@@ -37,7 +37,6 @@ use crate::conversation::Conversation;
 use crate::model_config::model_config_from_user_config;
 use crate::providers::base::DEFAULT_PROVIDER_TIMEOUT_SECS;
 use anyhow::Result;
-use futures::StreamExt;
 use goose_providers::errors::ProviderError;
 use goose_providers::formats::openai::create_request;
 use goose_providers::images::ImageFormat;
@@ -51,8 +50,6 @@ use uuid::Uuid;
 /// Default model to use for tool interpretation
 pub const DEFAULT_INTERPRETER_MODEL_OLLAMA: &str = "mistral-nemo";
 pub const TOOLSHIM_BACKEND_ENV_VAR: &str = "GOOSE_TOOLSHIM_BACKEND";
-pub const TOOLSHIM_LOCAL_MODEL_ENV_VAR: &str = "GOOSE_TOOLSHIM_MODEL";
-const LOCAL_LLM_MODEL_CONFIG_KEY: &str = "LOCAL_LLM_MODEL";
 
 const TOOL_CALLS_SECTION_BEGIN: &str = "<|tool_calls_section_begin|>";
 const TOOL_CALLS_SECTION_END: &str = "<|tool_calls_section_end|>";
@@ -64,15 +61,17 @@ const TOOL_CALL_END: &str = "<|tool_call_end|>";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToolshimBackend {
     Ollama,
-    Local,
 }
 
 fn parse_toolshim_backend(value: &str) -> Result<ToolshimBackend, ProviderError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "" | "ollama" => Ok(ToolshimBackend::Ollama),
-        "local" | "llama.cpp" | "llama_cpp" => Ok(ToolshimBackend::Local),
+        "local" | "llama.cpp" | "llama_cpp" => Err(ProviderError::RequestFailed(format!(
+            "Invalid {} value '{}'. Local-inference toolshim support was removed from this build; the only supported value is 'ollama'.",
+            TOOLSHIM_BACKEND_ENV_VAR, value
+        ))),
         other => Err(ProviderError::RequestFailed(format!(
-            "Invalid {} value '{}'. Expected one of: ollama, local, llama.cpp",
+            "Invalid {} value '{}'. Expected: ollama",
             TOOLSHIM_BACKEND_ENV_VAR, other
         ))),
     }
@@ -83,32 +82,6 @@ fn get_toolshim_backend() -> Result<ToolshimBackend, ProviderError> {
         Ok(value) => parse_toolshim_backend(&value),
         Err(_) => Ok(ToolshimBackend::Ollama),
     }
-}
-
-fn resolve_local_interpreter_model() -> Result<String, ProviderError> {
-    let env_model = std::env::var(TOOLSHIM_LOCAL_MODEL_ENV_VAR)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let config_model = crate::config::Config::global()
-        .get_param::<String>(LOCAL_LLM_MODEL_CONFIG_KEY)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    resolve_local_interpreter_model_from_sources(env_model, config_model)
-}
-
-fn resolve_local_interpreter_model_from_sources(
-    env_model: Option<String>,
-    config_model: Option<String>,
-) -> Result<String, ProviderError> {
-    env_model.or(config_model).ok_or_else(|| {
-        ProviderError::RequestFailed(format!(
-            "Local toolshim backend requires {} or {} to be set",
-            TOOLSHIM_LOCAL_MODEL_ENV_VAR, LOCAL_LLM_MODEL_CONFIG_KEY
-        ))
-    })
 }
 
 fn resolve_tool_name(raw_tool_name: &str, tools: &[Tool]) -> Option<String> {
@@ -547,56 +520,6 @@ pub struct OllamaInterpreter {
     base_url: String,
 }
 
-/// Local llama.cpp implementation of the ToolInterpreter trait.
-pub struct LocalInterpreter {
-    model: String,
-}
-
-impl LocalInterpreter {
-    pub fn new() -> Result<Self, ProviderError> {
-        Ok(Self {
-            model: resolve_local_interpreter_model()?,
-        })
-    }
-
-    async fn infer_structured_response(
-        &self,
-        format_instruction: &str,
-    ) -> Result<String, ProviderError> {
-        let model_config = crate::model_config::model_config_from_user_config("local", &self.model)
-            .map_err(|e| ProviderError::RequestFailed(format!("Model config error: {e}")))?
-            .with_toolshim(false)
-            .with_toolshim_model(None);
-
-        let provider = crate::providers::init::create("local", vec![])
-            .await
-            .map_err(|e| {
-                ProviderError::RequestFailed(format!(
-                    "Failed to create local interpreter provider: {e}"
-                ))
-            })?;
-
-        let request_messages = vec![Message::user().with_text(format_instruction)];
-        let mut stream = provider
-            .stream(&model_config, "", &request_messages, &[])
-            .await?;
-
-        let mut content = String::new();
-        while let Some(chunk) = stream.next().await {
-            let (message, _) = chunk?;
-            if let Some(message) = message {
-                for part in message.content {
-                    if let MessageContent::Text(text) = part {
-                        content.push_str(&text.text);
-                    }
-                }
-            }
-        }
-
-        Ok(content)
-    }
-}
-
 impl OllamaInterpreter {
     pub fn new() -> Result<Self, ProviderError> {
         let client = Client::builder()
@@ -826,49 +749,6 @@ Otherwise, if no JSON tool requests are provided, use the no-op tool:
     }
 }
 
-#[async_trait::async_trait]
-impl ToolInterpreter for LocalInterpreter {
-    async fn interpret_to_tool_calls(
-        &self,
-        last_assistant_msg: &str,
-        tools: &[Tool],
-    ) -> Result<Vec<CallToolRequestParams>, ProviderError> {
-        if tools.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let system_prompt = "If there is detectable JSON-formatted tool requests, write them into valid JSON tool calls in the following format:
-{{
-    \"tool_calls\": [
-        {{
-            \"name\": \"tool_name\",
-            \"arguments\": {{
-                \"param1\": \"value1\",
-                \"param2\": \"value2\"
-            }}
-        }}
-    ]
-}}
-
-Otherwise, if no JSON tool requests are provided, use the no-op tool:
-{{
-    \"tool_calls\": [
-        {{
-        \"name\": \"noop\",
-            \"arguments\": {{
-            }}
-        }}]
-}}
-";
-
-        let format_instruction = format!("{}\nRequest: {}\n\n", system_prompt, last_assistant_msg);
-        let content = self.infer_structured_response(&format_instruction).await?;
-        let response = json!({ "message": { "content": content } });
-
-        OllamaInterpreter::process_interpreter_response(&response)
-    }
-}
-
 /// Creates a string containing formatted tool information
 pub fn format_tool_info(tools: &[Tool]) -> String {
     let mut tool_info = String::new();
@@ -1033,10 +913,6 @@ pub async fn augment_message_with_selected_tool_interpreter(
             let interpreter = OllamaInterpreter::new()?;
             augment_message_with_tool_calls(&interpreter, message, tools).await
         }
-        ToolshimBackend::Local => {
-            let interpreter = LocalInterpreter::new()?;
-            augment_message_with_tool_calls(&interpreter, message, tools).await
-        }
     }
 }
 
@@ -1062,41 +938,25 @@ mod tests {
     #[test]
     fn parses_toolshim_backend_values() {
         assert_eq!(
-            parse_toolshim_backend("ollama").unwrap(),
+            parse_toolshim_backend("").unwrap(),
             ToolshimBackend::Ollama
         );
         assert_eq!(
-            parse_toolshim_backend("local").unwrap(),
-            ToolshimBackend::Local
-        );
-        assert_eq!(
-            parse_toolshim_backend("llama.cpp").unwrap(),
-            ToolshimBackend::Local
+            parse_toolshim_backend("ollama").unwrap(),
+            ToolshimBackend::Ollama
         );
         assert!(parse_toolshim_backend("something-else").is_err());
     }
 
     #[test]
-    fn resolves_local_interpreter_model_prefers_env() {
-        let model = resolve_local_interpreter_model_from_sources(
-            Some("env-model".to_string()),
-            Some("config-model".to_string()),
-        )
-        .unwrap();
-        assert_eq!(model, "env-model");
-    }
-
-    #[test]
-    fn resolves_local_interpreter_model_uses_config_fallback() {
-        let model =
-            resolve_local_interpreter_model_from_sources(None, Some("config-model".to_string()))
-                .unwrap();
-        assert_eq!(model, "config-model");
-    }
-
-    #[test]
-    fn resolves_local_interpreter_model_requires_source() {
-        assert!(resolve_local_interpreter_model_from_sources(None, None).is_err());
+    fn parses_toolshim_backend_rejects_removed_local_inference_values_with_clear_error() {
+        for value in ["local", "llama.cpp", "llama_cpp"] {
+            let err = parse_toolshim_backend(value).unwrap_err().to_string();
+            assert!(
+                err.contains("removed"),
+                "expected a 'removed' error for '{value}', got: {err}"
+            );
+        }
     }
 
     #[test]

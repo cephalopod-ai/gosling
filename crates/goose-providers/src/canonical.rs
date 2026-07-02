@@ -68,7 +68,7 @@ pub fn recommended_models_from_registry(provider: &str) -> Vec<String> {
 /// Providers that run models locally — their cost is always zero regardless
 /// of what the canonical registry says for the underlying model architecture.
 fn is_local_provider(provider: &str) -> bool {
-    matches!(provider, "ollama" | "local")
+    matches!(provider, "ollama")
 }
 
 pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<CanonicalModel> {
