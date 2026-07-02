@@ -190,7 +190,16 @@ function isValidLanguageSetting(value: unknown): value is Settings['language'] {
   return typeof value === 'string' && validLanguageSettings.has(value as Settings['language']);
 }
 
+// Cached parsed settings: getSettings() is called from hot paths on the main
+// process (notably the CSP rebuild in onHeadersReceived, which runs for every
+// HTTP response), and synchronous disk reads there jank the whole UI. All
+// writes go through updateSettings(), which invalidates the cache.
+let settingsCache: Settings | null = null;
+
 function getSettings(): Settings {
+  if (settingsCache) {
+    return settingsCache;
+  }
   if (fsSync.existsSync(SETTINGS_FILE)) {
     let stored: Partial<Settings>;
     try {
@@ -200,7 +209,7 @@ function getSettings(): Settings {
       console.error('Failed to read settings.json, using defaults:', err);
       return defaultSettings;
     }
-    return {
+    settingsCache = {
       ...defaultSettings,
       ...stored,
       externalGoosed: {
@@ -212,6 +221,7 @@ function getSettings(): Settings {
         ...(stored.keyboardShortcuts ?? {}),
       },
     };
+    return settingsCache;
   }
   return defaultSettings;
 }
@@ -219,7 +229,11 @@ function getSettings(): Settings {
 function updateSettings(modifier: (settings: Settings) => void): void {
   const settings = getSettings();
   modifier(settings);
-  fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  try {
+    fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  } finally {
+    settingsCache = null;
+  }
 }
 
 function getConfiguredGooseLocale(): string | undefined {
@@ -368,7 +382,13 @@ function isTrustedHost(hostname: string): boolean {
 
 // Renderer requests: pin to the exact cert once known.
 app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
-  const parsed = new URL(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    callback(false);
+    return;
+  }
   if (!isTrustedHost(parsed.hostname)) {
     callback(false);
     return;
@@ -437,7 +457,13 @@ if (process.platform !== 'darwin') {
     app.on('second-instance', (_event, commandLine) => {
       const protocolUrl = commandLine.find((arg) => arg.startsWith('goose://'));
       if (protocolUrl) {
-        const parsedUrl = new URL(protocolUrl);
+        let parsedUrl: URL;
+        try {
+          parsedUrl = new URL(protocolUrl);
+        } catch (error) {
+          log.warn('[Main] Ignoring invalid second-instance protocol URL:', errorMessage(error));
+          return;
+        }
         // Handle new-session URL by creating a fresh chat window
         if (parsedUrl.hostname === 'new-session') {
           app.whenReady().then(async () => {
@@ -633,7 +659,13 @@ async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWi
 
 app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
-    const parsedUrl = new URL(url);
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch (error) {
+      log.warn('[Main] Ignoring invalid open-url protocol URL:', errorMessage(error));
+      return;
+    }
 
     log.info(
       '[Main] Received open-url event:',
@@ -1666,11 +1698,19 @@ const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
   return result;
 };
 
-// Global error handler
+// Global error handler. Must never throw itself: it runs from
+// uncaughtException/unhandledRejection, and a window mid-teardown would turn
+// one error into a crash loop.
 const handleFatalError = (error: Error) => {
   const windows = BrowserWindow.getAllWindows();
   windows.forEach((win) => {
-    win.webContents.send('fatal-error', error.message || 'An unexpected error occurred');
+    try {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('fatal-error', error.message || 'An unexpected error occurred');
+      }
+    } catch (sendError) {
+      console.error('Failed to notify window of fatal error:', sendError);
+    }
   });
 };
 
