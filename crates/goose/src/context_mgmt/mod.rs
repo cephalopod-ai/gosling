@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::conversation::message::{ActionRequiredData, MessageMetadata};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{merge_consecutive_messages, Conversation};
@@ -5,7 +6,6 @@ use crate::prompt_template::render_template;
 use crate::providers::base::Provider;
 #[cfg(test)]
 use crate::providers::base::{stream_from_single_message, MessageStream};
-use crate::{config::Config, token_counter::create_token_counter};
 use anyhow::Result;
 use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
@@ -203,9 +203,18 @@ pub async fn check_if_compaction_needed(
             .unwrap_or(DEFAULT_COMPACTION_THRESHOLD)
     });
 
+    // Sessions that never persisted a model config (imports, fresh ACP
+    // sessions) would otherwise be checked against the 128k default limit
+    // regardless of the actual model; resolve the configured model instead so
+    // canonical context limits (e.g. 1M-context models) apply.
     let model_config = session
         .model_config
         .clone()
+        .or_else(|| {
+            config.get_goose_model().ok().and_then(|model| {
+                crate::model_config::model_config_from_user_config(provider.get_name(), model).ok()
+            })
+        })
         .unwrap_or_else(|| ModelConfig::new("unknown"));
     let context_limit = provider
         .get_context_limit(&model_config)
@@ -215,24 +224,37 @@ pub async fn check_if_compaction_needed(
     let (current_tokens, _token_source) = match session.usage.total_tokens {
         Some(tokens) => (tokens as usize, "session metadata"),
         None => {
-            let token_counter = create_token_counter()
+            let token_counter = crate::token_counter::shared_token_counter()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
 
-            let token_counts: Vec<_> = messages
-                .iter()
-                .filter(|m| m.is_agent_visible())
-                .map(|msg| token_counter.count_chat_tokens("", std::slice::from_ref(msg), &[]))
-                .collect();
-
-            (token_counts.iter().sum(), "estimated")
+            // One pass over the visible messages; counting each message as its
+            // own request added the per-request reply primer once per message.
+            // This still under-counts the system prompt and tool schemas,
+            // which are not available here.
+            (
+                token_counter.count_chat_tokens("", messages, &[]),
+                "estimated",
+            )
         }
     };
 
     let usage_ratio = current_tokens as f64 / context_limit as f64;
 
     let needs_compaction = if threshold <= 0.0 || threshold >= 1.0 {
-        false // Auto-compact is disabled.
+        // Auto-compact is disabled. Zero is the documented way to disable;
+        // anything >= 1.0 is more likely a misconfiguration, so say so.
+        if threshold >= 1.0 {
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!(
+                    "GOOSE_AUTO_COMPACT_THRESHOLD={} disables auto-compaction; use a value between 0 and 1 (or 0 to disable explicitly)",
+                    threshold
+                );
+            }
+        }
+        false
     } else {
         usage_ratio > threshold
     };
@@ -261,25 +283,23 @@ fn filter_tool_responses(messages: &[Message], remove_percent: u32) -> Vec<&Mess
         return messages.iter().collect();
     }
 
-    let num_to_remove = ((tool_indices.len() * remove_percent as usize) / 100).max(1);
+    let num_to_remove = ((tool_indices.len() * remove_percent as usize) / 100)
+        .max(1)
+        .min(tool_indices.len());
 
+    // Remove middle-out: order candidates by distance from the center so the
+    // earliest and most recent tool responses survive the longest, then take
+    // exactly `num_to_remove`. (The previous alternating-offset walk skipped
+    // removals when one side ran out, so a single tool response was never
+    // removed and 100% left one behind — breaking the escalation in
+    // `do_compact`, whose last resort assumes all tool responses are gone.)
     let middle = tool_indices.len() / 2;
-    let mut indices_to_remove = Vec::new();
-
-    // Middle out
-    for i in 0..num_to_remove {
-        if i % 2 == 0 {
-            let offset = i / 2;
-            if middle > offset {
-                indices_to_remove.push(tool_indices[middle - offset - 1]);
-            }
-        } else {
-            let offset = i / 2;
-            if middle + offset < tool_indices.len() {
-                indices_to_remove.push(tool_indices[middle + offset]);
-            }
-        }
-    }
+    let mut candidate_order: Vec<usize> = (0..tool_indices.len()).collect();
+    candidate_order.sort_by_key(|&i| (i.abs_diff(middle), i));
+    let indices_to_remove: Vec<usize> = candidate_order[..num_to_remove]
+        .iter()
+        .map(|&i| tool_indices[i])
+        .collect();
 
     messages
         .iter()
@@ -772,6 +792,66 @@ mod tests {
             "Should succeed with progressive removal: {:?}",
             result.err()
         );
+    }
+
+    fn tool_response_count(messages: &[&Message]) -> usize {
+        messages
+            .iter()
+            .filter(|m| {
+                m.content
+                    .iter()
+                    .any(|c| matches!(c, MessageContent::ToolResponse(_)))
+            })
+            .count()
+    }
+
+    #[test]
+    fn test_filter_tool_responses_removes_single_response_at_full_removal() {
+        let mut messages = vec![Message::user().with_text("start")];
+        messages.extend(create_tool_pair("call0", "resp0", "read_file", "content"));
+
+        let filtered = filter_tool_responses(&messages, 100);
+        assert_eq!(tool_response_count(&filtered), 0);
+    }
+
+    #[test]
+    fn test_filter_tool_responses_removes_all_for_odd_count() {
+        let mut messages = vec![Message::user().with_text("start")];
+        for i in 0..5 {
+            messages.extend(create_tool_pair(
+                &format!("call{}", i),
+                &format!("resp{}", i),
+                "read_file",
+                "content",
+            ));
+        }
+
+        let filtered = filter_tool_responses(&messages, 100);
+        assert_eq!(tool_response_count(&filtered), 0);
+    }
+
+    #[test]
+    fn test_filter_tool_responses_partial_removal_is_middle_out() {
+        let mut messages = Vec::new();
+        for i in 0..10 {
+            messages.extend(create_tool_pair(
+                &format!("call{}", i),
+                &format!("resp{}", i),
+                "read_file",
+                &format!("content{}", i),
+            ));
+        }
+
+        let filtered = filter_tool_responses(&messages, 50);
+        assert_eq!(tool_response_count(&filtered), 5);
+
+        // The first and last tool responses survive a partial removal.
+        let texts: Vec<String> = filtered
+            .iter()
+            .filter_map(|m| m.content.iter().find_map(|c| c.as_tool_response_text()))
+            .collect();
+        assert!(texts.iter().any(|t| t.contains("content0")));
+        assert!(texts.iter().any(|t| t.contains("content9")));
     }
 
     #[test]

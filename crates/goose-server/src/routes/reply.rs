@@ -274,6 +274,22 @@ pub async fn reply(
                         e
                     );
                 }
+                // The stored token counts described the old conversation;
+                // clearing them makes auto-compaction re-estimate instead of
+                // trusting stale numbers from before the override.
+                if let Err(e) = state
+                    .session_manager()
+                    .update(&session_id)
+                    .usage(Default::default())
+                    .apply()
+                    .await
+                {
+                    tracing::warn!(
+                        "Failed to reset session usage after history override for {}: {}",
+                        session_id,
+                        e
+                    );
+                }
                 conv
             }
             None => session.conversation.unwrap_or_default(),

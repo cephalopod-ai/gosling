@@ -1,13 +1,14 @@
 use lru::LruCache;
 use rmcp::model::Tool;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use tiktoken_rs::CoreBPE;
 use tokio::sync::OnceCell;
 
 use crate::conversation::message::Message;
 
 static TOKENIZER: OnceCell<Arc<CoreBPE>> = OnceCell::const_new();
+static SHARED_COUNTER: OnceCell<Arc<TokenCounter>> = OnceCell::const_new();
 
 const MAX_TOKEN_CACHE_SIZE: usize = 1_024;
 
@@ -55,7 +56,7 @@ impl TokenCounter {
         if let Some(count) = self
             .token_cache
             .lock()
-            .expect("token cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .get(&cache_key)
             .copied()
         {
@@ -67,7 +68,7 @@ impl TokenCounter {
 
         self.token_cache
             .lock()
-            .expect("token cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .put(cache_key, count);
         count
     }
@@ -190,30 +191,48 @@ impl TokenCounter {
     pub fn clear_cache(&self) {
         self.token_cache
             .lock()
-            .expect("token cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .clear();
     }
 
     pub fn cache_size(&self) -> usize {
         self.token_cache
             .lock()
-            .expect("token cache mutex poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .len()
     }
 }
 
 async fn get_tokenizer() -> Result<Arc<CoreBPE>, String> {
-    Ok(TOKENIZER
-        .get_or_init(|| async {
-            let bpe = tiktoken_rs::o200k_base().expect("Failed to initialize o200k_base tokenizer");
-            Arc::new(bpe)
+    TOKENIZER
+        .get_or_try_init(|| async {
+            // Building the BPE rank table is CPU-heavy; keep it off the async
+            // workers and surface failure as an error instead of panicking.
+            tokio::task::spawn_blocking(|| {
+                tiktoken_rs::o200k_base()
+                    .map(Arc::new)
+                    .map_err(|e| format!("Failed to initialize o200k_base tokenizer: {e}"))
+            })
+            .await
+            .map_err(|e| format!("Tokenizer initialization task failed: {e}"))?
         })
         .await
-        .clone())
+        .cloned()
 }
 
 pub async fn create_token_counter() -> Result<TokenCounter, String> {
     TokenCounter::new().await
+}
+
+/// Process-wide counter for hot paths (usage estimation, compaction checks):
+/// its LRU cache survives across turns, so an unchanged conversation prefix is
+/// not re-encoded on every check. `create_token_counter` keeps returning a
+/// fresh counter for callers that want isolated cache behavior.
+pub async fn shared_token_counter() -> Result<Arc<TokenCounter>, String> {
+    SHARED_COUNTER
+        .get_or_try_init(|| async { TokenCounter::new().await.map(Arc::new) })
+        .await
+        .cloned()
 }
 
 #[cfg(test)]
