@@ -362,12 +362,21 @@ impl SummonClient {
         subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
         buffer: Arc<Mutex<Vec<ServerNotification>>>,
     ) {
+        // With no subscribers the buffer holds notifications until someone
+        // peeks/loads; keep only the newest so an unobserved chatty subagent
+        // can't grow it for its whole run.
+        const MAX_BUFFERED_NOTIFICATIONS: usize = 256;
         tokio::spawn(async move {
             while let Some(notification) = notif_rx.recv().await {
                 let mut subs = subscribers.lock().await;
                 if subs.is_empty() {
                     drop(subs);
-                    buffer.lock().await.push(notification);
+                    let mut buffer = buffer.lock().await;
+                    if buffer.len() >= MAX_BUFFERED_NOTIFICATIONS {
+                        let excess = buffer.len() + 1 - MAX_BUFFERED_NOTIFICATIONS;
+                        buffer.drain(..excess);
+                    }
+                    buffer.push(notification);
                 } else {
                     subs.retain(|tx| match tx.try_send(notification.clone()) {
                         Ok(()) => true,

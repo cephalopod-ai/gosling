@@ -12,12 +12,11 @@ use std::time::Duration;
 use rmcp::model::{CallToolResult, Content};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, BufReader};
 #[cfg(not(windows))]
 use tokio::sync::OnceCell;
 #[cfg(not(windows))]
 use tokio::task::JoinHandle;
-use tokio_stream::{wrappers::SplitStream, StreamExt};
+use tokio_stream::StreamExt;
 
 use crate::subprocess::SubprocessExt;
 
@@ -140,11 +139,17 @@ fn unix_shell() -> String {
     if let Ok(shell) = std::env::var("GOOSE_SHELL") {
         return shell;
     }
-    if which::which("bash").is_ok() {
-        "bash".to_string()
-    } else {
-        "sh".to_string()
-    }
+    // Cache the PATH scan: this runs on every shell tool call.
+    static DEFAULT_SHELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    DEFAULT_SHELL
+        .get_or_init(|| {
+            if which::which("bash").is_ok() {
+                "bash".to_string()
+            } else {
+                "sh".to_string()
+            }
+        })
+        .clone()
 }
 
 const OUTPUT_LIMIT_LINES: usize = 2000;
@@ -656,6 +661,10 @@ fn build_shell_command(
         }
     };
 
+    // If the tool-call future is dropped before the command finishes (stream
+    // cancellation racing ahead of the timeout branch), don't leave the shell
+    // running orphaned.
+    command.kill_on_drop(true);
     command.set_no_window();
     command
 }
@@ -686,6 +695,57 @@ fn split_lines(lines: &[(bool, String)]) -> (String, String, String) {
     (stdout, stderr, interleaved)
 }
 
+/// Read `reader` as newline-separated lines, retaining at most
+/// `MAX_LINE_BYTES` per line. Unlike `BufReader::split`, a line longer than
+/// the cap is truncated as it streams instead of being buffered whole, so one
+/// giant line (a binary dump, `tr -d '\n'` output) cannot exhaust memory.
+fn bounded_line_stream<R>(
+    reader: R,
+    is_stderr: bool,
+) -> impl futures::Stream<Item = Result<(bool, Vec<u8>), std::io::Error>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    const MAX_LINE_BYTES: usize = 1024 * 1024;
+
+    fn append_capped(line: &mut Vec<u8>, segment: &[u8]) {
+        if line.len() < MAX_LINE_BYTES {
+            let take = segment.len().min(MAX_LINE_BYTES - line.len());
+            line.extend_from_slice(&segment[..take]);
+        }
+    }
+
+    async_stream::stream! {
+        use tokio::io::AsyncReadExt;
+        let mut reader = reader;
+        let mut buf = [0u8; 8192];
+        let mut line: Vec<u8> = Vec::new();
+        loop {
+            match reader.read(&mut buf).await {
+                Err(e) => {
+                    yield Err(e);
+                    return;
+                }
+                Ok(0) => break,
+                Ok(n) => {
+                    let mut start = 0;
+                    for i in 0..n {
+                        if buf[i] == b'\n' {
+                            append_capped(&mut line, &buf[start..i]);
+                            yield Ok((is_stderr, std::mem::take(&mut line)));
+                            start = i + 1;
+                        }
+                    }
+                    append_capped(&mut line, &buf[start..n]);
+                }
+            }
+        }
+        if !line.is_empty() {
+            yield Ok((is_stderr, line));
+        }
+    }
+}
+
 /// Collect lines from stdout and stderr and send `(is_stderr, line)` tuples to `tx`.
 async fn collect_tagged_lines(
     stdout: tokio::process::ChildStdout,
@@ -698,17 +758,17 @@ async fn collect_tagged_lines(
     // and can OOM the process before truncation ever applies. Stop retaining
     // once we cross a hard cap (well above the display limit so normal output is
     // unaffected) but keep draining the pipes so the child never blocks on a
-    // full pipe. Note: a single line with no newline is still read whole by the
-    // line splitter, so this bounds the common many-lines case, not one giant line.
+    // full pipe. Per-line size is bounded by `bounded_line_stream`, so neither
+    // many lines nor one giant line can grow memory without limit.
     const MAX_COLLECTED_BYTES: usize = 10 * 1024 * 1024;
-    let stdout_lines = SplitStream::new(BufReader::new(stdout).split(b'\n')).map(|l| (false, l));
-    let stderr_lines = SplitStream::new(BufReader::new(stderr).split(b'\n')).map(|l| (true, l));
-    let mut merged = stdout_lines.merge(stderr_lines);
+    let stdout_lines = bounded_line_stream(stdout, false);
+    let stderr_lines = bounded_line_stream(stderr, true);
+    let mut merged = std::pin::pin!(stdout_lines.merge(stderr_lines));
 
     let mut collected_bytes: usize = 0;
     let mut capped = false;
-    while let Some((is_stderr, line)) = merged.next().await {
-        let line = line?;
+    while let Some(item) = merged.next().await {
+        let (is_stderr, line) = item?;
         if collected_bytes < MAX_COLLECTED_BYTES {
             collected_bytes += line.len();
             let _ = tx.send((is_stderr, String::from_utf8_lossy(&line).into_owned()));

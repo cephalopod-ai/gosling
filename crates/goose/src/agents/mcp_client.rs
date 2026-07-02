@@ -340,20 +340,22 @@ impl ClientHandler for GooseClient {
         Ok(working_dir_roots(&self.working_dir.read().await))
     }
 
+    // Both notification handlers drop subscribers whose receiver is gone: a
+    // sender is registered per tool call (see `McpClient::subscribe`) and
+    // would otherwise stay in this Vec for the life of the session.
     async fn on_progress(
         &self,
         params: rmcp::model::ProgressNotificationParam,
         context: rmcp::service::NotificationContext<rmcp::RoleClient>,
     ) {
-        self.notification_handlers
-            .lock()
-            .await
-            .iter()
-            .for_each(|handler| {
-                let mut not = Notification::new(params.clone());
-                not.extensions = context.extensions.clone();
-                let _ = handler.try_send(ServerNotification::ProgressNotification(not));
-            });
+        self.notification_handlers.lock().await.retain(|handler| {
+            let mut not = Notification::new(params.clone());
+            not.extensions = context.extensions.clone();
+            !matches!(
+                handler.try_send(ServerNotification::ProgressNotification(not)),
+                Err(mpsc::error::TrySendError::Closed(_))
+            )
+        });
     }
 
     async fn on_logging_message(
@@ -361,16 +363,14 @@ impl ClientHandler for GooseClient {
         params: rmcp::model::LoggingMessageNotificationParam,
         context: rmcp::service::NotificationContext<rmcp::RoleClient>,
     ) {
-        self.notification_handlers
-            .lock()
-            .await
-            .iter()
-            .for_each(|handler| {
-                let mut notification = LoggingMessageNotification::new(params.clone());
-                notification.extensions = context.extensions.clone();
-                let _ =
-                    handler.try_send(ServerNotification::LoggingMessageNotification(notification));
-            });
+        self.notification_handlers.lock().await.retain(|handler| {
+            let mut notification = LoggingMessageNotification::new(params.clone());
+            notification.extensions = context.extensions.clone();
+            !matches!(
+                handler.try_send(ServerNotification::LoggingMessageNotification(notification)),
+                Err(mpsc::error::TrySendError::Closed(_))
+            )
+        });
     }
 
     async fn create_message(
@@ -866,7 +866,11 @@ impl McpClientTrait for McpClient {
 
     async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
         let (tx, rx) = mpsc::channel(16);
-        self.notification_subscribers.lock().await.push(tx);
+        let mut subscribers = self.notification_subscribers.lock().await;
+        // Quiet servers never trigger the send-side pruning in the
+        // notification handlers, so also drop dead subscribers here.
+        subscribers.retain(|subscriber| !subscriber.is_closed());
+        subscribers.push(tx);
         rx
     }
 

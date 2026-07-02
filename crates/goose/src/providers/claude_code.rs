@@ -401,12 +401,29 @@ impl ClaudeCodeProvider {
 
         let stderr = child.stderr.take();
         let stderr_handle = tokio::spawn(async move {
-            let mut output = String::new();
+            // The CLI child persists across turns, so an unbounded
+            // read_to_string would retain every stderr byte it ever emits.
+            // Keep only a bounded tail (enough to diagnose a failure) while
+            // draining so the child never blocks on a full stderr pipe.
+            const MAX_STDERR_CAPTURE: usize = 64 * 1024;
+            let mut captured: Vec<u8> = Vec::new();
             if let Some(mut stderr) = stderr {
                 use tokio::io::AsyncReadExt;
-                let _ = stderr.read_to_string(&mut output).await;
+                let mut chunk = [0u8; 8192];
+                loop {
+                    match stderr.read(&mut chunk).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            captured.extend_from_slice(&chunk[..n]);
+                            if captured.len() > MAX_STDERR_CAPTURE {
+                                let excess = captured.len() - MAX_STDERR_CAPTURE;
+                                captured.drain(..excess);
+                            }
+                        }
+                    }
+                }
             }
-            output
+            String::from_utf8_lossy(&captured).into_owned()
         });
 
         let mut process = CliProcess {

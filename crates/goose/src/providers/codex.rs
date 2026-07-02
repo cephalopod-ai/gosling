@@ -224,16 +224,30 @@ impl CodexProvider {
             .take()
             .ok_or_else(|| ProviderError::RequestFailed("Failed to capture stdout".to_string()))?;
 
-        // Drain stderr concurrently to prevent pipe buffer deadlock
+        // Drain stderr concurrently to prevent pipe buffer deadlock; keep
+        // only a bounded tail so a chatty child can't grow memory unbounded.
         let stderr_handle = {
             let stderr = child.stderr.take();
             tokio::spawn(async move {
-                let mut output = String::new();
+                const MAX_STDERR_CAPTURE: usize = 64 * 1024;
+                let mut captured: Vec<u8> = Vec::new();
                 if let Some(mut stderr) = stderr {
                     use tokio::io::AsyncReadExt;
-                    let _ = stderr.read_to_string(&mut output).await;
+                    let mut chunk = [0u8; 8192];
+                    loop {
+                        match stderr.read(&mut chunk).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                captured.extend_from_slice(&chunk[..n]);
+                                if captured.len() > MAX_STDERR_CAPTURE {
+                                    let excess = captured.len() - MAX_STDERR_CAPTURE;
+                                    captured.drain(..excess);
+                                }
+                            }
+                        }
+                    }
                 }
-                output
+                String::from_utf8_lossy(&captured).into_owned()
             })
         };
 

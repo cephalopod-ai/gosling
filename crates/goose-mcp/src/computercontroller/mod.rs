@@ -74,6 +74,54 @@ pub enum ScriptLanguage {
     Powershell,
 }
 
+/// Like `Command::output()` but retains at most a bounded prefix of stdout
+/// and stderr. The pipes are still drained to EOF so the child never blocks,
+/// but a runaway script can no longer exhaust process memory (`.output()`
+/// buffers everything it emits).
+async fn output_capped(
+    mut cmd: Command,
+) -> std::io::Result<(std::process::ExitStatus, String, String)> {
+    const MAX_CAPTURE: usize = 256 * 1024;
+
+    async fn drain(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> String {
+        use tokio::io::AsyncReadExt;
+        let mut captured: Vec<u8> = Vec::new();
+        let mut truncated = false;
+        if let Some(mut pipe) = pipe {
+            let mut chunk = [0u8; 8192];
+            loop {
+                match pipe.read(&mut chunk).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if captured.len() < MAX_CAPTURE {
+                            let take = n.min(MAX_CAPTURE - captured.len());
+                            captured.extend_from_slice(&chunk[..take]);
+                            truncated |= take < n;
+                        } else {
+                            truncated = true;
+                        }
+                    }
+                }
+            }
+        }
+        let mut text = String::from_utf8_lossy(&captured).into_owned();
+        if truncated {
+            text.push_str("\n... [output truncated]");
+        }
+        text
+    }
+
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn()?;
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+    let (stdout, stderr, status) =
+        tokio::join!(drain(stdout_pipe), drain(stderr_pipe), child.wait());
+    Ok((status?, stdout, stderr))
+}
+
 /// Enum for command parameter in cache tool
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -844,26 +892,24 @@ impl ComputerControllerServer {
         };
 
         // Run the script
-        let output = match language {
+        let (status, output_str, error_str) = match language {
             ScriptLanguage::Powershell => {
                 // For PowerShell, we need to use -File instead of -Command
-                Command::new("powershell")
-                    .arg("-NoProfile")
+                let mut cmd = Command::new("powershell");
+                cmd.arg("-NoProfile")
                     .arg("-NonInteractive")
                     .arg("-File")
                     .arg(&command)
                     .env("GOOSE_TERMINAL", "1")
                     .env("AGENT", "goose")
-                    .set_no_window()
-                    .output()
-                    .await
-                    .map_err(|e| {
-                        ErrorData::new(
-                            ErrorCode::INTERNAL_ERROR,
-                            format!("Failed to run script: {}", e),
-                            None,
-                        )
-                    })?
+                    .set_no_window();
+                output_capped(cmd).await.map_err(|e| {
+                    ErrorData::new(
+                        ErrorCode::INTERNAL_ERROR,
+                        format!("Failed to run script: {}", e),
+                        None,
+                    )
+                })?
             }
             _ => {
                 let mut cmd = Command::new(shell);
@@ -875,7 +921,8 @@ impl ComputerControllerServer {
                 if let Some(path) = merged_path() {
                     cmd.env("PATH", path);
                 }
-                cmd.set_no_window().output().await.map_err(|e| {
+                cmd.set_no_window();
+                output_capped(cmd).await.map_err(|e| {
                     ErrorData::new(
                         ErrorCode::INTERNAL_ERROR,
                         format!("Failed to run script: {}", e),
@@ -885,15 +932,12 @@ impl ComputerControllerServer {
             }
         };
 
-        let output_str = String::from_utf8_lossy(&output.stdout).into_owned();
-        let error_str = String::from_utf8_lossy(&output.stderr).into_owned();
-
-        let mut result = if output.status.success() {
+        let mut result = if status.success() {
             format!("Script completed successfully.\n\nOutput:\n{}", output_str)
         } else {
             format!(
                 "Script failed with error code {}.\n\nError:\n{}\nOutput:\n{}",
-                output.status, error_str, output_str
+                status, error_str, output_str
             )
         };
 
