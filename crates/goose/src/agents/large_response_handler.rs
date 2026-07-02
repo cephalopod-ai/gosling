@@ -104,13 +104,10 @@ fn restrict_to_owner(_dir: &std::path::Path) -> std::io::Result<()> {
 
 fn reject_symlink(dir: &std::path::Path) -> std::io::Result<()> {
     if std::fs::symlink_metadata(dir)?.file_type().is_symlink() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "refusing to use {} for large tool responses: it is a symlink",
-                dir.display()
-            ),
-        ));
+        return Err(std::io::Error::other(format!(
+            "refusing to use {} for large tool responses: it is a symlink",
+            dir.display()
+        )));
     }
     Ok(())
 }
