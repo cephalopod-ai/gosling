@@ -1135,7 +1135,7 @@ impl ExtensionManager {
                     dependencies.iter().flatten().for_each(|dep| {
                         command.arg("--with").arg(dep);
                     });
-                    command.arg("python").arg(file_path.to_str().unwrap());
+                    command.arg("python").arg(&file_path);
                 });
 
                 let client = child_process_client(
@@ -1475,9 +1475,15 @@ impl ExtensionManager {
     /// Get the extension prompt including client instructions
     pub async fn get_planning_prompt(&self, tools_info: Vec<ToolInfo>) -> String {
         let mut context: HashMap<&str, Value> = HashMap::new();
-        context.insert("tools", serde_json::to_value(tools_info).unwrap());
+        context.insert(
+            "tools",
+            serde_json::to_value(tools_info).unwrap_or_default(),
+        );
 
-        prompt_template::render_template("plan.md", &context).expect("Prompt should render")
+        prompt_template::render_template("plan.md", &context).unwrap_or_else(|e| {
+            tracing::error!("Failed to render planning prompt: {e}");
+            String::new()
+        })
     }
 
     // Function that gets executed for read_resource tool

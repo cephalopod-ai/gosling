@@ -224,11 +224,26 @@ impl Provider for GeminiCliProvider {
 
         let stderr = child.stderr.take();
         let stderr_drain = tokio::spawn(async move {
-            let mut buf = String::new();
+            // Bounded tail: drain the pipe fully but never retain more than
+            // this much, so a chatty child can't grow memory without limit.
+            const MAX_STDERR_CAPTURE: usize = 64 * 1024;
+            let mut captured: Vec<u8> = Vec::new();
             if let Some(mut stderr) = stderr {
-                let _ = AsyncReadExt::read_to_string(&mut stderr, &mut buf).await;
+                let mut chunk = [0u8; 8192];
+                loop {
+                    match AsyncReadExt::read(&mut stderr, &mut chunk).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            captured.extend_from_slice(&chunk[..n]);
+                            if captured.len() > MAX_STDERR_CAPTURE {
+                                let excess = captured.len() - MAX_STDERR_CAPTURE;
+                                captured.drain(..excess);
+                            }
+                        }
+                    }
+                }
             }
-            buf
+            String::from_utf8_lossy(&captured).into_owned()
         });
 
         Ok(Box::pin(try_stream! {

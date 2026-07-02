@@ -154,12 +154,20 @@ fn increment_session_count() -> InstallationData {
 fn get_platform_version() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("sw_vers")
-            .arg("-productVersion")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
+        // The OS version doesn't change while goose runs; spawning `sw_vers`
+        // per telemetry event (including every error event) is a measurable
+        // process-spawn cost on macOS, so resolve it once.
+        static PLATFORM_VERSION: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+        PLATFORM_VERSION
+            .get_or_init(|| {
+                std::process::Command::new("sw_vers")
+                    .arg("-productVersion")
+                    .output()
+                    .ok()
+                    .and_then(|o| String::from_utf8(o.stdout).ok())
+                    .map(|s| s.trim().to_string())
+            })
+            .clone()
     }
     #[cfg(target_os = "linux")]
     {

@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Speichern fehlgeschlagen"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Abbrechen"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Beispiel einfügen"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Anweisungen"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Detaillierte Anweisungen für die KI, vor dem Benutzer verborgen"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Anweisungen speichern"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Verwenden Sie die {code}-Syntax, um Parameter zu definieren, die Benutzer ausfüllen können"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Anweisungseditor"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Abbrechen"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Definieren Sie die erwartete Struktur der KI-Antwort im JSON-Schema-Format"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Beispiel einfügen"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Ungültiges JSON-Format"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "Antwort-JSON-Schema"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Schema speichern"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "JSON-Schema-Editor"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Abbrechen"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "Absenden"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Vorkonfigurierten Wert hinzufügen"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Parametername..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Parameterwert..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Vorkonfigurierten Wert {key} entfernen"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "Fenster immer im Vordergrund umschalten"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Anonyme Nutzungsdaten teilen"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Standardwert"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Standardwert eingeben"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Parameter löschen: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "Beschreibung"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Dies ist die Nachricht, die der Endbenutzer sieht."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Z. B. \"Geben Sie den Namen für die neue Komponente ein\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Eingabetyp"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Optional"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Geben Sie jede Option in einer neuen Zeile ein. Diese werden als Dropdown-Auswahlmöglichkeiten angezeigt."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Optionen (eine pro Zeile)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Option 1 Option 2 Option 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Erforderlich"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Anforderung"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Boolescher Wert"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Zahl"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Auswahl"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Zeichenkette"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Nicht verwendet"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Dieser Parameter wird in den Anweisungen oder im Prompt nicht verwendet. Er steht für die manuelle Eingabe zur Verfügung, wird aber möglicherweise nicht benötigt."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Immer zulassen"

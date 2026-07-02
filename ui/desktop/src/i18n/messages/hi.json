@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "सहेजने में विफल"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "रद्द करें"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "उदाहरण सम्मिलित करें"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "अनुदेश"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "एआई के लिए विस्तृत निर्देश, उपयोगकर्ता से छिपाए गए"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "अनुदेश सहेजें"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "उन मापदंडों को परिभाषित करने के लिए {code} सिंटैक्स का उपयोग करें जिन्हें उपयोगकर्ता भर सकते हैं"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "अनुदेश संपादक"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "रद्द करें"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "JSON स्कीमा प्रारूप का उपयोग करके AI की प्रतिक्रिया की अपेक्षित संरचना को परिभाषित करें"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "उदाहरण सम्मिलित करें"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "अमान्य JSON प्रारूप"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "प्रतिक्रिया JSON स्कीमा"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "स्कीमा सहेजें"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "JSON स्कीमा संपादक"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "रद्द करें"
   },
@@ -1324,18 +1282,6 @@
   },
   "keyboardShortcuts.toggleNavigationLabel": {
     "defaultMessage": "नेविगेशन टॉगल करें"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "पूर्व-कॉन्फ़िगर मान जोड़ें"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "पैरामीटर नाम..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "पैरामीटर मान..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "पूर्व-कॉन्फ़िगर मान {key} हटाएं"
   },
   "launcher.placeholder": {
     "defaultMessage": "goose से कुछ भी पूछें..."
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "अनाम उपयोग डेटा साझा करें"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "डिफ़ॉल्ट मान"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "डिफ़ॉल्ट मान दर्ज करें"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "पैरामीटर हटाएं: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "विवरण"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "यह वह संदेश है जिसे अंतिम उपयोगकर्ता देखेगा."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "उदा., \"नए कंपोनेंट का नाम दर्ज करें\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "इनपुट प्रकार"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "वैकल्पिक"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "हर विकल्प को नई लाइन पर दर्ज करें। ये ड्रॉपडाउन विकल्पों के रूप में दिखेंगे।"
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "विकल्प (प्रति पंक्ति एक)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "विकल्प 1 विकल्प 2 विकल्प 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "आवश्यक"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "मांग"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "बूलियन"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "संख्या"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "चयन करें"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "स्ट्रिंग"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "अप्रयुक्त"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "इस पैरामीटर का उपयोग निर्देशों या प्रॉम्प्ट में नहीं किया जाता है. यह मैन्युअल इनपुट के लिए उपलब्ध होगा लेकिन इसकी आवश्यकता नहीं होगी।"
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "हमेशा अनुमति दें"

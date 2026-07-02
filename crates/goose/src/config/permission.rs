@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, RwLock};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing;
 use utoipa::ToSchema;
 
@@ -35,6 +35,7 @@ pub struct PermissionConfig {
 pub struct PermissionManager {
     config_path: PathBuf,
     permission_map: RwLock<HashMap<String, PermissionConfig>>,
+    persist_lock: Mutex<()>,
 }
 
 // Constants representing specific permission categories
@@ -60,12 +61,17 @@ impl PermissionManager {
             })
         } else {
             // Consolidate directory creation for re-use in global singleton or ACP.
-            fs::create_dir_all(&config_dir).expect("Failed to create config directory");
+            // A failure (read-only config dir) only means later persists will
+            // fail too, which is logged there — not worth crashing the process.
+            if let Err(e) = fs::create_dir_all(&config_dir) {
+                tracing::error!("Failed to create config directory {config_dir:?}: {e}");
+            }
             HashMap::new()
         };
         PermissionManager {
             config_path: permission_path,
             permission_map: RwLock::new(permission_map),
+            persist_lock: Mutex::new(()),
         }
     }
 
@@ -73,14 +79,46 @@ impl PermissionManager {
         Arc::clone(&PERMISSION_MANAGER)
     }
 
-    /// Returns a list of all the names (keys) in the permission map.
-    pub fn get_permission_names(&self) -> Vec<String> {
+    /// The permission map stays structurally valid even if a thread panicked
+    /// while holding the lock, so recover from poison instead of turning one
+    /// panic into a panic on every subsequent permission check.
+    fn read_map(&self) -> RwLockReadGuard<'_, HashMap<String, PermissionConfig>> {
         self.permission_map
             .read()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn write_map(&self) -> RwLockWriteGuard<'_, HashMap<String, PermissionConfig>> {
+        self.permission_map
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Persist the current permission map. Persists are serialized and the
+    /// snapshot is taken under the persist lock, so whichever writer runs
+    /// last always writes the newest state (a per-caller snapshot could
+    /// persist an older clone over a newer one). IO happens outside the map
+    /// lock; a failure keeps the in-memory update and logs.
+    fn persist(&self) {
+        let _persist_guard = self
+            .persist_lock
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let snapshot = self.read_map().clone();
+        let result = serde_yaml::to_string(&snapshot)
+            .map_err(|e| e.to_string())
+            .and_then(|yaml| fs::write(&self.config_path, yaml).map_err(|e| e.to_string()));
+        if let Err(e) = result {
+            tracing::error!(
+                "Failed to persist permission config to {:?}: {e}",
+                self.config_path
+            );
+        }
+    }
+
+    /// Returns a list of all the names (keys) in the permission map.
+    pub fn get_permission_names(&self) -> Vec<String> {
+        self.read_map().keys().cloned().collect()
     }
 
     /// Retrieves the user permission level for a specific tool.
@@ -117,35 +155,37 @@ impl PermissionManager {
     }
 
     fn bulk_update_smart_approve_permissions(&self, tool_names: &[String], level: PermissionLevel) {
-        let mut map = self.permission_map.write().unwrap();
-        let permission_config = map.entry(SMART_APPROVE_PERMISSION.to_string()).or_default();
+        {
+            let mut map = self.write_map();
+            let permission_config = map.entry(SMART_APPROVE_PERMISSION.to_string()).or_default();
 
-        for tool_name in tool_names {
-            // Remove from all lists to avoid duplicates
-            permission_config.always_allow.retain(|p| p != tool_name);
-            permission_config.ask_before.retain(|p| p != tool_name);
-            permission_config.never_allow.retain(|p| p != tool_name);
+            for tool_name in tool_names {
+                // Remove from all lists to avoid duplicates
+                permission_config.always_allow.retain(|p| p != tool_name);
+                permission_config.ask_before.retain(|p| p != tool_name);
+                permission_config.never_allow.retain(|p| p != tool_name);
 
-            // Add to the appropriate list
-            match &level {
-                PermissionLevel::AlwaysAllow => {
-                    permission_config.always_allow.push(tool_name.clone())
-                }
-                PermissionLevel::AskBefore => permission_config.ask_before.push(tool_name.clone()),
-                PermissionLevel::NeverAllow => {
-                    permission_config.never_allow.push(tool_name.clone())
+                // Add to the appropriate list
+                match &level {
+                    PermissionLevel::AlwaysAllow => {
+                        permission_config.always_allow.push(tool_name.clone())
+                    }
+                    PermissionLevel::AskBefore => {
+                        permission_config.ask_before.push(tool_name.clone())
+                    }
+                    PermissionLevel::NeverAllow => {
+                        permission_config.never_allow.push(tool_name.clone())
+                    }
                 }
             }
         }
 
-        let yaml_content =
-            serde_yaml::to_string(&*map).expect("Failed to serialize permission config");
-        fs::write(&self.config_path, yaml_content).expect("Failed to write to permission.yaml");
+        self.persist();
     }
 
     /// Helper function to retrieve the permission level for a specific permission category and tool.
     fn get_permission(&self, name: &str, principal_name: &str) -> Option<PermissionLevel> {
-        let map = self.permission_map.read().unwrap();
+        let map = self.read_map();
         // Check if the permission category exists in the map
         if let Some(permission_config) = map.get(name) {
             // Check the permission levels for the given tool
@@ -181,56 +221,55 @@ impl PermissionManager {
 
     /// Helper function to update a permission level for a specific tool in a given permission category.
     fn update_permission(&self, name: &str, principal_name: &str, level: PermissionLevel) {
-        let mut map = self.permission_map.write().unwrap();
-        // Get or create a new PermissionConfig for the specified category
-        let permission_config = map.entry(name.to_string()).or_default();
+        {
+            let mut map = self.write_map();
+            // Get or create a new PermissionConfig for the specified category
+            let permission_config = map.entry(name.to_string()).or_default();
 
-        // Remove the principal from all existing lists to avoid duplicates
-        permission_config
-            .always_allow
-            .retain(|p| p != principal_name);
-        permission_config.ask_before.retain(|p| p != principal_name);
-        permission_config
-            .never_allow
-            .retain(|p| p != principal_name);
-
-        // Add the principal to the appropriate list
-        match level {
-            PermissionLevel::AlwaysAllow => permission_config
+            // Remove the principal from all existing lists to avoid duplicates
+            permission_config
                 .always_allow
-                .push(principal_name.to_string()),
-            PermissionLevel::AskBefore => permission_config
-                .ask_before
-                .push(principal_name.to_string()),
-            PermissionLevel::NeverAllow => permission_config
+                .retain(|p| p != principal_name);
+            permission_config.ask_before.retain(|p| p != principal_name);
+            permission_config
                 .never_allow
-                .push(principal_name.to_string()),
+                .retain(|p| p != principal_name);
+
+            // Add the principal to the appropriate list
+            match level {
+                PermissionLevel::AlwaysAllow => permission_config
+                    .always_allow
+                    .push(principal_name.to_string()),
+                PermissionLevel::AskBefore => permission_config
+                    .ask_before
+                    .push(principal_name.to_string()),
+                PermissionLevel::NeverAllow => permission_config
+                    .never_allow
+                    .push(principal_name.to_string()),
+            }
         }
 
-        // Serialize the updated permission map and write it back to the config file
-        let yaml_content =
-            serde_yaml::to_string(&*map).expect("Failed to serialize permission config");
-        fs::write(&self.config_path, yaml_content).expect("Failed to write to permission.yaml");
+        self.persist();
     }
 
     /// Removes all entries where the principal name starts with the given extension name.
     pub fn remove_extension(&self, extension_name: &str) {
-        let mut map = self.permission_map.write().unwrap();
-        for permission_config in map.values_mut() {
-            permission_config
-                .always_allow
-                .retain(|p| !p.starts_with(extension_name));
-            permission_config
-                .ask_before
-                .retain(|p| !p.starts_with(extension_name));
-            permission_config
-                .never_allow
-                .retain(|p| !p.starts_with(extension_name));
+        {
+            let mut map = self.write_map();
+            for permission_config in map.values_mut() {
+                permission_config
+                    .always_allow
+                    .retain(|p| !p.starts_with(extension_name));
+                permission_config
+                    .ask_before
+                    .retain(|p| !p.starts_with(extension_name));
+                permission_config
+                    .never_allow
+                    .retain(|p| !p.starts_with(extension_name));
+            }
         }
 
-        let yaml_content =
-            serde_yaml::to_string(&*map).expect("Failed to serialize permission config");
-        fs::write(&self.config_path, yaml_content).expect("Failed to write to permission.yaml");
+        self.persist();
     }
 }
 

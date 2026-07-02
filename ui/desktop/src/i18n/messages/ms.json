@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Gagal menyimpan"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Batal"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Sisipkan Contoh"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Arahan"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Arahan terperinci untuk AI, tersembunyi daripada pengguna"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Simpan Arahan"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Gunakan sintaks {code} untuk menentukan parameter yang boleh diisi oleh pengguna"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Editor Arahan"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Batal"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Tentukan struktur jangkaan respons AI menggunakan format JSON Schema"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Sisipkan Contoh"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Format JSON tidak sah"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "Skema JSON Respons"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Simpan Skema"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "Editor JSON Schema"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Batal"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "Hantar"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Tambah nilai prakonfigurasi"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Nama parameter..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Nilai parameter..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Buang nilai prakonfigurasi {key}"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "Togol tetingkap sentiasa di atas"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Kongsi data penggunaan tanpa nama"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Nilai Lalai"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Masukkan nilai lalai"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Padam parameter: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "perihalan"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Ini ialah mesej yang akan dilihat oleh pengguna akhir."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Cth., \"Masukkan nama untuk komponen baharu\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Jenis Input"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Pilihan"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Masukkan setiap pilihan pada baris baharu. Ini akan dipaparkan sebagai pilihan menu juntai bawah."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Pilihan (satu setiap baris)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Pilihan 1 Pilihan 2 Pilihan 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Diperlukan"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Keperluan"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Boolean"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Nombor"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Pilih"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Rentetan"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Tidak digunakan"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Parameter ini tidak digunakan dalam arahan atau gesaan. Ia akan tersedia untuk input manual tetapi mungkin tidak diperlukan."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Sentiasa benarkan"

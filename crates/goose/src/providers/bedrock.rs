@@ -84,25 +84,19 @@ impl BedrockProvider {
     ) -> Result<Self> {
         let config = crate::config::Config::global();
 
-        // Attempt to load config and secrets to get AWS_ prefixed keys
-        // to re-export them into the environment for aws_config to use as fallback
-        let set_aws_env_vars = |res: Result<HashMap<String, Value>, _>| {
-            if let Ok(map) = res {
-                map.into_iter()
-                    .filter(|(key, _)| key.starts_with("AWS_"))
-                    .filter_map(|(key, value)| value.as_str().map(|s| (key, s.to_string())))
-                    .for_each(|(key, s)| std::env::set_var(key, s));
-            }
-        };
-
+        // Re-export AWS_ prefixed config/secret keys into the environment for
+        // aws_config to use as fallback (once per process; see aws_env).
         let filtered_secrets = config.all_secrets().map(|map| {
             map.into_iter()
                 .filter(|(key, _)| key != "AWS_BEARER_TOKEN_BEDROCK")
-                .collect()
+                .collect::<HashMap<_, _>>()
         });
 
-        set_aws_env_vars(config.all_values());
-        set_aws_env_vars(filtered_secrets);
+        crate::providers::aws_env::export_aws_env(
+            [config.all_values().ok(), filtered_secrets.ok()]
+                .into_iter()
+                .flatten(),
+        );
 
         // Check for bearer token first to determine if region is required
         let bearer_token = match config.get_secret::<String>("AWS_BEARER_TOKEN_BEDROCK") {

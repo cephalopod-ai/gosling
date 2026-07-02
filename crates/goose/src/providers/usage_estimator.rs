@@ -1,5 +1,5 @@
 use crate::conversation::message::Message;
-use crate::token_counter::create_token_counter;
+use crate::token_counter::shared_token_counter;
 use anyhow::Result;
 use goose_providers::conversation::token_usage::ProviderUsage;
 use rmcp::model::Tool;
@@ -17,7 +17,7 @@ pub async fn ensure_usage_tokens(
         return Ok(());
     }
 
-    let token_counter = create_token_counter()
+    let token_counter = shared_token_counter()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
 
@@ -41,7 +41,7 @@ pub async fn ensure_usage_tokens(
         provider_usage.usage.input_tokens,
         provider_usage.usage.output_tokens,
     ) {
-        provider_usage.usage.total_tokens = Some(input + output);
+        provider_usage.usage.total_tokens = Some(input.saturating_add(output));
     }
 
     Ok(())

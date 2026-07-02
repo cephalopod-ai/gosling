@@ -1340,7 +1340,10 @@ impl Agent {
             .extension_manager
             .list_extensions()
             .await
-            .expect("Failed to list extensions");
+            .unwrap_or_else(|e| {
+                tracing::error!("Failed to list extensions: {e}");
+                Vec::new()
+            });
         extensions.extend(
             self.frontend_extension_configs()
                 .await
@@ -2355,43 +2358,53 @@ impl Agent {
                     if did_recovery_compact_this_iteration {
                         // continue from last user message after recovery compact
                     } else if self.has_pending_steers(&session_config.id).await {
-                    } else if self.goal.lock().await.is_some() && !goal_check_pending {
-                        goal_check_pending = true;
-                        let goal = self.goal.lock().await.clone().unwrap();
-                        let nudge = format!(
-                            "Before finishing, check whether the following goal has been fully met:\n\n\
-                             **Goal:** {goal}\n\n\
-                             If not, continue working toward it."
-                        );
-                        let message = Message::user().with_text(&nudge)
-                            .with_visibility(false, true);
-                        messages_to_add.push(message);
-                        yield AgentEvent::Message(
-                            Message::assistant().with_system_notification(
-                                SystemNotificationType::InlineMessage,
-                                format!("Goal: {goal}"),
-                            )
-                        );
-                    } else if self.grind.lock().await.is_some() {
-                        let grind = self.grind.lock().await.clone().unwrap();
-                        let nudge = format!(
-                            "Keep working. The grind goal is not yet complete:\n\n\
-                             **Goal:** {grind}\n\n\
-                             Continue until it is fully done."
-                        );
-                        let message = Message::user().with_text(&nudge)
-                            .with_visibility(false, true);
-                        messages_to_add.push(message);
-                        yield AgentEvent::Message(
-                            Message::assistant().with_system_notification(
-                                SystemNotificationType::InlineMessage,
-                                format!("Grind: {grind}"),
-                            )
-                        );
                     } else {
-                        self.set_goal(None).await;
-                        self.set_grind(None).await;
-                        exit_chat = true;
+                        // Clone out of the mutexes before branching: an `if let`
+                        // scrutinee that locks keeps its guard alive for the whole
+                        // if/else chain, which would deadlock against
+                        // set_goal/set_grind in the final arm.
+                        let goal_nudge = if goal_check_pending {
+                            None
+                        } else {
+                            self.goal.lock().await.clone()
+                        };
+                        let grind_nudge = self.grind.lock().await.clone();
+                        if let Some(goal) = goal_nudge {
+                            goal_check_pending = true;
+                            let nudge = format!(
+                                "Before finishing, check whether the following goal has been fully met:\n\n\
+                                 **Goal:** {goal}\n\n\
+                                 If not, continue working toward it."
+                            );
+                            let message = Message::user().with_text(&nudge)
+                                .with_visibility(false, true);
+                            messages_to_add.push(message);
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    format!("Goal: {goal}"),
+                                )
+                            );
+                        } else if let Some(grind) = grind_nudge {
+                            let nudge = format!(
+                                "Keep working. The grind goal is not yet complete:\n\n\
+                                 **Goal:** {grind}\n\n\
+                                 Continue until it is fully done."
+                            );
+                            let message = Message::user().with_text(&nudge)
+                                .with_visibility(false, true);
+                            messages_to_add.push(message);
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    format!("Grind: {grind}"),
+                                )
+                            );
+                        } else {
+                            self.set_goal(None).await;
+                            self.set_grind(None).await;
+                            exit_chat = true;
+                        }
                     }
                 }
 

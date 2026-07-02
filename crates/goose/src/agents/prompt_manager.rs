@@ -434,6 +434,9 @@ mod tests {
         assert_snapshot!(system_prompt)
     }
 
+    // The platform-extension set (and so the snapshot) depends on code-mode;
+    // the recorded snapshot is for builds with it enabled.
+    #[cfg(feature = "code-mode")]
     #[tokio::test]
     async fn test_all_platform_extensions() {
         use crate::agents::platform_extensions::{PlatformExtensionContext, PLATFORM_EXTENSIONS};

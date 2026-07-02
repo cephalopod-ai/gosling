@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Salvataggio non riuscito"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Annulla"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Inserisci esempio"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Istruzioni"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Istruzioni dettagliate per l'IA, nascoste all'utente"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Salva istruzioni"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Usa la sintassi {code} per definire i parametri che gli utenti possono compilare"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Editor delle istruzioni"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Annulla"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Definisci la struttura prevista della risposta dell'IA usando il formato JSON Schema"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Inserisci esempio"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Formato JSON non valido"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "JSON Schema della risposta"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Salva schema"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "Editor JSON Schema"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Annulla"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "Invia"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Aggiungi valore preconfigurato"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Nome parametro..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Valore parametro..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Rimuovi valore preconfigurato {key}"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "Attiva/disattiva la finestra sempre in primo piano"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Condividi dati di utilizzo anonimi"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Valore predefinito"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Inserisci il valore predefinito"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Elimina parametro: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "descrizione"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Questo è il messaggio che l'utente finale vedrà."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Es., \"Inserisci il nome del nuovo componente\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Tipo di input"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Facoltativo"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Inserisci ogni opzione su una nuova riga. Verranno mostrate come scelte del menu a discesa."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Opzioni (una per riga)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Opzione 1 Opzione 2 Opzione 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Obbligatorio"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Requisito"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Booleano"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Numero"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Selezione"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Stringa"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Non utilizzato"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Questo parametro non è utilizzato nelle istruzioni o nel prompt. Sarà disponibile per l'inserimento manuale ma potrebbe non essere necessario."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Consenti sempre"

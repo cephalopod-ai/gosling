@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -49,18 +48,13 @@ impl SageMakerTgiProvider {
             anyhow::anyhow!("SAGEMAKER_ENDPOINT_NAME is required for SageMaker TGI provider")
         })?;
 
-        // Attempt to load config and secrets to get AWS_ prefixed keys
-        let set_aws_env_vars = |res: Result<HashMap<String, Value>, _>| {
-            if let Ok(map) = res {
-                map.into_iter()
-                    .filter(|(key, _)| key.starts_with("AWS_"))
-                    .filter_map(|(key, value)| value.as_str().map(|s| (key, s.to_string())))
-                    .for_each(|(key, s)| std::env::set_var(key, s));
-            }
-        };
-
-        set_aws_env_vars(config.all_values());
-        set_aws_env_vars(config.all_secrets());
+        // Re-export AWS_ prefixed config/secret keys into the environment for
+        // aws_config to use as fallback (once per process; see aws_env).
+        crate::providers::aws_env::export_aws_env(
+            [config.all_values().ok(), config.all_secrets().ok()]
+                .into_iter()
+                .flatten(),
+        );
 
         let aws_config = aws_config::from_env()
             .http_client(ReqwestHttpClient::new())
@@ -70,7 +64,9 @@ impl SageMakerTgiProvider {
         // Validate credentials
         aws_config
             .credentials_provider()
-            .unwrap()
+            .ok_or_else(|| {
+                anyhow::anyhow!("No AWS credentials provider configured for SageMaker TGI")
+            })?
             .provide_credentials()
             .await?;
 

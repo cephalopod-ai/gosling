@@ -636,6 +636,14 @@ async fn stop_agent(
     Json(payload): Json<StopAgentRequest>,
 ) -> Result<StatusCode, ErrorResponse> {
     let session_id = payload.session_id;
+
+    // Clean up per-session server state before the agent lookup: the agent may
+    // already be gone (LRU-evicted, or the session only ever had SSE
+    // subscribers), and returning early would leak the event bus and its
+    // replay buffer for the rest of the server's lifetime.
+    state.remove_event_bus(&session_id).await;
+    state.remove_extension_loading_task(&session_id).await;
+
     state
         .agent_manager
         .remove_session(&session_id)
@@ -644,8 +652,6 @@ async fn stop_agent(
             message: format!("Failed to stop agent for session {}: {}", session_id, e),
             status: StatusCode::NOT_FOUND,
         })?;
-
-    state.remove_event_bus(&session_id).await;
 
     Ok(StatusCode::OK)
 }

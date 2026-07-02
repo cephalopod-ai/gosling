@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "No se pudo guardar"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Cancelar"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Insertar ejemplo"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Instrucciones"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Instrucciones detalladas para la IA, ocultas al usuario"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Guardar instrucciones"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Usa la sintaxis {code} para definir parámetros que los usuarios pueden rellenar"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Editor de instrucciones"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Cancelar"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Define la estructura esperada de la respuesta de la IA usando el formato JSON Schema"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Insertar ejemplo"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Formato JSON inválido"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "JSON Schema de respuesta"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Guardar Schema"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "Editor de JSON Schema"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Cancelar"
   },
@@ -1324,18 +1282,6 @@
   },
   "keyboardShortcuts.toggleNavigationLabel": {
     "defaultMessage": "Alternar navegación"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Añadir valor preconfigurado"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Nombre del parámetro..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Valor del parámetro..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Quitar valor preconfigurado {key}"
   },
   "launcher.placeholder": {
     "defaultMessage": "Pregúntale lo que sea a goose..."
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Compartir datos de uso anónimos"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Valor por defecto"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Introduce el valor por defecto"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Eliminar parámetro: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "descripción"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Este es el mensaje que verá el usuario final."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Ej.: \"Introduce el nombre del nuevo componente\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Tipo de entrada"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Opcional"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Introduce cada opción en una línea nueva. Se mostrarán como opciones de un menú desplegable."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Opciones (una por línea)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Opción 1 Opción 2 Opción 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Obligatorio"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Requisito"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Booleano"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Número"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Selección"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Cadena"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Sin usar"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Este parámetro no se usa en las instrucciones ni en el prompt. Estará disponible para entrada manual, pero puede que no sea necesario."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Permitir siempre"

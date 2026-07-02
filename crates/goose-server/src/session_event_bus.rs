@@ -6,6 +6,11 @@ use tokio_util::sync::CancellationToken;
 
 const BROADCAST_CAPACITY: usize = 256;
 const REPLAY_BUFFER_CAPACITY: usize = 512;
+// The replay buffer holds full message payloads (including image content and
+// whole-conversation snapshots published on compaction), so a count bound
+// alone can pin hundreds of MB per session. Bound retained bytes as well,
+// always keeping at least the newest event so reconnects still work.
+const REPLAY_BUFFER_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 /// Error returned by [`SessionEventBus::subscribe`].
 #[derive(Debug)]
@@ -25,9 +30,14 @@ pub struct SessionEvent {
     pub event: MessageEvent,
 }
 
+struct ReplayBuffer {
+    events: VecDeque<(SessionEvent, usize)>,
+    total_bytes: usize,
+}
+
 pub struct SessionEventBus {
     tx: broadcast::Sender<SessionEvent>,
-    buffer: Mutex<VecDeque<SessionEvent>>,
+    buffer: Mutex<ReplayBuffer>,
     next_seq: AtomicU64,
     active_requests: Mutex<HashMap<String, CancellationToken>>,
 }
@@ -37,7 +47,10 @@ impl SessionEventBus {
         let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
         Self {
             tx,
-            buffer: Mutex::new(VecDeque::with_capacity(REPLAY_BUFFER_CAPACITY)),
+            buffer: Mutex::new(ReplayBuffer {
+                events: VecDeque::with_capacity(REPLAY_BUFFER_CAPACITY),
+                total_bytes: 0,
+            }),
             next_seq: AtomicU64::new(1),
             active_requests: Mutex::new(HashMap::new()),
         }
@@ -48,6 +61,7 @@ impl SessionEventBus {
     /// The sequence ID is assigned under the buffer lock so that concurrent
     /// callers cannot reorder events (i.e. seq=2 published before seq=1).
     pub async fn publish(&self, request_id: Option<String>, event: MessageEvent) -> u64 {
+        let approx_bytes = serde_json::to_vec(&event).map(|v| v.len()).unwrap_or(1024);
         let session_event = {
             let mut buf = self.buffer.lock().await;
             let seq = self.next_seq.fetch_add(1, Ordering::Relaxed);
@@ -56,9 +70,15 @@ impl SessionEventBus {
                 request_id,
                 event,
             };
-            buf.push_back(session_event.clone());
-            while buf.len() > REPLAY_BUFFER_CAPACITY {
-                buf.pop_front();
+            buf.events.push_back((session_event.clone(), approx_bytes));
+            buf.total_bytes += approx_bytes;
+            while (buf.events.len() > REPLAY_BUFFER_CAPACITY
+                || buf.total_bytes > REPLAY_BUFFER_MAX_BYTES)
+                && buf.events.len() > 1
+            {
+                if let Some((_, removed_bytes)) = buf.events.pop_front() {
+                    buf.total_bytes -= removed_bytes;
+                }
             }
             session_event
         };
@@ -90,8 +110,8 @@ impl SessionEventBus {
 
         let (replay, replay_max_seq) = {
             let buf = self.buffer.lock().await;
-            let buf_max = buf.back().map(|e| e.seq).unwrap_or(0);
-            let buf_min = buf.front().map(|e| e.seq).unwrap_or(0);
+            let buf_max = buf.events.back().map(|(e, _)| e.seq).unwrap_or(0);
+            let buf_min = buf.events.front().map(|(e, _)| e.seq).unwrap_or(0);
             let last_id = last_event_id.unwrap_or(0);
 
             // If the client sent a Last-Event-ID that has been evicted from
@@ -102,7 +122,12 @@ impl SessionEventBus {
 
             // Clamp to the actual buffer max so a stale Last-Event-ID
             // (e.g. from before a server restart) doesn't suppress live events.
-            let events: Vec<_> = buf.iter().filter(|e| e.seq > last_id).cloned().collect();
+            let events: Vec<_> = buf
+                .events
+                .iter()
+                .filter(|(e, _)| e.seq > last_id)
+                .map(|(e, _)| e.clone())
+                .collect();
             let max_seq = events.last().map(|e| e.seq).unwrap_or(last_id.min(buf_max));
             (events, max_seq)
         };

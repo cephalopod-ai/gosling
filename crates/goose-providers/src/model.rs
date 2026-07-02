@@ -104,6 +104,12 @@ impl ModelConfig {
             if self.reasoning.is_none() {
                 self.reasoning = canonical.reasoning;
             }
+        } else if self.context_limit.is_none() && self.model_name.to_lowercase().contains("claude")
+        {
+            // Claude releases newer than the bundled registry would otherwise
+            // fall back to the generic 128k default; every Claude model since
+            // Claude 3 supports at least 200k.
+            self.context_limit = Some(200_000);
         }
 
         self
@@ -562,6 +568,36 @@ mod tests {
             assert_eq!(config.context_limit, Some(262_144));
             assert_eq!(config.max_tokens, None);
             assert_eq!(config.max_output_tokens(), 4_096);
+        }
+
+        #[test]
+        fn resolves_1m_context_for_latest_claude_models() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+
+            // API model ids use dashed versions; the canonical ids use dots.
+            let config = ModelConfig::new("claude-opus-4-8").with_canonical_limits("anthropic");
+            assert_eq!(config.context_limit(), 1_000_000);
+
+            let config = ModelConfig::new("claude-fable-5").with_canonical_limits("anthropic");
+            assert_eq!(config.context_limit(), 1_000_000);
+
+            let config = ModelConfig::new("claude-sonnet-4-5").with_canonical_limits("anthropic");
+            assert_eq!(config.context_limit(), 200_000);
+        }
+
+        #[test]
+        fn claude_models_missing_from_registry_fall_back_to_family_limit() {
+            let _guard = env_lock::lock_env([
+                ("GOOSE_MAX_TOKENS", None::<&str>),
+                ("GOOSE_CONTEXT_LIMIT", None::<&str>),
+            ]);
+
+            let config = ModelConfig::new("claude-hypothetical-99-not-in-registry")
+                .with_canonical_limits("anthropic");
+            assert_eq!(config.context_limit(), 200_000);
         }
 
         #[test]

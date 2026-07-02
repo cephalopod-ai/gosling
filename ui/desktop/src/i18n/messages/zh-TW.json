@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "儲存失敗"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "取消"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "插入範例"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "指示"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "提供給 AI 的詳細指示，使用者看不到"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "儲存指示"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "使用 {code} 語法定義使用者可填入的參數"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "指示編輯器"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "取消"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "使用 JSON Schema 格式定義 AI 回應的預期結構"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "插入範例"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "JSON 格式無效"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "回應 JSON Schema"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "儲存結構描述"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "JSON Schema 編輯器"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "取消"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "提交"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "新增預先設定的值"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "參數名稱…"
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "參數值…"
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "移除預先設定的值 {key}"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "切換視窗永遠在最上層"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "分享匿名使用資料"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "預設值"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "輸入預設值"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "刪除參數：{key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "說明"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "這是最終使用者將會看到的訊息。"
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "例如：「輸入新元件的名稱」"
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "輸入類型"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "選用"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "每個選項各佔一行。這些選項將顯示為下拉式清單選項。"
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "選項（每行一個）"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "選項 1 選項 2 選項 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "必填"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "需求"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "布林值"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "數字"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "選取"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "字串"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "未使用"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "此參數未在指示或提示中使用。它可供手動輸入，但可能並非必要。"
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "一律允許"

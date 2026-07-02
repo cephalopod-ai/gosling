@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Gagal menyimpan"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Batal"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Sisipkan Contoh"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Instruksi"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Instruksi terperinci untuk AI, disembunyikan dari pengguna"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Simpan Instruksi"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Gunakan sintaks {code} untuk mendefinisikan parameter yang dapat diisi pengguna"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Editor Instruksi"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Batal"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Definisikan struktur respons AI yang diharapkan menggunakan format JSON Schema"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Sisipkan Contoh"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Format JSON tidak valid"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "JSON Schema Respons"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Simpan Skema"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "Editor JSON Schema"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Batal"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "Kirim"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Tambahkan nilai prakonfigurasi"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Nama parameter..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Nilai parameter..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Hapus nilai prakonfigurasi {key}"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "Aktifkan jendela selalu di atas"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Bagikan data penggunaan anonim"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Nilai Default"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Masukkan nilai default"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Hapus parameter: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "deskripsi"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Ini adalah pesan yang akan dilihat oleh pengguna akhir."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Mis., \"Masukkan nama untuk komponen baru\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Tipe Masukan"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Opsional"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Masukkan setiap opsi pada baris baru. Ini akan ditampilkan sebagai pilihan dropdown."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Opsi (satu per baris)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Opsi 1 Opsi 2 Opsi 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Wajib"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Persyaratan"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Boolean"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Angka"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Pilih"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "String"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Tidak digunakan"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Parameter ini tidak digunakan dalam instruksi atau prompt. Parameter ini akan tersedia untuk masukan manual tetapi mungkin tidak diperlukan."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Selalu izinkan"
