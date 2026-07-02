@@ -49,6 +49,12 @@ impl SubprocessExt for std::process::Command {
 
 #[allow(unused_variables)]
 pub fn configure_subprocess(command: &mut Command) {
+    // Kill the child when its handle is dropped (graceful shutdown, agent eviction
+    // from the session LRU, or extension reconfigure) so MCP servers and spawned
+    // provider CLIs don't leak. On Linux this is backstopped by PR_SET_PDEATHSIG
+    // below for abnormal parent death; macOS has no in-process equivalent, so a
+    // hard parent SIGKILL can still orphan children.
+    command.kill_on_drop(true);
     // Isolate subprocess into its own process group so it does not receive
     // SIGINT when the user presses Ctrl+C in the terminal.
     #[cfg(unix)]

@@ -405,9 +405,26 @@ async fn child_process_client(
     })?;
 
     let stderr_task = tokio::spawn(async move {
-        let mut all_stderr = Vec::new();
-        stderr.read_to_end(&mut all_stderr).await?;
-        Ok::<String, std::io::Error>(String::from_utf8_lossy(&all_stderr).into())
+        // This buffer is only consumed to build an error message if the connect
+        // below fails. On the success path the task is detached and lives as long
+        // as the MCP server, so an unbounded `read_to_end` would accumulate every
+        // stderr byte a long-lived, chatty server emits for the whole session. Cap
+        // what we retain (enough to diagnose a startup failure) but keep reading so
+        // the child never blocks writing to a full stderr pipe.
+        const MAX_STDERR_CAPTURE: usize = 64 * 1024;
+        let mut captured: Vec<u8> = Vec::new();
+        let mut chunk = [0u8; 8192];
+        loop {
+            let n = stderr.read(&mut chunk).await?;
+            if n == 0 {
+                break;
+            }
+            if captured.len() < MAX_STDERR_CAPTURE {
+                let take = n.min(MAX_STDERR_CAPTURE - captured.len());
+                captured.extend_from_slice(&chunk[..take]);
+            }
+        }
+        Ok::<String, std::io::Error>(String::from_utf8_lossy(&captured).into())
     });
 
     let client_result = McpClient::connect_with_container(

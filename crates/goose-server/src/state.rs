@@ -99,6 +99,16 @@ impl AppState {
         buses.get(session_id).cloned()
     }
 
+    /// Drop a session's event bus when the session is stopped so buses (each of
+    /// which retains a replay buffer of events) do not accumulate for the whole
+    /// lifetime of the server. Active SSE subscribers hold their own `Arc` clone,
+    /// so an in-flight stream keeps working until it finishes. Not called on
+    /// restart, where the same session and its subscribers persist.
+    pub async fn remove_event_bus(&self, session_id: &str) {
+        let mut buses = self.session_buses.lock().await;
+        buses.remove(session_id);
+    }
+
     pub async fn get_agent(&self, session_id: String) -> anyhow::Result<Arc<goose::agents::Agent>> {
         self.agent_manager.get_or_create_agent(session_id).await
     }

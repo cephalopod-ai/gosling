@@ -645,6 +645,8 @@ async fn stop_agent(
             status: StatusCode::NOT_FOUND,
         })?;
 
+    state.remove_event_bus(&session_id).await;
+
     Ok(StatusCode::OK)
 }
 
