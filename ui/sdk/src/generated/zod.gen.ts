@@ -1430,6 +1430,13 @@ export const zShareSessionNostrResponse_unstable = z.object({
 });
 
 /**
+ * Return list-style metadata for a single session without loading the conversation.
+ */
+export const zGetSessionInfoRequest_unstable = z.object({
+    sessionId: z.string()
+});
+
+/**
  * A unique identifier for a conversation session between a client and agent.
  *
  * Sessions maintain their own context, conversation history, and state,
@@ -1458,13 +1465,6 @@ export const zSessionInfo = z.object({
         z.record(z.unknown()),
         z.null()
     ]).optional()
-});
-
-/**
- * Return list-style metadata for a single session without loading the conversation.
- */
-export const zGetSessionInfoRequest_unstable = z.object({
-    sessionId: z.string()
 });
 
 export const zGetSessionInfoResponse_unstable = z.object({
@@ -2434,15 +2434,21 @@ export const zExtAgentRequest = z.object({
     id: z.string(),
     method: z.string(),
     params: z.union([
-        z.record(z.unknown()),
-        z.null()
+        z.unknown(),
+        z.union([
+            z.record(z.unknown()),
+            z.null()
+        ])
     ]).optional()
 });
 
 export const zExtAgentResponse = z.union([
     z.object({
         id: z.string(),
-        result: z.unknown().optional()
+        result: z.union([
+            z.unknown(),
+            z.unknown()
+        ]).optional()
     }),
     z.object({
         error: z.object({

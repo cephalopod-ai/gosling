@@ -1489,6 +1489,17 @@ export type ShareSessionNostrResponse_unstable = {
 };
 
 /**
+ * Return list-style metadata for a single session without loading the conversation.
+ */
+export type GetSessionInfoRequest_unstable = {
+    sessionId: string;
+};
+
+export type GetSessionInfoResponse_unstable = {
+    session: SessionInfo;
+};
+
+/**
  * Information about a session returned by session/list
  */
 export type SessionInfo = {
@@ -1537,17 +1548,6 @@ export type SessionInfo = {
  * See protocol docs: [Session ID](https://agentclientprotocol.com/protocol/session-setup#session-id)
  */
 export type SessionId = string;
-
-/**
- * Return list-style metadata for a single session without loading the conversation.
- */
-export type GetSessionInfoRequest_unstable = {
-    sessionId: string;
-};
-
-export type GetSessionInfoResponse_unstable = {
-    session: SessionInfo;
-};
 
 /**
  * Truncate a session conversation from the given message timestamp onward.
@@ -2269,14 +2269,14 @@ export type ExtNotification = {
 export type ExtAgentRequest = {
     id: string;
     method: string;
-    params?: {
+    params?: unknown | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtAgentResponse = {
     id: string;
-    result?: unknown;
+    result?: unknown | unknown;
 } | {
     error: {
         code: number;
