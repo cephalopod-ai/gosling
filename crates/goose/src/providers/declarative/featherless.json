@@ -1,0 +1,46 @@
+{
+  "name": "featherless",
+  "engine": "openai",
+  "display_name": "Featherless AI",
+  "description": "Open source models via Featherless's OpenAI-compatible API",
+  "api_key_env": "FEATHERLESS_API_KEY",
+  "base_url": "https://api.featherless.ai/v1",
+  "catalog_provider_id": "featherless",
+  "models": [
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Flash",
+      "context_limit": 256000
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Pro",
+      "context_limit": 256000
+    },
+    {
+      "name": "moonshotai/Kimi-K2.7-Code",
+      "context_limit": 256000
+    },
+    {
+      "name": "moonshotai/Kimi-K2.6",
+      "context_limit": 256000
+    },
+    {
+      "name": "Qwen/Qwen3.6-27B",
+      "context_limit": 262144
+    },
+    {
+      "name": "zai-org/GLM-5.2",
+      "context_limit": 1000000
+    }
+  ],
+  "dynamic_models": true,
+  "skip_canonical_filtering": true,
+  "preserves_thinking": true,
+  "supports_streaming": true,
+  "fast_model": "deepseek-ai/DeepSeek-V4-Flash",
+  "model_doc_link": "https://featherless.ai/models",
+  "setup_steps": [
+    "Sign in to https://featherless.ai",
+    "Create an API key in the Featherless dashboard",
+    "Paste the key above as FEATHERLESS_API_KEY"
+  ]
+}

@@ -6,8 +6,6 @@ use super::bedrock::BedrockProvider;
 #[cfg(feature = "aws-providers")]
 use super::sagemaker_tgi::SageMakerTgiProvider;
 use super::{
-    amp_acp::AmpAcpProvider,
-    avian::AvianProvider,
     azure::AzureProvider,
     base::{Provider, ProviderMetadata},
     chatgpt_codex::ChatGptCodexProvider,
@@ -56,15 +54,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     let mut registry = ProviderRegistry::new(tls_config).with_providers(|registry| {
         use super::inventory::registrations;
 
-        registry.register_with_inventory::<AmpAcpProvider>(
-            false,
-            Some(registrations::amp_acp_inventory()),
-        );
         registry.register_with_inventory::<AnthropicProviderDef>(
             true,
             Some(registrations::anthropic_inventory()),
         );
-        registry.register::<AvianProvider>(false);
         registry.register::<AzureProvider>(false);
         #[cfg(feature = "aws-providers")]
         registry.register::<BedrockProvider>(false);

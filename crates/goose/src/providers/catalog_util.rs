@@ -69,49 +69,32 @@ mod tests {
     use crate::providers::base::ProviderType;
 
     #[tokio::test]
-    async fn test_zai_provider() {
-        let zai = crate::providers::get_from_registry("zai")
+    async fn test_featherless_provider() {
+        let featherless = crate::providers::get_from_registry("featherless")
             .await
-            .expect("z.ai should be registered as a declarative provider");
-        assert_eq!(zai.provider_type(), ProviderType::Declarative);
+            .expect("featherless should be registered as a declarative provider");
+        assert_eq!(featherless.provider_type(), ProviderType::Declarative);
 
-        let metadata = zai.metadata();
-        assert_eq!(metadata.display_name, "Z.AI");
+        let metadata = featherless.metadata();
+        assert_eq!(metadata.display_name, "Featherless AI");
         assert!(
             !metadata.known_models.is_empty(),
-            "z.ai should have known models"
+            "featherless should have starter models"
         );
         assert!(
             metadata
-                .config_keys
+                .known_models
                 .iter()
-                .any(|key| key.name == "ZHIPU_API_KEY"),
-            "z.ai should expose its API key config"
+                .any(|model| model.name == "deepseek-ai/DeepSeek-V4-Flash"),
+            "featherless should expose a starter DeepSeek model"
         );
 
         let setup_entries = get_setup_catalog_entries().await;
         let setup_entry = setup_entries
             .iter()
-            .find(|entry| entry.provider_id == "zai")
-            .expect("z.ai should be in the setup catalog");
+            .find(|entry| entry.provider_id == "featherless")
+            .expect("featherless should be in the setup catalog");
         assert_eq!(setup_entry.setup_method, ProviderSetupMethod::SingleApiKey);
-
-        let template = get_provider_template("zai");
-        assert!(template.is_some(), "z.ai should have a template");
-
-        let template = template.unwrap();
-        println!("Z.AI template: {} models", template.models.len());
-        for model in template.models.iter().take(3) {
-            println!(
-                "  - {} ({}K context)",
-                model.name,
-                model.context_limit / 1000
-            );
-        }
-        assert!(
-            !template.models.is_empty(),
-            "z.ai template should have models"
-        );
     }
 
     #[tokio::test]
@@ -156,21 +139,13 @@ mod tests {
             ["DATABRICKS_HOST", "DATABRICKS_TOKEN"]
         );
 
-        let atomic_chat = entries
+        let featherless = entries
             .iter()
-            .find(|entry| entry.provider_id == "atomic_chat")
-            .expect("setup catalog should include atomic_chat declarative provider");
-        assert_eq!(atomic_chat.setup_method, ProviderSetupMethod::ConfigFields);
-        let host_field = atomic_chat
-            .fields
-            .iter()
-            .find(|field| field.key == "ATOMIC_CHAT_HOST")
-            .expect("atomic_chat should expose ATOMIC_CHAT_HOST");
-        assert_eq!(host_field.label, "Host URL");
-        assert_eq!(
-            host_field.default_value.as_deref(),
-            Some("http://localhost:1337")
-        );
+            .find(|entry| entry.provider_id == "featherless")
+            .expect("setup catalog should include featherless");
+        assert_eq!(featherless.setup_method, ProviderSetupMethod::SingleApiKey);
+        assert_eq!(featherless.fields.len(), 1);
+        assert_eq!(featherless.fields[0].key, "FEATHERLESS_API_KEY");
     }
 
     #[tokio::test]
@@ -183,7 +158,6 @@ mod tests {
 
         assert!(provider_ids.contains("claude-acp"));
         assert!(provider_ids.contains("codex-acp"));
-        assert!(provider_ids.contains("atomic_chat"));
         assert!(!provider_ids.contains("claude_code"));
         assert!(!provider_ids.contains("codex"));
         assert!(!provider_ids.contains("gemini_cli"));
