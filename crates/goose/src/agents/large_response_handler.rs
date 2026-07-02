@@ -66,22 +66,69 @@ pub fn process_tool_response(
     }
 }
 
-/// Write large text content to a temporary file
+/// Write large text content to a temporary file.
+///
+/// This directory is shared across every user on the machine (it lives
+/// under the system temp dir), so tool output - which can include file
+/// contents, env values, or API responses fetched by the agent's own
+/// tools - must not be left world-readable, and the directory itself
+/// must not be usable as a pre-planted symlink to redirect writes
+/// elsewhere.
 fn write_large_text_to_file(content: &str) -> Result<String, std::io::Error> {
-    // Create temp directory if it doesn't exist
     let temp_dir = std::env::temp_dir().join("goose_mcp_responses");
     std::fs::create_dir_all(&temp_dir)?;
+    restrict_to_owner(&temp_dir)?;
+    reject_symlink(&temp_dir)?;
 
     // Generate a unique filename with timestamp
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S%.6f");
     let filename = format!("mcp_response_{}.txt", timestamp);
     let file_path = temp_dir.join(&filename);
 
-    // Write content to file
-    let mut file = File::create(&file_path)?;
+    let mut file = open_owner_only(&file_path)?;
     file.write_all(content.as_bytes())?;
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+#[cfg(unix)]
+fn restrict_to_owner(dir: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_dir: &std::path::Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+fn reject_symlink(dir: &std::path::Path) -> std::io::Result<()> {
+    if std::fs::symlink_metadata(dir)?.file_type().is_symlink() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!(
+                "refusing to use {} for large tool responses: it is a symlink",
+                dir.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn open_owner_only(path: &std::path::Path) -> std::io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_owner_only(path: &std::path::Path) -> std::io::Result<File> {
+    File::create(path)
 }
 
 #[cfg(test)]

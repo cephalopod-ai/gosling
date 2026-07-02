@@ -705,6 +705,22 @@ impl SessionStorage {
             if let Err(e) = fs::create_dir_all(parent) {
                 tracing::error!("Failed to create session database directory {parent:?}: {e}");
             }
+            // sessions.db holds full conversation history (including
+            // whatever secrets a tool call happened to echo back) and
+            // SQLite creates it, its -wal, and its -shm sidecars with the
+            // platform-default permissions (typically world-readable).
+            // Restricting the directory itself to owner-only is sufficient
+            // to keep every file SQLite creates in it unreachable by other
+            // local users, without having to chase each one individually.
+            #[cfg(unix)]
+            if let Err(e) = fs::set_permissions(
+                parent,
+                <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
+            ) {
+                tracing::error!(
+                    "Failed to restrict session database directory {parent:?} to owner-only: {e}"
+                );
+            }
         }
 
         let options = SqliteConnectOptions::new()
