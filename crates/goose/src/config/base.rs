@@ -13,8 +13,27 @@ use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+#[cfg(feature = "system-keyring")]
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::SystemTime;
 use thiserror::Error;
+
+/// Set when a keyring operation fails with an availability error, so later
+/// operations skip the (slow, failing) keyring and go straight to file
+/// storage. This used to be communicated via `std::env::set_var`, which is a
+/// data race against any other thread reading the environment (getenv is not
+/// synchronized with setenv on glibc or macOS) and can segfault the process.
+#[cfg(feature = "system-keyring")]
+static KEYRING_RUNTIME_DISABLED: AtomicBool = AtomicBool::new(false);
+
+/// Recover the guarded data even if another thread panicked while holding the
+/// lock. All values guarded by these mutexes are caches or plain flags that
+/// remain structurally valid after a panic; propagating the poison would turn
+/// one panic into a permanent panic-on-every-config-access cascade.
+fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
     #[cfg(unix)]
@@ -133,6 +152,7 @@ pub struct Config {
     secrets: SecretStorage,
     guard: Mutex<()>,
     secrets_cache: Arc<Mutex<Option<HashMap<String, Value>>>>,
+    param_cache: Mutex<Option<ConfigSnapshot>>,
 }
 
 enum SecretStorage {
@@ -143,6 +163,33 @@ enum SecretStorage {
     File {
         path: PathBuf,
     },
+}
+
+/// Cached merged config keyed by the (mtime, len) of every layer file, so the
+/// hot `get_param` path costs one `stat` per layer instead of a full
+/// read+parse of every YAML file on every call.
+struct ConfigSnapshot {
+    stamps: Vec<FileStamp>,
+    values: Mapping,
+}
+
+#[derive(PartialEq)]
+struct FileStamp {
+    mtime: Option<SystemTime>,
+    len: Option<u64>,
+}
+
+fn stamp_file(path: &Path) -> FileStamp {
+    match std::fs::metadata(path) {
+        Ok(meta) => FileStamp {
+            mtime: meta.modified().ok(),
+            len: Some(meta.len()),
+        },
+        Err(_) => FileStamp {
+            mtime: None,
+            len: None,
+        },
+    }
 }
 
 // Global instance
@@ -183,6 +230,7 @@ impl Default for Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            param_cache: Mutex::new(None),
         };
 
         let keyring_disabled = env::var("GOOSE_DISABLE_KEYRING").is_ok()
@@ -195,6 +243,7 @@ impl Default for Config {
             secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            param_cache: Mutex::new(None),
         }
     }
 }
@@ -413,6 +462,7 @@ impl Config {
             secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            param_cache: Mutex::new(None),
         })
     }
 
@@ -431,6 +481,7 @@ impl Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            param_cache: Mutex::new(None),
         })
     }
 
@@ -445,6 +496,7 @@ impl Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            param_cache: Mutex::new(None),
         })
     }
 
@@ -492,6 +544,16 @@ impl Config {
     }
 
     fn load(&self) -> Result<Mapping, ConfigError> {
+        let stamps: Vec<FileStamp> = self.config_paths.iter().map(|p| stamp_file(p)).collect();
+        {
+            let cache = lock_ignoring_poison(&self.param_cache);
+            if let Some(snapshot) = cache.as_ref() {
+                if snapshot.stamps == stamps {
+                    return Ok(snapshot.values.clone());
+                }
+            }
+        }
+
         let mut merged = Mapping::new();
 
         for path in &self.config_paths {
@@ -513,6 +575,11 @@ impl Config {
         }
 
         crate::config::migrations::run_read_migrations(&mut merged);
+
+        *lock_ignoring_poison(&self.param_cache) = Some(ConfigSnapshot {
+            stamps,
+            values: merged.clone(),
+        });
 
         Ok(merged)
     }
@@ -605,11 +672,13 @@ impl Config {
         // Atomically replace the original file
         std::fs::rename(&temp_path, &target_path)?;
 
+        *lock_ignoring_poison(&self.param_cache) = None;
+
         Ok(())
     }
 
     pub fn initialize_if_empty(&self, values: Mapping) -> Result<(), ConfigError> {
-        let _guard = self.guard.lock().unwrap();
+        let _guard = lock_ignoring_poison(&self.guard);
         if !self.exists() {
             self.save_values(&values)
         } else {
@@ -618,7 +687,7 @@ impl Config {
     }
 
     pub fn all_secrets(&self) -> Result<HashMap<String, Value>, ConfigError> {
-        let mut cache = self.secrets_cache.lock().unwrap();
+        let mut cache = lock_ignoring_poison(&self.secrets_cache);
 
         let values = if let Some(ref cached_secrets) = *cache {
             cached_secrets.clone()
@@ -759,7 +828,7 @@ impl Config {
         V: Serialize,
         F: FnOnce(T) -> V,
     {
-        let _guard = self.guard.lock().unwrap();
+        let _guard = lock_ignoring_poison(&self.guard);
         let mut values = self.load_write_config()?;
         let current: T = values
             .get(key)
@@ -784,7 +853,7 @@ impl Config {
     /// - There is an error reading or writing the config file
     /// - There is an error serializing the value
     pub fn set_param<V: Serialize>(&self, key: &str, value: V) -> Result<(), ConfigError> {
-        let _guard = self.guard.lock().unwrap();
+        let _guard = lock_ignoring_poison(&self.guard);
         let mut values = self.load_write_config()?;
         values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(value)?);
         self.save_values(&values)
@@ -796,7 +865,7 @@ impl Config {
             return Ok(());
         }
 
-        let _guard = self.guard.lock().unwrap();
+        let _guard = lock_ignoring_poison(&self.guard);
         let mut values = self.load_write_config()?;
         for (key, value) in updates {
             values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(value)?);
@@ -819,7 +888,7 @@ impl Config {
     /// - There is an error serializing the value
     pub fn delete(&self, key: &str) -> Result<(), ConfigError> {
         // Lock before reading to prevent race condition.
-        let _guard = self.guard.lock().unwrap();
+        let _guard = lock_ignoring_poison(&self.guard);
 
         let mut values = self.load_write_config()?;
         values.shift_remove(key);
@@ -913,7 +982,7 @@ impl Config {
         &self,
         mutate: impl FnOnce(&mut HashMap<String, Value>),
     ) -> Result<(), ConfigError> {
-        let _guard = self.guard.lock().unwrap();
+        let _guard = lock_ignoring_poison(&self.guard);
         let mut values = self.all_secrets()?;
         mutate(&mut values);
         self.write_all_secrets(&values)
@@ -1028,7 +1097,7 @@ impl Config {
     }
 
     pub fn invalidate_secrets_cache(&self) {
-        let mut cache = self.secrets_cache.lock().unwrap();
+        let mut cache = lock_ignoring_poison(&self.secrets_cache);
         *cache = None;
     }
 
@@ -1041,6 +1110,11 @@ impl Config {
             || lower.contains("org.freedesktop.secrets")
             || lower.contains("platform secure storage")
             || lower.contains("no secret service")
+            // macOS Security.framework: locked/denied keychain (e.g.
+            // errSecInteractionNotAllowed in a headless or SSH session)
+            // should fall back to file storage, not hard-fail.
+            || lower.contains("user interaction is not allowed")
+            || lower.contains("errsec")
     }
 
     /// Get a keyring entry for the specified service
@@ -1057,7 +1131,7 @@ impl Config {
         fallback_values: Option<&HashMap<String, Value>>,
     ) -> Result<T, ConfigError> {
         if self.is_keyring_availability_error(&keyring_err.to_string()) {
-            std::env::set_var("GOOSE_DISABLE_KEYRING", "1");
+            KEYRING_RUNTIME_DISABLED.store(true, Ordering::Relaxed);
             tracing::warn!("Keyring unavailable. Using file storage for secrets.");
 
             if let Some(values) = fallback_values {
@@ -1079,6 +1153,15 @@ impl Config {
         service: &str,
         fallback_values: Option<&HashMap<String, Value>>,
     ) -> Result<T, ConfigError> {
+        // A previous operation already found the keyring unavailable; don't
+        // keep hitting it (each failing platform call can be slow).
+        if KEYRING_RUNTIME_DISABLED.load(Ordering::Relaxed) {
+            if let Some(values) = fallback_values {
+                self.write_secrets_to_file(values)?;
+            }
+            return Err(ConfigError::FallbackToFileStorage);
+        }
+
         // Try to get the keyring entry and perform the operation
         let entry = match Self::get_keyring_entry(service) {
             Ok(entry) => entry,
