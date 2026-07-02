@@ -108,7 +108,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       // Verify compaction loading state
       const loadingGoose = goosePage.locator('[data-testid="loading-goose"]');
       await expect(loadingGoose).toBeVisible();
-      await expect(loadingGoose).toContainText('goose is compacting the conversation...');
+      await expect(loadingGoose).toContainText('gosling is compacting the conversation...');
       
       // Wait for compaction to complete
       await goosePage.waitForSelector('[data-testid="loading-goose"]', { state: 'hidden', timeout: 30000 });
@@ -369,7 +369,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       // Verify loading state persists during timeout
       const loadingGoose = goosePage.locator('[data-testid="loading-goose"]');
       await expect(loadingGoose).toBeVisible();
-      await expect(loadingGoose).toContainText('goose is compacting the conversation...');
+      await expect(loadingGoose).toContainText('gosling is compacting the conversation...');
       
       // Wait for timeout to complete
       await goosePage.waitForSelector('[data-testid="loading-goose"]', { state: 'hidden', timeout: 35000 });
@@ -401,7 +401,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       // Verify loading message
       const loadingGoose = goosePage.locator('[data-testid="loading-goose"]');
       await expect(loadingGoose).toBeVisible();
-      await expect(loadingGoose).toContainText('goose is compacting the conversation...');
+      await expect(loadingGoose).toContainText('gosling is compacting the conversation...');
       
       // Wait for compaction to complete
       await goosePage.waitForSelector('[data-testid="loading-goose"]', { state: 'hidden', timeout: 30000 });
@@ -426,7 +426,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       // Verify loading goose appears with correct message
       const loadingGoose = goosePage.locator('[data-testid="loading-goose"]');
       await expect(loadingGoose).toBeVisible();
-      await expect(loadingGoose).toContainText('goose is compacting the conversation...');
+      await expect(loadingGoose).toContainText('gosling is compacting the conversation...');
       
       // Verify no other loading indicators are shown
       const regularLoadingMessages = goosePage.locator('[data-testid="loading-goose"]:not(:has-text("compacting"))');

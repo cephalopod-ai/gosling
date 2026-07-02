@@ -495,7 +495,7 @@ enum SessionCommand {
 
         #[arg(
             long = "nostr",
-            help = "Publish the JSON session export as an encrypted Nostr event and print a Goose share link"
+            help = "Publish the JSON session export as an encrypted Nostr event and print a Gosling share link"
         )]
         nostr: bool,
 
@@ -512,7 +512,7 @@ enum SessionCommand {
     )]
     Import {
         #[arg(
-            help = "Path to a goose session export, a Claude Code, Codex, or Pi .jsonl transcript, or a goose://sessions/nostr share link"
+            help = "Path to a gosling session export, a Claude Code, Codex, or Pi .jsonl transcript, or a gosling://sessions/nostr share link"
         )]
         input: String,
 

@@ -189,11 +189,11 @@ jobs:
         shell: bash
         run: |
           cd ui/desktop
-          mkdir -p ./out/Goose-win32-x64/resources/bin
-          cp -r src/bin/* out/Goose-win32-x64/resources/bin/
+          mkdir -p ./out/Gosling-win32-x64/resources/bin
+          cp -r src/bin/* out/Gosling-win32-x64/resources/bin/
 
           mkdir -p ./dist-windows
-          cp -r ./out/Goose-win32-x64/* ./dist-windows/
+          cp -r ./out/Gosling-win32-x64/* ./dist-windows/
 
           echo "📋 Final flat distribution structure:"
           ls -la ./dist-windows/
@@ -234,14 +234,14 @@ jobs:
           trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT_NAME }}
           certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
           files: |
-            ${{ github.workspace }}/dist-windows/Goose.exe
+            ${{ github.workspace }}/dist-windows/Gosling.exe
             ${{ github.workspace }}/dist-windows/resources/bin/goose.exe
 
       - name: Verify signed executables
         shell: pwsh
         run: |
           $files = @(
-            "dist-windows/Goose.exe",
+            "dist-windows/Gosling.exe",
             "dist-windows/resources/bin/goose.exe"
           )
           foreach ($file in $files) {
@@ -254,7 +254,7 @@ jobs:
       - name: Create Windows zip package
         shell: bash
         run: |
-          ZIP_NAME="Goose-win32-x64"
+          ZIP_NAME="Gosling-win32-x64"
           if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
             ZIP_NAME="${ZIP_NAME}-cuda"
           fi
@@ -263,8 +263,8 @@ jobs:
       - name: Upload signed Windows build
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
-          path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
+          name: Gosling-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
+          path: Gosling-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
 
   # When signing is disabled, package the unsigned build directly
   package-desktop-windows:
@@ -283,7 +283,7 @@ jobs:
       - name: Create Windows zip package
         shell: bash
         run: |
-          ZIP_NAME="Goose-win32-x64"
+          ZIP_NAME="Gosling-win32-x64"
           if [ "${{ inputs.windows_variant }}" = "cuda" ]; then
             ZIP_NAME="${ZIP_NAME}-cuda"
           fi
@@ -292,5 +292,5 @@ jobs:
       - name: Upload Windows build
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
-          path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
+          name: Gosling-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
+          path: Gosling-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip

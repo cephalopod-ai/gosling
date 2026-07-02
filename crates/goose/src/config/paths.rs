@@ -16,15 +16,15 @@ impl Paths {
                 DirType::AgentsHome => base.join(".agents"),
             }
         } else {
-            // NOTE: "Block" is kept here for backwards compatibility with existing
-            // user config/data directories (e.g. ~/Library/Application Support/Block/goose/).
-            // Changing this would orphan existing installations.
+            // NOTE: gosling deliberately uses its own app_name so its config/data/state
+            // directories never collide with an upstream goose install on the same machine
+            // (e.g. ~/.config/gosling vs ~/.config/goose).
             let strategy = choose_app_strategy(AppStrategyArgs {
                 top_level_domain: "Block".to_string(),
                 author: "Block".to_string(),
-                app_name: "goose".to_string(),
+                app_name: "gosling".to_string(),
             })
-            .expect("goose requires a home dir");
+            .expect("gosling requires a home dir");
 
             match dir_type {
                 DirType::Config => strategy.config_dir(),
