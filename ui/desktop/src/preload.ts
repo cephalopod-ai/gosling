@@ -160,7 +160,7 @@ type ElectronAPI = {
   downloadUpdate: () => Promise<{ success: boolean; error: string | null }>;
   installUpdate: () => void;
   restartApp: () => void;
-  onUpdaterEvent: (callback: (event: UpdaterEvent) => void) => void;
+  onUpdaterEvent: (callback: (event: UpdaterEvent) => void) => () => void;
   getUpdateState: () => Promise<{ updateAvailable: boolean; latestVersion?: string } | null>;
   isUsingGitHubFallback: () => Promise<boolean>;
   getAutoDownloadDisabled: () => Promise<boolean>;
@@ -302,8 +302,10 @@ const electronAPI: ElectronAPI = {
   restartApp: (): void => {
     ipcRenderer.send('restart-app');
   },
-  onUpdaterEvent: (callback: (event: UpdaterEvent) => void): void => {
-    ipcRenderer.on('updater-event', (_event, data) => callback(data));
+  onUpdaterEvent: (callback: (event: UpdaterEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: UpdaterEvent) => callback(data);
+    ipcRenderer.on('updater-event', handler);
+    return () => ipcRenderer.removeListener('updater-event', handler);
   },
   getUpdateState: (): Promise<{ updateAvailable: boolean; latestVersion?: string } | null> => {
     return ipcRenderer.invoke('get-update-state');

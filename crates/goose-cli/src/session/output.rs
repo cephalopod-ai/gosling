@@ -178,29 +178,48 @@ pub fn hide_thinking() {
 }
 
 pub fn run_status_hook(status: &str) {
+    // The hook runs on every turn; without a deadline a hung hook command
+    // leaks one thread and one child process per turn for the session's
+    // lifetime.
+    const HOOK_TIMEOUT: Duration = Duration::from_secs(10);
+
     if let Ok(hook) = Config::global().get_param::<String>("GOOSE_STATUS_HOOK") {
         let status = status.to_string();
         std::thread::spawn(move || {
             #[cfg(target_os = "windows")]
-            let result = std::process::Command::new("cmd")
-                .arg("/C")
-                .arg(format!("{} {}", hook, status))
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .set_no_window()
-                .status();
+            let mut cmd = {
+                let mut cmd = std::process::Command::new("cmd");
+                cmd.arg("/C").arg(format!("{} {}", hook, status));
+                cmd.set_no_window();
+                cmd
+            };
 
             #[cfg(not(target_os = "windows"))]
-            let result = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(format!("{} {}", hook, status))
+            let mut cmd = {
+                let mut cmd = std::process::Command::new("sh");
+                cmd.arg("-c").arg(format!("{} {}", hook, status));
+                cmd
+            };
+
+            let Ok(mut child) = cmd
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .status();
+                .spawn()
+            else {
+                return;
+            };
 
-            let _ = result;
+            let start = std::time::Instant::now();
+            while start.elapsed() < HOOK_TIMEOUT {
+                match child.try_wait() {
+                    Ok(Some(_)) => return,
+                    Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+                    Err(_) => break,
+                }
+            }
+            let _ = child.kill();
+            let _ = child.wait();
         });
     }
 }

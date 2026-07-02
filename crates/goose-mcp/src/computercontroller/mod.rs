@@ -113,7 +113,11 @@ async fn output_capped(
 
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::piped())
+        // If the tool-call future is dropped before the script finishes
+        // (request cancelled, client disconnected), don't leave it running
+        // orphaned.
+        .kill_on_drop(true);
     let mut child = cmd.spawn()?;
     let stdout_pipe = child.stdout.take();
     let stderr_pipe = child.stderr.take();

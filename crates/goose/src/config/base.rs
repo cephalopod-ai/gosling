@@ -174,7 +174,7 @@ enum SecretStorage {
 /// read+parse of every YAML file on every call.
 struct ConfigSnapshot {
     stamps: Vec<FileStamp>,
-    values: Mapping,
+    values: Arc<Mapping>,
 }
 
 #[derive(PartialEq)]
@@ -547,13 +547,15 @@ impl Config {
         Ok(values)
     }
 
-    fn load(&self) -> Result<Mapping, ConfigError> {
+    /// Returns the merged config behind an `Arc` so cache hits share the
+    /// snapshot instead of deep-cloning the whole mapping per lookup.
+    fn load(&self) -> Result<Arc<Mapping>, ConfigError> {
         let stamps: Vec<FileStamp> = self.config_paths.iter().map(|p| stamp_file(p)).collect();
         {
             let cache = lock_ignoring_poison(&self.param_cache);
             if let Some(snapshot) = cache.as_ref() {
                 if snapshot.stamps == stamps {
-                    return Ok(snapshot.values.clone());
+                    return Ok(Arc::clone(&snapshot.values));
                 }
             }
         }
@@ -580,9 +582,10 @@ impl Config {
 
         crate::config::migrations::run_read_migrations(&mut merged);
 
+        let merged = Arc::new(merged);
         *lock_ignoring_poison(&self.param_cache) = Some(ConfigSnapshot {
             stamps,
-            values: merged.clone(),
+            values: Arc::clone(&merged),
         });
 
         Ok(merged)
@@ -590,7 +593,7 @@ impl Config {
 
     pub fn all_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
         let config_values = self.load()?;
-        let mut map = HashMap::from_iter(config_values.into_iter().filter_map(|(k, v)| {
+        let mut map = HashMap::from_iter(config_values.iter().filter_map(|(k, v)| {
             k.as_str()
                 .map(|k| k.to_string())
                 .zip(serde_json::to_value(v).ok())

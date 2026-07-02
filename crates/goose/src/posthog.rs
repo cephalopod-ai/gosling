@@ -64,6 +64,15 @@ struct CaptureEvent {
     timestamp: Option<String>,
 }
 
+/// Shared client so each fire-and-forget event doesn't rebuild a connection
+/// pool, with a timeout so detached telemetry tasks can't hang forever.
+static POSTHOG_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .expect("Failed to create HTTP client")
+});
+
 async fn posthog_capture(
     event_name: &str,
     distinct_id: &str,
@@ -77,8 +86,7 @@ async fn posthog_capture(
         timestamp: Some(Utc::now().to_rfc3339()),
     };
 
-    let client = reqwest::Client::new();
-    client
+    POSTHOG_CLIENT
         .post(POSTHOG_CAPTURE_URL)
         .header("Content-Type", "application/json")
         .json(&payload)

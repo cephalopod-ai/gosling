@@ -1,8 +1,11 @@
 use axum::http::StatusCode;
 use goose::builtin_extension::register_builtin_extensions;
-use goose::execution::manager::AgentManager;
+use goose::config::Config;
+use goose::execution::manager::{AgentManager, DEFAULT_MAX_SESSION};
 use goose::session::SessionManager;
+use lru::LruCache;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -17,7 +20,11 @@ type ExtensionLoadingTasks =
 pub struct AppState {
     pub(crate) agent_manager: Arc<AgentManager>,
     pub extension_loading_tasks: ExtensionLoadingTasks,
-    session_buses: Arc<Mutex<HashMap<String, Arc<SessionEventBus>>>>,
+    /// Bounded like the agent LRU: SSE clients rarely call `stop_agent`, so
+    /// without eviction each abandoned session would pin its bus (and up to
+    /// 8 MiB of replay buffer) for the lifetime of the server. In-flight
+    /// subscribers hold their own `Arc` clone and are unaffected by eviction.
+    session_buses: Arc<Mutex<LruCache<String, Arc<SessionEventBus>>>>,
 }
 
 impl AppState {
@@ -25,10 +32,15 @@ impl AppState {
         register_builtin_extensions(goose_mcp::BUILTIN_EXTENSIONS.clone());
 
         let agent_manager = AgentManager::instance().await?;
+        let bus_capacity = Config::global()
+            .get_goose_max_active_agents()
+            .ok()
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| NonZeroUsize::new(DEFAULT_MAX_SESSION).unwrap());
         Ok(Arc::new(Self {
             agent_manager,
             extension_loading_tasks: Arc::new(Mutex::new(HashMap::new())),
-            session_buses: Arc::new(Mutex::new(HashMap::new())),
+            session_buses: Arc::new(Mutex::new(LruCache::new(bus_capacity))),
         }))
     }
 
@@ -88,14 +100,13 @@ impl AppState {
     pub async fn get_or_create_event_bus(&self, session_id: &str) -> Arc<SessionEventBus> {
         let mut buses = self.session_buses.lock().await;
         buses
-            .entry(session_id.to_string())
-            .or_insert_with(|| Arc::new(SessionEventBus::new()))
+            .get_or_insert(session_id.to_string(), || Arc::new(SessionEventBus::new()))
             .clone()
     }
 
     /// Get an existing event bus for a session without creating one.
     pub async fn get_event_bus(&self, session_id: &str) -> Option<Arc<SessionEventBus>> {
-        let buses = self.session_buses.lock().await;
+        let mut buses = self.session_buses.lock().await;
         buses.get(session_id).cloned()
     }
 
@@ -106,7 +117,7 @@ impl AppState {
     /// restart, where the same session and its subscribers persist.
     pub async fn remove_event_bus(&self, session_id: &str) {
         let mut buses = self.session_buses.lock().await;
-        buses.remove(session_id);
+        buses.pop(session_id);
     }
 
     pub async fn get_agent(&self, session_id: String) -> anyhow::Result<Arc<goose::agents::Agent>> {

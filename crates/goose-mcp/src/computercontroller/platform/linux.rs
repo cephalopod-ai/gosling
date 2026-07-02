@@ -105,6 +105,23 @@ impl LinuxAutomation {
         Ok(())
     }
 
+    /// Writes to the child's stdin, making sure the child is reaped even when
+    /// the write fails — an early return would leave a zombie behind.
+    fn write_stdin_and_reap(child: &mut std::process::Child, text: &str) -> Result<()> {
+        let write_result = match child.stdin.take() {
+            Some(mut stdin) => {
+                use std::io::Write;
+                stdin.write_all(text.as_bytes())
+            }
+            None => Ok(()),
+        };
+        if write_result.is_err() {
+            let _ = child.kill();
+        }
+        child.wait()?;
+        write_result
+    }
+
     fn execute_input_command(&self, cmd: &str) -> Result<String> {
         match self.display_server {
             DisplayServer::X11 => self.execute_x11_command(cmd),
@@ -139,11 +156,7 @@ impl LinuxAutomation {
                 .arg("clipboard")
                 .stdin(std::process::Stdio::piped())
                 .spawn()?;
-            if let Some(mut stdin) = child.stdin.take() {
-                use std::io::Write;
-                stdin.write_all(text.as_bytes())?;
-            }
-            child.wait()?;
+            Self::write_stdin_and_reap(&mut child, text)?;
             Ok(String::new())
         } else {
             Ok(String::new())
@@ -164,11 +177,7 @@ impl LinuxAutomation {
             let mut child = Command::new("wl-copy")
                 .stdin(std::process::Stdio::piped())
                 .spawn()?;
-            if let Some(mut stdin) = child.stdin.take() {
-                use std::io::Write;
-                stdin.write_all(text.as_bytes())?;
-            }
-            child.wait()?;
+            Self::write_stdin_and_reap(&mut child, text)?;
             Ok(String::new())
         } else {
             // Some commands might not be available in Wayland

@@ -51,6 +51,24 @@ const globalApprovalState = new Map<
   }
 >();
 
+// The map outlives sessions so decisions survive remounts, but agents issue
+// many approvals per session — without a cap it grows for the window's
+// lifetime. Oldest entries belong to long-resolved requests, so evict those.
+const MAX_APPROVAL_STATES = 500;
+
+function recordApprovalState(
+  id: string,
+  state: { decision: Permission | null; isClicked: boolean }
+) {
+  if (!globalApprovalState.has(id) && globalApprovalState.size >= MAX_APPROVAL_STATES) {
+    const oldest = globalApprovalState.keys().next().value;
+    if (oldest !== undefined) {
+      globalApprovalState.delete(oldest);
+    }
+  }
+  globalApprovalState.set(id, state);
+}
+
 export interface ToolApprovalData {
   id: string;
   toolName: string;
@@ -84,7 +102,7 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
   }, [id]);
 
   useEffect(() => {
-    globalApprovalState.set(id, { decision, isClicked });
+    recordApprovalState(id, { decision, isClicked });
   }, [id, decision, isClicked]);
 
   const handleAction = async (action: Permission) => {
