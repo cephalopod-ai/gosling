@@ -55,15 +55,15 @@ pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
     let config = Config::global();
 
     println!();
-    println!("{}", style("Help improve goose").bold());
+    println!("{}", style("Help improve gosling").bold());
     println!();
     println!(
         "{}",
-        style("Would you like to help improve goose by sharing anonymous usage data?").dim()
+        style("Would you like to help improve gosling by sharing anonymous usage data?").dim()
     );
     println!(
         "{}",
-        style("This helps us understand how goose is used and identify areas for improvement.")
+        style("This helps us understand how gosling is used and identify areas for improvement.")
             .dim()
     );
     println!();
@@ -72,7 +72,7 @@ pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
         "{}",
         style("  • Operating system, version, and architecture").dim()
     );
-    println!("{}", style("  • goose version and install method").dim());
+    println!("{}", style("  • gosling version and install method").dim());
     println!("{}", style("  • Provider and model used").dim());
     println!(
         "{}",
@@ -97,14 +97,14 @@ pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
     );
     println!();
 
-    let enabled = cliclack::confirm("Share anonymous usage data to help improve goose?")
+    let enabled = cliclack::confirm("Share anonymous usage data to help improve gosling?")
         .initial_value(true)
         .interact()?;
 
     config.set_param(TELEMETRY_ENABLED_KEY, enabled)?;
 
     if enabled {
-        let _ = cliclack::log::success("Thank you for helping improve goose!");
+        let _ = cliclack::log::success("Thank you for helping improve gosling!");
     } else {
         let _ = cliclack::log::info("Telemetry disabled. You can enable it anytime in settings.");
     }
@@ -114,7 +114,10 @@ pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
 
 async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
     println!();
-    println!("{}", style("Welcome to goose! Let's get you set up.").dim());
+    println!(
+        "{}",
+        style("Welcome to gosling! Let's get you set up.").dim()
+    );
     println!(
         "{}",
         style("  you can rerun this command later to update your configuration").dim()
@@ -1390,7 +1393,7 @@ pub fn configure_telemetry_dialog() -> anyhow::Result<()> {
 
     let _ = cliclack::log::info(format!("Current telemetry status: {}", current_status));
 
-    let enabled = cliclack::confirm("Share anonymous usage data to help improve goose?")
+    let enabled = cliclack::confirm("Share anonymous usage data to help improve gosling?")
         .initial_value(current_choice.unwrap_or(true))
         .interact()?;
 

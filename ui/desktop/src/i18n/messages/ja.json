@@ -39,7 +39,7 @@
     "defaultMessage": "認証情報を削除"
   },
   "authSettings.description": {
-    "defaultMessage": "gooseがローカルに保存したプロバイダー認証情報を管理します。"
+    "defaultMessage": "goslingがローカルに保存したプロバイダー認証情報を管理します。"
   },
   "authSettings.empty": {
     "defaultMessage": "ローカルに保存されたプロバイダー認証情報は見つかりませんでした。"
@@ -120,10 +120,10 @@
     "defaultMessage": "起動"
   },
   "chat.notification.taskComplete.body": {
-    "defaultMessage": "クリックしてGooseにフォーカスを戻します。"
+    "defaultMessage": "クリックしてGoslingにフォーカスを戻します。"
   },
   "chat.notification.taskComplete.title": {
-    "defaultMessage": "Gooseがタスクを完了しました。"
+    "defaultMessage": "Goslingがタスクを完了しました。"
   },
   "chatInput.contextWindow": {
     "defaultMessage": "コンテキストウィンドウ"
@@ -171,13 +171,13 @@
     "defaultMessage": "画像の保存を待機中..."
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "Gooseがツールや拡張機能とどのようにやり取りするかを設定します"
+    "defaultMessage": "Goslingがツールや拡張機能とどのようにやり取りするかを設定します"
   },
   "chatSettings.modeTitle": {
     "defaultMessage": "モード"
   },
   "chatSettings.responseStylesDescription": {
-    "defaultMessage": "Gooseの回答の形式とスタイルを選択します"
+    "defaultMessage": "Goslingの回答の形式とスタイルを選択します"
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "回答スタイル"
@@ -198,10 +198,10 @@
     "defaultMessage": "設定エディター"
   },
   "configSettings.description": {
-    "defaultMessage": "gooseの設定を編集します"
+    "defaultMessage": "goslingの設定を編集します"
   },
   "configSettings.descriptionWithProvider": {
-    "defaultMessage": "gooseの設定を編集します（{provider} の現在の設定）"
+    "defaultMessage": "goslingの設定を編集します（{provider} の現在の設定）"
   },
   "configSettings.done": {
     "defaultMessage": "完了"
@@ -273,7 +273,7 @@
     "defaultMessage": "最大ターン数"
   },
   "conversationLimitsDropdown.maxTurnsDescription": {
-    "defaultMessage": "Gooseがユーザー入力を求めるまでのエージェントの最大ターン数"
+    "defaultMessage": "Goslingがユーザー入力を求めるまでのエージェントの最大ターン数"
   },
   "costTracker.costUnavailable": {
     "defaultMessage": "{model} のコストデータは利用できません（入力 {inputTokens} トークン、出力 {outputTokens} トークン）"
@@ -459,7 +459,7 @@
     "defaultMessage": "{name}の設定を編集"
   },
   "defaultCardButtons.getStarted": {
-    "defaultMessage": "gooseを始めましょう！"
+    "defaultMessage": "goslingを始めましょう！"
   },
   "defaultProviderSetupForm.apiHostLabel": {
     "defaultMessage": "APIホスト"
@@ -618,7 +618,7 @@
     "defaultMessage": "情報リクエストはキャンセルされました。"
   },
   "elicitationRequest.defaultMessage": {
-    "defaultMessage": "Gooseが情報を必要としています。"
+    "defaultMessage": "Goslingが情報を必要としています。"
   },
   "elicitationRequest.expired": {
     "defaultMessage": "このリクエストは期限切れです。拡張機能が再度確認する必要があります。"
@@ -663,7 +663,7 @@
     "defaultMessage": "エラーが発生しました。"
   },
   "errorBoundary.errorWithVersion": {
-    "defaultMessage": "Goose v{version}でエラーが発生しました。"
+    "defaultMessage": "Gosling v{version}でエラーが発生しました。"
   },
   "errorBoundary.heading": {
     "defaultMessage": "ガァ！"
@@ -846,7 +846,7 @@
     "defaultMessage": "ここで有効にした拡張機能は、新しいチャットのデフォルトとして使用されます。チャット中にアクティブな拡張機能を切り替えることもできます。"
   },
   "extensionsView.description": {
-    "defaultMessage": "これらの拡張機能は Model Context Protocol（MCP）を使用します。Prompts、Resources、Tools の3つの主要コンポーネントで Goose の機能を拡張できます。検索するには {searchShortcut}。"
+    "defaultMessage": "これらの拡張機能は Model Context Protocol（MCP）を使用します。Prompts、Resources、Tools の3つの主要コンポーネントで Gosling の機能を拡張できます。検索するには {searchShortcut}。"
   },
   "extensionsView.heading": {
     "defaultMessage": "拡張機能"
@@ -867,13 +867,13 @@
     "defaultMessage": "AA:BB:CC:... または sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "デフォルトでは goose がサーバーを起動します。外部の goose サーバーに接続する場合に使用してください。"
+    "defaultMessage": "デフォルトでは gosling がサーバーを起動します。外部の gosling サーバーに接続する場合に使用してください。"
   },
   "externalBackendSection.fingerprintRequiresHttps": {
     "defaultMessage": "Certificate fingerprint requires an https URL"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "変更を有効にするには Goose の再起動が必要です。新しいチャットウィンドウは外部サーバーに接続します。"
+    "defaultMessage": "変更を有効にするには Gosling の再起動が必要です。新しいチャットウィンドウは外部サーバーに接続します。"
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "シークレットキー"
@@ -888,10 +888,10 @@
     "defaultMessage": "サーバーURL"
   },
   "externalBackendSection.serverUrlHelp": {
-    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+    "defaultMessage": "Enter the HTTP(S) base URL. Gosling checks /status and connects to /acp under this base."
   },
   "externalBackendSection.title": {
-    "defaultMessage": "Goose Server"
+    "defaultMessage": "Gosling Server"
   },
   "externalBackendSection.urlBaseError": {
     "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
@@ -906,7 +906,7 @@
     "defaultMessage": "外部サーバーを使用"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "別の場所で実行中の goose サーバーに接続します（アプリの再起動が必要）"
+    "defaultMessage": "別の場所で実行中の gosling サーバーに接続します（アプリの再起動が必要）"
   },
   "goosehintsModal.close": {
     "defaultMessage": "閉じる"
@@ -915,7 +915,7 @@
     "defaultMessage": "開発者"
   },
   "goosehintsModal.dialogDescription": {
-    "defaultMessage": "Goose とのコミュニケーションを改善するために、プロジェクトに関する追加コンテキストを提供します"
+    "defaultMessage": "Gosling とのコミュニケーションを改善するために、プロジェクトに関する追加コンテキストを提供します"
   },
   "goosehintsModal.dialogTitle": {
     "defaultMessage": "プロジェクトヒントを設定（.goosehints）"
@@ -936,7 +936,7 @@
     "defaultMessage": ".goosehints ファイルが見つかりました: {filePath}"
   },
   "goosehintsModal.helpText1": {
-    "defaultMessage": ".goosehints は、プロジェクトに関する追加コンテキストを提供し、Goose とのコミュニケーションを改善するためのテキストファイルです。"
+    "defaultMessage": ".goosehints は、プロジェクトに関する追加コンテキストを提供し、Gosling とのコミュニケーションを改善するためのテキストファイルです。"
   },
   "goosehintsModal.helpText2": {
     "defaultMessage": "拡張機能ページで {bold} 拡張機能が有効になっていることを確認してください。この拡張機能は .goosehints を使用するために必要です。.goosehints の更新を反映するにはセッションの再起動が必要です。"
@@ -963,13 +963,13 @@
     "defaultMessage": "設定"
   },
   "goosehintsSection.description": {
-    "defaultMessage": "Goose に追加コンテキストを提供するために、プロジェクトの .goosehints ファイルを設定します"
+    "defaultMessage": "Gosling に追加コンテキストを提供するために、プロジェクトの .goosehints ファイルを設定します"
   },
   "goosehintsSection.title": {
     "defaultMessage": "プロジェクトヒント（.goosehints）"
   },
   "groupedExtensionLoadingToast.askGoose": {
-    "defaultMessage": "Gooseに聞く"
+    "defaultMessage": "Goslingに聞く"
   },
   "groupedExtensionLoadingToast.collapseDetails": {
     "defaultMessage": "詳細を折りたたむ"
@@ -1089,7 +1089,7 @@
     "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
-    "defaultMessage": "goose画像"
+    "defaultMessage": "gosling画像"
   },
   "imagePreview.clickToCollapse": {
     "defaultMessage": "クリックして折りたたむ"
@@ -1152,13 +1152,13 @@
     "defaultMessage": "アプリケーションショートカット"
   },
   "keyboardShortcuts.categoryApplicationDescription": {
-    "defaultMessage": "Gooseがアクティブなときに有効なショートカット"
+    "defaultMessage": "Goslingがアクティブなときに有効なショートカット"
   },
   "keyboardShortcuts.categoryGlobal": {
     "defaultMessage": "グローバルショートカット"
   },
   "keyboardShortcuts.categoryGlobalDescription": {
-    "defaultMessage": "Gooseにフォーカスがなくても、システム全体で有効なショートカット"
+    "defaultMessage": "Goslingにフォーカスがなくても、システム全体で有効なショートカット"
   },
   "keyboardShortcuts.categorySearch": {
     "defaultMessage": "検索ショートカット"
@@ -1200,10 +1200,10 @@
     "defaultMessage": "前を検索"
   },
   "keyboardShortcuts.focusWindowDescription": {
-    "defaultMessage": "どこからでもGooseウィンドウを前面に表示"
+    "defaultMessage": "どこからでもGoslingウィンドウを前面に表示"
   },
   "keyboardShortcuts.focusWindowLabel": {
-    "defaultMessage": "Gooseウィンドウにフォーカス"
+    "defaultMessage": "Goslingウィンドウにフォーカス"
   },
   "keyboardShortcuts.loading": {
     "defaultMessage": "読み込み中..."
@@ -1215,7 +1215,7 @@
     "defaultMessage": "新規チャット"
   },
   "keyboardShortcuts.newChatWindowDescription": {
-    "defaultMessage": "新しいGooseウィンドウを開く"
+    "defaultMessage": "新しいGoslingウィンドウを開く"
   },
   "keyboardShortcuts.newChatWindowLabel": {
     "defaultMessage": "新規チャットウィンドウ"
@@ -1254,7 +1254,7 @@
     "defaultMessage": "デフォルトに戻す"
   },
   "keyboardShortcuts.restartDescription": {
-    "defaultMessage": "アプリケーションショートカット（新規チャット、設定など）の変更を反映するには、Gooseの再起動が必要です。グローバルショートカット（ウィンドウにフォーカス、クイックランチャー）はすぐに有効になります。"
+    "defaultMessage": "アプリケーションショートカット（新規チャット、設定など）の変更を反映するには、Goslingの再起動が必要です。グローバルショートカット（ウィンドウにフォーカス、クイックランチャー）はすぐに有効になります。"
   },
   "keyboardShortcuts.restartRequired": {
     "defaultMessage": "再起動が必要です"
@@ -1284,13 +1284,13 @@
     "defaultMessage": "ナビゲーションを切り替え"
   },
   "launcher.placeholder": {
-    "defaultMessage": "gooseに何でも聞いて..."
+    "defaultMessage": "goslingに何でも聞いて..."
   },
   "loadingGoose.compacting": {
-    "defaultMessage": "gooseが会話を圧縮しています..."
+    "defaultMessage": "goslingが会話を圧縮しています..."
   },
   "loadingGoose.idle": {
-    "defaultMessage": "gooseが処理中です…"
+    "defaultMessage": "goslingが処理中です…"
   },
   "loadingGoose.loadingConversation": {
     "defaultMessage": "会話を読み込み中..."
@@ -1299,13 +1299,13 @@
     "defaultMessage": "セッションを再起動中..."
   },
   "loadingGoose.streaming": {
-    "defaultMessage": "gooseが処理中です…"
+    "defaultMessage": "goslingが処理中です…"
   },
   "loadingGoose.thinking": {
-    "defaultMessage": "gooseが考えています…"
+    "defaultMessage": "goslingが考えています…"
   },
   "loadingGoose.waiting": {
-    "defaultMessage": "gooseが待機中です…"
+    "defaultMessage": "goslingが待機中です…"
   },
   "localInferenceSettings.deleteConfirm": {
     "defaultMessage": "このモデルを削除しますか？後で再ダウンロードできます。"
@@ -1896,7 +1896,7 @@
     "defaultMessage": "サーバーの起動中、または一時的に利用できない可能性があります。"
   },
   "onboardingGuard.checkProviderErrorTitle": {
-    "defaultMessage": "gooseサーバーに接続できません"
+    "defaultMessage": "goslingサーバーに接続できません"
   },
   "onboardingGuard.retry": {
     "defaultMessage": "再試行"
@@ -1905,10 +1905,10 @@
     "defaultMessage": "ローカルAIエージェントです。始めるにはAIモデルプロバイダーに接続してください。"
   },
   "onboardingGuard.welcomeTitle": {
-    "defaultMessage": "gooseへようこそ"
+    "defaultMessage": "goslingへようこそ"
   },
   "onboardingSuccess.allSet": {
-    "defaultMessage": "gooseを使い始める準備ができました。"
+    "defaultMessage": "goslingを使い始める準備ができました。"
   },
   "onboardingSuccess.connectedTo": {
     "defaultMessage": "{providerName}に接続しました"
@@ -1923,7 +1923,7 @@
     "defaultMessage": "ローカルモデルの準備ができました"
   },
   "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "匿名の使用データはgooseの改善に役立ちます。会話、コード、個人データは収集しません。"
+    "defaultMessage": "匿名の使用データはgoslingの改善に役立ちます。会話、コード、個人データは収集しません。"
   },
   "onboardingSuccess.privacyTitle": {
     "defaultMessage": "プライバシー"
@@ -1998,10 +1998,10 @@
     "defaultMessage": "セッション指標（時間、やり取り数、トークン使用量）"
   },
   "privacyInfoModal.collectVersion": {
-    "defaultMessage": "gooseのバージョンとインストール方法"
+    "defaultMessage": "goslingのバージョンとインストール方法"
   },
   "privacyInfoModal.description": {
-    "defaultMessage": "匿名の使用データは、gooseの利用状況を把握し、改善点を見つけるのに役立ちます。"
+    "defaultMessage": "匿名の使用データは、goslingの利用状況を把握し、改善点を見つけるのに役立ちます。"
   },
   "privacyInfoModal.neverCollect": {
     "defaultMessage": "会話、コード、ツール引数、エラーメッセージ、個人データは一切収集しません。この設定はいつでも設定で変更できます。"
@@ -2070,7 +2070,7 @@
     "defaultMessage": "プロンプトの保存に失敗しました"
   },
   "promptsSettings.promptEditingDescription": {
-    "defaultMessage": "さまざまなコンテキストでのgooseの動作を定義するプロンプトをカスタマイズできます。これらのプロンプトはJinja2テンプレート構文を使用します。テンプレート変数を変更する際は、誤った変更により機能が壊れる可能性があるため注意してください。改善案はコミュニティで共有してください。"
+    "defaultMessage": "さまざまなコンテキストでのgoslingの動作を定義するプロンプトをカスタマイズできます。これらのプロンプトはJinja2テンプレート構文を使用します。テンプレート変数を変更する際は、誤った変更により機能が壊れる可能性があるため注意してください。改善案はコミュニティで共有してください。"
   },
   "promptsSettings.promptEditingTitle": {
     "defaultMessage": "プロンプト編集"
@@ -2166,7 +2166,7 @@
     "defaultMessage": "{providerName}でサインイン"
   },
   "providerConfigurationModal.addApiKeyDescription": {
-    "defaultMessage": "gooseと連携するには、このプロバイダーのAPIキーを追加してください"
+    "defaultMessage": "goslingと連携するには、このプロバイダーのAPIキーを追加してください"
   },
   "providerConfigurationModal.browserWindowHint": {
     "defaultMessage": "ログインを完了するためにブラウザーウィンドウが開きます。"
@@ -2202,7 +2202,7 @@
     "defaultMessage": "エラー"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "このプロバイダーはgooseの外部で設定します。次の手順に従ってください:"
+    "defaultMessage": "このプロバイダーはgoslingの外部で設定します。次の手順に従ってください:"
   },
   "providerConfigurationModal.goBack": {
     "defaultMessage": "戻る"
@@ -2280,7 +2280,7 @@
     "defaultMessage": "プロバイダーを読み込み中..."
   },
   "providerSettings.onboardingDescription": {
-    "defaultMessage": "gooseを始めるにはAIモデルプロバイダーを選択してください。各プロバイダーで生成したAPIキーが必要です。APIキーは暗号化され、ローカルに保存されます。プロバイダーは設定からいつでも変更できます。"
+    "defaultMessage": "goslingを始めるにはAIモデルプロバイダーを選択してください。各プロバイダーで生成したAPIキーが必要です。APIキーは暗号化され、ローカルに保存されます。プロバイダーは設定からいつでも変更できます。"
   },
   "providerSettings.otherProviders": {
     "defaultMessage": "その他のプロバイダー"
@@ -2505,7 +2505,7 @@
     "defaultMessage": "チャット履歴"
   },
   "sessions.chatHistoryDesc": {
-    "defaultMessage": "Gooseとの過去の会話を表示・検索できます。{shortcut}で検索。"
+    "defaultMessage": "Goslingとの過去の会話を表示・検索できます。{shortcut}で検索。"
   },
   "sessions.close": {
     "defaultMessage": "閉じる"
@@ -2544,10 +2544,10 @@
     "defaultMessage": "リンクをインポート"
   },
   "sessions.importNostr.description": {
-    "defaultMessage": "Goose Nostr共有リンクを貼り付けて、セッションを取得・復号・インポートします。"
+    "defaultMessage": "Gosling Nostr共有リンクを貼り付けて、セッションを取得・復号・インポートします。"
   },
   "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
+    "defaultMessage": "gosling://sessions/nostr?nevent=...&key=..."
   },
   "sessions.importNostr.title": {
     "defaultMessage": "Nostrセッションをインポート"
@@ -2625,13 +2625,13 @@
     "defaultMessage": "再試行"
   },
   "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Goose"
+    "defaultMessage": "Gosling"
   },
   "sessionViewComponents.role.user": {
     "defaultMessage": "あなた"
   },
   "settings.appearance.description": {
-    "defaultMessage": "システム上でのgooseの表示を設定します"
+    "defaultMessage": "システム上でのgoslingの表示を設定します"
   },
   "settings.appearance.title": {
     "defaultMessage": "外観"
@@ -2646,13 +2646,13 @@
     "defaultMessage": "コスト管理"
   },
   "settings.dockIcon.description": {
-    "defaultMessage": "Dockにgooseを表示します"
+    "defaultMessage": "Dockにgoslingを表示します"
   },
   "settings.dockIcon.title": {
     "defaultMessage": "Dockアイコン"
   },
   "settings.help.description": {
-    "defaultMessage": "問題の報告や新機能のリクエストでgooseの改善にご協力ください"
+    "defaultMessage": "問題の報告や新機能のリクエストでgoslingの改善にご協力ください"
   },
   "settings.help.reportBug": {
     "defaultMessage": "バグを報告"
@@ -2664,7 +2664,7 @@
     "defaultMessage": "ヘルプとフィードバック"
   },
   "settings.language.description": {
-    "defaultMessage": "goose の表示言語を選択"
+    "defaultMessage": "gosling の表示言語を選択"
   },
   "settings.language.english": {
     "defaultMessage": "英語"
@@ -2721,7 +2721,7 @@
     "defaultMessage": "中国語（繁体字）"
   },
   "settings.menuBarIcon.description": {
-    "defaultMessage": "メニューバーにgooseを表示します"
+    "defaultMessage": "メニューバーにgoslingを表示します"
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "メニューバーアイコン"
@@ -2742,7 +2742,7 @@
     "defaultMessage": "「通知」をクリック"
   },
   "settings.notifications.modal.macStep3": {
-    "defaultMessage": "アプリ一覧でgooseを見つけて選択"
+    "defaultMessage": "アプリ一覧でgoslingを見つけて選択"
   },
   "settings.notifications.modal.macStep4": {
     "defaultMessage": "通知を有効にし、必要に応じて設定を調整"
@@ -2760,7 +2760,7 @@
     "defaultMessage": "システム > 通知に移動"
   },
   "settings.notifications.modal.winStep3": {
-    "defaultMessage": "アプリ一覧でgooseを見つけて選択"
+    "defaultMessage": "アプリ一覧でgoslingを見つけて選択"
   },
   "settings.notifications.modal.winStep4": {
     "defaultMessage": "通知をオンにし、必要に応じて設定を調整"
@@ -2769,7 +2769,7 @@
     "defaultMessage": "設定を開く"
   },
   "settings.notifications.task.description": {
-    "defaultMessage": "ウィンドウがバックグラウンドにある間にGooseがタスクを完了したら通知します"
+    "defaultMessage": "ウィンドウがバックグラウンドにある間にGoslingがタスクを完了したら通知します"
   },
   "settings.notifications.task.title": {
     "defaultMessage": "タスク完了通知"
@@ -2778,19 +2778,19 @@
     "defaultMessage": "通知"
   },
   "settings.preventSleep.description": {
-    "defaultMessage": "gooseがタスクを実行中はコンピューターがスリープしないようにします（画面はロックされる場合があります）"
+    "defaultMessage": "goslingがタスクを実行中はコンピューターがスリープしないようにします（画面はロックされる場合があります）"
   },
   "settings.preventSleep.title": {
     "defaultMessage": "スリープを防止"
   },
   "settings.theme.description": {
-    "defaultMessage": "gooseの見た目と操作感をカスタマイズします"
+    "defaultMessage": "goslingの見た目と操作感をカスタマイズします"
   },
   "settings.theme.title": {
     "defaultMessage": "テーマ"
   },
   "settings.updates.description": {
-    "defaultMessage": "gooseを最新の状態に保つため、アップデートを確認してインストールします"
+    "defaultMessage": "goslingを最新の状態に保つため、アップデートを確認してインストールします"
   },
   "settings.updates.title": {
     "defaultMessage": "アップデート"
@@ -2868,7 +2868,7 @@
     "defaultMessage": "スキルを検索..."
   },
   "skillsView.skillsDescription": {
-    "defaultMessage": "Gooseの機能を拡張するインストール済みスキルを表示します。{shortcut}で検索。"
+    "defaultMessage": "Goslingの機能を拡張するインストール済みスキルを表示します。{shortcut}で検索。"
   },
   "skillsView.skillsTitle": {
     "defaultMessage": "スキル"
@@ -3018,10 +3018,10 @@
     "defaultMessage": "別のプロバイダーを使用"
   },
   "telemetryConsentPrompt.description": {
-    "defaultMessage": "gooseの改善のため、匿名の使用状況データを共有しますか？会話、コード、個人データは一切収集しません。"
+    "defaultMessage": "goslingの改善のため、匿名の使用状況データを共有しますか？会話、コード、個人データは一切収集しません。"
   },
   "telemetryConsentPrompt.heading": {
-    "defaultMessage": "gooseの改善に協力"
+    "defaultMessage": "goslingの改善に協力"
   },
   "telemetryConsentPrompt.learnMore": {
     "defaultMessage": "詳しく見る"
@@ -3048,7 +3048,7 @@
     "defaultMessage": "プライバシー"
   },
   "telemetrySettings.toggleDescription": {
-    "defaultMessage": "gooseの改善のため、匿名の使用統計を共有します。"
+    "defaultMessage": "goslingの改善のため、匿名の使用統計を共有します。"
   },
   "telemetrySettings.toggleLabel": {
     "defaultMessage": "匿名の使用状況データ"
@@ -3126,7 +3126,7 @@
     "defaultMessage": "{toolName}の実行を許可しますか？"
   },
   "toolConfirmation.gooseWouldLikeToCallWithName": {
-    "defaultMessage": "Gooseが{toolName}を実行しようとしています。許可しますか？"
+    "defaultMessage": "Goslingが{toolName}を実行しようとしています。許可しますか？"
   },
   "updateSection.autoDownload": {
     "defaultMessage": "アップデートはバックグラウンドで自動的にダウンロードされます。"
@@ -3153,7 +3153,7 @@
     "defaultMessage": "アップデートの自動ダウンロードを無効にする"
   },
   "updateSection.disableAutoDownloadDesc": {
-    "defaultMessage": "有効にすると、Goose は新しいバージョンを通知しますが、自動的にはダウンロードしません。"
+    "defaultMessage": "有効にすると、Gosling は新しいバージョンを通知しますが、自動的にはダウンロードしません。"
   },
   "updateSection.downloadingProgress": {
     "defaultMessage": "アップデートをダウンロード中... {percent}%"
@@ -3186,7 +3186,7 @@
     "defaultMessage": "このアップデート方法では、手動インストールが必要です。"
   },
   "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ アップデートの準備ができました！Gooseを終了するとインストールされます。"
+    "defaultMessage": "✓ アップデートの準備ができました！Goslingを終了するとインストールされます。"
   },
   "updateSection.readyInstallManual": {
     "defaultMessage": "✓ アップデートの準備ができました！インストール手順を表示するには「インストールして再起動」をクリックしてください。"

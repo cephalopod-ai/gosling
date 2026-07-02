@@ -39,7 +39,7 @@
     "defaultMessage": "Đã xóa thông tin xác thực"
   },
   "authSettings.description": {
-    "defaultMessage": "Quản lý thông tin xác thực nhà cung cấp được goose lưu trữ cục bộ."
+    "defaultMessage": "Quản lý thông tin xác thực nhà cung cấp được gosling lưu trữ cục bộ."
   },
   "authSettings.empty": {
     "defaultMessage": "Không tìm thấy thông tin xác thực nhà cung cấp nào được lưu trữ cục bộ."
@@ -120,10 +120,10 @@
     "defaultMessage": "Khởi chạy"
   },
   "chat.notification.taskComplete.body": {
-    "defaultMessage": "Nhấp vào đây để đưa Goose trở lại tiêu điểm."
+    "defaultMessage": "Nhấp vào đây để đưa Gosling trở lại tiêu điểm."
   },
   "chat.notification.taskComplete.title": {
-    "defaultMessage": "Goose đã hoàn thành tác vụ."
+    "defaultMessage": "Gosling đã hoàn thành tác vụ."
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Cửa sổ ngữ cảnh"
@@ -171,13 +171,13 @@
     "defaultMessage": "Đang chờ lưu hình ảnh..."
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "Chọn chế độ mặc định mà Goose sử dụng cho các phiên mới. Các phiên hiện có vẫn giữ chế độ hiện tại của chúng."
+    "defaultMessage": "Chọn chế độ mặc định mà Gosling sử dụng cho các phiên mới. Các phiên hiện có vẫn giữ chế độ hiện tại của chúng."
   },
   "chatSettings.modeTitle": {
     "defaultMessage": "Chế độ mặc định"
   },
   "chatSettings.responseStylesDescription": {
-    "defaultMessage": "Chọn cách Goose định dạng và tạo phong cách cho các phản hồi của mình"
+    "defaultMessage": "Chọn cách Gosling định dạng và tạo phong cách cho các phản hồi của mình"
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Phong cách phản hồi"
@@ -198,10 +198,10 @@
     "defaultMessage": "Trình chỉnh sửa cấu hình"
   },
   "configSettings.description": {
-    "defaultMessage": "Chỉnh sửa cài đặt cấu hình goose của bạn"
+    "defaultMessage": "Chỉnh sửa cài đặt cấu hình gosling của bạn"
   },
   "configSettings.descriptionWithProvider": {
-    "defaultMessage": "Chỉnh sửa cài đặt cấu hình goose của bạn (cài đặt hiện tại cho {provider})"
+    "defaultMessage": "Chỉnh sửa cài đặt cấu hình gosling của bạn (cài đặt hiện tại cho {provider})"
   },
   "configSettings.done": {
     "defaultMessage": "Xong"
@@ -273,7 +273,7 @@
     "defaultMessage": "Số lượt tối đa"
   },
   "conversationLimitsDropdown.maxTurnsDescription": {
-    "defaultMessage": "Số lượt tác nhân tối đa trước khi Goose yêu cầu người dùng nhập liệu"
+    "defaultMessage": "Số lượt tác nhân tối đa trước khi Gosling yêu cầu người dùng nhập liệu"
   },
   "costTracker.costUnavailable": {
     "defaultMessage": "Không có dữ liệu chi phí cho {model} ({inputTokens} token đầu vào, {outputTokens} token đầu ra)"
@@ -459,7 +459,7 @@
     "defaultMessage": "Chỉnh sửa thiết lập {name}"
   },
   "defaultCardButtons.getStarted": {
-    "defaultMessage": "Bắt đầu với goose!"
+    "defaultMessage": "Bắt đầu với gosling!"
   },
   "defaultProviderSetupForm.apiHostLabel": {
     "defaultMessage": "Máy chủ API"
@@ -618,7 +618,7 @@
     "defaultMessage": "Yêu cầu thông tin đã bị hủy."
   },
   "elicitationRequest.defaultMessage": {
-    "defaultMessage": "Goose cần một số thông tin từ bạn."
+    "defaultMessage": "Gosling cần một số thông tin từ bạn."
   },
   "elicitationRequest.expired": {
     "defaultMessage": "Yêu cầu này đã hết hạn. Tiện ích mở rộng sẽ cần hỏi lại."
@@ -663,7 +663,7 @@
     "defaultMessage": "Đã xảy ra lỗi."
   },
   "errorBoundary.errorWithVersion": {
-    "defaultMessage": "Đã xảy ra lỗi trong Goose v{version}."
+    "defaultMessage": "Đã xảy ra lỗi trong Gosling v{version}."
   },
   "errorBoundary.heading": {
     "defaultMessage": "Honk!"
@@ -849,7 +849,7 @@
     "defaultMessage": "Các tiện ích mở rộng được bật ở đây sẽ được dùng làm mặc định cho các cuộc trò chuyện mới. Bạn cũng có thể bật/tắt các tiện ích mở rộng đang hoạt động trong khi trò chuyện."
   },
   "extensionsView.description": {
-    "defaultMessage": "Các tiện ích mở rộng này sử dụng Model Context Protocol (MCP). Chúng có thể mở rộng khả năng của Goose bằng ba thành phần chính: Lời nhắc, Tài nguyên và Công cụ. {searchShortcut} để tìm kiếm."
+    "defaultMessage": "Các tiện ích mở rộng này sử dụng Model Context Protocol (MCP). Chúng có thể mở rộng khả năng của Gosling bằng ba thành phần chính: Lời nhắc, Tài nguyên và Công cụ. {searchShortcut} để tìm kiếm."
   },
   "extensionsView.heading": {
     "defaultMessage": "Tiện ích mở rộng"
@@ -867,13 +867,13 @@
     "defaultMessage": "AA:BB:CC:... hoặc sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "Theo mặc định goose khởi chạy một máy chủ cho bạn, hãy dùng tùy chọn này để kết nối tới một máy chủ goose bên ngoài"
+    "defaultMessage": "Theo mặc định gosling khởi chạy một máy chủ cho bạn, hãy dùng tùy chọn này để kết nối tới một máy chủ gosling bên ngoài"
   },
   "externalBackendSection.fingerprintRequiresHttps": {
     "defaultMessage": "Certificate fingerprint requires an https URL"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "Các thay đổi cần khởi động lại Goose để có hiệu lực. Các cửa sổ trò chuyện mới sẽ kết nối tới máy chủ bên ngoài."
+    "defaultMessage": "Các thay đổi cần khởi động lại Gosling để có hiệu lực. Các cửa sổ trò chuyện mới sẽ kết nối tới máy chủ bên ngoài."
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "Khóa bí mật"
@@ -888,10 +888,10 @@
     "defaultMessage": "URL máy chủ"
   },
   "externalBackendSection.serverUrlHelp": {
-    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+    "defaultMessage": "Enter the HTTP(S) base URL. Gosling checks /status and connects to /acp under this base."
   },
   "externalBackendSection.title": {
-    "defaultMessage": "Máy chủ Goose"
+    "defaultMessage": "Máy chủ Gosling"
   },
   "externalBackendSection.urlBaseError": {
     "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
@@ -906,7 +906,7 @@
     "defaultMessage": "Sử dụng máy chủ bên ngoài"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "Kết nối tới một máy chủ goose đang chạy ở nơi khác (cần khởi động lại ứng dụng)"
+    "defaultMessage": "Kết nối tới một máy chủ gosling đang chạy ở nơi khác (cần khởi động lại ứng dụng)"
   },
   "goosehintsModal.close": {
     "defaultMessage": "Đóng"
@@ -915,7 +915,7 @@
     "defaultMessage": "Nhà phát triển"
   },
   "goosehintsModal.dialogDescription": {
-    "defaultMessage": "Cung cấp thêm ngữ cảnh về dự án của bạn để cải thiện giao tiếp với Goose"
+    "defaultMessage": "Cung cấp thêm ngữ cảnh về dự án của bạn để cải thiện giao tiếp với Gosling"
   },
   "goosehintsModal.dialogTitle": {
     "defaultMessage": "Cấu hình gợi ý dự án (.goosehints)"
@@ -936,7 +936,7 @@
     "defaultMessage": "Đã tìm thấy tệp .goosehints tại: {filePath}"
   },
   "goosehintsModal.helpText1": {
-    "defaultMessage": ".goosehints là một tệp văn bản dùng để cung cấp thêm ngữ cảnh về dự án của bạn và cải thiện giao tiếp với Goose."
+    "defaultMessage": ".goosehints là một tệp văn bản dùng để cung cấp thêm ngữ cảnh về dự án của bạn và cải thiện giao tiếp với Gosling."
   },
   "goosehintsModal.helpText2": {
     "defaultMessage": "Hãy đảm bảo tiện ích mở rộng {bold} được bật trong trang tiện ích mở rộng. Tiện ích mở rộng này là bắt buộc để sử dụng .goosehints. Bạn cần khởi động lại phiên để các cập nhật .goosehints có hiệu lực."
@@ -963,13 +963,13 @@
     "defaultMessage": "Cấu hình"
   },
   "goosehintsSection.description": {
-    "defaultMessage": "Cấu hình tệp .goosehints của dự án để cung cấp thêm ngữ cảnh cho Goose"
+    "defaultMessage": "Cấu hình tệp .goosehints của dự án để cung cấp thêm ngữ cảnh cho Gosling"
   },
   "goosehintsSection.title": {
     "defaultMessage": "Gợi ý dự án (.goosehints)"
   },
   "groupedExtensionLoadingToast.askGoose": {
-    "defaultMessage": "Hỏi goose"
+    "defaultMessage": "Hỏi gosling"
   },
   "groupedExtensionLoadingToast.collapseDetails": {
     "defaultMessage": "Thu gọn chi tiết"
@@ -1089,7 +1089,7 @@
     "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
-    "defaultMessage": "hình ảnh goose"
+    "defaultMessage": "hình ảnh gosling"
   },
   "imagePreview.clickToCollapse": {
     "defaultMessage": "Nhấp để thu gọn"
@@ -1152,13 +1152,13 @@
     "defaultMessage": "Phím tắt ứng dụng"
   },
   "keyboardShortcuts.categoryApplicationDescription": {
-    "defaultMessage": "Các phím tắt này hoạt động khi Goose là ứng dụng đang hoạt động"
+    "defaultMessage": "Các phím tắt này hoạt động khi Gosling là ứng dụng đang hoạt động"
   },
   "keyboardShortcuts.categoryGlobal": {
     "defaultMessage": "Phím tắt toàn cục"
   },
   "keyboardShortcuts.categoryGlobalDescription": {
-    "defaultMessage": "Các phím tắt này hoạt động trên toàn hệ thống, ngay cả khi Goose không được lấy nét"
+    "defaultMessage": "Các phím tắt này hoạt động trên toàn hệ thống, ngay cả khi Gosling không được lấy nét"
   },
   "keyboardShortcuts.categorySearch": {
     "defaultMessage": "Phím tắt tìm kiếm"
@@ -1200,10 +1200,10 @@
     "defaultMessage": "Tìm trước đó"
   },
   "keyboardShortcuts.focusWindowDescription": {
-    "defaultMessage": "Đưa cửa sổ Goose lên phía trước từ bất kỳ đâu"
+    "defaultMessage": "Đưa cửa sổ Gosling lên phía trước từ bất kỳ đâu"
   },
   "keyboardShortcuts.focusWindowLabel": {
-    "defaultMessage": "Lấy nét cửa sổ Goose"
+    "defaultMessage": "Lấy nét cửa sổ Gosling"
   },
   "keyboardShortcuts.loading": {
     "defaultMessage": "Đang tải..."
@@ -1215,7 +1215,7 @@
     "defaultMessage": "Trò chuyện mới"
   },
   "keyboardShortcuts.newChatWindowDescription": {
-    "defaultMessage": "Mở một cửa sổ Goose mới"
+    "defaultMessage": "Mở một cửa sổ Gosling mới"
   },
   "keyboardShortcuts.newChatWindowLabel": {
     "defaultMessage": "Cửa sổ trò chuyện mới"
@@ -1254,7 +1254,7 @@
     "defaultMessage": "Đặt lại về mặc định"
   },
   "keyboardShortcuts.restartDescription": {
-    "defaultMessage": "Các thay đổi đối với phím tắt ứng dụng (như Trò chuyện mới, Cài đặt, v.v.) yêu cầu khởi động lại Goose để có hiệu lực. Phím tắt toàn cục (Lấy nét cửa sổ, Trình khởi chạy nhanh) hoạt động ngay lập tức."
+    "defaultMessage": "Các thay đổi đối với phím tắt ứng dụng (như Trò chuyện mới, Cài đặt, v.v.) yêu cầu khởi động lại Gosling để có hiệu lực. Phím tắt toàn cục (Lấy nét cửa sổ, Trình khởi chạy nhanh) hoạt động ngay lập tức."
   },
   "keyboardShortcuts.restartRequired": {
     "defaultMessage": "Cần khởi động lại"
@@ -1284,13 +1284,13 @@
     "defaultMessage": "Bật/tắt điều hướng"
   },
   "launcher.placeholder": {
-    "defaultMessage": "Hỏi goose bất cứ điều gì..."
+    "defaultMessage": "Hỏi gosling bất cứ điều gì..."
   },
   "loadingGoose.compacting": {
-    "defaultMessage": "goose đang nén cuộc trò chuyện..."
+    "defaultMessage": "gosling đang nén cuộc trò chuyện..."
   },
   "loadingGoose.idle": {
-    "defaultMessage": "goose đang xử lý…"
+    "defaultMessage": "gosling đang xử lý…"
   },
   "loadingGoose.loadingConversation": {
     "defaultMessage": "đang tải cuộc trò chuyện..."
@@ -1299,13 +1299,13 @@
     "defaultMessage": "đang khởi động lại phiên..."
   },
   "loadingGoose.streaming": {
-    "defaultMessage": "goose đang xử lý…"
+    "defaultMessage": "gosling đang xử lý…"
   },
   "loadingGoose.thinking": {
-    "defaultMessage": "goose đang suy nghĩ…"
+    "defaultMessage": "gosling đang suy nghĩ…"
   },
   "loadingGoose.waiting": {
-    "defaultMessage": "goose đang chờ…"
+    "defaultMessage": "gosling đang chờ…"
   },
   "localInferenceSettings.deleteConfirm": {
     "defaultMessage": "Xóa mô hình này? Bạn có thể tải lại sau."
@@ -1896,7 +1896,7 @@
     "defaultMessage": "Máy chủ có thể đang khởi động hoặc tạm thời không khả dụng."
   },
   "onboardingGuard.checkProviderErrorTitle": {
-    "defaultMessage": "Không thể kết nối với máy chủ Goose"
+    "defaultMessage": "Không thể kết nối với máy chủ Gosling"
   },
   "onboardingGuard.retry": {
     "defaultMessage": "Thử lại"
@@ -1905,10 +1905,10 @@
     "defaultMessage": "Tác nhân AI cục bộ của bạn. Kết nối một nhà cung cấp mô hình AI để bắt đầu."
   },
   "onboardingGuard.welcomeTitle": {
-    "defaultMessage": "Chào mừng đến với goose"
+    "defaultMessage": "Chào mừng đến với gosling"
   },
   "onboardingSuccess.allSet": {
-    "defaultMessage": "Bạn đã sẵn sàng bắt đầu sử dụng goose."
+    "defaultMessage": "Bạn đã sẵn sàng bắt đầu sử dụng gosling."
   },
   "onboardingSuccess.connectedTo": {
     "defaultMessage": "Đã kết nối với {providerName}"
@@ -1923,7 +1923,7 @@
     "defaultMessage": "Mô hình cục bộ đã sẵn sàng"
   },
   "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "Dữ liệu sử dụng ẩn danh giúp cải thiện goose. Chúng tôi không bao giờ thu thập cuộc trò chuyện, mã nguồn hoặc dữ liệu cá nhân của bạn."
+    "defaultMessage": "Dữ liệu sử dụng ẩn danh giúp cải thiện gosling. Chúng tôi không bao giờ thu thập cuộc trò chuyện, mã nguồn hoặc dữ liệu cá nhân của bạn."
   },
   "onboardingSuccess.privacyTitle": {
     "defaultMessage": "Quyền riêng tư"
@@ -1998,10 +1998,10 @@
     "defaultMessage": "Số liệu phiên (thời lượng, số lần tương tác, lượng token sử dụng)"
   },
   "privacyInfoModal.collectVersion": {
-    "defaultMessage": "Phiên bản goose và phương thức cài đặt"
+    "defaultMessage": "Phiên bản gosling và phương thức cài đặt"
   },
   "privacyInfoModal.description": {
-    "defaultMessage": "Dữ liệu sử dụng ẩn danh giúp chúng tôi hiểu cách goose được sử dụng và xác định các lĩnh vực cần cải thiện."
+    "defaultMessage": "Dữ liệu sử dụng ẩn danh giúp chúng tôi hiểu cách gosling được sử dụng và xác định các lĩnh vực cần cải thiện."
   },
   "privacyInfoModal.neverCollect": {
     "defaultMessage": "Chúng tôi không bao giờ thu thập cuộc trò chuyện, mã nguồn, đối số công cụ, thông báo lỗi hoặc bất kỳ dữ liệu cá nhân nào của bạn. Bạn có thể thay đổi cài đặt này bất cứ lúc nào trong Cài đặt."
@@ -2070,7 +2070,7 @@
     "defaultMessage": "Không lưu được lời nhắc"
   },
   "promptsSettings.promptEditingDescription": {
-    "defaultMessage": "Tùy chỉnh các lời nhắc xác định hành vi của goose trong các ngữ cảnh khác nhau. Các lời nhắc này sử dụng cú pháp mẫu Jinja2. Hãy cẩn thận khi sửa đổi các biến mẫu, vì thay đổi không đúng có thể làm hỏng chức năng. Vui lòng chia sẻ mọi cải tiến với cộng đồng."
+    "defaultMessage": "Tùy chỉnh các lời nhắc xác định hành vi của gosling trong các ngữ cảnh khác nhau. Các lời nhắc này sử dụng cú pháp mẫu Jinja2. Hãy cẩn thận khi sửa đổi các biến mẫu, vì thay đổi không đúng có thể làm hỏng chức năng. Vui lòng chia sẻ mọi cải tiến với cộng đồng."
   },
   "promptsSettings.promptEditingTitle": {
     "defaultMessage": "Chỉnh sửa lời nhắc"
@@ -2166,7 +2166,7 @@
     "defaultMessage": "Đang đăng nhập..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
-    "defaultMessage": "Thêm khóa API của bạn cho nhà cung cấp này để tích hợp vào goose"
+    "defaultMessage": "Thêm khóa API của bạn cho nhà cung cấp này để tích hợp vào gosling"
   },
   "providerConfigurationModal.browserWindowHint": {
     "defaultMessage": "Một cửa sổ trình duyệt sẽ mở ra để bạn hoàn tất đăng nhập."
@@ -2202,7 +2202,7 @@
     "defaultMessage": "Lỗi"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "Nhà cung cấp này được cấu hình bên ngoài goose. Hãy làm theo các bước sau:"
+    "defaultMessage": "Nhà cung cấp này được cấu hình bên ngoài gosling. Hãy làm theo các bước sau:"
   },
   "providerConfigurationModal.goBack": {
     "defaultMessage": "Quay lại"
@@ -2280,7 +2280,7 @@
     "defaultMessage": "Đang tải nhà cung cấp..."
   },
   "providerSettings.onboardingDescription": {
-    "defaultMessage": "Chọn một nhà cung cấp mô hình AI để bắt đầu với goose. Bạn sẽ cần sử dụng khóa API do mỗi nhà cung cấp tạo ra, khóa này sẽ được mã hóa và lưu trữ cục bộ. Bạn có thể thay đổi nhà cung cấp bất cứ lúc nào trong cài đặt."
+    "defaultMessage": "Chọn một nhà cung cấp mô hình AI để bắt đầu với gosling. Bạn sẽ cần sử dụng khóa API do mỗi nhà cung cấp tạo ra, khóa này sẽ được mã hóa và lưu trữ cục bộ. Bạn có thể thay đổi nhà cung cấp bất cứ lúc nào trong cài đặt."
   },
   "providerSettings.otherProviders": {
     "defaultMessage": "Nhà cung cấp khác"
@@ -2493,7 +2493,7 @@
     "defaultMessage": "Thử lại"
   },
   "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Goose"
+    "defaultMessage": "Gosling"
   },
   "sessionViewComponents.role.user": {
     "defaultMessage": "Bạn"
@@ -2523,7 +2523,7 @@
     "defaultMessage": "Lịch sử trò chuyện"
   },
   "sessions.chatHistoryDesc": {
-    "defaultMessage": "Xem và tìm kiếm các cuộc trò chuyện trước đây của bạn với Goose. {shortcut} để tìm kiếm."
+    "defaultMessage": "Xem và tìm kiếm các cuộc trò chuyện trước đây của bạn với Gosling. {shortcut} để tìm kiếm."
   },
   "sessions.close": {
     "defaultMessage": "Đóng"
@@ -2559,10 +2559,10 @@
     "defaultMessage": "Nhập liên kết"
   },
   "sessions.importNostr.description": {
-    "defaultMessage": "Dán một liên kết chia sẻ Nostr của Goose để tìm nạp, giải mã và nhập phiên."
+    "defaultMessage": "Dán một liên kết chia sẻ Nostr của Gosling để tìm nạp, giải mã và nhập phiên."
   },
   "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
+    "defaultMessage": "gosling://sessions/nostr?nevent=...&key=..."
   },
   "sessions.importNostr.title": {
     "defaultMessage": "Nhập phiên Nostr"
@@ -2631,7 +2631,7 @@
     "defaultMessage": "Đã cập nhật mô tả phiên làm việc thành công"
   },
   "settings.appearance.description": {
-    "defaultMessage": "Định cấu hình cách goose hiển thị trên hệ thống của bạn"
+    "defaultMessage": "Định cấu hình cách gosling hiển thị trên hệ thống của bạn"
   },
   "settings.appearance.title": {
     "defaultMessage": "Giao diện"
@@ -2646,13 +2646,13 @@
     "defaultMessage": "Theo dõi chi phí"
   },
   "settings.dockIcon.description": {
-    "defaultMessage": "Hiển thị goose trên dock"
+    "defaultMessage": "Hiển thị gosling trên dock"
   },
   "settings.dockIcon.title": {
     "defaultMessage": "Biểu tượng dock"
   },
   "settings.help.description": {
-    "defaultMessage": "Giúp chúng tôi cải thiện goose bằng cách báo cáo sự cố hoặc yêu cầu tính năng mới"
+    "defaultMessage": "Giúp chúng tôi cải thiện gosling bằng cách báo cáo sự cố hoặc yêu cầu tính năng mới"
   },
   "settings.help.reportBug": {
     "defaultMessage": "Báo cáo lỗi"
@@ -2664,7 +2664,7 @@
     "defaultMessage": "Trợ giúp & phản hồi"
   },
   "settings.language.description": {
-    "defaultMessage": "Chọn ngôn ngữ hiển thị cho goose"
+    "defaultMessage": "Chọn ngôn ngữ hiển thị cho gosling"
   },
   "settings.language.english": {
     "defaultMessage": "English"
@@ -2721,7 +2721,7 @@
     "defaultMessage": "Tiếng Trung (Phồn thể)"
   },
   "settings.menuBarIcon.description": {
-    "defaultMessage": "Hiển thị goose trên thanh menu"
+    "defaultMessage": "Hiển thị gosling trên thanh menu"
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "Biểu tượng thanh menu"
@@ -2742,7 +2742,7 @@
     "defaultMessage": "Nhấp vào Notifications"
   },
   "settings.notifications.modal.macStep3": {
-    "defaultMessage": "Tìm và chọn goose trong danh sách ứng dụng"
+    "defaultMessage": "Tìm và chọn gosling trong danh sách ứng dụng"
   },
   "settings.notifications.modal.macStep4": {
     "defaultMessage": "Bật thông báo và điều chỉnh cài đặt theo ý muốn"
@@ -2760,7 +2760,7 @@
     "defaultMessage": "Đi tới System > Notifications"
   },
   "settings.notifications.modal.winStep3": {
-    "defaultMessage": "Tìm và chọn goose trong danh sách ứng dụng"
+    "defaultMessage": "Tìm và chọn gosling trong danh sách ứng dụng"
   },
   "settings.notifications.modal.winStep4": {
     "defaultMessage": "Bật thông báo và điều chỉnh cài đặt theo ý muốn"
@@ -2769,7 +2769,7 @@
     "defaultMessage": "Mở Settings"
   },
   "settings.notifications.task.description": {
-    "defaultMessage": "Thông báo khi Goose hoàn thành một tác vụ trong khi cửa sổ đang ở chế độ nền"
+    "defaultMessage": "Thông báo khi Gosling hoàn thành một tác vụ trong khi cửa sổ đang ở chế độ nền"
   },
   "settings.notifications.task.title": {
     "defaultMessage": "Thông báo hoàn thành tác vụ"
@@ -2778,19 +2778,19 @@
     "defaultMessage": "Thông báo"
   },
   "settings.preventSleep.description": {
-    "defaultMessage": "Giữ máy tính của bạn luôn hoạt động trong khi goose đang chạy một tác vụ (màn hình vẫn có thể khóa)"
+    "defaultMessage": "Giữ máy tính của bạn luôn hoạt động trong khi gosling đang chạy một tác vụ (màn hình vẫn có thể khóa)"
   },
   "settings.preventSleep.title": {
     "defaultMessage": "Ngăn chế độ ngủ"
   },
   "settings.theme.description": {
-    "defaultMessage": "Tùy chỉnh giao diện và cảm nhận của goose"
+    "defaultMessage": "Tùy chỉnh giao diện và cảm nhận của gosling"
   },
   "settings.theme.title": {
     "defaultMessage": "Chủ đề"
   },
   "settings.updates.description": {
-    "defaultMessage": "Kiểm tra và cài đặt bản cập nhật để goose luôn hoạt động tốt nhất"
+    "defaultMessage": "Kiểm tra và cài đặt bản cập nhật để gosling luôn hoạt động tốt nhất"
   },
   "settings.updates.title": {
     "defaultMessage": "Cập nhật"
@@ -2868,7 +2868,7 @@
     "defaultMessage": "Tìm kiếm kỹ năng..."
   },
   "skillsView.skillsDescription": {
-    "defaultMessage": "Xem các kỹ năng đã cài đặt giúp mở rộng khả năng của Goose. {shortcut} để tìm kiếm."
+    "defaultMessage": "Xem các kỹ năng đã cài đặt giúp mở rộng khả năng của Gosling. {shortcut} để tìm kiếm."
   },
   "skillsView.skillsTitle": {
     "defaultMessage": "Kỹ năng"
@@ -3018,10 +3018,10 @@
     "defaultMessage": "Sử dụng nhà cung cấp khác"
   },
   "telemetryConsentPrompt.description": {
-    "defaultMessage": "Bạn có muốn chia sẻ dữ liệu sử dụng ẩn danh để giúp cải thiện goose không? Chúng tôi không bao giờ thu thập các cuộc trò chuyện, mã hoặc dữ liệu cá nhân của bạn."
+    "defaultMessage": "Bạn có muốn chia sẻ dữ liệu sử dụng ẩn danh để giúp cải thiện gosling không? Chúng tôi không bao giờ thu thập các cuộc trò chuyện, mã hoặc dữ liệu cá nhân của bạn."
   },
   "telemetryConsentPrompt.heading": {
-    "defaultMessage": "Giúp cải thiện goose"
+    "defaultMessage": "Giúp cải thiện gosling"
   },
   "telemetryConsentPrompt.learnMore": {
     "defaultMessage": "Tìm hiểu thêm"
@@ -3048,7 +3048,7 @@
     "defaultMessage": "Quyền riêng tư"
   },
   "telemetrySettings.toggleDescription": {
-    "defaultMessage": "Giúp cải thiện goose bằng cách chia sẻ số liệu thống kê sử dụng ẩn danh."
+    "defaultMessage": "Giúp cải thiện gosling bằng cách chia sẻ số liệu thống kê sử dụng ẩn danh."
   },
   "telemetrySettings.toggleLabel": {
     "defaultMessage": "Dữ liệu sử dụng ẩn danh"
@@ -3126,10 +3126,10 @@
     "defaultMessage": "Cho phép {toolName}?"
   },
   "toolConfirmation.gooseWouldLikeToCallWithName": {
-    "defaultMessage": "Goose muốn gọi {toolName}. Cho phép?"
+    "defaultMessage": "Gosling muốn gọi {toolName}. Cho phép?"
   },
   "updateSection.autoDownload": {
-    "defaultMessage": "Goose sẽ tải bản cập nhật ở chế độ nền và cài đặt vào lần tiếp theo khi bạn thoát hoặc khởi động lại."
+    "defaultMessage": "Gosling sẽ tải bản cập nhật ở chế độ nền và cài đặt vào lần tiếp theo khi bạn thoát hoặc khởi động lại."
   },
   "updateSection.autoDownloadDisabledByEnv": {
     "defaultMessage": "Tải xuống tự động đã bị tắt thông qua biến môi trường GOOSE_DISABLE_AUTO_DOWNLOAD."
@@ -3153,7 +3153,7 @@
     "defaultMessage": "Tắt tải xuống cập nhật tự động"
   },
   "updateSection.disableAutoDownloadDesc": {
-    "defaultMessage": "Khi được bật, Goose sẽ thông báo cho bạn về các phiên bản mới nhưng sẽ không tự động tải xuống."
+    "defaultMessage": "Khi được bật, Gosling sẽ thông báo cho bạn về các phiên bản mới nhưng sẽ không tự động tải xuống."
   },
   "updateSection.downloadNow": {
     "defaultMessage": "Tải ngay"
@@ -3186,7 +3186,7 @@
     "defaultMessage": "Cần cài đặt thủ công cho phương thức cập nhật này."
   },
   "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ Bản cập nhật đã sẵn sàng. Khởi động lại Goose để hoàn tất cài đặt, hoặc thoát khi bạn đã xong."
+    "defaultMessage": "✓ Bản cập nhật đã sẵn sàng. Khởi động lại Gosling để hoàn tất cài đặt, hoặc thoát khi bạn đã xong."
   },
   "updateSection.readyInstallManual": {
     "defaultMessage": "✓ Bản cập nhật đã sẵn sàng! Nhấp vào \"Cài đặt & khởi động lại\" để xem hướng dẫn cài đặt."

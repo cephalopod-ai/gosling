@@ -39,7 +39,7 @@
     "defaultMessage": "Kelayakan dipadam"
   },
   "authSettings.description": {
-    "defaultMessage": "Urus kelayakan pembekal yang disimpan secara setempat oleh goose."
+    "defaultMessage": "Urus kelayakan pembekal yang disimpan secara setempat oleh gosling."
   },
   "authSettings.empty": {
     "defaultMessage": "Tiada kelayakan pembekal yang disimpan secara setempat ditemui."
@@ -120,10 +120,10 @@
     "defaultMessage": "Lancarkan"
   },
   "chat.notification.taskComplete.body": {
-    "defaultMessage": "Klik di sini untuk membawa Goose kembali ke fokus."
+    "defaultMessage": "Klik di sini untuk membawa Gosling kembali ke fokus."
   },
   "chat.notification.taskComplete.title": {
-    "defaultMessage": "Goose telah menyelesaikan tugasan."
+    "defaultMessage": "Gosling telah menyelesaikan tugasan."
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Tetingkap konteks"
@@ -171,13 +171,13 @@
     "defaultMessage": "Menunggu imej disimpan..."
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "Pilih mod lalai yang Goose gunakan untuk sesi baharu. Sesi sedia ada mengekalkan mod semasanya."
+    "defaultMessage": "Pilih mod lalai yang Gosling gunakan untuk sesi baharu. Sesi sedia ada mengekalkan mod semasanya."
   },
   "chatSettings.modeTitle": {
     "defaultMessage": "Mod Lalai"
   },
   "chatSettings.responseStylesDescription": {
-    "defaultMessage": "Pilih cara Goose memformat dan menggaya respons"
+    "defaultMessage": "Pilih cara Gosling memformat dan menggaya respons"
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Gaya Respons"
@@ -198,10 +198,10 @@
     "defaultMessage": "Editor Konfigurasi"
   },
   "configSettings.description": {
-    "defaultMessage": "Edit tetapan konfigurasi goose anda"
+    "defaultMessage": "Edit tetapan konfigurasi gosling anda"
   },
   "configSettings.descriptionWithProvider": {
-    "defaultMessage": "Edit tetapan konfigurasi goose anda (tetapan semasa untuk {provider})"
+    "defaultMessage": "Edit tetapan konfigurasi gosling anda (tetapan semasa untuk {provider})"
   },
   "configSettings.done": {
     "defaultMessage": "Selesai"
@@ -273,7 +273,7 @@
     "defaultMessage": "Pusingan Maksimum"
   },
   "conversationLimitsDropdown.maxTurnsDescription": {
-    "defaultMessage": "Pusingan ejen maksimum sebelum Goose meminta input pengguna"
+    "defaultMessage": "Pusingan ejen maksimum sebelum Gosling meminta input pengguna"
   },
   "costTracker.costUnavailable": {
     "defaultMessage": "Data kos tidak tersedia untuk {model} ({inputTokens} token input, {outputTokens} token output)"
@@ -459,7 +459,7 @@
     "defaultMessage": "Edit tetapan {name}"
   },
   "defaultCardButtons.getStarted": {
-    "defaultMessage": "Mulakan dengan goose!"
+    "defaultMessage": "Mulakan dengan gosling!"
   },
   "defaultProviderSetupForm.apiHostLabel": {
     "defaultMessage": "Hos API"
@@ -618,7 +618,7 @@
     "defaultMessage": "Permintaan maklumat telah dibatalkan."
   },
   "elicitationRequest.defaultMessage": {
-    "defaultMessage": "Goose memerlukan beberapa maklumat daripada anda."
+    "defaultMessage": "Gosling memerlukan beberapa maklumat daripada anda."
   },
   "elicitationRequest.expired": {
     "defaultMessage": "Permintaan ini telah luput. Sambungan perlu bertanya semula."
@@ -663,7 +663,7 @@
     "defaultMessage": "Satu ralat telah berlaku."
   },
   "errorBoundary.errorWithVersion": {
-    "defaultMessage": "Satu ralat telah berlaku dalam Goose v{version}."
+    "defaultMessage": "Satu ralat telah berlaku dalam Gosling v{version}."
   },
   "errorBoundary.heading": {
     "defaultMessage": "Honk!"
@@ -849,7 +849,7 @@
     "defaultMessage": "Sambungan yang didayakan di sini digunakan sebagai lalai untuk sembang baharu. Anda juga boleh menogol sambungan aktif semasa sembang."
   },
   "extensionsView.description": {
-    "defaultMessage": "Sambungan ini menggunakan Model Context Protocol (MCP). Ia boleh mengembangkan keupayaan Goose menggunakan tiga komponen utama: Prompts, Resources, dan Tools. {searchShortcut} untuk mencari."
+    "defaultMessage": "Sambungan ini menggunakan Model Context Protocol (MCP). Ia boleh mengembangkan keupayaan Gosling menggunakan tiga komponen utama: Prompts, Resources, dan Tools. {searchShortcut} untuk mencari."
   },
   "extensionsView.heading": {
     "defaultMessage": "Sambungan"
@@ -867,13 +867,13 @@
     "defaultMessage": "AA:BB:CC:... atau sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "Secara lalai goose melancarkan pelayan untuk anda, gunakan ini untuk menyambung ke pelayan goose luaran"
+    "defaultMessage": "Secara lalai gosling melancarkan pelayan untuk anda, gunakan ini untuk menyambung ke pelayan gosling luaran"
   },
   "externalBackendSection.fingerprintRequiresHttps": {
     "defaultMessage": "Certificate fingerprint requires an https URL"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "Perubahan memerlukan memulakan semula Goose untuk berkuat kuasa. Tetingkap sembang baharu akan menyambung ke pelayan luaran."
+    "defaultMessage": "Perubahan memerlukan memulakan semula Gosling untuk berkuat kuasa. Tetingkap sembang baharu akan menyambung ke pelayan luaran."
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "Kunci Rahsia"
@@ -888,10 +888,10 @@
     "defaultMessage": "URL Pelayan"
   },
   "externalBackendSection.serverUrlHelp": {
-    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+    "defaultMessage": "Enter the HTTP(S) base URL. Gosling checks /status and connects to /acp under this base."
   },
   "externalBackendSection.title": {
-    "defaultMessage": "Pelayan Goose"
+    "defaultMessage": "Pelayan Gosling"
   },
   "externalBackendSection.urlBaseError": {
     "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
@@ -906,7 +906,7 @@
     "defaultMessage": "Gunakan pelayan luaran"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "Sambung ke pelayan goose yang berjalan di tempat lain (memerlukan memulakan semula aplikasi)"
+    "defaultMessage": "Sambung ke pelayan gosling yang berjalan di tempat lain (memerlukan memulakan semula aplikasi)"
   },
   "goosehintsModal.close": {
     "defaultMessage": "Tutup"
@@ -915,7 +915,7 @@
     "defaultMessage": "Pembangun"
   },
   "goosehintsModal.dialogDescription": {
-    "defaultMessage": "Berikan konteks tambahan tentang projek anda untuk meningkatkan komunikasi dengan Goose"
+    "defaultMessage": "Berikan konteks tambahan tentang projek anda untuk meningkatkan komunikasi dengan Gosling"
   },
   "goosehintsModal.dialogTitle": {
     "defaultMessage": "Konfigurasikan Petunjuk Projek (.goosehints)"
@@ -936,7 +936,7 @@
     "defaultMessage": "Fail .goosehints dijumpai di: {filePath}"
   },
   "goosehintsModal.helpText1": {
-    "defaultMessage": ".goosehints ialah fail teks yang digunakan untuk memberikan konteks tambahan tentang projek anda dan meningkatkan komunikasi dengan Goose."
+    "defaultMessage": ".goosehints ialah fail teks yang digunakan untuk memberikan konteks tambahan tentang projek anda dan meningkatkan komunikasi dengan Gosling."
   },
   "goosehintsModal.helpText2": {
     "defaultMessage": "Sila pastikan sambungan {bold} didayakan dalam halaman sambungan. Sambungan ini diperlukan untuk menggunakan .goosehints. Anda perlu memulakan semula sesi anda untuk kemas kini .goosehints berkuat kuasa."
@@ -963,13 +963,13 @@
     "defaultMessage": "Konfigurasikan"
   },
   "goosehintsSection.description": {
-    "defaultMessage": "Konfigurasikan fail .goosehints projek anda untuk memberikan konteks tambahan kepada Goose"
+    "defaultMessage": "Konfigurasikan fail .goosehints projek anda untuk memberikan konteks tambahan kepada Gosling"
   },
   "goosehintsSection.title": {
     "defaultMessage": "Petunjuk Projek (.goosehints)"
   },
   "groupedExtensionLoadingToast.askGoose": {
-    "defaultMessage": "Tanya goose"
+    "defaultMessage": "Tanya gosling"
   },
   "groupedExtensionLoadingToast.collapseDetails": {
     "defaultMessage": "Runtuhkan butiran"
@@ -1089,7 +1089,7 @@
     "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
-    "defaultMessage": "imej goose"
+    "defaultMessage": "imej gosling"
   },
   "imagePreview.clickToCollapse": {
     "defaultMessage": "Klik untuk meruntuhkan"
@@ -1152,13 +1152,13 @@
     "defaultMessage": "Pintasan Aplikasi"
   },
   "keyboardShortcuts.categoryApplicationDescription": {
-    "defaultMessage": "Pintasan ini berfungsi apabila Goose ialah aplikasi aktif"
+    "defaultMessage": "Pintasan ini berfungsi apabila Gosling ialah aplikasi aktif"
   },
   "keyboardShortcuts.categoryGlobal": {
     "defaultMessage": "Pintasan Global"
   },
   "keyboardShortcuts.categoryGlobalDescription": {
-    "defaultMessage": "Pintasan ini berfungsi di seluruh sistem, walaupun Goose tidak difokuskan"
+    "defaultMessage": "Pintasan ini berfungsi di seluruh sistem, walaupun Gosling tidak difokuskan"
   },
   "keyboardShortcuts.categorySearch": {
     "defaultMessage": "Pintasan Carian"
@@ -1200,10 +1200,10 @@
     "defaultMessage": "Cari Sebelumnya"
   },
   "keyboardShortcuts.focusWindowDescription": {
-    "defaultMessage": "Bawa tetingkap Goose ke hadapan dari mana-mana sahaja"
+    "defaultMessage": "Bawa tetingkap Gosling ke hadapan dari mana-mana sahaja"
   },
   "keyboardShortcuts.focusWindowLabel": {
-    "defaultMessage": "Fokus Tetingkap Goose"
+    "defaultMessage": "Fokus Tetingkap Gosling"
   },
   "keyboardShortcuts.loading": {
     "defaultMessage": "Memuatkan..."
@@ -1215,7 +1215,7 @@
     "defaultMessage": "Sembang Baharu"
   },
   "keyboardShortcuts.newChatWindowDescription": {
-    "defaultMessage": "Buka tetingkap Goose baharu"
+    "defaultMessage": "Buka tetingkap Gosling baharu"
   },
   "keyboardShortcuts.newChatWindowLabel": {
     "defaultMessage": "Tetingkap Sembang Baharu"
@@ -1254,7 +1254,7 @@
     "defaultMessage": "Set Semula kepada Lalai"
   },
   "keyboardShortcuts.restartDescription": {
-    "defaultMessage": "Perubahan pada pintasan aplikasi (seperti Sembang Baharu, Tetapan, dll.) memerlukan Goose dimulakan semula untuk berkuat kuasa. Pintasan global (Fokus Tetingkap, Pelancar Pantas) berfungsi serta-merta."
+    "defaultMessage": "Perubahan pada pintasan aplikasi (seperti Sembang Baharu, Tetapan, dll.) memerlukan Gosling dimulakan semula untuk berkuat kuasa. Pintasan global (Fokus Tetingkap, Pelancar Pantas) berfungsi serta-merta."
   },
   "keyboardShortcuts.restartRequired": {
     "defaultMessage": "Mula Semula Diperlukan"
@@ -1284,13 +1284,13 @@
     "defaultMessage": "Togol Navigasi"
   },
   "launcher.placeholder": {
-    "defaultMessage": "Tanya goose apa sahaja..."
+    "defaultMessage": "Tanya gosling apa sahaja..."
   },
   "loadingGoose.compacting": {
-    "defaultMessage": "goose sedang memadatkan perbualan..."
+    "defaultMessage": "gosling sedang memadatkan perbualan..."
   },
   "loadingGoose.idle": {
-    "defaultMessage": "goose sedang mengusahakannya…"
+    "defaultMessage": "gosling sedang mengusahakannya…"
   },
   "loadingGoose.loadingConversation": {
     "defaultMessage": "memuatkan perbualan..."
@@ -1299,13 +1299,13 @@
     "defaultMessage": "memulakan semula sesi..."
   },
   "loadingGoose.streaming": {
-    "defaultMessage": "goose sedang mengusahakannya…"
+    "defaultMessage": "gosling sedang mengusahakannya…"
   },
   "loadingGoose.thinking": {
-    "defaultMessage": "goose sedang berfikir…"
+    "defaultMessage": "gosling sedang berfikir…"
   },
   "loadingGoose.waiting": {
-    "defaultMessage": "goose sedang menunggu…"
+    "defaultMessage": "gosling sedang menunggu…"
   },
   "localInferenceSettings.deleteConfirm": {
     "defaultMessage": "Padam model ini? Anda boleh memuat turunnya semula kemudian."
@@ -1896,7 +1896,7 @@
     "defaultMessage": "Pelayan mungkin sedang dimulakan atau tidak tersedia buat sementara waktu."
   },
   "onboardingGuard.checkProviderErrorTitle": {
-    "defaultMessage": "Tidak dapat menyambung ke pelayan Goose"
+    "defaultMessage": "Tidak dapat menyambung ke pelayan Gosling"
   },
   "onboardingGuard.retry": {
     "defaultMessage": "Cuba Semula"
@@ -1905,10 +1905,10 @@
     "defaultMessage": "Ejen AI tempatan anda. Sambungkan penyedia model AI untuk bermula."
   },
   "onboardingGuard.welcomeTitle": {
-    "defaultMessage": "Selamat datang ke goose"
+    "defaultMessage": "Selamat datang ke gosling"
   },
   "onboardingSuccess.allSet": {
-    "defaultMessage": "Anda sudah bersedia untuk mula menggunakan goose."
+    "defaultMessage": "Anda sudah bersedia untuk mula menggunakan gosling."
   },
   "onboardingSuccess.connectedTo": {
     "defaultMessage": "Disambungkan ke {providerName}"
@@ -1923,7 +1923,7 @@
     "defaultMessage": "Model setempat sedia"
   },
   "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "Data penggunaan tanpa nama membantu menambah baik goose. Kami tidak sekali-kali mengumpul perbualan, kod atau data peribadi anda."
+    "defaultMessage": "Data penggunaan tanpa nama membantu menambah baik gosling. Kami tidak sekali-kali mengumpul perbualan, kod atau data peribadi anda."
   },
   "onboardingSuccess.privacyTitle": {
     "defaultMessage": "Privasi"
@@ -1998,10 +1998,10 @@
     "defaultMessage": "Metrik sesi (tempoh, kiraan interaksi, penggunaan token)"
   },
   "privacyInfoModal.collectVersion": {
-    "defaultMessage": "Versi goose dan kaedah pemasangan"
+    "defaultMessage": "Versi gosling dan kaedah pemasangan"
   },
   "privacyInfoModal.description": {
-    "defaultMessage": "Data penggunaan tanpa nama membantu kami memahami cara goose digunakan dan mengenal pasti bidang untuk penambahbaikan."
+    "defaultMessage": "Data penggunaan tanpa nama membantu kami memahami cara gosling digunakan dan mengenal pasti bidang untuk penambahbaikan."
   },
   "privacyInfoModal.neverCollect": {
     "defaultMessage": "Kami tidak sekali-kali mengumpul perbualan, kod, argumen alat, mesej ralat atau sebarang data peribadi anda. Anda boleh menukar tetapan ini pada bila-bila masa dalam Tetapan."
@@ -2070,7 +2070,7 @@
     "defaultMessage": "Gagal menyimpan gesaan"
   },
   "promptsSettings.promptEditingDescription": {
-    "defaultMessage": "Sesuaikan gesaan yang mentakrifkan tingkah laku goose dalam konteks yang berbeza. Gesaan ini menggunakan sintaks templat Jinja2. Berhati-hati semasa mengubah suai pemboleh ubah templat, kerana perubahan yang salah boleh merosakkan fungsi. Sila kongsikan sebarang penambahbaikan dengan komuniti."
+    "defaultMessage": "Sesuaikan gesaan yang mentakrifkan tingkah laku gosling dalam konteks yang berbeza. Gesaan ini menggunakan sintaks templat Jinja2. Berhati-hati semasa mengubah suai pemboleh ubah templat, kerana perubahan yang salah boleh merosakkan fungsi. Sila kongsikan sebarang penambahbaikan dengan komuniti."
   },
   "promptsSettings.promptEditingTitle": {
     "defaultMessage": "Pengeditan Gesaan"
@@ -2166,7 +2166,7 @@
     "defaultMessage": "Sedang log masuk..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
-    "defaultMessage": "Tambah kunci API anda untuk penyedia ini bagi disepadukan ke dalam goose"
+    "defaultMessage": "Tambah kunci API anda untuk penyedia ini bagi disepadukan ke dalam gosling"
   },
   "providerConfigurationModal.browserWindowHint": {
     "defaultMessage": "Tetingkap pelayar akan dibuka untuk anda melengkapkan log masuk."
@@ -2202,7 +2202,7 @@
     "defaultMessage": "Ralat"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "Penyedia ini dikonfigurasikan di luar goose. Ikuti langkah-langkah ini:"
+    "defaultMessage": "Penyedia ini dikonfigurasikan di luar gosling. Ikuti langkah-langkah ini:"
   },
   "providerConfigurationModal.goBack": {
     "defaultMessage": "Kembali"
@@ -2280,7 +2280,7 @@
     "defaultMessage": "Memuatkan penyedia..."
   },
   "providerSettings.onboardingDescription": {
-    "defaultMessage": "Pilih penyedia model AI untuk bermula dengan goose. Anda perlu menggunakan kunci API yang dijana oleh setiap penyedia yang akan disulitkan dan disimpan secara setempat. Anda boleh menukar penyedia anda pada bila-bila masa dalam tetapan."
+    "defaultMessage": "Pilih penyedia model AI untuk bermula dengan gosling. Anda perlu menggunakan kunci API yang dijana oleh setiap penyedia yang akan disulitkan dan disimpan secara setempat. Anda boleh menukar penyedia anda pada bila-bila masa dalam tetapan."
   },
   "providerSettings.otherProviders": {
     "defaultMessage": "Penyedia lain"
@@ -2493,7 +2493,7 @@
     "defaultMessage": "Cuba Lagi"
   },
   "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Goose"
+    "defaultMessage": "Gosling"
   },
   "sessionViewComponents.role.user": {
     "defaultMessage": "Anda"
@@ -2523,7 +2523,7 @@
     "defaultMessage": "Sejarah sembang"
   },
   "sessions.chatHistoryDesc": {
-    "defaultMessage": "Lihat dan cari perbualan lepas anda dengan Goose. {shortcut} untuk mencari."
+    "defaultMessage": "Lihat dan cari perbualan lepas anda dengan Gosling. {shortcut} untuk mencari."
   },
   "sessions.close": {
     "defaultMessage": "Tutup"
@@ -2559,10 +2559,10 @@
     "defaultMessage": "Import Pautan"
   },
   "sessions.importNostr.description": {
-    "defaultMessage": "Tampal pautan kongsi Nostr Goose untuk mengambil, menyahsulit, dan mengimport sesi."
+    "defaultMessage": "Tampal pautan kongsi Nostr Gosling untuk mengambil, menyahsulit, dan mengimport sesi."
   },
   "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
+    "defaultMessage": "gosling://sessions/nostr?nevent=...&key=..."
   },
   "sessions.importNostr.title": {
     "defaultMessage": "Import Sesi Nostr"
@@ -2631,7 +2631,7 @@
     "defaultMessage": "Penerangan sesi berjaya dikemas kini"
   },
   "settings.appearance.description": {
-    "defaultMessage": "Konfigurasikan cara goose muncul pada sistem anda"
+    "defaultMessage": "Konfigurasikan cara gosling muncul pada sistem anda"
   },
   "settings.appearance.title": {
     "defaultMessage": "Penampilan"
@@ -2646,13 +2646,13 @@
     "defaultMessage": "Penjejakan Kos"
   },
   "settings.dockIcon.description": {
-    "defaultMessage": "Tunjukkan goose dalam dok"
+    "defaultMessage": "Tunjukkan gosling dalam dok"
   },
   "settings.dockIcon.title": {
     "defaultMessage": "Ikon dok"
   },
   "settings.help.description": {
-    "defaultMessage": "Bantu kami menambah baik goose dengan melaporkan isu atau meminta ciri baharu"
+    "defaultMessage": "Bantu kami menambah baik gosling dengan melaporkan isu atau meminta ciri baharu"
   },
   "settings.help.reportBug": {
     "defaultMessage": "Laporkan Pepijat"
@@ -2664,7 +2664,7 @@
     "defaultMessage": "Bantuan & maklum balas"
   },
   "settings.language.description": {
-    "defaultMessage": "Pilih bahasa paparan untuk goose"
+    "defaultMessage": "Pilih bahasa paparan untuk gosling"
   },
   "settings.language.english": {
     "defaultMessage": "English"
@@ -2721,7 +2721,7 @@
     "defaultMessage": "Bahasa Cina (Tradisional)"
   },
   "settings.menuBarIcon.description": {
-    "defaultMessage": "Tunjukkan goose dalam bar menu"
+    "defaultMessage": "Tunjukkan gosling dalam bar menu"
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "Ikon bar menu"
@@ -2742,7 +2742,7 @@
     "defaultMessage": "Klik pada Notifications"
   },
   "settings.notifications.modal.macStep3": {
-    "defaultMessage": "Cari dan pilih goose dalam senarai aplikasi"
+    "defaultMessage": "Cari dan pilih gosling dalam senarai aplikasi"
   },
   "settings.notifications.modal.macStep4": {
     "defaultMessage": "Dayakan pemberitahuan dan laraskan tetapan mengikut kehendak"
@@ -2760,7 +2760,7 @@
     "defaultMessage": "Pergi ke System > Notifications"
   },
   "settings.notifications.modal.winStep3": {
-    "defaultMessage": "Cari dan pilih goose dalam senarai aplikasi"
+    "defaultMessage": "Cari dan pilih gosling dalam senarai aplikasi"
   },
   "settings.notifications.modal.winStep4": {
     "defaultMessage": "Hidupkan pemberitahuan dan laraskan tetapan mengikut kehendak"
@@ -2769,7 +2769,7 @@
     "defaultMessage": "Buka Tetapan"
   },
   "settings.notifications.task.description": {
-    "defaultMessage": "Beritahu apabila Goose menyelesaikan tugasan semasa tetingkap berada di latar belakang"
+    "defaultMessage": "Beritahu apabila Gosling menyelesaikan tugasan semasa tetingkap berada di latar belakang"
   },
   "settings.notifications.task.title": {
     "defaultMessage": "Pemberitahuan penyelesaian tugasan"
@@ -2778,19 +2778,19 @@
     "defaultMessage": "Pemberitahuan"
   },
   "settings.preventSleep.description": {
-    "defaultMessage": "Pastikan komputer anda kekal terjaga semasa goose sedang menjalankan tugasan (skrin masih boleh dikunci)"
+    "defaultMessage": "Pastikan komputer anda kekal terjaga semasa gosling sedang menjalankan tugasan (skrin masih boleh dikunci)"
   },
   "settings.preventSleep.title": {
     "defaultMessage": "Cegah Tidur"
   },
   "settings.theme.description": {
-    "defaultMessage": "Sesuaikan rupa dan rasa goose"
+    "defaultMessage": "Sesuaikan rupa dan rasa gosling"
   },
   "settings.theme.title": {
     "defaultMessage": "Tema"
   },
   "settings.updates.description": {
-    "defaultMessage": "Semak dan pasang kemas kini untuk memastikan goose berjalan dengan terbaik"
+    "defaultMessage": "Semak dan pasang kemas kini untuk memastikan gosling berjalan dengan terbaik"
   },
   "settings.updates.title": {
     "defaultMessage": "Kemas Kini"
@@ -2868,7 +2868,7 @@
     "defaultMessage": "Cari kemahiran..."
   },
   "skillsView.skillsDescription": {
-    "defaultMessage": "Lihat kemahiran terpasang yang meluaskan keupayaan Goose. {shortcut} untuk mencari."
+    "defaultMessage": "Lihat kemahiran terpasang yang meluaskan keupayaan Gosling. {shortcut} untuk mencari."
   },
   "skillsView.skillsTitle": {
     "defaultMessage": "Kemahiran"
@@ -3018,10 +3018,10 @@
     "defaultMessage": "Gunakan penyedia lain"
   },
   "telemetryConsentPrompt.description": {
-    "defaultMessage": "Adakah anda ingin berkongsi data penggunaan tanpa nama untuk membantu menambah baik goose? Kami tidak pernah mengumpul perbualan, kod, atau data peribadi anda."
+    "defaultMessage": "Adakah anda ingin berkongsi data penggunaan tanpa nama untuk membantu menambah baik gosling? Kami tidak pernah mengumpul perbualan, kod, atau data peribadi anda."
   },
   "telemetryConsentPrompt.heading": {
-    "defaultMessage": "Bantu menambah baik goose"
+    "defaultMessage": "Bantu menambah baik gosling"
   },
   "telemetryConsentPrompt.learnMore": {
     "defaultMessage": "Ketahui lebih lanjut"
@@ -3048,7 +3048,7 @@
     "defaultMessage": "Privasi"
   },
   "telemetrySettings.toggleDescription": {
-    "defaultMessage": "Bantu menambah baik goose dengan berkongsi statistik penggunaan tanpa nama."
+    "defaultMessage": "Bantu menambah baik gosling dengan berkongsi statistik penggunaan tanpa nama."
   },
   "telemetrySettings.toggleLabel": {
     "defaultMessage": "Data penggunaan tanpa nama"
@@ -3126,10 +3126,10 @@
     "defaultMessage": "Benarkan {toolName}?"
   },
   "toolConfirmation.gooseWouldLikeToCallWithName": {
-    "defaultMessage": "Goose ingin memanggil {toolName}. Benarkan?"
+    "defaultMessage": "Gosling ingin memanggil {toolName}. Benarkan?"
   },
   "updateSection.autoDownload": {
-    "defaultMessage": "Goose akan memuat turun kemas kini di latar belakang dan memasangnya pada kali seterusnya anda keluar atau mula semula."
+    "defaultMessage": "Gosling akan memuat turun kemas kini di latar belakang dan memasangnya pada kali seterusnya anda keluar atau mula semula."
   },
   "updateSection.autoDownloadDisabledByEnv": {
     "defaultMessage": "Muat turun automatik dilumpuhkan melalui pemboleh ubah persekitaran GOOSE_DISABLE_AUTO_DOWNLOAD."
@@ -3153,7 +3153,7 @@
     "defaultMessage": "Lumpuhkan muat turun kemas kini automatik"
   },
   "updateSection.disableAutoDownloadDesc": {
-    "defaultMessage": "Apabila didayakan, Goose akan memberitahu anda tentang versi baharu tetapi tidak akan memuat turunnya secara automatik."
+    "defaultMessage": "Apabila didayakan, Gosling akan memberitahu anda tentang versi baharu tetapi tidak akan memuat turunnya secara automatik."
   },
   "updateSection.downloadNow": {
     "defaultMessage": "Muat Turun Sekarang"
@@ -3186,7 +3186,7 @@
     "defaultMessage": "Pemasangan manual diperlukan untuk kaedah kemas kini ini."
   },
   "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ Kemas kini sudah sedia. Mula semula Goose untuk menyelesaikan pemasangannya, atau keluar apabila anda selesai."
+    "defaultMessage": "✓ Kemas kini sudah sedia. Mula semula Gosling untuk menyelesaikan pemasangannya, atau keluar apabila anda selesai."
   },
   "updateSection.readyInstallManual": {
     "defaultMessage": "✓ Kemas kini sudah sedia! Klik \"Pasang & Mula Semula\" untuk arahan pemasangan."

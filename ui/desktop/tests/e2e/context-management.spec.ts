@@ -67,7 +67,7 @@ test.describe('Context Management E2E Tests', () => {
     // Verify compaction loading state
     const loadingGoose = goosePage.locator('[data-testid="loading-goose"]');
     await expect(loadingGoose).toBeVisible();
-    await expect(loadingGoose).toContainText('goose is compacting the conversation...');
+    await expect(loadingGoose).toContainText('gosling is compacting the conversation...');
     
     // Wait for compaction to complete
     await goosePage.waitForSelector('[data-testid="loading-goose"]', { state: 'hidden', timeout: 30000 });
@@ -220,7 +220,7 @@ test.describe('Context Management E2E Tests', () => {
     // Verify loading state immediately after clicking compact
     const loadingGoose = goosePage.locator('[data-testid="loading-goose"]');
     await expect(loadingGoose).toBeVisible();
-    await expect(loadingGoose).toContainText('goose is compacting the conversation...');
+    await expect(loadingGoose).toContainText('gosling is compacting the conversation...');
     
     // Verify chat input is disabled during compaction
     const submitButton = goosePage.locator('[data-testid="submit-button"]');

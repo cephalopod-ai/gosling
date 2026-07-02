@@ -19,8 +19,8 @@ type SidebarItem = {
 };
 
 const config: Config = {
-  title: "goose | Your open source AI agent",
-  tagline: "your local AI agent, automating engineering tasks seamlessly",
+  title: "gosling | Your open source AI agent",
+  tagline: "a lighter goose — your local AI agent, automating engineering tasks seamlessly",
   favicon: "img/favicon.ico",
 
   // Set the production url of your site here
@@ -414,7 +414,7 @@ const config: Config = {
     navbar: {
       title: "",
       logo: {
-        alt: "goose Logo", // TODO: replace logo assets with AAIF branding
+        alt: "gosling Logo",
         src: "img/logo_light.png",
         srcDark: "img/logo_dark.png",
       },
@@ -482,7 +482,7 @@ const config: Config = {
           title: "Quick Links",
           items: [
             {
-              label: "Install goose",
+              label: "Install gosling",
               to: "docs/getting-started/installation",
             },
             {
@@ -552,7 +552,7 @@ const config: Config = {
         primaryBrandColor: "#1E1E1E",
       },
       aiChatSettings: {
-        chatSubjectName: "goose",
+        chatSubjectName: "gosling",
         botAvatarSrcUrl: "",
         getHelpCallToActions: [
           {
@@ -563,13 +563,13 @@ const config: Config = {
             },
           },
         ],
-        quickQuestions: ["What is goose?"],
+        quickQuestions: ["What is gosling?"],
       },
     },
     announcementBar: {
       id: 'goose-aaif-announcement', // Increment on new announcements to reuse the bar
       content:
-        '✨ goose has moved to the Agentic AI Foundation (AAIF): <a href="/blog/2026/04/07/goose-moves-to-aaif">Learn more</a>! ✨',
+        '🐥 gosling is a lighter fork of goose v1.38 — same agent, smaller footprint. ✨',
       backgroundColor: '#20232a',
       textColor: '#fff',
       isCloseable: true,

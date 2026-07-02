@@ -7,14 +7,14 @@
 
 const { execSync } = require('child_process');
 
-const PROTOCOL = 'goose';
+const PROTOCOL = 'gosling';
 
 function unregisterAllProtocolHandlers() {
   console.log('Unregistering ALL goose:// protocol handlers...');
   
   try {
     // Get all registered Goose apps
-    console.log('Finding all registered Goose applications...');
+    console.log('Finding all registered Gosling applications...');
     const lsregisterOutput = execSync(`/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -dump | grep -B 10 -A 10 "claimed schemes:.*${PROTOCOL}:"`, { encoding: 'utf8' });
     
     // Extract app paths from the output
@@ -24,13 +24,13 @@ function unregisterAllProtocolHandlers() {
     if (pathMatches) {
       pathMatches.forEach(match => {
         const path = match.replace(/path:\s+/, '').trim();
-        if (path.includes('Goose') || path.includes('goose')) {
+        if (path.includes('Gosling') || path.includes('gosling')) {
           uniquePaths.add(path);
         }
       });
     }
     
-    console.log(`Found ${uniquePaths.size} Goose app(s) to unregister:`);
+    console.log(`Found ${uniquePaths.size} Gosling app(s) to unregister:`);
     uniquePaths.forEach(path => console.log(`  - ${path}`));
     
     // Unregister each app
@@ -48,9 +48,9 @@ function unregisterAllProtocolHandlers() {
     // Also try to unregister by bundle identifier
     console.log('\nUnregistering by bundle identifier...');
     const bundleIds = [
-      'com.electron.goose',
-      'com.block.goose',
-      'com.block.goose.dev'
+      'com.electron.gosling',
+      'com.block.gosling',
+      'com.block.gosling.dev'
     ];
     
     bundleIds.forEach(bundleId => {
@@ -70,15 +70,15 @@ function unregisterAllProtocolHandlers() {
       console.log('Warning: Could not rebuild Launch Services database');
     }
     
-    console.log(`\n✅ Successfully processed ${unregisteredCount} Goose applications`);
+    console.log(`\n✅ Successfully processed ${unregisteredCount} Gosling applications`);
     console.log('All goose:// protocol handlers have been unregistered.');
     console.log('\nNote: You may need to restart your system for changes to take full effect.');
     
   } catch (error) {
     console.error('Error during unregistration:', error.message);
     console.log('\nManual cleanup options:');
-    console.log('1. Use Activity Monitor to quit all Goose processes');
-    console.log('2. Delete Goose apps from Applications folder');
+    console.log('1. Use Activity Monitor to quit all Gosling processes');
+    console.log('2. Delete Gosling apps from Applications folder');
     console.log('3. Run: sudo /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -kill -r -domain local -domain system -domain user');
   }
 }

@@ -39,7 +39,7 @@
     "defaultMessage": "Удалить учетные данные"
   },
   "authSettings.description": {
-    "defaultMessage": "Управляйте учетными данными провайдеров, сохраненными локально в goose."
+    "defaultMessage": "Управляйте учетными данными провайдеров, сохраненными локально в gosling."
   },
   "authSettings.empty": {
     "defaultMessage": "Локально сохраненные учетные данные провайдеров не найдены."
@@ -120,10 +120,10 @@
     "defaultMessage": "Запустить"
   },
   "chat.notification.taskComplete.body": {
-    "defaultMessage": "Нажмите здесь, чтобы сфокусироваться на Goose."
+    "defaultMessage": "Нажмите здесь, чтобы сфокусироваться на Gosling."
   },
   "chat.notification.taskComplete.title": {
-    "defaultMessage": "Goose завершил задачу."
+    "defaultMessage": "Gosling завершил задачу."
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Контекстное окно"
@@ -171,13 +171,13 @@
     "defaultMessage": "Ожидание сохранения изображений..."
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "Настройте как Goose взаимодействует с инструментами и расширениями"
+    "defaultMessage": "Настройте как Gosling взаимодействует с инструментами и расширениями"
   },
   "chatSettings.modeTitle": {
     "defaultMessage": "Режим"
   },
   "chatSettings.responseStylesDescription": {
-    "defaultMessage": "Выберите как Goose должен форматировать и оформлять ответы"
+    "defaultMessage": "Выберите как Gosling должен форматировать и оформлять ответы"
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Стили ответов"
@@ -198,10 +198,10 @@
     "defaultMessage": "Редактор конфигурации"
   },
   "configSettings.description": {
-    "defaultMessage": "Измените настройки конфигурации goose"
+    "defaultMessage": "Измените настройки конфигурации gosling"
   },
   "configSettings.descriptionWithProvider": {
-    "defaultMessage": "Измените настройки конфигурации goose (текущие настройки для {provider})"
+    "defaultMessage": "Измените настройки конфигурации gosling (текущие настройки для {provider})"
   },
   "configSettings.done": {
     "defaultMessage": "Готово"
@@ -459,7 +459,7 @@
     "defaultMessage": "Изменить параметры {name}"
   },
   "defaultCardButtons.getStarted": {
-    "defaultMessage": "Начните работу с goose!"
+    "defaultMessage": "Начните работу с gosling!"
   },
   "defaultProviderSetupForm.apiHostLabel": {
     "defaultMessage": "Хост API"
@@ -618,7 +618,7 @@
     "defaultMessage": "Запрос на информацию был отменен."
   },
   "elicitationRequest.defaultMessage": {
-    "defaultMessage": "Goose нужна от вас дополнительная информация."
+    "defaultMessage": "Gosling нужна от вас дополнительная информация."
   },
   "elicitationRequest.expired": {
     "defaultMessage": "Срок действия запроса истек. Расширению нужно будет запросить его снова."
@@ -663,7 +663,7 @@
     "defaultMessage": "Произошла ошибка."
   },
   "errorBoundary.errorWithVersion": {
-    "defaultMessage": "Произошла ошибка в Goose v{version}."
+    "defaultMessage": "Произошла ошибка в Gosling v{version}."
   },
   "errorBoundary.heading": {
     "defaultMessage": "Га-га!"
@@ -846,7 +846,7 @@
     "defaultMessage": "Расширения, включенные здесь, используются по умолчанию для новых чатов. Активные расширения также можно переключать во время чата."
   },
   "extensionsView.description": {
-    "defaultMessage": "Эти расширения используют Model Context Protocol (MCP). Они расширяют возможности Goose с помощью трех основных компонентов: промптов, ресурсов и инструментов. {searchShortcut} для поиска."
+    "defaultMessage": "Эти расширения используют Model Context Protocol (MCP). Они расширяют возможности Gosling с помощью трех основных компонентов: промптов, ресурсов и инструментов. {searchShortcut} для поиска."
   },
   "extensionsView.heading": {
     "defaultMessage": "Расширения"
@@ -867,13 +867,13 @@
     "defaultMessage": "AA:BB:CC:... or sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "По умолчанию goose запускает сервер за вас; используйте это для подключения к внешнему серверу goose"
+    "defaultMessage": "По умолчанию gosling запускает сервер за вас; используйте это для подключения к внешнему серверу gosling"
   },
   "externalBackendSection.fingerprintRequiresHttps": {
     "defaultMessage": "Certificate fingerprint requires an https URL"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "Чтобы изменения вступили в силу, требуется перезапуск Goose. Новые окна чата будут подключаться к внешнему серверу."
+    "defaultMessage": "Чтобы изменения вступили в силу, требуется перезапуск Gosling. Новые окна чата будут подключаться к внешнему серверу."
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "Секретный ключ"
@@ -888,10 +888,10 @@
     "defaultMessage": "URL сервера"
   },
   "externalBackendSection.serverUrlHelp": {
-    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+    "defaultMessage": "Enter the HTTP(S) base URL. Gosling checks /status and connects to /acp under this base."
   },
   "externalBackendSection.title": {
-    "defaultMessage": "Сервер Goose"
+    "defaultMessage": "Сервер Gosling"
   },
   "externalBackendSection.urlBaseError": {
     "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
@@ -906,7 +906,7 @@
     "defaultMessage": "Использовать внешний сервер"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "Подключиться к серверу goose, запущенному в другом месте (требуется перезапуск приложения)"
+    "defaultMessage": "Подключиться к серверу gosling, запущенному в другом месте (требуется перезапуск приложения)"
   },
   "goosehintsModal.close": {
     "defaultMessage": "Закрыть"
@@ -915,7 +915,7 @@
     "defaultMessage": "Разработчик"
   },
   "goosehintsModal.dialogDescription": {
-    "defaultMessage": "Предоставьте дополнительный контекст о проекте, чтобы улучшить взаимодействие с Goose"
+    "defaultMessage": "Предоставьте дополнительный контекст о проекте, чтобы улучшить взаимодействие с Gosling"
   },
   "goosehintsModal.dialogTitle": {
     "defaultMessage": "Настроить подсказки проекта (.goosehints)"
@@ -936,7 +936,7 @@
     "defaultMessage": "Файл .goosehints найден по пути: {filePath}"
   },
   "goosehintsModal.helpText1": {
-    "defaultMessage": ".goosehints — это текстовый файл для дополнительного контекста о проекте и улучшения взаимодействия с Goose."
+    "defaultMessage": ".goosehints — это текстовый файл для дополнительного контекста о проекте и улучшения взаимодействия с Gosling."
   },
   "goosehintsModal.helpText2": {
     "defaultMessage": "Убедитесь, что расширение {bold} включено на странице расширений. Оно необходимо для использования .goosehints. Чтобы обновления .goosehints вступили в силу, перезапустите сеанс."
@@ -963,13 +963,13 @@
     "defaultMessage": "Настроить"
   },
   "goosehintsSection.description": {
-    "defaultMessage": "Настройте файл .goosehints вашего проекта, чтобы предоставить Goose дополнительный контекст"
+    "defaultMessage": "Настройте файл .goosehints вашего проекта, чтобы предоставить Gosling дополнительный контекст"
   },
   "goosehintsSection.title": {
     "defaultMessage": "Подсказки проекта (.goosehints)"
   },
   "groupedExtensionLoadingToast.askGoose": {
-    "defaultMessage": "Спросить goose"
+    "defaultMessage": "Спросить gosling"
   },
   "groupedExtensionLoadingToast.collapseDetails": {
     "defaultMessage": "Свернуть детали"
@@ -1089,7 +1089,7 @@
     "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
-    "defaultMessage": "изображение goose"
+    "defaultMessage": "изображение gosling"
   },
   "imagePreview.clickToCollapse": {
     "defaultMessage": "Нажмите, чтобы свернуть"
@@ -1152,13 +1152,13 @@
     "defaultMessage": "Горячие клавиши приложения"
   },
   "keyboardShortcuts.categoryApplicationDescription": {
-    "defaultMessage": "Эти сочетания работают, когда Goose является активным приложением"
+    "defaultMessage": "Эти сочетания работают, когда Gosling является активным приложением"
   },
   "keyboardShortcuts.categoryGlobal": {
     "defaultMessage": "Глобальные горячие клавиши"
   },
   "keyboardShortcuts.categoryGlobalDescription": {
-    "defaultMessage": "Эти сочетания работают во всей системе, даже когда Goose не в фокусе"
+    "defaultMessage": "Эти сочетания работают во всей системе, даже когда Gosling не в фокусе"
   },
   "keyboardShortcuts.categorySearch": {
     "defaultMessage": "Горячие клавиши поиска"
@@ -1200,10 +1200,10 @@
     "defaultMessage": "Найти предыдущее"
   },
   "keyboardShortcuts.focusWindowDescription": {
-    "defaultMessage": "Вывести окно Goose на передний план из любого места"
+    "defaultMessage": "Вывести окно Gosling на передний план из любого места"
   },
   "keyboardShortcuts.focusWindowLabel": {
-    "defaultMessage": "Сфокусировать окно Goose"
+    "defaultMessage": "Сфокусировать окно Gosling"
   },
   "keyboardShortcuts.loading": {
     "defaultMessage": "Загрузка..."
@@ -1215,7 +1215,7 @@
     "defaultMessage": "Новый чат"
   },
   "keyboardShortcuts.newChatWindowDescription": {
-    "defaultMessage": "Открыть новое окно Goose"
+    "defaultMessage": "Открыть новое окно Gosling"
   },
   "keyboardShortcuts.newChatWindowLabel": {
     "defaultMessage": "Новое окно чата"
@@ -1254,7 +1254,7 @@
     "defaultMessage": "Сбросить к значениям по умолчанию"
   },
   "keyboardShortcuts.restartDescription": {
-    "defaultMessage": "Чтобы изменения сочетаний приложения (например, Новый чат, Настройки и т. д.) вступили в силу, требуется перезапуск Goose. Глобальные сочетания (Фокус окна, Быстрый запуск) работают сразу."
+    "defaultMessage": "Чтобы изменения сочетаний приложения (например, Новый чат, Настройки и т. д.) вступили в силу, требуется перезапуск Gosling. Глобальные сочетания (Фокус окна, Быстрый запуск) работают сразу."
   },
   "keyboardShortcuts.restartRequired": {
     "defaultMessage": "Требуется перезапуск"
@@ -1284,13 +1284,13 @@
     "defaultMessage": "Переключить навигацию"
   },
   "launcher.placeholder": {
-    "defaultMessage": "Спросите goose о чем угодно..."
+    "defaultMessage": "Спросите gosling о чем угодно..."
   },
   "loadingGoose.compacting": {
-    "defaultMessage": "goose сжимает разговор..."
+    "defaultMessage": "gosling сжимает разговор..."
   },
   "loadingGoose.idle": {
-    "defaultMessage": "goose работает над этим…"
+    "defaultMessage": "gosling работает над этим…"
   },
   "loadingGoose.loadingConversation": {
     "defaultMessage": "загрузка разговора..."
@@ -1299,13 +1299,13 @@
     "defaultMessage": "перезапуск сеанса..."
   },
   "loadingGoose.streaming": {
-    "defaultMessage": "goose работает над этим…"
+    "defaultMessage": "gosling работает над этим…"
   },
   "loadingGoose.thinking": {
-    "defaultMessage": "goose думает…"
+    "defaultMessage": "gosling думает…"
   },
   "loadingGoose.waiting": {
-    "defaultMessage": "goose ждет…"
+    "defaultMessage": "gosling ждет…"
   },
   "localInferenceSettings.deleteConfirm": {
     "defaultMessage": "Удалить эту модель? Позже ее можно скачать снова."
@@ -1896,7 +1896,7 @@
     "defaultMessage": "Сервер может запускаться или быть временно недоступен."
   },
   "onboardingGuard.checkProviderErrorTitle": {
-    "defaultMessage": "Не удалось подключиться к серверу Goose"
+    "defaultMessage": "Не удалось подключиться к серверу Gosling"
   },
   "onboardingGuard.retry": {
     "defaultMessage": "Повторить"
@@ -1905,10 +1905,10 @@
     "defaultMessage": "Ваш локальный ИИ-агент. Подключите провайдера ИИ-модели, чтобы начать."
   },
   "onboardingGuard.welcomeTitle": {
-    "defaultMessage": "Добро пожаловать в goose"
+    "defaultMessage": "Добро пожаловать в gosling"
   },
   "onboardingSuccess.allSet": {
-    "defaultMessage": "Все готово для начала работы с goose."
+    "defaultMessage": "Все готово для начала работы с gosling."
   },
   "onboardingSuccess.connectedTo": {
     "defaultMessage": "Подключено к {providerName}"
@@ -1923,7 +1923,7 @@
     "defaultMessage": "Локальная модель готова"
   },
   "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "Анонимные данные об использовании помогают улучшать goose. Мы никогда не собираем ваши разговоры, код или персональные данные."
+    "defaultMessage": "Анонимные данные об использовании помогают улучшать gosling. Мы никогда не собираем ваши разговоры, код или персональные данные."
   },
   "onboardingSuccess.privacyTitle": {
     "defaultMessage": "Конфиденциальность"
@@ -1998,10 +1998,10 @@
     "defaultMessage": "Метрики сеанса (длительность, число взаимодействий, использование токенов)"
   },
   "privacyInfoModal.collectVersion": {
-    "defaultMessage": "Версия goose и способ установки"
+    "defaultMessage": "Версия gosling и способ установки"
   },
   "privacyInfoModal.description": {
-    "defaultMessage": "Анонимные данные об использовании помогают понять как используется goose и найти области для улучшения."
+    "defaultMessage": "Анонимные данные об использовании помогают понять как используется gosling и найти области для улучшения."
   },
   "privacyInfoModal.neverCollect": {
     "defaultMessage": "Мы никогда не собираем ваши разговоры, код, аргументы инструментов, сообщения об ошибках или персональные данные. Эту настройку можно изменить в любое время в настройках."
@@ -2070,7 +2070,7 @@
     "defaultMessage": "Не удалось сохранить промпт"
   },
   "promptsSettings.promptEditingDescription": {
-    "defaultMessage": "Настраивайте промпты, определяющие поведение goose в разных контекстах. Эти промпты используют синтаксис шаблонов Jinja2. Будьте осторожны при изменении переменных шаблона: неверные изменения могут нарушить работу. Делитесь улучшениями с сообществом."
+    "defaultMessage": "Настраивайте промпты, определяющие поведение gosling в разных контекстах. Эти промпты используют синтаксис шаблонов Jinja2. Будьте осторожны при изменении переменных шаблона: неверные изменения могут нарушить работу. Делитесь улучшениями с сообществом."
   },
   "promptsSettings.promptEditingTitle": {
     "defaultMessage": "Редактирование промптов"
@@ -2166,7 +2166,7 @@
     "defaultMessage": "Войти через {providerName}"
   },
   "providerConfigurationModal.addApiKeyDescription": {
-    "defaultMessage": "Добавьте API-ключи для этого провайдера, чтобы интегрировать его в goose"
+    "defaultMessage": "Добавьте API-ключи для этого провайдера, чтобы интегрировать его в gosling"
   },
   "providerConfigurationModal.browserWindowHint": {
     "defaultMessage": "Откроется окно браузера для завершения входа."
@@ -2202,7 +2202,7 @@
     "defaultMessage": "Ошибка"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "Этот провайдер настраивается вне goose. Выполните следующие шаги:"
+    "defaultMessage": "Этот провайдер настраивается вне gosling. Выполните следующие шаги:"
   },
   "providerConfigurationModal.goBack": {
     "defaultMessage": "Назад"
@@ -2280,7 +2280,7 @@
     "defaultMessage": "Загрузка провайдеров..."
   },
   "providerSettings.onboardingDescription": {
-    "defaultMessage": "Выберите провайдера ИИ-модели, чтобы начать работу с goose. Понадобятся API-ключи, созданные каждым провайдером; они будут зашифрованы и сохранены локально. Провайдера можно изменить в настройках в любое время."
+    "defaultMessage": "Выберите провайдера ИИ-модели, чтобы начать работу с gosling. Понадобятся API-ключи, созданные каждым провайдером; они будут зашифрованы и сохранены локально. Провайдера можно изменить в настройках в любое время."
   },
   "providerSettings.otherProviders": {
     "defaultMessage": "Другие провайдеры"
@@ -2505,7 +2505,7 @@
     "defaultMessage": "История чатов"
   },
   "sessions.chatHistoryDesc": {
-    "defaultMessage": "Просматривайте и ищите прошлые разговоры с Goose. {shortcut} для поиска."
+    "defaultMessage": "Просматривайте и ищите прошлые разговоры с Gosling. {shortcut} для поиска."
   },
   "sessions.close": {
     "defaultMessage": "Закрыть"
@@ -2544,10 +2544,10 @@
     "defaultMessage": "Импортировать ссылку"
   },
   "sessions.importNostr.description": {
-    "defaultMessage": "Вставьте ссылку общего доступа Goose Nostr, чтобы получить, расшифровать и импортировать сеанс."
+    "defaultMessage": "Вставьте ссылку общего доступа Gosling Nostr, чтобы получить, расшифровать и импортировать сеанс."
   },
   "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
+    "defaultMessage": "gosling://sessions/nostr?nevent=...&key=..."
   },
   "sessions.importNostr.title": {
     "defaultMessage": "Импортировать сеанс Nostr"
@@ -2625,13 +2625,13 @@
     "defaultMessage": "Повторить попытку"
   },
   "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Goose"
+    "defaultMessage": "Gosling"
   },
   "sessionViewComponents.role.user": {
     "defaultMessage": "Вы"
   },
   "settings.appearance.description": {
-    "defaultMessage": "Настройте, как goose отображается в вашей системе"
+    "defaultMessage": "Настройте, как gosling отображается в вашей системе"
   },
   "settings.appearance.title": {
     "defaultMessage": "Внешний вид"
@@ -2646,13 +2646,13 @@
     "defaultMessage": "Отслеживание стоимости"
   },
   "settings.dockIcon.description": {
-    "defaultMessage": "Показывать goose в Dock"
+    "defaultMessage": "Показывать gosling в Dock"
   },
   "settings.dockIcon.title": {
     "defaultMessage": "Значок Dock"
   },
   "settings.help.description": {
-    "defaultMessage": "Помогите улучшить goose: сообщайте о проблемах или запрашивайте новые функции"
+    "defaultMessage": "Помогите улучшить gosling: сообщайте о проблемах или запрашивайте новые функции"
   },
   "settings.help.reportBug": {
     "defaultMessage": "Сообщить об ошибке"
@@ -2664,7 +2664,7 @@
     "defaultMessage": "Помощь и отзывы"
   },
   "settings.language.description": {
-    "defaultMessage": "Выберите язык интерфейса goose"
+    "defaultMessage": "Выберите язык интерфейса gosling"
   },
   "settings.language.english": {
     "defaultMessage": "Английский"
@@ -2721,7 +2721,7 @@
     "defaultMessage": "Китайский (традиционный)"
   },
   "settings.menuBarIcon.description": {
-    "defaultMessage": "Показывать goose в строке меню"
+    "defaultMessage": "Показывать gosling в строке меню"
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "Значок строки меню"
@@ -2742,7 +2742,7 @@
     "defaultMessage": "Нажмите «Уведомления»"
   },
   "settings.notifications.modal.macStep3": {
-    "defaultMessage": "Найдите и выберите goose в списке приложений"
+    "defaultMessage": "Найдите и выберите gosling в списке приложений"
   },
   "settings.notifications.modal.macStep4": {
     "defaultMessage": "Включите уведомления и настройте параметры по желанию"
@@ -2760,7 +2760,7 @@
     "defaultMessage": "Перейдите в Система > Уведомления"
   },
   "settings.notifications.modal.winStep3": {
-    "defaultMessage": "Найдите и выберите goose в списке приложений"
+    "defaultMessage": "Найдите и выберите gosling в списке приложений"
   },
   "settings.notifications.modal.winStep4": {
     "defaultMessage": "Включите уведомления и настройте параметры по желанию"
@@ -2769,7 +2769,7 @@
     "defaultMessage": "Откройте «Параметры»"
   },
   "settings.notifications.task.description": {
-    "defaultMessage": "Уведомлять, когда Goose завершает задачу, пока окно в фоне"
+    "defaultMessage": "Уведомлять, когда Gosling завершает задачу, пока окно в фоне"
   },
   "settings.notifications.task.title": {
     "defaultMessage": "Уведомления о завершении задач"
@@ -2778,19 +2778,19 @@
     "defaultMessage": "Уведомления"
   },
   "settings.preventSleep.description": {
-    "defaultMessage": "Не давать компьютеру засыпать, пока goose выполняет задачу (экран все равно может блокироваться)"
+    "defaultMessage": "Не давать компьютеру засыпать, пока gosling выполняет задачу (экран все равно может блокироваться)"
   },
   "settings.preventSleep.title": {
     "defaultMessage": "Запретить сон"
   },
   "settings.theme.description": {
-    "defaultMessage": "Настройте внешний вид и ощущения goose"
+    "defaultMessage": "Настройте внешний вид и ощущения gosling"
   },
   "settings.theme.title": {
     "defaultMessage": "Тема"
   },
   "settings.updates.description": {
-    "defaultMessage": "Проверяйте и устанавливайте обновления, чтобы goose работал оптимально"
+    "defaultMessage": "Проверяйте и устанавливайте обновления, чтобы gosling работал оптимально"
   },
   "settings.updates.title": {
     "defaultMessage": "Обновления"
@@ -2868,7 +2868,7 @@
     "defaultMessage": "Поиск навыков..."
   },
   "skillsView.skillsDescription": {
-    "defaultMessage": "Просматривайте установленные навыки, расширяющие возможности Goose. {shortcut} для поиска."
+    "defaultMessage": "Просматривайте установленные навыки, расширяющие возможности Gosling. {shortcut} для поиска."
   },
   "skillsView.skillsTitle": {
     "defaultMessage": "Навыки"
@@ -3018,10 +3018,10 @@
     "defaultMessage": "Использовать другого провайдера"
   },
   "telemetryConsentPrompt.description": {
-    "defaultMessage": "Хотите поделиться анонимными данными об использовании, чтобы помочь улучшить goose? Мы никогда не собираем ваши разговоры, код или персональные данные."
+    "defaultMessage": "Хотите поделиться анонимными данными об использовании, чтобы помочь улучшить gosling? Мы никогда не собираем ваши разговоры, код или персональные данные."
   },
   "telemetryConsentPrompt.heading": {
-    "defaultMessage": "Помогите улучшить goose"
+    "defaultMessage": "Помогите улучшить gosling"
   },
   "telemetryConsentPrompt.learnMore": {
     "defaultMessage": "Подробнее"
@@ -3048,7 +3048,7 @@
     "defaultMessage": "Конфиденциальность"
   },
   "telemetrySettings.toggleDescription": {
-    "defaultMessage": "Помогите улучшить goose, делясь анонимной статистикой использования."
+    "defaultMessage": "Помогите улучшить gosling, делясь анонимной статистикой использования."
   },
   "telemetrySettings.toggleLabel": {
     "defaultMessage": "Анонимные данные об использовании"
@@ -3126,7 +3126,7 @@
     "defaultMessage": "Разрешить {toolName}?"
   },
   "toolConfirmation.gooseWouldLikeToCallWithName": {
-    "defaultMessage": "Goose хочет вызвать {toolName}. Разрешить?"
+    "defaultMessage": "Gosling хочет вызвать {toolName}. Разрешить?"
   },
   "updateSection.autoDownload": {
     "defaultMessage": "Обновление будет автоматически скачано в фоновом режиме."
@@ -3153,7 +3153,7 @@
     "defaultMessage": "Отключить автоматическую загрузку обновлений"
   },
   "updateSection.disableAutoDownloadDesc": {
-    "defaultMessage": "Когда включено, Goose будет уведомлять о новых версиях, но не будет загружать их автоматически."
+    "defaultMessage": "Когда включено, Gosling будет уведомлять о новых версиях, но не будет загружать их автоматически."
   },
   "updateSection.downloadingProgress": {
     "defaultMessage": "Скачивание обновления... {percent}%"
@@ -3186,7 +3186,7 @@
     "defaultMessage": "Для этого способа обновления требуется ручная установка."
   },
   "updateSection.readyInstallAuto": {
-    "defaultMessage": "✓ Обновление готово! Оно будет установлено при выходе из Goose."
+    "defaultMessage": "✓ Обновление готово! Оно будет установлено при выходе из Gosling."
   },
   "updateSection.readyInstallManual": {
     "defaultMessage": "✓ Обновление готово! Нажмите «Установить и перезапустить», чтобы получить инструкции по установке."

@@ -56,7 +56,7 @@ fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
 }
 
 #[cfg(feature = "system-keyring")]
-const KEYRING_SERVICE: &str = "goose";
+const KEYRING_SERVICE: &str = "gosling";
 #[cfg(feature = "system-keyring")]
 const KEYRING_USERNAME: &str = "secrets";
 pub const CONFIG_YAML_NAME: &str = "config.yaml";
@@ -198,13 +198,13 @@ static GLOBAL_CONFIG: OnceCell<Config> = OnceCell::new();
 fn system_config_path() -> PathBuf {
     #[cfg(unix)]
     {
-        PathBuf::from("/etc/goose/config.yaml")
+        PathBuf::from("/etc/gosling/config.yaml")
     }
     #[cfg(windows)]
     {
         env::var("PROGRAMDATA")
-            .map(|d| PathBuf::from(d).join("goose").join("config.yaml"))
-            .unwrap_or_else(|_| PathBuf::from(r"C:\ProgramData\goose\config.yaml"))
+            .map(|d| PathBuf::from(d).join("gosling").join("config.yaml"))
+            .unwrap_or_else(|_| PathBuf::from(r"C:\ProgramData\gosling\config.yaml"))
     }
 }
 
