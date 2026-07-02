@@ -110,9 +110,9 @@ export async function acpUpdateCustomProviderFromRequest(
   });
 }
 
-export async function acpDeleteCustomProvider(providerId: string): Promise<void> {
+export async function acpDeleteCustomProvider(providerId: string) {
   const client = await getAcpClient();
-  await client.goose.providersCustomDelete_unstable({ providerId });
+  return client.goose.providersCustomDelete_unstable({ providerId });
 }
 
 export async function acpReadProviderConfig(providerId: string) {
@@ -121,9 +121,9 @@ export async function acpReadProviderConfig(providerId: string) {
   return fields;
 }
 
-export async function acpDeleteProviderConfig(providerId: string): Promise<void> {
+export async function acpDeleteProviderConfig(providerId: string) {
   const client = await getAcpClient();
-  await client.goose.providersConfigDelete_unstable({ providerId });
+  return client.goose.providersConfigDelete_unstable({ providerId });
 }
 
 export async function acpSaveProviderConfig(

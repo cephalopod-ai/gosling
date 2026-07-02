@@ -4,7 +4,7 @@ import { ScrollArea } from '../../ui/scroll-area';
 import BackButton from '../../ui/BackButton';
 import ProviderGrid from './ProviderGrid';
 import { acpListProviderDetails } from '../../../acp/providers';
-import type { ProviderDetails } from '../../../types/providers';
+import type { ProviderDetails, ProviderType } from '../../../types/providers';
 import { createNavigationHandler } from '../../../utils/navigationUtils';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -77,6 +77,19 @@ export default function ProviderSettings({
     }
   }, []);
 
+  const handleProviderDeleted = useCallback(
+    (providerId: string, providerType: ProviderType) => {
+      setProviders((currentProviders) =>
+        providerType === 'Custom'
+          ? currentProviders.filter((provider) => provider.name !== providerId)
+          : currentProviders.map((provider) =>
+              provider.name === providerId ? { ...provider, is_configured: false } : provider
+            )
+      );
+    },
+    []
+  );
+
   return (
     <div className="h-screen w-full flex flex-col bg-background-primary text-text-primary">
       <ScrollArea className="flex-1 w-full">
@@ -110,6 +123,7 @@ export default function ProviderSettings({
                   providers={providers}
                   isOnboarding={isOnboarding}
                   refreshProviders={refreshProviders}
+                  onProviderDeleted={handleProviderDeleted}
                   setView={setView}
                   onModelSelected={onProviderLaunched}
                 />

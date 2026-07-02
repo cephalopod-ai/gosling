@@ -3,7 +3,11 @@ import { ProviderCard } from './subcomponents/ProviderCard';
 import CardContainer from './subcomponents/CardContainer';
 import ProviderConfigurationModal from './modal/ProviderConfigurationModal';
 import type { CustomProviderConfigDto } from '@aaif/goose-sdk';
-import type { ProviderDetails, UpdateCustomProviderRequest } from '../../../types/providers';
+import type {
+  ProviderDetails,
+  ProviderType,
+  UpdateCustomProviderRequest,
+} from '../../../types/providers';
 import {
   acpCreateCustomProviderFromRequest,
   acpGetCustomProvider,
@@ -87,12 +91,14 @@ function ProviderCards({
   providers,
   isOnboarding,
   refreshProviders,
+  onProviderDeleted,
   setView,
   onModelSelected,
 }: {
   providers: ProviderDetails[];
   isOnboarding: boolean;
   refreshProviders?: () => void;
+  onProviderDeleted?: (providerId: string, providerType: ProviderType) => void;
   setView?: (view: View) => void;
   onModelSelected?: (model?: string) => void;
 }) {
@@ -171,13 +177,11 @@ function ProviderCards({
     if (!editingProvider) return;
 
     await acpDeleteCustomProvider(editingProvider.id);
+    onProviderDeleted?.(editingProvider.id, editingProvider.providerType);
     setShowCustomProviderModal(false);
     setEditingProvider(null);
     setIsActiveProvider(false);
-    if (refreshProviders) {
-      refreshProviders();
-    }
-  }, [editingProvider, refreshProviders]);
+  }, [editingProvider, onProviderDeleted]);
 
   const handleCloseModal = useCallback(() => {
     setShowCustomProviderModal(false);
@@ -187,10 +191,7 @@ function ProviderCards({
 
   const onCloseProviderConfig = useCallback(() => {
     setConfiguringProvider(null);
-    if (refreshProviders) {
-      refreshProviders();
-    }
-  }, [refreshProviders]);
+  }, []);
 
   const onProviderConfigured = useCallback(
     async (provider: ProviderDetails) => {
@@ -300,6 +301,7 @@ function ProviderCards({
           provider={configuringProvider}
           onClose={onCloseProviderConfig}
           onConfigured={onProviderConfigured}
+          onDeleted={onProviderDeleted}
         />
       )}
       {showSwitchModelModal && (
@@ -320,12 +322,14 @@ export default function ProviderGrid({
   providers,
   isOnboarding,
   refreshProviders,
+  onProviderDeleted,
   setView,
   onModelSelected,
 }: {
   providers: ProviderDetails[];
   isOnboarding: boolean;
   refreshProviders?: () => void;
+  onProviderDeleted?: (providerId: string, providerType: ProviderType) => void;
   setView?: (view: View) => void;
   onModelSelected?: (model?: string) => void;
 }) {
@@ -335,6 +339,7 @@ export default function ProviderGrid({
         providers={providers}
         isOnboarding={isOnboarding}
         refreshProviders={refreshProviders}
+        onProviderDeleted={onProviderDeleted}
         setView={setView}
         onModelSelected={onModelSelected}
       />

@@ -26,6 +26,7 @@ import type { ProviderDetails } from '../../../../types/providers';
 import { Button } from '../../../../components/ui/button';
 import { errorMessage } from '../../../../utils/conversionUtils';
 import { defineMessages, useIntl } from '../../../../i18n';
+import type { ProviderType } from '../../../../types/providers';
 
 const i18n = defineMessages({
   deleteConfigHeader: {
@@ -150,12 +151,14 @@ interface ProviderConfigurationModalProps {
   provider: ProviderDetails;
   onClose: () => void;
   onConfigured?: (provider: ProviderDetails) => void;
+  onDeleted?: (providerId: string, providerType: ProviderType) => void;
 }
 
 export default function ProviderConfigurationModal({
   provider,
   onClose,
   onConfigured,
+  onDeleted,
 }: ProviderConfigurationModalProps) {
   const intl = useIntl();
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -313,6 +316,7 @@ export default function ProviderConfigurationModal({
       await acpDeleteProviderConfig(provider.name);
     }
 
+    onDeleted?.(provider.name, provider.provider_type);
     onClose();
   };
 

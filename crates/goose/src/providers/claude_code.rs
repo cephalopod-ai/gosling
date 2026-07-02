@@ -8,6 +8,7 @@ use rmcp::model::{Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -36,6 +37,48 @@ use super::cli_common::{error_from_event, extract_usage_tokens};
 const CLAUDE_CODE_PROVIDER_NAME: &str = "claude-code";
 pub const CLAUDE_CODE_DEFAULT_MODEL: &str = "default";
 pub const CLAUDE_CODE_DOC_URL: &str = "https://code.claude.com/docs/en/setup";
+const CLAUDE_CODE_KNOWN_MODELS: &[&str] = &[
+    // Latest Claude family releases available in Anthropic's model overview.
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-sonnet-5",
+    "claude-haiku-4-5-20251001",
+    // Current supported Claude Code aliases and recent fallback versions.
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5-20250929",
+    "claude-haiku-4-5",
+];
+const CLAUDE_CODE_MODEL_ALIASES: &[&str] = &[
+    "default",
+    "best",
+    "fable",
+    "opus",
+    "sonnet",
+    "haiku",
+    "opusplan",
+    "sonnet[1m]",
+    "opus[1m]",
+];
+
+fn merge_model_names(models: Vec<String>) -> Vec<String> {
+    let mut merged = Vec::with_capacity(CLAUDE_CODE_KNOWN_MODELS.len() + models.len());
+    let mut seen = HashSet::new();
+
+    for name in CLAUDE_CODE_KNOWN_MODELS
+        .iter()
+        .copied()
+        .chain(CLAUDE_CODE_MODEL_ALIASES.iter().copied())
+        .chain(models.iter().map(|model| model.as_str()))
+    {
+        if seen.insert(name) {
+            merged.push(name.to_string());
+        }
+    }
+
+    merged
+}
 
 // https://github.com/anthropics/claude-agent-sdk-python/blob/0e9397e/src/claude_agent_sdk/types.py#L857-L859
 #[derive(Serialize)]
@@ -610,8 +653,7 @@ impl goose_providers::base::ProviderDescriptor for ClaudeCodeProvider {
             "Claude Code CLI",
             "[Deprecated: use claude-acp instead] Requires claude CLI installed, no MCPs. Use claude-acp for ACP support with extensions.",
             CLAUDE_CODE_DEFAULT_MODEL,
-            // Only a few agentic choices; fetched dynamically via fetch_supported_models.
-            vec![],
+            CLAUDE_CODE_KNOWN_MODELS.to_vec(),
             CLAUDE_CODE_DOC_URL,
             vec![ConfigKey::new(
                 "CLAUDE_CODE_COMMAND",
@@ -695,7 +737,8 @@ impl Provider for ClaudeCodeProvider {
         )
         .await;
         let _ = child.kill().await;
-        Ok(extract_model_aliases(response.ok().flatten().as_ref()))
+        let fetched = extract_model_aliases(response.ok().flatten().as_ref());
+        Ok(merge_model_names(fetched))
     }
 
     async fn update_mode(&self, _session_id: &str, mode: GooseMode) -> Result<(), ProviderError> {
@@ -1182,6 +1225,17 @@ mod tests {
     )]
     fn test_extract_model_aliases(response: Option<Value>, expected: Vec<String>) {
         assert_eq!(extract_model_aliases(response.as_ref()), expected);
+    }
+
+    #[test]
+    fn test_merge_model_names_includes_latest_claude_models() {
+        let merged = merge_model_names(vec!["sonnet".to_string(), "default".to_string()]);
+        assert!(merged.contains(&"claude-fable-5".to_string()));
+        assert!(merged.contains(&"claude-opus-4-8".to_string()));
+        assert!(merged.contains(&"claude-sonnet-5".to_string()));
+        assert!(merged.contains(&"claude-haiku-4-5-20251001".to_string()));
+        assert!(merged.contains(&"default".to_string()));
+        assert!(merged.contains(&"sonnet".to_string()));
     }
 
     #[test_case(
