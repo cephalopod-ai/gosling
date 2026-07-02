@@ -59,7 +59,10 @@ impl TokenCache {
         hasher.update(scopes.join(",").as_bytes());
         let hash = bytes_to_hex(hasher.finalize());
 
-        fs::create_dir_all(get_base_path()).unwrap();
+        // No eager create_dir_all here: it ran (and could panic) on every
+        // token-cache construction on the request path. `save_token` creates
+        // the directory when it actually writes, and `load_token` tolerates a
+        // missing file.
         let cache_path = get_base_path().join(format!("{}.json", hash));
 
         Self { cache_path }

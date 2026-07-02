@@ -8,6 +8,8 @@ pub mod api_client {
     pub use goose_providers::api_client::*;
 }
 pub mod avian;
+#[cfg(feature = "aws-providers")]
+pub(crate) mod aws_env;
 pub mod azure;
 pub mod azureauth;
 pub mod base;
