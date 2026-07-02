@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Failed to save"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Cancel"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Insert Example"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Instructions"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Detailed instructions for the AI, hidden from the user"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Save Instructions"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Use {code} syntax to define parameters that users can fill in"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Instructions Editor"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Cancel"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Define the expected structure of the AI's response using JSON Schema format"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Insert Example"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Invalid JSON format"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "Response JSON Schema"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Save Schema"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "JSON Schema Editor"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Cancel"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "Submit"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Add pre-configured value"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Parameter name..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Parameter value..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Remove pre-configured value {key}"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "Toggle window always on top"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Share anonymous usage data"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Default Value"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Enter default value"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Delete parameter: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "description"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "This is the message the end-user will see."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "E.g., \"Enter the name for the new component\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Input Type"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Optional"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Enter each option on a new line. These will be shown as dropdown choices."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Options (one per line)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Option 1 Option 2 Option 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Required"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Requirement"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Boolean"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Number"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Select"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "String"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Unused"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "This parameter is not used in the instructions or prompt. It will be available for manual input but may not be needed."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Always allow"
