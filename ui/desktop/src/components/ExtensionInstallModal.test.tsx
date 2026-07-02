@@ -52,7 +52,11 @@ describe('ExtensionInstallModal', () => {
   });
 
   describe('Extension Request Handling', () => {
-    it('should handle trusted extension (default behaviour, no allowlist)', async () => {
+    it('should treat extensions as untrusted by default (no allowlist configured)', async () => {
+      // With no admin-configured allowlist, every gosling://extension deep
+      // link is unauthenticated external input whose `args` can smuggle an
+      // arbitrary npm/PyPI package or Docker image - default to the
+      // stronger warning rather than the plain "Are you sure?" prompt.
       mockElectron.getAllowedExtensions.mockResolvedValue([]);
 
       renderWithIntl(<ExtensionInstallModal addExtension={mockAddExtension} setView={mockSetView} />);
@@ -64,8 +68,9 @@ describe('ExtensionInstallModal', () => {
       });
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
-      expect(screen.getByText('Confirm Extension Installation')).toBeInTheDocument();
-      expect(screen.getByText(/TestExt extension/)).toBeInTheDocument();
+      expect(screen.getByText('Install Untrusted Extension?')).toBeInTheDocument();
+      expect(screen.getByText(/TestExt/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Install Anyway' })).toBeInTheDocument();
       expect(screen.getAllByRole('button')).toHaveLength(3);
     });
 
@@ -121,8 +126,8 @@ describe('ExtensionInstallModal', () => {
       });
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
-      expect(screen.getByText('Confirm Extension Installation')).toBeInTheDocument();
-      expect(screen.getByText(/I Ching extension/)).toBeInTheDocument();
+      expect(screen.getByText('Install Untrusted Extension?')).toBeInTheDocument();
+      expect(screen.getByText(/I Ching/)).toBeInTheDocument();
       expect(screen.getAllByRole('button')).toHaveLength(3);
     });
     it('should handle blocked extension', async () => {
@@ -158,7 +163,7 @@ describe('ExtensionInstallModal', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
 
       await act(async () => {
-        screen.getByRole('button', { name: 'No' }).click();
+        screen.getByRole('button', { name: 'Cancel' }).click();
       });
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -177,7 +182,7 @@ describe('ExtensionInstallModal', () => {
       });
 
       await act(async () => {
-        screen.getByRole('button', { name: 'Yes' }).click();
+        screen.getByRole('button', { name: 'Install Anyway' }).click();
       });
 
       expect(addExtensionFromDeepLink).toHaveBeenCalledWith(
