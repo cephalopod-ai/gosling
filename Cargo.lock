@@ -4295,6 +4295,7 @@ dependencies = [
  "goose-providers",
  "hex",
  "http 1.4.2",
+ "lru 0.18.0",
  "rand 0.10.1",
  "reqwest 0.13.4",
  "rmcp",
