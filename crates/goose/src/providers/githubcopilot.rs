@@ -91,6 +91,23 @@ fn normalize_host(host: &str) -> String {
     host.to_string()
 }
 
+/// The GitHub OAuth token cached under this key is a real, long-lived
+/// credential obtained from a device-code login against `host`. It must
+/// not be reused against a different host - `GITHUB_COPILOT_HOST` is a
+/// user-settable, non-secret config value, so anyone who can change it
+/// (a malicious "recipe"/config snippet, a compromised extension) could
+/// otherwise cause the real token to be replayed as a bearer credential
+/// against an attacker-controlled endpoint with no re-authentication.
+/// Mirrors DiskCache::new's existing per-host cache-path scoping.
+fn token_secret_key(host: &str) -> String {
+    if host == DEFAULT_GITHUB_HOST {
+        "GITHUB_COPILOT_TOKEN".to_string()
+    } else {
+        let safe_host = host.replace(['/', ':', '.'], "_");
+        format!("GITHUB_COPILOT_TOKEN__{}", safe_host)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct GithubCopilotUrls {
     device_code_url: String,
@@ -203,6 +220,8 @@ pub struct GithubCopilotProvider {
     name: String,
     #[serde(skip)]
     tls_config: Option<crate::providers::api_client::TlsConfig>,
+    #[serde(skip)]
+    token_secret_key: String,
 }
 
 impl GithubCopilotProvider {
@@ -249,6 +268,7 @@ impl GithubCopilotProvider {
             .build()?;
         let cache = DiskCache::new(&host);
         let mu = tokio::sync::Mutex::new(RefCell::new(None));
+        let token_secret_key = token_secret_key(&host);
         Ok(Self {
             client,
             cache,
@@ -257,6 +277,7 @@ impl GithubCopilotProvider {
             client_id,
             name: GITHUB_COPILOT_PROVIDER_NAME.to_string(),
             tls_config,
+            token_secret_key,
         })
     }
 
@@ -324,7 +345,7 @@ impl GithubCopilotProvider {
 
     async fn refresh_api_info(&self) -> Result<CopilotTokenInfo> {
         let config = Config::global();
-        let token = match config.get_secret::<String>("GITHUB_COPILOT_TOKEN") {
+        let token = match config.get_secret::<String>(&self.token_secret_key) {
             Ok(token) => token,
             Err(err) => match err {
                 ConfigError::NotFound(_) => {
@@ -332,7 +353,7 @@ impl GithubCopilotProvider {
                         .get_access_token()
                         .await
                         .context("unable to login into github")?;
-                    config.set_secret("GITHUB_COPILOT_TOKEN", &token)?;
+                    config.set_secret(&self.token_secret_key, &token)?;
                     token
                 }
                 _ => return Err(err.into()),
@@ -348,7 +369,6 @@ impl GithubCopilotProvider {
             .error_for_status()?
             .text()
             .await?;
-        tracing::trace!("copilot token response: {}", resp);
         let info: CopilotTokenInfo = serde_json::from_str(&resp)?;
         Ok(info)
     }
@@ -650,7 +670,7 @@ impl Provider for GithubCopilotProvider {
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
         let config = Config::global();
 
-        if config.get_secret::<String>("GITHUB_COPILOT_TOKEN").is_ok() {
+        if config.get_secret::<String>(&self.token_secret_key).is_ok() {
             match self.refresh_api_info().await {
                 Ok(_) => return Ok(()),
                 Err(_) => {
@@ -665,7 +685,7 @@ impl Provider for GithubCopilotProvider {
             .map_err(|e| ProviderError::Authentication(format!("OAuth flow failed: {}", e)))?;
 
         config
-            .set_secret("GITHUB_COPILOT_TOKEN", &token)
+            .set_secret(&self.token_secret_key, &token)
             .map_err(|e| ProviderError::ExecutionError(format!("Failed to save token: {}", e)))?;
 
         Ok(())

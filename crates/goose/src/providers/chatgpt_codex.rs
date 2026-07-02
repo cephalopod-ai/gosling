@@ -1,7 +1,10 @@
 use crate::config::paths::Paths;
 use crate::conversation::message::{Message, MessageContent};
 use crate::providers::api_client::{AuthProvider, RequestBuilderDecorator};
-use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use crate::providers::base::{
+    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use crate::providers::openai_compatible::handle_status;
 use crate::providers::retry::ProviderRetry;
 use anyhow::{anyhow, Result};
@@ -379,7 +382,9 @@ struct OidcConfiguration {
 }
 
 async fn fetch_jwks_for(issuer: &str) -> Result<JwkSet> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+        .build()?;
     let config_url = format!("{}/.well-known/openid-configuration", issuer);
     let config = client
         .get(config_url)
@@ -532,7 +537,9 @@ async fn exchange_code_for_tokens_with_issuer(
     redirect_uri: &str,
     pkce: &PkceChallenge,
 ) -> Result<TokenResponse> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+        .build()?;
     let params = [
         ("grant_type", "authorization_code"),
         ("code", code),
@@ -561,7 +568,9 @@ async fn refresh_access_token_with_issuer(
     issuer: &str,
     refresh_token: &str,
 ) -> Result<TokenResponse> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+        .build()?;
     let params = [
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
@@ -919,7 +928,10 @@ impl ChatGptCodexProvider {
             );
         }
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+            .build()
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
         let request = client
             .post(format!("{}/responses", CODEX_API_ENDPOINT))
             .header(
