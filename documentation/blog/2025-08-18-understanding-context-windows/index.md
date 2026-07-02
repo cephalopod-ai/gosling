@@ -77,7 +77,7 @@ The [Memory extension](https://goose-docs.ai/docs/mcp/memory-mcp) stores importa
 
 **4. Recipes**
 
-[Recipes](https://goose-docs.ai/docs/guides/recipes/) package complete task setups into reusable configurations, eliminating the need to provide lengthy instructions repeatedly. Instead of consuming tokens explaining complex workflows in every session, recipes contain all necessary instructions, extensions, and parameters upfront. This is particularly valuable for repetitive tasks where you'd otherwise spend significant tokens on setup and explanation. And if your recipe starts to feel overly lengthy, you can break the tasks up into [subrecipes](https://goose-docs.ai/docs/guides/recipes/subrecipes).
+Recipes package complete task setups into reusable configurations, eliminating the need to provide lengthy instructions repeatedly. Instead of consuming tokens explaining complex workflows in every session, recipes contain all necessary instructions, extensions, and parameters upfront. This is particularly valuable for repetitive tasks where you'd otherwise spend significant tokens on setup and explanation. And if your recipe starts to feel overly lengthy, you can break the tasks up into subrecipes.
 
 **5. Subagents**
 

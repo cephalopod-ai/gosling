@@ -77,11 +77,6 @@ const config: Config = {
                 id: "mcp/memory-mcp",
                 label: "Memory Extension",
               },
-              {
-                type: "doc" as const,
-                id: "tutorials/rpi",
-                label: "Research → Plan → Implement",
-              },
             ];
 
             const addItemsToCategory = (
@@ -192,26 +187,6 @@ const config: Config = {
           {
             from: "/docs/guides/smart-context-management",
             to: "/docs/guides/sessions/smart-context-management",
-          },
-          {
-            from: "/docs/guides/share-goose-sessions",
-            to: "/docs/guides/recipes/session-recipes",
-          },
-          {
-            from: "/docs/guides/session-recipes",
-            to: "/docs/guides/recipes/session-recipes",
-          },
-          {
-            from: "/docs/guides/recipe-reference",
-            to: "/docs/guides/recipes/recipe-reference",
-          },
-          {
-            from: "/docs/guides/recipes/sub-recipes",
-            to: "/docs/guides/recipes/subrecipes",
-          },
-          {
-            from: "/docs/tutorials/sub-recipes-in-parallel",
-            to: "/docs/tutorials/subrecipes-in-parallel",
           },
           {
             from: "/docs/guides/tool-permissions",
@@ -479,16 +454,8 @@ const config: Config = {
               label: "Skills Marketplace",
             },
             {
-              to: "/recipe-generator",
-              label: "Recipe Generator",
-            },
-            {
               to: "/prompt-library",
               label: "Prompt Library",
-            },
-            {
-              to: "/recipes",
-              label: "Recipe Cookbook",
             },
             {
               to: "deeplink-generator",

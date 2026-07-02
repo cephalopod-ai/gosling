@@ -35,7 +35,7 @@ const i18n = defineMessages({
   },
 });
 
-type CommandItemType = 'Builtin' | 'Recipe' | 'Skill' | 'Agent';
+type CommandItemType = 'Builtin' | 'Skill' | 'Agent';
 type DisplayItemType = CommandItemType | 'Directory' | 'File';
 
 const typeOrder: Record<DisplayItemType, number> = {
@@ -44,7 +44,6 @@ const typeOrder: Record<DisplayItemType, number> = {
   File: 2,
   Builtin: 3,
   Skill: 4,
-  Recipe: 5,
 };
 
 export interface DisplayItem {
@@ -462,7 +461,7 @@ const MentionPopover = forwardRef<
       if (item.itemType === 'Agent') {
         return '@' + item.name + ' ';
       }
-      if (['Builtin', 'Recipe', 'Skill'].includes(item.itemType)) {
+      if (['Builtin', 'Skill'].includes(item.itemType)) {
         return '/' + item.name;
       }
       return item.extra;

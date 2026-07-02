@@ -3,7 +3,6 @@ use crate::config::GooseMode;
 use crate::conversation::message::{Message, TokenState};
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
-use crate::recipe::Recipe;
 use crate::session::extension_data::ExtensionData;
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
@@ -16,7 +15,6 @@ use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Sqlite};
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -76,9 +74,6 @@ pub struct Session {
     #[serde(default)]
     pub accumulated_usage: Usage,
     pub accumulated_cost: Option<f64>,
-    pub schedule_id: Option<String>,
-    pub recipe: Option<Recipe>,
-    pub user_recipe_values: Option<HashMap<String, String>>,
     pub conversation: Option<Conversation>,
     pub message_count: usize,
     #[serde(default)]
@@ -130,9 +125,6 @@ pub struct SessionUpdateBuilder<'a> {
     usage: Option<Usage>,
     accumulated_usage: Option<Usage>,
     accumulated_cost: Option<Option<f64>>,
-    schedule_id: Option<Option<String>>,
-    recipe: Option<Option<Recipe>>,
-    user_recipe_values: Option<Option<HashMap<String, String>>>,
     provider_name: Option<Option<String>>,
     model_config: Option<Option<ModelConfig>>,
     goose_mode: Option<GooseMode>,
@@ -161,9 +153,6 @@ impl<'a> SessionUpdateBuilder<'a> {
             usage: None,
             accumulated_usage: None,
             accumulated_cost: None,
-            schedule_id: None,
-            recipe: None,
-            user_recipe_values: None,
             provider_name: None,
             model_config: None,
             goose_mode: None,
@@ -221,24 +210,6 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn accumulated_cost(mut self, cost: Option<f64>) -> Self {
         self.accumulated_cost = Some(cost);
-        self
-    }
-
-    pub fn schedule_id(mut self, schedule_id: Option<String>) -> Self {
-        self.schedule_id = Some(schedule_id);
-        self
-    }
-
-    pub fn recipe(mut self, recipe: Option<Recipe>) -> Self {
-        self.recipe = Some(recipe);
-        self
-    }
-
-    pub fn user_recipe_values(
-        mut self,
-        user_recipe_values: Option<HashMap<String, String>>,
-    ) -> Self {
-        self.user_recipe_values = Some(user_recipe_values);
         self
     }
 
@@ -499,15 +470,6 @@ impl SessionManager {
             return Ok(None);
         }
 
-        if let Some(recipe) = &session.recipe {
-            let name = recipe.title.trim().to_string();
-            if name.is_empty() || session.name == name {
-                return Ok(None);
-            }
-
-            return Ok(Some(self.system_generated_name_update(id, name).await?));
-        }
-
         let model_config = match session.model_config.clone() {
             Some(model_config) => model_config,
             None => {
@@ -637,9 +599,6 @@ impl Default for Session {
             usage: Usage::default(),
             accumulated_usage: Usage::default(),
             accumulated_cost: None,
-            schedule_id: None,
-            recipe: None,
-            user_recipe_values: None,
             conversation: None,
             message_count: 0,
             last_message_at: None,
@@ -663,13 +622,6 @@ impl Session {
 impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
     fn from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
-
-        let recipe_json: Option<String> = row.try_get("recipe_json")?;
-        let recipe = recipe_json.and_then(|json| serde_json::from_str(&json).ok());
-
-        let user_recipe_values_json: Option<String> = row.try_get("user_recipe_values_json")?;
-        let user_recipe_values =
-            user_recipe_values_json.and_then(|json| serde_json::from_str(&json).ok());
 
         let model_config_json: Option<String> = row.try_get("model_config_json").ok().flatten();
         let model_config = model_config_json.and_then(|json| serde_json::from_str(&json).ok());
@@ -727,9 +679,6 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                     .flatten(),
             },
             accumulated_cost: row.try_get("accumulated_cost").ok().flatten(),
-            schedule_id: row.try_get("schedule_id")?,
-            recipe,
-            user_recipe_values,
             conversation: None,
             message_count: row.try_get("message_count").unwrap_or(0) as usize,
             last_message_at,
@@ -962,16 +911,6 @@ impl SessionStorage {
     async fn import_legacy_session(pool: &Pool<Sqlite>, session: &Session) -> Result<()> {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let recipe_json = match &session.recipe {
-            Some(recipe) => Some(serde_json::to_string(recipe)?),
-            None => None,
-        };
-
-        let user_recipe_values_json = match &session.user_recipe_values {
-            Some(user_recipe_values) => Some(serde_json::to_string(user_recipe_values)?),
-            None => None,
-        };
-
         let model_config_json = match &session.model_config {
             Some(model_config) => Some(serde_json::to_string(model_config)?),
             None => None,
@@ -986,9 +925,8 @@ impl SessionStorage {
             accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
             accumulated_cache_read_tokens, accumulated_cache_write_tokens,
             accumulated_cost,
-            schedule_id, recipe_json, user_recipe_values_json,
             provider_name, model_config_json, goose_mode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         )
         .bind(&session.id)
@@ -1010,9 +948,6 @@ impl SessionStorage {
         .bind(session.accumulated_usage.cache_read_input_tokens)
         .bind(session.accumulated_usage.cache_write_input_tokens)
         .bind(session.accumulated_cost)
-        .bind(&session.schedule_id)
-        .bind(recipe_json)
-        .bind(user_recipe_values_json)
         .bind(&session.provider_name)
         .bind(model_config_json)
         .bind(session.goose_mode.to_string())
@@ -1389,7 +1324,6 @@ impl SessionStorage {
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
                accumulated_cache_read_tokens, accumulated_cache_write_tokens,
                accumulated_cost,
-               schedule_id, recipe_json, user_recipe_values_json,
                provider_name, model_config_json, goose_mode,
                archived_at, project_id
         FROM sessions
@@ -1461,9 +1395,6 @@ impl SessionStorage {
         add_update!(builder.accumulated_usage, "accumulated_cache_read_tokens");
         add_update!(builder.accumulated_usage, "accumulated_cache_write_tokens");
         add_update!(builder.accumulated_cost, "accumulated_cost");
-        add_update!(builder.schedule_id, "schedule_id");
-        add_update!(builder.recipe, "recipe_json");
-        add_update!(builder.user_recipe_values, "user_recipe_values_json");
         add_update!(builder.provider_name, "provider_name");
         add_update!(builder.model_config, "model_config_json");
         add_update!(builder.goose_mode, "goose_mode");
@@ -1513,19 +1444,6 @@ impl SessionStorage {
         }
         if let Some(ac) = builder.accumulated_cost {
             q = q.bind(ac);
-        }
-        if let Some(sid) = builder.schedule_id {
-            q = q.bind(sid);
-        }
-        if let Some(recipe) = builder.recipe {
-            let recipe_json = recipe.map(|r| serde_json::to_string(&r)).transpose()?;
-            q = q.bind(recipe_json);
-        }
-        if let Some(user_recipe_values) = builder.user_recipe_values {
-            let user_recipe_values_json = user_recipe_values
-                .map(|urv| serde_json::to_string(&urv))
-                .transpose()?;
-            q = q.bind(user_recipe_values_json);
         }
         if let Some(provider_name) = builder.provider_name {
             q = q.bind(provider_name);
@@ -1736,7 +1654,6 @@ impl SessionStorage {
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
                    s.accumulated_cache_read_tokens, s.accumulated_cache_write_tokens,
                    s.accumulated_cost,
-                   s.schedule_id, s.recipe_json, s.user_recipe_values_json,
                    s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id,
                    COUNT(m.id) as message_count,
@@ -1934,10 +1851,7 @@ impl SessionStorage {
             .extension_data(import.extension_data)
             .usage(import.usage)
             .accumulated_usage(import.accumulated_usage)
-            .accumulated_cost(import.accumulated_cost)
-            .schedule_id(import.schedule_id)
-            .recipe(import.recipe)
-            .user_recipe_values(import.user_recipe_values);
+            .accumulated_cost(import.accumulated_cost);
 
         if import.user_set_name {
             builder = builder.user_provided_name(import.name.clone());
@@ -1972,10 +1886,7 @@ impl SessionStorage {
 
         let mut builder = session_manager
             .update(&new_session.id)
-            .extension_data(original_session.extension_data)
-            .schedule_id(original_session.schedule_id)
-            .recipe(original_session.recipe)
-            .user_recipe_values(original_session.user_recipe_values);
+            .extension_data(original_session.extension_data);
 
         if let Some(project_id) = original_session.project_id {
             builder = builder.project_id(Some(project_id));
@@ -2232,15 +2143,6 @@ mod tests {
 
     fn naming_test_provider() -> Arc<dyn Provider> {
         Arc::new(NamingTestProvider)
-    }
-
-    fn test_recipe(title: &str) -> Recipe {
-        Recipe::builder()
-            .title(title)
-            .description("Recipe description")
-            .instructions("Follow the recipe")
-            .build()
-            .unwrap()
     }
 
     async fn create_session_for_list(
@@ -2523,48 +2425,6 @@ mod tests {
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.name, "Manual title");
         assert!(reloaded.user_set_name);
-    }
-
-    #[tokio::test]
-    async fn test_maybe_update_name_uses_recipe_title_for_recipe_session() {
-        let temp_dir = TempDir::new().unwrap();
-        let sm = SessionManager::new(temp_dir.path().to_path_buf());
-
-        let session = sm
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "New Chat".to_string(),
-                SessionType::User,
-                GooseMode::default(),
-            )
-            .await
-            .unwrap();
-
-        sm.update(&session.id)
-            .recipe(Some(test_recipe("Recipe title")))
-            .apply()
-            .await
-            .unwrap();
-        add_user_message(&sm, &session.id).await;
-
-        let update = sm
-            .maybe_update_name(&session.id, naming_test_provider())
-            .await
-            .unwrap();
-        assert_eq!(
-            update.as_ref().map(|update| update.name.as_str()),
-            Some("Recipe title")
-        );
-
-        let reloaded = sm.get_session(&session.id, false).await.unwrap();
-        assert_eq!(reloaded.name, "Recipe title");
-        assert!(!reloaded.user_set_name);
-
-        let update = sm
-            .maybe_update_name(&session.id, naming_test_provider())
-            .await
-            .unwrap();
-        assert!(update.is_none());
     }
 
     #[tokio::test]

@@ -495,9 +495,7 @@ impl OrchestratorClient {
         let user_message = Message::user().with_text(&message_text);
         let session_config = SessionConfig {
             id: session_id.clone(),
-            schedule_id: None,
             max_turns: None,
-            retry_config: None,
         };
 
         let mut stream = agent

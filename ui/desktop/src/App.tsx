@@ -11,8 +11,6 @@ import {
 import { importNostrSessionFromDeepLink } from './sessionLinks';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
-import RecipeParamsModalContainer from './components/RecipeParamsModalContainer';
-import { isRecipeParamsCancelled } from './acp/errors';
 import { toast, ToastContainer } from 'react-toastify';
 import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
@@ -30,7 +28,6 @@ interface PairRouteState {
 }
 import SettingsView, { SettingsViewOptions } from './components/settings/SettingsView';
 import SessionsView from './components/sessions/SessionsView';
-import SchedulesView from './components/schedule/SchedulesView';
 import ProviderSettings from './components/settings/providers/ProviderSettingsPage';
 import { AppLayout } from './components/Layout/AppLayout';
 import { ChatProvider, DEFAULT_CHAT_TITLE } from './contexts/ChatContext';
@@ -44,10 +41,7 @@ import { FeaturesProvider } from './contexts/FeaturesContext';
 import PermissionSettingsView from './components/settings/permission/PermissionSetting';
 
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
-import RecipesView from './components/recipes/RecipesView';
 import SkillsView from './components/skills/SkillsView';
-import AppsView from './components/apps/AppsView';
-import StandaloneAppView from './components/apps/StandaloneAppView';
 import { View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
@@ -56,7 +50,6 @@ import { getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
-import { registerPlatformEventHandlers } from './utils/platform_events';
 
 function PageViewTracker() {
   usePageViewTracking();
@@ -68,16 +61,6 @@ const HubRouteWrapper = () => {
   const setView = useNavigation();
   return <Hub setView={setView} />;
 };
-
-export function resolveSessionInitialMessage(
-  session: { recipe?: { prompt?: string | null } | null },
-  initialMessage?: UserInput
-): UserInput | undefined {
-  return (
-    initialMessage ??
-    (session.recipe?.prompt ? { msg: session.recipe.prompt, images: [] } : undefined)
-  );
-}
 
 const PairRouteWrapper = ({
   activeSessions,
@@ -97,37 +80,27 @@ const PairRouteWrapper = ({
     (location.state as PairRouteState) || (window.history.state as PairRouteState) || {};
   const [searchParams, setSearchParams] = useSearchParams();
   const isCreatingSessionRef = useRef(false);
-  const navigate = useNavigate();
 
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
-  const recipeDeeplinkFromConfig = window.appConfig?.get('recipeDeeplink') as string | undefined;
-  const recipeIdFromConfig = window.appConfig?.get('recipeId') as string | undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
 
-  // Create session if we have an initialMessage, recipeDeeplink, or recipeId but no sessionId
+  // Create session if we have an initialMessage but no sessionId
   useEffect(() => {
-    if (
-      (initialMessage || recipeDeeplinkFromConfig || recipeIdFromConfig) &&
-      !resumeSessionId &&
-      !isCreatingSessionRef.current
-    ) {
+    if (initialMessage && !resumeSessionId && !isCreatingSessionRef.current) {
       isCreatingSessionRef.current = true;
 
       (async () => {
         try {
           const newSession = await createSession(getInitialWorkingDir(), {
-            recipeDeeplink: recipeDeeplinkFromConfig,
-            recipeId: recipeIdFromConfig,
             allExtensions: extensionsList,
           });
-          const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
 
           window.dispatchEvent(
             new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
               detail: {
                 sessionId: newSession.id,
-                initialMessage: sessionInitialMessage,
+                initialMessage,
                 noAutoSubmit,
               },
             })
@@ -138,10 +111,6 @@ const PairRouteWrapper = ({
             return prev;
           });
         } catch (error) {
-          if (isRecipeParamsCancelled(error)) {
-            navigate('/');
-            return;
-          }
           console.error('Failed to create session:', error);
           trackErrorWithContext(error, {
             component: 'PairRouteWrapper',
@@ -154,14 +123,7 @@ const PairRouteWrapper = ({
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    initialMessage,
-    recipeDeeplinkFromConfig,
-    recipeIdFromConfig,
-    resumeSessionId,
-    setSearchParams,
-    extensionsList,
-  ]);
+  }, [initialMessage, resumeSessionId, setSearchParams, extensionsList]);
 
   // Add resumed session to active sessions if not already there
   useEffect(() => {
@@ -204,15 +166,6 @@ const SessionsRoute = () => {
   return <SessionsView />;
 };
 
-const SchedulesRoute = () => {
-  const navigate = useNavigate();
-  return <SchedulesView onClose={() => navigate('/')} />;
-};
-
-const RecipesRoute = () => {
-  return <RecipesView />;
-};
-
 const SkillsRoute = () => {
   return <SkillsView />;
 };
@@ -239,12 +192,6 @@ const PermissionRoute = () => {
             break;
           case 'sessions':
             navigate('/sessions');
-            break;
-          case 'schedules':
-            navigate('/schedules');
-            break;
-          case 'recipes':
-            navigate('/recipes');
             break;
           case 'skills':
             navigate('/skills');
@@ -315,7 +262,6 @@ export function AppInner() {
     sessionId: '',
     name: DEFAULT_CHAT_TITLE,
     messages: [],
-    recipe: null,
   });
 
   const MAX_ACTIVE_SESSIONS = 10;
@@ -576,11 +522,6 @@ export function AppInner() {
     };
   }, [navigate]);
 
-  // Register platform event handlers for app lifecycle management
-  useEffect(() => {
-    return registerPlatformEventHandlers();
-  }, []);
-
   if (fatalError) {
     return <ErrorUI error={errorMessage(fatalError)} />;
   }
@@ -604,14 +545,12 @@ export function AppInner() {
         pauseOnHover
       />
       <ExtensionInstallModal addExtension={addExtension} setView={setView} />
-      <RecipeParamsModalContainer />
       <div className="relative w-screen h-screen overflow-hidden bg-background-secondary flex flex-col">
         <div className="titlebar-drag-region" />
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <Routes>
             <Route path="launcher" element={<LauncherView />} />
             <Route path="configure-providers" element={<ConfigureProvidersRoute />} />
-            <Route path="standalone-app" element={<StandaloneAppView />} />
             <Route
               path="/"
               element={
@@ -641,10 +580,7 @@ export function AppInner() {
                   </ChatProvider>
                 }
               />
-              <Route path="apps" element={<AppsView />} />
               <Route path="sessions" element={<SessionsRoute />} />
-              <Route path="schedules" element={<SchedulesRoute />} />
-              <Route path="recipes" element={<RecipesRoute />} />
               <Route path="skills" element={<SkillsRoute />} />
               <Route path="permission" element={<PermissionRoute />} />
             </Route>

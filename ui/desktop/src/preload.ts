@@ -1,6 +1,4 @@
 import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
-import { Recipe } from './recipe';
-import type { GooseApp } from './types/apps';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings } from './utils/settings';
 
@@ -92,7 +90,6 @@ export interface CreateChatWindowOptions {
   version?: string;
   resumeSessionId?: string;
   viewType?: string;
-  recipeId?: string;
 }
 
 // Define the API types in a single place
@@ -167,14 +164,8 @@ type ElectronAPI = {
   getUpdateState: () => Promise<{ updateAvailable: boolean; latestVersion?: string } | null>;
   isUsingGitHubFallback: () => Promise<boolean>;
   getAutoDownloadDisabled: () => Promise<boolean>;
-  // Recipe warning functions
   closeWindow: () => void;
-  hasAcceptedRecipeBefore: (recipe: Recipe) => Promise<boolean>;
-  recordRecipeHash: (recipe: Recipe) => Promise<boolean>;
   openDirectoryInExplorer: (directoryPath: string) => Promise<boolean>;
-  launchApp: (app: GooseApp) => Promise<void>;
-  refreshApp: (app: GooseApp) => Promise<void>;
-  closeApp: (appName: string) => Promise<void>;
   addRecentDir: (dir: string) => Promise<boolean>;
   listRecentDirs: () => Promise<string[]>;
   listGitWorktreeDirs: (dir: string) => Promise<string[]>;
@@ -324,14 +315,8 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke('get-auto-download-disabled');
   },
   closeWindow: () => ipcRenderer.send('close-window'),
-  hasAcceptedRecipeBefore: (recipe: Recipe) =>
-    ipcRenderer.invoke('has-accepted-recipe-before', recipe),
-  recordRecipeHash: (recipe: Recipe) => ipcRenderer.invoke('record-recipe-hash', recipe),
   openDirectoryInExplorer: (directoryPath: string) =>
     ipcRenderer.invoke('open-directory-in-explorer', directoryPath),
-  launchApp: (app: GooseApp) => ipcRenderer.invoke('launch-app', app),
-  refreshApp: (app: GooseApp) => ipcRenderer.invoke('refresh-app', app),
-  closeApp: (appName: string) => ipcRenderer.invoke('close-app', appName),
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
   listRecentDirs: () => ipcRenderer.invoke('list-recent-dirs'),
   listGitWorktreeDirs: (dir: string) => ipcRenderer.invoke('list-git-worktree-dirs', dir),

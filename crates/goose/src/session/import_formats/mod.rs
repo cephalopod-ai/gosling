@@ -50,9 +50,6 @@ pub(crate) fn build_session_json(session: ImportedSession) -> Value {
     obj.insert("usage".into(), usage.clone());
     obj.insert("accumulated_usage".into(), usage);
     obj.insert("accumulated_cost".into(), json!(session.accumulated_cost));
-    obj.insert("schedule_id".into(), json!(null));
-    obj.insert("recipe".into(), json!(null));
-    obj.insert("user_recipe_values".into(), json!(null));
     obj.insert(
         "conversation".into(),
         serde_json::to_value(&session.conversation).unwrap(),

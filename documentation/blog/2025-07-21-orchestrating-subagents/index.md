@@ -56,7 +56,7 @@ As of version 1.10.0, subagents are no longer experimental and don't require ena
 
 ## Instructing My Team
 
-There are a few ways to create subagents in Goose. You can use natural language prompts, define them through [recipes](/docs/guides/recipes/), or even spin up [external subagents](/docs/guides/context-engineering/subagents/#external-subagents) like Codex or Claude Code.
+There are a few ways to create subagents in Goose. You can use natural language prompts, define them through recipes, or even spin up [external subagents](/docs/guides/context-engineering/subagents/#external-subagents) like Codex or Claude Code.
 
 I took the natural language prompt approach because it felt convenient to directly configure a subagent through one prompt. Here’s the prompt I used:
   

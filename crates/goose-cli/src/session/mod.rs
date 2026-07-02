@@ -31,10 +31,9 @@ use goose::providers::base::Provider;
 use goose::providers::base::ProviderUsage;
 use goose::utils::safe_truncate;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use completion::GooseCompleter;
 use goose::agents::extension::{Envs, ExtensionConfig, PLATFORM_EXTENSIONS};
-use goose::agents::types::RetryConfig;
 use goose::agents::{Agent, SessionConfig, COMPACT_TRIGGERS};
 use goose::config::extensions::name_to_key;
 use goose::config::{Config, GooseMode};
@@ -171,10 +170,8 @@ pub struct CliSession {
     completion_cache: Arc<std::sync::RwLock<CompletionCache>>,
     debug: bool,
     run_mode: RunMode,
-    scheduled_job_id: Option<String>,
     max_turns: Option<u32>,
     edit_mode: Option<EditMode>,
-    retry_config: Option<RetryConfig>,
     output_format: String,
     stats: bool,
 }
@@ -251,10 +248,8 @@ impl CliSession {
         agent: Agent,
         session_id: String,
         debug: bool,
-        scheduled_job_id: Option<String>,
         max_turns: Option<u32>,
         edit_mode: Option<EditMode>,
-        retry_config: Option<RetryConfig>,
         output_format: String,
         stats: bool,
     ) -> Self {
@@ -273,10 +268,8 @@ impl CliSession {
             completion_cache: Arc::new(std::sync::RwLock::new(CompletionCache::new())),
             debug,
             run_mode: RunMode::Normal,
-            scheduled_job_id,
             max_turns,
             edit_mode,
-            retry_config,
             output_format,
             stats,
         }
@@ -632,10 +625,6 @@ impl CliSession {
                 history.save(editor);
                 self.handle_prompt_command(opts).await?;
             }
-            InputResult::Recipe(filepath_opt) => {
-                history.save(editor);
-                self.handle_recipe(filepath_opt).await;
-            }
             InputResult::Compact => {
                 history.save(editor);
                 self.handle_compact().await?;
@@ -932,37 +921,6 @@ impl CliSession {
         Ok(())
     }
 
-    async fn handle_recipe(&mut self, filepath_opt: Option<String>) {
-        println!("{}", console::style("Generating Recipe").green());
-
-        output::show_thinking();
-        let recipe = self
-            .agent
-            .create_recipe(&self.session_id, self.messages.clone())
-            .await;
-        output::hide_thinking();
-
-        match recipe {
-            Ok(recipe) => {
-                let filepath_str = filepath_opt.as_deref().unwrap_or("recipe.yaml");
-                match self.save_recipe(&recipe, filepath_str) {
-                    Ok(path) => println!(
-                        "{}",
-                        console::style(format!("Saved recipe to {}", path.display())).green()
-                    ),
-                    Err(e) => println!("{}", console::style(e).red()),
-                }
-            }
-            Err(e) => {
-                println!(
-                    "{}: {:?}",
-                    console::style("Failed to generate recipe").red(),
-                    e
-                );
-            }
-        }
-    }
-
     async fn handle_load_skills(&mut self, names: &[String]) -> Result<()> {
         // NOTE: We don't validate the skill names here because the load_skill tool will
         // handle that and provide feedback to the user if any skill names are invalid.
@@ -1156,9 +1114,7 @@ impl CliSession {
 
         let session_config = SessionConfig {
             id: self.session_id.clone(),
-            schedule_id: self.scheduled_job_id.clone(),
             max_turns: self.max_turns,
-            retry_config: self.retry_config.clone(),
         };
         let user_message = self
             .messages
@@ -1706,49 +1662,6 @@ impl CliSession {
         }
 
         Ok(())
-    }
-
-    /// Save a recipe to a file
-    ///
-    /// # Arguments
-    /// * `recipe` - The recipe to save
-    /// * `filepath_str` - The path to save the recipe to
-    ///
-    /// # Returns
-    /// * `Result<PathBuf, String>` - The path the recipe was saved to or an error message
-    fn save_recipe(
-        &self,
-        recipe: &goose::recipe::Recipe,
-        filepath_str: &str,
-    ) -> anyhow::Result<PathBuf> {
-        let path_buf = PathBuf::from(filepath_str);
-        let mut path = path_buf.clone();
-
-        // Update the final path if it's relative
-        if path_buf.is_relative() {
-            // If the path is relative, resolve it relative to the current working directory
-            let cwd = std::env::current_dir().context("Failed to get current directory")?;
-            path = cwd.join(&path_buf);
-        }
-
-        // Check if parent directory exists
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                return Err(anyhow::anyhow!(
-                    "Directory '{}' does not exist",
-                    parent.display()
-                ));
-            }
-        }
-
-        // Try creating the file
-        let file = std::fs::File::create(path.as_path())
-            .context(format!("Failed to create file '{}'", path.display()))?;
-
-        // Write YAML
-        serde_yaml::to_writer(file, recipe).context("Failed to save recipe")?;
-
-        Ok(path)
     }
 
     fn push_message(&mut self, message: Message) {

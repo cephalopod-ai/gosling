@@ -268,11 +268,6 @@ class DiagnosticsSession:
             if isinstance(prompt, dict) and prompt.get("name") and prompt.get("content") is not None:
                 files[f"prompts/{prompt['name']}.txt"] = prompt["content"]
 
-        for recipe in report.get("scheduledRecipes") or []:
-            if isinstance(recipe, dict) and recipe.get("path") and recipe.get("content") is not None:
-                path = Path(recipe["path"])
-                files[f"scheduled_recipes/{path.name}"] = recipe["content"]
-
         return files
 
     def get_file_list(self) -> list[str]:

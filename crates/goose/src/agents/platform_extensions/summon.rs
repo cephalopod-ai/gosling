@@ -1,15 +1,14 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::subagent_handler::{run_subagent_task, OnMessageCallback, SubagentRunParams};
+use crate::agents::subagent_handler::{
+    run_subagent_task, OnMessageCallback, SubagentRunParams, SubagentTask,
+};
 use crate::agents::subagent_task_config::{TaskConfig, DEFAULT_SUBAGENT_MAX_TURNS};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::agents::AgentConfig;
 use crate::config::paths::Paths;
 use crate::config::{Config, GooseMode};
 use crate::providers;
-use crate::recipe::build_recipe::build_recipe_from_template;
-use crate::recipe::local_recipes::load_local_recipe_file;
-use crate::recipe::{Recipe, RecipeParameter, Settings, RECIPE_FILE_EXTENSIONS};
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::SessionType;
 use crate::sources::parse_frontmatter;
@@ -41,8 +40,6 @@ const TASK_LABEL_BUDGET: usize = 60;
 
 fn kind_plural(kind: SourceType) -> &'static str {
     match kind {
-        SourceType::Subrecipe => "Subrecipes",
-        SourceType::Recipe => "Recipes",
         SourceType::Agent => "Agents",
         _ => "Other",
     }
@@ -52,7 +49,6 @@ fn kind_plural(kind: SourceType) -> &'static str {
 pub struct DelegateParams {
     pub instructions: Option<String>,
     pub source: Option<String>,
-    pub parameters: Option<HashMap<String, serde_json::Value>>,
     pub extensions: Option<Vec<String>>,
     pub provider: Option<String>,
     pub model: Option<String>,
@@ -102,6 +98,15 @@ struct AgentMetadata {
     model: Option<String>,
 }
 
+/// What a delegate runs: instructions/prompt for the subagent plus an
+/// optional model override from the agent file's frontmatter.
+#[derive(Debug, Default, Clone)]
+struct DelegateSpec {
+    instructions: Option<String>,
+    prompt: Option<String>,
+    model: Option<String>,
+}
+
 fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
     let (metadata, body): (AgentMetadata, String) = match parse_frontmatter(content) {
         Ok(Some(parsed)) => parsed,
@@ -137,68 +142,6 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
         supporting_files: Vec::new(),
         properties: std::collections::HashMap::new(),
     })
-}
-
-fn scan_recipes_from_dir(
-    dir: &Path,
-    kind: SourceType,
-    suppress_config_warnings: bool,
-    sources: &mut Vec<SourceEntry>,
-    seen: &mut std::collections::HashSet<String>,
-) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !RECIPE_FILE_EXTENSIONS.contains(&ext) {
-            continue;
-        }
-
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        if name.is_empty() || seen.contains(&name) {
-            continue;
-        }
-
-        match Recipe::from_file_path(&path) {
-            Ok(recipe) => {
-                seen.insert(name.clone());
-                sources.push(SourceEntry {
-                    source_type: kind,
-                    name,
-                    description: recipe.description.clone(),
-                    content: recipe.instructions.clone().unwrap_or_default(),
-                    path: path.to_string_lossy().into_owned(),
-                    global: false,
-                    writable: true,
-                    supporting_files: Vec::new(),
-                    properties: std::collections::HashMap::new(),
-                });
-            }
-            Err(e) => {
-                // The working directory commonly contains project config like package.json
-                // and tsconfig.json, which parse as valid JSON but lack Recipe fields. In that
-                // case treat them as "not a recipe" rather than warning. Dedicated recipe
-                // directories still warn so a real recipe with a typo is not silently dropped.
-                if suppress_config_warnings && e.to_string().contains("missing field") {
-                    continue;
-                }
-                warn!("Failed to parse recipe {}: {}", path.display(), e);
-            }
-        }
-    }
 }
 
 fn scan_agents_from_dir(
@@ -246,29 +189,6 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     let home = dirs::home_dir();
     let config = Paths::config_dir();
 
-    let local_recipe_dirs: Vec<PathBuf> = vec![
-        working_dir.join(".goose/recipes"),
-        working_dir.join(".agents/recipes"),
-    ];
-
-    let global_recipe_dirs: Vec<PathBuf> = std::env::var("GOOSE_RECIPE_PATH")
-        .ok()
-        .into_iter()
-        .flat_map(|p| {
-            let sep = if cfg!(windows) { ';' } else { ':' };
-            p.split(sep).map(PathBuf::from).collect::<Vec<_>>()
-        })
-        .chain(
-            [
-                home.as_ref().map(|h| h.join(".goose/recipes")),
-                Some(config.join("recipes")),
-                home.as_ref().map(|h| h.join(".agents/recipes")),
-            ]
-            .into_iter()
-            .flatten(),
-        )
-        .collect();
-
     let local_agent_dirs: Vec<PathBuf> = vec![
         working_dir.join(".goose/agents"),
         working_dir.join(".claude/agents"),
@@ -285,24 +205,8 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     .flatten()
     .collect();
 
-    scan_recipes_from_dir(
-        working_dir,
-        SourceType::Recipe,
-        true,
-        &mut sources,
-        &mut seen,
-    );
-
-    for dir in local_recipe_dirs {
-        scan_recipes_from_dir(&dir, SourceType::Recipe, false, &mut sources, &mut seen);
-    }
-
     for dir in local_agent_dirs {
         scan_agents_from_dir(&dir, &mut sources, &mut seen);
-    }
-
-    for dir in global_recipe_dirs {
-        scan_recipes_from_dir(&dir, SourceType::Recipe, false, &mut sources, &mut seen);
     }
 
     for dir in global_agent_dirs {
@@ -328,38 +232,8 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
     // filter the sources down to what we want even though currently that is what we get
     let mut sources: Vec<SourceEntry> = discover_filesystem_sources(&session.working_dir)
         .into_iter()
-        .filter(|s| {
-            matches!(
-                s.source_type,
-                SourceType::Agent | SourceType::Recipe | SourceType::Subrecipe
-            )
-        })
+        .filter(|s| matches!(s.source_type, SourceType::Agent))
         .collect();
-
-    // If the session is started from a recipe, also use the subrecipes for
-    // that recipe as delegate targets
-    if let Some(recipe) = session.recipe.as_ref() {
-        if let Some(subs) = recipe.sub_recipes.as_ref() {
-            let mut seen: std::collections::HashSet<String> =
-                sources.iter().map(|s| s.name.clone()).collect();
-            for sr in subs {
-                if !seen.insert(sr.name.clone()) {
-                    continue;
-                }
-                sources.push(SourceEntry {
-                    source_type: SourceType::Subrecipe,
-                    name: sr.name.clone(),
-                    description: sr.description.clone().unwrap_or_default(),
-                    content: String::new(),
-                    path: sr.path.clone(),
-                    global: false,
-                    writable: false,
-                    supporting_files: Vec::new(),
-                    properties: std::collections::HashMap::new(),
-                });
-            }
-        }
-    }
 
     if sources.is_empty() {
         return String::new();
@@ -529,14 +403,14 @@ impl SummonClient {
         Tool::new(
             "load",
             "Load knowledge into your current context or discover available sources.\n\n\
-             Call with no arguments to list all available sources (subrecipes, recipes, agents).\n\
+             Call with no arguments to list all available agents.\n\
              Call with a source name to load its content into your context.\n\
              For background tasks: load(source: \"task_id\") waits for the task and returns the result.\n\
              To cancel a running task: load(source: \"task_id\", cancel: true) stops and returns output.\n\
              To check progress: load(source: \"task_id\", peek: true) returns status without blocking.\n\n\
              Examples:\n\
              - load() → Lists available sources\n\
-             - load(source: \"deploy\") → Loads the deploy recipe\n\
+             - load(source: \"reviewer\") → Loads the reviewer agent\n\
              - load(source: \"20260219_1\") → Waits for background task, then returns result\n\
              - load(source: \"20260219_1\", peek: true) → Check task progress without waiting"
                 .to_string(),
@@ -554,12 +428,7 @@ impl SummonClient {
                 },
                 "source": {
                     "type": "string",
-                    "description": "Name of a recipe or agent to run."
-                },
-                "parameters": {
-                    "type": "object",
-                    "additionalProperties": true,
-                    "description": "Parameters for the source (only valid with source)."
+                    "description": "Name of an agent to run."
                 },
                 "extensions": {
                     "type": "array",
@@ -581,7 +450,7 @@ impl SummonClient {
                 "max_turns": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Maximum turns for this delegate. Overrides recipe settings.max_turns and GOOSE_SUBAGENT_MAX_TURNS."
+                    "description": "Maximum turns for this delegate. Overrides GOOSE_SUBAGENT_MAX_TURNS."
                 },
                 "context": {
                     "type": "string",
@@ -604,8 +473,8 @@ impl SummonClient {
             "Delegate a task to a subagent that runs independently with its own context.\n\n\
              Modes:\n\
              1. Ad-hoc: Provide `instructions` for a custom task\n\
-             2. Source-based: Provide `source` name to run a subrecipe, recipe, or agent\n\
-             3. Combined: Pair a source with a task (e.g., source: \"deploy\", instructions: \"deploy to staging\")\n\n\
+             2. Source-based: Provide `source` name to run an agent\n\
+             3. Combined: Pair a source with a task (e.g., source: \"reviewer\", instructions: \"review the auth module\")\n\n\
              Effective Delegation:\n\
              - Delegates know only instructions + source content\n\
              - Delegates cannot coordinate. Same-file work = conflicts.\n\
@@ -628,14 +497,11 @@ impl SummonClient {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
     }
 
-    async fn get_sources(&self, session_id: &str, working_dir: &Path) -> Vec<SourceEntry> {
+    async fn get_sources(&self, working_dir: &Path) -> Vec<SourceEntry> {
         let fs_sources = self.get_filesystem_sources(working_dir).await;
 
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut sources: Vec<SourceEntry> = Vec::new();
-
-        self.add_subrecipes(session_id, &mut sources, &mut seen)
-            .await;
 
         for source in fs_sources {
             if !seen.contains(&source.name) {
@@ -655,153 +521,19 @@ impl SummonClient {
                 return sources.clone();
             }
         }
-        let sources = self.discover_filesystem_sources(working_dir);
+        let sources = discover_filesystem_sources(working_dir);
         *cache = Some((Instant::now(), working_dir.to_path_buf(), sources.clone()));
         sources
     }
 
     async fn resolve_source(
         &self,
-        session_id: &str,
         name: &str,
         working_dir: &Path,
     ) -> Result<Option<SourceEntry>, String> {
-        let sources = self.get_sources(session_id, working_dir).await;
+        let sources = self.get_sources(working_dir).await;
 
-        if let Some(mut source) = sources.iter().find(|s| s.name == name).cloned() {
-            if source.source_type == SourceType::Subrecipe && source.content.is_empty() {
-                source.content = self.load_subrecipe_content(session_id, &source.name).await;
-            }
-            return Ok(Some(source));
-        }
-
-        Ok(None)
-    }
-
-    async fn load_subrecipe_content(&self, session_id: &str, name: &str) -> String {
-        let session = match self
-            .context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-        {
-            Ok(s) => s,
-            Err(_) => return String::new(),
-        };
-
-        let sub_recipes = match session.recipe.as_ref().and_then(|r| r.sub_recipes.as_ref()) {
-            Some(sr) => sr,
-            None => return String::new(),
-        };
-
-        let sr = match sub_recipes.iter().find(|sr| sr.name == name) {
-            Some(sr) => sr,
-            None => return String::new(),
-        };
-
-        match load_local_recipe_file(&sr.path) {
-            Ok(recipe_file) => match Recipe::from_content(&recipe_file.content) {
-                Ok(recipe) => {
-                    let mut content = recipe.instructions.unwrap_or_default();
-                    if let Some(params) = &recipe.parameters {
-                        if !params.is_empty() {
-                            content.push_str("\n\n");
-                            content.push_str(&Self::format_parameters(params));
-                        }
-                    }
-                    content
-                }
-                Err(_) => recipe_file.content,
-            },
-            Err(_) => String::new(),
-        }
-    }
-
-    fn discover_filesystem_sources(&self, working_dir: &Path) -> Vec<SourceEntry> {
-        discover_filesystem_sources(working_dir)
-    }
-
-    async fn add_subrecipes(
-        &self,
-        session_id: &str,
-        sources: &mut Vec<SourceEntry>,
-        seen: &mut std::collections::HashSet<String>,
-    ) {
-        let session = match self
-            .context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-        {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-
-        let sub_recipes = match session.recipe.as_ref().and_then(|r| r.sub_recipes.as_ref()) {
-            Some(sr) => sr,
-            None => return,
-        };
-
-        for sr in sub_recipes {
-            if seen.contains(&sr.name) {
-                continue;
-            }
-            seen.insert(sr.name.clone());
-
-            let description = self.build_subrecipe_description(sr).await;
-
-            sources.push(SourceEntry {
-                source_type: SourceType::Subrecipe,
-                name: sr.name.clone(),
-                description,
-                content: String::new(),
-                path: sr.path.clone(),
-                global: false,
-                writable: true,
-                supporting_files: Vec::new(),
-                properties: std::collections::HashMap::new(),
-            });
-        }
-    }
-
-    async fn build_subrecipe_description(&self, sr: &crate::recipe::SubRecipe) -> String {
-        if let Some(desc) = &sr.description {
-            return desc.clone();
-        }
-
-        if let Ok(recipe_file) = load_local_recipe_file(&sr.path) {
-            if let Ok(recipe) = Recipe::from_content(&recipe_file.content) {
-                let mut desc = recipe.description.clone();
-
-                if let Some(params) = &recipe.parameters {
-                    if !params.is_empty() {
-                        desc = format!("{}\n{}", desc, Self::format_parameters(params));
-                    }
-                }
-
-                return desc;
-            }
-        }
-
-        format!("Subrecipe from {}", sr.path)
-    }
-
-    fn format_parameters(params: &[RecipeParameter]) -> String {
-        let mut out = String::from("Parameters:");
-        for p in params {
-            let mut detail = format!("\n  - {} ({}, {})", p.key, p.input_type, p.requirement);
-            if let Some(default) = &p.default {
-                detail.push_str(&format!(", default: \"{}\"", default));
-            }
-            if let Some(options) = &p.options {
-                if !options.is_empty() {
-                    detail.push_str(&format!(", options: [{}]", options.join(", ")));
-                }
-            }
-            detail.push_str(&format!(": {}", p.description));
-            out.push_str(&detail);
-        }
-        out
+        Ok(sources.iter().find(|s| s.name == name).cloned())
     }
 
     async fn handle_load(
@@ -832,7 +564,7 @@ impl SummonClient {
 
         if source_name.is_none() {
             return self
-                .handle_load_discovery(session_id, &working_dir)
+                .handle_load_discovery(&working_dir)
                 .await
                 .map(CallToolResult::success);
         }
@@ -865,7 +597,7 @@ impl SummonClient {
             return Ok(CallToolResult::success(task_result.content).with_meta(Some(meta)));
         }
 
-        self.handle_load_source(session_id, name, &working_dir)
+        self.handle_load_source(name, &working_dir)
             .await
             .map(CallToolResult::success)
     }
@@ -1081,27 +813,21 @@ impl SummonClient {
         Err(format!("Task '{}' not found.", task_id))
     }
 
-    async fn handle_load_discovery(
-        &self,
-        session_id: &str,
-        working_dir: &Path,
-    ) -> Result<Vec<Content>, String> {
+    async fn handle_load_discovery(&self, working_dir: &Path) -> Result<Vec<Content>, String> {
         {
             let mut cache = self.source_cache.lock().await;
             *cache = None;
         }
 
-        let sources = self.get_sources(session_id, working_dir).await;
+        let sources = self.get_sources(working_dir).await;
         let completed = self.completed_tasks.lock().await;
 
         if sources.is_empty() && completed.is_empty() {
             return Ok(vec![Content::text(
                 "No sources available for load/delegate.\n\n\
                  Sources are discovered from:\n\
-                 • Current recipe's sub_recipes\n\
-                 • .agents/recipes/, .agents/agents/ (project-level)\n\
-                 • ~/.agents/agents/ (global)\n\
-                 • GOOSE_RECIPE_PATH directories",
+                 • .goose/agents/, .agents/agents/ (project-level)\n\
+                 • ~/.goose/agents/, ~/.agents/agents/ (global)",
             )]);
         }
 
@@ -1124,7 +850,7 @@ impl SummonClient {
             }
         }
 
-        for kind in [SourceType::Subrecipe, SourceType::Recipe, SourceType::Agent] {
+        for kind in [SourceType::Agent] {
             let kind_sources: Vec<_> = sources.iter().filter(|s| s.source_type == kind).collect();
             if !kind_sources.is_empty() {
                 output.push_str(&format!("\n{}:\n", kind_plural(kind)));
@@ -1146,11 +872,10 @@ impl SummonClient {
 
     async fn handle_load_source(
         &self,
-        session_id: &str,
         name: &str,
         working_dir: &Path,
     ) -> Result<Vec<Content>, String> {
-        let source = self.resolve_source(session_id, name, working_dir).await?;
+        let source = self.resolve_source(name, working_dir).await?;
 
         match source {
             Some(source) => {
@@ -1164,7 +889,7 @@ impl SummonClient {
                 Ok(vec![Content::text(output)])
             }
             None => {
-                let sources = self.get_sources(session_id, working_dir).await;
+                let sources = self.get_sources(working_dir).await;
 
                 let suggestions: Vec<&str> = sources
                     .iter()
@@ -1232,12 +957,10 @@ impl SummonClient {
         }
 
         let working_dir = session.working_dir.clone();
-        let recipe = self
-            .build_delegate_recipe(&params, session_id, &working_dir)
-            .await?;
+        let spec = self.build_delegate_spec(&params, &working_dir).await?;
 
         let task_config = self
-            .build_task_config(&params, &recipe, &session)
+            .build_task_config(&params, &spec, &session)
             .await
             .map_err(|e| format!("Failed to build task config: {}", e))?;
 
@@ -1247,7 +970,6 @@ impl SummonClient {
         let agent_config = AgentConfig::new(
             self.context.session_manager.clone(),
             crate::config::permission::PermissionManager::instance(),
-            None,
             GooseMode::Auto,
             true, // disable session naming for subagents
             crate::agents::GoosePlatform::GooseCli,
@@ -1277,7 +999,10 @@ impl SummonClient {
 
         let result = run_subagent_task(SubagentRunParams {
             config: agent_config,
-            recipe,
+            task: SubagentTask {
+                instructions: spec.instructions.clone(),
+                prompt: spec.prompt.clone(),
+            },
             task_config,
             return_last_only: true,
             session_id: subagent_session.id,
@@ -1310,10 +1035,6 @@ impl SummonClient {
             return Err("Must provide 'instructions' or 'source' (or both)".to_string());
         }
 
-        if params.parameters.is_some() && params.source.is_none() {
-            return Err("'parameters' can only be used with 'source'".to_string());
-        }
-
         if let Some(max) = params.max_turns {
             if max < 1 {
                 return Err("'max_turns' must be at least 1".to_string());
@@ -1323,60 +1044,51 @@ impl SummonClient {
         Ok(())
     }
 
-    async fn build_delegate_recipe(
+    async fn build_delegate_spec(
         &self,
         params: &DelegateParams,
-        session_id: &str,
         working_dir: &Path,
-    ) -> Result<Recipe, String> {
-        let mut recipe = if let Some(source_name) = &params.source {
-            self.build_source_recipe(source_name, params, session_id, working_dir)
+    ) -> Result<DelegateSpec, String> {
+        let mut spec = if let Some(source_name) = &params.source {
+            self.build_source_spec(source_name, params, working_dir)
                 .await?
         } else {
-            self.build_adhoc_recipe(params)?
+            self.build_adhoc_spec(params)?
         };
 
         if let Some(ref context) = params.context {
-            let existing = recipe.instructions.unwrap_or_default();
-            recipe.instructions = Some(build_instructions_with_context(context, &existing));
+            let existing = spec.instructions.unwrap_or_default();
+            spec.instructions = Some(build_instructions_with_context(context, &existing));
         }
 
-        Ok(recipe)
+        Ok(spec)
     }
 
-    fn build_adhoc_recipe(&self, params: &DelegateParams) -> Result<Recipe, String> {
+    fn build_adhoc_spec(&self, params: &DelegateParams) -> Result<DelegateSpec, String> {
         let task = params
             .instructions
             .as_ref()
             .ok_or("Instructions required for ad-hoc task")?;
 
-        Recipe::builder()
-            .version("1.0.0")
-            .title("Delegated Task")
-            .description("Ad-hoc delegated task")
-            .prompt(task)
-            .build()
-            .map_err(|e| format!("Failed to build recipe: {}", e))
+        Ok(DelegateSpec {
+            prompt: Some(task.clone()),
+            ..Default::default()
+        })
     }
 
-    async fn build_source_recipe(
+    async fn build_source_spec(
         &self,
         source_name: &str,
         params: &DelegateParams,
-        session_id: &str,
         working_dir: &Path,
-    ) -> Result<Recipe, String> {
+    ) -> Result<DelegateSpec, String> {
         let source = self
-            .resolve_source(session_id, source_name, working_dir)
+            .resolve_source(source_name, working_dir)
             .await?
             .ok_or_else(|| format!("Source '{}' not found", source_name))?;
 
-        let mut recipe = match source.source_type {
-            SourceType::Recipe | SourceType::Subrecipe => {
-                self.build_recipe_from_source(&source, params, session_id)
-                    .await?
-            }
-            SourceType::Agent => self.build_recipe_from_agent(&source, params)?,
+        let mut spec = match source.source_type {
+            SourceType::Agent => self.build_spec_from_agent(&source, params)?,
             _ => {
                 return Err(format!(
                     "Source '{}' has kind '{}' which cannot be delegated from summon",
@@ -1386,100 +1098,22 @@ impl SummonClient {
         };
 
         if let Some(extra_instructions) = &params.instructions {
-            if recipe.prompt.is_some() {
-                let current_prompt = recipe.prompt.take().unwrap();
-                recipe.prompt = Some(format!("{}\n\n{}", current_prompt, extra_instructions));
+            if spec.prompt.is_some() {
+                let current_prompt = spec.prompt.take().unwrap();
+                spec.prompt = Some(format!("{}\n\n{}", current_prompt, extra_instructions));
             } else {
-                recipe.prompt = Some(extra_instructions.clone());
+                spec.prompt = Some(extra_instructions.clone());
             }
         }
 
-        Ok(recipe)
+        Ok(spec)
     }
 
-    async fn build_recipe_from_source(
+    fn build_spec_from_agent(
         &self,
         source: &SourceEntry,
         params: &DelegateParams,
-        session_id: &str,
-    ) -> Result<Recipe, String> {
-        let session = self
-            .context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .map_err(|e| format!("Failed to get session: {}", e))?;
-
-        if source.source_type == SourceType::Subrecipe {
-            let sub_recipes = session.recipe.as_ref().and_then(|r| r.sub_recipes.as_ref());
-
-            if let Some(sub_recipes) = sub_recipes {
-                if let Some(sr) = sub_recipes.iter().find(|sr| sr.name == source.name) {
-                    let recipe_file = load_local_recipe_file(&sr.path).map_err(|e| {
-                        format!("Failed to load subrecipe '{}': {}", source.name, e)
-                    })?;
-
-                    let mut merged: HashMap<String, String> = HashMap::new();
-                    if let Some(values) = &sr.values {
-                        for (k, v) in values {
-                            merged.insert(k.clone(), v.clone());
-                        }
-                    }
-                    if let Some(provided_params) = &params.parameters {
-                        for (k, v) in provided_params {
-                            let value_str = match v {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => other.to_string(),
-                            };
-                            merged.insert(k.clone(), value_str);
-                        }
-                    }
-                    let param_values: Vec<(String, String)> = merged.into_iter().collect();
-
-                    return build_recipe_from_template(
-                        recipe_file.content,
-                        &recipe_file.parent_dir,
-                        param_values,
-                        None::<fn(&str, &str) -> Result<String, anyhow::Error>>,
-                    )
-                    .map_err(|e| format!("Failed to build subrecipe: {}", e));
-                }
-            }
-        }
-
-        let recipe_file = load_local_recipe_file(&source.path)
-            .map_err(|e| format!("Failed to load recipe '{}': {}", source.name, e))?;
-
-        let param_values: Vec<(String, String)> = params
-            .parameters
-            .as_ref()
-            .map(|p| {
-                p.iter()
-                    .map(|(k, v)| {
-                        let value_str = match v {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        };
-                        (k.clone(), value_str)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        build_recipe_from_template(
-            recipe_file.content,
-            &recipe_file.parent_dir,
-            param_values,
-            None::<fn(&str, &str) -> Result<String, anyhow::Error>>,
-        )
-        .map_err(|e| format!("Failed to build recipe: {}", e))
-    }
-
-    fn build_recipe_from_agent(
-        &self,
-        source: &SourceEntry,
-        params: &DelegateParams,
-    ) -> Result<Recipe, String> {
+    ) -> Result<DelegateSpec, String> {
         let agent_content = if source.path.is_empty() {
             return Err("Agent source has no path".to_string());
         } else {
@@ -1491,44 +1125,25 @@ impl SummonClient {
             .map_err(|e| format!("Failed to parse agent frontmatter: {}", e))?
             .ok_or("No frontmatter found in agent file")?;
 
-        let model = metadata.model;
+        let prompt = params
+            .instructions
+            .is_none()
+            .then(|| "Proceed with your expertise to produce a useful result.".to_string());
 
-        // max_turns is set later in build_task_config so it can incorporate params.max_turns
-        // with the correct priority ordering; setting it here would cause it to be overridden
-        // by the parent session's recipe instead.
-        let settings = model.map(|m| Settings {
-            goose_model: Some(m),
-            goose_provider: params.provider.clone(),
-            temperature: params.temperature,
-            max_turns: None,
-        });
-
-        let mut builder = Recipe::builder()
-            .version("1.0.0")
-            .title(format!("Agent: {}", source.name))
-            .description(source.description.clone())
-            .instructions(&source.content);
-
-        if let Some(settings) = settings {
-            builder = builder.settings(settings);
-        }
-
-        if params.instructions.is_none() {
-            builder = builder.prompt("Proceed with your expertise to produce a useful result.");
-        }
-
-        builder
-            .build()
-            .map_err(|e| format!("Failed to build recipe from agent: {}", e))
+        Ok(DelegateSpec {
+            instructions: Some(source.content.clone()),
+            prompt,
+            model: metadata.model,
+        })
     }
 
     async fn build_task_config(
         &self,
         params: &DelegateParams,
-        recipe: &Recipe,
+        spec: &DelegateSpec,
         session: &crate::session::Session,
     ) -> Result<TaskConfig, anyhow::Error> {
-        let (provider, model_config) = self.resolve_provider(params, recipe, session).await?;
+        let (provider, model_config) = self.resolve_provider(params, spec, session).await?;
 
         let mut extensions = EnabledExtensionsState::extensions_or_default(
             Some(&session.extension_data),
@@ -1556,10 +1171,7 @@ impl SummonClient {
             }
         }
 
-        let max_turns = params
-            .max_turns
-            .or_else(|| recipe.settings.as_ref().and_then(|s| s.max_turns))
-            .unwrap_or_else(|| self.resolve_max_turns(session));
+        let max_turns = params.max_turns.unwrap_or_else(|| self.resolve_max_turns());
 
         if max_turns == 0 || max_turns > u32::MAX as usize {
             anyhow::bail!(
@@ -1589,7 +1201,7 @@ impl SummonClient {
     fn resolve_model_config(
         &self,
         params: &DelegateParams,
-        recipe: &Recipe,
+        spec: &DelegateSpec,
         session: &crate::session::Session,
         provider_name: &str,
     ) -> Result<goose_providers::model::ModelConfig, anyhow::Error> {
@@ -1600,7 +1212,7 @@ impl SummonClient {
         let override_model = params
             .model
             .clone()
-            .or_else(|| recipe.settings.as_ref().and_then(|s| s.goose_model.clone()))
+            .or_else(|| spec.model.clone())
             .or_else(|| {
                 Config::global()
                     .get_param::<String>("GOOSE_SUBAGENT_MODEL")
@@ -1632,8 +1244,6 @@ impl SummonClient {
 
         if let Some(temp) = params.temperature {
             model_config = model_config.with_temperature(Some(temp));
-        } else if let Some(temp) = recipe.settings.as_ref().and_then(|s| s.temperature) {
-            model_config = model_config.with_temperature(Some(temp));
         }
 
         Ok(model_config)
@@ -1642,7 +1252,7 @@ impl SummonClient {
     async fn resolve_provider(
         &self,
         params: &DelegateParams,
-        recipe: &Recipe,
+        spec: &DelegateSpec,
         session: &crate::session::Session,
     ) -> Result<
         (
@@ -1655,12 +1265,6 @@ impl SummonClient {
             .provider
             .clone()
             .or_else(|| {
-                recipe
-                    .settings
-                    .as_ref()
-                    .and_then(|s| s.goose_provider.clone())
-            })
-            .or_else(|| {
                 Config::global()
                     .get_param::<String>("GOOSE_SUBAGENT_PROVIDER")
                     .ok()
@@ -1668,22 +1272,15 @@ impl SummonClient {
             .or_else(|| session.provider_name.clone())
             .ok_or_else(|| anyhow::anyhow!("No provider configured"))?;
 
-        let model_config = self.resolve_model_config(params, recipe, session, &provider_name)?;
+        let model_config = self.resolve_model_config(params, spec, session, &provider_name)?;
         let provider = providers::create(&provider_name, Vec::new()).await?;
         Ok((provider, model_config))
     }
 
-    fn resolve_max_turns(&self, session: &crate::session::Session) -> usize {
-        session
-            .recipe
-            .as_ref()
-            .and_then(|r| r.settings.as_ref())
-            .and_then(|s| s.max_turns)
-            .or_else(|| {
-                std::env::var("GOOSE_SUBAGENT_MAX_TURNS")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-            })
+    fn resolve_max_turns(&self) -> usize {
+        std::env::var("GOOSE_SUBAGENT_MAX_TURNS")
+            .ok()
+            .and_then(|v| v.parse().ok())
             .or_else(|| {
                 Config::global()
                     .get_param::<usize>("GOOSE_SUBAGENT_MAX_TURNS")
@@ -1774,12 +1371,10 @@ impl SummonClient {
             .map_err(|e| format!("Failed to get session: {}", e))?;
 
         let working_dir = session.working_dir.clone();
-        let recipe = self
-            .build_delegate_recipe(&params, session_id, &working_dir)
-            .await?;
+        let spec = self.build_delegate_spec(&params, &working_dir).await?;
 
         let task_config = self
-            .build_task_config(&params, &recipe, &session)
+            .build_task_config(&params, &spec, &session)
             .await
             .map_err(|e| format!("Failed to build task config: {}", e))?;
 
@@ -1791,7 +1386,6 @@ impl SummonClient {
         let agent_config = AgentConfig::new(
             self.context.session_manager.clone(),
             crate::config::permission::PermissionManager::instance(),
-            None,
             GooseMode::Auto,
             true, // disable session naming for subagents
             crate::agents::GoosePlatform::GooseCli,
@@ -1838,7 +1432,10 @@ impl SummonClient {
         let handle = tokio::spawn(async move {
             run_subagent_task(SubagentRunParams {
                 config: agent_config,
-                recipe,
+                task: SubagentTask {
+                    instructions: spec.instructions.clone(),
+                    prompt: spec.prompt.clone(),
+                },
                 task_config,
                 return_last_only: true,
                 session_id: subagent_session.id,
@@ -2165,51 +1762,9 @@ You review code."#;
         assert_eq!(sources[0].name, "reviewer");
     }
 
-    #[test]
-    fn test_recipe_scan_skips_non_recipe_project_config_files() {
-        let temp_dir = TempDir::new().unwrap();
-        fs::write(
-            temp_dir.path().join("package.json"),
-            r#"{"scripts":{"test":"cargo test"}}"#,
-        )
-        .unwrap();
-        fs::write(
-            temp_dir.path().join("tsconfig.json"),
-            r#"{"compilerOptions":{"strict":true}}"#,
-        )
-        .unwrap();
-        fs::write(
-            temp_dir.path().join("valid.yaml"),
-            "title: Valid\ndescription: Real recipe\ninstructions: Run valid steps",
-        )
-        .unwrap();
-
-        let mut sources = Vec::new();
-        let mut seen = HashSet::new();
-        scan_recipes_from_dir(
-            temp_dir.path(),
-            SourceType::Recipe,
-            true,
-            &mut sources,
-            &mut seen,
-        );
-
-        assert_eq!(sources.len(), 1);
-        assert_eq!(sources[0].name, "valid");
-        assert_eq!(sources[0].description, "Real recipe");
-    }
-
     #[tokio::test]
-    async fn test_discover_recipes_and_agents() {
+    async fn test_discover_agents() {
         let temp_dir = TempDir::new().unwrap();
-
-        let recipes = temp_dir.path().join(".goose/recipes");
-        fs::create_dir_all(&recipes).unwrap();
-        fs::write(
-            recipes.join("deploy.yaml"),
-            "title: Deploy\ndescription: Deploy to production\ninstructions: Run deploy steps",
-        )
-        .unwrap();
 
         let agents = temp_dir.path().join(".goose/agents");
         fs::create_dir_all(&agents).unwrap();
@@ -2219,15 +1774,7 @@ You review code."#;
         )
         .unwrap();
 
-        let client = SummonClient::new(create_test_context()).unwrap();
-        let sources = client.discover_filesystem_sources(temp_dir.path());
-
-        let recipe = sources
-            .iter()
-            .find(|s| s.name == "deploy" && s.source_type == SourceType::Recipe)
-            .unwrap();
-        assert_eq!(recipe.description, "Deploy to production");
-        assert_eq!(recipe.content, "Run deploy steps");
+        let sources = discover_filesystem_sources(temp_dir.path());
 
         let agent = sources
             .iter()
@@ -2238,54 +1785,29 @@ You review code."#;
     }
 
     #[tokio::test]
-    async fn test_recipe_deduplication_local_wins() {
+    async fn test_agent_deduplication_local_wins() {
         let temp_dir = TempDir::new().unwrap();
 
-        let local = temp_dir.path().join(".goose/recipes");
+        let local = temp_dir.path().join(".goose/agents");
         fs::create_dir_all(&local).unwrap();
         fs::write(
-            local.join("deploy.yaml"),
-            "title: Deploy\ndescription: Local deploy\ninstructions: local steps",
+            local.join("reviewer.md"),
+            "---\nname: reviewer\ndescription: Local reviewer\n---\nlocal steps",
         )
         .unwrap();
 
-        let also_local = temp_dir.path().join(".agents/recipes");
+        let also_local = temp_dir.path().join(".agents/agents");
         fs::create_dir_all(&also_local).unwrap();
         fs::write(
-            also_local.join("deploy.yaml"),
-            "title: Deploy\ndescription: Agents deploy\ninstructions: agents steps",
+            also_local.join("reviewer.md"),
+            "---\nname: reviewer\ndescription: Agents reviewer\n---\nagents steps",
         )
         .unwrap();
 
-        let client = SummonClient::new(create_test_context()).unwrap();
-        let sources = client.discover_filesystem_sources(temp_dir.path());
+        let sources = discover_filesystem_sources(temp_dir.path());
 
-        let deploys: Vec<_> = sources.iter().filter(|s| s.name == "deploy").collect();
-        assert_eq!(deploys.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_load_recipe_source() {
-        let temp_dir = TempDir::new().unwrap();
-
-        let recipes = temp_dir.path().join(".goose/recipes");
-        fs::create_dir_all(&recipes).unwrap();
-        fs::write(
-            recipes.join("deploy.yaml"),
-            "title: Deploy\ndescription: Deploy to production\ninstructions: Run deploy steps",
-        )
-        .unwrap();
-
-        let client = SummonClient::new(create_test_context()).unwrap();
-        let result = client
-            .handle_load_source("test", "deploy", temp_dir.path())
-            .await
-            .unwrap();
-
-        let text = &result[0].as_text().expect("expected text content").text;
-        assert!(text.contains("deploy"));
-        assert!(text.contains("Run deploy steps"));
-        assert!(text.contains("now available in your context"));
+        let reviewers: Vec<_> = sources.iter().filter(|s| s.name == "reviewer").collect();
+        assert_eq!(reviewers.len(), 1);
     }
 
     #[tokio::test]
@@ -2302,7 +1824,7 @@ You review code."#;
 
         let client = SummonClient::new(create_test_context()).unwrap();
         let result = client
-            .handle_load_source("test", "reviewer", temp_dir.path())
+            .handle_load_source("reviewer", temp_dir.path())
             .await
             .unwrap();
 
@@ -2316,17 +1838,17 @@ You review code."#;
     async fn test_load_nonexistent_source_suggests_similar() {
         let temp_dir = TempDir::new().unwrap();
 
-        let recipes = temp_dir.path().join(".goose/recipes");
-        fs::create_dir_all(&recipes).unwrap();
+        let agents = temp_dir.path().join(".goose/agents");
+        fs::create_dir_all(&agents).unwrap();
         fs::write(
-            recipes.join("deploy.yaml"),
-            "title: Deploy\ndescription: Deploy to production\ninstructions: steps",
+            agents.join("deploy.md"),
+            "---\nname: deploy\ndescription: Deploy to production\n---\nsteps",
         )
         .unwrap();
 
         let client = SummonClient::new(create_test_context()).unwrap();
         let err = client
-            .handle_load_source("test", "deploy-prod", temp_dir.path())
+            .handle_load_source("deploy-prod", temp_dir.path())
             .await
             .unwrap_err();
 
@@ -2340,7 +1862,7 @@ You review code."#;
 
         let client = SummonClient::new(create_test_context()).unwrap();
         let err = client
-            .handle_load_source("test", "zzz-nonexistent", temp_dir.path())
+            .handle_load_source("zzz-nonexistent", temp_dir.path())
             .await
             .unwrap_err();
 
@@ -2387,8 +1909,8 @@ You review code."#;
         };
 
         assert_eq!(
-            SummonClient::get_task_description(&make_params(Some("recipe"), None)),
-            "recipe"
+            SummonClient::get_task_description(&make_params(Some("reviewer"), None)),
+            "reviewer"
         );
         assert_eq!(
             SummonClient::get_task_description(&make_params(None, Some("do stuff"))),
@@ -2405,7 +1927,7 @@ You review code."#;
     }
 
     #[tokio::test]
-    async fn test_context_injected_into_adhoc_recipe() {
+    async fn test_context_injected_into_adhoc_spec() {
         let temp_dir = TempDir::new().unwrap();
         let client = SummonClient::new(create_test_context()).unwrap();
 
@@ -2415,16 +1937,16 @@ You review code."#;
             ..Default::default()
         };
 
-        let recipe = client
-            .build_delegate_recipe(&params, "test", temp_dir.path())
+        let spec = client
+            .build_delegate_spec(&params, temp_dir.path())
             .await
             .unwrap();
 
         assert_eq!(
-            recipe.instructions.as_deref(),
+            spec.instructions.as_deref(),
             Some("# Reference Context\n\nbackground info")
         );
-        assert_eq!(recipe.prompt.as_deref(), Some("do the task"));
+        assert_eq!(spec.prompt.as_deref(), Some("do the task"));
     }
 
     #[test]
@@ -2468,55 +1990,12 @@ You review code."#;
 
     #[test]
     #[serial]
-    fn test_resolve_max_turns_recipe_overrides_env_var() {
-        let context = create_test_context();
-        let client = SummonClient::new(context).unwrap();
-
-        let session = crate::session::Session {
-            recipe: Some(crate::recipe::Recipe {
-                version: "1.0.0".to_string(),
-                title: String::new(),
-                description: String::new(),
-                instructions: None,
-                prompt: None,
-                extensions: None,
-                settings: Some(crate::recipe::Settings {
-                    goose_provider: None,
-                    goose_model: None,
-                    temperature: None,
-                    max_turns: Some(10),
-                }),
-                activities: None,
-                author: None,
-                parameters: None,
-                response: None,
-                sub_recipes: None,
-                retry: None,
-            }),
-            ..Default::default()
-        };
-
-        // Set env var to a different value — recipe should still win
-        std::env::set_var("GOOSE_SUBAGENT_MAX_TURNS", "99");
-        let result = client.resolve_max_turns(&session);
-        std::env::remove_var("GOOSE_SUBAGENT_MAX_TURNS");
-
-        assert_eq!(
-            result, 10,
-            "recipe settings.max_turns should take priority over env var"
-        );
-    }
-
-    #[test]
-    #[serial]
     fn test_resolve_max_turns_falls_back_to_env_var() {
         let context = create_test_context();
         let client = SummonClient::new(context).unwrap();
 
-        let session = crate::session::Session::default(); // no recipe
-
         std::env::set_var("GOOSE_SUBAGENT_MAX_TURNS", "7");
-        let result = client.resolve_max_turns(&session);
+        let result = client.resolve_max_turns();
         std::env::remove_var("GOOSE_SUBAGENT_MAX_TURNS");
 
         assert_eq!(
@@ -2531,10 +2010,8 @@ You review code."#;
         let context = create_test_context();
         let client = SummonClient::new(context).unwrap();
 
-        let session = crate::session::Session::default(); // no recipe
-
         std::env::remove_var("GOOSE_SUBAGENT_MAX_TURNS");
-        let result = client.resolve_max_turns(&session);
+        let result = client.resolve_max_turns();
 
         assert_eq!(
             result,
@@ -2543,22 +2020,8 @@ You review code."#;
         );
     }
 
-    fn empty_recipe() -> crate::recipe::Recipe {
-        crate::recipe::Recipe {
-            version: "1.0.0".to_string(),
-            title: String::new(),
-            description: String::new(),
-            instructions: None,
-            prompt: None,
-            extensions: None,
-            settings: None,
-            activities: None,
-            author: None,
-            parameters: None,
-            response: None,
-            sub_recipes: None,
-            retry: None,
-        }
+    fn empty_spec() -> DelegateSpec {
+        DelegateSpec::default()
     }
 
     const PARENT_MODEL: &str = "claude-3-5-sonnet-20241022";
@@ -2583,7 +2046,7 @@ You review code."#;
             ..Default::default()
         };
         client
-            .resolve_model_config(&params, &empty_recipe(), &session_with(parent), PROVIDER)
+            .resolve_model_config(&params, &empty_spec(), &session_with(parent), PROVIDER)
             .expect("resolve_model_config")
     }
 
@@ -2654,7 +2117,7 @@ You review code."#;
         assert!(is_session_id("20260204_42"));
         assert!(is_session_id("20260204_999"));
         assert!(!is_session_id("task_12345_0001"));
-        assert!(!is_session_id("my-recipe"));
+        assert!(!is_session_id("my-agent"));
         assert!(!is_session_id("2026020_1"));
         assert!(!is_session_id("20260204"));
     }
@@ -2760,10 +2223,7 @@ You review code."#;
         assert!(moim.contains(r#"use load("20260204_2") to get result"#));
         assert!(moim.contains(r#"use load("20260204_3") to get result"#));
 
-        let discovery = client
-            .handle_load_discovery("test", temp_dir.path())
-            .await
-            .unwrap();
+        let discovery = client.handle_load_discovery(temp_dir.path()).await.unwrap();
         let discovery_text = extract_text(&discovery[0]);
         assert!(discovery_text.contains("Completed Tasks (awaiting retrieval)"));
         assert!(discovery_text.contains("20260204_2"));

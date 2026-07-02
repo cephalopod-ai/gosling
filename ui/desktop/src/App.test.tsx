@@ -6,7 +6,7 @@
 import React from 'react';
 import { screen, render, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { AppInner, resolveSessionInitialMessage } from './App';
+import { AppInner } from './App';
 import { IntlTestWrapper } from './i18n/test-utils';
 import { FeaturesProvider } from './contexts/FeaturesContext';
 
@@ -92,14 +92,11 @@ vi.mock('./contexts/ChatContext', () => ({
       id: 'test-id',
       name: 'Test Chat',
       messages: [],
-      recipe: null,
     },
     setChat: vi.fn(),
     setPairChat: vi.fn(), // Keep this from HEAD
     resetChat: vi.fn(),
     hasActiveSession: false,
-    setRecipe: vi.fn(),
-    clearRecipe: vi.fn(),
     contextKey: 'hub',
   }),
   DEFAULT_CHAT_TITLE: 'New Chat', // Keep this from HEAD
@@ -294,21 +291,5 @@ describe('App Component - Brand New State', () => {
     newChatHandler?.({} as any);
 
     expect(mockNavigate).toHaveBeenCalledWith('/');
-  });
-
-  it('should seed recipe sessions with the recipe prompt when no initial message is provided', () => {
-    expect(
-      resolveSessionInitialMessage(
-        {
-          recipe: {
-            prompt: 'Write a release note for the latest change',
-          },
-        },
-        undefined
-      )
-    ).toEqual({
-      msg: 'Write a release note for the latest change',
-      images: [],
-    });
   });
 });

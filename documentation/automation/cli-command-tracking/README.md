@@ -42,10 +42,12 @@ python3 scripts/diff-cli-structures.py output/old-cli-structure.json \
                                        > output/cli-changes.json
 
 # 3. Generate human-readable change documentation
-cd output && goose run --recipe ../recipes/synthesize-cli-changes.yaml
+cd output && goose run --instructions ../prompts/synthesize-cli-changes.prompt.md \
+  --system "$(cat ../prompts/synthesize-cli-changes.system.md)"
 
 # 4. Update goose-cli-commands.md
-cd output && goose run --recipe ../recipes/update-cli-commands.yaml
+cd output && goose run --instructions ../prompts/update-cli-commands.prompt.md \
+  --system "$(cat ../prompts/update-cli-commands.system.md)"
 ```
 
 ### Version Detection
@@ -64,7 +66,7 @@ To test unreleased changes, explicitly pass `HEAD`:
 
 ### Modular Pipeline Design
 
-The automation uses a **hybrid approach**: deterministic scripts for data extraction/diffing, AI recipes for analysis and documentation updates.
+The automation uses a **hybrid approach**: deterministic scripts for data extraction/diffing, AI prompts for analysis and documentation updates.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -108,7 +110,7 @@ The automation uses a **hybrid approach**: deterministic scripts for data extrac
 - JSON structure comparison
 - No interpretation or inference - direct extraction
 
-**AI recipes handle synthesis and updates:**
+**AI prompts handle synthesis and updates:**
 - Analyzing changes and explaining implications
 - Generating migration guidance and examples
 - Updating documentation with proper formatting and context
@@ -217,9 +219,9 @@ python3 scripts/diff-cli-structures.py \
   > output/cli-changes.json
 ```
 
-## Recipes
+## Prompts
 
-### `synthesize-cli-changes.yaml`
+### `synthesize-cli-changes`
 
 Analyzes detected changes and generates human-readable documentation.
 
@@ -238,15 +240,16 @@ Analyzes detected changes and generates human-readable documentation.
 **Usage:**
 ```bash
 cd output
-goose run --recipe ../recipes/synthesize-cli-changes.yaml
+goose run --instructions ../prompts/synthesize-cli-changes.prompt.md \
+  --system "$(cat ../prompts/synthesize-cli-changes.system.md)"
 ```
 
-### `update-cli-commands.yaml`
+### `update-cli-commands`
 
 Updates the CLI Commands Guide based on synthesized changes.
 
 **Inputs:**
-- `output/cli-changes.md` - Change documentation from synthesis recipe
+- `output/cli-changes.md` - Change documentation from the synthesis step
 - `goose-cli-commands.md` - Target documentation file (path from `CLI_COMMANDS_PATH` or `GOOSE_REPO` env var)
 
 **Outputs:**
@@ -257,7 +260,8 @@ Updates the CLI Commands Guide based on synthesized changes.
 ```bash
 export CLI_COMMANDS_PATH=/path/to/goose-cli-commands.md
 cd output
-goose run --recipe ../recipes/update-cli-commands.yaml
+goose run --instructions ../prompts/update-cli-commands.prompt.md \
+  --system "$(cat ../prompts/update-cli-commands.system.md)"
 ```
 
 ## Directory Structure
@@ -274,9 +278,11 @@ cli-command-tracking/
 │   ├── extract-cli-structure.py        # Python script to parse --help output
 │   ├── diff-cli-structures.py          # Compare structures and detect changes
 │   └── run-pipeline.sh                 # End-to-end pipeline runner
-├── recipes/                            # AI recipes
-│   ├── synthesize-cli-changes.yaml     # Generate change docs
-│   └── update-cli-commands.yaml        # Update documentation
+├── prompts/                            # AI prompt files
+│   ├── synthesize-cli-changes.prompt.md  # Generate change docs
+│   ├── synthesize-cli-changes.system.md  # System prompt for synthesis
+│   ├── update-cli-commands.prompt.md     # Update documentation
+│   └── update-cli-commands.system.md     # System prompt for updates
 ├── .github/workflows/                  # GitHub Actions workflow
 │   └── docs-update-cli-ref.yml         # Workflow definition
 └── output/                             # Generated files (gitignored)

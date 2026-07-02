@@ -62,7 +62,7 @@ In this example, we use the Excalidraw MCP App to have Goose visualize its own a
 
 ### goose Prompt
 ```
-Hey Goose review my video automation recipe and create a visual of the automation pipeline for me. I want clean lines and clear labels.
+Hey Goose review my video automation workflow and create a visual of the automation pipeline for me. I want clean lines and clear labels.
 ```
 
 ### goose Output

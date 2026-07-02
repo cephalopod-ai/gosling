@@ -36,26 +36,10 @@ def add(
     return a + b
 EOF
 
-cat > "$TESTDIR/recipe.yaml" << 'EOF'
-title: FastMCP Test
-description: Test that FastMCP servers with stderr banners work
-prompt: Use the add tool to calculate 42 + 58
-extensions:
-  - name: test_mcp
-    cmd: uv
-    args:
-      - run
-      - --with
-      - fastmcp
-      - fastmcp
-      - run
-      - test_mcp.py
-    type: stdio
-EOF
-
 TMPFILE=$(mktemp)
 (cd "$TESTDIR" && GOOSE_PROVIDER="$TEST_PROVIDER" GOOSE_MODEL="$TEST_MODEL" \
-    "$GOOSE_BIN" run --recipe recipe.yaml 2>&1) | tee "$TMPFILE"
+    "$GOOSE_BIN" run --text "Use the add tool to calculate 42 + 58" \
+    --with-extension "uv run --with fastmcp fastmcp run test_mcp.py" 2>&1) | tee "$TMPFILE"
 
 if grep -qE "(add \| test_mcp)|(▸.*add.*test_mcp)" "$TMPFILE" && grep -q "100" "$TMPFILE"; then
     echo "✓ FastMCP stderr test passed"

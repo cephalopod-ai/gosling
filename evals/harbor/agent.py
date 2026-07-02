@@ -8,8 +8,6 @@ import shlex
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import yaml
-
 from harbor.agents.installed.base import NonZeroAgentExitCodeError, with_prompt_template
 from harbor.agents.installed.goose import Goose
 from harbor.environments.base import BaseEnvironment
@@ -27,7 +25,7 @@ PROVIDER_SECRETS = {
 
 CONTAINER_GOOSE_PATH_ROOT = "/installed-agent/goose-profile"
 CONTAINER_CONFIG_PATH = f"{CONTAINER_GOOSE_PATH_ROOT}/config/config.yaml"
-CONTAINER_RECIPE_PATH = "/installed-agent/harbor-recipe.yaml"
+CONTAINER_PROMPT_PATH = "/installed-agent/harbor-task-prompt.txt"
 CONTAINER_CA_BUNDLE_PATH = "/installed-agent/ca-certificates.crt"
 
 FATAL_GOOSE_NOTIFICATIONS = ("creditsExhausted",)
@@ -48,14 +46,12 @@ class GooseBinaryAgent(Goose):
         *args,
         goose_binary: str,
         config_yaml: str,
-        extension_entries: list[dict[str, str]],
         install_goose_runtime_deps: bool = False,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.goose_binary = Path(goose_binary).expanduser().resolve()
         self.config_yaml = config_yaml
-        self.extension_entries = extension_entries
         self.install_goose_runtime_deps = install_goose_runtime_deps
         self.ca_bundle_env_path: str | None = None
 
@@ -186,23 +182,13 @@ class GooseBinaryAgent(Goose):
             timeout_sec=30,
         )
 
-    def _create_recipe_yaml(self, instruction: str) -> str:
-        return yaml.dump(
-            {
-                "version": "1.0.0",
-                "title": "harbor-task",
-                "description": "harbor task recipe",
-                "instructions": (
-                    "You are given a task and you need to complete it. "
-                    "You are currently executing in a docker container where you are "
-                    "being evaluated on a benchmark for LLM agents. Act autonomously. "
-                    "You will not receive any feedback on your progress, so you must "
-                    "use your own tools to complete the task without any intervention."
-                ),
-                "prompt": instruction,
-                "extensions": self.extension_entries,
-            }
-        )
+    SYSTEM_PROMPT = (
+        "You are given a task and you need to complete it. "
+        "You are currently executing in a docker container where you are "
+        "being evaluated on a benchmark for LLM agents. Act autonomously. "
+        "You will not receive any feedback on your progress, so you must "
+        "use your own tools to complete the task without any intervention."
+    )
 
     @with_prompt_template
     async def run(
@@ -212,20 +198,20 @@ class GooseBinaryAgent(Goose):
         context: AgentContext,
     ) -> None:
         env = self._run_env()
-        recipe_yaml = self._create_recipe_yaml(instruction)
 
         with TemporaryDirectory() as tmp:
-            recipe_path = Path(tmp) / "harbor-recipe.yaml"
-            recipe_path.write_text(recipe_yaml)
-            await environment.upload_file(recipe_path, CONTAINER_RECIPE_PATH)
-        await self._chown_to_agent_user(environment, CONTAINER_RECIPE_PATH)
+            prompt_path = Path(tmp) / "harbor-task-prompt.txt"
+            prompt_path.write_text(instruction)
+            await environment.upload_file(prompt_path, CONTAINER_PROMPT_PATH)
+        await self._chown_to_agent_user(environment, CONTAINER_PROMPT_PATH)
 
         cli_flags = self.build_cli_flags()
         await self.exec_as_agent(
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$PATH" && '
-                f"goose run --recipe {shlex.quote(CONTAINER_RECIPE_PATH)} "
+                f"goose run --instructions {shlex.quote(CONTAINER_PROMPT_PATH)} "
+                f"--system {shlex.quote(self.SYSTEM_PROMPT)} "
                 "--output-format stream-json "
                 + ((cli_flags + " ") if cli_flags else "")
                 + "2>&1 | stdbuf -oL tee /logs/agent/goose.txt"

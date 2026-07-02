@@ -29,7 +29,6 @@ interface ExtensionListProps {
   onToggle: (extension: FixedExtensionEntry) => Promise<boolean | void> | void;
   onConfigure?: (extension: FixedExtensionEntry) => void;
   isStatic?: boolean;
-  disableConfiguration?: boolean;
   searchTerm?: string;
 }
 
@@ -38,7 +37,6 @@ export default function ExtensionList({
   onToggle,
   onConfigure,
   isStatic,
-  disableConfiguration: _disableConfiguration,
   searchTerm = '',
 }: ExtensionListProps) {
   const matchesSearch = (extension: FixedExtensionEntry): boolean => {

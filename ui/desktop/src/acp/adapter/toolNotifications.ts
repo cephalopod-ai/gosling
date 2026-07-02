@@ -46,7 +46,7 @@ export function toolNotificationChange(
   };
 }
 
-export function toolNotificationEvent(update: ToolCallUpdate): NotificationEvent | undefined {
+function toolNotificationEvent(update: ToolCallUpdate): NotificationEvent | undefined {
   const toolNotification = parseToolNotification(update._meta);
   if (!toolNotification) {
     return undefined;

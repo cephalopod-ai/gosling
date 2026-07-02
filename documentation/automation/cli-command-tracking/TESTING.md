@@ -7,7 +7,7 @@ This guide explains how to test the CLI command tracking automation locally and 
 - Python 3.7+
 - Rust toolchain (for building goose)
 - jq (for JSON processing)
-- goose CLI installed (for running recipes)
+- goose CLI installed (for running the AI steps)
 - Git with access to goose repository
 
 ## Local Testing
@@ -85,15 +85,16 @@ jq '.breaking_changes' output/cli-changes.json
 - Detailed changes in structured format
 - Breaking changes categorized
 
-### Step 4: Test AI Synthesis Recipe
+### Step 4: Test AI Synthesis Step
 
 Generate human-readable documentation:
 
 ```bash
 cd output
 
-# Run synthesis recipe
-goose run --recipe ../recipes/synthesize-cli-changes.yaml
+# Run synthesis step
+goose run --instructions ../prompts/synthesize-cli-changes.prompt.md \
+  --system "$(cat ../prompts/synthesize-cli-changes.system.md)"
 
 # Check output
 ls -lh cli-changes.md
@@ -107,7 +108,7 @@ head -50 cli-changes.md
 - Examples provided for complex changes
 - When testing AI workflows, ensure any content sent via the `store_comment` tool does not contain triple-backtick code fences (```), even though regular backticks in markdown files like `cli-changes.md` are allowed.
 
-### Step 5: Test Documentation Update Recipe
+### Step 5: Test Documentation Update Step
 
 Update the actual documentation:
 
@@ -117,8 +118,9 @@ cd output
 # Set path to documentation file
 export CLI_COMMANDS_PATH=/path/to/goose/documentation/docs/guides/goose-cli-commands.md
 
-# Run update recipe
-goose run --recipe ../recipes/update-cli-commands.yaml
+# Run update step
+goose run --instructions ../prompts/update-cli-commands.prompt.md \
+  --system "$(cat ../prompts/update-cli-commands.system.md)"
 
 # Check outputs
 ls -lh update-summary.md
@@ -275,7 +277,7 @@ Before considering the automation complete:
 - [ ] Detects changed possible values
 - [ ] Categorizes breaking changes correctly
 
-### AI Recipes
+### AI Steps
 - [ ] Generates readable documentation
 - [ ] Provides migration guidance
 - [ ] Uses correct markdown formatting
@@ -342,7 +344,7 @@ Check if help text formatting changed:
 diff old-help.txt new-help.txt
 ```
 
-### AI recipe fails
+### AI step fails
 
 Check input files exist and are valid:
 

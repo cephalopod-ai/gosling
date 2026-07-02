@@ -30,10 +30,9 @@ goose can autonomously decide to use subagents when it determines they would be 
 To use subagents, ask goose to delegate tasks using natural language. goose automatically decides when to spawn subagents and handles their lifecycle. You can:
 
 1. **Request specialized help**: "Use a code reviewer to analyze this function for security issues"
-2. **Reference specific recipes**: "Use the 'security-auditor' recipe to scan this endpoint"  
-3. **Run parallel tasks**: "Create three HTML templates simultaneously"
-4. **Delegate complex work**: "Research quantum computing developments and summarize findings"
-5. **Control extension access**: "Create a subagent with only the developer extension to refactor the code"
+2. **Run parallel tasks**: "Create three HTML templates simultaneously"
+3. **Delegate complex work**: "Research quantum computing developments and summarize findings"
+4. **Control extension access**: "Create a subagent with only the developer extension to refactor the code"
 
 You can run multiple subagents sequentially or in parallel.
 
@@ -73,10 +72,7 @@ If a subagent fails or times out (5-minute default), you will receive no output 
 
 ## Internal Subagents
 
-Internal subagents spawn goose instances to handle tasks using your current session's context and extensions. There are two ways to configure and execute internal subagents:
-
-1. **Direct Prompts** - Quick, one-off tasks using natural language instructions
-2. **Recipes** - Reusable, structured configurations for specialized subagent behavior
+Internal subagents spawn goose instances to handle tasks using your current session's context and extensions. You configure and execute internal subagents with direct prompts.
 
 ### Direct Prompts
 Direct prompts provided for one-off tasks using natural language prompts. The main agent automatically configures the subagent based on your request.
@@ -108,75 +104,6 @@ Direct prompts provided for one-off tasks using natural language prompts. The ma
     }
   ]
 }
-```
-
-### Recipes
-Use [recipe](/docs/guides/recipes/) files to define specific instructions, extensions, and behavior for subagents. Recipes provide reusable configurations that can be shared and referenced by name.
-
-**Creating a Recipe File**
-
-`code-reviewer.yaml`
-
-```yaml
-id: code-reviewer
-version: 1.0.0
-title: "Code Review Assistant"
-description: "Specialized subagent for code quality and security analysis"
-instructions: |
-  You are a code review assistant. Analyze code and provide feedback on:
-  - Code quality and readability
-  - Security vulnerabilities
-  - Performance issues
-  - Best practices adherence
-activities:
-  - Analyze code structure
-  - Check for security issues
-  - Review performance patterns
-extensions:
-  - type: builtin
-    name: developer
-    display_name: Developer
-    timeout: 300
-    bundled: true
-parameters:
-  - key: focus_area
-    input_type: string
-    requirement: optional
-    description: "Specific area to focus on (security, performance, readability, etc.)"
-    default: "general"
-prompt: |
-  Please review the following code focusing on {{focus_area}} aspects.
-  Provide specific, actionable feedback with examples.
-```
-
-**Place your recipe file where goose can find it**
-- Set [`GOOSE_RECIPE_PATH`](/docs/guides/recipes/recipe-reference#recipe-location) environment variable to your recipe directory
-- Or place it in your current working directory
-
-**goose Prompt**
-```
-Use the "code-reviewer" recipe to analyze the authentication feature I implemented
-```
-
-**goose Output**
-```
-I'll use your code-reviewer recipe to create a specialized subagent for this analysis.
-
-🤖 Subagent created using code-reviewer recipe
-💭 Analyzing authentication function for security issues...
-🔧 Scanning code structure and patterns...
-⚠️  Security vulnerabilities detected!
-
-## Code Review Results
-
-### Critical Issues Found:
-1. **SQL Injection Vulnerability**: Direct string interpolation in SQL query
-2. **Missing Password Hashing**: Plain text password comparison
-
-### Recommendations:
-- Use parameterized queries or ORM
-- Implement proper password hashing (bcrypt, scrypt)
-- Add input validation and sanitization
 ```
 
 ## External Subagents
@@ -271,7 +198,7 @@ Subagents use the following pre-configured settings, but you can override any de
 ### Default Settings
 | Parameter | Default | How to Customize |
 |-----------|---------|------------------|
-| **Max Turns** | 25 | Use natural language, set `GOOSE_SUBAGENT_MAX_TURNS`, or configure `settings.max_turns` in [recipes](/docs/guides/recipes/recipe-reference#settings) or subagent tool calls |
+| **Max Turns** | 25 | Use natural language or set `GOOSE_SUBAGENT_MAX_TURNS` |
 | **Timeout** | 5 minutes | Request longer timeout in your prompt |
 | **Extensions** | Inherited from parent | Specify which extensions to use in your prompt |
 | **Return Mode** | All subagent information provided in main session | Specify how much detail you want in your prompt |
@@ -300,16 +227,7 @@ You can override any default by including the setting in your natural language r
 Control which tools and capabilities subagents can access. By default, subagents inherit all extensions from your main session, but you can restrict access for security, focus or performance.
 
 :::note Summon Extension
-The `delegate` and `load` tools are provided by the `summon` platform extension, which is enabled by default. If you are using a [recipe](/docs/guides/recipes/) with an explicit `extensions` block, you must include `summon` in that list or the `delegate` tool will not be available:
-
-```yaml
-extensions:
-  - type: platform
-    name: summon
-  # ... your other extensions
-```
-
-Recipes that define [`sub_recipes`](/docs/guides/recipes/subrecipes) have `summon` auto-injected.
+The `delegate` and `load` tools are provided by the `summon` platform extension, which is enabled by default.
 :::
 
 **Examples:**
@@ -344,7 +262,7 @@ Subagents have access to these safe operations:
 
 - **Extension discovery**: Search for available extensions to understand what tools are available
 - **Resource access**: Read and list resources from enabled extensions for context
-- **Extension tools**: Use tools from extensions specified in recipes or inherited from the parent session
+- **Extension tools**: Use tools from extensions inherited from the parent session
 
 ### Restricted Operations
 
@@ -361,7 +279,6 @@ Subagents can browse extensions for suggestions but cannot enable them to avoid 
 ## Additional Resources
 
 import ContentCardCarousel from '@site/src/components/ContentCardCarousel';
-import subagentsVsSubrecipes from '@site/blog/2025-09-26-subagents-vs-subrecipes/subrecipes-vs-subagents.png';
 import agentCoordination from '@site/blog/2025-08-14-agent-coordination-patterns/agent-coordination.png';
 
 <ContentCardCarousel
@@ -396,7 +313,7 @@ import agentCoordination from '@site/blog/2025-08-14-agent-coordination-patterns
     {
       type: 'video',
       title: 'Flight School - Choosing the Right Tools for AI Work',
-      description: 'Discover the differences between subagents and subrecipes for efficient task execution in goose. Learn which approach is best for your workflow.',
+      description: 'Discover how to choose the right tools for efficient task execution in goose. Learn which approach is best for your workflow.',
       thumbnailUrl: 'https://img.youtube.com/vi/joePzlkARjs/maxresdefault.jpg',
       linkUrl: 'https://www.youtube.com/watch?v=joePzlkARjs',
       date: '2025-09-29',
@@ -405,20 +322,11 @@ import agentCoordination from '@site/blog/2025-08-14-agent-coordination-patterns
     {
       type: 'video',
       title: 'Flight School - Choosing the Right Tools for AI Work',
-      description: 'Discover the differences between subagents and subrecipes for efficient task execution in goose. Learn which approach is best for your workflow.',
+      description: 'Discover how to choose the right tools for efficient task execution in goose. Learn which approach is best for your workflow.',
       thumbnailUrl: 'https://img.youtube.com/vi/joePzlkARjs/maxresdefault.jpg',
       linkUrl: 'https://www.youtube.com/watch?v=joePzlkARjs',
       date: '2025-09-29',
       duration: '6:13'
-    },
-    {
-      type: 'blog',
-      title: 'How to Choose Between Subagents and Subrecipes in goose',
-      description: 'Detailed guide to subagents and subrecipes in goose. Compare reusability, setup complexity, and get practical advice for choosing the right approach.',
-      thumbnailUrl: subagentsVsSubrecipes,
-      linkUrl: '/blog/2025/09/26/subagents-vs-subrecipes',
-      date: '2025-09-26',
-      duration: '6 min read'
     }
   ]}
 />

@@ -1,4 +1,3 @@
-use crate::recipes::github_recipe::GOOSE_RECIPE_GITHUB_REPO_CONFIG_KEY;
 use cliclack::spinner;
 use console::style;
 use goose::agents::extension::{ToolInfo, PLATFORM_EXTENSIONS};
@@ -316,7 +315,7 @@ async fn handle_existing_config() -> anyhow::Result<()> {
         .item(
             "settings",
             "goose settings",
-            "Set the goose mode, Tool Output, Tool Permissions, Experiment, goose recipe github repo and more",
+            "Set the goose mode, Tool Output, Tool Permissions, Experiment and more",
         )
         .interact()?;
 
@@ -1290,11 +1289,6 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
             "Toggle Experiment",
             "Enable or disable an experiment feature",
         )
-        .item(
-            "recipe",
-            "goose recipe github repo",
-            "goose will pull recipes from this repo if not found locally.",
-        )
         .interact()?;
 
     let mut should_print_config_path = true;
@@ -1323,9 +1317,6 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
         }
         "experiment" => {
             toggle_experiments_dialog()?;
-        }
-        "recipe" => {
-            configure_recipe_dialog()?;
         }
         _ => unreachable!(),
     };
@@ -1717,28 +1708,6 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
         permission_manager.get_config_path().display()
     ))?;
 
-    Ok(())
-}
-
-fn configure_recipe_dialog() -> anyhow::Result<()> {
-    let key_name = GOOSE_RECIPE_GITHUB_REPO_CONFIG_KEY;
-    let config = Config::global();
-    let default_recipe_repo = std::env::var(key_name)
-        .ok()
-        .or_else(|| config.get_param(key_name).unwrap_or(None));
-    let mut recipe_repo_input = cliclack::input(
-        "Enter your goose recipe GitHub repo (owner/repo): eg: my_org/goose-recipes",
-    )
-    .required(false);
-    if let Some(recipe_repo) = default_recipe_repo {
-        recipe_repo_input = recipe_repo_input.default_input(&recipe_repo);
-    }
-    let input_value: String = recipe_repo_input.interact()?;
-    if input_value.clone().trim().is_empty() {
-        config.delete(key_name)?;
-    } else {
-        config.set_param(key_name, &input_value)?;
-    }
     Ok(())
 }
 

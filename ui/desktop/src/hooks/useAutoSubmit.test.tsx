@@ -21,7 +21,7 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 const initialMessage: UserInput = {
-  msg: 'Run the recipe',
+  msg: 'Run the task',
   images: [],
 };
 
@@ -30,7 +30,7 @@ describe('useAutoSubmit', () => {
     vi.clearAllMocks();
   });
 
-  it('does not auto-submit while recipe acceptance is unresolved', () => {
+  it('does not auto-submit while canAutoSubmit is false', () => {
     const handleSubmit = vi.fn();
     const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
 
@@ -56,7 +56,7 @@ describe('useAutoSubmit', () => {
     expect(dispatchEventSpy).not.toHaveBeenCalled();
   });
 
-  it('auto-submits once recipe acceptance is confirmed', () => {
+  it('auto-submits once canAutoSubmit becomes true', () => {
     const handleSubmit = vi.fn();
     const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
 

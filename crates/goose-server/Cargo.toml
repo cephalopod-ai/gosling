@@ -75,7 +75,6 @@ serde_yaml = { workspace = true }
 utoipa = { workspace = true, features = ["axum_extras", "chrono"] }
 reqwest = { workspace = true, features = ["json", "blocking", "multipart", "system-proxy"] }
 tokio-util = { workspace = true }
-serde_path_to_error = { version = "0.1.8", default-features = false }
 rand = { workspace = true }
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
 rustls = { workspace = true, optional = true }

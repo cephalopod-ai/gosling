@@ -4,11 +4,7 @@ import {
   installGooseExtAgentRequestDispatcher,
   installGooseExtNotificationDispatcher,
 } from "../src/generated/client.gen.ts";
-import type {
-  GooseSessionNotification_unstable,
-  RecipeParamsResponse_unstable,
-  RequestRecipeParams_unstable,
-} from "../src/generated/types.gen.ts";
+import type { GooseSessionNotification_unstable } from "../src/generated/types.gen.ts";
 import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
@@ -59,25 +55,6 @@ class MinimalCallbacks {
   async sessionUpdate(_params: SessionNotification): Promise<void> {}
 }
 
-class AgentRequestCallbacks extends MinimalCallbacks {
-  events: string[] = [];
-
-  async unstable_sessionRecipeRequestParams(
-    request: RequestRecipeParams_unstable,
-  ): Promise<RecipeParamsResponse_unstable> {
-    this.events.push(`typed:${request.sessionId}`);
-    return { action: "submit", values: { name: "Ada" } };
-  }
-
-  async extMethod(
-    method: string,
-    _params: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    this.events.push(`extMethod:${method}`);
-    return { action: "cancel" };
-  }
-}
-
 class GenericAgentRequestCallbacks extends MinimalCallbacks {
   events: string[] = [];
 
@@ -90,22 +67,9 @@ class GenericAgentRequestCallbacks extends MinimalCallbacks {
   }
 }
 
-const recipeParamRequest: RequestRecipeParams_unstable = {
+const agentRequestParams: Record<string, unknown> = {
   sessionId: "session-1",
-  parameters: [
-    {
-      key: "name",
-      input_type: "string",
-      requirement: "user_prompt",
-      description: "Name",
-    },
-  ],
 };
-
-const recipeParamRequestParams = recipeParamRequest as unknown as Record<
-  string,
-  unknown
->;
 
 test("dispatcher preserves class-backed callback receivers", async () => {
   const callbacks = new ClassBackedCallbacks();
@@ -139,31 +103,18 @@ test("raw extNotification is optional", async () => {
   await client.extNotification!("example/unknown", {});
 });
 
-test("agent request dispatcher prefers typed callbacks", async () => {
-  const callbacks = new AgentRequestCallbacks();
-  const client = installGooseExtAgentRequestDispatcher(callbacks);
-
-  const response = await client.extMethod!(
-    "_goose/unstable/session/recipe/request-params",
-    recipeParamRequestParams,
-  );
-
-  assert.deepEqual(response, { action: "submit", values: { name: "Ada" } });
-  assert.deepEqual(callbacks.events, ["typed:session-1"]);
-});
-
 test("agent request dispatcher falls back to raw extMethod", async () => {
   const callbacks = new GenericAgentRequestCallbacks();
   const client = installGooseExtAgentRequestDispatcher(callbacks);
 
   const response = await client.extMethod!(
-    "_goose/unstable/session/recipe/request-params",
-    recipeParamRequestParams,
+    "_goose/unstable/example/request",
+    agentRequestParams,
   );
 
   assert.deepEqual(response, { action: "cancel" });
   assert.deepEqual(callbacks.events, [
-    "extMethod:_goose/unstable/session/recipe/request-params",
+    "extMethod:_goose/unstable/example/request",
   ]);
 });
 
@@ -172,10 +123,7 @@ test("agent request dispatcher throws when a request is unhandled", async () => 
 
   await assert.rejects(
     () =>
-      client.extMethod!(
-        "_goose/unstable/session/recipe/request-params",
-        recipeParamRequestParams,
-      ),
-    /unhandled ext method: _goose\/unstable\/session\/recipe\/request-params/,
+      client.extMethod!("_goose/unstable/example/request", agentRequestParams),
+    /unhandled ext method: _goose\/unstable\/example\/request/,
   );
 });

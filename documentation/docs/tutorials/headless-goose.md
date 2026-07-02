@@ -141,73 +141,6 @@ fi
 Use `--no-session` for one-off tasks to avoid cluttering your session history, but maintain sessions for complex, multi-step workflows that might need debugging later (or when trying this for the first time).
 
 
-## Recipe Execution in Headless Mode
-
-[Recipes](/docs/guides/recipes/) are goose's powerful way to define reusable, parameterized workflows. In headless mode, recipes become even more valuable as they enable sophisticated automation scenarios.
-
-### Recipe Requirements for Headless Mode
-
-For a recipe to work in headless mode, it **must** include a `prompt` field. This prompt serves as the initial instruction that kicks off the automated execution:
-
-```yaml
-# automation-recipe.yaml
-title: "Automated Code Quality Check"
-name: "Automated Code Quality Check"
-description: "Comprehensive code quality analysis and improvement"
-author:
-  name: "DevOps Team"
-  email: "devops@company.com"
-
-# Required for headless mode
-prompt: "Perform a comprehensive code quality analysis including linting, security scanning, test coverage analysis, and generate an improvement plan"
-
-instructions: |
-  You are an expert code quality engineer. Your task is to:
-  1. Run static analysis tools (eslint, pylint, etc.)
-  2. Perform security vulnerability scanning
-  3. Analyze test coverage and identify gaps
-  4. Check for code duplication and complexity issues
-  5. Generate a prioritized improvement plan
-  6. Create actionable tickets for the development team
-
-parameters:
-  - key: target_directory
-    input_type: string
-    requirement: required
-    description: "Directory to analyze"
-    default: "./src"
-  - key: output_format
-    input_type: string
-    requirement: required
-    description: "Report format (markdown, json, html)"
-    default: "markdown"
-
-extensions:
-  - type: builtin
-    name: developer
-    display_name: Developer
-    timeout: 300
-    bundled: true
-```
-
-### Executing Recipes in Headless Mode
-
-```bash
-# Basic recipe execution
-goose run --recipe automation-recipe.yaml
-
-# With custom parameters
-goose run --recipe automation-recipe.yaml \
-  --params target_directory=./backend \
-  --params output_format=json
-
-# Complex workflow with multiple recipes
-goose run --recipe main-workflow.yaml \
-  --sub-recipe security-audit.yaml \
-  --sub-recipe performance-analysis.yaml \
-  --params environment=production
-```
-
 ## Understanding the Limitations
 
 While headless mode is incredibly powerful, it's important to understand its constraints, so you can set appropriate expectations for your automation ideas.
@@ -228,15 +161,7 @@ goose run -t "Fix the issues"
 goose run -t "Fix the TypeScript compilation errors in src/components/, ensure all imports are correct, and update any deprecated API calls to use the latest syntax"
 ```
 
-### 2. Recipe Prompt Requirements
-
-**What this means**: Any recipe used in headless mode must include a `prompt` field, or execution will fail with an error.
-
-**Impact**: Existing interactive recipes may need modification before they can be used in automated scenarios.
-
-**Mitigation**: Always include meaningful prompts in your recipes, even if they're primarily designed for interactive use.
-
-### 3. Tool Permission Dependencies
+### 2. Tool Permission Dependencies
 
 **What this means**: goose cannot prompt for permission to use potentially risky tools or operations.
 
@@ -249,7 +174,7 @@ export GOOSE_MODE=auto  # Automatically approve safe operations
 # or configure specific tool permissions in your config
 ```
 
-### 4. Context Decision Automation
+### 3. Context Decision Automation
 
 **What this means**: When conversation context limits are reached, goose automatically applies the configured strategy without user input.
 
@@ -262,7 +187,7 @@ export GOOSE_CONTEXT_STRATEGY=summarize  # Usually the best choice for automatio
 export GOOSE_MAX_TURNS=100  # Prevent runaway execution
 ```
 
-### 5. Error Recovery Limitations
+### 4. Error Recovery Limitations
 
 **What this means**: Complex error scenarios that would benefit from human insight cannot be resolved interactively.
 
@@ -272,10 +197,10 @@ export GOOSE_MAX_TURNS=100  # Prevent runaway execution
 
 ```bash
 #!/bin/bash
-if ! goose run --recipe complex-deployment.yaml; then
+if ! goose run --instructions deployment-checklist.md; then
     # Fallback to simpler approach or alert human operators
     echo "Complex deployment failed, initiating rollback procedure"
-    goose run --recipe rollback.yaml
+    goose run --instructions rollback-procedure.md
 fi
 ```
 
@@ -319,7 +244,7 @@ Whether you're looking to streamline your CI/CD pipelines, automate server maint
 **Start your automation journey today:**
 
 1. **Install goose** and configure your environment variables
-2. **Create your first recipe** with clear prompts and detailed instructions  
+2. **Write your first instruction file** with clear prompts and detailed steps  
 3. **Test in a safe environment** before deploying to production
 4. **Integrate with your existing workflows** and watch your productivity soar
 

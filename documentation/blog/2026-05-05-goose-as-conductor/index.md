@@ -106,7 +106,7 @@ Do these three things in parallel: [task A], [task B], [task C]
 
 goose handles the rest — spinning up delegates, running them concurrently, and bringing the results together.
 
-For reusable workflows, check out the [subrecipes in parallel tutorial](/docs/tutorials/subrecipes-in-parallel/) to build recipes you can share with your team. And if you want to bring in external agents, the [ACP providers guide](/docs/guides/acp-providers) will get you set up with Claude Code, Codex, or Amp.
+For reusable workflows, check out the subrecipes in parallel tutorial to build recipes you can share with your team. And if you want to bring in external agents, the [ACP providers guide](/docs/guides/acp-providers) will get you set up with Claude Code, Codex, or Amp.
 
 <head>
   <meta property="og:title" content="Orchestrate Complex Workflows Across Multiple Agents with goose" />

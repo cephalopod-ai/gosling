@@ -79,7 +79,7 @@ Here’s what that loop looked like in practice:
 
 > *Even **this** demo is powered by persistent context.*
 
-That was the moment I experimented with [RPI](https://goose-docs.ai/docs/tutorials/rpi). Not because it was trendy, but because the alternative had become tedious.
+That was the moment I experimented with RPI. Not because it was trendy, but because the alternative had become tedious.
 
 You don’t have to adopt RPI, or any new pattern, tomorrow to benefit from this. You can simulate the shift in your next session with a small change in how you start.
 

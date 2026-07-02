@@ -46,10 +46,6 @@ declare module '*.md?raw' {
 }
 
 declare global {
-  interface Window {
-    isCreatingRecipe?: boolean;
-  }
-
   interface WindowEventMap {
     'add-active-session': CustomEvent<{
       sessionId: string;

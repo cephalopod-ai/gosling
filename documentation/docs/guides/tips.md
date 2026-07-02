@@ -45,9 +45,6 @@ Commit your code changes early and often. This allows you to rollback any unexpe
 ### Control which extensions goose can use
 Administrators can use an [allowlist](/docs/guides/allowlist) to restrict goose to approved extensions only. This helps prevent risky installs from unknown MCP servers.
 
-### Set up starter templates
-You can turn a successful session into a reusable "[recipe](/docs/guides/recipes/session-recipes)" to share with others or use again later—no need to start from scratch.
-
 ### Embrace an experimental mindset
 You don’t need to get it right the first time. Iterating on prompts and tools is part of the workflow.
 
@@ -59,9 +56,3 @@ Regularly [update](/docs/guides/updating-goose) goose to benefit from the latest
 
 ### Use a Dedicated Planner Model
 Use [planning mode](/docs/guides/context-engineering/creating-plans) with a dedicated planner model for complex reasoning, while keeping a faster default model for everyday execution.
-
-### Make Recipes Safe to Re-run
-Write [recipes](/docs/guides/recipes/session-recipes) that check your current state before acting, so they can be run multiple times without causing any errors or duplication. 
-
-### Add Logging to Recipes
-Include informative log messages in your recipes for each major step to make debugging and troubleshooting easier should something fail.

@@ -153,17 +153,6 @@ jobs:
         run: |
           bash scripts/test_mcp.sh
 
-      - name: Run Subrecipe Tests
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GOOSE_PROVIDER: anthropic
-          GOOSE_MODEL: claude-sonnet-4-5-20250929
-          HOME: /tmp/goose-home
-          GOOSE_DISABLE_KEYRING: 1
-          SKIP_BUILD: 1
-        run: |
-          bash scripts/test_subrecipes.sh
-
   smoke-tests-code-exec:
     name: Smoke Tests (Code Execution)
     runs-on: ubuntu-latest

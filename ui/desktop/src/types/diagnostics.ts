@@ -41,11 +41,6 @@ export type DiagnosticsPrompt = {
   name: string;
 };
 
-export type DiagnosticsScheduledRecipe = {
-  content: string;
-  path: string;
-};
-
 export type DiagnosticsReport = {
   config?: DiagnosticsConfig | null;
   errors: DiagnosticsError[];
@@ -54,8 +49,6 @@ export type DiagnosticsReport = {
   level: DiagnosticsLevel;
   logs: DiagnosticsLogs;
   prompts: DiagnosticsPrompt[];
-  schedule?: unknown;
-  scheduledRecipes: DiagnosticsScheduledRecipe[];
   schemaVersion: number;
   session?: unknown;
   system: SystemInfo;

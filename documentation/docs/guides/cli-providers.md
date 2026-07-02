@@ -23,7 +23,6 @@ CLI providers are useful if you:
 
 - already have a Claude Code, Codex, Cursor, or Google Gemini CLI subscription and want to use it through goose instead of paying per token
 - need session persistence to save, resume, and export conversation history
-- want to use goose recipes and scheduled tasks to create repeatable workflows
 - prefer unified commands across different AI providers
 - want to [use multiple models together](#combining-with-planner-models) in your tasks
 
@@ -35,8 +34,6 @@ CLI providers are useful if you:
 - **Session organization**: Manage multiple conversation threads
 
 #### Workflow Integration  
-- **Recipe compatibility**: Use CLI providers in automated goose recipes
-- **Scheduling support**: Include in scheduled tasks and workflows
 - **Hybrid configurations**: Combine with planning mode and model-specific workflows
 
 #### Interface Consistency
@@ -395,4 +392,4 @@ CLI providers depend on external tools, so ensure:
 
 ---
 
-CLI providers offer a way to use existing AI tool subscriptions through goose's interface, adding session management and workflow integration capabilities. They're particularly valuable for users with existing CLI subscriptions who want unified session management and recipe integration.
+CLI providers offer a way to use existing AI tool subscriptions through goose's interface, adding session management and workflow integration capabilities. They're particularly valuable for users with existing CLI subscriptions who want unified session management.

@@ -1,6 +1,5 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { ChatType } from '../types/chat';
-import { Recipe } from '../recipe';
 
 // TODO(Douwe): We should not need this anymore
 export const DEFAULT_CHAT_TITLE = 'New Chat';
@@ -10,8 +9,6 @@ interface ChatContextType {
   setChat: (chat: ChatType) => void;
   resetChat: () => void;
   hasActiveSession: boolean;
-  setRecipe: (recipe: Recipe | null) => void;
-  clearRecipe: () => void;
   // Context identification
   contextKey: string; // 'hub' or 'pair-{sessionId}'
 }
@@ -36,23 +33,6 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({
       sessionId: '',
       name: DEFAULT_CHAT_TITLE,
       messages: [],
-      recipe: null,
-      recipeParameterValues: null,
-    });
-  };
-
-  const setRecipe = (recipe: Recipe | null) => {
-    setChat({
-      ...chat,
-      recipe: recipe,
-      recipeParameterValues: null,
-    });
-  };
-
-  const clearRecipe = () => {
-    setChat({
-      ...chat,
-      recipe: null,
     });
   };
 
@@ -63,8 +43,6 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({
     setChat,
     resetChat,
     hasActiveSession,
-    setRecipe,
-    clearRecipe,
     contextKey,
   };
 

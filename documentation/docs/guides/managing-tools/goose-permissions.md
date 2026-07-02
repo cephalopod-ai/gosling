@@ -86,7 +86,7 @@ Here's how to configure:
         | ○ Toggle Extensions
         | ○ Remove Extension
         // highlight-start
-        | ● goose settings (Set the goose mode, Tool Output, Tool Permissions, Experiment, goose recipe github repo and more)
+        | ● goose settings (Set the goose mode, Tool Output, Tool Permissions, Experiment and more)
         // highlight-end
         └
         ```
@@ -108,8 +108,6 @@ Here's how to configure:
         │  ○ Tool Output 
         │  ○ Max Turns 
         │  ○ Toggle Experiment 
-        │  ○ goose recipe github repo 
-        │  ○ Scheduler Type 
         └
         ```
 

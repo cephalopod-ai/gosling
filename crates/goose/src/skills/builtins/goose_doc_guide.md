@@ -1,17 +1,15 @@
 ---
 name: goose-doc-guide
-description: Reference goose documentation to create, configure, or explain goose-specific features like recipes, extensions, sessions, and providers. You MUST fetch relevant goose docs before answering. You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
+description: Reference goose documentation to create, configure, or explain goose-specific features like extensions, sessions, and providers. You MUST fetch relevant goose docs before answering. You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
 ---
 
 Use this skill when working with **goose-specific features**:
-- Creating or editing recipes
 - Configuring extensions or providers
 - Explaining how goose features work
 - Any goose configuration or setup task
 
 Do NOT use this skill for:
 - General coding tasks unrelated to goose
-- Running existing recipes (just run them directly)
 
 ## Steps (COMPLETE ALL BEFORE RESPONDING)
 1. **Fetch official docs**

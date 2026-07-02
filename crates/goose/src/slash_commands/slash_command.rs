@@ -20,29 +20,19 @@ pub fn list_builtin_commands() -> Vec<SlashCommandEntry> {
 pub fn list_acp_commands(working_dir: Option<&Path>) -> Vec<SlashCommandEntry> {
     merge_command_sources(
         list_builtin_commands(),
-        super::recipe_slash_command::commands_from_mappings(
-            super::recipe_slash_command::list_commands(),
-        ),
         super::skill_slash_command::list_commands(working_dir),
     )
 }
 
 pub(super) fn merge_command_sources(
     builtins: Vec<SlashCommandEntry>,
-    recipes: Vec<SlashCommandEntry>,
     skills: Vec<SlashCommandEntry>,
 ) -> Vec<SlashCommandEntry> {
     let mut commands = builtins;
-    let mut reserved_names: HashSet<String> = commands
+    let reserved_names: HashSet<String> = commands
         .iter()
         .map(|command| normalize_command_name(&command.name))
         .collect();
-
-    for command in recipes {
-        if reserved_names.insert(normalize_command_name(&command.name)) {
-            commands.push(command);
-        }
-    }
 
     commands.extend(
         skills
@@ -87,23 +77,9 @@ mod tests {
     }
 
     #[test]
-    fn merge_recipe_wins_over_skill_on_name_collision() {
+    fn merge_builtin_wins_over_skill() {
         let merged = merge_command_sources(
             vec![entry("compact", SlashCommandSource::Builtin)],
-            vec![entry("review", SlashCommandSource::Recipe)],
-            vec![entry("review", SlashCommandSource::Skill)],
-        );
-
-        let review: Vec<_> = merged.iter().filter(|c| c.name == "review").collect();
-        assert_eq!(review.len(), 1);
-        assert_eq!(review[0].source, SlashCommandSource::Recipe);
-    }
-
-    #[test]
-    fn merge_builtin_wins_over_recipe_and_skill() {
-        let merged = merge_command_sources(
-            vec![entry("compact", SlashCommandSource::Builtin)],
-            vec![entry("compact", SlashCommandSource::Recipe)],
             vec![entry("compact", SlashCommandSource::Skill)],
         );
 
@@ -116,7 +92,6 @@ mod tests {
     fn merge_dedupes_by_normalized_name() {
         let merged = merge_command_sources(
             vec![entry("Compact", SlashCommandSource::Builtin)],
-            vec![entry("/compact", SlashCommandSource::Recipe)],
             vec![entry("COMPACT", SlashCommandSource::Skill)],
         );
 

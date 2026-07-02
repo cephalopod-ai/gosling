@@ -143,8 +143,8 @@ Debug mode can be useful when:
 # Run a task with debug output enabled
 goose run --debug -t "your instructions"
 
-# Debug a recipe execution
-goose run --debug --recipe recipe.yaml
+# Debug an instruction file execution
+goose run --debug -i instructions.md
 ```
 
 ### JSON Output Format
@@ -161,8 +161,8 @@ goose run --output-format json -t "your instructions"
 # Stream JSON events in real-time
 goose run --output-format stream-json -t "your instructions"
 
-# Run a recipe with JSON output
-goose run --output-format json --recipe recipe.yaml
+# Run an instruction file with JSON output
+goose run --output-format json -i instructions.md
 
 # Combine with other options
 goose run --output-format json --no-session -t "automated task"
