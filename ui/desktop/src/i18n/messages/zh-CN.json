@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "保存失败"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "取消"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "插入示例"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "指令"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "给 AI 的详细指令，对用户隐藏"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "保存指令"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "使用 {code} 语法定义用户可填入的参数"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "指令编辑器"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "取消"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "使用 JSON Schema 格式定义 AI 响应的期望结构"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "插入示例"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "JSON 格式无效"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "响应 JSON Schema"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "保存 Schema"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "JSON Schema 编辑器"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "取消"
   },
@@ -1324,18 +1282,6 @@
   },
   "keyboardShortcuts.toggleNavigationLabel": {
     "defaultMessage": "切换导航"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "添加预设值"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "参数名…"
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "参数值…"
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "移除预设值 {key}"
   },
   "launcher.placeholder": {
     "defaultMessage": "问 goose 任何问题…"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "分享匿名使用数据"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "默认值"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "输入默认值"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "删除参数：{key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "描述"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "这是最终用户将看到的信息。"
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "例如：“输入新组件的名称”"
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "输入类型"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "可选"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "每个选项占一行，将显示为下拉选项。"
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "选项（每行一个）"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "选项 1 选项 2 选项 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "必填"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "要求"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "布尔"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "数字"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "选择"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "字符串"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "未使用"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "此参数未在指令或提示词中使用。可手动输入，但可能不需要。"
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "始终允许"

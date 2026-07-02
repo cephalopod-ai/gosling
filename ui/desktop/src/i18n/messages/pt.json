@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Falha ao salvar"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Cancelar"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Inserir exemplo"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Instruções"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Instruções detalhadas para a IA, ocultas do usuário"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Salvar instruções"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Use a sintaxe {code} para definir parâmetros que os usuários podem preencher"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Editor de instruções"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Cancelar"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Defina a estrutura esperada da resposta da IA usando o formato JSON Schema"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Inserir exemplo"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Formato JSON inválido"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "JSON Schema da resposta"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Salvar Schema"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "Editor de JSON Schema"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Cancelar"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "Enviar"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Adicionar valor pré-configurado"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Nome do parâmetro..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Valor do parâmetro..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Remover valor pré-configurado {key}"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "Alternar janela sempre no topo"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Partilhar dados de utilização anónimos"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Valor predefinido"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Introduza o valor predefinido"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Eliminar parâmetro: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "descrição"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Esta é a mensagem que o utilizador final irá ver."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Ex.: \"Introduza o nome do novo componente\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Tipo de entrada"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Opcional"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Introduza cada opção numa nova linha. Estas serão apresentadas como escolhas num menu pendente."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Opções (uma por linha)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Opção 1 Opção 2 Opção 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Obrigatório"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Requisito"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Booleano"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Número"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Seleção"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Cadeia de texto"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Não utilizado"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Este parâmetro não é utilizado nas instruções ou no prompt. Ficará disponível para introdução manual, mas pode não ser necessário."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Permitir sempre"

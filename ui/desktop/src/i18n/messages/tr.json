@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Kaydedilemedi"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "İptal"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Örnek Ekle"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Talimatlar"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Kullanıcıdan gizlenen yapay zeka için ayrıntılı talimatlar"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Talimatları Kaydet"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Kullanıcıların doldurabileceği parametreleri tanımlamak için {code} sözdizimini kullanın"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Talimat Düzenleyicisi"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "İptal"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "JSON Şema formatını kullanarak yapay zekanın yanıtının beklenen yapısını tanımlayın"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Örnek Ekle"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Geçersiz JSON biçimi"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "Yanıt JSON Şeması"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Şemayı Kaydet"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "JSON Şema Düzenleyici"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "İptal"
   },
@@ -1324,18 +1282,6 @@
   },
   "keyboardShortcuts.toggleNavigationLabel": {
     "defaultMessage": "Gezinmeyi Değiştir"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Önceden yapılandırılmış değer ekleyin"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Parametre adı..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Parametre değeri..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Önceden yapılandırılmış değeri kaldır {key}"
   },
   "launcher.placeholder": {
     "defaultMessage": "goose'a herhangi bir şey sorun..."
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Anonim kullanım verilerini paylaşın"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Varsayılan Değer"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Varsayılan değeri girin"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Parametreyi sil: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "açıklama"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Bu, son kullanıcının göreceği mesajdır."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Örneğin, \"Yeni bileşenin adını girin\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Giriş Türü"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "İsteğe bağlı"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Her seçeneği yeni bir satıra girin. Bunlar açılır seçenekler olarak gösterilecektir."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Seçenekler (her satıra bir tane)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Seçenek 1 Seçenek 2 Seçenek 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Gerekli"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Gereksinim"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Boolean"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Sayı"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Seç"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Dize"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Kullanılmayan"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Bu parametre talimatlarda veya istemde kullanılmaz. Manuel giriş için mevcut olacaktır ancak gerekli olmayabilir."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Her zaman izin ver"

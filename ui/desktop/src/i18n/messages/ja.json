@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "保存に失敗しました"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "キャンセル"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "例を挿入"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "指示"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "AIへの詳細な指示（ユーザーには表示されません）"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "指示を保存"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "ユーザーが入力できるパラメーターを定義するには {code} 構文を使用してください"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "指示エディター"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "キャンセル"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "JSON Schema 形式で AI の応答の想定構造を定義します"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "例を挿入"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "JSON形式が無効です"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "応答JSON Schema"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "スキーマを保存"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "JSON Schema エディター"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "キャンセル"
   },
@@ -1324,18 +1282,6 @@
   },
   "keyboardShortcuts.toggleNavigationLabel": {
     "defaultMessage": "ナビゲーションを切り替え"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "事前設定値を追加"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "パラメーター名..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "パラメーター値..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "事前設定値 {key} を削除"
   },
   "launcher.placeholder": {
     "defaultMessage": "gooseに何でも聞いて..."
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "匿名の使用データを共有"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "デフォルト値"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "デフォルト値を入力"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "パラメーターを削除: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "説明"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "これはエンドユーザーに表示されるメッセージです。"
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "例: 「新しいコンポーネントの名前を入力」"
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "入力タイプ"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "任意"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "各オプションを改行で入力します。ドロップダウンの選択肢として表示されます。"
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "オプション（1行に1つ）"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "オプション1 オプション2 オプション3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "必須"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "要件"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "真偽値"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "数値"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "選択"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "文字列"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "未使用"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "このパラメーターは手順またはプロンプトで使用されていません。手動入力には使用できますが、必要ない可能性があります。"
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "常に許可"

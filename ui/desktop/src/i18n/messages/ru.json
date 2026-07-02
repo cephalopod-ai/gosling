@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Не удалось сохранить"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Отмена"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Вставить пример"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Инструкции"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Подробные инструкции для ИИ, скрытые от пользователя"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Сохранить инструкции"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Используйте синтаксис {code}, чтобы определить параметры, которые пользователи смогут заполнить"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Редактор инструкций"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Отмена"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Определите ожидаемую структуру ответа ИИ в формате JSON Schema"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Вставить пример"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Неверный формат JSON"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "JSON-схема ответа"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Сохранить схему"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "Редактор JSON Schema"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Отмена"
   },
@@ -1324,18 +1282,6 @@
   },
   "keyboardShortcuts.toggleNavigationLabel": {
     "defaultMessage": "Переключить навигацию"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Добавить предварительно настроенное значение"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Имя параметра..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Значение параметра..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Удалить предварительно настроенное значение {key}"
   },
   "launcher.placeholder": {
     "defaultMessage": "Спросите goose о чем угодно..."
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Поделиться анонимными данными об использовании"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Значение по умолчанию"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Введите значение по умолчанию"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Удалить параметр: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "описание"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Это сообщение увидит конечный пользователь."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Например: «Введите имя нового компонента»"
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Тип ввода"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Необязательно"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Введите каждый вариант с новой строки. Они будут показаны как пункты выпадающего списка."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Варианты (по одному на строку)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Вариант 1 Вариант 2 Вариант 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Обязательно"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Требование"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Булево"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Число"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Селект"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Строка"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Не используется"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Этот параметр не используется в инструкциях или промпте. Он будет доступен для ручного ввода, но может быть не нужен."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Всегда разрешать"

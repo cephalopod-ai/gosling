@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Không thể lưu"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Hủy"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Chèn ví dụ"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Hướng dẫn"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Hướng dẫn chi tiết cho AI, ẩn khỏi người dùng"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Lưu hướng dẫn"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Dùng cú pháp {code} để định nghĩa các tham số mà người dùng có thể điền vào"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Trình chỉnh sửa hướng dẫn"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Hủy"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Định nghĩa cấu trúc dự kiến của phản hồi từ AI bằng định dạng JSON Schema"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Chèn ví dụ"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Định dạng JSON không hợp lệ"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "JSON Schema phản hồi"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Lưu Schema"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "Trình chỉnh sửa JSON Schema"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Hủy"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "Gửi"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Thêm giá trị được cấu hình sẵn"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Tên tham số..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Giá trị tham số..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Xóa giá trị được cấu hình sẵn {key}"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "Bật/tắt cửa sổ luôn ở trên cùng"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Chia sẻ dữ liệu sử dụng ẩn danh"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Giá trị mặc định"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Nhập giá trị mặc định"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Xóa tham số: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "mô tả"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Đây là thông báo mà người dùng cuối sẽ thấy."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Ví dụ: \"Nhập tên cho thành phần mới\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Kiểu nhập"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Tùy chọn"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Nhập mỗi lựa chọn trên một dòng mới. Các lựa chọn này sẽ hiển thị dưới dạng danh sách thả xuống."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Lựa chọn (mỗi dòng một lựa chọn)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Lựa chọn 1 Lựa chọn 2 Lựa chọn 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Bắt buộc"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Yêu cầu"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Boolean"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Số"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Lựa chọn"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Chuỗi"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Không dùng"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Tham số này không được sử dụng trong hướng dẫn hoặc lời nhắc. Nó sẽ khả dụng để nhập thủ công nhưng có thể không cần thiết."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Luôn cho phép"

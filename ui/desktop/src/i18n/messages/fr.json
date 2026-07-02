@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "Échec de l'enregistrement"
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "Annuler"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "Insérer un exemple"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "Instructions"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "Instructions détaillées pour l'IA, masquées à l'utilisateur"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "Enregistrer les instructions"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "Utilisez la syntaxe {code} pour définir les paramètres que les utilisateurs peuvent renseigner"
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "Éditeur d'instructions"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "Annuler"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "Définissez la structure attendue de la réponse de l'IA à l'aide du format JSON Schema"
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "Insérer un exemple"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "Format JSON non valide"
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "Schéma JSON de la réponse"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "Enregistrer le schéma"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "Éditeur de schéma JSON"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "Annuler"
   },
@@ -1180,18 +1138,6 @@
   },
   "jsonSchemaForm.submit": {
     "defaultMessage": "Envoyer"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "Ajouter une valeur préconfigurée"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "Nom du paramètre..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "Valeur du paramètre..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "Supprimer la valeur préconfigurée {key}"
   },
   "keyboardShortcuts.alwaysOnTopDescription": {
     "defaultMessage": "Activer ou désactiver la fenêtre toujours au premier plan"
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "Partager des données d'utilisation anonymes"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "Valeur par défaut"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "Saisir une valeur par défaut"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "Supprimer le paramètre : {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "description"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "Il s'agit du message que verra l'utilisateur final."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "Ex. : « Saisissez le nom du nouveau composant »"
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "Type de saisie"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "Facultatif"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "Saisissez chaque option sur une nouvelle ligne. Elles seront affichées sous forme de choix dans une liste déroulante."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "Options (une par ligne)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "Option 1 Option 2 Option 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "Obligatoire"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "Exigence"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "Booléen"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "Nombre"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "Sélection"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "Chaîne"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "Inutilisé"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "Ce paramètre n'est pas utilisé dans les instructions ni dans l'invite. Il sera disponible pour une saisie manuelle, mais n'est peut-être pas nécessaire."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Toujours autoriser"

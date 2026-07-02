@@ -1112,48 +1112,6 @@
   "inlineEditText.failedToSave": {
     "defaultMessage": "저장하지 못했습니다."
   },
-  "instructionsEditor.cancel": {
-    "defaultMessage": "취소"
-  },
-  "instructionsEditor.insertExample": {
-    "defaultMessage": "예시 삽입"
-  },
-  "instructionsEditor.label": {
-    "defaultMessage": "지침"
-  },
-  "instructionsEditor.placeholder": {
-    "defaultMessage": "사용자에게 숨겨진 AI에 대한 자세한 지침"
-  },
-  "instructionsEditor.save": {
-    "defaultMessage": "지침 저장"
-  },
-  "instructionsEditor.syntaxHelp": {
-    "defaultMessage": "{code} 구문을 사용하여 사용자가 입력할 수 있는 매개변수를 정의하세요."
-  },
-  "instructionsEditor.title": {
-    "defaultMessage": "지침 편집기"
-  },
-  "jsonSchemaEditor.cancel": {
-    "defaultMessage": "취소"
-  },
-  "jsonSchemaEditor.description": {
-    "defaultMessage": "JSON Schema 형식을 이용하여 예상되는 AI의 응답 구조를 정의합니다."
-  },
-  "jsonSchemaEditor.insertExample": {
-    "defaultMessage": "예시 삽입"
-  },
-  "jsonSchemaEditor.invalidJson": {
-    "defaultMessage": "잘못된 JSON 형식입니다."
-  },
-  "jsonSchemaEditor.label": {
-    "defaultMessage": "응답 JSON 스키마"
-  },
-  "jsonSchemaEditor.save": {
-    "defaultMessage": "스키마 저장"
-  },
-  "jsonSchemaEditor.title": {
-    "defaultMessage": "JSON 스키마 편집기"
-  },
   "jsonSchemaForm.cancel": {
     "defaultMessage": "취소"
   },
@@ -1324,18 +1282,6 @@
   },
   "keyboardShortcuts.toggleNavigationLabel": {
     "defaultMessage": "탐색 메뉴 전환"
-  },
-  "keyValueEditor.addValue": {
-    "defaultMessage": "사전 구성된 값 추가"
-  },
-  "keyValueEditor.defaultKeyPlaceholder": {
-    "defaultMessage": "매개변수 이름..."
-  },
-  "keyValueEditor.defaultValuePlaceholder": {
-    "defaultMessage": "매개변수 값..."
-  },
-  "keyValueEditor.removeValue": {
-    "defaultMessage": "사전 구성된 값 제거: {key}"
   },
   "launcher.placeholder": {
     "defaultMessage": "goose에게 무엇이든 물어보세요..."
@@ -1984,63 +1930,6 @@
   },
   "onboardingSuccess.shareUsageData": {
     "defaultMessage": "익명의 사용 데이터 공유"
-  },
-  "parameterInput.defaultValue": {
-    "defaultMessage": "기본값"
-  },
-  "parameterInput.defaultValuePlaceholder": {
-    "defaultMessage": "기본값을 입력하세요"
-  },
-  "parameterInput.deleteParameter": {
-    "defaultMessage": "매개변수 삭제: {key}"
-  },
-  "parameterInput.description": {
-    "defaultMessage": "설명"
-  },
-  "parameterInput.descriptionHelp": {
-    "defaultMessage": "최종 사용자에게 표시되는 메시지입니다."
-  },
-  "parameterInput.descriptionPlaceholder": {
-    "defaultMessage": "예: \"새 구성요소의 이름을 입력하세요.\""
-  },
-  "parameterInput.inputType": {
-    "defaultMessage": "입력 유형"
-  },
-  "parameterInput.optional": {
-    "defaultMessage": "선택 사항"
-  },
-  "parameterInput.optionsHelp": {
-    "defaultMessage": "각 옵션을 새 줄에 입력하세요. 드롭다운 선택지로 표시됩니다."
-  },
-  "parameterInput.optionsLabel": {
-    "defaultMessage": "옵션(한 줄에 하나씩)"
-  },
-  "parameterInput.optionsPlaceholder": {
-    "defaultMessage": "옵션 1 옵션 2 옵션 3"
-  },
-  "parameterInput.required": {
-    "defaultMessage": "필수"
-  },
-  "parameterInput.requirement": {
-    "defaultMessage": "요구 사항"
-  },
-  "parameterInput.typeBoolean": {
-    "defaultMessage": "부울"
-  },
-  "parameterInput.typeNumber": {
-    "defaultMessage": "숫자"
-  },
-  "parameterInput.typeSelect": {
-    "defaultMessage": "선택"
-  },
-  "parameterInput.typeString": {
-    "defaultMessage": "문자열"
-  },
-  "parameterInput.unused": {
-    "defaultMessage": "미사용"
-  },
-  "parameterInput.unusedWarningTitle": {
-    "defaultMessage": "이 매개변수는 지침이나 프롬프트에서 사용되지 않습니다. 수동 입력에 사용할 수 있지만 필요하지 않을 수도 있습니다."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "항상 허용"
