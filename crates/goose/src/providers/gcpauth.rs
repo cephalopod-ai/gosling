@@ -723,6 +723,8 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         assert_eq!(token2.token_value, "cached_token");
     }
 
+    // Requires a jsonwebtoken crypto backend, which only the TLS features enable.
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
     #[tokio::test]
     async fn test_token_expiration() {
         let auth = GcpAuth {
@@ -792,6 +794,8 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         }
     }
 
+    // Requires a jsonwebtoken crypto backend, which only the TLS features enable.
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
     #[tokio::test]
     async fn test_token_refresh_race_condition() {
         let auth = Arc::new(GcpAuth {
@@ -862,6 +866,8 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         }
     }
 
+    // Requires a jsonwebtoken crypto backend, which only the TLS features enable.
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
     #[tokio::test]
     async fn test_service_account_jwt_creation() {
         let auth = GcpAuth {

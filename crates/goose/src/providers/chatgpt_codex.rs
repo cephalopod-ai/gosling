@@ -1344,6 +1344,8 @@ mod tests {
         chatgpt_account_id: Option<String>,
     }
 
+    // Requires a jsonwebtoken crypto backend, which only the TLS features enable.
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
     #[tokio::test]
     async fn test_parse_jwt_claims_verified_with_issuer() {
         let server = MockServer::start().await;
