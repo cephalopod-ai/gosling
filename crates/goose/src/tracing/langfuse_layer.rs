@@ -12,6 +12,11 @@ use uuid::Uuid;
 
 const DEFAULT_LANGFUSE_URL: &str = "http://localhost:3000";
 
+/// Upper bound on buffered events while Langfuse is unreachable. Without a
+/// cap, an unreachable endpoint means every span of a long session
+/// accumulates here forever.
+const MAX_BATCH_EVENTS: usize = 4096;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct LangfuseIngestionResponse {
     successes: Vec<LangfuseIngestionSuccess>,
@@ -105,11 +110,13 @@ impl LangfuseBatchManager {
                     );
                 }
 
-                if !response_body.successes.is_empty() {
-                    self.batch.clear();
-                }
+                // The server has adjudicated every item; retrying rejected
+                // items would fail identically, so drop them either way.
+                let all_failed =
+                    response_body.successes.is_empty() && !response_body.errors.is_empty();
+                self.batch.clear();
 
-                if response_body.successes.is_empty() && !response_body.errors.is_empty() {
+                if all_failed {
                     Err("Langfuse ingestion failed for all items".into())
                 } else {
                     Ok(())
@@ -120,6 +127,9 @@ impl LangfuseBatchManager {
             | StatusCode::FORBIDDEN
             | StatusCode::NOT_FOUND
             | StatusCode::METHOD_NOT_ALLOWED) => {
+                // Misconfiguration: retrying the same payload can never
+                // succeed, so don't let it pile up until the next restart.
+                self.batch.clear();
                 let err_text = response.text().await.unwrap_or_default();
                 Err(format!("Langfuse API error: {}: {}", status, err_text).into())
             }
@@ -133,6 +143,11 @@ impl LangfuseBatchManager {
 
 impl BatchManager for LangfuseBatchManager {
     fn add_event(&mut self, event_type: &str, body: Value) {
+        if self.batch.len() >= MAX_BATCH_EVENTS {
+            // Shed the oldest quarter in one go so the shift cost is
+            // amortized instead of paid per event once the cap is hit.
+            self.batch.drain(..MAX_BATCH_EVENTS / 4);
+        }
         self.batch.push(json!({
             "id": Uuid::new_v4().to_string(),
             "timestamp": Utc::now().to_rfc3339(),
@@ -388,7 +403,48 @@ mod tests {
 
         let result = manager.send_async().await;
         assert!(result.is_err());
-        assert!(!manager.batch.is_empty());
+        assert!(
+            manager.batch.is_empty(),
+            "server-rejected items must not be retried"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_batch_is_bounded() {
+        let _fixture = TestFixture::new().await;
+        let mut manager = LangfuseBatchManager::new(
+            "test-public".to_string(),
+            "test-secret".to_string(),
+            "http://test.local".to_string(),
+        );
+
+        for _ in 0..(MAX_BATCH_EVENTS * 2) {
+            manager.add_event("test-event", create_test_event());
+        }
+
+        assert!(manager.batch.len() <= MAX_BATCH_EVENTS);
+    }
+
+    #[tokio::test]
+    async fn test_batch_cleared_on_permanent_api_error() {
+        let fixture = TestFixture::new().await.with_mock_server().await;
+
+        fixture.mock_response(401, json!({})).await;
+
+        let mut manager = LangfuseBatchManager::new(
+            "test-public".to_string(),
+            "test-secret".to_string(),
+            fixture.mock_server_uri(),
+        );
+
+        manager.add_event("test-event", create_test_event());
+
+        let result = manager.send_async().await;
+        assert!(result.is_err());
+        assert!(
+            manager.batch.is_empty(),
+            "batch must not grow forever when Langfuse rejects credentials"
+        );
     }
 
     #[tokio::test]
