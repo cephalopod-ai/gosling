@@ -113,7 +113,7 @@ function ProviderCards({
     id: string;
     config: CustomProviderConfigDto;
     isEditable: boolean;
-    providerType: string;
+    providerType: ProviderType;
   } | null>(null);
 
   const handleProviderLaunchWithModelSelection = useCallback((provider: ProviderDetails) => {

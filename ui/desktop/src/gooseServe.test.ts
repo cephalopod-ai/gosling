@@ -248,6 +248,43 @@ describe('startGooseServe', () => {
     }
   });
 
+  it.skipIf(process.platform === 'win32')('allows the packaged file origin', async () => {
+    const tempDir = makeTempDir();
+    const resourcesPath = path.join(tempDir, 'resources');
+    const argsPath = path.join(tempDir, 'args.txt');
+    makeExecutable(
+      path.join(resourcesPath, 'bin', binaryName),
+      [
+        '#!/usr/bin/env sh',
+        'printf "%s\\n" "$@" > "$TEST_ARGS_PATH"',
+        'printf "GOOSED_CERT_FINGERPRINT=DD:EE:FF\\n"',
+        'while true; do sleep 1; done',
+        '',
+      ].join('\n')
+    );
+
+    const result = await startGooseServe({
+      serverSecret: 'test-secret',
+      dir: tempDir,
+      tls: true,
+      env: {
+        TEST_ARGS_PATH: argsPath,
+      },
+      isPackaged: true,
+      resourcesPath,
+      readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+    });
+
+    try {
+      const args = await waitForFileLines(argsPath);
+      expect(args).toContain('--allowed-origin');
+      expect(args).toContain('null');
+      expect(args).toContain('file://');
+    } finally {
+      await result.cleanup();
+    }
+  });
+
   it.skipIf(process.platform === 'win32')('waits for TLS fingerprint after readiness succeeds', async () => {
     const tempDir = makeTempDir();
     const goosePath = makeExecutable(

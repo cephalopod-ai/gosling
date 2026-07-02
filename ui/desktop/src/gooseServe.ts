@@ -1,8 +1,10 @@
 import { spawn, type ChildProcess } from 'child_process';
 import fs from 'node:fs';
+import https from 'node:https';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import type { TLSSocket } from 'node:tls';
 import {
   appendTail as appendStartupTail,
   createGooseServeStartupDiagnostics,
@@ -36,6 +38,7 @@ export interface StartGooseServeOptions extends FindGooseBinaryOptions {
   logger?: Logger;
   diagnosticsDir?: string;
   readinessFetch?: ReadinessFetch;
+  usePinnedTlsReadiness?: boolean;
 }
 
 export interface GooseServeResult {
@@ -135,10 +138,70 @@ const appendErrorTail = (target: string[], lines: string[], maxLines = 100): voi
 const CERT_FINGERPRINT_PREFIX = 'GOOSED_CERT_FINGERPRINT=';
 const TLS_FINGERPRINT_TIMEOUT_MS = 5000;
 
+const normalizeFingerprint = (fingerprint: string): string =>
+  fingerprint.replace(/[^a-fA-F0-9]/g, '').toUpperCase();
+
+const fetchStatusWithPinnedTls = async (
+  statusUrl: string,
+  expectedFingerprint: string
+): Promise<boolean> => {
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+    let certificateMatches = false;
+
+    const finish = (result: boolean) => {
+      if (!settled) {
+        settled = true;
+        resolve(result);
+      }
+    };
+
+    const request = https.request(
+      statusUrl,
+      {
+        method: 'GET',
+        rejectUnauthorized: false,
+      },
+      (response) => {
+        response.resume();
+        response.on('end', () => {
+          const statusCode = response.statusCode ?? 0;
+          finish(certificateMatches && statusCode >= 200 && statusCode < 300);
+        });
+      }
+    );
+
+    request.on('socket', (socket) => {
+      socket.on('secureConnect', () => {
+        const certificate = (socket as TLSSocket).getPeerCertificate();
+        const actualFingerprint = certificate.fingerprint256 || certificate.fingerprint;
+        certificateMatches =
+          !!actualFingerprint &&
+          normalizeFingerprint(actualFingerprint) === normalizeFingerprint(expectedFingerprint);
+        if (!certificateMatches) {
+          request.destroy();
+        }
+      });
+    });
+
+    request.setTimeout(1000, () => {
+      request.destroy();
+      finish(false);
+    });
+    request.on('error', () => finish(false));
+    request.end();
+  });
+};
+
 const fetchStatus = async (
   statusUrl: string,
-  readinessFetch: ReadinessFetch
+  readinessFetch: ReadinessFetch,
+  tlsFingerprint?: string
 ): Promise<boolean> => {
+  if (tlsFingerprint && statusUrl.startsWith('https://127.0.0.1:')) {
+    return fetchStatusWithPinnedTls(statusUrl, tlsFingerprint);
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1000);
 
@@ -177,6 +240,7 @@ const waitForGooseServeReady = async (
   options: {
     healthUrl: string;
     readinessFetch: ReadinessFetch;
+    tlsFingerprint?: string;
     onEvent?: (name: string, details?: Record<string, unknown>) => void;
   }
 ): Promise<boolean> => {
@@ -217,7 +281,7 @@ const waitForGooseServeReady = async (
       return false;
     }
 
-    if (await fetchStatus(statusUrl, options.readinessFetch)) {
+    if (await fetchStatus(statusUrl, options.readinessFetch, options.tlsFingerprint)) {
       options.onEvent?.('healthcheck_success', {
         ...probeDetails,
         attempt,
@@ -327,6 +391,7 @@ export const startGooseServe = async ({
   logger = defaultLogger,
   diagnosticsDir,
   readinessFetch = fetch,
+  usePinnedTlsReadiness = false,
 }: StartGooseServeOptions): Promise<GooseServeResult> => {
   const workingDir = dir || process.cwd();
   const startupTrace = createGooseServeStartupDiagnostics(diagnosticsDir, workingDir);
@@ -364,6 +429,10 @@ export const startGooseServe = async ({
     '127.0.0.1',
     '--port',
     String(port),
+    // The packaged renderer is served from file://, so its WebSocket upgrades
+    // carry `Origin: file://` while CORS fetches serialize the origin as
+    // `null`. Allow both; anything else stays rejected.
+    ...(isPackaged ? ['--allowed-origin', 'null', '--allowed-origin', 'file://'] : []),
   ];
 
   logger.info(`Starting goose serve from: ${goosePath} on port ${port} in dir ${workingDir}`);
@@ -530,17 +599,45 @@ export const startGooseServe = async ({
     });
   };
 
-  const ready = await waitForGooseServeReady(statusUrl, errorLog, () => exited || spawnFailed, {
-    healthUrl,
-    readinessFetch,
-    onEvent: startupTrace?.record,
-  });
-
   const stopOutputCollection = () => {
     stopStdoutCollection();
     gooseProcess.stderr?.off('data', onStderrData);
     gooseProcess.stderr?.resume();
   };
+
+  let pinnedTlsFingerprint: string | undefined;
+  if (tls && usePinnedTlsReadiness) {
+    startupTrace?.record('fingerprint_wait_start', { timeoutMs: TLS_FINGERPRINT_TIMEOUT_MS });
+    const fingerprint = await waitForFingerprint(fingerprintReady, TLS_FINGERPRINT_TIMEOUT_MS);
+    if (!fingerprint) {
+      stopOutputCollection();
+      await cleanup();
+      const exitDetails = exited
+        ? ` Process exited with code ${exitCode} and signal ${exitSignal}.`
+        : '';
+      const stderrDetails = errorLog.length ? ` Stderr: ${errorLog.join('\n')}` : '';
+      startupTrace?.record('fingerprint_missing', {
+        timeoutMs: TLS_FINGERPRINT_TIMEOUT_MS,
+        exited,
+        exitCode,
+        exitSignal,
+      });
+      throw new Error(
+        withStartupDiagnosticsPath(
+          `goose serve did not emit TLS certificate fingerprint on ${statusUrl}.${exitDetails}${stderrDetails}`,
+          startupDiagnosticsPath
+        )
+      );
+    }
+    pinnedTlsFingerprint = fingerprint;
+  }
+
+  const ready = await waitForGooseServeReady(statusUrl, errorLog, () => exited || spawnFailed, {
+    healthUrl,
+    readinessFetch,
+    tlsFingerprint: pinnedTlsFingerprint,
+    onEvent: startupTrace?.record,
+  });
 
   if (!ready) {
     stopOutputCollection();
@@ -557,7 +654,7 @@ export const startGooseServe = async ({
     );
   }
 
-  if (tls) {
+  if (tls && !usePinnedTlsReadiness) {
     startupTrace?.record('fingerprint_wait_start', { timeoutMs: TLS_FINGERPRINT_TIMEOUT_MS });
     const fingerprint = await waitForFingerprint(fingerprintReady, TLS_FINGERPRINT_TIMEOUT_MS);
     if (!fingerprint) {

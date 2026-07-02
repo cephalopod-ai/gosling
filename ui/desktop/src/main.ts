@@ -1,4 +1,4 @@
-import type { OpenDialogOptions, OpenDialogReturnValue } from 'electron';
+import type { OpenDialogOptions, OpenDialogReturnValue, Session } from 'electron';
 import {
   app,
   App,
@@ -302,9 +302,9 @@ async function configureProxy() {
 
 if (started) app.quit();
 
-// Certificate trust for active backend leases. Renderer requests and
-// main-process net.fetch both pin to the exact cert fingerprint. Each backend
-// lease owns a trust record so old windows keep working after settings change.
+// Certificate trust for active backend leases. Renderer requests pin to the
+// exact cert fingerprint. Each backend lease owns a trust record so old windows
+// keep working after settings change.
 interface BackendCertificateTrust {
   hostname: string;
   fingerprint: string | null;
@@ -316,6 +316,8 @@ interface BackendCertificateTrustRegistration {
 }
 
 const trustedBackendCertificates = new Set<BackendCertificateTrust>();
+const backendCertificateVerifierSessions = new WeakSet<Session>();
+const MAIN_WINDOW_SESSION_PARTITION = 'persist:goose';
 
 function normalizeHostname(hostname: string): string {
   return hostname.toLowerCase();
@@ -380,6 +382,27 @@ function isTrustedHost(hostname: string): boolean {
   return getBackendCertificateTrusts(hostname).length > 0;
 }
 
+function installBackendCertificateVerifier(targetSession: Session) {
+  if (backendCertificateVerifierSessions.has(targetSession)) {
+    return;
+  }
+
+  targetSession.setCertificateVerifyProc((request, callback) => {
+    if (!isTrustedHost(request.hostname)) {
+      callback(-3);
+      return;
+    }
+
+    const certificate = request.certificate as Electron.Certificate & {
+      fingerprint256?: string;
+    };
+    const fingerprint = certificate.fingerprint256 ?? certificate.fingerprint;
+    const match = verifyBackendCertificate(request.hostname, fingerprint);
+    callback(match ? 0 : -2);
+  });
+  backendCertificateVerifierSessions.add(targetSession);
+}
+
 // Renderer requests: pin to the exact cert once known.
 app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
   let parsed: URL;
@@ -395,7 +418,10 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
   }
 
   event.preventDefault();
-  callback(verifyBackendCertificate(parsed.hostname, certificate.fingerprint));
+  const cert = certificate as Electron.Certificate & {
+    fingerprint256?: string;
+  };
+  callback(verifyBackendCertificate(parsed.hostname, cert.fingerprint256 ?? cert.fingerprint));
 });
 
 app.whenReady().then(() => {
@@ -403,18 +429,6 @@ app.whenReady().then(() => {
 });
 
 // Main-process net.fetch: pin to the exact cert once known.
-app.whenReady().then(() => {
-  session.defaultSession.setCertificateVerifyProc((request, callback) => {
-    if (!isTrustedHost(request.hostname)) {
-      callback(-3);
-      return;
-    }
-
-    const match = verifyBackendCertificate(request.hostname, request.certificate.fingerprint);
-    callback(match ? 0 : -2);
-  });
-});
-
 if (process.env.ENABLE_PLAYWRIGHT) {
   const debugPort = process.env.PLAYWRIGHT_DEBUG_PORT || '9222';
   console.log(`[Main] Enabling Playwright remote debugging on port ${debugPort}`);
@@ -1090,14 +1104,17 @@ const createChat = async (
       return;
     }
   } else {
-    const localCertificateTrust = trustBackendCertificate('127.0.0.1', null);
+    const useLocalBackendTls = !app.isPackaged;
+    const localCertificateTrust = useLocalBackendTls
+      ? trustBackendCertificate('127.0.0.1', null)
+      : null;
 
     let gooseServeResult: Awaited<ReturnType<typeof startGooseServe>>;
     try {
       gooseServeResult = await startGooseServe({
         serverSecret,
         dir: workingDir,
-        tls: true,
+        tls: useLocalBackendTls,
         env: {
           GOOSE_PATH_ROOT: appConfig.GOOSE_PATH_ROOT as string | undefined,
         },
@@ -1105,26 +1122,30 @@ const createChat = async (
         resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
         logger: log,
         diagnosticsDir: STARTUP_LOGS_DIR,
-        readinessFetch: net.fetch as unknown as typeof globalThis.fetch,
+        readinessFetch: globalThis.fetch,
+        usePinnedTlsReadiness: useLocalBackendTls,
       });
-      if (!gooseServeResult.certFingerprint) {
+      if (useLocalBackendTls && !gooseServeResult.certFingerprint) {
         await gooseServeResult.cleanup();
         throw new Error(
           'goose serve started with TLS but did not return a certificate fingerprint'
         );
       }
 
-      const localCertFingerprint = normalizeFingerprint(gooseServeResult.certFingerprint);
-      if (
-        localCertificateTrust.trust.fingerprint &&
-        localCertificateTrust.trust.fingerprint !== localCertFingerprint
-      ) {
-        await gooseServeResult.cleanup();
-        throw new Error('goose serve TLS certificate fingerprint did not match readiness probe');
+      if (useLocalBackendTls && gooseServeResult.certFingerprint && localCertificateTrust) {
+        const localCertFingerprint = normalizeFingerprint(gooseServeResult.certFingerprint);
+        if (
+          localCertificateTrust.trust.fingerprint &&
+          localCertificateTrust.trust.fingerprint !== localCertFingerprint
+        ) {
+          await gooseServeResult.cleanup();
+          throw new Error('goose serve TLS certificate fingerprint did not match readiness probe');
+        }
+        localCertificateTrust.trust.fingerprint = localCertFingerprint;
+        installBackendCertificateVerifier(session.fromPartition(MAIN_WINDOW_SESSION_PARTITION));
       }
-      localCertificateTrust.trust.fingerprint = localCertFingerprint;
     } catch (error) {
-      localCertificateTrust.release();
+      localCertificateTrust?.release();
       log.error('goose serve failed to start', error);
       dialog.showMessageBoxSync({
         type: 'error',
@@ -1147,7 +1168,7 @@ const createChat = async (
       try {
         await cleanupGooseServe();
       } finally {
-        localCertificateTrust.release();
+        localCertificateTrust?.release();
       }
     };
     gooseServeLease = gooseServeLeases.create(gooseServeResult, serverSecret);
@@ -1211,9 +1232,10 @@ const createChat = async (
               process.env.SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE,
           }),
         ],
-        partition: 'persist:goose',
+        partition: MAIN_WINDOW_SESSION_PARTITION,
       },
     });
+    installBackendCertificateVerifier(mainWindow.webContents.session);
   } catch (error) {
     await cleanupUnregisteredGooseServeLease();
     throw error;
