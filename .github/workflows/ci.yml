@@ -18,6 +18,9 @@ permissions:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       docs-only: ${{ steps.filter.outputs.docs-only }}
       code: ${{ steps.filter.outputs.code }}
