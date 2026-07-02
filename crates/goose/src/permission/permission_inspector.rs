@@ -45,12 +45,18 @@ impl PermissionInspector {
                 readonly_annotated.insert(tool.name.to_string());
             }
         }
-        *self.readonly_tools.write().unwrap() = readonly_annotated;
+        *self
+            .readonly_tools
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = readonly_annotated;
         self.permission_manager.apply_tool_annotations(tools);
     }
 
     pub fn is_readonly_annotated_tool(&self, tool_name: &str) -> bool {
-        self.readonly_tools.read().unwrap().contains(tool_name)
+        self.readonly_tools
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(tool_name)
     }
 
     /// Process inspection results into permission decisions
