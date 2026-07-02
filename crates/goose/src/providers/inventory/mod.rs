@@ -452,7 +452,10 @@ impl ProviderInventoryService {
         let models = enrich_model_ids_with_canonical(&identity.provider_family, model_ids);
         let now = Utc::now();
         let pool = self.storage.pool().await?;
-        let mut tx = pool.begin().await?;
+        // BEGIN IMMEDIATE, matching the session storage convention: a deferred
+        // transaction on this shared pool that reads before writing can fail
+        // with SQLITE_BUSY_SNAPSHOT, which busy_timeout does not retry.
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         sqlx::query(
             r#"

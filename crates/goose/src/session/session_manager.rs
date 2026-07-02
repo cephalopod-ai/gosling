@@ -699,7 +699,13 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
 impl SessionStorage {
     fn create_pool(path: &Path) -> Pool<Sqlite> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("Failed to create session database directory");
+            // Don't panic here: this runs inside a process-global LazyLock, so
+            // a panic would poison it and crash every later session access.
+            // If the directory really is unusable the first query returns a
+            // recoverable error instead.
+            if let Err(e) = fs::create_dir_all(parent) {
+                tracing::error!("Failed to create session database directory {parent:?}: {e}");
+            }
         }
 
         let options = SqliteConnectOptions::new()
@@ -707,7 +713,12 @@ impl SessionStorage {
             .create_if_missing(true)
             .foreign_keys(true)
             .busy_timeout(std::time::Duration::from_secs(30))
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            // WAL + NORMAL is the standard pairing: commits skip the
+            // per-commit WAL fsync (a large cost on macOS where fsync is
+            // F_FULLFSYNC) while remaining corruption-safe; at most the last
+            // commit is lost on power failure.
+            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
 
         SqlitePoolOptions::new().connect_lazy_with(options)
     }
@@ -725,12 +736,15 @@ impl SessionStorage {
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
         self.initialized
             .get_or_try_init(|| async {
+                // Propagate probe failures (e.g. SQLITE_BUSY past the timeout
+                // while another process holds the write lock). Treating an
+                // error as "no schema" would stamp an existing older DB with
+                // the current version and permanently skip its migrations.
                 let schema_exists = sqlx::query_scalar::<_, bool>(
                     r#"SELECT EXISTS (SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version')"#,
                 )
                 .fetch_one(&self.pool)
-                .await
-                .unwrap_or(false);
+                .await?;
 
                 if schema_exists {
                     Self::run_migrations(&self.pool).await?;
@@ -1991,13 +2005,19 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let current_metadata_json = sqlx::query_scalar::<_, String>(
+        // No-op when the row is gone: another writer (session truncation or
+        // deletion from the desktop app) may race the background tasks that
+        // patch metadata, and losing that race must not abort an agent turn.
+        let Some(current_metadata_json) = sqlx::query_scalar::<_, String>(
             "SELECT metadata_json FROM messages WHERE message_id = ? AND session_id = ?",
         )
         .bind(message_id)
         .bind(session_id)
-        .fetch_one(&mut *tx)
-        .await?;
+        .fetch_optional(&mut *tx)
+        .await?
+        else {
+            return Ok(());
+        };
 
         let current_metadata: crate::conversation::message::MessageMetadata =
             serde_json::from_str(&current_metadata_json)?;
