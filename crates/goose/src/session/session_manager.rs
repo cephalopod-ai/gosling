@@ -118,6 +118,11 @@ pub struct SessionUpdateBuilder<'a> {
     session_id: String,
     name: Option<String>,
     user_set_name: Option<bool>,
+    /// Set by `system_generated_name`: only apply this update if the
+    /// session's `user_set_name` is still false at write time, so a
+    /// background auto-naming task can't clobber a rename the user made
+    /// while it was running. See `apply_update`.
+    only_if_not_user_named: bool,
     session_type: Option<SessionType>,
     working_dir: Option<PathBuf>,
     extension_data: Option<ExtensionData>,
@@ -146,6 +151,7 @@ impl<'a> SessionUpdateBuilder<'a> {
             session_id,
             name: None,
             user_set_name: None,
+            only_if_not_user_named: false,
             session_type: None,
             working_dir: None,
             extension_data: None,
@@ -178,6 +184,7 @@ impl<'a> SessionUpdateBuilder<'a> {
         if !name.is_empty() {
             self.name = Some(name);
             self.user_set_name = Some(false);
+            self.only_if_not_user_named = true;
         }
         self
     }
@@ -1435,8 +1442,12 @@ impl SessionStorage {
             return Ok(());
         }
 
+        let guard_on_user_set_name = builder.only_if_not_user_named;
         query.push_str(", ");
         query.push_str("updated_at = datetime('now') WHERE id = ?");
+        if guard_on_user_set_name {
+            query.push_str(" AND user_set_name = 0");
+        }
 
         let mut q = sqlx::query(&query);
 
@@ -1500,6 +1511,25 @@ impl SessionStorage {
         let result = q.execute(&mut *tx).await?;
 
         if result.rows_affected() == 0 {
+            if guard_on_user_set_name {
+                // The guarded UPDATE matched zero rows because either the
+                // session doesn't exist, or it does but user_set_name was
+                // already true - i.e. the user renamed it while this
+                // background auto-naming write was in flight. Only the
+                // first case is a real error; distinguish them so a lost
+                // race silently drops the stale write instead of clobbering
+                // (or being reported as failing to touch) the user's rename.
+                let exists: Option<i64> =
+                    sqlx::query_scalar("SELECT 1 FROM sessions WHERE id = ?")
+                        .bind(&builder.session_id)
+                        .fetch_optional(&mut *tx)
+                        .await?;
+                tx.commit().await?;
+                if exists.is_some() {
+                    return Ok(());
+                }
+                return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
+            }
             return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
         }
 
@@ -2464,6 +2494,46 @@ mod tests {
             .await
             .unwrap();
         assert!(update.is_none());
+
+        let reloaded = sm.get_session(&session.id, false).await.unwrap();
+        assert_eq!(reloaded.name, "Manual title");
+        assert!(reloaded.user_set_name);
+    }
+
+    #[tokio::test]
+    async fn test_system_generated_name_does_not_clobber_concurrent_user_rename() {
+        // Simulates the actual race: a background auto-naming write that
+        // started before the user renamed the session, but whose apply()
+        // lands after the user's rename already committed. Regression test
+        // for the TOCTOU in apply_update's system_generated_name path -
+        // previously this unconditionally overwrote the name and reset
+        // user_set_name back to false.
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "New Chat".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        // User renames first...
+        sm.update(&session.id)
+            .user_provided_name("Manual title".to_string())
+            .apply()
+            .await
+            .unwrap();
+
+        // ...then the stale background auto-name write lands.
+        sm.update(&session.id)
+            .system_generated_name("Auto-generated title".to_string())
+            .apply()
+            .await
+            .unwrap();
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.name, "Manual title");
