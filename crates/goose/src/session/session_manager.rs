@@ -2398,6 +2398,14 @@ mod tests {
             .await
             .unwrap();
 
+        // Persist a model config so naming doesn't fall back to the
+        // globally-configured model, which doesn't exist in test environments.
+        sm.update(&session.id)
+            .model_config(ModelConfig::new("test-model"))
+            .apply()
+            .await
+            .unwrap();
+
         add_user_message(&sm, &session.id).await;
 
         let update = sm
