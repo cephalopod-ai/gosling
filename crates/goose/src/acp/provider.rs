@@ -26,6 +26,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread::JoinHandle;
+use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
@@ -44,6 +45,25 @@ use goose_providers::model::ModelConfig;
 
 /// Sentinel: resolved to the actual model name during connect().
 pub const ACP_CURRENT_MODEL: &str = "current";
+
+/// How long to wait for a session-mode/config-option control request to the
+/// ACP subprocess before giving up. These are small, local round-trips
+/// (not a model completion), so this is intentionally much shorter than a
+/// provider's request timeout - a well-behaved agent responds immediately.
+const ACP_CONTROL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Await a control-request response with a timeout, so a hung ACP
+/// subprocess can't block the caller (and, transitively, anything else
+/// waiting on the same provider mutex) forever.
+async fn await_control_response<T>(response_rx: oneshot::Receiver<Result<T>>) -> Result<T> {
+    match tokio::time::timeout(ACP_CONTROL_REQUEST_TIMEOUT, response_rx).await {
+        Ok(channel_result) => channel_result.context("ACP request cancelled")?,
+        Err(_) => anyhow::bail!(
+            "ACP agent did not respond to a mode/config-option request within {:?}",
+            ACP_CONTROL_REQUEST_TIMEOUT
+        ),
+    }
+}
 
 pub struct AcpProviderConfig {
     pub command: PathBuf,
@@ -303,7 +323,7 @@ impl AcpProvider {
             })
             .await
             .context("ACP client is unavailable")?;
-        response_rx.await.context("ACP request cancelled")?
+        await_control_response(response_rx).await
     }
 
     pub(crate) async fn send_set_config_option(
@@ -325,7 +345,7 @@ impl AcpProvider {
             })
             .await
             .context("ACP client is unavailable")?;
-        response_rx.await.context("ACP request cancelled")?
+        await_control_response(response_rx).await
     }
 
     /// Re-apply the model selection config option when the active session model
