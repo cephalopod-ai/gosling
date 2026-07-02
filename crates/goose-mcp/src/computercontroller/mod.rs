@@ -1531,6 +1531,35 @@ impl ComputerControllerServer {
         Ok(CallToolResult::success(result))
     }
 
+    /// Resolve a user/LLM-supplied path for the `cache` tool's view/delete
+    /// commands and confine it to `self.cache_dir`. Prevents an
+    /// arbitrary-file read or delete via a path outside the cache directory
+    /// (e.g. from prompt-injected tool arguments).
+    fn resolve_cached_file_path(&self, path: &str) -> Result<PathBuf, ErrorData> {
+        let cache_dir = fs::canonicalize(&self.cache_dir).map_err(|e| {
+            ErrorData::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("Failed to resolve cache directory: {}", e),
+                None,
+            )
+        })?;
+        let canonical = fs::canonicalize(path).map_err(|e| {
+            ErrorData::new(
+                ErrorCode::INVALID_PARAMS,
+                format!("Failed to resolve path '{}': {}", path, e),
+                None,
+            )
+        })?;
+        if !canonical.starts_with(&cache_dir) {
+            return Err(ErrorData::new(
+                ErrorCode::INVALID_PARAMS,
+                format!("Path '{}' is outside the cache directory", path),
+                None,
+            ));
+        }
+        Ok(canonical)
+    }
+
     /// Manage cached files and data
     #[tool(
         name = "cache",
@@ -1583,7 +1612,9 @@ impl ComputerControllerServer {
                     )
                 })?;
 
-                let content = fs::read_to_string(path).map_err(|e| {
+                let confined_path = self.resolve_cached_file_path(path)?;
+
+                let content = fs::read_to_string(&confined_path).map_err(|e| {
                     ErrorData::new(
                         ErrorCode::INTERNAL_ERROR,
                         format!("Failed to read file: {}", e),
@@ -1605,7 +1636,9 @@ impl ComputerControllerServer {
                     )
                 })?;
 
-                fs::remove_file(path).map_err(|e| {
+                let confined_path = self.resolve_cached_file_path(path)?;
+
+                fs::remove_file(&confined_path).map_err(|e| {
                     ErrorData::new(
                         ErrorCode::INTERNAL_ERROR,
                         format!("Failed to delete file: {}", e),
