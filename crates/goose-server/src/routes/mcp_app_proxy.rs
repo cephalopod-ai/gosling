@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use goose::acp::transport::auth::token_matches;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -45,8 +46,14 @@ struct GuestQuery {
 struct StoreGuestBody {
     secret: String,
     html: String,
-    /// CSP string to apply to the guest page
-    csp: Option<String>,
+    /// Comma-separated list of domains for connect-src (fetch, XHR, WebSocket)
+    connect_domains: Option<String>,
+    /// Comma-separated list of domains for resource loading (scripts, styles, images, fonts, media)
+    resource_domains: Option<String>,
+    /// Comma-separated list of origins for nested iframes (frame-src)
+    frame_domains: Option<String>,
+    /// Comma-separated list of allowed base URIs (base-uri)
+    base_uri_domains: Option<String>,
 }
 
 const MCP_APP_PROXY_HTML: &str = include_str!("templates/mcp_app_proxy.html");
@@ -151,7 +158,7 @@ async fn mcp_app_proxy(
     axum::extract::State(state): axum::extract::State<AppState>,
     Query(params): Query<ProxyQuery>,
 ) -> Response {
-    if params.secret != state.secret_key {
+    if !token_matches(Some(params.secret.as_str()), &state.secret_key) {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
 
@@ -193,12 +200,25 @@ async fn store_guest_html(
     axum::extract::State(state): axum::extract::State<AppState>,
     Json(body): Json<StoreGuestBody>,
 ) -> Response {
-    if body.secret != state.secret_key {
+    if !token_matches(Some(body.secret.as_str()), &state.secret_key) {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
 
     let nonce = Uuid::new_v4().to_string();
-    let csp = body.csp.unwrap_or_default();
+
+    // Derive the guest CSP server-side from the same domain lists used for
+    // the outer frame, rather than trusting a pre-built CSP string from the
+    // client. The guest UI gets the same restrictions as its outer proxy
+    // frame; script-src has no extra domains here since the guest is not
+    // expected to load additional third-party script origins beyond what
+    // resource_domains/connect_domains already grant.
+    let csp = build_outer_csp(
+        &parse_domains(body.connect_domains.as_ref()),
+        &parse_domains(body.resource_domains.as_ref()),
+        &parse_domains(body.frame_domains.as_ref()),
+        &parse_domains(body.base_uri_domains.as_ref()),
+        &[],
+    );
 
     {
         let mut store = state.guest_store.write().await;
@@ -236,7 +256,7 @@ async fn serve_guest_html(
     axum::extract::State(state): axum::extract::State<AppState>,
     Query(params): Query<GuestQuery>,
 ) -> Response {
-    if params.secret != state.secret_key {
+    if !token_matches(Some(params.secret.as_str()), &state.secret_key) {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
 
