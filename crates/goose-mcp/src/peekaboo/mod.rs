@@ -7,6 +7,17 @@
 const BREW_FORMULA: &str = "steipete/tap/peekaboo";
 
 pub fn is_peekaboo_installed() -> bool {
+    // A GUI-launched app inherits a minimal PATH that excludes Homebrew, so a
+    // bare `which peekaboo` reports "not installed" even when it is — which drove
+    // a spurious `brew install` on the first computer_control call every
+    // restricted-PATH session. Check the well-known Homebrew locations directly
+    // (mirrors resolve_brew) before falling back to PATH lookup.
+    for candidate in &["/opt/homebrew/bin/peekaboo", "/usr/local/bin/peekaboo"] {
+        if std::path::Path::new(candidate).exists() {
+            return true;
+        }
+    }
+
     std::process::Command::new("which")
         .arg("peekaboo")
         .output()
@@ -49,7 +60,11 @@ pub fn auto_install_peekaboo() -> Result<(), String> {
         if is_peekaboo_installed() {
             return Ok(());
         }
-        // brew succeeded but binary not on PATH — try adding brew bin
+        // brew succeeded but the binary isn't in a well-known location — confirm
+        // it exists under the brew prefix. run_peekaboo_cmd invokes peekaboo with
+        // the login-shell PATH (merged_path), which includes the brew bin, so we
+        // don't need to mutate this process's global PATH (which would be a data
+        // race against other tokio worker threads reading the environment).
         if let Ok(prefix_output) = std::process::Command::new(&brew)
             .args(["--prefix"])
             .output()
@@ -59,12 +74,7 @@ pub fn auto_install_peekaboo() -> Result<(), String> {
                 .to_string();
             let bin_path = format!("{}/bin/peekaboo", prefix);
             if std::path::Path::new(&bin_path).exists() {
-                if let Ok(current_path) = std::env::var("PATH") {
-                    std::env::set_var("PATH", format!("{}/bin:{}", prefix, current_path));
-                    if is_peekaboo_installed() {
-                        return Ok(());
-                    }
-                }
+                return Ok(());
             }
         }
         Err("brew install succeeded but peekaboo binary not found on PATH".to_string())
