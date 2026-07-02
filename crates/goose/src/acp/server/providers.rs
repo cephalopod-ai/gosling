@@ -191,7 +191,6 @@ fn provider_setup_method_to_dto(
         crate::providers::catalog::ProviderSetupMethod::CloudCredentials => {
             ProviderSetupMethodDto::CloudCredentials
         }
-        crate::providers::catalog::ProviderSetupMethod::Local => ProviderSetupMethodDto::Local,
         crate::providers::catalog::ProviderSetupMethod::CliAuth => ProviderSetupMethodDto::CliAuth,
     }
 }

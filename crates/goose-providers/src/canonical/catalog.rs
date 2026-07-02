@@ -127,7 +127,6 @@ pub enum ProviderSetupMethod {
     OauthBrowser,
     OauthDeviceCode,
     CloudCredentials,
-    Local,
     CliAuth,
 }
 
