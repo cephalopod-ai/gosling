@@ -692,13 +692,37 @@ async fn collect_tagged_lines(
     stderr: tokio::process::ChildStderr,
     tx: tokio::sync::mpsc::UnboundedSender<(bool, String)>,
 ) -> Result<(), std::io::Error> {
+    // Downstream display/file truncation only runs after the whole output is
+    // collected, so without a cap here a single command emitting a flood of
+    // output (a verbose build, `find /`, `yes`) buffers unboundedly in memory
+    // and can OOM the process before truncation ever applies. Stop retaining
+    // once we cross a hard cap (well above the display limit so normal output is
+    // unaffected) but keep draining the pipes so the child never blocks on a
+    // full pipe. Note: a single line with no newline is still read whole by the
+    // line splitter, so this bounds the common many-lines case, not one giant line.
+    const MAX_COLLECTED_BYTES: usize = 10 * 1024 * 1024;
     let stdout_lines = SplitStream::new(BufReader::new(stdout).split(b'\n')).map(|l| (false, l));
     let stderr_lines = SplitStream::new(BufReader::new(stderr).split(b'\n')).map(|l| (true, l));
     let mut merged = stdout_lines.merge(stderr_lines);
 
+    let mut collected_bytes: usize = 0;
+    let mut capped = false;
     while let Some((is_stderr, line)) = merged.next().await {
         let line = line?;
-        let _ = tx.send((is_stderr, String::from_utf8_lossy(&line).into_owned()));
+        if collected_bytes < MAX_COLLECTED_BYTES {
+            collected_bytes += line.len();
+            let _ = tx.send((is_stderr, String::from_utf8_lossy(&line).into_owned()));
+            if collected_bytes >= MAX_COLLECTED_BYTES && !capped {
+                capped = true;
+                let _ = tx.send((
+                    true,
+                    format!(
+                        "[output exceeded {} bytes; further output discarded]",
+                        MAX_COLLECTED_BYTES
+                    ),
+                ));
+            }
+        }
     }
     Ok(())
 }
