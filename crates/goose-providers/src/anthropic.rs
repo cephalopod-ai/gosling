@@ -28,6 +28,9 @@ use rmcp::model::Tool;
 pub const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-5";
 pub const ANTHROPIC_DEFAULT_FAST_MODEL: &str = "claude-haiku-4-5";
 const ANTHROPIC_KNOWN_MODELS: &[&str] = &[
+    // Claude 5 models
+    "claude-fable-5",
+    "claude-sonnet-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     // Claude 4.6 models
@@ -194,9 +197,17 @@ impl AnthropicProvider {
 
 impl ProviderDescriptor for AnthropicProvider {
     fn metadata() -> ProviderMetadata {
+        // Context limits come from the canonical registry: several current
+        // models (opus-4-6 and later, fable-5) have 1M-token windows, so a
+        // hardcoded 200k here misreports the context meter for them.
         let models: Vec<ModelInfo> = ANTHROPIC_KNOWN_MODELS
             .iter()
-            .map(|&model_name| ModelInfo::new(model_name, 200_000))
+            .map(|&model_name| {
+                let context_limit = ModelConfig::new(model_name)
+                    .with_canonical_limits(ANTHROPIC_PROVIDER_NAME)
+                    .context_limit();
+                ModelInfo::new(model_name, context_limit)
+            })
             .collect();
 
         ProviderMetadata::with_models(
