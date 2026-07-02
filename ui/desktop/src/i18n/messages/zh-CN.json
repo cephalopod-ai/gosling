@@ -29,14 +29,14 @@
   "authSettings.deleteCredential": {
     "defaultMessage": "删除凭据"
   },
-  "authSettings.deleted": {
-    "defaultMessage": "凭据已删除"
-  },
   "authSettings.deleteMessage": {
     "defaultMessage": "要删除 {provider} 的 {name} 凭据吗？"
   },
   "authSettings.deleteTitle": {
     "defaultMessage": "删除凭据"
+  },
+  "authSettings.deleted": {
+    "defaultMessage": "凭据已删除"
   },
   "authSettings.description": {
     "defaultMessage": "管理 gosling 在本地存储的提供商凭据。"
@@ -62,11 +62,11 @@
   "authSettings.reauthorize": {
     "defaultMessage": "重新授权"
   },
-  "authSettings.signedIn": {
-    "defaultMessage": "凭据已配置"
-  },
   "authSettings.signIn": {
     "defaultMessage": "登录"
+  },
+  "authSettings.signedIn": {
+    "defaultMessage": "凭据已配置"
   },
   "authSettings.storageProviderCache": {
     "defaultMessage": "提供商缓存"
@@ -86,12 +86,6 @@
   "baseChat.goHome": {
     "defaultMessage": "回到首页"
   },
-  "bottomMenuExtensionSelection.extensionsForNewChats": {
-    "defaultMessage": "新聊天使用的扩展"
-  },
-  "bottomMenuExtensionSelection.extensionsForThisSession": {
-    "defaultMessage": "当前聊天会话使用的扩展"
-  },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "扩展已更新"
   },
@@ -100,6 +94,12 @@
   },
   "bottomMenuExtensionSelection.extensionWillBeEnabled": {
     "defaultMessage": "{name} 将在新聊天中被启用"
+  },
+  "bottomMenuExtensionSelection.extensionsForNewChats": {
+    "defaultMessage": "新聊天使用的扩展"
+  },
+  "bottomMenuExtensionSelection.extensionsForThisSession": {
+    "defaultMessage": "当前聊天会话使用的扩展"
   },
   "bottomMenuExtensionSelection.manageExtensions": {
     "defaultMessage": "管理扩展"
@@ -332,11 +332,11 @@
   "customProviderForm.attachments": {
     "defaultMessage": "附件"
   },
-  "customProviderForm.authentication": {
-    "defaultMessage": "认证"
-  },
   "customProviderForm.authHint": {
     "defaultMessage": "像 Ollama 这样的本地大模型通常不需要 API 密钥。"
+  },
+  "customProviderForm.authentication": {
+    "defaultMessage": "认证"
   },
   "customProviderForm.availableModels": {
     "defaultMessage": "可用模型（用逗号分隔）"
@@ -635,20 +635,17 @@
   "elicitationRequest.waitingForResponse": {
     "defaultMessage": "正在等待你的回复（剩余 {timeRemaining}）"
   },
-  "environmentBadge.dev": {
-    "defaultMessage": "开发"
-  },
   "envVarsSection.add": {
     "defaultMessage": "添加"
   },
   "envVarsSection.bothRequired": {
     "defaultMessage": "变量名和值都必须填写"
   },
-  "envVarsSection.environmentVariables": {
-    "defaultMessage": "环境变量"
-  },
   "envVarsSection.envVarsDescription": {
     "defaultMessage": "添加环境变量的键值对。填完两个字段后点击“+”按钮添加。若要修改已有的密钥值，点击编辑按钮。"
+  },
+  "envVarsSection.environmentVariables": {
+    "defaultMessage": "环境变量"
   },
   "envVarsSection.noSpaces": {
     "defaultMessage": "变量名不能包含空格"
@@ -658,6 +655,9 @@
   },
   "envVarsSection.variableName": {
     "defaultMessage": "变量名"
+  },
+  "environmentBadge.dev": {
+    "defaultMessage": "开发"
   },
   "errorBoundary.errorGeneric": {
     "defaultMessage": "发生了错误。"
@@ -818,6 +818,9 @@
   "extensionModal.unsavedChangesTitle": {
     "defaultMessage": "未保存的更改"
   },
+  "extensionTimeoutField.timeoutLabel": {
+    "defaultMessage": "超时"
+  },
   "extensionsSection.addCustomExtension": {
     "defaultMessage": "添加自定义扩展"
   },
@@ -853,9 +856,6 @@
   },
   "extensionsView.searchPlaceholder": {
     "defaultMessage": "搜索扩展…"
-  },
-  "extensionTimeoutField.timeoutLabel": {
-    "defaultMessage": "超时"
   },
   "externalBackendSection.certFingerprint": {
     "defaultMessage": "证书指纹（可选）"
@@ -1036,57 +1036,6 @@
   },
   "hub.goodMorning": {
     "defaultMessage": "早上好"
-  },
-  "huggingFaceModelSearch.download": {
-    "defaultMessage": "下载"
-  },
-  "huggingFaceModelSearch.downloaded": {
-    "defaultMessage": "已下载"
-  },
-  "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "下载中…"
-  },
-  "huggingFaceModelSearch.loadingVariants": {
-    "defaultMessage": "正在加载变体…"
-  },
-  "huggingFaceModelSearch.noGgufModels": {
-    "defaultMessage": "未找到此查询的 GGUF 模型。"
-  },
-  "huggingFaceModelSearch.recommended": {
-    "defaultMessage": "推荐"
-  },
-  "huggingFaceModelSearch.searchError": {
-    "defaultMessage": "搜索错误：{details}"
-  },
-  "huggingFaceModelSearch.searchFailed": {
-    "defaultMessage": "搜索失败，请重试。"
-  },
-  "huggingFaceModelSearch.searchHuggingFace": {
-    "defaultMessage": "搜索 HuggingFace"
-  },
-  "huggingFaceModelSearch.searchNoData": {
-    "defaultMessage": "搜索未返回数据。"
-  },
-  "huggingFaceModelSearch.searchPlaceholder": {
-    "defaultMessage": "搜索 GGUF 模型…"
-  },
-  "huggingFaceModelSearch.tooLarge": {
-    "defaultMessage": "可能超出内存（模型 {size}，可用 {available}）"
-  },
-  "huggingFaceSignInPrompt.failedToConfigure": {
-    "defaultMessage": "登录 Hugging Face 失败：{error}"
-  },
-  "huggingFaceSignInPrompt.signedIn": {
-    "defaultMessage": "已登录 Hugging Face"
-  },
-  "huggingFaceSignInPrompt.signIn": {
-    "defaultMessage": "登录"
-  },
-  "huggingFaceSignInPrompt.signingIn": {
-    "defaultMessage": "正在登录..."
-  },
-  "huggingFaceSignInPrompt.title": {
-    "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
     "defaultMessage": "gosling 图片"
@@ -1307,156 +1256,6 @@
   "loadingGoose.waiting": {
     "defaultMessage": "gosling 正在等待…"
   },
-  "localInferenceSettings.deleteConfirm": {
-    "defaultMessage": "删除此模型？之后可以重新下载。"
-  },
-  "localInferenceSettings.description": {
-    "defaultMessage": "下载和管理用于本地推理的大模型，无需 API 密钥。在 HuggingFace 搜索任意 GGUF 模型，或使用下方推荐。"
-  },
-  "localInferenceSettings.dismiss": {
-    "defaultMessage": "关闭"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "下载"
-  },
-  "localInferenceSettings.downloadCancelled": {
-    "defaultMessage": "下载已取消"
-  },
-  "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "已下载的模型"
-  },
-  "localInferenceSettings.downloadFailed": {
-    "defaultMessage": "下载失败"
-  },
-  "localInferenceSettings.downloading": {
-    "defaultMessage": "下载中"
-  },
-  "localInferenceSettings.downloadProgress": {
-    "defaultMessage": "{downloaded} / {total}（{percent}%）"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "推荐模型"
-  },
-  "localInferenceSettings.huggingFaceSignInNote": {
-    "defaultMessage": "登录后可在搜索和下载模型时提高速率限制，并访问私有或受限的 Hugging Face 仓库。"
-  },
-  "localInferenceSettings.modelSettings": {
-    "defaultMessage": "模型设置"
-  },
-  "localInferenceSettings.modelSettingsTitle": {
-    "defaultMessage": "模型设置"
-  },
-  "localInferenceSettings.noModels": {
-    "defaultMessage": "暂无可用模型"
-  },
-  "localInferenceSettings.recommended": {
-    "defaultMessage": "推荐"
-  },
-  "localInferenceSettings.remaining": {
-    "defaultMessage": "剩余 {time}"
-  },
-  "localInferenceSettings.retry": {
-    "defaultMessage": "重试"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "显示全部推荐（还有 {count} 个）"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "仅显示推荐"
-  },
-  "localInferenceSettings.title": {
-    "defaultMessage": "本地推理模型"
-  },
-  "localInferenceSettings.vision": {
-    "defaultMessage": "视觉"
-  },
-  "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "视觉编码器下载中…"
-  },
-  "localInferenceSettings.visionEncoderNotDownloaded": {
-    "defaultMessage": "视觉编码器尚未下载"
-  },
-  "localModelManager.active": {
-    "defaultMessage": "启用中"
-  },
-  "localModelManager.deleteConfirm": {
-    "defaultMessage": "删除此模型？之后可以重新下载。"
-  },
-  "localModelManager.download": {
-    "defaultMessage": "下载"
-  },
-  "localModelManager.downloaded": {
-    "defaultMessage": "已下载"
-  },
-  "localModelManager.gpuAcceleration": {
-    "defaultMessage": "支持 GPU 加速（NVIDIA 走 CUDA，Apple Silicon 走 Metal）。硬件加速需要在构建时启用 GPU 特性。"
-  },
-  "localModelManager.noModels": {
-    "defaultMessage": "暂无可用模型"
-  },
-  "localModelManager.recommended": {
-    "defaultMessage": "推荐"
-  },
-  "localModelManager.recommendedForHardware": {
-    "defaultMessage": "为你的硬件推荐"
-  },
-  "localModelManager.showAllModels": {
-    "defaultMessage": "显示全部模型（还有 {count} 个）"
-  },
-  "localModelManager.showRecommendedOnly": {
-    "defaultMessage": "仅显示推荐"
-  },
-  "localModelPicker.bestForMachine": {
-    "defaultMessage": "最适合你的机器"
-  },
-  "localModelPicker.cancelDownload": {
-    "defaultMessage": "取消下载"
-  },
-  "localModelPicker.checkingModels": {
-    "defaultMessage": "正在检查可用模型…"
-  },
-  "localModelPicker.downloading": {
-    "defaultMessage": "正在下载 {modelId}"
-  },
-  "localModelPicker.downloadModel": {
-    "defaultMessage": "下载 {modelId}（{size}）"
-  },
-  "localModelPicker.failedToLoad": {
-    "defaultMessage": "加载可用模型失败，请重试。"
-  },
-  "localModelPicker.failedToStartDownload": {
-    "defaultMessage": "启动下载失败，请重试。"
-  },
-  "localModelPicker.hideOtherSizes": {
-    "defaultMessage": "隐藏其他规格"
-  },
-  "localModelPicker.localModelsNote": {
-    "defaultMessage": "本地模型让一切都在你的机器上运行，完全保护隐私。性能和上下文窗口大小可能因硬件和模型规模而与云端提供商有差异。"
-  },
-  "localModelPicker.lostConnection": {
-    "defaultMessage": "下载连接中断，请重试。"
-  },
-  "localModelPicker.modelNotFound": {
-    "defaultMessage": "未找到模型"
-  },
-  "localModelPicker.ready": {
-    "defaultMessage": "就绪"
-  },
-  "localModelPicker.selectModel": {
-    "defaultMessage": "选择一个模型"
-  },
-  "localModelPicker.showOtherSizes": {
-    "defaultMessage": "显示另外 {count} 个规格"
-  },
-  "localModelPicker.startingDownload": {
-    "defaultMessage": "开始下载…"
-  },
-  "localModelPicker.tryAgain": {
-    "defaultMessage": "重试"
-  },
-  "localModelPicker.useModel": {
-    "defaultMessage": "使用 {modelId}"
-  },
   "markdownContent.cancel": {
     "defaultMessage": "取消"
   },
@@ -1583,9 +1382,6 @@
   "messageQueue.paused": {
     "defaultMessage": "已暂停"
   },
-  "messageQueue.queued": {
-    "defaultMessage": "已排队"
-  },
   "messageQueue.queuePaused": {
     "defaultMessage": "队列已暂停"
   },
@@ -1594,6 +1390,9 @@
   },
   "messageQueue.queuePausedExpanded": {
     "defaultMessage": "队列因中断而暂停。使用“立即发送”或添加新消息以恢复。"
+  },
+  "messageQueue.queued": {
+    "defaultMessage": "已排队"
   },
   "messageQueue.removeFromQueue": {
     "defaultMessage": "将此消息从队列中移除"
@@ -1640,210 +1439,6 @@
   "microphoneSelector.test": {
     "defaultMessage": "测试"
   },
-  "modelAndProviderContext.modelChangedTitle": {
-    "defaultMessage": "模型已切换"
-  },
-  "modelAndProviderContext.modelChangeFailed": {
-    "defaultMessage": "{provider}/{model} 失败"
-  },
-  "modelAndProviderContext.selectModel": {
-    "defaultMessage": "选择模型"
-  },
-  "modelAndProviderContext.switchModelSuccess": {
-    "defaultMessage": "模型切换成功 —— 正在使用 {provider} 的 {model}"
-  },
-  "modelAndProviderContext.unknownProviderMsg": {
-    "defaultMessage": "配置中存在未知提供商 —— 请检查你的 config.yaml"
-  },
-  "modelAndProviderContext.unknownProviderTitle": {
-    "defaultMessage": "提供商名称查找"
-  },
-  "modelsBottomBar.changeModel": {
-    "defaultMessage": "切换模型"
-  },
-  "modelsBottomBar.currentModel": {
-    "defaultMessage": "当前模型"
-  },
-  "modelsBottomBar.loadingModel": {
-    "defaultMessage": "正在加载模型…"
-  },
-  "modelsBottomBar.localModelSettings": {
-    "defaultMessage": "本地模型设置"
-  },
-  "modelsBottomBar.localModelSettingsTitle": {
-    "defaultMessage": "本地模型设置 — {modelName}"
-  },
-  "modelsBottomBar.resolvedModel": {
-    "defaultMessage": "解析后的模型"
-  },
-  "modelsBottomBar.selectModel": {
-    "defaultMessage": "选择模型"
-  },
-  "modelSettingsButtons.configureProviders": {
-    "defaultMessage": "配置提供商"
-  },
-  "modelSettingsButtons.switchModels": {
-    "defaultMessage": "切换模型"
-  },
-  "modelSettingsPanel.batchSize": {
-    "defaultMessage": "批处理大小"
-  },
-  "modelSettingsPanel.batchSizeDescription": {
-    "defaultMessage": "提示词处理批大小"
-  },
-  "modelSettingsPanel.builtinChatTemplate": {
-    "defaultMessage": "内置模板"
-  },
-  "modelSettingsPanel.builtinChatTemplateDescription": {
-    "defaultMessage": "选择 llama.cpp 内置模板名称"
-  },
-  "modelSettingsPanel.chatTemplate": {
-    "defaultMessage": "聊天模板"
-  },
-  "modelSettingsPanel.chatTemplateBuiltin": {
-    "defaultMessage": "内置"
-  },
-  "modelSettingsPanel.chatTemplateCustomInline": {
-    "defaultMessage": "自定义内联"
-  },
-  "modelSettingsPanel.chatTemplateDescription": {
-    "defaultMessage": "使用嵌入式 GGUF 元数据、llama.cpp 内置模板或内联 Jinja 模板"
-  },
-  "modelSettingsPanel.chatTemplateEmbedded": {
-    "defaultMessage": "嵌入式"
-  },
-  "modelSettingsPanel.contextAndGeneration": {
-    "defaultMessage": "上下文与生成"
-  },
-  "modelSettingsPanel.contextSize": {
-    "defaultMessage": "上下文大小"
-  },
-  "modelSettingsPanel.contextSizeDescription": {
-    "defaultMessage": "最大上下文窗口（0 = 模型默认）"
-  },
-  "modelSettingsPanel.customChatTemplate": {
-    "defaultMessage": "自定义聊天模板"
-  },
-  "modelSettingsPanel.customChatTemplateDescription": {
-    "defaultMessage": "粘贴完整的 Jinja 聊天模板源码"
-  },
-  "modelSettingsPanel.etaLearningRate": {
-    "defaultMessage": "Eta（学习率）"
-  },
-  "modelSettingsPanel.flashAttention": {
-    "defaultMessage": "Flash Attention"
-  },
-  "modelSettingsPanel.flashAttentionDescription": {
-    "defaultMessage": "启用 Flash Attention 优化"
-  },
-  "modelSettingsPanel.frequencyPenalty": {
-    "defaultMessage": "频率惩罚"
-  },
-  "modelSettingsPanel.frequencyPenaltyDescription": {
-    "defaultMessage": "0.0 = 关闭"
-  },
-  "modelSettingsPanel.gpuLayers": {
-    "defaultMessage": "GPU 层数"
-  },
-  "modelSettingsPanel.gpuLayersDescription": {
-    "defaultMessage": "卸载到 GPU 的层数"
-  },
-  "modelSettingsPanel.loadingSettings": {
-    "defaultMessage": "正在加载设置…"
-  },
-  "modelSettingsPanel.lockModelInRam": {
-    "defaultMessage": "将模型锁定在内存（mlock）"
-  },
-  "modelSettingsPanel.lockModelInRamDescription": {
-    "defaultMessage": "防止模型被交换到磁盘"
-  },
-  "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "最大输出令牌"
-  },
-  "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "生成令牌上限"
-  },
-  "modelSettingsPanel.minP": {
-    "defaultMessage": "Min P"
-  },
-  "modelSettingsPanel.performance": {
-    "defaultMessage": "性能"
-  },
-  "modelSettingsPanel.presencePenalty": {
-    "defaultMessage": "出现惩罚"
-  },
-  "modelSettingsPanel.presencePenaltyDescription": {
-    "defaultMessage": "0.0 = 关闭"
-  },
-  "modelSettingsPanel.repeatPenalty": {
-    "defaultMessage": "重复惩罚"
-  },
-  "modelSettingsPanel.repeatPenaltyDescription": {
-    "defaultMessage": "1.0 = 关闭"
-  },
-  "modelSettingsPanel.repeatWindow": {
-    "defaultMessage": "重复窗口"
-  },
-  "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "回看的令牌数"
-  },
-  "modelSettingsPanel.repetitionPenalty": {
-    "defaultMessage": "重复惩罚"
-  },
-  "modelSettingsPanel.reset": {
-    "defaultMessage": "重置"
-  },
-  "modelSettingsPanel.resetToDefaults": {
-    "defaultMessage": "重置为默认"
-  },
-  "modelSettingsPanel.samplingStrategy": {
-    "defaultMessage": "采样策略"
-  },
-  "modelSettingsPanel.saving": {
-    "defaultMessage": "保存中…"
-  },
-  "modelSettingsPanel.seed": {
-    "defaultMessage": "随机种子"
-  },
-  "modelSettingsPanel.tauTargetEntropy": {
-    "defaultMessage": "Tau（目标熵）"
-  },
-  "modelSettingsPanel.temperature": {
-    "defaultMessage": "温度"
-  },
-  "modelSettingsPanel.threads": {
-    "defaultMessage": "线程数"
-  },
-  "modelSettingsPanel.threadsDescription": {
-    "defaultMessage": "用于生成的 CPU 线程数"
-  },
-  "modelSettingsPanel.toolCalling": {
-    "defaultMessage": "工具调用"
-  },
-  "modelSettingsPanel.toolCallingAuto": {
-    "defaultMessage": "自动"
-  },
-  "modelSettingsPanel.toolCallingDescription": {
-    "defaultMessage": "选择本地模型如何使用原生或模拟工具调用"
-  },
-  "modelSettingsPanel.toolCallingForceEmulated": {
-    "defaultMessage": "强制模拟"
-  },
-  "modelSettingsPanel.toolCallingForceNative": {
-    "defaultMessage": "强制原生"
-  },
-  "modelSettingsPanel.topK": {
-    "defaultMessage": "Top K"
-  },
-  "modelSettingsPanel.topP": {
-    "defaultMessage": "Top P"
-  },
-  "modelsSection.resetDescription": {
-    "defaultMessage": "清空已选的模型和提供商设置，重新开始"
-  },
-  "modelsSection.resetTitle": {
-    "defaultMessage": "重置提供商和模型"
-  },
   "modeSelectionItem.autonomousDescription": {
     "defaultMessage": "完整文件修改能力，可自由编辑、创建和删除文件。"
   },
@@ -1867,6 +1462,51 @@
   },
   "modeSelectionItem.smartLabel": {
     "defaultMessage": "智能"
+  },
+  "modelAndProviderContext.modelChangeFailed": {
+    "defaultMessage": "{provider}/{model} 失败"
+  },
+  "modelAndProviderContext.modelChangedTitle": {
+    "defaultMessage": "模型已切换"
+  },
+  "modelAndProviderContext.selectModel": {
+    "defaultMessage": "选择模型"
+  },
+  "modelAndProviderContext.switchModelSuccess": {
+    "defaultMessage": "模型切换成功 —— 正在使用 {provider} 的 {model}"
+  },
+  "modelAndProviderContext.unknownProviderMsg": {
+    "defaultMessage": "配置中存在未知提供商 —— 请检查你的 config.yaml"
+  },
+  "modelAndProviderContext.unknownProviderTitle": {
+    "defaultMessage": "提供商名称查找"
+  },
+  "modelSettingsButtons.configureProviders": {
+    "defaultMessage": "配置提供商"
+  },
+  "modelSettingsButtons.switchModels": {
+    "defaultMessage": "切换模型"
+  },
+  "modelsBottomBar.changeModel": {
+    "defaultMessage": "切换模型"
+  },
+  "modelsBottomBar.currentModel": {
+    "defaultMessage": "当前模型"
+  },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "正在加载模型…"
+  },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "解析后的模型"
+  },
+  "modelsBottomBar.selectModel": {
+    "defaultMessage": "选择模型"
+  },
+  "modelsSection.resetDescription": {
+    "defaultMessage": "清空已选的模型和提供商设置，重新开始"
+  },
+  "modelsSection.resetTitle": {
+    "defaultMessage": "重置提供商和模型"
   },
   "navigation.itemExtensions": {
     "defaultMessage": "扩展"
@@ -1918,9 +1558,6 @@
   },
   "onboardingSuccess.learnMore": {
     "defaultMessage": "了解更多"
-  },
-  "onboardingSuccess.localModelReady": {
-    "defaultMessage": "本地模型就绪"
   },
   "onboardingSuccess.privacyDescription": {
     "defaultMessage": "匿名使用数据有助于改善 gosling。我们绝不采集你的对话、代码或个人数据。"
@@ -2045,11 +1682,11 @@
   "promptsSettings.edit": {
     "defaultMessage": "编辑"
   },
-  "promptsSettings.editingLabel": {
-    "defaultMessage": "正在编辑：{name}"
-  },
   "promptsSettings.editPromptTitle": {
     "defaultMessage": "编辑：{name}"
+  },
+  "promptsSettings.editingLabel": {
+    "defaultMessage": "正在编辑：{name}"
   },
   "promptsSettings.enterPromptContent": {
     "defaultMessage": "输入提示词内容…"
@@ -2159,11 +1796,11 @@
   "providerConfigForm.noApiKey": {
     "defaultMessage": "没有 API 密钥？"
   },
-  "providerConfigForm.signingIn": {
-    "defaultMessage": "登录中…"
-  },
   "providerConfigForm.signInWith": {
     "defaultMessage": "使用 {providerName} 登录"
+  },
+  "providerConfigForm.signingIn": {
+    "defaultMessage": "登录中…"
   },
   "providerConfigurationModal.addApiKeyDescription": {
     "defaultMessage": "添加此提供商的 API 密钥以接入 gosling"
@@ -2207,9 +1844,6 @@
   "providerConfigurationModal.goBack": {
     "defaultMessage": "返回"
   },
-  "providerConfigurationModal.huggingFaceOAuthDescription": {
-    "defaultMessage": "登录后即可使用 Hugging Face Inference Providers，而无需手动输入 API 令牌。"
-  },
   "providerConfigurationModal.oauthLoginFailed": {
     "defaultMessage": "OAuth 登录失败：{error}"
   },
@@ -2225,11 +1859,11 @@
   "providerConfigurationModal.seeDocumentation": {
     "defaultMessage": "详见 <link>文档</link>。"
   },
-  "providerConfigurationModal.signingIn": {
-    "defaultMessage": "登录中…"
-  },
   "providerConfigurationModal.signInWith": {
     "defaultMessage": "使用 {providerName} 登录"
+  },
+  "providerConfigurationModal.signingIn": {
+    "defaultMessage": "登录中…"
   },
   "providerGrid.addProvider": {
     "defaultMessage": "添加提供商"
@@ -2264,14 +1898,8 @@
   "providerSelector.connectProviderDescription": {
     "defaultMessage": "连接 OpenAI、Anthropic、Google 等"
   },
-  "providerSelector.localModelDescription": {
-    "defaultMessage": "下载模型并完全运行在你的机器上。无需 API 密钥，无需账号。"
-  },
   "providerSelector.selectProvider": {
     "defaultMessage": "选择提供商"
-  },
-  "providerSelector.useLocalModel": {
-    "defaultMessage": "使用本地模型"
   },
   "providerSettings.configurationSettings": {
     "defaultMessage": "提供商配置项"
@@ -2426,14 +2054,14 @@
   "sessionActionsHeader.copyText": {
     "defaultMessage": "Copy text"
   },
-  "sessionActionsHeader.duplicated": {
-    "defaultMessage": "Session duplicated"
-  },
   "sessionActionsHeader.duplicateFailed": {
     "defaultMessage": "Failed to duplicate session: {error}"
   },
   "sessionActionsHeader.duplicateSession": {
     "defaultMessage": "Duplicate session"
+  },
+  "sessionActionsHeader.duplicated": {
+    "defaultMessage": "Session duplicated"
   },
   "sessionActionsHeader.fullTextTitle": {
     "defaultMessage": "Text value"
@@ -2447,9 +2075,6 @@
   "sessionActionsHeader.loadingJson": {
     "defaultMessage": "Loading JSON..."
   },
-  "sessionActionsHeader.renamed": {
-    "defaultMessage": "Session renamed"
-  },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "Failed to rename session: {error}"
   },
@@ -2461,6 +2086,9 @@
   },
   "sessionActionsHeader.renameTitle": {
     "defaultMessage": "Rename Session"
+  },
+  "sessionActionsHeader.renamed": {
+    "defaultMessage": "Session renamed"
   },
   "sessionActionsHeader.save": {
     "defaultMessage": "Save"
@@ -2479,6 +2107,24 @@
   },
   "sessionIndicators.streaming": {
     "defaultMessage": "流式传输中"
+  },
+  "sessionViewComponents.empty.description": {
+    "defaultMessage": "此会话不包含任何消息"
+  },
+  "sessionViewComponents.empty.title": {
+    "defaultMessage": "未找到消息"
+  },
+  "sessionViewComponents.error.loading": {
+    "defaultMessage": "加载会话详情出错"
+  },
+  "sessionViewComponents.error.tryAgain": {
+    "defaultMessage": "重试"
+  },
+  "sessionViewComponents.role.assistant": {
+    "defaultMessage": "Gosling"
+  },
+  "sessionViewComponents.role.user": {
+    "defaultMessage": "你"
   },
   "sessions.action.delete": {
     "defaultMessage": "删除会话"
@@ -2537,9 +2183,6 @@
   "sessions.import": {
     "defaultMessage": "导入会话"
   },
-  "sessions.importing": {
-    "defaultMessage": "正在导入..."
-  },
   "sessions.importNostr": {
     "defaultMessage": "导入链接"
   },
@@ -2551,6 +2194,9 @@
   },
   "sessions.importNostr.title": {
     "defaultMessage": "导入 Nostr 会话"
+  },
+  "sessions.importing": {
+    "defaultMessage": "正在导入..."
   },
   "sessions.loadingMore": {
     "defaultMessage": "正在加载更多会话…"
@@ -2579,26 +2225,26 @@
   "sessions.toast.copied": {
     "defaultMessage": "已复制到剪贴板"
   },
-  "sessions.toast.deleted": {
-    "defaultMessage": "会话删除成功"
-  },
   "sessions.toast.deleteFailed": {
     "defaultMessage": "删除会话“{name}”失败：{error}"
   },
-  "sessions.toast.duplicated": {
-    "defaultMessage": "会话“{name}”复制成功"
+  "sessions.toast.deleted": {
+    "defaultMessage": "会话删除成功"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "复制会话失败：{error}"
   },
+  "sessions.toast.duplicated": {
+    "defaultMessage": "会话“{name}”复制成功"
+  },
   "sessions.toast.exported": {
     "defaultMessage": "会话导出成功"
   },
-  "sessions.toast.imported": {
-    "defaultMessage": "会话导入成功"
-  },
   "sessions.toast.importFailed": {
     "defaultMessage": "导入会话失败：{error}"
+  },
+  "sessions.toast.imported": {
+    "defaultMessage": "会话导入成功"
   },
   "sessions.toast.shareNostr": {
     "defaultMessage": "已创建加密的 Nostr 分享链接"
@@ -2606,29 +2252,11 @@
   "sessions.toast.shareNostrFailed": {
     "defaultMessage": "创建 Nostr 分享链接失败：{error}"
   },
-  "sessions.toast.updated": {
-    "defaultMessage": "会话描述更新成功"
-  },
   "sessions.toast.updateFailed": {
     "defaultMessage": "更新会话描述失败：{error}"
   },
-  "sessionViewComponents.empty.description": {
-    "defaultMessage": "此会话不包含任何消息"
-  },
-  "sessionViewComponents.empty.title": {
-    "defaultMessage": "未找到消息"
-  },
-  "sessionViewComponents.error.loading": {
-    "defaultMessage": "加载会话详情出错"
-  },
-  "sessionViewComponents.error.tryAgain": {
-    "defaultMessage": "重试"
-  },
-  "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Gosling"
-  },
-  "sessionViewComponents.role.user": {
-    "defaultMessage": "你"
+  "sessions.toast.updated": {
+    "defaultMessage": "会话描述更新成功"
   },
   "settings.appearance.description": {
     "defaultMessage": "配置 gosling 在你系统中的外观"
@@ -2810,9 +2438,6 @@
   "settingsView.tabKeyboard": {
     "defaultMessage": "键盘"
   },
-  "settingsView.tabLocalInference": {
-    "defaultMessage": "本地推理"
-  },
   "settingsView.tabModels": {
     "defaultMessage": "模型"
   },
@@ -2945,17 +2570,8 @@
   "switchModelModal.geminiOnly": {
     "defaultMessage": "（仅 Gemini 3 模型）"
   },
-  "switchModelModal.goToSettings": {
-    "defaultMessage": "前往设置"
-  },
   "switchModelModal.loadingModels": {
     "defaultMessage": "正在加载模型…"
-  },
-  "switchModelModal.localModelsDescription": {
-    "defaultMessage": "要使用本地推理，你需要先下载一个模型到电脑上。前往 设置 → 模型 管理本地模型。"
-  },
-  "switchModelModal.localModelsTitle": {
-    "defaultMessage": "本地模型需要先下载"
   },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "提供商，输入以搜索"
@@ -3068,11 +2684,11 @@
   "themeSelector.theme": {
     "defaultMessage": "主题"
   },
-  "toolApprovalButtons.allowedOnce": {
-    "defaultMessage": "已单次允许"
-  },
   "toolApprovalButtons.allowOnce": {
     "defaultMessage": "仅此次允许"
+  },
+  "toolApprovalButtons.allowedOnce": {
+    "defaultMessage": "已单次允许"
   },
   "toolApprovalButtons.alwaysAllow": {
     "defaultMessage": "始终允许"
@@ -3155,17 +2771,17 @@
   "updateSection.disableAutoDownloadDesc": {
     "defaultMessage": "启用后，Gosling 会通知你有新版本，但不会自动下载。"
   },
-  "updateSection.downloadingProgress": {
-    "defaultMessage": "正在下载更新… {percent}%"
-  },
-  "updateSection.downloadingUpdate": {
-    "defaultMessage": "正在下载更新…"
-  },
   "updateSection.downloadNow": {
     "defaultMessage": "立即下载"
   },
   "updateSection.downloadReady": {
     "defaultMessage": "更新已下载，可以安装！"
+  },
+  "updateSection.downloadingProgress": {
+    "defaultMessage": "正在下载更新… {percent}%"
+  },
+  "updateSection.downloadingUpdate": {
+    "defaultMessage": "正在下载更新…"
   },
   "updateSection.installAndRestart": {
     "defaultMessage": "安装并重启"
@@ -3191,11 +2807,11 @@
   "updateSection.readyInstallManual": {
     "defaultMessage": "✓ 更新已就绪！点击“安装并重启”查看安装说明。"
   },
-  "updateSection.updateAvailable": {
-    "defaultMessage": "有可用更新！"
-  },
   "updateSection.upToDate": {
     "defaultMessage": "（已是最新）"
+  },
+  "updateSection.updateAvailable": {
+    "defaultMessage": "有可用更新！"
   },
   "updateSection.versionAvailable": {
     "defaultMessage": "→ {version} 可用"

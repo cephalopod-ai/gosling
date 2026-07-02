@@ -107,19 +107,6 @@ const i18n = defineMessages({
     id: 'switchModelModal.providerPlaceholder',
     defaultMessage: 'Provider, type to search',
   },
-  localModelsTitle: {
-    id: 'switchModelModal.localModelsTitle',
-    defaultMessage: 'Local models need to be downloaded first',
-  },
-  localModelsDescription: {
-    id: 'switchModelModal.localModelsDescription',
-    defaultMessage:
-      'To use local inference, you need to download a model to your computer first. Go to Settings → Models to manage local models.',
-  },
-  goToSettings: {
-    id: 'switchModelModal.goToSettings',
-    defaultMessage: 'Go to Settings',
-  },
   couldNotContactProvider: {
     id: 'switchModelModal.couldNotContactProvider',
     defaultMessage: 'Could not contact provider',
@@ -837,35 +824,7 @@ export const SwitchModelModal = ({
 
               {provider && (
                 <>
-                  {provider === 'local' &&
-                  !loadingModels &&
-                  filteredModelOptions.flatMap((g) => g.options).filter((o) => o.value !== 'custom')
-                    .length === 0 ? (
-                    /* Show special UI for local provider when no models are downloaded */
-                    <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4">
-                      <div className="flex flex-col gap-3">
-                        <div>
-                          <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                            {intl.formatMessage(i18n.localModelsTitle)}
-                          </h3>
-                          <div className="mt-1 text-sm text-blue-700 dark:text-blue-300">
-                            {intl.formatMessage(i18n.localModelsDescription)}
-                          </div>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setView('settings');
-                            onClose();
-                          }}
-                          className="self-start border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40"
-                        >
-                          {intl.formatMessage(i18n.goToSettings)}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : providerErrors[provider] ? (
+                  {providerErrors[provider] ? (
                     /* Show error with custom model input so users aren't stuck */
                     <div className="flex flex-col gap-2">
                       <div className="rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3">

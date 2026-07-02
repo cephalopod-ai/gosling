@@ -125,46 +125,4 @@ describe('AuthSettingsSection', () => {
     });
     expect(await screen.findByText('No locally stored provider credentials were found.')).toBeInTheDocument();
   });
-
-  it('configures the permanent Hugging Face credential row', async () => {
-    const user = userEvent.setup();
-    const huggingFaceSecret: ProviderSecretDto = {
-      id: 'provider_cache:huggingface',
-      provider: 'huggingface',
-      providerDisplayName: 'Hugging Face',
-      name: 'OAuth token',
-      storage: 'provider_cache',
-      expiresAt: null,
-      status: 'unknown',
-      configured: false,
-      hasSecret: false,
-      canDelete: false,
-      canConfigure: true,
-      configureProvider: 'huggingface',
-    };
-
-    mockedListProviderSecrets
-      .mockResolvedValueOnce([huggingFaceSecret])
-      .mockResolvedValueOnce([
-        {
-          ...huggingFaceSecret,
-          configured: true,
-          hasSecret: true,
-          canDelete: true,
-        },
-      ]);
-
-    renderWithIntl(<AuthSettingsSection />);
-
-    expect(await screen.findByText('Hugging Face')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete credential' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Sign in' }));
-
-    await waitFor(() => {
-      expect(mockedAcpAuthenticateProvider).toHaveBeenCalledWith('huggingface');
-    });
-    await waitFor(() => {
-      expect(mockedToast.success).toHaveBeenCalledWith('Credential configured');
-    });
-  });
 });

@@ -26,8 +26,6 @@ export const SAFE_PROTOCOLS = [
   'facetime-audio:',
   'slack:',
   'discord:',
-  'tg:',
-  'telegram:',
   'whatsapp:',
   'skype:',
   'msteams:',

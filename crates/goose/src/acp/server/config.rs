@@ -372,14 +372,5 @@ fn prepare_voice_dictation_preferred_mic(
 }
 
 fn is_supported_voice_dictation_provider(value: &str) -> bool {
-    matches!(value, "openai" | "groq" | "elevenlabs" | "__disabled__") || {
-        #[cfg(feature = "local-inference")]
-        {
-            value == "local"
-        }
-        #[cfg(not(feature = "local-inference"))]
-        {
-            false
-        }
-    }
+    matches!(value, "openai" | "groq" | "elevenlabs" | "__disabled__")
 }

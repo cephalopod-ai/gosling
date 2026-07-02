@@ -1037,57 +1037,6 @@
   "hub.goodMorning": {
     "defaultMessage": "早安"
   },
-  "huggingFaceModelSearch.download": {
-    "defaultMessage": "下載"
-  },
-  "huggingFaceModelSearch.downloaded": {
-    "defaultMessage": "已下載"
-  },
-  "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "正在下載…"
-  },
-  "huggingFaceModelSearch.loadingVariants": {
-    "defaultMessage": "正在載入變體…"
-  },
-  "huggingFaceModelSearch.noGgufModels": {
-    "defaultMessage": "找不到符合此查詢的相容本機模型。"
-  },
-  "huggingFaceModelSearch.recommended": {
-    "defaultMessage": "推薦"
-  },
-  "huggingFaceModelSearch.searchError": {
-    "defaultMessage": "搜尋錯誤：{details}"
-  },
-  "huggingFaceModelSearch.searchFailed": {
-    "defaultMessage": "搜尋失敗。請再試一次。"
-  },
-  "huggingFaceModelSearch.searchHuggingFace": {
-    "defaultMessage": "搜尋 HuggingFace"
-  },
-  "huggingFaceModelSearch.searchNoData": {
-    "defaultMessage": "搜尋未傳回任何資料。"
-  },
-  "huggingFaceModelSearch.searchPlaceholder": {
-    "defaultMessage": "搜尋本機模型…"
-  },
-  "huggingFaceModelSearch.tooLarge": {
-    "defaultMessage": "可能無法載入記憶體（模型 {size}，可用 {available}）"
-  },
-  "huggingFaceSignInPrompt.failedToConfigure": {
-    "defaultMessage": "登入 Hugging Face 失敗：{error}"
-  },
-  "huggingFaceSignInPrompt.signIn": {
-    "defaultMessage": "登入"
-  },
-  "huggingFaceSignInPrompt.signedIn": {
-    "defaultMessage": "已登入 Hugging Face"
-  },
-  "huggingFaceSignInPrompt.signingIn": {
-    "defaultMessage": "正在登入…"
-  },
-  "huggingFaceSignInPrompt.title": {
-    "defaultMessage": "Hugging Face"
-  },
   "imagePreview.altText": {
     "defaultMessage": "gosling 圖片"
   },
@@ -1306,156 +1255,6 @@
   },
   "loadingGoose.waiting": {
     "defaultMessage": "gosling 正在等待…"
-  },
-  "localInferenceSettings.deleteConfirm": {
-    "defaultMessage": "要刪除此模型嗎？您之後可以重新下載。"
-  },
-  "localInferenceSettings.description": {
-    "defaultMessage": "下載並管理本機 LLM 模型，無需 API 金鑰即可進行推論。在 HuggingFace 搜尋 GGUF 或 MLX 模型，或使用下方的精選推薦。"
-  },
-  "localInferenceSettings.dismiss": {
-    "defaultMessage": "關閉"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "下載"
-  },
-  "localInferenceSettings.downloadCancelled": {
-    "defaultMessage": "下載已取消"
-  },
-  "localInferenceSettings.downloadFailed": {
-    "defaultMessage": "下載失敗"
-  },
-  "localInferenceSettings.downloadProgress": {
-    "defaultMessage": "{downloaded} / {total}（{percent}%）"
-  },
-  "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "已下載的模型"
-  },
-  "localInferenceSettings.downloading": {
-    "defaultMessage": "下載中"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "精選模型"
-  },
-  "localInferenceSettings.huggingFaceSignInNote": {
-    "defaultMessage": "登入以在搜尋與下載模型時提高速率上限，並存取私人或受限的 Hugging Face 儲存庫。"
-  },
-  "localInferenceSettings.modelSettings": {
-    "defaultMessage": "模型設定"
-  },
-  "localInferenceSettings.modelSettingsTitle": {
-    "defaultMessage": "模型設定"
-  },
-  "localInferenceSettings.noModels": {
-    "defaultMessage": "沒有可用的模型"
-  },
-  "localInferenceSettings.recommended": {
-    "defaultMessage": "建議"
-  },
-  "localInferenceSettings.remaining": {
-    "defaultMessage": "剩餘 {time}"
-  },
-  "localInferenceSettings.retry": {
-    "defaultMessage": "重試"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "顯示全部精選（還有 {count} 個）"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "僅顯示建議項目"
-  },
-  "localInferenceSettings.title": {
-    "defaultMessage": "本機推論模型"
-  },
-  "localInferenceSettings.vision": {
-    "defaultMessage": "視覺"
-  },
-  "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "正在下載視覺編碼器…"
-  },
-  "localInferenceSettings.visionEncoderNotDownloaded": {
-    "defaultMessage": "尚未下載視覺編碼器"
-  },
-  "localModelManager.active": {
-    "defaultMessage": "使用中"
-  },
-  "localModelManager.deleteConfirm": {
-    "defaultMessage": "要刪除此模型嗎？您之後可以重新下載。"
-  },
-  "localModelManager.download": {
-    "defaultMessage": "下載"
-  },
-  "localModelManager.downloaded": {
-    "defaultMessage": "已下載"
-  },
-  "localModelManager.gpuAcceleration": {
-    "defaultMessage": "支援 GPU 加速（NVIDIA 使用 CUDA，Apple Silicon 使用 Metal）。硬體加速的 GPU 功能必須在建置時啟用。"
-  },
-  "localModelManager.noModels": {
-    "defaultMessage": "沒有可用的模型"
-  },
-  "localModelManager.recommended": {
-    "defaultMessage": "建議"
-  },
-  "localModelManager.recommendedForHardware": {
-    "defaultMessage": "為您的硬體建議"
-  },
-  "localModelManager.showAllModels": {
-    "defaultMessage": "顯示所有模型（還有 {count} 個）"
-  },
-  "localModelManager.showRecommendedOnly": {
-    "defaultMessage": "僅顯示建議項目"
-  },
-  "localModelPicker.bestForMachine": {
-    "defaultMessage": "最適合您的電腦"
-  },
-  "localModelPicker.cancelDownload": {
-    "defaultMessage": "取消下載"
-  },
-  "localModelPicker.checkingModels": {
-    "defaultMessage": "正在檢查可用的模型…"
-  },
-  "localModelPicker.downloadModel": {
-    "defaultMessage": "下載 {modelId}（{size}）"
-  },
-  "localModelPicker.downloading": {
-    "defaultMessage": "正在下載 {modelId}"
-  },
-  "localModelPicker.failedToLoad": {
-    "defaultMessage": "載入可用模型失敗。請再試一次。"
-  },
-  "localModelPicker.failedToStartDownload": {
-    "defaultMessage": "無法開始下載。請再試一次。"
-  },
-  "localModelPicker.hideOtherSizes": {
-    "defaultMessage": "隱藏其他大小"
-  },
-  "localModelPicker.localModelsNote": {
-    "defaultMessage": "本機模型會將所有資料保留在您的電腦上，以確保完全的隱私。效能與上下文視窗大小可能因您的硬體與模型大小而異，與雲端供應商相比會有所不同。"
-  },
-  "localModelPicker.lostConnection": {
-    "defaultMessage": "與下載的連線中斷。請再試一次。"
-  },
-  "localModelPicker.modelNotFound": {
-    "defaultMessage": "找不到模型"
-  },
-  "localModelPicker.ready": {
-    "defaultMessage": "就緒"
-  },
-  "localModelPicker.selectModel": {
-    "defaultMessage": "選擇模型"
-  },
-  "localModelPicker.showOtherSizes": {
-    "defaultMessage": "顯示其他 {count} 種大小"
-  },
-  "localModelPicker.startingDownload": {
-    "defaultMessage": "正在開始下載…"
-  },
-  "localModelPicker.tryAgain": {
-    "defaultMessage": "再試一次"
-  },
-  "localModelPicker.useModel": {
-    "defaultMessage": "使用 {modelId}"
   },
   "markdownContent.cancel": {
     "defaultMessage": "取消"
@@ -1688,159 +1487,6 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "切換模型"
   },
-  "modelSettingsPanel.batchSize": {
-    "defaultMessage": "批次大小"
-  },
-  "modelSettingsPanel.batchSizeDescription": {
-    "defaultMessage": "提示處理批次"
-  },
-  "modelSettingsPanel.builtinChatTemplate": {
-    "defaultMessage": "內建範本"
-  },
-  "modelSettingsPanel.builtinChatTemplateDescription": {
-    "defaultMessage": "選擇 llama.cpp 內建範本名稱"
-  },
-  "modelSettingsPanel.chatTemplate": {
-    "defaultMessage": "對話範本"
-  },
-  "modelSettingsPanel.chatTemplateBuiltin": {
-    "defaultMessage": "內建"
-  },
-  "modelSettingsPanel.chatTemplateCustomInline": {
-    "defaultMessage": "自訂內嵌"
-  },
-  "modelSettingsPanel.chatTemplateDescription": {
-    "defaultMessage": "使用內嵌的 GGUF 中繼資料、llama.cpp 內建範本或內嵌 Jinja"
-  },
-  "modelSettingsPanel.chatTemplateEmbedded": {
-    "defaultMessage": "內嵌"
-  },
-  "modelSettingsPanel.contextAndGeneration": {
-    "defaultMessage": "上下文與生成"
-  },
-  "modelSettingsPanel.contextSize": {
-    "defaultMessage": "上下文大小"
-  },
-  "modelSettingsPanel.contextSizeDescription": {
-    "defaultMessage": "最大上下文視窗（0 = 模型預設值）"
-  },
-  "modelSettingsPanel.customChatTemplate": {
-    "defaultMessage": "自訂對話範本"
-  },
-  "modelSettingsPanel.customChatTemplateDescription": {
-    "defaultMessage": "貼上完整的 Jinja 對話範本原始碼"
-  },
-  "modelSettingsPanel.etaLearningRate": {
-    "defaultMessage": "Eta（學習率）"
-  },
-  "modelSettingsPanel.flashAttention": {
-    "defaultMessage": "Flash attention"
-  },
-  "modelSettingsPanel.flashAttentionDescription": {
-    "defaultMessage": "啟用 flash attention 最佳化"
-  },
-  "modelSettingsPanel.frequencyPenalty": {
-    "defaultMessage": "頻率懲罰"
-  },
-  "modelSettingsPanel.frequencyPenaltyDescription": {
-    "defaultMessage": "0.0 = 關閉"
-  },
-  "modelSettingsPanel.gpuLayers": {
-    "defaultMessage": "GPU 層數"
-  },
-  "modelSettingsPanel.gpuLayersDescription": {
-    "defaultMessage": "要卸載至 GPU 的層數"
-  },
-  "modelSettingsPanel.loadingSettings": {
-    "defaultMessage": "正在載入設定…"
-  },
-  "modelSettingsPanel.lockModelInRam": {
-    "defaultMessage": "將模型鎖定在 RAM 中（mlock）"
-  },
-  "modelSettingsPanel.lockModelInRamDescription": {
-    "defaultMessage": "防止模型被置換到磁碟"
-  },
-  "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "最大輸出 token 數"
-  },
-  "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "生成 token 的上限"
-  },
-  "modelSettingsPanel.minP": {
-    "defaultMessage": "Min P"
-  },
-  "modelSettingsPanel.performance": {
-    "defaultMessage": "效能"
-  },
-  "modelSettingsPanel.presencePenalty": {
-    "defaultMessage": "出現懲罰"
-  },
-  "modelSettingsPanel.presencePenaltyDescription": {
-    "defaultMessage": "0.0 = 關閉"
-  },
-  "modelSettingsPanel.repeatPenalty": {
-    "defaultMessage": "重複懲罰"
-  },
-  "modelSettingsPanel.repeatPenaltyDescription": {
-    "defaultMessage": "1.0 = 關閉"
-  },
-  "modelSettingsPanel.repeatWindow": {
-    "defaultMessage": "重複視窗"
-  },
-  "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "回溯的 token 數"
-  },
-  "modelSettingsPanel.repetitionPenalty": {
-    "defaultMessage": "重複懲罰"
-  },
-  "modelSettingsPanel.reset": {
-    "defaultMessage": "重設"
-  },
-  "modelSettingsPanel.resetToDefaults": {
-    "defaultMessage": "重設為預設值"
-  },
-  "modelSettingsPanel.samplingStrategy": {
-    "defaultMessage": "取樣策略"
-  },
-  "modelSettingsPanel.saving": {
-    "defaultMessage": "正在儲存…"
-  },
-  "modelSettingsPanel.seed": {
-    "defaultMessage": "種子"
-  },
-  "modelSettingsPanel.tauTargetEntropy": {
-    "defaultMessage": "Tau（目標熵）"
-  },
-  "modelSettingsPanel.temperature": {
-    "defaultMessage": "溫度"
-  },
-  "modelSettingsPanel.threads": {
-    "defaultMessage": "執行緒"
-  },
-  "modelSettingsPanel.threadsDescription": {
-    "defaultMessage": "用於生成的 CPU 執行緒"
-  },
-  "modelSettingsPanel.toolCalling": {
-    "defaultMessage": "工具呼叫"
-  },
-  "modelSettingsPanel.toolCallingAuto": {
-    "defaultMessage": "自動"
-  },
-  "modelSettingsPanel.toolCallingDescription": {
-    "defaultMessage": "選擇本機模型如何使用原生或模擬的工具呼叫"
-  },
-  "modelSettingsPanel.toolCallingForceEmulated": {
-    "defaultMessage": "強制模擬"
-  },
-  "modelSettingsPanel.toolCallingForceNative": {
-    "defaultMessage": "強制原生"
-  },
-  "modelSettingsPanel.topK": {
-    "defaultMessage": "Top K"
-  },
-  "modelSettingsPanel.topP": {
-    "defaultMessage": "Top P"
-  },
   "modelsBottomBar.changeModel": {
     "defaultMessage": "變更模型"
   },
@@ -1849,12 +1495,6 @@
   },
   "modelsBottomBar.loadingModel": {
     "defaultMessage": "正在載入模型…"
-  },
-  "modelsBottomBar.localModelSettings": {
-    "defaultMessage": "本機模型設定"
-  },
-  "modelsBottomBar.localModelSettingsTitle": {
-    "defaultMessage": "本機模型設定 — {modelName}"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "已解析的模型"
@@ -1918,9 +1558,6 @@
   },
   "onboardingSuccess.learnMore": {
     "defaultMessage": "瞭解更多"
-  },
-  "onboardingSuccess.localModelReady": {
-    "defaultMessage": "本機模型已就緒"
   },
   "onboardingSuccess.privacyDescription": {
     "defaultMessage": "匿名使用資料有助於改善 gosling。我們絕不會收集您的對話、程式碼或個人資料。"
@@ -2207,9 +1844,6 @@
   "providerConfigurationModal.goBack": {
     "defaultMessage": "返回"
   },
-  "providerConfigurationModal.huggingFaceOAuthDescription": {
-    "defaultMessage": "登入即可使用 Hugging Face 推論提供者，無需手動輸入 API 權杖。"
-  },
   "providerConfigurationModal.oauthLoginFailed": {
     "defaultMessage": "OAuth 登入失敗：{error}"
   },
@@ -2264,14 +1898,8 @@
   "providerSelector.connectProviderDescription": {
     "defaultMessage": "連線到 OpenAI、Anthropic、Google 等"
   },
-  "providerSelector.localModelDescription": {
-    "defaultMessage": "下載模型並完全在您的電腦上執行。無需 API 金鑰，無需帳號。"
-  },
   "providerSelector.selectProvider": {
     "defaultMessage": "選取提供者"
-  },
-  "providerSelector.useLocalModel": {
-    "defaultMessage": "使用本機模型"
   },
   "providerSettings.configurationSettings": {
     "defaultMessage": "提供者組態設定"
@@ -2810,9 +2438,6 @@
   "settingsView.tabKeyboard": {
     "defaultMessage": "鍵盤"
   },
-  "settingsView.tabLocalInference": {
-    "defaultMessage": "本機推論"
-  },
   "settingsView.tabModels": {
     "defaultMessage": "模型"
   },
@@ -2945,17 +2570,8 @@
   "switchModelModal.geminiOnly": {
     "defaultMessage": "（僅限 Gemini 3 模型）"
   },
-  "switchModelModal.goToSettings": {
-    "defaultMessage": "前往設定"
-  },
   "switchModelModal.loadingModels": {
     "defaultMessage": "正在載入模型…"
-  },
-  "switchModelModal.localModelsDescription": {
-    "defaultMessage": "若要使用本機推論，您必須先將模型下載到電腦。請前往「設定」→「模型」以管理本機模型。"
-  },
-  "switchModelModal.localModelsTitle": {
-    "defaultMessage": "本機模型需要先行下載"
   },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "提供者，輸入以搜尋"

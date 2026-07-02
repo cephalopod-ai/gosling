@@ -29,7 +29,6 @@ export type SessionType =
   | 'sub_agent'
   | 'hidden'
   | 'terminal'
-  | 'gateway'
   | 'acp';
 
 export type Session = {

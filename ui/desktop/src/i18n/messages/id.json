@@ -1037,57 +1037,6 @@
   "hub.goodMorning": {
     "defaultMessage": "Selamat pagi"
   },
-  "huggingFaceModelSearch.download": {
-    "defaultMessage": "Unduh"
-  },
-  "huggingFaceModelSearch.downloaded": {
-    "defaultMessage": "Terunduh"
-  },
-  "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "Mengunduh…"
-  },
-  "huggingFaceModelSearch.loadingVariants": {
-    "defaultMessage": "Memuat varian..."
-  },
-  "huggingFaceModelSearch.noGgufModels": {
-    "defaultMessage": "Tidak ada model lokal yang kompatibel ditemukan untuk kueri ini."
-  },
-  "huggingFaceModelSearch.recommended": {
-    "defaultMessage": "Direkomendasikan"
-  },
-  "huggingFaceModelSearch.searchError": {
-    "defaultMessage": "Kesalahan pencarian: {details}"
-  },
-  "huggingFaceModelSearch.searchFailed": {
-    "defaultMessage": "Pencarian gagal. Silakan coba lagi."
-  },
-  "huggingFaceModelSearch.searchHuggingFace": {
-    "defaultMessage": "Cari HuggingFace"
-  },
-  "huggingFaceModelSearch.searchNoData": {
-    "defaultMessage": "Pencarian tidak mengembalikan data."
-  },
-  "huggingFaceModelSearch.searchPlaceholder": {
-    "defaultMessage": "Cari model lokal..."
-  },
-  "huggingFaceModelSearch.tooLarge": {
-    "defaultMessage": "Mungkin tidak muat dalam memori (model {size}, {available} tersedia)"
-  },
-  "huggingFaceSignInPrompt.failedToConfigure": {
-    "defaultMessage": "Gagal masuk ke Hugging Face: {error}"
-  },
-  "huggingFaceSignInPrompt.signIn": {
-    "defaultMessage": "Masuk"
-  },
-  "huggingFaceSignInPrompt.signedIn": {
-    "defaultMessage": "Hugging Face telah masuk"
-  },
-  "huggingFaceSignInPrompt.signingIn": {
-    "defaultMessage": "Sedang masuk..."
-  },
-  "huggingFaceSignInPrompt.title": {
-    "defaultMessage": "Hugging Face"
-  },
   "imagePreview.altText": {
     "defaultMessage": "gambar gosling"
   },
@@ -1306,156 +1255,6 @@
   },
   "loadingGoose.waiting": {
     "defaultMessage": "gosling sedang menunggu…"
-  },
-  "localInferenceSettings.deleteConfirm": {
-    "defaultMessage": "Hapus model ini? Anda dapat mengunduhnya kembali nanti."
-  },
-  "localInferenceSettings.description": {
-    "defaultMessage": "Unduh dan kelola model LLM lokal untuk inferensi tanpa kunci API. Cari model GGUF atau MLX di HuggingFace, atau gunakan pilihan unggulan di bawah."
-  },
-  "localInferenceSettings.dismiss": {
-    "defaultMessage": "Tutup"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Unduh"
-  },
-  "localInferenceSettings.downloadCancelled": {
-    "defaultMessage": "Unduhan dibatalkan"
-  },
-  "localInferenceSettings.downloadFailed": {
-    "defaultMessage": "Unduhan gagal"
-  },
-  "localInferenceSettings.downloadProgress": {
-    "defaultMessage": "{downloaded} / {total} ({percent}%)"
-  },
-  "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "Model yang Diunduh"
-  },
-  "localInferenceSettings.downloading": {
-    "defaultMessage": "Mengunduh"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Model Unggulan"
-  },
-  "localInferenceSettings.huggingFaceSignInNote": {
-    "defaultMessage": "Masuk untuk meningkatkan batas laju saat mencari dan mengunduh model, serta untuk mengakses repositori Hugging Face yang privat atau terbatas."
-  },
-  "localInferenceSettings.modelSettings": {
-    "defaultMessage": "Pengaturan Model"
-  },
-  "localInferenceSettings.modelSettingsTitle": {
-    "defaultMessage": "Pengaturan model"
-  },
-  "localInferenceSettings.noModels": {
-    "defaultMessage": "Tidak ada model yang tersedia"
-  },
-  "localInferenceSettings.recommended": {
-    "defaultMessage": "Direkomendasikan"
-  },
-  "localInferenceSettings.remaining": {
-    "defaultMessage": "{time} tersisa"
-  },
-  "localInferenceSettings.retry": {
-    "defaultMessage": "Coba Lagi"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Tampilkan semua unggulan ({count} lainnya)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Tampilkan yang direkomendasikan saja"
-  },
-  "localInferenceSettings.title": {
-    "defaultMessage": "Model Inferensi Lokal"
-  },
-  "localInferenceSettings.vision": {
-    "defaultMessage": "Visi"
-  },
-  "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "Mengunduh encoder visi…"
-  },
-  "localInferenceSettings.visionEncoderNotDownloaded": {
-    "defaultMessage": "Encoder visi belum diunduh"
-  },
-  "localModelManager.active": {
-    "defaultMessage": "Aktif"
-  },
-  "localModelManager.deleteConfirm": {
-    "defaultMessage": "Hapus model ini? Anda dapat mengunduhnya kembali nanti."
-  },
-  "localModelManager.download": {
-    "defaultMessage": "Unduh"
-  },
-  "localModelManager.downloaded": {
-    "defaultMessage": "Diunduh"
-  },
-  "localModelManager.gpuAcceleration": {
-    "defaultMessage": "Mendukung akselerasi GPU (CUDA untuk NVIDIA, Metal untuk Apple Silicon). Fitur GPU harus diaktifkan saat waktu build untuk akselerasi perangkat keras."
-  },
-  "localModelManager.noModels": {
-    "defaultMessage": "Tidak ada model yang tersedia"
-  },
-  "localModelManager.recommended": {
-    "defaultMessage": "Direkomendasikan"
-  },
-  "localModelManager.recommendedForHardware": {
-    "defaultMessage": "Direkomendasikan untuk perangkat keras Anda"
-  },
-  "localModelManager.showAllModels": {
-    "defaultMessage": "Tampilkan semua model ({count} lainnya)"
-  },
-  "localModelManager.showRecommendedOnly": {
-    "defaultMessage": "Tampilkan yang direkomendasikan saja"
-  },
-  "localModelPicker.bestForMachine": {
-    "defaultMessage": "Terbaik untuk mesin Anda"
-  },
-  "localModelPicker.cancelDownload": {
-    "defaultMessage": "Batalkan Unduhan"
-  },
-  "localModelPicker.checkingModels": {
-    "defaultMessage": "Memeriksa model yang tersedia..."
-  },
-  "localModelPicker.downloadModel": {
-    "defaultMessage": "Unduh {modelId} ({size})"
-  },
-  "localModelPicker.downloading": {
-    "defaultMessage": "Mengunduh {modelId}"
-  },
-  "localModelPicker.failedToLoad": {
-    "defaultMessage": "Gagal memuat model yang tersedia. Silakan coba lagi."
-  },
-  "localModelPicker.failedToStartDownload": {
-    "defaultMessage": "Gagal memulai unduhan. Silakan coba lagi."
-  },
-  "localModelPicker.hideOtherSizes": {
-    "defaultMessage": "Sembunyikan ukuran lainnya"
-  },
-  "localModelPicker.localModelsNote": {
-    "defaultMessage": "Model lokal menyimpan semuanya di mesin Anda untuk privasi penuh. Kinerja dan ukuran jendela konteks dapat bervariasi dibandingkan penyedia cloud tergantung pada perangkat keras dan ukuran model Anda."
-  },
-  "localModelPicker.lostConnection": {
-    "defaultMessage": "Koneksi ke unduhan terputus. Silakan coba lagi."
-  },
-  "localModelPicker.modelNotFound": {
-    "defaultMessage": "Model tidak ditemukan"
-  },
-  "localModelPicker.ready": {
-    "defaultMessage": "Siap"
-  },
-  "localModelPicker.selectModel": {
-    "defaultMessage": "Pilih model"
-  },
-  "localModelPicker.showOtherSizes": {
-    "defaultMessage": "Tampilkan {count} ukuran lainnya"
-  },
-  "localModelPicker.startingDownload": {
-    "defaultMessage": "Memulai unduhan..."
-  },
-  "localModelPicker.tryAgain": {
-    "defaultMessage": "Coba Lagi"
-  },
-  "localModelPicker.useModel": {
-    "defaultMessage": "Gunakan {modelId}"
   },
   "markdownContent.cancel": {
     "defaultMessage": "Batal"
@@ -1688,159 +1487,6 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "Ganti model"
   },
-  "modelSettingsPanel.batchSize": {
-    "defaultMessage": "Ukuran batch"
-  },
-  "modelSettingsPanel.batchSizeDescription": {
-    "defaultMessage": "Batch pemrosesan prompt"
-  },
-  "modelSettingsPanel.builtinChatTemplate": {
-    "defaultMessage": "Templat bawaan"
-  },
-  "modelSettingsPanel.builtinChatTemplateDescription": {
-    "defaultMessage": "Pilih nama templat bawaan llama.cpp"
-  },
-  "modelSettingsPanel.chatTemplate": {
-    "defaultMessage": "Templat obrolan"
-  },
-  "modelSettingsPanel.chatTemplateBuiltin": {
-    "defaultMessage": "Bawaan"
-  },
-  "modelSettingsPanel.chatTemplateCustomInline": {
-    "defaultMessage": "Inline kustom"
-  },
-  "modelSettingsPanel.chatTemplateDescription": {
-    "defaultMessage": "Gunakan metadata GGUF tersemat, templat bawaan llama.cpp, atau Jinja inline"
-  },
-  "modelSettingsPanel.chatTemplateEmbedded": {
-    "defaultMessage": "Tersemat"
-  },
-  "modelSettingsPanel.contextAndGeneration": {
-    "defaultMessage": "Konteks & Generasi"
-  },
-  "modelSettingsPanel.contextSize": {
-    "defaultMessage": "Ukuran konteks"
-  },
-  "modelSettingsPanel.contextSizeDescription": {
-    "defaultMessage": "Jendela konteks maks (0 = default model)"
-  },
-  "modelSettingsPanel.customChatTemplate": {
-    "defaultMessage": "Templat obrolan kustom"
-  },
-  "modelSettingsPanel.customChatTemplateDescription": {
-    "defaultMessage": "Tempel sumber templat obrolan Jinja lengkap"
-  },
-  "modelSettingsPanel.etaLearningRate": {
-    "defaultMessage": "Eta (laju pembelajaran)"
-  },
-  "modelSettingsPanel.flashAttention": {
-    "defaultMessage": "Flash attention"
-  },
-  "modelSettingsPanel.flashAttentionDescription": {
-    "defaultMessage": "Aktifkan optimasi flash attention"
-  },
-  "modelSettingsPanel.frequencyPenalty": {
-    "defaultMessage": "Penalti frekuensi"
-  },
-  "modelSettingsPanel.frequencyPenaltyDescription": {
-    "defaultMessage": "0.0 = nonaktif"
-  },
-  "modelSettingsPanel.gpuLayers": {
-    "defaultMessage": "Lapisan GPU"
-  },
-  "modelSettingsPanel.gpuLayersDescription": {
-    "defaultMessage": "Lapisan untuk dialihkan ke GPU"
-  },
-  "modelSettingsPanel.loadingSettings": {
-    "defaultMessage": "Memuat pengaturan..."
-  },
-  "modelSettingsPanel.lockModelInRam": {
-    "defaultMessage": "Kunci model di RAM (mlock)"
-  },
-  "modelSettingsPanel.lockModelInRamDescription": {
-    "defaultMessage": "Cegah model ditukar ke disk"
-  },
-  "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "Token output maks"
-  },
-  "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "Batas pada token yang dihasilkan"
-  },
-  "modelSettingsPanel.minP": {
-    "defaultMessage": "Min P"
-  },
-  "modelSettingsPanel.performance": {
-    "defaultMessage": "Kinerja"
-  },
-  "modelSettingsPanel.presencePenalty": {
-    "defaultMessage": "Penalti kehadiran"
-  },
-  "modelSettingsPanel.presencePenaltyDescription": {
-    "defaultMessage": "0.0 = nonaktif"
-  },
-  "modelSettingsPanel.repeatPenalty": {
-    "defaultMessage": "Penalti pengulangan"
-  },
-  "modelSettingsPanel.repeatPenaltyDescription": {
-    "defaultMessage": "1.0 = nonaktif"
-  },
-  "modelSettingsPanel.repeatWindow": {
-    "defaultMessage": "Jendela pengulangan"
-  },
-  "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "Token untuk ditinjau kembali"
-  },
-  "modelSettingsPanel.repetitionPenalty": {
-    "defaultMessage": "Penalti Repetisi"
-  },
-  "modelSettingsPanel.reset": {
-    "defaultMessage": "Atur Ulang"
-  },
-  "modelSettingsPanel.resetToDefaults": {
-    "defaultMessage": "Atur ulang ke default"
-  },
-  "modelSettingsPanel.samplingStrategy": {
-    "defaultMessage": "Strategi Sampling"
-  },
-  "modelSettingsPanel.saving": {
-    "defaultMessage": "Menyimpan..."
-  },
-  "modelSettingsPanel.seed": {
-    "defaultMessage": "Seed"
-  },
-  "modelSettingsPanel.tauTargetEntropy": {
-    "defaultMessage": "Tau (entropi target)"
-  },
-  "modelSettingsPanel.temperature": {
-    "defaultMessage": "Temperatur"
-  },
-  "modelSettingsPanel.threads": {
-    "defaultMessage": "Utas"
-  },
-  "modelSettingsPanel.threadsDescription": {
-    "defaultMessage": "Utas CPU untuk generasi"
-  },
-  "modelSettingsPanel.toolCalling": {
-    "defaultMessage": "Pemanggilan alat"
-  },
-  "modelSettingsPanel.toolCallingAuto": {
-    "defaultMessage": "Otomatis"
-  },
-  "modelSettingsPanel.toolCallingDescription": {
-    "defaultMessage": "Pilih cara model lokal memilih pemanggilan alat native atau emulasi"
-  },
-  "modelSettingsPanel.toolCallingForceEmulated": {
-    "defaultMessage": "Paksa emulasi"
-  },
-  "modelSettingsPanel.toolCallingForceNative": {
-    "defaultMessage": "Paksa native"
-  },
-  "modelSettingsPanel.topK": {
-    "defaultMessage": "Top K"
-  },
-  "modelSettingsPanel.topP": {
-    "defaultMessage": "Top P"
-  },
   "modelsBottomBar.changeModel": {
     "defaultMessage": "Ubah Model"
   },
@@ -1849,12 +1495,6 @@
   },
   "modelsBottomBar.loadingModel": {
     "defaultMessage": "Memuat model..."
-  },
-  "modelsBottomBar.localModelSettings": {
-    "defaultMessage": "Pengaturan Model Lokal"
-  },
-  "modelsBottomBar.localModelSettingsTitle": {
-    "defaultMessage": "Pengaturan Model Lokal — {modelName}"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Model yang diselesaikan"
@@ -1918,9 +1558,6 @@
   },
   "onboardingSuccess.learnMore": {
     "defaultMessage": "Pelajari selengkapnya"
-  },
-  "onboardingSuccess.localModelReady": {
-    "defaultMessage": "Model lokal siap"
   },
   "onboardingSuccess.privacyDescription": {
     "defaultMessage": "Data penggunaan anonim membantu meningkatkan gosling. Kami tidak pernah mengumpulkan percakapan, kode, atau data pribadi Anda."
@@ -2207,9 +1844,6 @@
   "providerConfigurationModal.goBack": {
     "defaultMessage": "Kembali"
   },
-  "providerConfigurationModal.huggingFaceOAuthDescription": {
-    "defaultMessage": "Masuk untuk menggunakan Hugging Face Inference Providers tanpa memasukkan token API secara manual."
-  },
   "providerConfigurationModal.oauthLoginFailed": {
     "defaultMessage": "Login OAuth gagal: {error}"
   },
@@ -2264,14 +1898,8 @@
   "providerSelector.connectProviderDescription": {
     "defaultMessage": "Hubungkan OpenAI, Anthropic, Google, dll"
   },
-  "providerSelector.localModelDescription": {
-    "defaultMessage": "Unduh model dan jalankan sepenuhnya di mesin Anda. Tanpa kunci API, tanpa akun."
-  },
   "providerSelector.selectProvider": {
     "defaultMessage": "Pilih penyedia"
-  },
-  "providerSelector.useLocalModel": {
-    "defaultMessage": "Gunakan Model Lokal"
   },
   "providerSettings.configurationSettings": {
     "defaultMessage": "Pengaturan Konfigurasi Penyedia"
@@ -2810,9 +2438,6 @@
   "settingsView.tabKeyboard": {
     "defaultMessage": "Keyboard"
   },
-  "settingsView.tabLocalInference": {
-    "defaultMessage": "Inferensi Lokal"
-  },
   "settingsView.tabModels": {
     "defaultMessage": "Model"
   },
@@ -2945,17 +2570,8 @@
   "switchModelModal.geminiOnly": {
     "defaultMessage": "(Hanya model Gemini 3)"
   },
-  "switchModelModal.goToSettings": {
-    "defaultMessage": "Buka Pengaturan"
-  },
   "switchModelModal.loadingModels": {
     "defaultMessage": "Memuat model…"
-  },
-  "switchModelModal.localModelsDescription": {
-    "defaultMessage": "Untuk menggunakan inferensi lokal, Anda perlu mengunduh model ke komputer Anda terlebih dahulu. Buka Pengaturan → Model untuk mengelola model lokal."
-  },
-  "switchModelModal.localModelsTitle": {
-    "defaultMessage": "Model lokal perlu diunduh terlebih dahulu"
   },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "Penyedia, ketik untuk mencari"

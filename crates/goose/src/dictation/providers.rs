@@ -1,13 +1,9 @@
 use crate::config::tls::provider_tls_config_from_config;
 use crate::config::Config;
-#[cfg(feature = "local-inference")]
-use crate::dictation::whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY;
 use crate::providers::api_client::{ApiClient, AuthMethod};
 use crate::providers::openai::parse_openai_base_url;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "local-inference")]
-use std::sync::Mutex;
 use std::time::Duration;
 use utoipa::ToSchema;
 
@@ -15,22 +11,12 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const OPENAI_VERSIONLESS_TRANSCRIPTIONS_PATH: &str = "audio/transcriptions";
 type OpenAiDictationTarget = (String, Vec<(String, String)>, String);
 
-#[cfg(feature = "local-inference")]
-static LOCAL_TRANSCRIBER: once_cell::sync::Lazy<
-    Mutex<Option<(String, super::whisper::WhisperTranscriber)>>,
-> = once_cell::sync::Lazy::new(|| Mutex::new(None));
-
-#[cfg(feature = "local-inference")]
-const WHISPER_TOKENIZER_JSON: &str = include_str!("whisper_data/tokens.json");
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DictationProvider {
     OpenAI,
     ElevenLabs,
     Groq,
-    #[cfg(feature = "local-inference")]
-    Local,
 }
 
 pub struct DictationProviderDef {
@@ -77,37 +63,11 @@ pub const PROVIDERS: &[DictationProviderDef] = &[
     },
 ];
 
-#[cfg(feature = "local-inference")]
-pub const LOCAL_PROVIDER_DEF: DictationProviderDef = DictationProviderDef {
-    provider: DictationProvider::Local,
-    config_key: LOCAL_WHISPER_MODEL_CONFIG_KEY,
-    default_base_url: "",
-    endpoint_path: "",
-    host_key: None,
-    description: "Uses local Whisper model for transcription. No API key needed.",
-    uses_provider_config: false,
-    settings_path: None,
-};
-
-/// Returns all provider definitions, including Local when the `local-inference` feature is enabled.
 pub fn all_providers() -> Vec<&'static DictationProviderDef> {
-    #[cfg(not(feature = "local-inference"))]
-    {
-        PROVIDERS.iter().collect()
-    }
-    #[cfg(feature = "local-inference")]
-    {
-        let mut all: Vec<&DictationProviderDef> = PROVIDERS.iter().collect();
-        all.push(&LOCAL_PROVIDER_DEF);
-        all
-    }
+    PROVIDERS.iter().collect()
 }
 
 pub fn get_provider_def(provider: DictationProvider) -> &'static DictationProviderDef {
-    #[cfg(feature = "local-inference")]
-    if provider == DictationProvider::Local {
-        return &LOCAL_PROVIDER_DEF;
-    }
     PROVIDERS
         .iter()
         .find(|def| def.provider == provider)
@@ -116,71 +76,8 @@ pub fn get_provider_def(provider: DictationProvider) -> &'static DictationProvid
 
 pub fn is_configured(provider: DictationProvider) -> bool {
     let config = Config::global();
-
-    match provider {
-        #[cfg(feature = "local-inference")]
-        DictationProvider::Local => config
-            .get(LOCAL_WHISPER_MODEL_CONFIG_KEY, false)
-            .ok()
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .and_then(|id| super::whisper::get_model(&id))
-            .is_some_and(|m| m.is_downloaded()),
-        _ => {
-            let def = get_provider_def(provider);
-            config.get_secret::<String>(def.config_key).is_ok()
-        }
-    }
-}
-
-#[cfg(feature = "local-inference")]
-pub async fn transcribe_local(audio_bytes: Vec<u8>) -> Result<String> {
-    tokio::task::spawn_blocking(move || {
-        let config = Config::global();
-        let model_id = config
-            .get(LOCAL_WHISPER_MODEL_CONFIG_KEY, false)
-            .ok()
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .ok_or_else(|| anyhow::anyhow!("Local Whisper model not configured"))?;
-
-        let model = super::whisper::get_model(&model_id)
-            .ok_or_else(|| anyhow::anyhow!("Unknown model: {}", model_id))?;
-        let model_path = model.local_path();
-
-        let mut transcriber_lock = LOCAL_TRANSCRIBER
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Failed to lock transcriber: {}", e))?;
-
-        let model_path_str = model_path.to_string_lossy().to_string();
-        let needs_reload = match transcriber_lock.as_ref() {
-            None => true,
-            Some((cached_path, _)) => cached_path != &model_path_str,
-        };
-
-        if needs_reload {
-            tracing::info!("Loading Whisper model from: {}", model_path.display());
-
-            let transcriber = super::whisper::WhisperTranscriber::new_with_tokenizer(
-                &model_id,
-                &model_path,
-                WHISPER_TOKENIZER_JSON,
-            )?;
-
-            *transcriber_lock = Some((model_path_str, transcriber));
-        }
-
-        let (_, transcriber) = transcriber_lock.as_mut().unwrap();
-        let text = transcriber.transcribe(&audio_bytes).map_err(|e| {
-            tracing::error!("Transcription failed: {}", e);
-            e
-        })?;
-
-        Ok(text)
-    })
-    .await
-    .map_err(|e| {
-        tracing::error!("Transcription task failed: {}", e);
-        anyhow::anyhow!(e)
-    })?
+    let def = get_provider_def(provider);
+    config.get_secret::<String>(def.config_key).is_ok()
 }
 
 fn openai_dictation_target(raw_url: &str) -> Result<OpenAiDictationTarget> {
@@ -248,8 +145,6 @@ fn build_api_client(provider: DictationProvider) -> Result<(ApiClient, String)> 
             header_name: "xi-api-key".to_string(),
             key: api_key,
         },
-        #[cfg(feature = "local-inference")]
-        DictationProvider::Local => anyhow::bail!("Local provider should not use API client"),
     };
 
     let tls = provider_tls_config_from_config(config)?;

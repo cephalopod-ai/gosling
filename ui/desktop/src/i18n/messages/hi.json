@@ -29,14 +29,14 @@
   "authSettings.deleteCredential": {
     "defaultMessage": "क्रेडेंशियल हटाएँ"
   },
-  "authSettings.deleted": {
-    "defaultMessage": "क्रेडेंशियल हटा दिया गया"
-  },
   "authSettings.deleteMessage": {
     "defaultMessage": "{provider} के लिए {name} क्रेडेंशियल हटाएं?"
   },
   "authSettings.deleteTitle": {
     "defaultMessage": "क्रेडेंशियल हटाएँ"
+  },
+  "authSettings.deleted": {
+    "defaultMessage": "क्रेडेंशियल हटा दिया गया"
   },
   "authSettings.description": {
     "defaultMessage": "gosling द्वारा स्थानीय रूप से संग्रहीत प्रदाता क्रेडेंशियल प्रबंधित करें।"
@@ -62,11 +62,11 @@
   "authSettings.reauthorize": {
     "defaultMessage": "पुन: प्राधिकृत करें"
   },
-  "authSettings.signedIn": {
-    "defaultMessage": "क्रेडेंशियल कॉन्फ़िगर किया गया"
-  },
   "authSettings.signIn": {
     "defaultMessage": "साइन इन करें"
+  },
+  "authSettings.signedIn": {
+    "defaultMessage": "क्रेडेंशियल कॉन्फ़िगर किया गया"
   },
   "authSettings.storageProviderCache": {
     "defaultMessage": "प्रदाता कैश"
@@ -86,12 +86,6 @@
   "baseChat.goHome": {
     "defaultMessage": "घर जाओ"
   },
-  "bottomMenuExtensionSelection.extensionsForNewChats": {
-    "defaultMessage": "नई चैट के लिए एक्सटेंशन"
-  },
-  "bottomMenuExtensionSelection.extensionsForThisSession": {
-    "defaultMessage": "इस चैट सत्र के लिए एक्सटेंशन"
-  },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "एक्सटेंशन अपडेट किया गया"
   },
@@ -100,6 +94,12 @@
   },
   "bottomMenuExtensionSelection.extensionWillBeEnabled": {
     "defaultMessage": "नई चैट में {name} सक्षम किया जाएगा"
+  },
+  "bottomMenuExtensionSelection.extensionsForNewChats": {
+    "defaultMessage": "नई चैट के लिए एक्सटेंशन"
+  },
+  "bottomMenuExtensionSelection.extensionsForThisSession": {
+    "defaultMessage": "इस चैट सत्र के लिए एक्सटेंशन"
   },
   "bottomMenuExtensionSelection.manageExtensions": {
     "defaultMessage": "एक्सटेंशन प्रबंधित करें"
@@ -332,11 +332,11 @@
   "customProviderForm.attachments": {
     "defaultMessage": "अनुलग्नक"
   },
-  "customProviderForm.authentication": {
-    "defaultMessage": "प्रमाणीकरण"
-  },
   "customProviderForm.authHint": {
     "defaultMessage": "Ollama जैसे स्थानीय एलएलएम को आमतौर पर API कुंजी की आवश्यकता नहीं होती है।"
+  },
+  "customProviderForm.authentication": {
+    "defaultMessage": "प्रमाणीकरण"
   },
   "customProviderForm.availableModels": {
     "defaultMessage": "उपलब्ध मॉडल (अल्पविराम से अलग)"
@@ -635,20 +635,17 @@
   "elicitationRequest.waitingForResponse": {
     "defaultMessage": "आपकी प्रतिक्रिया की प्रतीक्षा में ({timeRemaining} शेष)"
   },
-  "environmentBadge.dev": {
-    "defaultMessage": "देव"
-  },
   "envVarsSection.add": {
     "defaultMessage": "जोड़ें"
   },
   "envVarsSection.bothRequired": {
     "defaultMessage": "वेरिएबल नाम और मान दोनों दर्ज किए जाने चाहिए"
   },
-  "envVarsSection.environmentVariables": {
-    "defaultMessage": "पर्यावरण चर"
-  },
   "envVarsSection.envVarsDescription": {
     "defaultMessage": "पर्यावरण चर के लिए कुंजी-मान जोड़े जोड़ें। दोनों फ़ील्ड भरने के बाद जोड़ने के लिए \"+\" बटन पर क्लिक करें। मौजूदा गुप्त मानों को संशोधित करने के लिए संपादन बटन पर क्लिक करें।"
+  },
+  "envVarsSection.environmentVariables": {
+    "defaultMessage": "पर्यावरण चर"
   },
   "envVarsSection.noSpaces": {
     "defaultMessage": "वेरिएबल नाम में रिक्त स्थान नहीं हो सकते"
@@ -658,6 +655,9 @@
   },
   "envVarsSection.variableName": {
     "defaultMessage": "परिवर्तनीय नाम"
+  },
+  "environmentBadge.dev": {
+    "defaultMessage": "देव"
   },
   "errorBoundary.errorGeneric": {
     "defaultMessage": "एक त्रुटि पाई गई।"
@@ -818,6 +818,9 @@
   "extensionModal.unsavedChangesTitle": {
     "defaultMessage": "सहेजे न गए परिवर्तन"
   },
+  "extensionTimeoutField.timeoutLabel": {
+    "defaultMessage": "समयबाह्य"
+  },
   "extensionsSection.addCustomExtension": {
     "defaultMessage": "कस्टम एक्सटेंशन जोड़ें"
   },
@@ -853,9 +856,6 @@
   },
   "extensionsView.searchPlaceholder": {
     "defaultMessage": "एक्सटेंशन खोजें..."
-  },
-  "extensionTimeoutField.timeoutLabel": {
-    "defaultMessage": "समयबाह्य"
   },
   "externalBackendSection.certFingerprint": {
     "defaultMessage": "प्रमाणपत्र फ़िंगरप्रिंट (वैकल्पिक)"
@@ -1036,57 +1036,6 @@
   },
   "hub.goodMorning": {
     "defaultMessage": "सुप्रभात"
-  },
-  "huggingFaceModelSearch.download": {
-    "defaultMessage": "डाउनलोड करें"
-  },
-  "huggingFaceModelSearch.downloaded": {
-    "defaultMessage": "डाउनलोड"
-  },
-  "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "डाउनलोड हो रहा है..."
-  },
-  "huggingFaceModelSearch.loadingVariants": {
-    "defaultMessage": "वेरिएंट लोड हो रहा है..."
-  },
-  "huggingFaceModelSearch.noGgufModels": {
-    "defaultMessage": "इस क्वेरी के लिए कोई GGUF मॉडल नहीं मिला."
-  },
-  "huggingFaceModelSearch.recommended": {
-    "defaultMessage": "अनुशंसित"
-  },
-  "huggingFaceModelSearch.searchError": {
-    "defaultMessage": "खोज त्रुटि: {details}"
-  },
-  "huggingFaceModelSearch.searchFailed": {
-    "defaultMessage": "खोज विफल रही. कृपया पुन: प्रयास करें।"
-  },
-  "huggingFaceModelSearch.searchHuggingFace": {
-    "defaultMessage": "हगिंगफेस खोजें"
-  },
-  "huggingFaceModelSearch.searchNoData": {
-    "defaultMessage": "खोज से कोई डेटा नहीं मिला."
-  },
-  "huggingFaceModelSearch.searchPlaceholder": {
-    "defaultMessage": "जीजीयूएफ मॉडल खोजें..."
-  },
-  "huggingFaceModelSearch.tooLarge": {
-    "defaultMessage": "मेमोरी में फ़िट नहीं हो सकता ({size} मॉडल, {available} उपलब्ध)"
-  },
-  "huggingFaceSignInPrompt.failedToConfigure": {
-    "defaultMessage": "हगिंग फेस में साइन इन करने में विफल: {error}"
-  },
-  "huggingFaceSignInPrompt.signedIn": {
-    "defaultMessage": "हगिंग फेस ने साइन इन किया"
-  },
-  "huggingFaceSignInPrompt.signIn": {
-    "defaultMessage": "साइन इन करें"
-  },
-  "huggingFaceSignInPrompt.signingIn": {
-    "defaultMessage": "साइन इन किया जा रहा है..."
-  },
-  "huggingFaceSignInPrompt.title": {
-    "defaultMessage": "आलिंगन करता हुआ चेहरा"
   },
   "imagePreview.altText": {
     "defaultMessage": "gosling छवि"
@@ -1307,156 +1256,6 @@
   "loadingGoose.waiting": {
     "defaultMessage": "gosling इंतज़ार कर रहा है..."
   },
-  "localInferenceSettings.deleteConfirm": {
-    "defaultMessage": "यह मॉडल हटाएं? आप इसे बाद में पुनः डाउनलोड कर सकते हैं."
-  },
-  "localInferenceSettings.description": {
-    "defaultMessage": "API कुंजियों के बिना अनुमान के लिए स्थानीय एलएलएम मॉडल डाउनलोड और प्रबंधित करें। किसी भी जीजीयूएफ मॉडल के लिए हगिंगफेस खोजें या नीचे दिए गए चुनिंदा विकल्पों का उपयोग करें।"
-  },
-  "localInferenceSettings.dismiss": {
-    "defaultMessage": "खारिज करें"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "डाउनलोड करें"
-  },
-  "localInferenceSettings.downloadCancelled": {
-    "defaultMessage": "डाउनलोड रद्द किया गया"
-  },
-  "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "डाउनलोड किए गए मॉडल"
-  },
-  "localInferenceSettings.downloadFailed": {
-    "defaultMessage": "डाउनलोड विफल रहा"
-  },
-  "localInferenceSettings.downloading": {
-    "defaultMessage": "डाउनलोड हो रहा है"
-  },
-  "localInferenceSettings.downloadProgress": {
-    "defaultMessage": "{downloaded} / {total} ({percent}%)"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "विशेष रुप से प्रदर्शित मॉडल"
-  },
-  "localInferenceSettings.huggingFaceSignInNote": {
-    "defaultMessage": "मॉडल खोजते और डाउनलोड करते समय दर सीमा बढ़ाने के लिए और निजी या गेटेड हगिंग फेस रिपॉजिटरी तक पहुंचने के लिए साइन इन करें।"
-  },
-  "localInferenceSettings.modelSettings": {
-    "defaultMessage": "मॉडल Settings"
-  },
-  "localInferenceSettings.modelSettingsTitle": {
-    "defaultMessage": "मॉडल सेटिंग्स"
-  },
-  "localInferenceSettings.noModels": {
-    "defaultMessage": "कोई मॉडल उपलब्ध नहीं"
-  },
-  "localInferenceSettings.recommended": {
-    "defaultMessage": "अनुशंसित"
-  },
-  "localInferenceSettings.remaining": {
-    "defaultMessage": "{time} शेष"
-  },
-  "localInferenceSettings.retry": {
-    "defaultMessage": "पुनः प्रयास करें"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "सभी विशेष रुप से प्रदर्शित दिखाएँ ({count} अधिक)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "केवल अनुशंसित दिखाएं"
-  },
-  "localInferenceSettings.title": {
-    "defaultMessage": "स्थानीय अनुमान मॉडल"
-  },
-  "localInferenceSettings.vision": {
-    "defaultMessage": "दृष्टि"
-  },
-  "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "विज़न एनकोडर डाउनलोड हो रहा है..."
-  },
-  "localInferenceSettings.visionEncoderNotDownloaded": {
-    "defaultMessage": "विज़न एनकोडर डाउनलोड नहीं हुआ"
-  },
-  "localModelManager.active": {
-    "defaultMessage": "सक्रिय"
-  },
-  "localModelManager.deleteConfirm": {
-    "defaultMessage": "यह मॉडल हटाएं? आप इसे बाद में पुनः डाउनलोड कर सकते हैं."
-  },
-  "localModelManager.download": {
-    "defaultMessage": "डाउनलोड करें"
-  },
-  "localModelManager.downloaded": {
-    "defaultMessage": "डाउनलोड"
-  },
-  "localModelManager.gpuAcceleration": {
-    "defaultMessage": "GPU त्वरण का समर्थन करता है (NVIDIA के लिए CUDA, Apple सिलिकॉन के लिए मेटल)। हार्डवेयर त्वरण के लिए निर्माण समय पर GPU सुविधाओं को सक्षम किया जाना चाहिए।"
-  },
-  "localModelManager.noModels": {
-    "defaultMessage": "कोई मॉडल उपलब्ध नहीं"
-  },
-  "localModelManager.recommended": {
-    "defaultMessage": "अनुशंसित"
-  },
-  "localModelManager.recommendedForHardware": {
-    "defaultMessage": "आपके हार्डवेयर के लिए अनुशंसित"
-  },
-  "localModelManager.showAllModels": {
-    "defaultMessage": "सभी मॉडल दिखाएं ({count} अधिक)"
-  },
-  "localModelManager.showRecommendedOnly": {
-    "defaultMessage": "केवल अनुशंसित दिखाएं"
-  },
-  "localModelPicker.bestForMachine": {
-    "defaultMessage": "आपकी मशीन के लिए सर्वोत्तम"
-  },
-  "localModelPicker.cancelDownload": {
-    "defaultMessage": "डाउनलोड रद्द करें"
-  },
-  "localModelPicker.checkingModels": {
-    "defaultMessage": "उपलब्ध मॉडलों की जाँच की जा रही है..."
-  },
-  "localModelPicker.downloading": {
-    "defaultMessage": "डाउनलोड हो रहा है {modelId}"
-  },
-  "localModelPicker.downloadModel": {
-    "defaultMessage": "डाउनलोड करें {modelId} ({size})"
-  },
-  "localModelPicker.failedToLoad": {
-    "defaultMessage": "उपलब्ध मॉडल लोड करने में विफल. कृपया पुन: प्रयास करें।"
-  },
-  "localModelPicker.failedToStartDownload": {
-    "defaultMessage": "डाउनलोड प्रारंभ करने में विफल. कृपया पुन: प्रयास करें।"
-  },
-  "localModelPicker.hideOtherSizes": {
-    "defaultMessage": "अन्य आकार छिपाएँ"
-  },
-  "localModelPicker.localModelsNote": {
-    "defaultMessage": "स्थानीय मॉडल पूरी गोपनीयता के लिए आपकी मशीन पर सब कुछ रखते हैं। आपके हार्डवेयर और मॉडल आकार के आधार पर क्लाउड प्रदाताओं की तुलना में प्रदर्शन और संदर्भ विंडो का आकार भिन्न हो सकता है।"
-  },
-  "localModelPicker.lostConnection": {
-    "defaultMessage": "डाउनलोड करने के लिए कनेक्शन खो गया. कृपया पुन: प्रयास करें।"
-  },
-  "localModelPicker.modelNotFound": {
-    "defaultMessage": "मॉडल नहीं मिला"
-  },
-  "localModelPicker.ready": {
-    "defaultMessage": "तैयार"
-  },
-  "localModelPicker.selectModel": {
-    "defaultMessage": "एक मॉडल चुनें"
-  },
-  "localModelPicker.showOtherSizes": {
-    "defaultMessage": "{count} अन्य आकार दिखाएँ"
-  },
-  "localModelPicker.startingDownload": {
-    "defaultMessage": "डाउनलोड प्रारंभ हो रहा है..."
-  },
-  "localModelPicker.tryAgain": {
-    "defaultMessage": "पुनः प्रयास करें"
-  },
-  "localModelPicker.useModel": {
-    "defaultMessage": "{modelId} का प्रयोग करें"
-  },
   "markdownContent.cancel": {
     "defaultMessage": "रद्द करें"
   },
@@ -1583,9 +1382,6 @@
   "messageQueue.paused": {
     "defaultMessage": "रुका हुआ"
   },
-  "messageQueue.queued": {
-    "defaultMessage": "पंक्तिबद्ध"
-  },
   "messageQueue.queuePaused": {
     "defaultMessage": "कतार रोक दी गई"
   },
@@ -1594,6 +1390,9 @@
   },
   "messageQueue.queuePausedExpanded": {
     "defaultMessage": "रुकावट के कारण कतार रुकी. \"अभी भेजें\" का उपयोग करें या फिर से शुरू करने के लिए एक नया संदेश जोड़ें।"
+  },
+  "messageQueue.queued": {
+    "defaultMessage": "पंक्तिबद्ध"
   },
   "messageQueue.removeFromQueue": {
     "defaultMessage": "इस संदेश को कतार से हटाएँ"
@@ -1640,210 +1439,6 @@
   "microphoneSelector.test": {
     "defaultMessage": "परीक्षण"
   },
-  "modelAndProviderContext.modelChangedTitle": {
-    "defaultMessage": "मॉडल बदल गया"
-  },
-  "modelAndProviderContext.modelChangeFailed": {
-    "defaultMessage": "{provider}/{model} विफल"
-  },
-  "modelAndProviderContext.selectModel": {
-    "defaultMessage": "मॉडल का चयन करें"
-  },
-  "modelAndProviderContext.switchModelSuccess": {
-    "defaultMessage": "मॉडल सफलतापूर्वक बदला गया -- {provider} से {model} इस्तेमाल किया जा रहा है"
-  },
-  "modelAndProviderContext.unknownProviderMsg": {
-    "defaultMessage": "कॉन्फ़िग में अज्ञात प्रदाता -- कृपया अपनी config.yaml जांचें"
-  },
-  "modelAndProviderContext.unknownProviderTitle": {
-    "defaultMessage": "प्रदाता का नाम लुकअप"
-  },
-  "modelsBottomBar.changeModel": {
-    "defaultMessage": "मॉडल बदलें"
-  },
-  "modelsBottomBar.currentModel": {
-    "defaultMessage": "वर्तमान मॉडल"
-  },
-  "modelsBottomBar.loadingModel": {
-    "defaultMessage": "मॉडल लोड हो रहा है..."
-  },
-  "modelsBottomBar.localModelSettings": {
-    "defaultMessage": "स्थानीय मॉडल Settings"
-  },
-  "modelsBottomBar.localModelSettingsTitle": {
-    "defaultMessage": "स्थानीय मॉडल Settings — {modelName}"
-  },
-  "modelsBottomBar.resolvedModel": {
-    "defaultMessage": "हल किया गया मॉडल"
-  },
-  "modelsBottomBar.selectModel": {
-    "defaultMessage": "मॉडल का चयन करें"
-  },
-  "modelSettingsButtons.configureProviders": {
-    "defaultMessage": "प्रदाताओं को कॉन्फ़िगर करें"
-  },
-  "modelSettingsButtons.switchModels": {
-    "defaultMessage": "मॉडल स्विच करें"
-  },
-  "modelSettingsPanel.batchSize": {
-    "defaultMessage": "बैच का आकार"
-  },
-  "modelSettingsPanel.batchSizeDescription": {
-    "defaultMessage": "शीघ्र प्रसंस्करण बैच"
-  },
-  "modelSettingsPanel.builtinChatTemplate": {
-    "defaultMessage": "अंतर्निर्मित टेम्पलेट"
-  },
-  "modelSettingsPanel.builtinChatTemplateDescription": {
-    "defaultMessage": "एक llama.cpp अंतर्निहित टेम्पलेट नाम चुनें"
-  },
-  "modelSettingsPanel.chatTemplate": {
-    "defaultMessage": "चैट टेम्पलेट"
-  },
-  "modelSettingsPanel.chatTemplateBuiltin": {
-    "defaultMessage": "अंतर्निर्मित"
-  },
-  "modelSettingsPanel.chatTemplateCustomInline": {
-    "defaultMessage": "कस्टम इनलाइन"
-  },
-  "modelSettingsPanel.chatTemplateDescription": {
-    "defaultMessage": "एम्बेडेड GGUF मेटाडेटा, llama.cpp का बिल्ट-इन टेम्पलेट, या इनलाइन Jinja इस्तेमाल करें"
-  },
-  "modelSettingsPanel.chatTemplateEmbedded": {
-    "defaultMessage": "एंबेडेड"
-  },
-  "modelSettingsPanel.contextAndGeneration": {
-    "defaultMessage": "प्रसंग एवं पीढ़ी"
-  },
-  "modelSettingsPanel.contextSize": {
-    "defaultMessage": "प्रसंग का आकार"
-  },
-  "modelSettingsPanel.contextSizeDescription": {
-    "defaultMessage": "अधिकतम संदर्भ विंडो (0 = मॉडल डिफ़ॉल्ट)"
-  },
-  "modelSettingsPanel.customChatTemplate": {
-    "defaultMessage": "कस्टम चैट टेम्पलेट"
-  },
-  "modelSettingsPanel.customChatTemplateDescription": {
-    "defaultMessage": "संपूर्ण जिंजा चैट टेम्पलेट स्रोत चिपकाएँ"
-  },
-  "modelSettingsPanel.etaLearningRate": {
-    "defaultMessage": "एटा (सीखने की दर)"
-  },
-  "modelSettingsPanel.flashAttention": {
-    "defaultMessage": "फ़्लैश ध्यान"
-  },
-  "modelSettingsPanel.flashAttentionDescription": {
-    "defaultMessage": "फ़्लैश ध्यान अनुकूलन सक्षम करें"
-  },
-  "modelSettingsPanel.frequencyPenalty": {
-    "defaultMessage": "बारंबारता दंड"
-  },
-  "modelSettingsPanel.frequencyPenaltyDescription": {
-    "defaultMessage": "0.0 = बंद"
-  },
-  "modelSettingsPanel.gpuLayers": {
-    "defaultMessage": "जीपीयू परतें"
-  },
-  "modelSettingsPanel.gpuLayersDescription": {
-    "defaultMessage": "जीपीयू पर अपलोड करने के लिए परतें"
-  },
-  "modelSettingsPanel.loadingSettings": {
-    "defaultMessage": "सेटिंग लोड हो रही है..."
-  },
-  "modelSettingsPanel.lockModelInRam": {
-    "defaultMessage": "मॉडल को RAM में लॉक करें (mlock)"
-  },
-  "modelSettingsPanel.lockModelInRamDescription": {
-    "defaultMessage": "मॉडल को डिस्क पर स्वैप होने से रोकें"
-  },
-  "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "अधिकतम आउटपुट टोकन"
-  },
-  "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "जेनरेट किए गए टोकन पर सीमा"
-  },
-  "modelSettingsPanel.minP": {
-    "defaultMessage": "मिन पी"
-  },
-  "modelSettingsPanel.performance": {
-    "defaultMessage": "प्रदर्शन"
-  },
-  "modelSettingsPanel.presencePenalty": {
-    "defaultMessage": "उपस्थिति दंड"
-  },
-  "modelSettingsPanel.presencePenaltyDescription": {
-    "defaultMessage": "0.0 = बंद"
-  },
-  "modelSettingsPanel.repeatPenalty": {
-    "defaultMessage": "बार-बार जुर्माना"
-  },
-  "modelSettingsPanel.repeatPenaltyDescription": {
-    "defaultMessage": "1.0 = बंद"
-  },
-  "modelSettingsPanel.repeatWindow": {
-    "defaultMessage": "विंडो दोहराएँ"
-  },
-  "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "पीछे देखने के लिए टोकन"
-  },
-  "modelSettingsPanel.repetitionPenalty": {
-    "defaultMessage": "पुनरावृत्ति दंड"
-  },
-  "modelSettingsPanel.reset": {
-    "defaultMessage": "रीसेट करें"
-  },
-  "modelSettingsPanel.resetToDefaults": {
-    "defaultMessage": "डिफ़ॉल्ट पर रीसेट करें"
-  },
-  "modelSettingsPanel.samplingStrategy": {
-    "defaultMessage": "नमूनाकरण रणनीति"
-  },
-  "modelSettingsPanel.saving": {
-    "defaultMessage": "सहेजा जा रहा है..."
-  },
-  "modelSettingsPanel.seed": {
-    "defaultMessage": "बीज"
-  },
-  "modelSettingsPanel.tauTargetEntropy": {
-    "defaultMessage": "ताऊ (लक्ष्य एन्ट्रापी)"
-  },
-  "modelSettingsPanel.temperature": {
-    "defaultMessage": "तापमान"
-  },
-  "modelSettingsPanel.threads": {
-    "defaultMessage": "धागे"
-  },
-  "modelSettingsPanel.threadsDescription": {
-    "defaultMessage": "पीढ़ी के लिए सीपीयू धागे"
-  },
-  "modelSettingsPanel.toolCalling": {
-    "defaultMessage": "टूल कॉलिंग"
-  },
-  "modelSettingsPanel.toolCallingAuto": {
-    "defaultMessage": "ऑटो"
-  },
-  "modelSettingsPanel.toolCallingDescription": {
-    "defaultMessage": "चुनें कि स्थानीय मॉडल देशी या अनुकरणीय टूल कॉलिंग का चयन कैसे करते हैं"
-  },
-  "modelSettingsPanel.toolCallingForceEmulated": {
-    "defaultMessage": "बल का अनुकरण किया गया"
-  },
-  "modelSettingsPanel.toolCallingForceNative": {
-    "defaultMessage": "बल मूलनिवासी"
-  },
-  "modelSettingsPanel.topK": {
-    "defaultMessage": "शीर्ष के"
-  },
-  "modelSettingsPanel.topP": {
-    "defaultMessage": "शीर्ष पी"
-  },
-  "modelsSection.resetDescription": {
-    "defaultMessage": "नए सिरे से शुरुआत करने के लिए अपने चयनित मॉडल और प्रदाता सेटिंग्स को साफ़ करें"
-  },
-  "modelsSection.resetTitle": {
-    "defaultMessage": "प्रदाता और मॉडल रीसेट करें"
-  },
   "modeSelectionItem.autonomousDescription": {
     "defaultMessage": "पूर्ण फ़ाइल संशोधन क्षमताएं, फ़ाइलों को स्वतंत्र रूप से संपादित करें, बनाएं और हटाएं।"
   },
@@ -1867,6 +1462,51 @@
   },
   "modeSelectionItem.smartLabel": {
     "defaultMessage": "होशियार"
+  },
+  "modelAndProviderContext.modelChangeFailed": {
+    "defaultMessage": "{provider}/{model} विफल"
+  },
+  "modelAndProviderContext.modelChangedTitle": {
+    "defaultMessage": "मॉडल बदल गया"
+  },
+  "modelAndProviderContext.selectModel": {
+    "defaultMessage": "मॉडल का चयन करें"
+  },
+  "modelAndProviderContext.switchModelSuccess": {
+    "defaultMessage": "मॉडल सफलतापूर्वक बदला गया -- {provider} से {model} इस्तेमाल किया जा रहा है"
+  },
+  "modelAndProviderContext.unknownProviderMsg": {
+    "defaultMessage": "कॉन्फ़िग में अज्ञात प्रदाता -- कृपया अपनी config.yaml जांचें"
+  },
+  "modelAndProviderContext.unknownProviderTitle": {
+    "defaultMessage": "प्रदाता का नाम लुकअप"
+  },
+  "modelSettingsButtons.configureProviders": {
+    "defaultMessage": "प्रदाताओं को कॉन्फ़िगर करें"
+  },
+  "modelSettingsButtons.switchModels": {
+    "defaultMessage": "मॉडल स्विच करें"
+  },
+  "modelsBottomBar.changeModel": {
+    "defaultMessage": "मॉडल बदलें"
+  },
+  "modelsBottomBar.currentModel": {
+    "defaultMessage": "वर्तमान मॉडल"
+  },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "मॉडल लोड हो रहा है..."
+  },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "हल किया गया मॉडल"
+  },
+  "modelsBottomBar.selectModel": {
+    "defaultMessage": "मॉडल का चयन करें"
+  },
+  "modelsSection.resetDescription": {
+    "defaultMessage": "नए सिरे से शुरुआत करने के लिए अपने चयनित मॉडल और प्रदाता सेटिंग्स को साफ़ करें"
+  },
+  "modelsSection.resetTitle": {
+    "defaultMessage": "प्रदाता और मॉडल रीसेट करें"
   },
   "navigation.itemExtensions": {
     "defaultMessage": "एक्सटेंशन"
@@ -1918,9 +1558,6 @@
   },
   "onboardingSuccess.learnMore": {
     "defaultMessage": "और जानें"
-  },
-  "onboardingSuccess.localModelReady": {
-    "defaultMessage": "स्थानीय मॉडल तैयार"
   },
   "onboardingSuccess.privacyDescription": {
     "defaultMessage": "अनाम उपयोग डेटा gosling को बेहतर बनाने में मदद करता है। हम कभी भी आपकी बातचीत, कोड या व्यक्तिगत डेटा एकत्र नहीं करते हैं।"
@@ -2045,11 +1682,11 @@
   "promptsSettings.edit": {
     "defaultMessage": "संपादित करें"
   },
-  "promptsSettings.editingLabel": {
-    "defaultMessage": "संपादन: {name}"
-  },
   "promptsSettings.editPromptTitle": {
     "defaultMessage": "संपादित करें: {name}"
+  },
+  "promptsSettings.editingLabel": {
+    "defaultMessage": "संपादन: {name}"
   },
   "promptsSettings.enterPromptContent": {
     "defaultMessage": "प्रॉम्प्ट सामग्री दर्ज करें..."
@@ -2159,11 +1796,11 @@
   "providerConfigForm.noApiKey": {
     "defaultMessage": "क्या आपके पास API कुंजी नहीं है?"
   },
-  "providerConfigForm.signingIn": {
-    "defaultMessage": "साइन इन किया जा रहा है..."
-  },
   "providerConfigForm.signInWith": {
     "defaultMessage": "{providerName} के साथ साइन इन करें"
+  },
+  "providerConfigForm.signingIn": {
+    "defaultMessage": "साइन इन किया जा रहा है..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
     "defaultMessage": "इस प्रदाता को gosling में एकीकृत करने के लिए अपनी API कुंजी जोड़ें"
@@ -2207,9 +1844,6 @@
   "providerConfigurationModal.goBack": {
     "defaultMessage": "वापस जाओ"
   },
-  "providerConfigurationModal.huggingFaceOAuthDescription": {
-    "defaultMessage": "मैन्युअल रूप से API टोकन दर्ज किए बिना हगिंग फेस इंफ़रेंस प्रोवाइडर्स का उपयोग करने के लिए साइन इन करें।"
-  },
   "providerConfigurationModal.oauthLoginFailed": {
     "defaultMessage": "OAuth लॉगिन विफल: {error}"
   },
@@ -2225,11 +1859,11 @@
   "providerConfigurationModal.seeDocumentation": {
     "defaultMessage": "अधिक विवरण के लिए <link>दस्तावेज़ीकरण</link> देखें।"
   },
-  "providerConfigurationModal.signingIn": {
-    "defaultMessage": "साइन इन किया जा रहा है..."
-  },
   "providerConfigurationModal.signInWith": {
     "defaultMessage": "{providerName} के साथ साइन इन करें"
+  },
+  "providerConfigurationModal.signingIn": {
+    "defaultMessage": "साइन इन किया जा रहा है..."
   },
   "providerGrid.addProvider": {
     "defaultMessage": "प्रदाता जोड़ें"
@@ -2264,14 +1898,8 @@
   "providerSelector.connectProviderDescription": {
     "defaultMessage": "OpenAI, Anthropic, Google, आदि से कनेक्ट करें"
   },
-  "providerSelector.localModelDescription": {
-    "defaultMessage": "एक मॉडल डाउनलोड करें और पूरी तरह से अपनी मशीन पर चलाएं। कोई API कुंजी नहीं, कोई खाता नहीं।"
-  },
   "providerSelector.selectProvider": {
     "defaultMessage": "एक प्रदाता चुनें"
-  },
-  "providerSelector.useLocalModel": {
-    "defaultMessage": "स्थानीय मॉडल का प्रयोग करें"
   },
   "providerSettings.configurationSettings": {
     "defaultMessage": "प्रदाता कॉन्फ़िगरेशन Settings"
@@ -2426,14 +2054,14 @@
   "sessionActionsHeader.copyText": {
     "defaultMessage": "Copy text"
   },
-  "sessionActionsHeader.duplicated": {
-    "defaultMessage": "Session duplicated"
-  },
   "sessionActionsHeader.duplicateFailed": {
     "defaultMessage": "Failed to duplicate session: {error}"
   },
   "sessionActionsHeader.duplicateSession": {
     "defaultMessage": "Duplicate session"
+  },
+  "sessionActionsHeader.duplicated": {
+    "defaultMessage": "Session duplicated"
   },
   "sessionActionsHeader.fullTextTitle": {
     "defaultMessage": "Text value"
@@ -2447,9 +2075,6 @@
   "sessionActionsHeader.loadingJson": {
     "defaultMessage": "Loading JSON..."
   },
-  "sessionActionsHeader.renamed": {
-    "defaultMessage": "Session renamed"
-  },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "Failed to rename session: {error}"
   },
@@ -2461,6 +2086,9 @@
   },
   "sessionActionsHeader.renameTitle": {
     "defaultMessage": "Rename Session"
+  },
+  "sessionActionsHeader.renamed": {
+    "defaultMessage": "Session renamed"
   },
   "sessionActionsHeader.save": {
     "defaultMessage": "Save"
@@ -2479,6 +2107,24 @@
   },
   "sessionIndicators.streaming": {
     "defaultMessage": "स्ट्रीमिंग"
+  },
+  "sessionViewComponents.empty.description": {
+    "defaultMessage": "इस सत्र में कोई संदेश नहीं है"
+  },
+  "sessionViewComponents.empty.title": {
+    "defaultMessage": "कोई संदेश नहीं मिला"
+  },
+  "sessionViewComponents.error.loading": {
+    "defaultMessage": "सत्र विवरण लोड करने में त्रुटि"
+  },
+  "sessionViewComponents.error.tryAgain": {
+    "defaultMessage": "पुनः प्रयास करें"
+  },
+  "sessionViewComponents.role.assistant": {
+    "defaultMessage": "Gosling"
+  },
+  "sessionViewComponents.role.user": {
+    "defaultMessage": "आप"
   },
   "sessions.action.delete": {
     "defaultMessage": "सत्र हटाएँ"
@@ -2537,9 +2183,6 @@
   "sessions.import": {
     "defaultMessage": "आयात सत्र"
   },
-  "sessions.importing": {
-    "defaultMessage": "आयात किया जा रहा है..."
-  },
   "sessions.importNostr": {
     "defaultMessage": "लिंक आयात करें"
   },
@@ -2551,6 +2194,9 @@
   },
   "sessions.importNostr.title": {
     "defaultMessage": "नोस्ट्र सत्र आयात करें"
+  },
+  "sessions.importing": {
+    "defaultMessage": "आयात किया जा रहा है..."
   },
   "sessions.loadingMore": {
     "defaultMessage": "अधिक सत्र लोड हो रहे हैं..."
@@ -2579,26 +2225,26 @@
   "sessions.toast.copied": {
     "defaultMessage": "क्लिपबोर्ड पर कॉपी किया गया"
   },
-  "sessions.toast.deleted": {
-    "defaultMessage": "सत्र सफलतापूर्वक हटा दिया गया"
-  },
   "sessions.toast.deleteFailed": {
     "defaultMessage": "सत्र \"{name}\" हटाने में विफल: {error}"
   },
-  "sessions.toast.duplicated": {
-    "defaultMessage": "सत्र \"{name}\" सफलतापूर्वक दोहराया गया"
+  "sessions.toast.deleted": {
+    "defaultMessage": "सत्र सफलतापूर्वक हटा दिया गया"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "सत्र की नकल करने में विफल: {error}"
   },
+  "sessions.toast.duplicated": {
+    "defaultMessage": "सत्र \"{name}\" सफलतापूर्वक दोहराया गया"
+  },
   "sessions.toast.exported": {
     "defaultMessage": "सत्र सफलतापूर्वक निर्यात किया गया"
   },
-  "sessions.toast.imported": {
-    "defaultMessage": "सत्र सफलतापूर्वक आयात किया गया"
-  },
   "sessions.toast.importFailed": {
     "defaultMessage": "सत्र आयात करने में विफल: {error}"
+  },
+  "sessions.toast.imported": {
+    "defaultMessage": "सत्र सफलतापूर्वक आयात किया गया"
   },
   "sessions.toast.shareNostr": {
     "defaultMessage": "एन्क्रिप्टेड नोस्ट्र शेयर लिंक बनाया गया"
@@ -2606,29 +2252,11 @@
   "sessions.toast.shareNostrFailed": {
     "defaultMessage": "Nostr शेयर लिंक बनाने में विफल: {error}"
   },
-  "sessions.toast.updated": {
-    "defaultMessage": "सत्र विवरण सफलतापूर्वक अपडेट किया गया"
-  },
   "sessions.toast.updateFailed": {
     "defaultMessage": "सत्र विवरण अद्यतन करने में विफल: {error}"
   },
-  "sessionViewComponents.empty.description": {
-    "defaultMessage": "इस सत्र में कोई संदेश नहीं है"
-  },
-  "sessionViewComponents.empty.title": {
-    "defaultMessage": "कोई संदेश नहीं मिला"
-  },
-  "sessionViewComponents.error.loading": {
-    "defaultMessage": "सत्र विवरण लोड करने में त्रुटि"
-  },
-  "sessionViewComponents.error.tryAgain": {
-    "defaultMessage": "पुनः प्रयास करें"
-  },
-  "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Gosling"
-  },
-  "sessionViewComponents.role.user": {
-    "defaultMessage": "आप"
+  "sessions.toast.updated": {
+    "defaultMessage": "सत्र विवरण सफलतापूर्वक अपडेट किया गया"
   },
   "settings.appearance.description": {
     "defaultMessage": "कॉन्फ़िगर करें कि gosling आपके सिस्टम पर कैसे दिखाई देता है"
@@ -2810,9 +2438,6 @@
   "settingsView.tabKeyboard": {
     "defaultMessage": "कीबोर्ड"
   },
-  "settingsView.tabLocalInference": {
-    "defaultMessage": "स्थानीय अनुमान"
-  },
   "settingsView.tabModels": {
     "defaultMessage": "मॉडल"
   },
@@ -2945,17 +2570,8 @@
   "switchModelModal.geminiOnly": {
     "defaultMessage": "(Gemini केवल 3 मॉडल)"
   },
-  "switchModelModal.goToSettings": {
-    "defaultMessage": "Settings पर जाएँ"
-  },
   "switchModelModal.loadingModels": {
     "defaultMessage": "मॉडल लोड हो रहे हैं…"
-  },
-  "switchModelModal.localModelsDescription": {
-    "defaultMessage": "स्थानीय अनुमान का उपयोग करने के लिए, आपको पहले अपने कंप्यूटर पर एक मॉडल डाउनलोड करना होगा। स्थानीय मॉडल प्रबंधित करने के लिए Settings → मॉडल पर जाएं।"
-  },
-  "switchModelModal.localModelsTitle": {
-    "defaultMessage": "स्थानीय मॉडल को पहले डाउनलोड करना होगा"
   },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "प्रदाता, खोजने के लिए टाइप करें"
@@ -3068,11 +2684,11 @@
   "themeSelector.theme": {
     "defaultMessage": "थीम"
   },
-  "toolApprovalButtons.allowedOnce": {
-    "defaultMessage": "एक बार अनुमति दी गई"
-  },
   "toolApprovalButtons.allowOnce": {
     "defaultMessage": "एक बार अनुमति दें"
+  },
+  "toolApprovalButtons.allowedOnce": {
+    "defaultMessage": "एक बार अनुमति दी गई"
   },
   "toolApprovalButtons.alwaysAllow": {
     "defaultMessage": "हमेशा अनुमति दें"
@@ -3155,17 +2771,17 @@
   "updateSection.disableAutoDownloadDesc": {
     "defaultMessage": "सक्षम होने पर, Gosling आपको नई संस्करणों की सूचना देगा लेकिन उन्हें स्वचालित रूप से डाउनलोड नहीं करेगा।"
   },
-  "updateSection.downloadingProgress": {
-    "defaultMessage": "अपडेट डाउनलोड हो रहा है... {percent}%"
-  },
-  "updateSection.downloadingUpdate": {
-    "defaultMessage": "अपडेट डाउनलोड हो रहा है..."
-  },
   "updateSection.downloadNow": {
     "defaultMessage": "अभी डाउनलोड करें"
   },
   "updateSection.downloadReady": {
     "defaultMessage": "अपडेट डाउनलोड हो गया है और इंस्टॉल करने के लिए तैयार है!"
+  },
+  "updateSection.downloadingProgress": {
+    "defaultMessage": "अपडेट डाउनलोड हो रहा है... {percent}%"
+  },
+  "updateSection.downloadingUpdate": {
+    "defaultMessage": "अपडेट डाउनलोड हो रहा है..."
   },
   "updateSection.installAndRestart": {
     "defaultMessage": "स्थापित करें और पुनः प्रारंभ करें"
@@ -3191,11 +2807,11 @@
   "updateSection.readyInstallManual": {
     "defaultMessage": "✓ अपडेट तैयार है! इंस्टॉलेशन निर्देशों के लिए \"इंस्टॉल करें और पुनरारंभ करें\" पर क्लिक करें।"
   },
-  "updateSection.updateAvailable": {
-    "defaultMessage": "उपलब्ध अद्यतन!"
-  },
   "updateSection.upToDate": {
     "defaultMessage": "(अप टू डेट)"
+  },
+  "updateSection.updateAvailable": {
+    "defaultMessage": "उपलब्ध अद्यतन!"
   },
   "updateSection.versionAvailable": {
     "defaultMessage": "→ {version} उपलब्ध"

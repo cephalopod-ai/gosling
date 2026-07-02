@@ -31,8 +31,6 @@ async-trait = { version = "0.1.89", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
 base64 = { version = "0.22.1", default-features = false, features = ["std"] }
 bytes = { version = "1.10.1", default-features = false, features = ["std"] }
-candle-core = { version = "0.10", default-features = false }
-candle-nn = { version = "0.10", default-features = false }
 chrono = { version = "0.4.44", default-features = false, features = ["serde", "std"] }
 clap = { version = "4.1.14", default-features = false, features = ["derive", "std", "help", "suggestions", "usage", "color", "error-context"] }
 dirs = { version = "6", default-features = false }
@@ -101,10 +99,6 @@ tree-sitter-rust = { version = "0.24", default-features = false }
 tree-sitter-swift = { version = "0.7", default-features = false }
 tree-sitter-typescript = { version = "0.23", default-features = false }
 
-# llama-cpp-2 doesn't pin the version of its sys crate, so we do it here. it also has breaking changes in patch releases, so we use an exact version pin
-llama-cpp-2 = { version = "=0.1.146", default-features = false, features = ["sampler", "mtmd"] }
-llama-cpp-sys-2 = { version = "=0.1.146", default-features = false }
-
 # These are needed because temporal_rs 0.1 (a transitive dep via PCTX) enables unstable features on icu_calendar without pinning the dependency version
 # A fix is available in temporal_rs 0.2 but PCTX has not updated
 # They are just here to pin the version, and can be removed if PCTX updates temporal_rs
@@ -113,7 +107,6 @@ icu_locale = { version = "=2.1.1", default-features = false }
 
 [patch.crates-io]
 v8 = { path = "vendor/v8" }
-cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673db98dc9e17da0f04834a456f" }
 
 # Dependencies don't need debug info. You rarely step-debug into third-party
 # crates, but their DWARF dominates `target/debug` — roughly 50-70% of each

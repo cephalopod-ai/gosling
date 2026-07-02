@@ -40,14 +40,7 @@ import type {
   DiagnosticsGetResponse_unstable,
   DictationConfigRequest_unstable,
   DictationConfigResponse_unstable,
-  DictationModelCancelRequest_unstable,
-  DictationModelDeleteRequest_unstable,
-  DictationModelDownloadProgressRequest_unstable,
-  DictationModelDownloadProgressResponse_unstable,
-  DictationModelDownloadRequest_unstable,
   DictationModelSelectRequest_unstable,
-  DictationModelsListRequest_unstable,
-  DictationModelsListResponse_unstable,
   DictationSecretDeleteRequest_unstable,
   DictationSecretSaveRequest_unstable,
   DictationTranscribeRequest_unstable,
@@ -85,24 +78,6 @@ import type {
   ListSlashCommandsResponse_unstable,
   ListSourcesRequest_unstable,
   ListSourcesResponse_unstable,
-  LocalInferenceBuiltinChatTemplatesListRequest_unstable,
-  LocalInferenceBuiltinChatTemplatesListResponse_unstable,
-  LocalInferenceHuggingFaceRepoVariantsRequest_unstable,
-  LocalInferenceHuggingFaceRepoVariantsResponse_unstable,
-  LocalInferenceHuggingFaceSearchRequest_unstable,
-  LocalInferenceHuggingFaceSearchResponse_unstable,
-  LocalInferenceModelDeleteRequest_unstable,
-  LocalInferenceModelDownloadCancelRequest_unstable,
-  LocalInferenceModelDownloadProgressRequest_unstable,
-  LocalInferenceModelDownloadProgressResponse_unstable,
-  LocalInferenceModelDownloadRequest_unstable,
-  LocalInferenceModelDownloadResponse_unstable,
-  LocalInferenceModelSettingsReadRequest_unstable,
-  LocalInferenceModelSettingsReadResponse_unstable,
-  LocalInferenceModelSettingsUpdateRequest_unstable,
-  LocalInferenceModelSettingsUpdateResponse_unstable,
-  LocalInferenceModelsListRequest_unstable,
-  LocalInferenceModelsListResponse_unstable,
   OnboardingImportApplyRequest_unstable,
   OnboardingImportApplyResponse_unstable,
   OnboardingImportScanRequest_unstable,
@@ -167,8 +142,6 @@ import {
   zDefaultsReadResponse_unstable,
   zDiagnosticsGetResponse_unstable,
   zDictationConfigResponse_unstable,
-  zDictationModelDownloadProgressResponse_unstable,
-  zDictationModelsListResponse_unstable,
   zDictationTranscribeResponse_unstable,
   zExportSessionResponse_unstable,
   zExportSourceResponse_unstable,
@@ -187,14 +160,6 @@ import {
   zListProvidersResponse_unstable,
   zListSlashCommandsResponse_unstable,
   zListSourcesResponse_unstable,
-  zLocalInferenceBuiltinChatTemplatesListResponse_unstable,
-  zLocalInferenceHuggingFaceRepoVariantsResponse_unstable,
-  zLocalInferenceHuggingFaceSearchResponse_unstable,
-  zLocalInferenceModelDownloadProgressResponse_unstable,
-  zLocalInferenceModelDownloadResponse_unstable,
-  zLocalInferenceModelSettingsReadResponse_unstable,
-  zLocalInferenceModelSettingsUpdateResponse_unstable,
-  zLocalInferenceModelsListResponse_unstable,
   zOnboardingImportApplyResponse_unstable,
   zOnboardingImportScanResponse_unstable,
   zPreferencesReadResponse_unstable,
@@ -968,57 +933,6 @@ export class GooseExtClient {
     );
   }
 
-  async dictationModelsList_unstable(
-    params: DictationModelsListRequest_unstable,
-  ): Promise<DictationModelsListResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/dictation/models/list",
-      params,
-    );
-    return zDictationModelsListResponse_unstable.parse(
-      raw,
-    ) as DictationModelsListResponse_unstable;
-  }
-
-  async dictationModelsDownload_unstable(
-    params: DictationModelDownloadRequest_unstable,
-  ): Promise<void> {
-    await this.conn.extMethod(
-      "_goose/unstable/dictation/models/download",
-      params,
-    );
-  }
-
-  async dictationModelsDownloadProgress_unstable(
-    params: DictationModelDownloadProgressRequest_unstable,
-  ): Promise<DictationModelDownloadProgressResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/dictation/models/download/progress",
-      params,
-    );
-    return zDictationModelDownloadProgressResponse_unstable.parse(
-      raw,
-    ) as DictationModelDownloadProgressResponse_unstable;
-  }
-
-  async dictationModelsCancel_unstable(
-    params: DictationModelCancelRequest_unstable,
-  ): Promise<void> {
-    await this.conn.extMethod(
-      "_goose/unstable/dictation/models/cancel",
-      params,
-    );
-  }
-
-  async dictationModelsDelete_unstable(
-    params: DictationModelDeleteRequest_unstable,
-  ): Promise<void> {
-    await this.conn.extMethod(
-      "_goose/unstable/dictation/models/delete",
-      params,
-    );
-  }
-
   async dictationModelsSelect_unstable(
     params: DictationModelSelectRequest_unstable,
   ): Promise<void> {
@@ -1026,120 +940,6 @@ export class GooseExtClient {
       "_goose/unstable/dictation/models/select",
       params,
     );
-  }
-
-  async localInferenceModelsList_unstable(
-    params: LocalInferenceModelsListRequest_unstable,
-  ): Promise<LocalInferenceModelsListResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/local-inference/models/list",
-      params,
-    );
-    return zLocalInferenceModelsListResponse_unstable.parse(
-      raw,
-    ) as LocalInferenceModelsListResponse_unstable;
-  }
-
-  async localInferenceModelsDownload_unstable(
-    params: LocalInferenceModelDownloadRequest_unstable,
-  ): Promise<LocalInferenceModelDownloadResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/local-inference/models/download",
-      params,
-    );
-    return zLocalInferenceModelDownloadResponse_unstable.parse(
-      raw,
-    ) as LocalInferenceModelDownloadResponse_unstable;
-  }
-
-  async localInferenceModelsDownloadProgress_unstable(
-    params: LocalInferenceModelDownloadProgressRequest_unstable,
-  ): Promise<LocalInferenceModelDownloadProgressResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/local-inference/models/download/progress",
-      params,
-    );
-    return zLocalInferenceModelDownloadProgressResponse_unstable.parse(
-      raw,
-    ) as LocalInferenceModelDownloadProgressResponse_unstable;
-  }
-
-  async localInferenceModelsDownloadCancel_unstable(
-    params: LocalInferenceModelDownloadCancelRequest_unstable,
-  ): Promise<void> {
-    await this.conn.extMethod(
-      "_goose/unstable/local-inference/models/download/cancel",
-      params,
-    );
-  }
-
-  async localInferenceModelsDelete_unstable(
-    params: LocalInferenceModelDeleteRequest_unstable,
-  ): Promise<void> {
-    await this.conn.extMethod(
-      "_goose/unstable/local-inference/models/delete",
-      params,
-    );
-  }
-
-  async localInferenceModelsSettingsRead_unstable(
-    params: LocalInferenceModelSettingsReadRequest_unstable,
-  ): Promise<LocalInferenceModelSettingsReadResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/local-inference/models/settings/read",
-      params,
-    );
-    return zLocalInferenceModelSettingsReadResponse_unstable.parse(
-      raw,
-    ) as LocalInferenceModelSettingsReadResponse_unstable;
-  }
-
-  async localInferenceModelsSettingsUpdate_unstable(
-    params: LocalInferenceModelSettingsUpdateRequest_unstable,
-  ): Promise<LocalInferenceModelSettingsUpdateResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/local-inference/models/settings/update",
-      params,
-    );
-    return zLocalInferenceModelSettingsUpdateResponse_unstable.parse(
-      raw,
-    ) as LocalInferenceModelSettingsUpdateResponse_unstable;
-  }
-
-  async localInferenceHuggingfaceSearch_unstable(
-    params: LocalInferenceHuggingFaceSearchRequest_unstable,
-  ): Promise<LocalInferenceHuggingFaceSearchResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/local-inference/huggingface/search",
-      params,
-    );
-    return zLocalInferenceHuggingFaceSearchResponse_unstable.parse(
-      raw,
-    ) as LocalInferenceHuggingFaceSearchResponse_unstable;
-  }
-
-  async localInferenceHuggingfaceRepoVariants_unstable(
-    params: LocalInferenceHuggingFaceRepoVariantsRequest_unstable,
-  ): Promise<LocalInferenceHuggingFaceRepoVariantsResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/local-inference/huggingface/repo/variants",
-      params,
-    );
-    return zLocalInferenceHuggingFaceRepoVariantsResponse_unstable.parse(
-      raw,
-    ) as LocalInferenceHuggingFaceRepoVariantsResponse_unstable;
-  }
-
-  async localInferenceChatTemplatesBuiltinList_unstable(
-    params: LocalInferenceBuiltinChatTemplatesListRequest_unstable,
-  ): Promise<LocalInferenceBuiltinChatTemplatesListResponse_unstable> {
-    const raw = await this.conn.extMethod(
-      "_goose/unstable/local-inference/chat-templates/builtin/list",
-      params,
-    );
-    return zLocalInferenceBuiltinChatTemplatesListResponse_unstable.parse(
-      raw,
-    ) as LocalInferenceBuiltinChatTemplatesListResponse_unstable;
   }
 }
 
