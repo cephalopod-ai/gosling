@@ -383,7 +383,9 @@ struct OidcConfiguration {
 
 async fn fetch_jwks_for(issuer: &str) -> Result<JwkSet> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(
+            DEFAULT_PROVIDER_TIMEOUT_SECS,
+        ))
         .build()?;
     let config_url = format!("{}/.well-known/openid-configuration", issuer);
     let config = client
@@ -538,7 +540,9 @@ async fn exchange_code_for_tokens_with_issuer(
     pkce: &PkceChallenge,
 ) -> Result<TokenResponse> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(
+            DEFAULT_PROVIDER_TIMEOUT_SECS,
+        ))
         .build()?;
     let params = [
         ("grant_type", "authorization_code"),
@@ -569,7 +573,9 @@ async fn refresh_access_token_with_issuer(
     refresh_token: &str,
 ) -> Result<TokenResponse> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(
+            DEFAULT_PROVIDER_TIMEOUT_SECS,
+        ))
         .build()?;
     let params = [
         ("grant_type", "refresh_token"),
@@ -929,7 +935,9 @@ impl ChatGptCodexProvider {
         }
 
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+            .timeout(std::time::Duration::from_secs(
+                DEFAULT_PROVIDER_TIMEOUT_SECS,
+            ))
             .build()
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
         let request = client

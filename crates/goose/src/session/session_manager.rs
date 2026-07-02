@@ -1519,11 +1519,10 @@ impl SessionStorage {
                 // first case is a real error; distinguish them so a lost
                 // race silently drops the stale write instead of clobbering
                 // (or being reported as failing to touch) the user's rename.
-                let exists: Option<i64> =
-                    sqlx::query_scalar("SELECT 1 FROM sessions WHERE id = ?")
-                        .bind(&builder.session_id)
-                        .fetch_optional(&mut *tx)
-                        .await?;
+                let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM sessions WHERE id = ?")
+                    .bind(&builder.session_id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
                 tx.commit().await?;
                 if exists.is_some() {
                     return Ok(());

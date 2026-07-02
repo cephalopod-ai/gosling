@@ -937,10 +937,7 @@ mod tests {
 
     #[test]
     fn parses_toolshim_backend_values() {
-        assert_eq!(
-            parse_toolshim_backend("").unwrap(),
-            ToolshimBackend::Ollama
-        );
+        assert_eq!(parse_toolshim_backend("").unwrap(), ToolshimBackend::Ollama);
         assert_eq!(
             parse_toolshim_backend("ollama").unwrap(),
             ToolshimBackend::Ollama

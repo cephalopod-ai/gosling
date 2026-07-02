@@ -211,9 +211,9 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
                 }
                 Err(e) => {
                     tracing::error!("Error receiving message from subagent: {}", e);
-                    return Err(e.context(
-                        "subagent's reply stream ended with an error before completing",
-                    ));
+                    return Err(
+                        e.context("subagent's reply stream ended with an error before completing")
+                    );
                 }
             }
         }
