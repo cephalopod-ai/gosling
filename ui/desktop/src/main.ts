@@ -1833,6 +1833,8 @@ const validSettingKeys: Set<string> = new Set([
   'enableWakelock',
   'enableNotifications',
   'spellcheckEnabled',
+  'archiveFolder',
+  'archivedSessionFiles',
   'externalGoosed',
   'globalShortcut',
   'keyboardShortcuts',
@@ -2233,6 +2235,17 @@ ipcMain.handle('write-file', async (_event, filePath, content) => {
     return true;
   } catch (error) {
     console.error('Error writing to file:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('delete-file', async (_event, filePath) => {
+  try {
+    const expandedPath = expandTilde(filePath);
+    await fs.unlink(expandedPath);
+    return true;
+  } catch (error) {
+    console.error('Error deleting file:', error);
     return false;
   }
 });

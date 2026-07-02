@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="ui/desktop/src/images/icon.png" alt="gosling logo" width="140">
+<img src="assets/gosling_logo_asset_pack/derived/gosling-wordmark-light.svg" alt="gosling logo" width="240">
 
 # gosling
 

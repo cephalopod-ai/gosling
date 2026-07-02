@@ -34,6 +34,7 @@ interface InlineEditTextProps {
   onEditEnd?: () => void;
   allowEmpty?: boolean;
   singleClickEdit?: boolean;
+  editToken?: number;
 }
 
 export const InlineEditText: React.FC<InlineEditTextProps> = ({
@@ -48,6 +49,7 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
   onEditEnd,
   allowEmpty = false,
   singleClickEdit = true,
+  editToken,
 }) => {
   const intl = useIntl();
   const resolvedPlaceholder = placeholder ?? intl.formatMessage(i18n.enterText);
@@ -77,6 +79,12 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
     setEditValue(value);
     onEditStart?.();
   }, [disabled, isSaving, value, onEditStart]);
+
+  useEffect(() => {
+    if (editToken !== undefined) {
+      handleStartEdit();
+    }
+  }, [editToken, handleStartEdit]);
 
   const handleCancel = useCallback(() => {
     setIsEditing(false);

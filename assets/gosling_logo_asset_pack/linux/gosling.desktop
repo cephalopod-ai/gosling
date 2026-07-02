@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Gosling
+Comment=Lightweight fork icon assets
+Exec=gosling
+Icon=gosling
+Type=Application
+Categories=Development;Utility;

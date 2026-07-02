@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigationContext } from './NavigationContext';
 import { useNavigationSessions } from '../../hooks/useNavigationSessions';
@@ -13,9 +13,28 @@ import {
 import { AppEvents } from '../../constants/events';
 import { InlineEditText } from '../common/InlineEditText';
 import { SessionIndicators } from '../SessionIndicators';
-import { acpRenameSession, type SessionListItem } from '../../acp/sessions';
+import { acpDeleteSession, acpRenameSession, type SessionListItem } from '../../acp/sessions';
 import { cn } from '../../utils';
 import { defineMessages, useIntl } from '../../i18n';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import { ConfirmationModal } from '../ui/ConfirmationModal';
+import {
+  ArchiveFolderNotConfiguredError,
+  archiveSessionToConfiguredFolder,
+  getArchiveFolder,
+  getTrackedArchiveFile,
+  removeTrackedArchiveFile,
+} from '../../sessionArchive';
+import { acpChatSessionActions } from '../../acp/chatSessionStore';
+import { cancelAcpElicitationRequestsForSession } from '../../acp/elicitationRequests';
+import { cancelAcpPermissionRequestsForSession } from '../../acp/permissionRequests';
+import { errorMessage } from '../../utils/conversionUtils';
+import { toast } from 'react-toastify';
 
 type StreamState = 'idle' | 'loading' | 'streaming' | 'error';
 
@@ -36,6 +55,81 @@ const i18n = defineMessages({
   untitledSession: {
     id: 'navigationPanel.untitledSession',
     defaultMessage: 'Untitled session',
+  },
+  renameSession: {
+    id: 'navigationPanel.renameSession',
+    defaultMessage: 'Rename session',
+  },
+  archiveSession: {
+    id: 'navigationPanel.archiveSession',
+    defaultMessage: 'Archive session',
+  },
+  deleteSession: {
+    id: 'navigationPanel.deleteSession',
+    defaultMessage: 'Delete session',
+  },
+  moreSessionActions: {
+    id: 'navigationPanel.moreSessionActions',
+    defaultMessage: 'Session actions',
+  },
+  cancel: {
+    id: 'navigationPanel.cancel',
+    defaultMessage: 'Cancel',
+  },
+  archiveTitle: {
+    id: 'navigationPanel.archiveTitle',
+    defaultMessage: 'Archive Session',
+  },
+  archiveMessage: {
+    id: 'navigationPanel.archiveMessage',
+    defaultMessage:
+      'Archive "{name}" to the configured folder and hide it from active session history?',
+  },
+  archiveDetail: {
+    id: 'navigationPanel.archiveDetail',
+    defaultMessage: 'Archive folder: {folder}. You can restore this session from Archived.',
+  },
+  deleteTitle: {
+    id: 'navigationPanel.deleteTitle',
+    defaultMessage: 'Delete Session',
+  },
+  deleteMessage: {
+    id: 'navigationPanel.deleteMessage',
+    defaultMessage:
+      'Are you sure you want to permanently delete the session "{name}"? This action cannot be undone.',
+  },
+  deleteWithArchiveFileMessage: {
+    id: 'navigationPanel.deleteWithArchiveFileMessage',
+    defaultMessage:
+      'Delete the session "{name}" permanently? Its tracked archive file will also be removed from disk.',
+  },
+  deleteTrackedFileDetail: {
+    id: 'navigationPanel.deleteTrackedFileDetail',
+    defaultMessage: 'Tracked archive file: {filePath}',
+  },
+  archiveFolderMissing: {
+    id: 'navigationPanel.archiveFolderMissing',
+    defaultMessage: 'Configure an archive folder in App Settings before archiving sessions.',
+  },
+  archiveSuccess: {
+    id: 'navigationPanel.archiveSuccess',
+    defaultMessage: 'Session archived successfully',
+  },
+  archiveFailed: {
+    id: 'navigationPanel.archiveFailed',
+    defaultMessage: 'Failed to archive session "{name}": {error}',
+  },
+  deleteSuccess: {
+    id: 'navigationPanel.deleteSuccess',
+    defaultMessage: 'Session deleted successfully',
+  },
+  deleteFailed: {
+    id: 'navigationPanel.deleteFailed',
+    defaultMessage: 'Failed to delete session "{name}": {error}',
+  },
+  deleteArchiveFileFailed: {
+    id: 'navigationPanel.deleteArchiveFileFailed',
+    defaultMessage: 'Deleted session, but failed to remove archive file on disk.',
   },
 });
 
@@ -74,9 +168,23 @@ interface SessionRowProps {
   status: SessionStatus | undefined;
   onClick: () => void;
   onRenamed: () => void;
+  onRenameRequested: (sessionId: string) => void;
+  onArchiveRequested: (session: SessionListItem) => void;
+  onDeleteRequested: (session: SessionListItem) => void;
+  renameToken?: number;
 }
 
-const SessionRow: React.FC<SessionRowProps> = ({ session, active, status, onClick, onRenamed }) => {
+const SessionRow: React.FC<SessionRowProps> = ({
+  session,
+  active,
+  status,
+  onClick,
+  onRenamed,
+  onRenameRequested,
+  onArchiveRequested,
+  onDeleteRequested,
+  renameToken,
+}) => {
   const intl = useIntl();
   const [isEditing, setIsEditing] = useState(false);
   const isStreaming = status?.streamState === 'streaming';
@@ -87,7 +195,7 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, active, status, onClic
     <div
       onClick={() => !isEditing && onClick()}
       className={cn(
-        'flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer text-sm',
+        'group flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer text-sm',
         'hover:bg-background-tertiary/60 transition-colors',
         active && 'bg-background-tertiary'
       )}
@@ -108,10 +216,40 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, active, status, onClic
         singleClickEdit={false}
         className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
         editClassName="!text-sm"
+        editToken={renameToken}
         onEditStart={() => setIsEditing(true)}
         onEditEnd={() => setIsEditing(false)}
       />
-      <SessionIndicators isStreaming={isStreaming} hasUnread={hasUnread} hasError={hasError} />
+      <div className="flex items-center gap-1">
+        <SessionIndicators isStreaming={isStreaming} hasUnread={hasUnread} hasError={hasError} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="rounded-full p-1 text-text-secondary opacity-0 transition-opacity hover:bg-background-secondary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100"
+              onClick={(event) => event.stopPropagation()}
+              aria-label={intl.formatMessage(i18n.moreSessionActions)}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onSelect={() => onRenameRequested(session.id)}>
+              {intl.formatMessage(i18n.renameSession)}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={isStreaming} onSelect={() => onArchiveRequested(session)}>
+              {intl.formatMessage(i18n.archiveSession)}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={isStreaming}
+              onSelect={() => onDeleteRequested(session)}
+              className="text-red-600 focus:text-red-600"
+            >
+              {intl.formatMessage(i18n.deleteSession)}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   );
 };
@@ -120,6 +258,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
   const intl = useIntl();
   const { isNavExpanded } = useNavigationContext();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
 
@@ -127,6 +266,18 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
     useNavigationSessions();
 
   const [sessionStatuses, setSessionStatuses] = useState<Map<string, SessionStatus>>(new Map());
+  const [renameRequest, setRenameRequest] = useState<{ sessionId: string; token: number } | null>(
+    null
+  );
+  const [archiveDialog, setArchiveDialog] = useState<{
+    folder: string;
+    session: SessionListItem;
+  } | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<{
+    filePath?: string;
+    hasTrackedArchiveFile: boolean;
+    session: SessionListItem;
+  } | null>(null);
 
   useEffect(() => {
     const handleStatusUpdate = (event: Event) => {
@@ -169,6 +320,106 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
   }, [isNavExpanded, fetchSessions]);
 
   const [isChatsExpanded, setIsChatsExpanded] = useState(true);
+
+  const navigateAwayFromCurrentSession = useCallback(
+    (sessionId: string, tab: 'active' | 'archived') => {
+      if (location.pathname === '/pair' && activeSessionId === sessionId) {
+        navigate(tab === 'archived' ? '/sessions?tab=archived' : '/sessions');
+      }
+    },
+    [activeSessionId, location.pathname, navigate]
+  );
+
+  const handleArchiveRequested = useCallback(
+    async (session: SessionListItem) => {
+      const folder = await getArchiveFolder();
+      if (!folder) {
+        toast.error(intl.formatMessage(i18n.archiveFolderMissing));
+        navigate('/settings?section=app');
+        return;
+      }
+
+      setArchiveDialog({ session, folder });
+    },
+    [intl, navigate]
+  );
+
+  const handleDeleteRequested = useCallback(async (session: SessionListItem) => {
+    const filePath = await getTrackedArchiveFile(session.id);
+    setDeleteDialog({
+      session,
+      filePath,
+      hasTrackedArchiveFile: filePath != null,
+    });
+  }, []);
+
+  const handleConfirmArchive = useCallback(async () => {
+    if (!archiveDialog) {
+      return;
+    }
+
+    const { session } = archiveDialog;
+    setArchiveDialog(null);
+
+    try {
+      await archiveSessionToConfiguredFolder(session.id, session.name);
+      cancelAcpPermissionRequestsForSession(session.id);
+      cancelAcpElicitationRequestsForSession(session.id);
+      acpChatSessionActions.deleteSnapshot(session.id);
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_ARCHIVED, { detail: { sessionId: session.id } })
+      );
+      navigateAwayFromCurrentSession(session.id, 'archived');
+      toast.success(intl.formatMessage(i18n.archiveSuccess));
+      await fetchSessions();
+    } catch (error) {
+      if (error instanceof ArchiveFolderNotConfiguredError) {
+        toast.error(intl.formatMessage(i18n.archiveFolderMissing));
+        navigate('/settings?section=app');
+        return;
+      }
+
+      toast.error(
+        intl.formatMessage(i18n.archiveFailed, {
+          name: session.name,
+          error: errorMessage(error, 'Unknown error'),
+        })
+      );
+    }
+  }, [archiveDialog, fetchSessions, intl, navigate, navigateAwayFromCurrentSession]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deleteDialog) {
+      return;
+    }
+
+    const { session, hasTrackedArchiveFile } = deleteDialog;
+    setDeleteDialog(null);
+
+    try {
+      await acpDeleteSession(session.id);
+      const archiveFileRemoval = await removeTrackedArchiveFile(session.id);
+      cancelAcpPermissionRequestsForSession(session.id);
+      cancelAcpElicitationRequestsForSession(session.id);
+      acpChatSessionActions.deleteSnapshot(session.id);
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId: session.id } })
+      );
+      navigateAwayFromCurrentSession(session.id, 'active');
+      toast.success(intl.formatMessage(i18n.deleteSuccess));
+      if (hasTrackedArchiveFile && !archiveFileRemoval.removed) {
+        toast.error(intl.formatMessage(i18n.deleteArchiveFileFailed));
+      }
+      await fetchSessions();
+    } catch (error) {
+      toast.error(
+        intl.formatMessage(i18n.deleteFailed, {
+          name: session.name,
+          error: errorMessage(error, 'Unknown error'),
+        })
+      );
+    }
+  }, [deleteDialog, fetchSessions, intl, navigateAwayFromCurrentSession]);
 
   if (!isNavExpanded) return null;
 
@@ -227,6 +478,17 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
                     handleSessionClick(session.id);
                   }}
                   onRenamed={fetchSessions}
+                  onRenameRequested={(sessionId) =>
+                    setRenameRequest((prev) => ({
+                      sessionId,
+                      token: prev?.token && prev.sessionId === sessionId ? prev.token + 1 : 1,
+                    }))
+                  }
+                  onArchiveRequested={(session) => void handleArchiveRequested(session)}
+                  onDeleteRequested={(session) => void handleDeleteRequested(session)}
+                  renameToken={
+                    renameRequest?.sessionId === session.id ? renameRequest.token : undefined
+                  }
                 />
               ))
             )}
@@ -242,6 +504,51 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
           onClick={() => handleNavClick(SETTINGS_NAV_ITEM.path)}
         />
       </div>
+
+      <ConfirmationModal
+        isOpen={archiveDialog != null}
+        title={intl.formatMessage(i18n.archiveTitle)}
+        message={intl.formatMessage(i18n.archiveMessage, {
+          name: archiveDialog?.session.name ?? '',
+        })}
+        detail={
+          archiveDialog ? (
+            <div>{intl.formatMessage(i18n.archiveDetail, { folder: archiveDialog.folder })}</div>
+          ) : undefined
+        }
+        confirmLabel={intl.formatMessage(i18n.archiveTitle)}
+        cancelLabel={intl.formatMessage(i18n.cancel)}
+        onConfirm={() => void handleConfirmArchive()}
+        onCancel={() => setArchiveDialog(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={deleteDialog != null}
+        title={intl.formatMessage(i18n.deleteTitle)}
+        message={
+          deleteDialog?.hasTrackedArchiveFile
+            ? intl.formatMessage(i18n.deleteWithArchiveFileMessage, {
+                name: deleteDialog.session.name,
+              })
+            : intl.formatMessage(i18n.deleteMessage, {
+                name: deleteDialog?.session.name ?? '',
+              })
+        }
+        detail={
+          deleteDialog?.hasTrackedArchiveFile && deleteDialog.filePath ? (
+            <div>
+              {intl.formatMessage(i18n.deleteTrackedFileDetail, {
+                filePath: deleteDialog.filePath,
+              })}
+            </div>
+          ) : undefined
+        }
+        confirmLabel={intl.formatMessage(i18n.deleteTitle)}
+        cancelLabel={intl.formatMessage(i18n.cancel)}
+        confirmVariant="destructive"
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={() => setDeleteDialog(null)}
+      />
     </motion.div>
   );
 };

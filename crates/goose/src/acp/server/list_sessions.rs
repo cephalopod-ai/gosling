@@ -1,6 +1,6 @@
 use super::{build_session_info, meta_string, GooseAcpAgent, ResultExt};
 use crate::session::session_manager::{
-    SessionListCursor, SessionListFilters, SessionListPageQuery, SessionType,
+    SessionArchiveState, SessionListCursor, SessionListFilters, SessionListPageQuery, SessionType,
 };
 use agent_client_protocol::schema::v1::{
     ListSessionsRequest, ListSessionsResponse, Meta, SessionInfo,
@@ -30,6 +30,7 @@ struct SessionListCursorFilters {
     session_types: Vec<String>,
     keyword: Option<String>,
     only_sessions_with_messages: bool,
+    archive_state: SessionArchiveState,
 }
 
 fn invalid_session_list_cursor(message: &'static str) -> agent_client_protocol::Error {
@@ -99,11 +100,41 @@ fn include_last_message_snippet_from_meta(
     })
 }
 
+fn archive_state_from_meta(
+    meta: Option<&Meta>,
+) -> Result<SessionArchiveState, agent_client_protocol::Error> {
+    let Some(value) = meta.and_then(|meta| meta.get("goose")) else {
+        return Ok(SessionArchiveState::Active);
+    };
+    if value.is_null() {
+        return Ok(SessionArchiveState::Active);
+    }
+
+    let Some(goose_meta) = value.as_object() else {
+        return Err(agent_client_protocol::Error::invalid_params().data("goose must be an object"));
+    };
+    let Some(value) = goose_meta.get("archiveState") else {
+        return Ok(SessionArchiveState::Active);
+    };
+    if value.is_null() {
+        return Ok(SessionArchiveState::Active);
+    }
+
+    match value.as_str() {
+        Some("active") => Ok(SessionArchiveState::Active),
+        Some("archived") => Ok(SessionArchiveState::Archived),
+        Some("all") => Ok(SessionArchiveState::All),
+        _ => Err(agent_client_protocol::Error::invalid_params()
+            .data("goose.archiveState must be one of active, archived, or all")),
+    }
+}
+
 // bind cursors to the effective filters so they cannot be reused for a different list.
 fn session_list_filter_hash(
     cwd: Option<&std::path::Path>,
     session_types: &[SessionType],
     keyword: Option<&str>,
+    archive_state: SessionArchiveState,
 ) -> Result<String, agent_client_protocol::Error> {
     let mut session_type_names = session_types
         .iter()
@@ -115,6 +146,7 @@ fn session_list_filter_hash(
         session_types: session_type_names,
         keyword: keyword.map(ToString::to_string),
         only_sessions_with_messages: true,
+        archive_state,
     };
     let bytes =
         serde_json::to_vec(&filters).internal_err_ctx("Failed to encode session list filters")?;
@@ -126,6 +158,7 @@ fn decode_session_list_cursor(
     cwd: Option<&std::path::Path>,
     session_types: &[SessionType],
     keyword: Option<&str>,
+    archive_state: SessionArchiveState,
 ) -> Result<Option<SessionListCursor>, agent_client_protocol::Error> {
     let Some(cursor) = cursor else {
         return Ok(None);
@@ -141,7 +174,8 @@ fn decode_session_list_cursor(
         return Err(invalid_session_list_cursor("malformed session list cursor"));
     }
 
-    let expected_filter_hash = session_list_filter_hash(cwd, session_types, keyword)?;
+    let expected_filter_hash =
+        session_list_filter_hash(cwd, session_types, keyword, archive_state)?;
     if token.filter_hash != expected_filter_hash {
         return Err(invalid_session_list_cursor(
             "session list cursor does not match filters",
@@ -159,11 +193,12 @@ fn encode_session_list_cursor(
     cwd: Option<&std::path::Path>,
     session_types: &[SessionType],
     keyword: Option<&str>,
+    archive_state: SessionArchiveState,
 ) -> Result<String, agent_client_protocol::Error> {
     let token = SessionListCursorToken {
         sort_at: cursor.sort_at,
         session_id: cursor.session_id.clone(),
-        filter_hash: session_list_filter_hash(cwd, session_types, keyword)?,
+        filter_hash: session_list_filter_hash(cwd, session_types, keyword, archive_state)?,
     };
     let bytes =
         serde_json::to_vec(&token).internal_err_ctx("Failed to encode session list cursor")?;
@@ -187,11 +222,13 @@ impl GooseAcpAgent {
         let session_types = session_types_from_meta(req.meta.as_ref())?;
         let include_last_message_snippet =
             include_last_message_snippet_from_meta(req.meta.as_ref())?;
+        let archive_state = archive_state_from_meta(req.meta.as_ref())?;
         let cursor = decode_session_list_cursor(
             req.cursor.as_deref(),
             cwd,
             &session_types,
             keyword.as_deref(),
+            archive_state,
         )?;
 
         // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
@@ -203,6 +240,7 @@ impl GooseAcpAgent {
                     working_dir: cwd,
                     keyword: keyword.as_deref(),
                     only_sessions_with_messages: true,
+                    archive_state,
                 },
                 cursor: cursor.as_ref(),
                 page_size: SESSION_LIST_PAGE_SIZE,
@@ -217,7 +255,13 @@ impl GooseAcpAgent {
             .next_cursor
             .as_ref()
             .map(|cursor| {
-                encode_session_list_cursor(cursor, cwd, &session_types, keyword.as_deref())
+                encode_session_list_cursor(
+                    cursor,
+                    cwd,
+                    &session_types,
+                    keyword.as_deref(),
+                    archive_state,
+                )
             })
             .transpose()?;
         Ok(ListSessionsResponse::new(session_infos).next_cursor(next_cursor))

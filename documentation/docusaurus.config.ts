@@ -415,8 +415,8 @@ const config: Config = {
       title: "",
       logo: {
         alt: "gosling Logo",
-        src: "img/logo_light.png",
-        srcDark: "img/logo_dark.png",
+        src: "img/logo_light.svg",
+        srcDark: "img/logo_dark.svg",
       },
       items: [
         {

@@ -266,12 +266,22 @@ pub(crate) struct SessionListPage {
     pub(crate) next_cursor: Option<SessionListCursor>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum SessionArchiveState {
+    #[default]
+    Active,
+    Archived,
+    All,
+}
+
 #[derive(Debug, Default, Clone)]
 pub(crate) struct SessionListFilters<'a> {
     pub(crate) types: Option<&'a [SessionType]>,
     pub(crate) working_dir: Option<&'a Path>,
     pub(crate) keyword: Option<&'a str>,
     pub(crate) only_sessions_with_messages: bool,
+    pub(crate) archive_state: SessionArchiveState,
 }
 
 #[derive(Debug, Clone)]
@@ -383,7 +393,9 @@ impl SessionManager {
     }
 
     pub async fn list_sessions_by_types(&self, types: &[SessionType]) -> Result<Vec<Session>> {
-        self.storage.list_sessions_by_types(Some(types)).await
+        self.storage
+            .list_sessions_by_types(Some(types), SessionArchiveState::Active)
+            .await
     }
 
     pub(crate) async fn list_sessions_paged(
@@ -394,7 +406,9 @@ impl SessionManager {
     }
 
     pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
-        self.storage.list_sessions_by_types(None).await
+        self.storage
+            .list_sessions_by_types(None, SessionArchiveState::All)
+            .await
     }
 
     pub async fn delete_session(&self, id: &str) -> Result<()> {
@@ -1674,6 +1688,13 @@ impl SessionStorage {
             let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
             where_clauses.push(format!("s.session_type IN ({})", placeholders));
         }
+        match filters.archive_state {
+            SessionArchiveState::Active => where_clauses.push("s.archived_at IS NULL".to_string()),
+            SessionArchiveState::Archived => {
+                where_clauses.push("s.archived_at IS NOT NULL".to_string())
+            }
+            SessionArchiveState::All => {}
+        }
         if filters.working_dir.is_some() {
             where_clauses.push("s.working_dir = ?".to_string());
         }
@@ -1760,10 +1781,15 @@ impl SessionStorage {
         q.fetch_all(pool).await.map_err(Into::into)
     }
 
-    async fn list_sessions_by_types(&self, types: Option<&[SessionType]>) -> Result<Vec<Session>> {
+    async fn list_sessions_by_types(
+        &self,
+        types: Option<&[SessionType]>,
+        archive_state: SessionArchiveState,
+    ) -> Result<Vec<Session>> {
         self.list_sessions_matching(SessionListQuery {
             filters: SessionListFilters {
                 types,
+                archive_state,
                 ..Default::default()
             },
             ..Default::default()
@@ -1816,8 +1842,11 @@ impl SessionStorage {
     }
 
     async fn list_sessions(&self) -> Result<Vec<Session>> {
-        self.list_sessions_by_types(Some(&[SessionType::User, SessionType::Scheduled]))
-            .await
+        self.list_sessions_by_types(
+            Some(&[SessionType::User, SessionType::Scheduled]),
+            SessionArchiveState::Active,
+        )
+        .await
     }
 
     async fn delete_session(&self, session_id: &str) -> Result<()> {
@@ -3077,6 +3106,7 @@ mod tests {
             working_dir: Some(Path::new("/tmp/session-list/a")),
             keyword: Some("postgres"),
             only_sessions_with_messages: true,
+            archive_state: SessionArchiveState::Active,
         };
         let cursor = sm
             .list_sessions_paged(SessionListPageQuery {
@@ -3336,6 +3366,97 @@ mod tests {
             .unwrap();
         assert_eq!(acp_sessions.len(), 1);
         assert_eq!(acp_sessions[0].name, "ACP session");
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_filters_by_archive_state() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let active_session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Active session".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        sm.add_message(
+            &active_session.id,
+            &Message::user().with_text("hello active"),
+        )
+        .await
+        .unwrap();
+
+        let archived_session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Archived session".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        sm.add_message(
+            &archived_session.id,
+            &Message::user().with_text("hello archived"),
+        )
+        .await
+        .unwrap();
+        sm.update(&archived_session.id)
+            .archived_at(Some(chrono::Utc::now()))
+            .apply()
+            .await
+            .unwrap();
+
+        let types = [SessionType::User];
+        let active = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    archive_state: SessionArchiveState::Active,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 100,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(active.sessions.len(), 1);
+        assert_eq!(active.sessions[0].name, "Active session");
+
+        let archived = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    archive_state: SessionArchiveState::Archived,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 100,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(archived.sessions.len(), 1);
+        assert_eq!(archived.sessions[0].name, "Archived session");
+
+        let all = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    archive_state: SessionArchiveState::All,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 100,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(all.sessions.len(), 2);
     }
 
     #[tokio::test]

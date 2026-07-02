@@ -68,7 +68,7 @@ export function useNavigationSessions() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const sessions = await acpListRecentSessions(MAX_RECENT_SESSIONS);
+      const sessions = await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active');
       setRecentSessions(sessions);
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
@@ -81,7 +81,9 @@ export function useNavigationSessions() {
 
     acpGetSessionListItem(activeSessionId)
       .then((item) => {
-        setRecentSessions((prev) => prependUnique(prev, item));
+        if (!item.archivedAt) {
+          setRecentSessions((prev) => prependUnique(prev, item));
+        }
       })
       .catch((error) => {
         console.error('Failed to fetch active session:', error);
@@ -109,7 +111,7 @@ export function useNavigationSessions() {
       const pollForUpdates = async () => {
         pollCount++;
         try {
-          const listed = await acpListRecentSessions(MAX_RECENT_SESSIONS);
+          const listed = await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active');
           setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
         } catch (error) {
           console.error('Failed to poll sessions:', error);
@@ -145,7 +147,7 @@ export function useNavigationSessions() {
         lastSessionIdRef.current = null;
       }
       const version = ++fetchVersion;
-      acpListRecentSessions(MAX_RECENT_SESSIONS)
+      acpListRecentSessions(MAX_RECENT_SESSIONS, 'active')
         .then((sessions) => {
           if (version !== fetchVersion) return;
           setRecentSessions(sessions.filter((session) => session.id !== sessionId));
@@ -161,20 +163,45 @@ export function useNavigationSessions() {
       setRecentSessions((prev) =>
         prev.map((session) =>
           session.id === sessionId
-            ? { ...session, name: newName, ...(userInitiated && { user_set_name: true }) }
+            ? { ...session, name: newName, ...(userInitiated && { userSetName: true }) }
             : session
         )
       );
     };
 
+    const handleSessionArchived = (event: Event) => {
+      const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
+
+      setRecentSessions((prev) => prev.filter((session) => session.id !== sessionId));
+      if (lastSessionIdRef.current === sessionId) {
+        lastSessionIdRef.current = null;
+      }
+      void fetchSessions();
+    };
+
+    const handleSessionUnarchived = (event: Event) => {
+      const { session } = (
+        event as CustomEvent<{ sessionId: string; session?: SessionListItem }>
+      ).detail;
+
+      if (session) {
+        setRecentSessions((prev) => prependUnique(prev, session));
+      }
+      void fetchSessions();
+    };
+
     window.addEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
+    window.addEventListener(AppEvents.SESSION_ARCHIVED, handleSessionArchived);
+    window.addEventListener(AppEvents.SESSION_UNARCHIVED, handleSessionUnarchived);
     window.addEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
 
     return () => {
       window.removeEventListener(AppEvents.SESSION_DELETED, handleSessionDeleted);
+      window.removeEventListener(AppEvents.SESSION_ARCHIVED, handleSessionArchived);
+      window.removeEventListener(AppEvents.SESSION_UNARCHIVED, handleSessionUnarchived);
       window.removeEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
     };
-  }, []);
+  }, [fetchSessions]);
 
   const handleNavClick = useCallback(
     (path: string) => {

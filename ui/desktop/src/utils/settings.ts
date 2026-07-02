@@ -36,6 +36,8 @@ export interface Settings {
   enableWakelock: boolean;
   enableNotifications: boolean;
   spellcheckEnabled: boolean;
+  archiveFolder: string | null;
+  archivedSessionFiles: Record<string, string>;
   externalGoosed: ExternalGoosedConfig;
   globalShortcut?: string | null;
   keyboardShortcuts: KeyboardShortcuts;
@@ -73,6 +75,8 @@ export const defaultSettings: Settings = {
   enableWakelock: false,
   enableNotifications: true,
   spellcheckEnabled: true,
+  archiveFolder: null,
+  archivedSessionFiles: {},
   keyboardShortcuts: defaultKeyboardShortcuts,
   externalGoosed: {
     enabled: false,

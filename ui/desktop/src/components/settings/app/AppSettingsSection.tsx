@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { defineMessages, useIntl } from '../../../i18n';
 import { Switch } from '../../ui/switch';
 import { Button } from '../../ui/button';
-import { ChevronDown, Settings } from 'lucide-react';
+import { ChevronDown, FolderOpen, Settings } from 'lucide-react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../ui/dialog';
 import {
   DropdownMenu,
@@ -111,6 +111,31 @@ const i18n = defineMessages({
     id: 'settings.notifications.modal.title',
     defaultMessage: 'How to Enable Notifications',
   },
+  archiveTitle: {
+    id: 'settings.archive.title',
+    defaultMessage: 'Archive folder',
+  },
+  archiveDesc: {
+    id: 'settings.archive.description',
+    defaultMessage:
+      'Choose where archived session JSON files should be saved when you archive chats.',
+  },
+  archiveChoose: {
+    id: 'settings.archive.choose',
+    defaultMessage: 'Choose folder',
+  },
+  archiveChange: {
+    id: 'settings.archive.change',
+    defaultMessage: 'Change folder',
+  },
+  archiveEmpty: {
+    id: 'settings.archive.empty',
+    defaultMessage: 'No archive folder configured yet.',
+  },
+  archiveSavedTo: {
+    id: 'settings.archive.savedTo',
+    defaultMessage: 'Archived sessions will be exported to this folder.',
+  },
   notificationsMacInstructions: {
     id: 'settings.notifications.modal.macInstructions',
     defaultMessage: 'To enable notifications on macOS:',
@@ -188,6 +213,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showPricing, setShowPricing] = useState(true);
   const [language, setLanguage] = useState<LanguageSetting>('system');
+  const [archiveFolder, setArchiveFolder] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const updateSectionRef = useRef<HTMLDivElement>(null);
   const shouldShowUpdates = !window.appConfig.get('GOOSE_VERSION');
@@ -215,6 +241,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
   useEffect(() => {
     window.electron.getSetting('showPricing').then(setShowPricing);
     window.electron.getSetting('language').then((value) => setLanguage(value ?? 'system'));
+    window.electron.getSetting('archiveFolder').then((value) => setArchiveFolder(value ?? null));
   }, []);
 
   useEffect(() => {
@@ -323,6 +350,21 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
     } catch (error) {
       console.error('Failed to update language setting:', error);
       setLanguage(language);
+    }
+  };
+
+  const handleArchiveFolderPick = async () => {
+    try {
+      const result = await window.electron.directoryChooser();
+      if (result.canceled || result.filePaths.length === 0) {
+        return;
+      }
+
+      const nextFolder = result.filePaths[0];
+      setArchiveFolder(nextFolder);
+      await window.electron.setSetting('archiveFolder', nextFolder);
+    } catch (error) {
+      console.error('Failed to update archive folder setting:', error);
     }
   };
 
@@ -497,6 +539,36 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-lg">
+        <CardHeader className="pb-0">
+          <CardTitle className="mb-1">{intl.formatMessage(i18n.archiveTitle)}</CardTitle>
+          <CardDescription>{intl.formatMessage(i18n.archiveDesc)}</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-4 px-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs text-text-secondary">
+                {archiveFolder
+                  ? intl.formatMessage(i18n.archiveSavedTo)
+                  : intl.formatMessage(i18n.archiveEmpty)}
+              </p>
+              {archiveFolder && (
+                <p className="mt-2 break-all text-sm text-text-primary">{archiveFolder}</p>
+              )}
+            </div>
+            <Button
+              onClick={() => void handleArchiveFolderPick()}
+              variant="secondary"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <FolderOpen className="h-4 w-4" />
+              {intl.formatMessage(archiveFolder ? i18n.archiveChange : i18n.archiveChoose)}
+            </Button>
+          </div>
         </CardContent>
       </Card>
       <TelemetrySettings />

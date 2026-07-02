@@ -31,6 +31,7 @@ export interface SessionListItem {
   updatedAt: string;
   messageCount: number;
   lastMessageAt?: string;
+  lastMessageSnippet?: string;
   createdAt: string;
   archivedAt?: string;
   projectId?: string;
@@ -112,6 +113,7 @@ function sessionInfoToListItem(s: SessionInfo): SessionListItem {
     updatedAt: s.updatedAt ?? '',
     messageCount: meta.messageCount ?? 0,
     lastMessageAt: meta.lastMessageAt,
+    lastMessageSnippet: meta.lastMessageSnippet,
     createdAt: meta.createdAt ?? s.updatedAt ?? '',
     archivedAt: meta.archivedAt,
     projectId: meta.projectId,
@@ -123,9 +125,12 @@ function sessionInfoToListItem(s: SessionInfo): SessionListItem {
 
 export interface SessionListFilter {
   keyword?: string;
+  archiveState?: SessionArchiveState;
+  includeLastMessageSnippet?: boolean;
 }
 
 const SESSION_LIST_TYPES = ['user', 'scheduled'] as const;
+export type SessionArchiveState = 'active' | 'archived' | 'all';
 
 export async function acpListSessions(
   cursor?: string | null,
@@ -141,6 +146,10 @@ export async function acpListSessions(
   if (keyword) {
     meta.query = keyword;
   }
+  meta.goose = {
+    archiveState: filter?.archiveState ?? 'active',
+    includeLastMessageSnippet: filter?.includeLastMessageSnippet ?? false,
+  };
   request._meta = meta;
   const response = await client.listSessions(request);
   return {
@@ -149,13 +158,24 @@ export async function acpListSessions(
   };
 }
 
-export async function acpListRecentSessions(maxSessions: number): Promise<SessionListItem[]> {
+export async function acpListRecentSessions(
+  maxSessions: number,
+  archiveState: SessionArchiveState = 'active'
+): Promise<SessionListItem[]> {
   if (maxSessions <= 0) {
     return [];
   }
 
   const client = await getAcpClient();
-  const response = await client.listSessions({ _meta: { types: SESSION_LIST_TYPES } });
+  const response = await client.listSessions({
+    _meta: {
+      types: SESSION_LIST_TYPES,
+      goose: {
+        archiveState,
+        includeLastMessageSnippet: false,
+      },
+    },
+  });
   return response.sessions.slice(0, maxSessions).map(sessionInfoToListItem);
 }
 
@@ -245,6 +265,16 @@ export async function acpCloseSession(sessionId: string): Promise<void> {
 export async function acpRenameSession(sessionId: string, title: string): Promise<void> {
   const client = await getAcpClient();
   await client.goose.sessionRename_unstable({ sessionId, title });
+}
+
+export async function acpArchiveSession(sessionId: string): Promise<void> {
+  const client = await getAcpClient();
+  await client.goose.sessionArchive_unstable({ sessionId });
+}
+
+export async function acpUnarchiveSession(sessionId: string): Promise<void> {
+  const client = await getAcpClient();
+  await client.goose.sessionUnarchive_unstable({ sessionId });
 }
 
 export async function acpUpdateWorkingDir(sessionId: string, workingDir: string): Promise<void> {

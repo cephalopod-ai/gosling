@@ -57,6 +57,11 @@ declare global {
     responseStyleChanged: CustomEvent;
     'session-created': CustomEvent<{ session?: import('./types/session').Session }>;
     'session-deleted': CustomEvent<{ sessionId: string }>;
+    'session-archived': CustomEvent<{ sessionId: string }>;
+    'session-unarchived': CustomEvent<{
+      sessionId: string;
+      session?: import('./acp/sessions').SessionListItem;
+    }>;
     'session-renamed': CustomEvent<{
       sessionId: string;
       newName: string;

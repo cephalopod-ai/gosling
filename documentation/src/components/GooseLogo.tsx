@@ -2,11 +2,9 @@ import { useColorMode } from '@docusaurus/theme-common';
 
 export const GooseLogo = (props: { className?: string }) => {
   const { colorMode } = useColorMode();
-  
-  const logoSrc = colorMode === 'dark' 
-    ? 'img/goose-logo-white.png' 
-    : 'img/goose-logo-black.png';
-  
+
+  const logoSrc = colorMode === 'dark' ? 'img/logo_dark.svg' : 'img/logo_light.svg';
+
   const logoAlt = 'gosling logo';
 
   return (

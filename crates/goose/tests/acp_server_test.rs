@@ -120,8 +120,20 @@ fn assert_invalid_params(error: anyhow::Error) {
 fn include_last_message_snippet_meta(
     value: serde_json::Value,
 ) -> serde_json::Map<String, serde_json::Value> {
+    goose_meta([("includeLastMessageSnippet", value)])
+}
+
+fn archive_state_meta(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    goose_meta([("archiveState", value)])
+}
+
+fn goose_meta<const N: usize>(
+    entries: [(&str, serde_json::Value); N],
+) -> serde_json::Map<String, serde_json::Value> {
     let mut goose = serde_json::Map::new();
-    goose.insert("includeLastMessageSnippet".to_string(), value);
+    for (key, value) in entries {
+        goose.insert(key.to_string(), value);
+    }
 
     let mut meta = serde_json::Map::new();
     meta.insert("goose".to_string(), serde_json::Value::Object(goose));
@@ -363,6 +375,92 @@ fn test_list_sessions_types_rejects_internal_session_types() {
 }
 
 #[test]
+fn test_list_sessions_archive_state_filters_results() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let cwd = Path::new("/tmp/acp-session-list-archive");
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+
+        let active_session = session_manager
+            .create_session(
+                cwd.to_path_buf(),
+                "Active session".to_string(),
+                SessionType::Acp,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        session_manager
+            .add_message(
+                &active_session.id,
+                &Message::user().with_text("hello active"),
+            )
+            .await
+            .unwrap();
+
+        let archived_session = session_manager
+            .create_session(
+                cwd.to_path_buf(),
+                "Archived session".to_string(),
+                SessionType::Acp,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        session_manager
+            .add_message(
+                &archived_session.id,
+                &Message::user().with_text("hello archived"),
+            )
+            .await
+            .unwrap();
+        session_manager
+            .update(&archived_session.id)
+            .archived_at(Some(chrono::Utc::now()))
+            .apply()
+            .await
+            .unwrap();
+
+        let conn = new_connection(data_root.path()).await;
+
+        let active = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new().meta(archive_state_meta(serde_json::Value::String(
+                "active".to_string(),
+            ))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(active.sessions.len(), 1);
+        assert_eq!(active.sessions[0].title.as_deref(), Some("Active session"));
+
+        let archived = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new().meta(archive_state_meta(serde_json::Value::String(
+                "archived".to_string(),
+            ))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(archived.sessions.len(), 1);
+        assert_eq!(
+            archived.sessions[0].title.as_deref(),
+            Some("Archived session")
+        );
+
+        let all = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new().meta(archive_state_meta(serde_json::Value::String(
+                "all".to_string(),
+            ))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(all.sessions.len(), 2);
+    });
+}
+
+#[test]
 fn test_list_sessions_invalid_params() {
     run_test(async {
         let data_root = tempfile::tempdir().unwrap();
@@ -404,6 +502,16 @@ fn test_list_sessions_invalid_params() {
             ListSessionsRequest::new().meta(include_last_message_snippet_meta(
                 serde_json::Value::String("true".to_string()),
             )),
+        )
+        .await
+        .unwrap_err();
+        assert_invalid_params(error);
+
+        let error = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new().meta(archive_state_meta(serde_json::Value::String(
+                "later".to_string(),
+            ))),
         )
         .await
         .unwrap_err();
