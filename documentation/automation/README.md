@@ -8,8 +8,7 @@ Each automation project tracks specific types of changes and updates correspondi
 
 | Project | Status | Tracks | Updates |
 |---------|--------|--------|---------|
-| [recipe-schema-tracking](./recipe-schema-tracking/) | ✅ Active | Recipe schema & validation rules | Recipe Reference Guide |
-| cli-command-tracking | 🔮 Planned | CLI commands & options | CLI documentation |
+| [cli-command-tracking](./cli-command-tracking/) | ✅ Active | CLI commands & options | CLI documentation |
 | provider-tracking | 🔮 Planned | Supported AI providers | Provider documentation |
 | extension-tracking | 🔮 Planned | Built-in extensions | Extension documentation |
 
@@ -23,7 +22,7 @@ project-name/
 ├── TESTING.md            # How to test this automation
 ├── config/               # Configuration files
 ├── scripts/              # Deterministic extraction/diff scripts
-└── recipes/              # AI-powered synthesis/update recipes
+└── prompts/              # AI prompt files for synthesis/updates
 ```
 
 ### Design Principles
@@ -36,7 +35,7 @@ project-name/
 ### Hybrid Approach
 
 - **Shell scripts**: Deterministic extraction and comparison
-- **AI recipes**: Synthesis and documentation updates
+- **AI prompts**: Synthesis and documentation updates
 
 ## GitHub Actions Integration
 
@@ -49,7 +48,7 @@ See individual project TESTING.md files for workflow usage.
 When creating a new automation project:
 
 1. Create a subdirectory: `documentation/automation/your-project/`
-2. Follow the standard structure (README, TESTING, config, scripts, recipes)
+2. Follow the standard structure (README, TESTING, config, scripts, prompts)
 3. Create corresponding GitHub Actions workflow (if needed)
 4. Update this README with the new project
 

@@ -5,7 +5,7 @@ sidebar_label: Session Management
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { AppWindow, PanelLeft, FolderDot, Paperclip, Copy, Edit2, Trash2, Download, Upload, ChefHat, History } from 'lucide-react';
+import { AppWindow, PanelLeft, FolderDot, Paperclip, Copy, Edit2, Trash2, Download, Upload, History } from 'lucide-react';
 
 
 A session is a single, continuous interaction between you and goose, providing a space to ask questions and prompt action. This guide covers how to manage the session lifecycle.
@@ -279,8 +279,6 @@ Search allows you to find specific content within sessions or find specific sess
     - **Green dot** - Session completed a task while you were viewing a different session
     - **Red dot** - Session encountered an error
 
-    In addition, sessions that are started from a recipe display the <ChefHat className="inline" size={16} /> icon.
-
     :::tip
     You can [rename sessions](#name-session) to make it easier to identify specific sessions.
     :::
@@ -352,7 +350,6 @@ Create a complete copy of any session to reuse configurations, experiment with v
         - All session metadata and settings
         - Provider and model configuration
         - Extension data and configurations
-        - Recipe information (if applicable)
 
         The new session is named the same as the original and appears at the top of your session list.
 
@@ -385,7 +382,6 @@ Create a complete copy of any session to reuse configurations, experiment with v
         - All session metadata and settings
         - Provider and model configuration
         - Extension data and configurations
-        - Recipe information (if applicable)
     </TabItem>
 </Tabs>
 

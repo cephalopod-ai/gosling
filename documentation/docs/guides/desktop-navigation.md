@@ -10,7 +10,7 @@ import { PanelLeft, Menu } from 'lucide-react';
 Sidebar customization is available only in goose Desktop.
 :::
 
-The sidebar is how you navigate between pages in goose Desktop: Home, Chat, Recipes, Apps, Scheduler, Extensions, and Settings. You can customize its appearance, position, and behavior to fit the way you work.
+The sidebar is how you navigate between pages in goose Desktop: Home, Chat, Extensions, and Settings. You can customize its appearance, position, and behavior to fit the way you work.
 
 To access these settings:
 

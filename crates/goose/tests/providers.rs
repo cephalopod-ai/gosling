@@ -251,7 +251,6 @@ impl ProviderFixture {
         let agent = Agent::with_config(AgentConfig::new(
             session_manager.clone(),
             permission_manager,
-            None,
             mode,
             true,
             GoosePlatform::GooseCli,
@@ -528,9 +527,7 @@ impl ProviderFixture {
         let message = Message::user().with_text(message);
         let session_config = SessionConfig {
             id: self.session_id.clone(),
-            schedule_id: None,
             max_turns: Some(5),
-            retry_config: None,
         };
 
         let mut stream = self.agent.reply(message, session_config, None).await?;

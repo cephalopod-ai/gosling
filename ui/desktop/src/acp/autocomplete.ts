@@ -2,10 +2,10 @@ import type { AgentMention, AvailableCommand } from '@aaif/goose-sdk';
 import type { DisplayItem } from '../components/MentionPopover';
 import { getAcpClient } from './acpConnection';
 
-type SlashCommandItemType = Extract<DisplayItem['itemType'], 'Builtin' | 'Recipe' | 'Skill'>;
+type SlashCommandItemType = Extract<DisplayItem['itemType'], 'Builtin' | 'Skill'>;
 type AutocompleteDisplayItem = DisplayItem;
 
-const SLASH_COMMAND_ITEM_TYPES = new Set<string>(['Builtin', 'Recipe', 'Skill']);
+const SLASH_COMMAND_ITEM_TYPES = new Set<string>(['Builtin', 'Skill']);
 
 function isSlashCommandItemType(value: unknown): value is SlashCommandItemType {
   return typeof value === 'string' && SLASH_COMMAND_ITEM_TYPES.has(value);
@@ -32,12 +32,9 @@ export function availableCommandToDisplayItem(
     return null;
   }
 
-  const sourcePath = stringMetaValue(command._meta, 'sourcePath');
-  const extra = commandType === 'Recipe' ? sourcePath ?? command.description : command.description;
-
   return {
     name: command.name,
-    extra,
+    extra: command.description,
     itemType: commandType,
     relativePath: command.name,
   };

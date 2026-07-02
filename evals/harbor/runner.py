@@ -52,10 +52,9 @@ def load_dotenv() -> None:
         os.environ.setdefault(key, value)
 
 
-def render_goose_config(extensions: list[str]) -> tuple[str, list[dict[str, str]]]:
+def render_goose_config(extensions: list[str]) -> str:
     """Render config.yaml from the template, enabling the given extensions.
 
-    Returns (config_yaml_text, recipe_extension_entries).
     Raises ValueError for any extension not found in the template.
     """
     if not CONFIG_TEMPLATE_PATH.is_file():
@@ -73,10 +72,7 @@ def render_goose_config(extensions: list[str]) -> tuple[str, list[dict[str, str]
     for name, entry in available.items():
         entry["enabled"] = name in extensions
 
-    recipe_entries = [
-        {"type": available[name]["type"], "name": name} for name in extensions
-    ]
-    return yaml.dump(template, sort_keys=False), recipe_entries
+    return yaml.dump(template, sort_keys=False)
 
 
 def default_job_name(model: str, dataset: str) -> str:
@@ -137,7 +133,7 @@ def build_harbor_config(args: argparse.Namespace) -> dict[str, Any]:
     if not goose_binary.is_file():
         raise ValueError(f"--goose-binary does not exist or is not a file: {args.goose_binary}")
 
-    config_yaml, extension_entries = render_goose_config(args.extensions)
+    config_yaml = render_goose_config(args.extensions)
 
     provider = args.model.split("/", 1)[0]
     missing_secrets = [
@@ -152,7 +148,6 @@ def build_harbor_config(args: argparse.Namespace) -> dict[str, Any]:
     agent_kwargs: dict[str, Any] = {
         "goose_binary": str(goose_binary),
         "config_yaml": config_yaml,
-        "extension_entries": extension_entries,
         "install_goose_runtime_deps": args.install_goose_runtime_deps,
     }
     if args.max_turns is not None:

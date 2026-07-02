@@ -10,7 +10,6 @@ import { getAcpClient } from './acpConnection';
 import { DEFAULT_CHAT_TITLE } from '../contexts/ChatContext';
 import type { ExtensionLoadResult } from '../types/extensions';
 import type { Session } from '../types/session';
-import type { Recipe } from '../recipe';
 
 interface GooseSessionInfoMeta {
   messageCount?: number;
@@ -22,7 +21,6 @@ interface GooseSessionInfoMeta {
   modelId?: string;
   sessionType?: Session['session_type'];
   userSetName?: boolean;
-  hasRecipe?: boolean;
   lastMessageSnippet?: string;
 }
 
@@ -39,7 +37,6 @@ export interface SessionListItem {
   providerId?: string;
   modelId?: string;
   userSetName?: boolean;
-  hasRecipe?: boolean;
 }
 
 export interface SessionListPage {
@@ -48,8 +45,6 @@ export interface SessionListPage {
 }
 
 export interface LoadSessionMeta {
-  recipe?: Recipe | null;
-  userRecipeValues?: Record<string, string> | null;
   extensionResults?: ExtensionLoadResult[] | null;
   workingDir?: string;
 }
@@ -65,8 +60,6 @@ const inFlightSessionLoads = new Map<string, Promise<AcpLoadSessionResult>>();
 function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
   const meta = (rawMeta ?? {}) as LoadSessionMeta;
   return {
-    recipe: meta.recipe,
-    userRecipeValues: meta.userRecipeValues,
     extensionResults: meta.extensionResults,
     workingDir: typeof meta.workingDir === 'string' ? meta.workingDir : undefined,
   };
@@ -105,8 +98,6 @@ export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta =
     provider_name: meta.providerId,
     model_config: modelConfig,
     session_type: meta.sessionType,
-    recipe: loadMeta.recipe as Session['recipe'],
-    user_recipe_values: loadMeta.userRecipeValues,
     user_set_name: meta.userSetName,
     last_message_snippet: meta.lastMessageSnippet,
   };
@@ -127,7 +118,6 @@ function sessionInfoToListItem(s: SessionInfo): SessionListItem {
     providerId: meta.providerId,
     modelId: meta.modelId,
     userSetName: meta.userSetName,
-    hasRecipe: meta.hasRecipe,
   };
 }
 
@@ -221,25 +211,14 @@ export interface AcpNewSessionResult {
   meta: LoadSessionMeta;
 }
 
-export interface AcpRecipeOptions {
-  recipeId?: string;
-  recipeDeeplink?: string;
-}
-
 export async function acpNewSession(
   cwd: string,
-  gooseExtensions: GooseExtension[],
-  recipe?: AcpRecipeOptions
+  gooseExtensions: GooseExtension[]
 ): Promise<AcpNewSessionResult> {
   const client = await getAcpClient();
   const meta: Record<string, unknown> = { client: 'goose-desktop' };
   if (gooseExtensions.length > 0) {
     meta.enabledExtensions = gooseExtensions;
-  }
-  if (recipe?.recipeId) {
-    meta.recipeId = recipe.recipeId;
-  } else if (recipe?.recipeDeeplink) {
-    meta.recipeDeeplink = recipe.recipeDeeplink;
   }
   const request: NewSessionRequest = { cwd, mcpServers: [], _meta: meta };
   const response = await client.newSession(request);

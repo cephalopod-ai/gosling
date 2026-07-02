@@ -62,7 +62,7 @@ In a goose chat session, ask goose to list available sources:
 list available sources
 ```
 
-This is a prompt to goose, not a terminal command. When source loading is available, goose lists discoverable agents alongside recipes and subrecipes.
+This is a prompt to goose, not a terminal command. When source loading is available, goose lists discoverable agents alongside other sources.
 
 You can invoke an agent by mentioning it by name:
 
@@ -144,36 +144,31 @@ When writing docs:
 - call out limitations and prerequisites
 ```
 
-## When to Use Agents, Skills, or Recipes
+## When to Use Agents or Skills
 
 | Use | Best fit |
 |---|---|
 | Change goose's role, tone, or instructions for a task | Custom agent |
 | Teach goose a reusable workflow or domain-specific procedure it can load on demand | [Skill](/docs/guides/context-engineering/using-skills) |
-| Package a repeatable task with prompts, settings, extensions, and parameters | [Recipe](/docs/guides/recipes) |
 | Delegate work to another isolated goose instance | [Subagent](/docs/guides/context-engineering/subagents) |
 
-Agents define who goose should be for a task. Skills and recipes define what goose should know or do.
+Agents define who goose should be for a task. Skills define what goose should know or do.
 
 ### Can custom agents be scheduled to run?
 
-Not directly. Custom agents are reusable roles, not scheduled jobs. To run something on a schedule, create a [recipe](/docs/guides/recipes) and schedule the recipe. If you want the scheduled job to behave like a custom agent, put the agent's instructions into the recipe or have the recipe delegate to that agent.
+No. Custom agents are reusable roles, not scheduled jobs. To run something on a schedule, use an external scheduler such as cron to invoke `goose run`, and include the agent's instructions in the prompt if you want the run to behave like a custom agent.
 
 ### Do custom agents have workflows?
 
-No. A custom agent defines who goose should be for a task: its role, behavior, instructions, and optional model preference. It does not define a step-by-step workflow. Use a recipe when you need repeatable steps, parameters, extension configuration, or scheduled execution.
+No. A custom agent defines who goose should be for a task: its role, behavior, instructions, and optional model preference. It does not define a step-by-step workflow. Use a [skill](/docs/guides/context-engineering/using-skills) when you need a repeatable procedure goose can load on demand.
 
 ### Can custom agents use skills?
 
 Yes. A custom agent can use skills that are available in the session. Skills are still discovered and loaded through goose's normal skill behavior, so the agent can use them when your request matches a skill or when you explicitly ask for one.
 
-### Can custom agents run recipes?
-
-A custom agent does not contain or automatically run a recipe. You can start goose with a recipe, ask goose to load or delegate a recipe when the relevant tools are available, or create a recipe that uses custom-agent instructions as part of its workflow.
-
 ### Can custom agents use MCP servers?
 
-Yes. Custom agents can use the MCP servers and extensions that are enabled in the current session. The agent file itself does not define a separate MCP server list. If you need a reusable setup with a specific extension set, use a recipe.
+Yes. Custom agents can use the MCP servers and extensions that are enabled in the current session. The agent file itself does not define a separate MCP server list.
 
 ### Can custom agents call subagents?
 
@@ -183,4 +178,4 @@ Yes, when delegation tools are available in the session. A custom agent can ask 
 
 Yes, through delegation. For example, one custom agent can delegate a task to another custom agent by name if that agent is discoverable. This is useful for one-off collaboration between specialized agents.
 
-For repeatable chains, use a recipe that explicitly defines the sequence, such as delegating first to a reviewer agent, then to a docs agent, then combining the results.
+For repeatable chains, spell out the sequence in your instructions or a [skill](/docs/guides/context-engineering/using-skills), such as delegating first to a reviewer agent, then to a docs agent, then combining the results.

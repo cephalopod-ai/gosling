@@ -40,7 +40,7 @@ This was great progress. Gemma could have stopped here.
 But instead, she utilized Goose recipes to create **Goose Janitor**.
 
 
-Goose Janitor acts as new AI team member whose responsibility is to tidy up the code after we're done experimenting. It was heavily inspired by existing [Goose recipes](/recipes/detail/?id=clean-up-feature-flag) and internal discussions and experimentation occurring elsewhere in Block. Here's how it is run:
+Goose Janitor acts as new AI team member whose responsibility is to tidy up the code after we're done experimenting. It was heavily inspired by existing Goose recipes and internal discussions and experimentation occurring elsewhere in Block. Here's how it is run:
 
 ```bash
 goose run \
@@ -91,7 +91,6 @@ The future of software development is mixed teams where AI agents are autonomous
 
 ---
 
-Want to tweak the base recipe for your own needs? Check out [Clean up feature flag](/recipes/detail/?id=clean-up-feature-flag) in our Recipe Cookbook!
 
 <head>
   <meta property="og:title" content="When AI Becomes Your New Team Member: The Story of Goose Janitor" />

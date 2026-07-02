@@ -1,8 +1,5 @@
 use crate::routes::config_management::resolve_provider_model_info;
 use crate::routes::errors::ErrorResponse;
-use crate::routes::recipe_utils::{
-    apply_recipe_to_agent, build_recipe_with_parameter_values, load_recipe_by_id, validate_recipe,
-};
 use crate::state::AppState;
 use axum::response::IntoResponse;
 use axum::{
@@ -17,8 +14,6 @@ use goose::agents::ExtensionConfig;
 use goose::config::resolve_extensions_for_new_session;
 use goose::config::{Config, GooseMode};
 use goose::providers::create;
-use goose::recipe::Recipe;
-use goose::recipe_deeplink;
 use goose::session::session_manager::SessionType;
 use goose::session::{EnabledExtensionsState, ExtensionState, Session};
 use goose::{
@@ -29,11 +24,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::error;
-
-#[derive(Deserialize, utoipa::ToSchema)]
-pub struct UpdateFromSessionRequest {
-    session_id: String,
-}
 
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct UpdateProviderRequest {
@@ -59,12 +49,6 @@ pub struct GetToolsQuery {
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct StartAgentRequest {
     working_dir: String,
-    #[serde(default)]
-    recipe: Option<Recipe>,
-    #[serde(default)]
-    recipe_id: Option<String>,
-    #[serde(default)]
-    recipe_deeplink: Option<String>,
     #[serde(default)]
     extension_overrides: Option<Vec<ExtensionConfig>>,
 }
@@ -142,42 +126,8 @@ async fn start_agent(
 
     let StartAgentRequest {
         working_dir,
-        recipe,
-        recipe_id,
-        recipe_deeplink,
         extension_overrides,
     } = payload;
-
-    let original_recipe = if let Some(deeplink) = recipe_deeplink {
-        match recipe_deeplink::decode(&deeplink) {
-            Ok(recipe) => Some(recipe),
-            Err(err) => {
-                error!("Failed to decode recipe deeplink: {}", err);
-                #[cfg(feature = "telemetry")]
-                goose::posthog::emit_error("recipe_deeplink_decode_failed", &err.to_string());
-                return Err(ErrorResponse {
-                    message: err.to_string(),
-                    status: StatusCode::BAD_REQUEST,
-                });
-            }
-        }
-    } else if let Some(id) = recipe_id {
-        match load_recipe_by_id(state.as_ref(), &id).await {
-            Ok(recipe) => Some(recipe),
-            Err(err) => return Err(err),
-        }
-    } else {
-        recipe
-    };
-
-    if let Some(ref recipe) = original_recipe {
-        if let Err(err) = validate_recipe(recipe) {
-            return Err(ErrorResponse {
-                message: err.message,
-                status: err.status,
-            });
-        }
-    }
 
     let name = "New Chat".to_string();
 
@@ -203,13 +153,9 @@ async fn start_agent(
             }
         })?;
 
-    let recipe_extensions = original_recipe
-        .as_ref()
-        .and_then(|r| r.extensions.as_deref());
     let has_extension_overrides = extension_overrides.is_some();
-    let mut extensions_to_use =
-        resolve_extensions_for_new_session(recipe_extensions, extension_overrides);
-    if recipe_extensions.is_none() && !has_extension_overrides {
+    let mut extensions_to_use = resolve_extensions_for_new_session(extension_overrides);
+    if !has_extension_overrides {
         extensions_to_use.extend(goose::plugins::mcp_servers::enabled_plugin_mcp_servers(
             Some(&PathBuf::from(&working_dir)),
         ));
@@ -232,32 +178,6 @@ async fn start_agent(
                     status: StatusCode::INTERNAL_SERVER_ERROR,
                 }
             })?;
-    }
-
-    if let Some(recipe) = original_recipe {
-        let mut update = manager.update(&session.id).recipe(Some(recipe.clone()));
-
-        if let Some(ref settings) = recipe.settings {
-            if let Some(ref provider) = settings.goose_provider {
-                update = update.provider_name(provider);
-
-                if let Some(ref model) = settings.goose_model {
-                    if let Ok(model_config) =
-                        goose::model_config::model_config_from_user_config(provider, model)
-                    {
-                        update = update.model_config(model_config);
-                    }
-                }
-            }
-        }
-
-        update.apply().await.map_err(|err| {
-            error!("Failed to update session with recipe: {}", err);
-            ErrorResponse {
-                message: format!("Failed to update session with recipe: {}", err),
-                status: StatusCode::INTERNAL_SERVER_ERROR,
-            }
-        })?;
     }
 
     // Refetch session to get all updates
@@ -422,72 +342,6 @@ async fn resume_agent(
         session,
         extension_results,
     }))
-}
-
-#[utoipa::path(
-    post,
-    path = "/agent/update_from_session",
-    request_body = UpdateFromSessionRequest,
-    responses(
-        (status = 200, description = "Update agent from session data successfully"),
-        (status = 401, description = "Unauthorized - invalid secret key"),
-        (status = 424, description = "Agent not initialized"),
-    ),
-)]
-async fn update_from_session(
-    State(state): State<Arc<AppState>>,
-    Json(payload): Json<UpdateFromSessionRequest>,
-) -> Result<StatusCode, ErrorResponse> {
-    let agent = state
-        .get_agent_for_route(payload.session_id.clone())
-        .await
-        .map_err(|status| ErrorResponse {
-            message: format!("Failed to get agent: {}", status),
-            status,
-        })?;
-    let session = state
-        .session_manager()
-        .get_session(&payload.session_id, false)
-        .await
-        .map_err(|err| ErrorResponse {
-            message: format!("Failed to get session: {}", err),
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-        })?;
-    if let Some(recipe) = session.recipe {
-        if session.session_type == SessionType::Scheduled {
-            if let Some(prompt) = apply_recipe_to_agent(&agent, &recipe, true).await {
-                agent
-                    .extend_system_prompt("recipe".to_string(), prompt)
-                    .await;
-            }
-        } else {
-            match build_recipe_with_parameter_values(
-                &recipe,
-                session.user_recipe_values.unwrap_or_default(),
-            )
-            .await
-            {
-                Ok(Some(recipe)) => {
-                    if let Some(prompt) = apply_recipe_to_agent(&agent, &recipe, true).await {
-                        agent
-                            .extend_system_prompt("recipe".to_string(), prompt)
-                            .await;
-                    }
-                }
-                Ok(None) => {
-                    // Recipe has missing parameters
-                }
-                Err(e) => {
-                    return Err(ErrorResponse {
-                        message: e.to_string(),
-                        status: StatusCode::INTERNAL_SERVER_ERROR,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(StatusCode::OK)
 }
 
 #[utoipa::path(
@@ -819,40 +673,6 @@ async fn restart_agent_internal(
         status: StatusCode::INTERNAL_SERVER_ERROR,
     })?;
 
-    if let Some(ref recipe) = session.recipe {
-        if session.session_type == SessionType::Scheduled {
-            if let Some(prompt) = apply_recipe_to_agent(&agent, recipe, true).await {
-                agent
-                    .extend_system_prompt("recipe".to_string(), prompt)
-                    .await;
-            }
-        } else {
-            match build_recipe_with_parameter_values(
-                recipe,
-                session.user_recipe_values.clone().unwrap_or_default(),
-            )
-            .await
-            {
-                Ok(Some(recipe)) => {
-                    if let Some(prompt) = apply_recipe_to_agent(&agent, &recipe, true).await {
-                        agent
-                            .extend_system_prompt("recipe".to_string(), prompt)
-                            .await;
-                    }
-                }
-                Ok(None) => {
-                    // Recipe has missing parameters
-                }
-                Err(e) => {
-                    return Err(ErrorResponse {
-                        message: e.to_string(),
-                        status: StatusCode::INTERNAL_SERVER_ERROR,
-                    });
-                }
-            }
-        }
-    }
-
     Ok(extension_results)
 }
 
@@ -1010,7 +830,6 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/agent/tools", get(get_tools))
         .route("/agent/update_provider", post(update_agent_provider))
         .route("/agent/update_session", post(update_session))
-        .route("/agent/update_from_session", post(update_from_session))
         .route("/agent/add_extension", post(agent_add_extension))
         .route("/agent/remove_extension", post(agent_remove_extension))
         .route("/agent/set_container", post(set_container))

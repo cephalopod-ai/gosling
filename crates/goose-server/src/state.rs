@@ -1,10 +1,8 @@
 use axum::http::StatusCode;
 use goose::builtin_extension::register_builtin_extensions;
 use goose::execution::manager::AgentManager;
-use goose::scheduler_trait::SchedulerTrait;
 use goose::session::SessionManager;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -18,8 +16,6 @@ type ExtensionLoadingTasks =
 #[derive(Clone)]
 pub struct AppState {
     pub(crate) agent_manager: Arc<AgentManager>,
-    pub recipe_file_hash_map: Arc<Mutex<HashMap<String, PathBuf>>>,
-    recipe_session_tracker: Arc<Mutex<HashSet<String>>>,
     pub extension_loading_tasks: ExtensionLoadingTasks,
     session_buses: Arc<Mutex<HashMap<String, Arc<SessionEventBus>>>>,
 }
@@ -31,8 +27,6 @@ impl AppState {
         let agent_manager = AgentManager::instance().await?;
         Ok(Arc::new(Self {
             agent_manager,
-            recipe_file_hash_map: Arc::new(Mutex::new(HashMap::new())),
-            recipe_session_tracker: Arc::new(Mutex::new(HashSet::new())),
             extension_loading_tasks: Arc::new(Mutex::new(HashMap::new())),
             session_buses: Arc::new(Mutex::new(HashMap::new())),
         }))
@@ -87,27 +81,8 @@ impl AppState {
         tasks.remove(session_id);
     }
 
-    pub fn scheduler(&self) -> Arc<dyn SchedulerTrait> {
-        self.agent_manager.scheduler()
-    }
-
     pub fn session_manager(&self) -> &SessionManager {
         self.agent_manager.session_manager()
-    }
-
-    pub async fn set_recipe_file_hash_map(&self, hash_map: HashMap<String, PathBuf>) {
-        let mut map = self.recipe_file_hash_map.lock().await;
-        *map = hash_map;
-    }
-
-    pub async fn mark_recipe_run_if_absent(&self, session_id: &str) -> bool {
-        let mut sessions = self.recipe_session_tracker.lock().await;
-        if sessions.contains(session_id) {
-            false
-        } else {
-            sessions.insert(session_id.to_string());
-            true
-        }
     }
 
     pub async fn get_or_create_event_bus(&self, session_id: &str) -> Arc<SessionEventBus> {

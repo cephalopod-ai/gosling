@@ -33,8 +33,7 @@ import { expandTilde } from './utils/pathUtils';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
-import { formatAppName, errorMessage, formatErrorForLogging } from './utils/conversionUtils';
-import { isRetiredGooseChatApp } from './utils/retiredApps';
+import { errorMessage, formatErrorForLogging } from './utils/conversionUtils';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings, getKeyboardShortcuts } from './utils/settings';
 import * as crypto from 'crypto';
@@ -49,8 +48,6 @@ import {
   updateTrayMenu,
 } from './utils/autoUpdater';
 import { UPDATES_ENABLED } from './updates';
-import './utils/recipeHash';
-import type { GooseApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { BLOCKED_PROTOCOLS, WEB_PROTOCOLS } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
@@ -441,25 +438,6 @@ if (process.platform !== 'darwin') {
       const protocolUrl = commandLine.find((arg) => arg.startsWith('goose://'));
       if (protocolUrl) {
         const parsedUrl = new URL(protocolUrl);
-        // If it's a bot/recipe URL, handle it directly by creating a new window
-        if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-          app.whenReady().then(async () => {
-            const recentDirs = loadRecentDirs();
-            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-
-            const deeplinkData = parseRecipeDeeplink(protocolUrl);
-            const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-
-            await createChat(app, {
-              dir: openDir || undefined,
-              recipeDeeplink: deeplinkData?.config,
-              scheduledJobId: scheduledJobId || undefined,
-              recipeParameters: deeplinkData?.parameters,
-            });
-          });
-          return; // Skip the rest of the handler
-        }
-
         // Handle new-session URL by creating a fresh chat window
         if (parsedUrl.hostname === 'new-session') {
           app.whenReady().then(async () => {
@@ -484,11 +462,9 @@ if (process.platform !== 'darwin') {
           return;
         }
 
-        // For non-bot URLs, continue with normal handling
         handleProtocolUrl(protocolUrl, parsedUrl);
       }
 
-      // Only focus existing windows for non-bot/recipe URLs
       const existingWindows = BrowserWindow.getAllWindows();
       if (existingWindows.length > 0) {
         const mainWindow = existingWindows[0];
@@ -624,14 +600,6 @@ async function handleProtocolUrl(url: string, parsedUrl: URL) {
   } else if (parsedUrl.hostname === 'resume') {
     await createResumeChatWindow(parsedUrl, openDir || undefined);
     return;
-  } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    const existingWindows = BrowserWindow.getAllWindows();
-    const targetWindow =
-      existingWindows.length > 0
-        ? existingWindows[0]
-        : await createChat(app, { dir: openDir || undefined });
-    if (!targetWindow) return;
-    await processProtocolUrl(url, parsedUrl, targetWindow);
   } else {
     const existingWindows = BrowserWindow.getAllWindows();
     let targetWindow: BrowserWindow | undefined;
@@ -656,27 +624,12 @@ async function handleProtocolUrl(url: string, parsedUrl: URL) {
 }
 
 async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWindow) {
-  const recentDirs = loadRecentDirs();
-  const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-
   if (parsedUrl.hostname === 'extension') {
     window.webContents.send('add-extension', url);
   } else if (parsedUrl.hostname === 'sessions') {
     sendOpenSharedSession(window, url);
-  } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-    const deeplinkData = parseRecipeDeeplink(url);
-    const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-
-    await createChat(app, {
-      dir: openDir || undefined,
-      recipeDeeplink: deeplinkData?.config,
-      scheduledJobId: scheduledJobId || undefined,
-      recipeParameters: deeplinkData?.parameters,
-    });
   }
 }
-
-let windowDeeplinkURL: string | null = null;
 
 app.on('open-url', async (_event, url) => {
   if (process.platform !== 'win32') {
@@ -708,26 +661,6 @@ app.on('open-url', async (_event, url) => {
     if (parsedUrl.hostname === 'resume') {
       log.info('[Main] Detected resume URL, creating session resume window');
       openUrlHandledLaunch = await createResumeChatWindow(parsedUrl, openDir || undefined);
-      return;
-    }
-
-    // Handle bot/recipe URLs by directly creating a new window
-    if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
-      log.info('[Main] Detected bot/recipe URL, creating new chat window');
-      openUrlHandledLaunch = true;
-      const deeplinkData = parseRecipeDeeplink(url);
-      if (deeplinkData) {
-        windowDeeplinkURL = url;
-      }
-      const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-
-      await createChat(app, {
-        dir: openDir || undefined,
-        recipeDeeplink: deeplinkData?.config,
-        scheduledJobId: scheduledJobId || undefined,
-        recipeParameters: deeplinkData?.parameters,
-      });
-      windowDeeplinkURL = null;
       return;
     }
 
@@ -964,7 +897,6 @@ let appConfig = {
 };
 
 const windowMap = new Map<number, BrowserWindow>();
-const appWindows = new Map<string, BrowserWindow>();
 
 const gooseServeLeases = new GooseServeLeaseRegistry(log);
 
@@ -979,27 +911,13 @@ interface CreateChatOptions {
   dir?: string;
   resumeSessionId?: string;
   viewType?: string;
-  recipeDeeplink?: string;
-  recipeId?: string;
-  scheduledJobId?: string;
-  recipeParameters?: Record<string, string>;
 }
 
 const createChat = async (
   app: App,
   options: CreateChatOptions = {}
 ): Promise<BrowserWindow | undefined> => {
-  const {
-    initialMessage,
-    initialMessageNoAutoSubmit,
-    dir,
-    resumeSessionId,
-    viewType,
-    recipeDeeplink,
-    recipeId,
-    scheduledJobId,
-    recipeParameters,
-  } = options;
+  const { initialMessage, initialMessageNoAutoSubmit, dir, resumeSessionId, viewType } = options;
   const settings = getSettings();
 
   let externalBackend: ExternalBackend | null;
@@ -1251,10 +1169,6 @@ const createChat = async (
             GOOSE_WORKING_DIR: workingDir,
             REQUEST_DIR: dir,
             GOOSE_VERSION: version,
-            recipeDeeplink: recipeDeeplink,
-            recipeId: recipeId,
-            recipeParameters: recipeParameters,
-            scheduledJobId: scheduledJobId,
             SECURITY_ML_MODEL_MAPPING: process.env.SECURITY_ML_MODEL_MAPPING,
             SECURITY_PROMPT_ENABLED_OVERRIDE: process.env.SECURITY_PROMPT_ENABLED_OVERRIDE,
             SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE:
@@ -1392,8 +1306,6 @@ const createChat = async (
     pair: '/pair',
     settings: '/settings',
     sessions: '/sessions',
-    schedules: '/schedules',
-    recipes: '/recipes',
     skills: '/skills',
     permission: '/permission',
     ConfigureProviders: '/configure-providers',
@@ -1402,10 +1314,7 @@ const createChat = async (
   if (viewType) {
     appPath = routeMap[viewType] || '/';
   }
-  if (
-    appPath === '/' &&
-    (recipeDeeplink !== undefined || recipeId !== undefined || initialMessage)
-  ) {
+  if (appPath === '/' && initialMessage) {
     appPath = '/pair';
   }
 
@@ -1752,71 +1661,10 @@ const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
 
     addRecentDir(dirToAdd);
 
-    let deeplinkData: RecipeDeeplinkData | undefined = undefined;
-    if (windowDeeplinkURL) {
-      deeplinkData = parseRecipeDeeplink(windowDeeplinkURL);
-    }
-    await createChat(app, {
-      dir: dirToAdd,
-      recipeDeeplink: deeplinkData?.config,
-      recipeParameters: deeplinkData?.parameters,
-    });
+    await createChat(app, { dir: dirToAdd });
   }
   return result;
 };
-
-interface RecipeDeeplinkData {
-  config: string;
-  parameters?: Record<string, string>;
-}
-
-function parseRecipeDeeplink(url: string): RecipeDeeplinkData | undefined {
-  const parsedUrl = new URL(url);
-  let recipeDeeplink = parsedUrl.searchParams.get('config');
-  if (recipeDeeplink && !url.includes(recipeDeeplink)) {
-    // URLSearchParams decodes + as space, which can break encoded configs
-    // Parse raw query to preserve "+" characters in values like config
-    const search = parsedUrl.search || '';
-    const configMatch = search.match(/(?:[?&])config=([^&]*)/);
-    let recipeDeeplinkTmp = configMatch ? configMatch[1] : null;
-    if (recipeDeeplinkTmp) {
-      try {
-        recipeDeeplink = decodeURIComponent(recipeDeeplinkTmp);
-      } catch (error) {
-        console.error('[Main] parseRecipeDeeplink - Failed to decode:', errorMessage(error));
-        return undefined;
-      }
-    }
-  }
-  if (!recipeDeeplink) {
-    return undefined;
-  }
-
-  // Extract all query parameters except 'config' and 'scheduledJob' as recipe parameters
-  // Use raw query string parsing to preserve '+' characters (consistent with config handling)
-  const parameters: Record<string, string> = {};
-  const search = parsedUrl.search || '';
-  const paramMatches = search.matchAll(/[?&]([^=&]+)=([^&]*)/g);
-
-  for (const match of paramMatches) {
-    const key = match[1];
-    const rawValue = match[2];
-
-    if (key !== 'config' && key !== 'scheduledJob') {
-      try {
-        parameters[key] = decodeURIComponent(rawValue);
-      } catch {
-        // If decoding fails, use raw value
-        parameters[key] = rawValue;
-      }
-    }
-  }
-
-  return {
-    config: recipeDeeplink,
-    parameters: Object.keys(parameters).length > 0 ? parameters : undefined,
-  };
-}
 
 // Global error handler
 const handleFatalError = (error: Error) => {
@@ -2775,7 +2623,7 @@ async function appMain() {
   });
 
   ipcMain.on('create-chat-window', (event, options = {}) => {
-    const { query, dir, resumeSessionId, viewType, recipeId } = options;
+    const { query, dir, resumeSessionId, viewType } = options;
 
     let resolvedDir = dir;
     if (!resolvedDir?.trim()) {
@@ -2783,7 +2631,7 @@ async function appMain() {
       resolvedDir = recentDirs.length > 0 ? recentDirs[0] : undefined;
     }
 
-    const isFromLauncher = query && !resumeSessionId && !viewType && !recipeId;
+    const isFromLauncher = query && !resumeSessionId && !viewType;
 
     if (isFromLauncher) {
       const senderWindow = BrowserWindow.fromWebContents(event.sender);
@@ -2808,7 +2656,6 @@ async function appMain() {
       dir: resolvedDir,
       resumeSessionId,
       viewType,
-      recipeId,
     });
   });
 
@@ -2960,112 +2807,6 @@ async function appMain() {
     }
   });
 
-  ipcMain.handle('launch-app', async (event, gooseApp: GooseApp) => {
-    try {
-      if (isRetiredGooseChatApp(gooseApp)) {
-        throw new Error('This built-in Chat app is no longer supported.');
-      }
-
-      const launchingWindow = BrowserWindow.fromWebContents(event.sender);
-      if (!launchingWindow) {
-        throw new Error('Could not find launching window');
-      }
-
-      const launchingWindowId = launchingWindow.id;
-      const launchingGooseServeLease = gooseServeLeases.get(launchingWindowId);
-      if (!launchingGooseServeLease) {
-        throw new Error('No backend lease found for launching window');
-      }
-
-      const workingDir = app.getPath('home');
-      const appWindow = new BrowserWindow({
-        title: formatAppName(gooseApp.name),
-        width: gooseApp.width ?? 800,
-        height: gooseApp.height ?? 600,
-        resizable: gooseApp.resizable ?? true,
-        useContentSize: true,
-        webPreferences: {
-          preload: path.join(__dirname, 'preload.js'),
-          nodeIntegration: false,
-          contextIsolation: true,
-          webSecurity: true,
-          additionalArguments: [
-            JSON.stringify({
-              ...appConfig,
-              GOOSE_LOCALE: getConfiguredGooseLocale(),
-              GOOSE_WORKING_DIR: workingDir,
-              GOOSE_VERSION: version,
-            }),
-          ],
-          partition: 'persist:goose',
-        },
-      });
-
-      gooseServeLeases.attachWindow(appWindow.id, launchingGooseServeLease);
-
-      appWindows.set(gooseApp.name, appWindow);
-
-      appWindow.on('closed', () => {
-        void gooseServeLeases.releaseWindow(appWindow.id);
-        appWindows.delete(gooseApp.name);
-      });
-
-      const extensionName = gooseApp.mcpServers?.[0] ?? '';
-
-      const url = getAppUrl();
-
-      const searchParams = new URLSearchParams();
-      searchParams.set('resourceUri', gooseApp.uri);
-      searchParams.set('extensionName', extensionName);
-      searchParams.set('appName', gooseApp.name);
-      searchParams.set('workingDir', workingDir);
-
-      url.hash = `/standalone-app?${searchParams.toString()}`;
-      await appWindow.loadURL(formatUrl(url));
-      appWindow.show();
-    } catch (error) {
-      console.error('Failed to launch app:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('refresh-app', async (_event, gooseApp: GooseApp) => {
-    try {
-      const appWindow = appWindows.get(gooseApp.name);
-      if (!appWindow || appWindow.isDestroyed()) {
-        console.log(`App window for '${gooseApp.name}' not found or destroyed, skipping refresh`);
-        return;
-      }
-
-      // Bring to front first
-      if (appWindow.isMinimized()) {
-        appWindow.restore();
-      }
-      appWindow.show();
-      appWindow.focus();
-
-      // Then reload
-      await appWindow.webContents.reload();
-    } catch (error) {
-      console.error('Failed to refresh app:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('close-app', async (_event, appName: string) => {
-    try {
-      const appWindow = appWindows.get(appName);
-      if (!appWindow || appWindow.isDestroyed()) {
-        console.log(`App window for '${appName}' not found or destroyed, skipping close`);
-        return;
-      }
-
-      appWindow.close();
-    } catch (error) {
-      console.error('Failed to close app:', error);
-      throw error;
-    }
-  });
 }
 
 app.whenReady().then(async () => {

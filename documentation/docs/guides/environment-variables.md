@@ -157,7 +157,7 @@ These variables control how goose manages conversation sessions and context.
 | `GOOSE_CONTEXT_STRATEGY` | Controls how goose handles context limit exceeded situations | "summarize", "truncate", "clear", "prompt" | "prompt" (interactive), "summarize" (headless) |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 |
 | `GOOSE_GATEWAY_MAX_TURNS` | Maximum number of turns for gateway sessions (e.g., Telegram). Overrides `GOOSE_MAX_TURNS` for gateway traffic only, so chat platforms can keep a stricter cap than CLI/desktop sessions. | Integer (e.g., 5, 10, 25) | Falls back to `GOOSE_MAX_TURNS`, then 5 |
-| `GOOSE_SUBAGENT_MAX_TURNS` | Sets the maximum turns allowed for a [subagent](/docs/guides/context-engineering/subagents) to complete before timeout. Can be overridden by [`settings.max_turns`](/docs/guides/recipes/recipe-reference#settings) in recipes or subagent tool calls. | Integer (e.g., 25) | 25 |
+| `GOOSE_SUBAGENT_MAX_TURNS` | Sets the maximum turns allowed for a [subagent](/docs/guides/context-engineering/subagents) to complete before timeout. Can be overridden by `max_turns` in subagent tool calls. | Integer (e.g., 25) | 25 |
 | `GOOSE_MAX_BACKGROUND_TASKS` | Sets the maximum number of concurrent background [subagent](/docs/guides/context-engineering/subagents) tasks goose can run at once | Integer (e.g., 1, 5, 10) | 5 |
 | `CONTEXT_FILE_NAMES` | Specifies custom filenames for [hint/context files](/docs/guides/context-engineering/using-goosehints#custom-context-files) | JSON array of strings (e.g., `["CLAUDE.md", ".goosehints"]`) | `[".goosehints"]` |
 | `GOOSE_DISABLE_SESSION_NAMING` | Disables automatic AI-generated session naming; avoids the background model call and keeps the default "CLI Session" (goose CLI) or "New Chat" (goose Desktop) | "1", "true" (case-insensitive) to enable | false |
@@ -201,7 +201,7 @@ export GOOSE_MAX_TURNS=100
 export GOOSE_GATEWAY_MAX_TURNS=15
 
 # Customize the default subagent turn limit
-# Note: This can be overridden per-recipe or per-subagent using the max_turns setting
+# Note: This can be overridden per-subagent using the max_turns setting
 export GOOSE_SUBAGENT_MAX_TURNS=50
 
 # Use multiple context files
@@ -529,31 +529,6 @@ goosed agent
 
 When TLS is enabled, `goosed` prints a `GOOSED_CERT_FINGERPRINT=...` line on startup. Clients (such as goose Desktop) need this fingerprint to verify the self-signed certificate. See [Running a Remote goose Server](/docs/guides/remote-goose-server) for the full setup.
 
-## Recipe Configuration
-
-These variables control recipe discovery and management.
-
-| Variable | Purpose | Values | Default |
-|----------|---------|---------|---------|
-| `GOOSE_RECIPE_PATH` | Additional directories to search for recipes | Colon-separated paths on Unix, semicolon-separated on Windows | None |
-| `GOOSE_RECIPE_GITHUB_REPO` | GitHub repository to search for recipes | Format: "owner/repo" (e.g., "aaif-goose/goose-recipes") | None |
-| `GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS` | Global timeout for recipe success check commands | Integer (seconds) | Recipe-specific default |
-| `GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS` | Global timeout for recipe on_failure commands | Integer (seconds) | Recipe-specific default |
-
-**Examples**
-
-```bash
-# Add custom recipe directories
-export GOOSE_RECIPE_PATH="/path/to/my/recipes:/path/to/team/recipes"
-
-# Configure GitHub recipe repository
-export GOOSE_RECIPE_GITHUB_REPO="myorg/goose-recipes"
-
-# Set global recipe timeouts
-export GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS=300
-export GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS=60
-```
-
 ## Development & Testing
 
 These variables are primarily used for development, testing, and debugging goose itself.
@@ -576,10 +551,10 @@ When set, goose creates `config/`, `data/`, and `state/` subdirectories under th
 export GOOSE_PATH_ROOT="/tmp/goose-test"
 
 # Isolated environment for a single command
-GOOSE_PATH_ROOT="/tmp/goose-isolated" goose run --recipe my-recipe.yaml
+GOOSE_PATH_ROOT="/tmp/goose-isolated" goose run --text "run the integration tests"
 
 # CI/CD usage
-GOOSE_PATH_ROOT="$(mktemp -d)" goose run --recipe integration-test.yaml
+GOOSE_PATH_ROOT="$(mktemp -d)" goose run --instructions integration-test.md
 
 # Use with developer tools
 GOOSE_PATH_ROOT="/tmp/goose-test" ./scripts/goose-db-helper.sh status
@@ -657,14 +632,14 @@ STDIO extensions (local extensions that communicate via standard input/output) a
 - Isolate worktrees or temporary files by session
 - Debug correlation between artifacts and session history
 
-The following example shows how a recipe might use the session ID to hand off information between steps:
+The following example shows how a workflow might use the session ID to hand off information between steps:
 
 ```bash
 # Create session-specific handoff directory
 mkdir -p ~/Desktop/${AGENT_SESSION_ID}/handoff
 echo "Results from step 1" > ~/Desktop/${AGENT_SESSION_ID}/handoff/output.txt
 
-# Later steps in the recipe can read from the same location
+# Later steps in the workflow can read from the same location
 cat ~/Desktop/${AGENT_SESSION_ID}/handoff/output.txt
 ```
 

@@ -5,7 +5,6 @@ use crate::{
         Conversation,
     },
     prompt_template::render_template,
-    recipe::Recipe,
 };
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
@@ -18,7 +17,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::debug;
 
 pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
 
@@ -34,9 +33,17 @@ pub struct SubagentPromptContext {
 type AgentMessagesFuture =
     Pin<Box<dyn Future<Output = Result<(Conversation, Option<String>)>> + Send>>;
 
+/// The unit of work delegated to a subagent: system instructions plus the
+/// user-facing prompt that kicks it off.
+#[derive(Debug, Clone, Default)]
+pub struct SubagentTask {
+    pub instructions: Option<String>,
+    pub prompt: Option<String>,
+}
+
 pub struct SubagentRunParams {
     pub config: AgentConfig,
-    pub recipe: Recipe,
+    pub task: SubagentTask,
     pub task_config: TaskConfig,
     pub return_last_only: bool,
     pub session_id: String,
@@ -123,7 +130,7 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
     Box::pin(async move {
         let SubagentRunParams {
             config,
-            recipe,
+            task,
             task_config,
             session_id,
             cancellation_token,
@@ -132,11 +139,8 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             ..
         } = params;
 
-        let system_instructions = recipe.instructions.clone().unwrap_or_default();
-        let user_task = recipe
-            .prompt
-            .clone()
-            .unwrap_or_else(|| "Begin.".to_string());
+        let system_instructions = task.instructions.clone().unwrap_or_default();
+        let user_task = task.prompt.clone().unwrap_or_else(|| "Begin.".to_string());
 
         let agent = Arc::new(Agent::with_config(config));
 
@@ -159,11 +163,6 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             }
         }
 
-        let has_response_schema = recipe.response.is_some();
-        agent
-            .apply_recipe_components(recipe.response.clone(), true)
-            .await;
-
         let subagent_prompt =
             build_subagent_prompt(&agent, &task_config, &session_id, system_instructions).await?;
         agent.override_system_prompt(subagent_prompt).await;
@@ -171,16 +170,9 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
         let user_message = Message::user().with_text(user_task);
         let mut conversation = Conversation::new_unvalidated(vec![user_message.clone()]);
 
-        if let Some(activities) = recipe.activities {
-            for activity in activities {
-                info!("Recipe activity: {}", activity);
-            }
-        }
         let session_config = SessionConfig {
             id: session_id.clone(),
-            schedule_id: None,
             max_turns: task_config.max_turns.map(|v| v as u32),
-            retry_config: recipe.retry,
         };
 
         let mut stream =
@@ -224,9 +216,7 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             }
         }
 
-        let final_output = get_final_output(&agent, has_response_schema).await;
-
-        Ok((conversation, final_output))
+        Ok((conversation, None))
     })
 }
 
@@ -259,19 +249,6 @@ async fn build_subagent_prompt(
         },
     )
     .map_err(|e| anyhow!("Failed to render subagent system prompt: {}", e))
-}
-
-async fn get_final_output(agent: &Agent, has_response_schema: bool) -> Option<String> {
-    if has_response_schema {
-        agent
-            .final_output_tool
-            .lock()
-            .await
-            .as_ref()
-            .and_then(|tool| tool.final_output.clone())
-    } else {
-        None
-    }
 }
 
 pub fn create_tool_notification(

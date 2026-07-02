@@ -70,13 +70,6 @@ pub struct DiagnosticsPrompt {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct DiagnosticsScheduledRecipe {
-    pub path: String,
-    pub content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct DiagnosticsError {
     pub path: Option<String>,
     pub message: String,
@@ -94,8 +87,6 @@ pub struct DiagnosticsReport {
     pub session: Option<serde_json::Value>,
     pub logs: DiagnosticsLogs,
     pub prompts: Vec<DiagnosticsPrompt>,
-    pub schedule: Option<serde_json::Value>,
-    pub scheduled_recipes: Vec<DiagnosticsScheduledRecipe>,
     pub errors: Vec<DiagnosticsError>,
 }
 
@@ -281,10 +272,9 @@ pub async fn generate_diagnostics(
     level: DiagnosticsLevel,
 ) -> anyhow::Result<DiagnosticsReport> {
     let config_path = config_path();
-    let data_dir = Paths::data_dir();
     let system_info = SystemInfo::collect();
     let is_full = matches!(level, DiagnosticsLevel::Full);
-    let mut errors = Vec::new();
+    let errors: Vec<DiagnosticsError> = Vec::new();
 
     let session = if is_full {
         let session_data = session_manager.export_session(session_id).await?;
@@ -348,51 +338,6 @@ pub async fn generate_diagnostics(
         Vec::new()
     };
 
-    let schedule = if is_full {
-        let schedule_json = data_dir.join("schedule.json");
-        if schedule_json.exists() {
-            fs::read_to_string(&schedule_json).ok().and_then(|content| {
-                match serde_json::from_str(&content) {
-                    Ok(value) => Some(value),
-                    Err(err) => {
-                        errors.push(DiagnosticsError {
-                            path: Some(schedule_json.display().to_string()),
-                            message: err.to_string(),
-                        });
-                        None
-                    }
-                }
-            })
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let mut scheduled_recipes = Vec::new();
-    if is_full {
-        let scheduled_recipes_dir = data_dir.join("scheduled_recipes");
-        if scheduled_recipes_dir.exists() && scheduled_recipes_dir.is_dir() {
-            for entry in fs::read_dir(&scheduled_recipes_dir)? {
-                let entry = entry?;
-                let path = entry.path();
-                if path.is_file() {
-                    match fs::read_to_string(&path) {
-                        Ok(content) => scheduled_recipes.push(DiagnosticsScheduledRecipe {
-                            path: path.display().to_string(),
-                            content,
-                        }),
-                        Err(err) => errors.push(DiagnosticsError {
-                            path: Some(path.display().to_string()),
-                            message: err.to_string(),
-                        }),
-                    }
-                }
-            }
-        }
-    }
-
     Ok(DiagnosticsReport {
         schema_version: 1,
         generated_at: chrono::Utc::now().to_rfc3339(),
@@ -405,8 +350,6 @@ pub async fn generate_diagnostics(
         session,
         logs,
         prompts,
-        schedule,
-        scheduled_recipes,
         errors,
     })
 }

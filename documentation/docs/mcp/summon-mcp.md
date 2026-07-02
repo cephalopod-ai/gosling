@@ -10,9 +10,8 @@ import GooseBuiltinInstaller from '@site/src/components/GooseBuiltinInstaller';
 
 The Summon extension lets you load knowledge into goose's context and delegate tasks to [subagents](/docs/guides/context-engineering/subagents). 
 
-You can load different types of sources:
+You can load sources such as:
 - [**Skills**](/docs/guides/context-engineering/using-skills) - Reusable instruction sets that teach goose specific workflows
-- [**Recipes**](/docs/guides/recipes) - Automated task definitions with prompts and parameters
 
 This is useful for teaching goose how to perform tasks and running work in parallel through subagents.
 

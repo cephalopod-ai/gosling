@@ -165,7 +165,6 @@ impl GooseCompleter {
             "/prompt",
             "/mode",
             "/model",
-            "/recipe",
             "/skills",
             "/status",
         ];

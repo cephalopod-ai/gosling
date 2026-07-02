@@ -63,9 +63,9 @@ This opens up a whole new class of MCP extensions that can provide dashboards, v
 
 ## 📝 Edit Recipe Model & Provider from the GUI
 
-**You can now [edit a recipe's](https://goose-docs.ai/docs/guides/recipes/session-recipes#edit-recipe) model, provider, and extensions directly in goose Desktop. No YAML editing required.**
+**You can now edit a recipe's model, provider, and extensions directly in goose Desktop. No YAML editing required.**
 
-[Recipes](https://goose-docs.ai/docs/tutorials/recipes-tutorial) already let you define reusable workflows with specific instructions, extensions, and configurations, and you could always edit the underlying YAML file. But switching the model or provider for a recipe meant hunting down the right field in the config file.
+Recipes already let you define reusable workflows with specific instructions, extensions, and configurations, and you could always edit the underlying YAML file. But switching the model or provider for a recipe meant hunting down the right field in the config file.
 
 With v1.25.0, the desktop app lets you visually configure these settings per recipe:
 - Change the model and provider a recipe uses

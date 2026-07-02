@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::Message;
-use crate::slash_commands::{recipe_slash_command, skill_slash_command};
+use crate::slash_commands::skill_slash_command;
 
 use super::Agent;
 
@@ -134,15 +134,6 @@ impl Agent {
             "goal" => self.handle_goal_command(params_str).await,
             "grind" => self.handle_grind_command(params_str).await,
             _ => {
-                if let Some(message) = self
-                    .handle_recipe_command(command, params_str, session_id)
-                    .await?
-                {
-                    #[cfg(feature = "telemetry")]
-                    crate::posthog::emit_custom_slash_command_used();
-                    return Ok(Some(message));
-                }
-
                 self.handle_skill_command(command, params_str, session_id)
                     .await
             }
@@ -170,7 +161,7 @@ impl Agent {
             .replace_conversation(session_id, &compacted_conversation)
             .await?;
 
-        self.update_session_metrics(session_id, session.schedule_id, &usage, true)
+        self.update_session_metrics(session_id, &usage, true)
             .await?;
 
         Ok(Some(user_only_assistant_text("Compaction complete")))
@@ -413,22 +404,6 @@ impl Agent {
             Err(e) => Ok(Some(
                 Message::assistant().with_text(format!("Error getting prompt: {}", e)),
             )),
-        }
-    }
-
-    async fn handle_recipe_command(
-        &self,
-        command: &str,
-        params_str: &str,
-        _session_id: &str,
-    ) -> Result<Option<Message>> {
-        match recipe_slash_command::resolve_command(command, params_str) {
-            Ok(None) => Ok(None),
-            Ok(Some((response, prompt))) => {
-                self.apply_recipe_components(response, true).await;
-                Ok(Some(Message::user().with_text(prompt)))
-            }
-            Err(text) => Ok(Some(Message::assistant().with_text(text))),
         }
     }
 

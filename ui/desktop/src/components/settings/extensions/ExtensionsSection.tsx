@@ -44,9 +44,6 @@ interface ExtensionSectionProps {
   deepLinkConfig?: ExtensionConfig;
   showEnvVars?: boolean;
   hideButtons?: boolean;
-  disableConfiguration?: boolean;
-  customToggle?: (extension: FixedExtensionEntry) => Promise<boolean | void>;
-  selectedExtensions?: string[]; // Add controlled state
   onModalClose?: (extensionName: string) => void;
   searchTerm?: string;
 }
@@ -55,9 +52,6 @@ export default function ExtensionsSection({
   deepLinkConfig,
   showEnvVars,
   hideButtons,
-  disableConfiguration,
-  customToggle,
-  selectedExtensions = [],
   onModalClose,
   searchTerm = '',
 }: ExtensionSectionProps) {
@@ -96,24 +90,14 @@ export default function ExtensionsSection({
 
         // Finally sort alphabetically within each group
         return a.name.localeCompare(b.name);
-      })
-      .map((ext) => ({
-        ...ext,
-        // Use selectedExtensions to determine enabled state in recipe editor
-        enabled: disableConfiguration ? selectedExtensions.includes(ext.name) : ext.enabled,
-      }));
-  }, [extensionsList, disableConfiguration, selectedExtensions]);
+      });
+  }, [extensionsList]);
 
   const fetchExtensions = useCallback(async () => {
     await getExtensions(true); // Force refresh - this will update the context
   }, [getExtensions]);
 
   const handleExtensionToggle = async (extensionConfig: FixedExtensionEntry) => {
-    if (customToggle) {
-      await customToggle(extensionConfig);
-      return true;
-    }
-
     const toggleDirection = extensionConfig.enabled ? 'toggleOff' : 'toggleOn';
     const configKey = extensionConfig.configKey ?? nameToKey(extensionConfig.name);
 
@@ -214,7 +198,6 @@ export default function ExtensionsSection({
           extensions={extensions}
           onToggle={handleExtensionToggle}
           onConfigure={handleConfigureClick}
-          disableConfiguration={disableConfiguration}
           searchTerm={searchTerm}
         />
 

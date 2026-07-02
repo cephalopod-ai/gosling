@@ -23,7 +23,6 @@ import { COST_TRACKING_ENABLED } from '../updates';
 import { CostTracker } from './bottom_menu/CostTracker';
 import { ContextWindowIndicator } from './bottom_menu/ContextWindowIndicator';
 import { DroppedFile, useFileDrop } from '../hooks/useFileDrop';
-import { Recipe } from '../recipe';
 import { MessageQueue, QueuedMessage } from './MessageQueue';
 import { detectInterruption } from '../utils/interruptionDetector';
 import { DiagnosticsModal } from './ui/Diagnostics';
@@ -150,10 +149,6 @@ const i18n = defineMessages({
     id: 'chatInput.failedToReadImage',
     defaultMessage: 'Failed to read image file',
   },
-  viewEditRecipe: {
-    id: 'chatInput.viewEditRecipe',
-    defaultMessage: 'View/Edit Recipe',
-  },
 });
 
 interface ChatInputProps {
@@ -175,9 +170,6 @@ interface ChatInputProps {
   accumulatedCost?: number | null;
   messages?: Message[];
   disableAnimation?: boolean;
-  recipe?: Recipe | null;
-  recipeId?: string | null;
-  recipeAccepted?: boolean;
   initialPrompt?: string;
   append?: (message: Message) => void;
   onWorkingDirChange?: (newDir: string) => Promise<void> | void;
@@ -210,9 +202,6 @@ export default function ChatInput({
   accumulatedCost,
   messages = [],
   disableAnimation = false,
-  recipe: _recipe,
-  recipeId: _recipeId,
-  recipeAccepted,
   initialPrompt,
   append: _append,
   onWorkingDirChange,
@@ -522,17 +511,16 @@ export default function ChatInput({
     setHasUserTyped(false);
   }, [initialValue]);
 
-  // Handle recipe prompt updates
+  // Handle initial prompt updates
   useEffect(() => {
-    // If recipe is accepted and we have an initial prompt, and no messages yet, and we haven't set it before
-    if (recipeAccepted && initialPrompt && messages.length === 0) {
+    if (initialPrompt && messages.length === 0) {
       setDisplayValue(initialPrompt);
       setValue(initialPrompt);
       setTimeout(() => {
         textAreaRef.current?.focus();
       }, 0);
     }
-  }, [recipeAccepted, initialPrompt, messages.length, textAreaRef]);
+  }, [initialPrompt, messages.length, textAreaRef]);
 
   const [isComposing, setIsComposing] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);

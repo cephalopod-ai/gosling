@@ -13,7 +13,6 @@ import {
   Settings,
   Terminal,
   Zap,
-  BookOpen,
   Wrench,
   Sparkles,
 } from 'lucide-react';
@@ -32,8 +31,6 @@ export const getItemIcon = (item: DisplayItem): IconInfo => {
   switch (item.itemType) {
     case 'Builtin':
       return { Icon: Zap, color: '#3b82f6' }; // Blue
-    case 'Recipe':
-      return { Icon: BookOpen, color: '#10b981' }; // Green
     case 'Skill':
       return { Icon: Sparkles, color: '#8b5cf6' }; // Purple
     case 'Agent':

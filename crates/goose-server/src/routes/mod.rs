@@ -5,10 +5,7 @@ pub mod dictation;
 pub mod errors;
 pub mod mcp_app_proxy;
 pub mod prompts;
-pub mod recipe;
-pub mod recipe_utils;
 pub mod reply;
-pub mod schedule;
 pub mod session;
 pub mod session_events;
 pub mod status;
@@ -28,9 +25,7 @@ pub fn configure(state: Arc<crate::state::AppState>, secret_key: String) -> Rout
         .merge(agent::routes(state.clone()))
         .merge(config_management::routes(state.clone()))
         .merge(prompts::routes())
-        .merge(recipe::routes(state.clone()))
         .merge(session::routes(state.clone()))
-        .merge(schedule::routes(state.clone()))
         .merge(telemetry::routes(state.clone()))
         .merge(mcp_app_proxy::routes(secret_key))
         .merge(session_events::routes(state.clone()))

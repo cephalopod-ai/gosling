@@ -13,7 +13,7 @@ pub use diagnostics::{
     config_path, generate_diagnostics, get_system_info, latest_llm_log_path,
     latest_server_log_path, read_capped, read_tail, DiagnosticsConfig, DiagnosticsError,
     DiagnosticsExtensions, DiagnosticsLevel, DiagnosticsLogs, DiagnosticsPrompt, DiagnosticsReport,
-    DiagnosticsScheduledRecipe, DiagnosticsTextFile, SystemInfo,
+    DiagnosticsTextFile, SystemInfo,
 };
 pub use extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState, TodoState};
 pub use session_manager::{

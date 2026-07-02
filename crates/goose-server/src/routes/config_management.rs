@@ -20,9 +20,7 @@ use goose::providers::catalog::{
 };
 use goose::providers::create_with_default_model;
 use goose::providers::providers as get_providers;
-use goose::{
-    agents::execute_commands, agents::ExtensionConfig, slash_commands::recipe_slash_command,
-};
+use goose::{agents::execute_commands, agents::ExtensionConfig};
 use goose_providers::model::ModelConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -141,7 +139,6 @@ pub struct ProviderSecretsResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum CommandType {
     Builtin,
-    Recipe,
     Skill,
     Agent,
 }
@@ -559,14 +556,7 @@ pub struct SlashCommandsQuery {
 pub async fn get_slash_commands(
     axum::extract::Query(query): axum::extract::Query<SlashCommandsQuery>,
 ) -> Result<Json<SlashCommandsResponse>, ErrorResponse> {
-    let mut commands: Vec<_> = recipe_slash_command::list_commands()
-        .iter()
-        .map(|command| SlashCommand {
-            command: command.command.clone(),
-            help: command.recipe_path.clone(),
-            command_type: CommandType::Recipe,
-        })
-        .collect();
+    let mut commands: Vec<SlashCommand> = Vec::new();
 
     for cmd_def in execute_commands::list_commands() {
         commands.push(SlashCommand {
@@ -591,11 +581,7 @@ pub async fn get_slash_commands(
     for source in
         goose::agents::platform_extensions::summon::discover_filesystem_sources(discover_dir)
     {
-        if matches!(
-            source.source_type,
-            SourceType::Agent | SourceType::Recipe | SourceType::Subrecipe
-        ) && !source.content.is_empty()
-        {
+        if matches!(source.source_type, SourceType::Agent) && !source.content.is_empty() {
             commands.push(SlashCommand {
                 command: source.name,
                 help: source.description,

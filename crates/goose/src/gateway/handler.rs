@@ -358,9 +358,7 @@ impl GatewayHandler {
 
         let session_config = SessionConfig {
             id: session_id.to_string(),
-            schedule_id: None,
             max_turns: Some(max_turns),
-            retry_config: None,
         };
 
         let mut stream = match agent

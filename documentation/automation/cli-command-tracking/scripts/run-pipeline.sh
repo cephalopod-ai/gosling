@@ -111,7 +111,8 @@ if [ "$HAS_CHANGES" = "true" ]; then
     echo "Step 4: Synthesizing CLI changes documentation..."
     
     # Run goose and capture output, filtering out session logs
-    goose run --recipe ../recipes/synthesize-cli-changes.yaml 2>&1 | \
+    goose run --instructions ../prompts/synthesize-cli-changes.prompt.md \
+        --system "$(cat ../prompts/synthesize-cli-changes.system.md)" 2>&1 | \
         sed -E 's/\x1B\[[0-9;]*[mK]//g' | \
         grep -v "^starting session" | \
         grep -v "^    session id:" | \
@@ -120,7 +121,6 @@ if [ "$HAS_CHANGES" = "true" ]; then
         grep -v "^path:" | \
         grep -v "^command:" | \
         grep -v "^Closing session" | \
-        grep -v "^Loading recipe:" | \
         grep -v "^Description:" | \
         cat -s > cli-changes.md.tmp
 
@@ -147,11 +147,12 @@ if [ "$HAS_CHANGES" = "true" ]; then
     echo ""
     echo "Step 5: Updating CLI commands documentation..."
     
-    # Set environment variables for the update recipe
+    # Set environment variables for the update prompt
     export CLI_COMMANDS_PATH="${GOOSE_REPO}/documentation/docs/guides/goose-cli-commands.md"
-    
-    # Run the update recipe
-    goose run --recipe ../recipes/update-cli-commands.yaml 2>&1 | \
+
+    # Run the documentation update
+    goose run --instructions ../prompts/update-cli-commands.prompt.md \
+        --system "$(cat ../prompts/update-cli-commands.system.md)" 2>&1 | \
         sed -E 's/\x1B\[[0-9;]*[mK]//g' | \
         grep -v "^starting session" | \
         grep -v "^    session id:" | \
@@ -160,7 +161,6 @@ if [ "$HAS_CHANGES" = "true" ]; then
         grep -v "^path:" | \
         grep -v "^command:" | \
         grep -v "^Closing session" | \
-        grep -v "^Loading recipe:" | \
         grep -v "^Description:" | \
         cat -s
 

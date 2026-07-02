@@ -262,7 +262,6 @@ Always verify webhook signatures. See `src/webhooks/square.js` for our handler p
 
 :::tip Other goose features that support reuse
 - [.goosehints](/docs/guides/context-engineering/using-goosehints): Best for general preferences, project context, and repeated instructions like "Always use TypeScript"
-- [recipes](/docs/guides/recipes/session-recipes): Shareable configurations that package instructions, prompts, and settings together
 :::
 
 ## Best Practices

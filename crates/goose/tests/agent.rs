@@ -10,464 +10,6 @@ mod tests {
     use super::*;
 
     #[cfg(test)]
-    mod schedule_tool_tests {
-        use super::*;
-        use async_trait::async_trait;
-        use chrono::{DateTime, Utc};
-        use goose::agents::platform_tools::PLATFORM_MANAGE_SCHEDULE_TOOL_NAME;
-        use goose::agents::AgentConfig;
-        use goose::config::permission::PermissionManager;
-        use goose::config::GooseMode;
-        use goose::scheduler::{ScheduledJob, SchedulerError};
-        use goose::scheduler_trait::SchedulerTrait;
-        use goose::session::{Session, SessionManager};
-        use std::path::PathBuf;
-        use std::sync::Arc;
-        use tempfile::TempDir;
-
-        struct MockScheduler {
-            jobs: tokio::sync::Mutex<Vec<ScheduledJob>>,
-        }
-
-        struct SessionsMockScheduler {
-            sessions: Vec<(String, Session)>,
-        }
-
-        impl SessionsMockScheduler {
-            fn new(sessions: Vec<(String, Session)>) -> Self {
-                Self { sessions }
-            }
-        }
-
-        #[async_trait]
-        impl SchedulerTrait for SessionsMockScheduler {
-            async fn add_scheduled_job(
-                &self,
-                _job: ScheduledJob,
-                _copy: bool,
-            ) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn schedule_recipe(
-                &self,
-                _recipe_path: PathBuf,
-                _cron_schedule: Option<String>,
-            ) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn list_scheduled_jobs(&self) -> Vec<ScheduledJob> {
-                Vec::new()
-            }
-
-            async fn remove_scheduled_job(
-                &self,
-                _id: &str,
-                _remove: bool,
-            ) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn pause_schedule(&self, _id: &str) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn unpause_schedule(&self, _id: &str) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn run_now(&self, _id: &str) -> Result<String, SchedulerError> {
-                Ok("test_session_123".to_string())
-            }
-
-            async fn sessions(
-                &self,
-                _sched_id: &str,
-                _limit: usize,
-            ) -> Result<Vec<(String, Session)>, SchedulerError> {
-                Ok(self.sessions.clone())
-            }
-
-            async fn update_schedule(
-                &self,
-                _sched_id: &str,
-                _new_cron: String,
-            ) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn kill_running_job(&self, _sched_id: &str) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn get_running_job_info(
-                &self,
-                _sched_id: &str,
-            ) -> Result<Option<(String, DateTime<Utc>)>, SchedulerError> {
-                Ok(None)
-            }
-        }
-
-        impl MockScheduler {
-            fn new() -> Self {
-                Self {
-                    jobs: tokio::sync::Mutex::new(Vec::new()),
-                }
-            }
-        }
-
-        #[async_trait]
-        impl SchedulerTrait for MockScheduler {
-            async fn add_scheduled_job(
-                &self,
-                job: ScheduledJob,
-                _copy: bool,
-            ) -> Result<(), SchedulerError> {
-                let mut jobs = self.jobs.lock().await;
-                jobs.push(job);
-                Ok(())
-            }
-
-            async fn schedule_recipe(
-                &self,
-                _recipe_path: PathBuf,
-                _cron_schedule: Option<String>,
-            ) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn list_scheduled_jobs(&self) -> Vec<ScheduledJob> {
-                let jobs = self.jobs.lock().await;
-                jobs.clone()
-            }
-
-            async fn remove_scheduled_job(
-                &self,
-                id: &str,
-                _remove: bool,
-            ) -> Result<(), SchedulerError> {
-                let mut jobs = self.jobs.lock().await;
-                if let Some(pos) = jobs.iter().position(|job| job.id == id) {
-                    jobs.remove(pos);
-                    Ok(())
-                } else {
-                    Err(SchedulerError::JobNotFound(id.to_string()))
-                }
-            }
-
-            async fn pause_schedule(&self, _id: &str) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn unpause_schedule(&self, _id: &str) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn run_now(&self, _id: &str) -> Result<String, SchedulerError> {
-                Ok("test_session_123".to_string())
-            }
-
-            async fn sessions(
-                &self,
-                _sched_id: &str,
-                _limit: usize,
-            ) -> Result<Vec<(String, Session)>, SchedulerError> {
-                Ok(vec![])
-            }
-
-            async fn update_schedule(
-                &self,
-                _sched_id: &str,
-                _new_cron: String,
-            ) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn kill_running_job(&self, _sched_id: &str) -> Result<(), SchedulerError> {
-                Ok(())
-            }
-
-            async fn get_running_job_info(
-                &self,
-                _sched_id: &str,
-            ) -> Result<Option<(String, DateTime<Utc>)>, SchedulerError> {
-                Ok(None)
-            }
-        }
-
-        #[tokio::test]
-        async fn test_schedule_management_tool_list() {
-            let temp_dir = TempDir::new().unwrap();
-            let data_dir = temp_dir.path().to_path_buf();
-            let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
-            let permission_manager = Arc::new(PermissionManager::new(data_dir));
-            let mock_scheduler = Arc::new(MockScheduler::new());
-            let config = AgentConfig::new(
-                session_manager,
-                permission_manager,
-                Some(mock_scheduler),
-                GooseMode::Auto,
-                false,
-                GoosePlatform::GooseCli,
-            );
-            let agent = Agent::with_config(config);
-
-            let tools = agent.list_tools("test-session-id", None).await;
-            let schedule_tool = tools
-                .iter()
-                .find(|tool| tool.name == PLATFORM_MANAGE_SCHEDULE_TOOL_NAME);
-            assert!(schedule_tool.is_some());
-
-            let tool = schedule_tool.unwrap();
-            assert!(tool
-                .description
-                .clone()
-                .unwrap_or_default()
-                .contains("Manage goose's internal scheduled recipe execution"));
-        }
-
-        #[tokio::test]
-        async fn test_no_schedule_management_tool_without_scheduler() {
-            let agent = Agent::new();
-
-            let tools = agent.list_tools("test-session-id", None).await;
-            let schedule_tool = tools
-                .iter()
-                .find(|tool| tool.name == PLATFORM_MANAGE_SCHEDULE_TOOL_NAME);
-            assert!(schedule_tool.is_none());
-        }
-
-        #[tokio::test]
-        async fn test_schedule_management_tool_in_platform_tools() {
-            let temp_dir = TempDir::new().unwrap();
-            let data_dir = temp_dir.path().to_path_buf();
-            let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
-            let permission_manager = Arc::new(PermissionManager::new(data_dir));
-            let mock_scheduler = Arc::new(MockScheduler::new());
-            let config = AgentConfig::new(
-                session_manager,
-                permission_manager,
-                Some(mock_scheduler),
-                GooseMode::Auto,
-                false,
-                GoosePlatform::GooseCli,
-            );
-            let agent = Agent::with_config(config);
-
-            let tools = agent
-                .list_tools("test-session-id", Some("platform".to_string()))
-                .await;
-
-            // Check that the schedule management tool is included in platform tools
-            let schedule_tool = tools
-                .iter()
-                .find(|tool| tool.name == PLATFORM_MANAGE_SCHEDULE_TOOL_NAME);
-            assert!(schedule_tool.is_some());
-
-            let tool = schedule_tool.unwrap();
-            assert!(tool
-                .description
-                .clone()
-                .unwrap_or_default()
-                .contains("Manage goose's internal scheduled recipe execution"));
-
-            // Verify the tool has the expected actions in its schema
-            if let Some(properties) = tool.input_schema.get("properties") {
-                if let Some(action_prop) = properties.get("action") {
-                    if let Some(enum_values) = action_prop.get("enum") {
-                        let actions: Vec<String> = enum_values
-                            .as_array()
-                            .unwrap()
-                            .iter()
-                            .map(|v| v.as_str().unwrap().to_string())
-                            .collect();
-
-                        // Check that our session_content action is included
-                        assert!(actions.contains(&"session_content".to_string()));
-                        assert!(actions.contains(&"list".to_string()));
-                        assert!(actions.contains(&"create".to_string()));
-                        assert!(actions.contains(&"sessions".to_string()));
-                    }
-                }
-            }
-        }
-
-        #[tokio::test]
-        async fn test_schedule_management_tool_schema_validation() {
-            let temp_dir = TempDir::new().unwrap();
-            let data_dir = temp_dir.path().to_path_buf();
-            let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
-            let permission_manager = Arc::new(PermissionManager::new(data_dir));
-            let mock_scheduler = Arc::new(MockScheduler::new());
-            let config = AgentConfig::new(
-                session_manager,
-                permission_manager,
-                Some(mock_scheduler),
-                GooseMode::Auto,
-                false,
-                GoosePlatform::GooseCli,
-            );
-            let agent = Agent::with_config(config);
-
-            let tools = agent.list_tools("test-session-id", None).await;
-            let schedule_tool = tools
-                .iter()
-                .find(|tool| tool.name == PLATFORM_MANAGE_SCHEDULE_TOOL_NAME);
-            assert!(schedule_tool.is_some());
-
-            let tool = schedule_tool.unwrap();
-
-            // Verify the tool schema has the session_id parameter for session_content action
-            if let Some(properties) = tool.input_schema.get("properties") {
-                assert!(properties.get("session_id").is_some());
-
-                if let Some(session_id_prop) = properties.get("session_id") {
-                    assert_eq!(
-                        session_id_prop.get("type").unwrap().as_str().unwrap(),
-                        "string"
-                    );
-                    assert!(session_id_prop
-                        .get("description")
-                        .unwrap()
-                        .as_str()
-                        .unwrap()
-                        .contains("Session identifier for session_content action"));
-                }
-            }
-        }
-
-        #[tokio::test]
-        async fn test_schedule_sessions_reports_message_count_without_conversation() {
-            let temp_dir = TempDir::new().unwrap();
-            let data_dir = temp_dir.path().to_path_buf();
-            let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
-            let permission_manager = Arc::new(PermissionManager::new(data_dir));
-
-            let session = Session {
-                id: "session-123".to_string(),
-                message_count: 37,
-                conversation: None,
-                ..Default::default()
-            };
-
-            let mock_scheduler = Arc::new(SessionsMockScheduler::new(vec![(
-                "session-123".to_string(),
-                session,
-            )]));
-            let config = AgentConfig::new(
-                session_manager,
-                permission_manager,
-                Some(mock_scheduler),
-                GooseMode::Auto,
-                false,
-                GoosePlatform::GooseCli,
-            );
-            let agent = Agent::with_config(config);
-
-            let result = agent
-                .handle_schedule_management(
-                    serde_json::json!({
-                        "action": "sessions",
-                        "job_id": "daily-report"
-                    }),
-                    "test-request".to_string(),
-                )
-                .await
-                .expect("schedule sessions should succeed");
-
-            let text = result
-                .into_iter()
-                .filter_map(|content| match &content.raw {
-                    rmcp::model::RawContent::Text(text_content) => Some(text_content.text.clone()),
-                    _ => None,
-                })
-                .collect::<String>();
-            assert!(
-                text.contains("Messages: 37"),
-                "expected stored message_count in sessions output, got: {text}"
-            );
-        }
-    }
-
-    #[cfg(test)]
-    mod retry_tests {
-        use super::*;
-        use goose::agents::types::{RetryConfig, SuccessCheck};
-
-        #[tokio::test]
-        async fn test_retry_success_check_execution() -> Result<()> {
-            use goose::agents::retry::execute_success_checks;
-
-            let retry_config = RetryConfig {
-                max_retries: 3,
-                checks: vec![],
-                on_failure: None,
-                timeout_seconds: Some(30),
-                on_failure_timeout_seconds: Some(60),
-            };
-
-            let success_checks = vec![SuccessCheck::Shell {
-                command: "echo 'test'".to_string(),
-            }];
-
-            let result = execute_success_checks(&success_checks, &retry_config).await;
-            assert!(result.is_ok(), "Success check should pass");
-            assert!(result.unwrap(), "Command should succeed");
-
-            let fail_checks = vec![SuccessCheck::Shell {
-                command: "false".to_string(),
-            }];
-
-            let result = execute_success_checks(&fail_checks, &retry_config).await;
-            assert!(result.is_ok(), "Success check execution should not error");
-            assert!(!result.unwrap(), "Command should fail");
-
-            Ok(())
-        }
-
-        #[tokio::test]
-        async fn test_retry_logic_with_validation_errors() -> Result<()> {
-            let invalid_retry_config = RetryConfig {
-                max_retries: 0,
-                checks: vec![],
-                on_failure: None,
-                timeout_seconds: Some(0),
-                on_failure_timeout_seconds: None,
-            };
-
-            let validation_result = invalid_retry_config.validate();
-            assert!(
-                validation_result.is_err(),
-                "Should validate max_retries > 0"
-            );
-            assert!(validation_result
-                .unwrap_err()
-                .contains("max_retries must be greater than 0"));
-
-            Ok(())
-        }
-
-        #[tokio::test]
-        async fn test_retry_attempts_counter_reset() -> Result<()> {
-            let agent = Agent::new();
-
-            agent.reset_retry_attempts().await;
-            let initial_attempts = agent.get_retry_attempts().await;
-            assert_eq!(initial_attempts, 0);
-
-            let new_attempts = agent.increment_retry_attempts().await;
-            assert_eq!(new_attempts, 1);
-
-            agent.reset_retry_attempts().await;
-            let reset_attempts = agent.get_retry_attempts().await;
-            assert_eq!(reset_attempts, 0);
-
-            Ok(())
-        }
-    }
-
-    #[cfg(test)]
     mod max_turns_tests {
         use super::*;
         use async_trait::async_trait;
@@ -570,9 +112,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session.id,
-                schedule_id: None,
                 max_turns: Some(1),
-                retry_config: None,
             };
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -735,7 +275,6 @@ mod tests {
             let agent = Agent::with_config(AgentConfig::new(
                 session_manager.clone(),
                 Arc::new(PermissionManager::new(data_dir)),
-                None,
                 GooseMode::default(),
                 true,
                 GoosePlatform::GooseCli,
@@ -761,9 +300,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session.id,
-                schedule_id: None,
                 max_turns: Some(5),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -970,9 +507,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session.id.clone(),
-                schedule_id: None,
                 max_turns: Some(1),
-                retry_config: None,
             };
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -1102,7 +637,6 @@ mod tests {
             let config = AgentConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
-                None,
                 GooseMode::default(),
                 false,
                 GoosePlatform::GooseCli,
@@ -1297,7 +831,6 @@ mod tests {
             let config = AgentConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
-                None,
                 GooseMode::Auto,
                 true, // disable session naming so it doesn't consume a provider call
                 GoosePlatform::GooseCli,
@@ -1330,9 +863,7 @@ mod tests {
             // with the cancel token so the provider triggers cancellation.
             let session_config = SessionConfig {
                 id: session_id.clone(),
-                schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -1380,9 +911,7 @@ mod tests {
             // ── Reply 2: text stream with provider-triggered cancellation (call 2)
             let session_config2 = SessionConfig {
                 id: session_id.clone(),
-                schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream2 = agent
@@ -1545,7 +1074,6 @@ mod tests {
             let config = AgentConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
-                None,
                 GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
@@ -1569,9 +1097,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session_id.clone(),
-                schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -1745,7 +1271,6 @@ mod tests {
             let config = AgentConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
-                None,
                 GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
@@ -1769,9 +1294,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session_id.clone(),
-                schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -1906,7 +1429,6 @@ mod tests {
             let config = AgentConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
-                None,
                 GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
@@ -1930,9 +1452,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session_id.clone(),
-                schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2081,7 +1601,6 @@ mod tests {
             let config = AgentConfig::new(
                 session_manager,
                 PermissionManager::instance(),
-                None,
                 GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
@@ -2118,9 +1637,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session.id.clone(),
-                schedule_id: None,
                 max_turns: Some(10),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2197,9 +1714,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session.id.clone(),
-                schedule_id: None,
                 max_turns: Some(10),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2293,9 +1808,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session.id.clone(),
-                schedule_id: None,
                 max_turns: Some(10),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2357,9 +1870,7 @@ mod tests {
 
             let session_config = SessionConfig {
                 id: session.id.clone(),
-                schedule_id: None,
                 max_turns: Some(10),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2432,9 +1943,7 @@ mod tests {
         async fn run_turn(agent: &Agent, session_id: &str, text: &str) -> Result<()> {
             let session_config = SessionConfig {
                 id: session_id.to_string(),
-                schedule_id: None,
                 max_turns: Some(1),
-                retry_config: None,
             };
             let stream = agent
                 .reply(Message::user().with_text(text), session_config, None)
@@ -2453,7 +1962,6 @@ mod tests {
             let config = AgentConfig::new(
                 session_manager.clone(),
                 PermissionManager::instance(),
-                None,
                 GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
@@ -2542,7 +2050,6 @@ mod tests {
             let agent = Agent::with_config(AgentConfig::new(
                 session_manager.clone(),
                 permission_manager,
-                None,
                 GooseMode::default(),
                 false,
                 GoosePlatform::GooseDesktop,
@@ -2621,7 +2128,6 @@ mod tests {
             let agent = Arc::new(Agent::with_config(AgentConfig::new(
                 session_manager.clone(),
                 permission_manager,
-                None,
                 GooseMode::default(),
                 false,
                 GoosePlatform::GooseDesktop,

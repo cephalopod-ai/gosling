@@ -1,6 +1,5 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolListItem } from '@aaif/goose-sdk';
-import type { GooseApp } from '../types/apps';
 import { getAcpClient } from './acpConnection';
 
 type JsonRecord = Record<string, unknown>;
@@ -60,28 +59,6 @@ function flattenReadResourceResult(result: unknown, fallbackUri: string): McpApp
     text,
     _meta: metaField(first),
   };
-}
-
-function acpApp(value: unknown): GooseApp | null {
-  if (!isRecord(value)) return null;
-  return value as GooseApp;
-}
-
-export async function listMcpApps(sessionId?: string): Promise<GooseApp[]> {
-  const client = await getAcpClient();
-  const response = await client.goose.appsList_unstable(sessionId ? { sessionId } : {});
-  return (response.apps ?? []).map(acpApp).filter((app): app is GooseApp => !!app);
-}
-
-export async function exportMcpApp(name: string): Promise<string> {
-  const client = await getAcpClient();
-  const response = await client.goose.appsExport_unstable({ name });
-  return response.html;
-}
-
-export async function importMcpApp(html: string): Promise<void> {
-  const client = await getAcpClient();
-  await client.goose.appsImport_unstable({ html });
 }
 
 export async function listMcpAppTools(

@@ -285,7 +285,7 @@ pub async fn session_reply(
     }
 
     // Validate session exists before allocating a bus/registering work
-    let session_data = state
+    state
         .session_manager()
         .get_session(&session_id, false)
         .await
@@ -299,19 +299,6 @@ pub async fn session_reply(
         interface = "ui",
         "Session started"
     );
-
-    if let Some(ref recipe) = session_data.recipe {
-        if state.mark_recipe_run_if_absent(&session_id).await {
-            tracing::info!(
-                monotonic_counter.goose.recipe_runs = 1,
-                recipe_name = %recipe.title,
-                recipe_version = %recipe.version,
-                session_type = "app",
-                interface = "ui",
-                "Recipe execution started"
-            );
-        }
-    }
 
     let user_message = request.user_message;
     let override_conversation = request.override_conversation;
@@ -334,9 +321,7 @@ pub async fn session_reply(
         let agent = state.get_agent_for_route(session_id.clone()).await?;
         let session_config = goose::agents::types::SessionConfig {
             id: session_id.clone(),
-            schedule_id: session_data.schedule_id.clone(),
             max_turns: None,
-            retry_config: None,
         };
         let _ = agent
             .reply(user_message, session_config, None)
@@ -406,9 +391,7 @@ pub async fn session_reply(
 
         let session_config = SessionConfig {
             id: task_session_id.clone(),
-            schedule_id: session.schedule_id.clone(),
             max_turns: None,
-            retry_config: None,
         };
 
         let mut all_messages = match override_conversation {

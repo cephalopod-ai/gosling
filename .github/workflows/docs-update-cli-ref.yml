@@ -187,7 +187,8 @@ jobs:
           ls -la
           echo ""
           echo "🤖 Applying changes to goose-cli-commands.md..."
-          goose run --recipe ../recipes/update-cli-commands.yaml
+          goose run --instructions ../prompts/update-cli-commands.prompt.md \
+            --system "$(cat ../prompts/update-cli-commands.system.md)"
       
       - name: Upload automation outputs
         if: always()

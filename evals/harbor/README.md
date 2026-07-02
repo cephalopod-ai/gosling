@@ -69,7 +69,7 @@ alternatively, you can just export them in the session where you run the benchma
 The `run` subcommand builds a harbor config that uses our `GooseBinaryAgent`
 adapter — it uploads your local goose binary into each task container,
 generates a `config.yaml` from the template with the requested extensions
-flipped on, runs the recipe, and streams JSON output.
+flipped on, runs the task prompt, and streams JSON output.
 
 ```bash
 # Pin a specific binary, default everything else

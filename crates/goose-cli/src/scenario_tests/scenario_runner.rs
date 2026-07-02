@@ -205,7 +205,6 @@ where
     let agent_config = AgentConfig::new(
         session_manager,
         permission_manager,
-        None,
         GooseMode::Auto,
         true,
         GoosePlatform::GooseCli,
@@ -254,8 +253,6 @@ where
         agent,
         session.id,
         false,
-        None,
-        None,
         None,
         None,
         "text".to_string(),

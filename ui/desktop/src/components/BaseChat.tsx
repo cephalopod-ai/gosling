@@ -1,5 +1,5 @@
 import { AppEvents } from '../constants/events';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { defineMessages, useIntl } from '../i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SearchView } from './conversation/SearchView';
@@ -16,20 +16,14 @@ import { useIsMobile } from '../hooks/use-mobile';
 import { useNavigationContextSafe } from './Layout/NavigationContext';
 import { cn } from '../utils';
 import { useChatSession } from '../hooks/useChatSession';
-import { acpDeleteSession, acpUpdateWorkingDir } from '../acp/sessions';
+import { acpUpdateWorkingDir } from '../acp/sessions';
 import { useNavigation } from '../hooks/useNavigation';
-import { RecipeHeader } from './RecipeHeader';
-import { RecipeWarningModal } from './ui/RecipeWarningModal';
-import { scanRecipe } from '../recipe';
-import type { Recipe } from '../recipe';
-import RecipeActivities from './recipes/RecipeActivities';
 import {
   getThinkingMessage,
   getTextAndImageContent,
   type Message,
   type UserInput,
 } from '../types/message';
-import { substituteParameters } from '../utils/parameterSubstitution';
 import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Goose } from './icons';
 import EnvironmentBadge from './GooseSidebar/EnvironmentBadge';
@@ -77,9 +71,6 @@ export default function BaseChat({
   const scrollRef = useRef<ScrollAreaHandle>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const disableAnimation = location.state?.disableAnimation || false;
-  const [hasStartedUsingRecipe, setHasStartedUsingRecipe] = React.useState(false);
-  const [hasNotAcceptedRecipe, setHasNotAcceptedRecipe] = useState<boolean>();
-  const [hasRecipeSecurityWarnings, setHasRecipeSecurityWarnings] = useState(false);
   const isMobile = useIsMobile();
   const navContext = useNavigationContextSafe();
   const setView = useNavigation();
@@ -119,33 +110,17 @@ export default function BaseChat({
     [session, updateSession]
   );
 
-  const recipe = session?.recipe as Recipe | null | undefined;
-
-  const resolvedInitialMessage = useMemo((): UserInput | undefined => {
-    if (!initialMessage) return undefined;
-    if (recipe?.prompt && session?.user_recipe_values) {
-      return {
-        ...initialMessage,
-        msg: substituteParameters(initialMessage.msg, session.user_recipe_values),
-      };
-    }
-    return initialMessage;
-  }, [initialMessage, recipe?.prompt, session?.user_recipe_values]);
-
   // noAutoSubmit only suppresses auto-submitting the initial prompt of a fresh session
   // (goose://new-session?prompt=...). Once the conversation has messages, later flows
   // such as forks or resumes should auto-submit normally.
-  const suppressInitialAutoSubmit = noAutoSubmit && messages.length === 0;
-  const canAutoSubmit =
-    !suppressInitialAutoSubmit &&
-    (session?.session_type === 'scheduled' || !recipe || hasNotAcceptedRecipe === false);
+  const canAutoSubmit = !(noAutoSubmit && messages.length === 0);
 
   useAutoSubmit({
     sessionId,
     session,
     messages,
     chatState,
-    initialMessage: resolvedInitialMessage,
+    initialMessage,
     canAutoSubmit,
     handleSubmit,
   });
@@ -191,9 +166,6 @@ export default function BaseChat({
   }, [messages]);
 
   const chatInputSubmit = (input: UserInput) => {
-    if (recipe && input.msg.trim()) {
-      setHasStartedUsingRecipe(true);
-    }
     handleSubmit(input);
   };
 
@@ -213,38 +185,6 @@ export default function BaseChat({
     }
     return null;
   }, [messages]);
-
-  useEffect(() => {
-    if (!recipe || !isActiveSession || session?.session_type === 'scheduled') return;
-
-    (async () => {
-      const accepted = await window.electron.hasAcceptedRecipeBefore(recipe);
-      setHasNotAcceptedRecipe(!accepted);
-
-      if (!accepted) {
-        const scanResult = await scanRecipe(recipe);
-        setHasRecipeSecurityWarnings(scanResult.has_security_warnings);
-      }
-    })();
-  }, [recipe, isActiveSession, session?.session_type]);
-
-  const handleRecipeAccept = async (accept: boolean) => {
-    if (recipe && accept) {
-      await window.electron.recordRecipeHash(recipe);
-      setHasNotAcceptedRecipe(false);
-      return;
-    }
-
-    if (sessionId) {
-      try {
-        await acpDeleteSession(sessionId);
-        window.dispatchEvent(new CustomEvent(AppEvents.SESSION_DELETED, { detail: { sessionId } }));
-      } catch (error) {
-        console.error('Failed to delete declined recipe session:', error);
-      }
-    }
-    setView('chat');
-  };
 
   // Track if this is the initial render for session resuming
   const initialRenderRef = useRef(true);
@@ -334,7 +274,6 @@ export default function BaseChat({
       lastSetNameRef.current = currentSessionName;
       setChat({
         messages,
-        recipe,
         sessionId,
         name: currentSessionName,
       });
@@ -342,18 +281,8 @@ export default function BaseChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.name, setChat]);
 
-  // If we have a recipe prompt and user recipe values, substitute parameters
-  let recipePrompt = '';
-  if (messages.length === 0 && recipe?.prompt) {
-    recipePrompt = session?.user_recipe_values
-      ? substituteParameters(recipe.prompt, session.user_recipe_values)
-      : recipe.prompt;
-  }
-
   const initialPrompt =
-    noAutoSubmit && messages.length === 0 && resolvedInitialMessage?.msg
-      ? resolvedInitialMessage.msg
-      : recipePrompt;
+    noAutoSubmit && messages.length === 0 && initialMessage?.msg ? initialMessage.msg : '';
 
   if (sessionLoadError) {
     return (
@@ -399,7 +328,6 @@ export default function BaseChat({
         {/* Custom header */}
         {renderHeader && renderHeader()}
 
-        {/* Chat container with sticky recipe header */}
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Goose watermark - top right */}
           <div className="absolute top-[14px] right-4 z-[60] flex flex-row items-center gap-1">
@@ -429,24 +357,7 @@ export default function BaseChat({
             paddingX={6}
             paddingY={0}
           >
-            {recipe?.title && (
-              <div className="sticky top-0 z-10 bg-background-primary px-0 -mx-6 mb-6 pt-6">
-                <RecipeHeader title={recipe.title} />
-              </div>
-            )}
-
-            {recipe && (
-              <div className={hasStartedUsingRecipe ? 'mb-6' : ''}>
-                <RecipeActivities
-                  append={(text: string) => handleSubmit({ msg: text, images: [] })}
-                  activities={Array.isArray(recipe.activities) ? recipe.activities : null}
-                  title={recipe.title}
-                  parameterValues={session?.user_recipe_values || {}}
-                />
-              </div>
-            )}
-
-            {messages.length > 0 || recipe ? (
+            {messages.length > 0 ? (
               <>
                 <SearchView>
                   <ProgressiveMessageList
@@ -515,8 +426,6 @@ export default function BaseChat({
             onFilesProcessed={() => setDroppedFiles([])} // Clear dropped files after processing
             messages={messages}
             disableAnimation={disableAnimation}
-            recipe={recipe}
-            recipeAccepted={!hasNotAcceptedRecipe}
             initialPrompt={initialPrompt}
             sessionModel={sessionModel}
             sessionProvider={sessionProvider}
@@ -528,20 +437,6 @@ export default function BaseChat({
           />
         </ChatInputCard>
       </MainPanelLayout>
-
-      {recipe && isActiveSession && session?.session_type !== 'scheduled' && (
-        <RecipeWarningModal
-          isOpen={!!hasNotAcceptedRecipe}
-          onConfirm={() => handleRecipeAccept(true)}
-          onCancel={() => handleRecipeAccept(false)}
-          recipeDetails={{
-            title: recipe.title,
-            description: recipe.description,
-            instructions: recipe.instructions || undefined,
-          }}
-          hasSecurityWarnings={hasRecipeSecurityWarnings}
-        />
-      )}
     </div>
   );
 }

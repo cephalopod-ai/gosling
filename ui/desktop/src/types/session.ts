@@ -1,4 +1,3 @@
-import type { Recipe } from '../recipe';
 import type { Message } from './message';
 
 export type ExtensionData = Record<string, unknown>;
@@ -49,12 +48,9 @@ export type Session = {
   name: string;
   project_id?: string | null;
   provider_name?: string | null;
-  recipe?: Recipe | null;
-  schedule_id?: string | null;
   session_type?: SessionType;
   updated_at: string;
   usage?: Usage;
-  user_recipe_values?: Record<string, string> | null;
   user_set_name?: boolean;
   working_dir: string;
 };

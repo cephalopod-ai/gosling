@@ -48,7 +48,6 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_CLI_DARK_THEME` | Custom syntax highlighting theme for dark mode | [bat theme name](https://github.com/sharkdp/bat#adding-new-themes) | "zenburn" | No |
 | `GOOSE_CLI_SHOW_COST` | Show estimated cost for token use in the CLI | true/false | false | No |
 | `GOOSE_ALLOWLIST` | URL for allowed extensions | Valid URL | None | No |
-| `GOOSE_RECIPE_GITHUB_REPO` | GitHub repository for recipes | Format: "org/repo" | None | No |
 | `GOOSE_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which goose [automatically summarizes your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float between 0.0 and 1.0 (disabled at 0.0)| 0.8 | No |
 | `SECURITY_PROMPT_ENABLED` | Enable [prompt injection detection](/docs/guides/security/prompt-injection-detection) to identify potentially harmful commands | true/false | false | No |
 | `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (higher = stricter) | Float between 0.01 and 1.0 | 0.8 | No |
@@ -77,9 +76,6 @@ GOOSE_PLANNER_MODEL: "gpt-4"
 GOOSE_MODE: "smart_approve"
 GOOSE_TOOLSHIM: true
 GOOSE_CLI_MIN_PRIORITY: 0.2
-
-# Recipe Configuration
-GOOSE_RECIPE_GITHUB_REPO: "aaif-goose/goose-recipes"
 
 # Search Path Configuration
 GOOSE_SEARCH_PATHS:
@@ -159,17 +155,6 @@ Configure goose to export telemetry to [OpenTelemetry](https://opentelemetry.io/
 ```yaml
 otel_exporter_otlp_endpoint: "http://localhost:4318"
 otel_exporter_otlp_timeout: 20000
-```
-
-## Recipe Command Configuration
-You can optionally set up [custom slash commands](/docs/guides/context-engineering/slash-commands) to run recipes that you create. List the command (without the leading `/`) along with the path to the recipe:
-
-```yaml
-slash_commands:
-  - command: "run-tests"
-    recipe_path: "/path/to/recipe.yaml"
-  - command: "daily-standup"
-    recipe_path: "/Users/me/.local/share/goose/recipes/standup.yaml"
 ```
 
 ## Configuration Priority

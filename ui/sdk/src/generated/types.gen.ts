@@ -346,31 +346,6 @@ export type ReadResourceResponse_unstable = {
     result?: unknown;
 };
 
-export type AppsListRequest_unstable = {
-    sessionId?: string | null;
-};
-
-export type AppsListResponse_unstable = {
-    apps?: Array<unknown>;
-};
-
-export type AppsExportRequest_unstable = {
-    name: string;
-};
-
-export type AppsExportResponse_unstable = {
-    html: string;
-};
-
-export type AppsImportRequest_unstable = {
-    html: string;
-};
-
-export type AppsImportResponse_unstable = {
-    name: string;
-    message: string;
-};
-
 /**
  * Update the working directory for a session.
  */
@@ -1513,243 +1488,6 @@ export type ShareSessionNostrResponse_unstable = {
     relays: Array<string>;
 };
 
-export type EncodeRecipeRequest_unstable = {
-    recipe: RecipeDto;
-};
-
-export type RecipeDto = {
-    version?: string;
-    title: string;
-    description: string;
-    instructions?: string | null;
-    prompt?: string | null;
-    extensions?: Array<RecipeExtensionDto> | null;
-    settings?: RecipeSettingsDto | null;
-    activities?: Array<string> | null;
-    author?: RecipeAuthorDto | null;
-    parameters?: Array<RecipeParameterDto> | null;
-    response?: RecipeResponseDto | null;
-    sub_recipes?: Array<SubRecipeDto> | null;
-    retry?: RecipeRetryConfigDto | null;
-};
-
-export type RecipeExtensionDto = {
-    name: string;
-    description?: string | null;
-    display_name?: string | null;
-    timeout?: number | null;
-    bundled?: boolean | null;
-    /**
-     * Tool allowlist for this extension. Omit this field to allow all tools.
-     */
-    available_tools?: Array<string> | null;
-    type: 'builtin';
-} | {
-    name: string;
-    description?: string | null;
-    display_name?: string | null;
-    bundled?: boolean | null;
-    /**
-     * Tool allowlist for this extension. Omit this field to allow all tools.
-     */
-    available_tools?: Array<string> | null;
-    type: 'platform';
-} | {
-    name: string;
-    description?: string | null;
-    cmd: string;
-    args?: Array<string>;
-    envs?: {
-        [key: string]: string;
-    };
-    env_keys?: Array<string>;
-    timeout?: number | null;
-    cwd?: string | null;
-    bundled?: boolean | null;
-    /**
-     * Tool allowlist for this extension. Omit this field to allow all tools.
-     */
-    available_tools?: Array<string> | null;
-    type: 'stdio';
-} | {
-    name: string;
-    description?: string | null;
-    uri: string;
-    envs?: {
-        [key: string]: string;
-    };
-    env_keys?: Array<string>;
-    headers?: {
-        [key: string]: string;
-    };
-    timeout?: number | null;
-    socket?: string | null;
-    bundled?: boolean | null;
-    /**
-     * Tool allowlist for this extension. Omit this field to allow all tools.
-     */
-    available_tools?: Array<string> | null;
-    type: 'streamable_http';
-};
-
-export type RecipeSettingsDto = {
-    goose_provider?: string | null;
-    goose_model?: string | null;
-    temperature?: number | null;
-    max_turns?: number | null;
-};
-
-export type RecipeAuthorDto = {
-    contact?: string | null;
-    metadata?: string | null;
-};
-
-export type RecipeParameterDto = {
-    key: string;
-    input_type: RecipeParameterInputTypeDto;
-    requirement: RecipeParameterRequirementDto;
-    description: string;
-    default?: string | null;
-    options?: Array<string> | null;
-};
-
-export type RecipeParameterInputTypeDto = 'string' | 'number' | 'boolean' | 'date' | 'file' | 'select';
-
-export type RecipeParameterRequirementDto = 'required' | 'optional' | 'user_prompt';
-
-export type RecipeResponseDto = {
-    json_schema?: unknown;
-};
-
-export type SubRecipeDto = {
-    name: string;
-    path: string;
-    values?: {
-        [key: string]: string;
-    } | null;
-    sequential_when_repeated?: boolean;
-    description?: string | null;
-};
-
-export type RecipeRetryConfigDto = {
-    max_retries: number;
-    checks?: Array<RecipeSuccessCheckDto>;
-    on_failure?: string | null;
-    timeout_seconds?: number | null;
-    on_failure_timeout_seconds?: number | null;
-};
-
-export type RecipeSuccessCheckDto = {
-    command: string;
-    type: 'shell';
-};
-
-export type EncodeRecipeResponse_unstable = {
-    deeplink: string;
-};
-
-export type DecodeRecipeRequest_unstable = {
-    deeplink: string;
-};
-
-export type DecodeRecipeResponse_unstable = {
-    recipe: RecipeDto;
-};
-
-export type ScanRecipeRequest_unstable = {
-    recipe: RecipeDto;
-};
-
-export type ScanRecipeResponse_unstable = {
-    has_security_warnings: boolean;
-};
-
-export type ListRecipesRequest_unstable = {
-    [key: string]: unknown;
-};
-
-export type ListRecipesResponse_unstable = {
-    recipes: Array<RecipeListEntryDto>;
-};
-
-export type RecipeListEntryDto = {
-    id: string;
-    recipe: RecipeDto;
-    file_path: string;
-    last_modified: string;
-    schedule_cron?: string | null;
-    slash_command?: string | null;
-};
-
-export type DeleteRecipeRequest_unstable = {
-    id: string;
-};
-
-export type ScheduleRecipeRequest_unstable = {
-    id: string;
-    cron_schedule?: string | null;
-};
-
-export type SetRecipeSlashCommandRequest_unstable = {
-    id: string;
-    slash_command?: string | null;
-};
-
-export type SaveRecipeRequest_unstable = {
-    recipe: RecipeDto;
-    id?: string | null;
-};
-
-export type SaveRecipeResponse_unstable = {
-    id: string;
-    file_name: string;
-    file_path: string;
-};
-
-export type ParseRecipeRequest_unstable = {
-    content: string;
-};
-
-export type ParseRecipeResponse_unstable = {
-    recipe: RecipeDto;
-};
-
-export type RecipeToYamlRequest_unstable = {
-    recipe: RecipeDto;
-};
-
-export type RecipeToYamlResponse_unstable = {
-    yaml: string;
-};
-
-export type ListSchedulesRequest_unstable = {
-    [key: string]: unknown;
-};
-
-export type ListSchedulesResponse_unstable = {
-    jobs: Array<ScheduledJobDto>;
-};
-
-export type ScheduledJobDto = {
-    id: string;
-    source: string;
-    cron: string;
-    lastRun?: string | null;
-    currentlyRunning: boolean;
-    paused: boolean;
-    currentSessionId?: string | null;
-    jobStartTime?: string | null;
-};
-
-export type ListScheduleSessionsRequest_unstable = {
-    scheduleId: string;
-    limit: number;
-};
-
-export type ListScheduleSessionsResponse_unstable = {
-    sessions: Array<SessionInfo>;
-};
-
 /**
  * Information about a session returned by session/list
  */
@@ -1799,67 +1537,6 @@ export type SessionInfo = {
  * See protocol docs: [Session ID](https://agentclientprotocol.com/protocol/session-setup#session-id)
  */
 export type SessionId = string;
-
-export type CreateScheduleRequest_unstable = {
-    id: string;
-    recipe: RecipeDto;
-    cron: string;
-};
-
-export type CreateScheduleResponse_unstable = {
-    job: ScheduledJobDto;
-};
-
-export type DeleteScheduleRequest_unstable = {
-    scheduleId: string;
-};
-
-export type PauseScheduleRequest_unstable = {
-    scheduleId: string;
-};
-
-export type UnpauseScheduleRequest_unstable = {
-    scheduleId: string;
-};
-
-export type UpdateScheduleRequest_unstable = {
-    scheduleId: string;
-    cron: string;
-};
-
-export type UpdateScheduleResponse_unstable = {
-    job: ScheduledJobDto;
-};
-
-export type RunScheduleNowRequest_unstable = {
-    scheduleId: string;
-};
-
-export type RunScheduleNowResponse_unstable = {
-    status: RunScheduleNowStatus;
-    sessionId?: string | null;
-};
-
-export type RunScheduleNowStatus = 'completed' | 'cancelled';
-
-export type KillRunningJobRequest_unstable = {
-    jobId: string;
-};
-
-export type KillRunningJobResponse_unstable = {
-    message: string;
-};
-
-export type InspectRunningJobRequest_unstable = {
-    jobId: string;
-};
-
-export type InspectRunningJobResponse_unstable = {
-    running: boolean;
-    sessionId?: string | null;
-    jobStartTime?: string | null;
-    runningDurationSeconds?: number | null;
-};
 
 /**
  * Return list-style metadata for a single session without loading the conversation.
@@ -1930,7 +1607,7 @@ export type CreateSourceRequest_unstable = {
 /**
  * The type of source entity.
  */
-export type SourceType = 'skill' | 'builtinSkill' | 'recipe' | 'subrecipe' | 'agent' | 'project';
+export type SourceType = 'skill' | 'builtinSkill' | 'agent' | 'project';
 
 /**
  * Target scope for creating or importing sources.
@@ -2025,7 +1702,7 @@ export type ListAgentMentionsResponse_unstable = {
 };
 
 /**
- * A user-facing `@` mention target backed by an agent, recipe, or subrecipe source.
+ * A user-facing `@` mention target backed by an agent source.
  */
 export type AgentMention = {
     name: string;
@@ -2562,31 +2239,17 @@ export type StatusMessageUpdate = {
     status: StatusMessage;
 };
 
-export type RequestRecipeParams_unstable = {
-    sessionId: string;
-    parameters: Array<RecipeParameterDto>;
-};
-
-export type RecipeParamsResponse_unstable = {
-    action?: RecipeParamsAction;
-    values?: {
-        [key: string]: string;
-    };
-};
-
-export type RecipeParamsAction = 'submit' | 'cancel';
-
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddSessionExtensionRequest_unstable | RemoveSessionExtensionRequest_unstable | GetToolsRequest_unstable | SetToolPermissionsRequest_unstable | GooseToolCallRequest_unstable | ReadResourceRequest_unstable | AppsListRequest_unstable | AppsExportRequest_unstable | AppsImportRequest_unstable | UpdateWorkingDirRequest_unstable | SetSessionSystemPromptRequest_unstable | SteerSessionRequest_unstable | DiagnosticsGetRequest_unstable | ListPromptsRequest_unstable | GetPromptRequest_unstable | SavePromptRequest_unstable | ResetPromptRequest_unstable | DeleteSessionRequest | GetConfigExtensionsRequest_unstable | GetAvailableExtensionsRequest_unstable | AddConfigExtensionRequest_unstable | RemoveConfigExtensionRequest_unstable | SetConfigExtensionEnabledRequest_unstable | GetSessionExtensionsRequest_unstable | ListProvidersRequest_unstable | ProviderSupportedModelsListRequest_unstable | ProviderCatalogListRequest_unstable | ProviderSetupCatalogListRequest_unstable | ProviderCatalogTemplateRequest_unstable | CustomProviderCreateRequest_unstable | CustomProviderReadRequest_unstable | CustomProviderUpdateRequest_unstable | CustomProviderDeleteRequest_unstable | RefreshProviderInventoryRequest_unstable | ProviderConfigReadRequest_unstable | ProviderConfigStatusRequest_unstable | ProviderConfigSaveRequest_unstable | ProviderConfigDeleteRequest_unstable | ProviderConfigAuthenticateRequest_unstable | ProviderSecretsListRequest_unstable | ProviderSecretDeleteRequest_unstable | CanonicalModelInfoRequest_unstable | PreferencesReadRequest_unstable | PreferencesSaveRequest_unstable | PreferencesRemoveRequest_unstable | ConfigReadRequest_unstable | ConfigUpsertRequest_unstable | ConfigRemoveRequest_unstable | ConfigReadAllRequest_unstable | DefaultsReadRequest_unstable | DefaultsSaveRequest_unstable | DefaultsClearRequest_unstable | OnboardingImportScanRequest_unstable | OnboardingImportApplyRequest_unstable | ExportSessionRequest_unstable | ImportSessionRequest_unstable | ShareSessionNostrRequest_unstable | EncodeRecipeRequest_unstable | DecodeRecipeRequest_unstable | ScanRecipeRequest_unstable | ListRecipesRequest_unstable | DeleteRecipeRequest_unstable | ScheduleRecipeRequest_unstable | SetRecipeSlashCommandRequest_unstable | SaveRecipeRequest_unstable | ParseRecipeRequest_unstable | RecipeToYamlRequest_unstable | ListSchedulesRequest_unstable | ListScheduleSessionsRequest_unstable | CreateScheduleRequest_unstable | DeleteScheduleRequest_unstable | PauseScheduleRequest_unstable | UnpauseScheduleRequest_unstable | UpdateScheduleRequest_unstable | RunScheduleNowRequest_unstable | KillRunningJobRequest_unstable | InspectRunningJobRequest_unstable | GetSessionInfoRequest_unstable | TruncateSessionConversationRequest_unstable | UpdateSessionProjectRequest_unstable | RenameSessionRequest_unstable | ArchiveSessionRequest_unstable | UnarchiveSessionRequest_unstable | CreateSourceRequest_unstable | ListSourcesRequest_unstable | ListAgentMentionsRequest_unstable | ListSlashCommandsRequest_unstable | UpdateSourceRequest_unstable | DeleteSourceRequest_unstable | ExportSourceRequest_unstable | ImportSourcesRequest_unstable | DictationTranscribeRequest_unstable | DictationConfigRequest_unstable | DictationSecretSaveRequest_unstable | DictationSecretDeleteRequest_unstable | DictationModelsListRequest_unstable | DictationModelDownloadRequest_unstable | DictationModelDownloadProgressRequest_unstable | DictationModelCancelRequest_unstable | DictationModelDeleteRequest_unstable | DictationModelSelectRequest_unstable | LocalInferenceModelsListRequest_unstable | LocalInferenceModelDownloadRequest_unstable | LocalInferenceModelDownloadProgressRequest_unstable | LocalInferenceModelDownloadCancelRequest_unstable | LocalInferenceModelDeleteRequest_unstable | LocalInferenceModelSettingsReadRequest_unstable | LocalInferenceModelSettingsUpdateRequest_unstable | LocalInferenceHuggingFaceSearchRequest_unstable | LocalInferenceHuggingFaceRepoVariantsRequest_unstable | LocalInferenceBuiltinChatTemplatesListRequest_unstable | {
+    params?: AddSessionExtensionRequest_unstable | RemoveSessionExtensionRequest_unstable | GetToolsRequest_unstable | SetToolPermissionsRequest_unstable | GooseToolCallRequest_unstable | ReadResourceRequest_unstable | UpdateWorkingDirRequest_unstable | SetSessionSystemPromptRequest_unstable | SteerSessionRequest_unstable | DiagnosticsGetRequest_unstable | ListPromptsRequest_unstable | GetPromptRequest_unstable | SavePromptRequest_unstable | ResetPromptRequest_unstable | DeleteSessionRequest | GetConfigExtensionsRequest_unstable | GetAvailableExtensionsRequest_unstable | AddConfigExtensionRequest_unstable | RemoveConfigExtensionRequest_unstable | SetConfigExtensionEnabledRequest_unstable | GetSessionExtensionsRequest_unstable | ListProvidersRequest_unstable | ProviderSupportedModelsListRequest_unstable | ProviderCatalogListRequest_unstable | ProviderSetupCatalogListRequest_unstable | ProviderCatalogTemplateRequest_unstable | CustomProviderCreateRequest_unstable | CustomProviderReadRequest_unstable | CustomProviderUpdateRequest_unstable | CustomProviderDeleteRequest_unstable | RefreshProviderInventoryRequest_unstable | ProviderConfigReadRequest_unstable | ProviderConfigStatusRequest_unstable | ProviderConfigSaveRequest_unstable | ProviderConfigDeleteRequest_unstable | ProviderConfigAuthenticateRequest_unstable | ProviderSecretsListRequest_unstable | ProviderSecretDeleteRequest_unstable | CanonicalModelInfoRequest_unstable | PreferencesReadRequest_unstable | PreferencesSaveRequest_unstable | PreferencesRemoveRequest_unstable | ConfigReadRequest_unstable | ConfigUpsertRequest_unstable | ConfigRemoveRequest_unstable | ConfigReadAllRequest_unstable | DefaultsReadRequest_unstable | DefaultsSaveRequest_unstable | DefaultsClearRequest_unstable | OnboardingImportScanRequest_unstable | OnboardingImportApplyRequest_unstable | ExportSessionRequest_unstable | ImportSessionRequest_unstable | ShareSessionNostrRequest_unstable | GetSessionInfoRequest_unstable | TruncateSessionConversationRequest_unstable | UpdateSessionProjectRequest_unstable | RenameSessionRequest_unstable | ArchiveSessionRequest_unstable | UnarchiveSessionRequest_unstable | CreateSourceRequest_unstable | ListSourcesRequest_unstable | ListAgentMentionsRequest_unstable | ListSlashCommandsRequest_unstable | UpdateSourceRequest_unstable | DeleteSourceRequest_unstable | ExportSourceRequest_unstable | ImportSourcesRequest_unstable | DictationTranscribeRequest_unstable | DictationConfigRequest_unstable | DictationSecretSaveRequest_unstable | DictationSecretDeleteRequest_unstable | DictationModelsListRequest_unstable | DictationModelDownloadRequest_unstable | DictationModelDownloadProgressRequest_unstable | DictationModelCancelRequest_unstable | DictationModelDeleteRequest_unstable | DictationModelSelectRequest_unstable | LocalInferenceModelsListRequest_unstable | LocalInferenceModelDownloadRequest_unstable | LocalInferenceModelDownloadProgressRequest_unstable | LocalInferenceModelDownloadCancelRequest_unstable | LocalInferenceModelDeleteRequest_unstable | LocalInferenceModelSettingsReadRequest_unstable | LocalInferenceModelSettingsUpdateRequest_unstable | LocalInferenceHuggingFaceSearchRequest_unstable | LocalInferenceHuggingFaceRepoVariantsRequest_unstable | LocalInferenceBuiltinChatTemplatesListRequest_unstable | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse_unstable | SetToolPermissionsResponse_unstable | GooseToolCallResponse_unstable | ReadResourceResponse_unstable | AppsListResponse_unstable | AppsExportResponse_unstable | AppsImportResponse_unstable | SteerSessionResponse_unstable | DiagnosticsGetResponse_unstable | ListPromptsResponse_unstable | GetPromptResponse_unstable | PromptOperationResponse_unstable | GetConfigExtensionsResponse_unstable | GetAvailableExtensionsResponse_unstable | GetSessionExtensionsResponse_unstable | ListProvidersResponse_unstable | ProviderSupportedModelsListResponse_unstable | ProviderCatalogListResponse_unstable | ProviderSetupCatalogListResponse_unstable | ProviderCatalogTemplateResponse_unstable | CustomProviderCreateResponse_unstable | CustomProviderReadResponse_unstable | CustomProviderUpdateResponse_unstable | CustomProviderDeleteResponse_unstable | RefreshProviderInventoryResponse_unstable | ProviderConfigReadResponse_unstable | ProviderConfigStatusResponse_unstable | ProviderConfigChangeResponse_unstable | ProviderSecretsListResponse_unstable | CanonicalModelInfoResponse_unstable | PreferencesReadResponse_unstable | ConfigReadResponse_unstable | ConfigReadAllResponse_unstable | DefaultsReadResponse_unstable | OnboardingImportScanResponse_unstable | OnboardingImportApplyResponse_unstable | ExportSessionResponse_unstable | ImportSessionResponse_unstable | ShareSessionNostrResponse_unstable | EncodeRecipeResponse_unstable | DecodeRecipeResponse_unstable | ScanRecipeResponse_unstable | ListRecipesResponse_unstable | SaveRecipeResponse_unstable | ParseRecipeResponse_unstable | RecipeToYamlResponse_unstable | ListSchedulesResponse_unstable | ListScheduleSessionsResponse_unstable | CreateScheduleResponse_unstable | UpdateScheduleResponse_unstable | RunScheduleNowResponse_unstable | KillRunningJobResponse_unstable | InspectRunningJobResponse_unstable | GetSessionInfoResponse_unstable | CreateSourceResponse_unstable | ListSourcesResponse_unstable | ListAgentMentionsResponse_unstable | ListSlashCommandsResponse_unstable | UpdateSourceResponse_unstable | ExportSourceResponse_unstable | ImportSourcesResponse_unstable | DictationTranscribeResponse_unstable | DictationConfigResponse_unstable | DictationModelsListResponse_unstable | DictationModelDownloadProgressResponse_unstable | LocalInferenceModelsListResponse_unstable | LocalInferenceModelDownloadResponse_unstable | LocalInferenceModelDownloadProgressResponse_unstable | LocalInferenceModelSettingsReadResponse_unstable | LocalInferenceModelSettingsUpdateResponse_unstable | LocalInferenceHuggingFaceSearchResponse_unstable | LocalInferenceHuggingFaceRepoVariantsResponse_unstable | LocalInferenceBuiltinChatTemplatesListResponse_unstable | unknown;
+    result?: EmptyResponse | GetToolsResponse_unstable | SetToolPermissionsResponse_unstable | GooseToolCallResponse_unstable | ReadResourceResponse_unstable | SteerSessionResponse_unstable | DiagnosticsGetResponse_unstable | ListPromptsResponse_unstable | GetPromptResponse_unstable | PromptOperationResponse_unstable | GetConfigExtensionsResponse_unstable | GetAvailableExtensionsResponse_unstable | GetSessionExtensionsResponse_unstable | ListProvidersResponse_unstable | ProviderSupportedModelsListResponse_unstable | ProviderCatalogListResponse_unstable | ProviderSetupCatalogListResponse_unstable | ProviderCatalogTemplateResponse_unstable | CustomProviderCreateResponse_unstable | CustomProviderReadResponse_unstable | CustomProviderUpdateResponse_unstable | CustomProviderDeleteResponse_unstable | RefreshProviderInventoryResponse_unstable | ProviderConfigReadResponse_unstable | ProviderConfigStatusResponse_unstable | ProviderConfigChangeResponse_unstable | ProviderSecretsListResponse_unstable | CanonicalModelInfoResponse_unstable | PreferencesReadResponse_unstable | ConfigReadResponse_unstable | ConfigReadAllResponse_unstable | DefaultsReadResponse_unstable | OnboardingImportScanResponse_unstable | OnboardingImportApplyResponse_unstable | ExportSessionResponse_unstable | ImportSessionResponse_unstable | ShareSessionNostrResponse_unstable | GetSessionInfoResponse_unstable | CreateSourceResponse_unstable | ListSourcesResponse_unstable | ListAgentMentionsResponse_unstable | ListSlashCommandsResponse_unstable | UpdateSourceResponse_unstable | ExportSourceResponse_unstable | ImportSourcesResponse_unstable | DictationTranscribeResponse_unstable | DictationConfigResponse_unstable | DictationModelsListResponse_unstable | DictationModelDownloadProgressResponse_unstable | LocalInferenceModelsListResponse_unstable | LocalInferenceModelDownloadResponse_unstable | LocalInferenceModelDownloadProgressResponse_unstable | LocalInferenceModelSettingsReadResponse_unstable | LocalInferenceModelSettingsUpdateResponse_unstable | LocalInferenceHuggingFaceSearchResponse_unstable | LocalInferenceHuggingFaceRepoVariantsResponse_unstable | LocalInferenceBuiltinChatTemplatesListResponse_unstable | unknown;
 } | {
     error: {
         code: number;
@@ -2606,14 +2269,14 @@ export type ExtNotification = {
 export type ExtAgentRequest = {
     id: string;
     method: string;
-    params?: RequestRecipeParams_unstable | {
+    params?: {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtAgentResponse = {
     id: string;
-    result?: RecipeParamsResponse_unstable | unknown;
+    result?: unknown;
 } | {
     error: {
         code: number;

@@ -51,45 +51,19 @@ describe('ACP autocomplete mapping', () => {
     });
   });
 
-  it('maps recipe commands and prefers sourcePath for display text', () => {
-    expect(
-      availableCommandToDisplayItem(
-        command({
-          _meta: {
-            commandType: 'Recipe',
-            sourcePath: '/tmp/release.yaml',
-          },
-        })
-      )
-    ).toEqual({
-      name: 'release',
-      extra: '/tmp/release.yaml',
-      itemType: 'Recipe',
-      relativePath: 'release',
-    });
-  });
-
-  it('falls back to recipe descriptions when sourcePath is missing', () => {
-    expect(
-      availableCommandToDisplayItem(
-        command({
-          _meta: { commandType: 'Recipe' },
-        })
-      )
-    ).toEqual({
-      name: 'release',
-      extra: 'Run release workflow',
-      itemType: 'Recipe',
-      relativePath: 'release',
-    });
-  });
-
   it('skips commands without a valid commandType', () => {
     expect(availableCommandToDisplayItem(command({}))).toBeNull();
     expect(
       availableCommandToDisplayItem(
         command({
           _meta: { commandType: 'Agent' },
+        })
+      )
+    ).toBeNull();
+    expect(
+      availableCommandToDisplayItem(
+        command({
+          _meta: { commandType: 'Recipe' },
         })
       )
     ).toBeNull();

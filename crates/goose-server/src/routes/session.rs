@@ -1,5 +1,4 @@
 use crate::routes::errors::ErrorResponse;
-use crate::routes::recipe_utils::{apply_recipe_to_agent, build_recipe_with_parameter_values};
 use crate::state::AppState;
 use axum::extract::State;
 use axum::routing::post;
@@ -10,10 +9,8 @@ use axum::{
     Json, Router,
 };
 use goose::agents::ExtensionConfig;
-use goose::recipe::Recipe;
 use goose::session::{EnabledExtensionsState, Session};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -22,18 +19,6 @@ use utoipa::ToSchema;
 pub struct UpdateSessionNameRequest {
     /// Updated name for the session (max 200 characters)
     name: String,
-}
-
-#[derive(Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateSessionUserRecipeValuesRequest {
-    /// Recipe parameter values entered by the user
-    user_recipe_values: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct UpdateSessionUserRecipeValuesResponse {
-    recipe: Recipe,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -123,82 +108,6 @@ async fn update_session_name(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(StatusCode::OK)
-}
-
-#[utoipa::path(
-    put,
-    path = "/sessions/{session_id}/user_recipe_values",
-    request_body = UpdateSessionUserRecipeValuesRequest,
-    params(
-        ("session_id" = String, Path, description = "Unique identifier for the session")
-    ),
-    responses(
-        (status = 200, description = "Session user recipe values updated successfully", body = UpdateSessionUserRecipeValuesResponse),
-        (status = 401, description = "Unauthorized - Invalid or missing API key"),
-        (status = 404, description = "Session not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
-    ),
-    security(
-        ("api_key" = [])
-    ),
-    tag = "Session Management"
-)]
-// Update session user recipe parameter values
-async fn update_session_user_recipe_values(
-    State(state): State<Arc<AppState>>,
-    Path(session_id): Path<String>,
-    Json(request): Json<UpdateSessionUserRecipeValuesRequest>,
-) -> Result<Json<UpdateSessionUserRecipeValuesResponse>, ErrorResponse> {
-    state
-        .session_manager()
-        .update(&session_id)
-        .user_recipe_values(Some(request.user_recipe_values))
-        .apply()
-        .await
-        .map_err(|err| ErrorResponse {
-            message: err.to_string(),
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-        })?;
-
-    let session = state
-        .session_manager()
-        .get_session(&session_id, false)
-        .await
-        .map_err(|err| ErrorResponse {
-            message: err.to_string(),
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-        })?;
-    let recipe = session.recipe.ok_or_else(|| ErrorResponse {
-        message: "Recipe not found".to_string(),
-        status: StatusCode::NOT_FOUND,
-    })?;
-
-    let user_recipe_values = session.user_recipe_values.unwrap_or_default();
-    match build_recipe_with_parameter_values(&recipe, user_recipe_values).await {
-        Ok(Some(recipe)) => {
-            let agent = state
-                .get_agent_for_route(session_id.clone())
-                .await
-                .map_err(|status| ErrorResponse {
-                    message: format!("Failed to get agent: {}", status),
-                    status,
-                })?;
-            if let Some(prompt) = apply_recipe_to_agent(&agent, &recipe, true).await {
-                agent
-                    .extend_system_prompt("recipe".to_string(), prompt)
-                    .await;
-            }
-            Ok(Json(UpdateSessionUserRecipeValuesResponse { recipe }))
-        }
-        Ok(None) => Err(ErrorResponse {
-            message: "Missing required parameters".to_string(),
-            status: StatusCode::BAD_REQUEST,
-        }),
-        Err(e) => Err(ErrorResponse {
-            message: e.to_string(),
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-        }),
-    }
 }
 
 #[utoipa::path(
@@ -339,10 +248,6 @@ pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/sessions/{session_id}", get(get_session))
         .route("/sessions/{session_id}/name", put(update_session_name))
-        .route(
-            "/sessions/{session_id}/user_recipe_values",
-            put(update_session_user_recipe_values),
-        )
         .route("/sessions/{session_id}/fork", post(fork_session))
         .route(
             "/sessions/{session_id}/extensions",

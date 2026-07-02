@@ -18,7 +18,7 @@ Seeing the hype made me want to get my hands dirty. I wanted to see if I could b
 
 My usual move is to just jump in, start breaking things, and refactor as I go. I actually prefer the back and forth conversation with an agent because it helps me learn how the project works in real time. But when I tried that here, I hit a wall fast. goose did not naturally know what OpenClaw was, and it kept hallucinating how to use its own backend. It would forget context mid-conversation or suggest API calls that simply did not exist.
 
-I realized I needed to change my approach. While I love the iterative learning process, I needed a way to give the agent a better foundation so our pair programming sessions actually made progress. I decided to try the [RPI method (Research, Plan, Implement)](/docs/tutorials/rpi). This is a framework introduced by [HumanLayer](https://humanlayer.dev/) that trades raw speed for predictability. It is built into goose as a series of recipes. Since I did not fully understand the technical landscape myself, this investment in structure felt like the right move to help us both get on the same page.
+I realized I needed to change my approach. While I love the iterative learning process, I needed a way to give the agent a better foundation so our pair programming sessions actually made progress. I decided to try the RPI method (Research, Plan, Implement). This is a framework introduced by [HumanLayer](https://humanlayer.dev/) that trades raw speed for predictability. It is built into goose as a series of recipes. Since I did not fully understand the technical landscape myself, this investment in structure felt like the right move to help us both get on the same page.
 
 ---
 
@@ -115,7 +115,7 @@ I even had AltOpenClaw push its own [repository](https://github.com/blackgirlbyt
 
 ## Try It Out
 
-If you want more reliability from your agent, give the [RPI recipes](/docs/tutorials/rpi) in goose a shot:
+If you want more reliability from your agent, give the RPI recipes in goose a shot:
 
 * `/research_codebase`
 * `/create_plan`

@@ -85,8 +85,6 @@ pub struct ChatRequest {
     #[serde(default)]
     override_conversation: Option<Vec<Message>>,
     session_id: String,
-    recipe_name: Option<String>,
-    recipe_version: Option<String>,
 }
 
 pub struct SseResponse {
@@ -214,24 +212,6 @@ pub async fn reply(
 
     let session_id = request.session_id.clone();
 
-    if let Some(recipe_name) = request.recipe_name.clone() {
-        if state.mark_recipe_run_if_absent(&session_id).await {
-            let recipe_version = request
-                .recipe_version
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string());
-
-            tracing::info!(
-                monotonic_counter.goose.recipe_runs = 1,
-                recipe_name = %recipe_name,
-                recipe_version = %recipe_version,
-                session_type = "app",
-                interface = "ui",
-                "Recipe execution started"
-            );
-        }
-    }
-
     let (tx, rx) = mpsc::channel(100);
     let stream = ReceiverStream::new(rx);
     let cancel_token = CancellationToken::new();
@@ -277,9 +257,7 @@ pub async fn reply(
 
         let session_config = SessionConfig {
             id: session_id.clone(),
-            schedule_id: session.schedule_id.clone(),
             max_turns: None,
-            retry_config: None,
         };
 
         let mut all_messages = match override_conversation {
@@ -486,8 +464,6 @@ mod tests {
                         user_message: Message::user().with_text("test message"),
                         override_conversation: None,
                         session_id: "test-session".to_string(),
-                        recipe_name: None,
-                        recipe_version: None,
                     })
                     .unwrap(),
                 ))

@@ -7,7 +7,7 @@ import { cn } from '../utils';
  * Both the Hub (empty-chat landing) and the BaseChat (active session)
  * present ChatInput as a floating rounded outlined card on the canvas.
  * Centralizing it here keeps the look in sync and gives a single place
- * to tweak the recipe.
+ * to tweak the styling.
  */
 export const ChatInputCard: React.FC<{
   className?: string;

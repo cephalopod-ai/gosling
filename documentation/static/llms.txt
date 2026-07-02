@@ -15,7 +15,6 @@ goose is available as both a desktop application and a command-line interface (C
 ## Core Concepts
 
 - **Extensions**: Plugins that give goose new capabilities via MCP servers (GitHub, Slack, databases, etc.)
-- **Recipes**: Reusable task templates that can be shared and automated
 - **Sessions**: Conversation contexts that maintain state across interactions
 - **Providers**: LLM backends that power goose (OpenAI, Anthropic, Ollama, etc.)
 - **Goosehints**: Project-specific instructions that customize goose behavior
@@ -27,7 +26,6 @@ goose is available as both a desktop application and a command-line interface (C
 - LLM Providers: /docs/getting-started/providers
 - Using Extensions: /docs/getting-started/using-extensions
 - CLI Commands: /docs/guides/goose-cli-commands
-- Recipes Guide: /docs/guides/recipes/
 - Tutorials: /docs/tutorials/
 - MCP Servers/Extensions: /docs/mcp/
 

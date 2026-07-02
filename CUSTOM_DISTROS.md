@@ -34,7 +34,7 @@ goose's architecture is designed for extensibility. Organizations can create "re
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Core (goose crate)                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │  Providers  │  │  Extensions │  │  Config & Recipes       │  │
+│  │  Providers  │  │  Extensions │  │  Config & Defaults      │  │
 │  │  (AI models)│  │  (MCP tools)│  │  (behavior & defaults)  │  │
 │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
@@ -50,8 +50,7 @@ goose's architecture is designed for extensibility. Organizations can create "re
 | Modify system prompts | `crates/goose/src/prompts/` | Low |
 | Customize desktop branding | `ui/desktop/` (icons, names, colors) | Medium |
 | Build a new UI (web, mobile) | Integrate with `goose-server` REST API | High |
-| Create guided workflows | Recipes (YAML-based task definitions) | Low |
-| Build complex multi-step workflows | Recipes with sub-recipes and subagents | Medium |
+| Build complex multi-step workflows | Subagents | Medium |
 
 ## Getting Started
 
@@ -98,8 +97,7 @@ goose includes optional telemetry (via PostHog) to help improve the project. For
 To benefit from upstream improvements:
 1. Regularly sync your fork with the main repository
 2. Keep customizations isolated (config files, separate extension repos) when possible
-3. Use recipes for workflow customization rather than code changes
-4. Subscribe to release announcements for breaking changes
+3. Subscribe to release announcements for breaking changes
 
 ---
 
@@ -159,7 +157,7 @@ GOOSE_MODEL: claude-sonnet-4-20250514
 goose configure set-secret ANTHROPIC_API_KEY "your-corporate-key"
 ```
 
-3. **Lock down provider changes** (optional) by modifying the settings UI or using a recipe that enforces the provider.
+3. **Lock down provider changes** (optional) by modifying the settings UI.
 
 ### Technical Details
 
@@ -209,22 +207,6 @@ Example:
   "env_keys": ["INTERNAL_DATA_API_KEY"],
   "timeout": 300
 }
-```
-
-3. **Or distribute as a recipe** that enables the extension:
-
-```yaml
-# data-analyst.yaml
-title: Data Analyst Assistant
-description: goose configured for data analysis
-instructions: |
-  You have access to the corporate data lake. Help users query and analyze data.
-extensions:
-  - type: stdio
-    name: internal-data
-    cmd: python
-    args: ["/opt/corp-goose/internal_data_mcp.py"]
-    description: Corporate data lake access
 ```
 
 ### Technical Details
@@ -429,51 +411,39 @@ For the full ACP specification, see the [Agent Client Protocol documentation](ht
 
 ### Steps
 
-1. **Create a specialized recipe** that defines the experience:
+1. **Tailor the system prompt** for the audience in `crates/goose/src/prompts/system.md`:
+
+```markdown
+You are a legal research assistant. You help lawyers and paralegals with:
+- Case law research
+- Document review and summarization
+- Contract analysis
+- Legal writing assistance
+
+Always cite sources. Flag when you're uncertain. Never provide actual legal advice.
+```
+
+2. **Preconfigure the provider and model** via `init-config.yaml` or environment variables (see scenarios A and B).
+
+3. **Customize the UI** to show only relevant features and use domain-appropriate language.
+
+4. **Bundle domain-specific extensions** for specialized data sources (legal databases, design tools, etc.):
 
 ```yaml
-# legal-assistant.yaml
-title: Legal Research Assistant
-description: AI assistant for legal professionals
-
-instructions: |
-  You are a legal research assistant. You help lawyers and paralegals with:
-  - Case law research
-  - Document review and summarization
-  - Contract analysis
-  - Legal writing assistance
-  
-  Always cite sources. Flag when you're uncertain. Never provide actual legal advice.
-
+# config.yaml
 extensions:
-  - type: builtin
-    name: developer
-    description: File and document tools
-  - type: stdio
-    name: legal-database
+  legal-database:
+    type: stdio
     cmd: python
     args: ["/opt/legal-goose/legal_db_mcp.py"]
     description: Legal database search
-
-activities:
-  - "Research case law on..."
-  - "Summarize this contract..."
-  - "Find precedents for..."
-
-settings:
-  goose_provider: anthropic
-  goose_model: claude-sonnet-4-20250514
+    enabled: true
 ```
-
-2. **Customize the UI** to show only relevant features and use domain-appropriate language.
-
-3. **Bundle domain-specific extensions** for specialized data sources (legal databases, design tools, etc.).
 
 ### Technical Details
 
-- Recipe format: `crates/goose/src/recipe/mod.rs`
-- Recipe loading: `crates/goose/src/recipe/local_recipes.rs`
-- Activity suggestions: Shown in UI as quick-start prompts
+- System prompts: `crates/goose/src/prompts/`
+- Extension configuration: `crates/goose/src/agents/extension.rs` (ExtensionConfig enum)
 
 ---
 
@@ -523,145 +493,9 @@ For providers with unique APIs, implement the Provider trait:
 
 ---
 
-## H. Preconfigured Workflows with Recipes
-
-**Goal**: Create standardized, repeatable workflows that users can run with minimal setup.
-
-Recipes are YAML files that define complete goose experiences—instructions, extensions, parameters, and prompts bundled together. They're ideal for custom distributions because they require no code changes and can be distributed as simple files.
-
-### Basic Recipe Structure
-
-```yaml
-version: 1.0.0
-title: Daily Standup Report Generator
-description: Generates standup reports from GitHub activity
-
-# Parameters users can customize at runtime
-parameters:
-  - key: github_repo
-    input_type: string
-    requirement: required
-    description: "GitHub repository (e.g., 'owner/repo')"
-  
-  - key: time_period
-    input_type: select
-    requirement: optional
-    default: "24h"
-    options: ["24h", "48h", "week"]
-    description: "Time period to analyze"
-
-# System instructions for the AI
-instructions: |
-  You are a standup report generator. Fetch PR and issue data from GitHub,
-  analyze activity, and generate a formatted report.
-  
-  Always save reports to ./standup/standup-{date}.md
-
-# Extensions this recipe needs
-extensions:
-  - type: builtin
-    name: developer
-    description: File operations
-  - type: stdio
-    name: github
-    cmd: uvx
-    args: ["github-mcp-server"]
-    description: GitHub API access
-
-# Quick-start suggestions shown in UI
-activities:
-  - "Generate today's standup report"
-  - "Summarize this week's PRs"
-
-# Initial prompt with parameter substitution
-prompt: |
-  Generate a standup report for {{ github_repo }} covering the last {{ time_period }}.
-```
-
-### Recipe Parameter Types
-
-| Type | Description | Use Case |
-|------|-------------|----------|
-| `string` | Free-form text input | Names, paths, queries |
-| `number` | Numeric input | Counts, limits |
-| `boolean` | True/false toggle | Feature flags |
-| `date` | Date picker | Time-based filters |
-| `file` | File path (content imported) | Document processing |
-| `select` | Dropdown from options | Predefined choices |
-
-### Distributing Recipes
-
-1. **Bundle with your distribution** in a known location
-2. **Share via URL** - users can import recipes from URLs
-3. **Create a recipe library** - a directory of recipes for different use cases
-
-### Technical Details
-
-- Recipe schema: `crates/goose/src/recipe/mod.rs`
-- Parameter handling: `crates/goose/src/recipe/template_recipe.rs`
-- Recipe validation: `crates/goose/src/recipe/validate_recipe.rs`
-
----
-
-## I. Complex Workflows with Sub-Recipes and Subagents
+## H. Complex Workflows with Subagents
 
 **Goal**: Build sophisticated multi-step workflows that orchestrate multiple specialized tasks.
-
-For complex workflows, goose supports two powerful composition mechanisms:
-
-1. **Sub-recipes**: Predefined recipe templates that can be invoked by name
-2. **Subagents**: Independent AI agents spawned to handle specific tasks
-
-### Sub-Recipes: Predefined Task Templates
-
-Sub-recipes let you define reusable workflow components that the main recipe can invoke:
-
-```yaml
-version: 1.0.0
-title: Implementation Planner
-description: Creates detailed implementation plans with research
-
-instructions: |
-  Create implementation plans through research and iteration.
-  Use sub-recipes to delegate specialized research tasks.
-
-# Define available sub-recipes
-sub_recipes:
-  - name: "find_files"
-    path: "./subrecipes/codebase-locator.yaml"
-    description: "Locate relevant files in the codebase"
-  
-  - name: "analyze_code"
-    path: "./subrecipes/code-analyzer.yaml"
-    description: "Analyze code structure and patterns"
-  
-  - name: "find_patterns"
-    path: "./subrecipes/pattern-finder.yaml"
-    # Pre-fill some parameters
-    values:
-      search_depth: "3"
-      include_tests: "true"
-
-extensions:
-  - type: builtin
-    name: developer
-
-prompt: |
-  Create an implementation plan for the requested feature.
-  
-  Use the available sub-recipes to research the codebase:
-  - find_files: Locate relevant source files
-  - analyze_code: Understand current implementation  
-  - find_patterns: Find similar features to model after
-```
-
-The AI can then invoke these sub-recipes using the `subagent` tool:
-
-```
-subagent(subrecipe: "find_files", parameters: {"search_term": "authentication"})
-```
-
-### Subagents: Dynamic Task Delegation
 
 Subagents are independent AI instances that run with their own context. They're useful for:
 
@@ -669,162 +503,84 @@ Subagents are independent AI instances that run with their own context. They're 
 - **Context isolation**: Preventing context window overflow
 - **Specialized tasks**: Different model/settings per task
 
-#### Ad-hoc Subagents
+### Ad-hoc Subagents
 
 Create subagents on-the-fly with custom instructions:
 
-```yaml
-prompt: |
-  To complete this task:
-  
-  1. Spawn a subagent to analyze the frontend code:
-     subagent(instructions: "Analyze all React components in src/components/ 
-              and list their props and state management patterns")
-  
-  2. Spawn another subagent for the backend:
-     subagent(instructions: "Document all API endpoints in src/api/ 
-              including their request/response schemas")
-  
-  3. Synthesize findings from both subagents into a unified report.
+```
+To complete this task:
+
+1. Spawn a subagent to analyze the frontend code:
+   subagent(instructions: "Analyze all React components in src/components/
+            and list their props and state management patterns")
+
+2. Spawn another subagent for the backend:
+   subagent(instructions: "Document all API endpoints in src/api/
+            including their request/response schemas")
+
+3. Synthesize findings from both subagents into a unified report.
 ```
 
-#### Parallel Subagent Execution
+### Parallel Subagent Execution
 
 Multiple subagent calls in the same message execute in parallel:
 
-```yaml
-prompt: |
-  Run these analyses in parallel by making all subagent calls at once:
-  
-  subagent(instructions: "Count lines of code by language")
-  subagent(instructions: "Find all TODO comments") 
-  subagent(instructions: "List external dependencies")
-  
-  Then combine the results into a codebase health report.
+```
+Run these analyses in parallel by making all subagent calls at once:
+
+subagent(instructions: "Count lines of code by language")
+subagent(instructions: "Find all TODO comments")
+subagent(instructions: "List external dependencies")
+
+Then combine the results into a codebase health report.
 ```
 
-#### Subagent Settings Override
+### Subagent Settings Override
 
 Customize model, provider, or behavior per subagent:
 
-```yaml
-prompt: |
-  Use a faster model for simple tasks:
-  
-  subagent(
-    instructions: "List all files modified in the last week",
-    settings: {
-      model: "gpt-4o-mini",
-      max_turns: 3
-    }
-  )
-  
-  Use the full model for complex analysis:
-  
-  subagent(
-    instructions: "Review this code for security vulnerabilities",
-    settings: {
-      model: "claude-sonnet-4-20250514",
-      temperature: 0.1
-    }
-  )
+```
+Use a faster model for simple tasks:
+
+subagent(
+  instructions: "List all files modified in the last week",
+  settings: {
+    model: "gpt-4o-mini",
+    max_turns: 3
+  }
+)
+
+Use the full model for complex analysis:
+
+subagent(
+  instructions: "Review this code for security vulnerabilities",
+  settings: {
+    model: "claude-sonnet-4-20250514",
+    temperature: 0.1
+  }
+)
 ```
 
-#### Extension Scoping
+### Extension Scoping
 
 Limit which extensions a subagent can access:
 
-```yaml
-prompt: |
-  Create a sandboxed subagent with only file reading capabilities:
-  
-  subagent(
-    instructions: "Analyze the README files in this project",
-    extensions: ["developer"]  # Only developer extension, no network access
-  )
 ```
+Create a sandboxed subagent with only file reading capabilities:
 
-### Example: Multi-Stage Code Review Workflow
-
-```yaml
-version: 1.0.0
-title: Comprehensive Code Review
-description: Multi-stage code review with parallel analysis
-
-sub_recipes:
-  - name: "security_scan"
-    path: "./subrecipes/security-scanner.yaml"
-    sequential_when_repeated: true  # Don't run multiple security scans in parallel
-  
-  - name: "style_check"
-    path: "./subrecipes/style-checker.yaml"
-  
-  - name: "test_coverage"
-    path: "./subrecipes/coverage-analyzer.yaml"
-
-parameters:
-  - key: pr_number
-    input_type: number
-    requirement: required
-    description: "Pull request number to review"
-  
-  - key: review_depth
-    input_type: select
-    requirement: optional
-    default: "standard"
-    options: ["quick", "standard", "thorough"]
-
-instructions: |
-  Perform a comprehensive code review using specialized sub-recipes.
-  
-  ## Review Process
-  
-  ### Phase 1: Parallel Analysis
-  Run these checks simultaneously:
-  - style_check: Code style and formatting
-  - test_coverage: Test coverage analysis
-  
-  ### Phase 2: Security Review
-  After initial checks pass, run security_scan (sequential to avoid conflicts).
-  
-  ### Phase 3: Synthesis
-  Combine all findings into a unified review report with:
-  - Critical issues (must fix)
-  - Suggestions (should consider)
-  - Positive observations (good practices found)
-
-extensions:
-  - type: builtin
-    name: developer
-  - type: stdio
-    name: github
-    cmd: uvx
-    args: ["github-mcp-server"]
-
-prompt: |
-  Review PR #{{ pr_number }} with {{ review_depth }} depth.
-  
-  {% if review_depth == "quick" %}
-  Focus only on critical issues and security concerns.
-  {% elif review_depth == "thorough" %}
-  Perform exhaustive analysis including performance review.
-  {% endif %}
-  
-  Start by fetching the PR details, then orchestrate the review phases.
+subagent(
+  instructions: "Analyze the README files in this project",
+  extensions: ["developer"]  # Only developer extension, no network access
+)
 ```
 
 ### Best Practices for Complex Workflows
 
-1. **Use sub-recipes for reusable components** - Define once, use across multiple recipes
-2. **Parallelize independent tasks** - Multiple subagent calls in one message run concurrently
-3. **Use `sequential_when_repeated: true`** - For tasks that shouldn't run in parallel (e.g., database migrations)
-4. **Scope extensions appropriately** - Give subagents only the tools they need
-5. **Use summary mode (default)** - Subagents return concise summaries; use `summary: false` only when you need full conversation history
-6. **Handle failures gracefully** - Design workflows to continue even if one subagent fails
+1. **Parallelize independent tasks** - Multiple subagent calls in one message run concurrently
+2. **Scope extensions appropriately** - Give subagents only the tools they need
+3. **Use summary mode (default)** - Subagents return concise summaries; use `summary: false` only when you need full conversation history
+4. **Handle failures gracefully** - Design workflows to continue even if one subagent fails
 
 ### Technical Details
 
-- Subagent tool: `crates/goose/src/agents/subagent_tool.rs`
 - Subagent execution: `crates/goose/src/agents/subagent_handler.rs`
-- Recipe sub_recipes field: `crates/goose/src/recipe/mod.rs` (SubRecipe struct)
-- Template rendering: `crates/goose/src/recipe/template_recipe.rs`

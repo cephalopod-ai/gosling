@@ -21,7 +21,6 @@ fn test_acp_router(dir: &tempfile::TempDir) -> Router {
         config_dir: dir.path().join("config"),
         goose_platform: GoosePlatform::GooseCli,
         additional_source_roots: Vec::new(),
-        scheduler: None,
     }));
     create_acp_router(server)
 }
@@ -33,7 +32,6 @@ fn test_authenticated_acp_router(dir: &tempfile::TempDir) -> Router {
         config_dir: dir.path().join("config"),
         goose_platform: GoosePlatform::GooseCli,
         additional_source_roots: Vec::new(),
-        scheduler: None,
     }));
     create_authenticated_acp_router(server, SECRET.to_string())
 }
@@ -49,7 +47,6 @@ fn test_router_with_origins(
         config_dir: dir.path().join("config"),
         goose_platform: GoosePlatform::GooseCli,
         additional_source_roots: Vec::new(),
-        scheduler: None,
     }));
     create_router(
         server,

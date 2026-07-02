@@ -69,31 +69,6 @@ export type AnalyticsEvent =
       properties: { enabled: boolean; location: 'settings' | 'onboarding' | 'modal' };
     }
   | {
-      name: 'schedule_created';
-      properties: { source_type: 'file' | 'deeplink'; success: boolean; error_details?: string };
-    }
-  | { name: 'schedule_deleted'; properties: { success: boolean; error_details?: string } }
-  | { name: 'schedule_run_now'; properties: { success: boolean; error_details?: string } }
-  | { name: 'recipe_created'; properties: { success: boolean; error_details?: string } }
-  | { name: 'recipe_imported'; properties: { success: boolean; error_details?: string } }
-  | { name: 'recipe_edited'; properties: { success: boolean; error_details?: string } }
-  | { name: 'recipe_deleted'; properties: { success: boolean; error_details?: string } }
-  | {
-      name: 'recipe_started';
-      properties: { success: boolean; error_details?: string; in_new_window?: boolean };
-    }
-  | { name: 'recipe_deeplink_copied'; properties: { success: boolean; error_details?: string } }
-  | { name: 'recipe_yaml_copied'; properties: { success: boolean; error_details?: string } }
-  | { name: 'recipe_exported_to_file'; properties: { success: boolean; error_details?: string } }
-  | {
-      name: 'recipe_scheduled';
-      properties: { success: boolean; error_details?: string; action: 'add' | 'edit' | 'remove' };
-    }
-  | {
-      name: 'recipe_slash_command_set';
-      properties: { success: boolean; error_details?: string; action: 'add' | 'edit' | 'remove' };
-    }
-  | {
       name: 'extension_added';
       properties: {
         extension_name?: string;
@@ -141,8 +116,6 @@ export type AnalyticsEvent =
     }
   | { name: 'input_mode_changed'; properties: { from_mode: string; to_mode: string } }
   | { name: 'input_diagnostics_opened'; properties: Record<string, never> }
-  | { name: 'input_create_recipe_opened'; properties: Record<string, never> }
-  | { name: 'input_edit_recipe_opened'; properties: Record<string, never> }
   // Auto-update tracking events
   | {
       name: 'update_check_started';
@@ -414,125 +387,10 @@ export function trackExtensionDeleted(
   });
 }
 
-// ============================================================================
-// Schedule/Recipe Tracking
-// ============================================================================
-
-export function trackScheduleCreated(
-  sourceType: 'file' | 'deeplink',
-  success: boolean,
-  errorDetails?: string
-): void {
-  trackEvent({
-    name: 'schedule_created',
-    properties: { source_type: sourceType, success, error_details: errorDetails },
-  });
-}
-
-export function trackScheduleDeleted(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'schedule_deleted',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackScheduleRunNow(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'schedule_run_now',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-// ============================================================================
-// Recipe Tracking
-// ============================================================================
-
-export function trackRecipeCreated(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_created',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeImported(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_imported',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeEdited(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_edited',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeDeleted(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_deleted',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeStarted(
-  success: boolean,
-  errorDetails?: string,
-  inNewWindow?: boolean
-): void {
-  trackEvent({
-    name: 'recipe_started',
-    properties: { success, error_details: errorDetails, in_new_window: inNewWindow },
-  });
-}
-
-export function trackRecipeDeeplinkCopied(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_deeplink_copied',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeYamlCopied(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_yaml_copied',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeExportedToFile(success: boolean, errorDetails?: string): void {
-  trackEvent({
-    name: 'recipe_exported_to_file',
-    properties: { success, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeScheduled(
-  success: boolean,
-  action: 'add' | 'edit' | 'remove',
-  errorDetails?: string
-): void {
-  trackEvent({
-    name: 'recipe_scheduled',
-    properties: { success, action, error_details: errorDetails },
-  });
-}
-
-export function trackRecipeSlashCommandSet(
-  success: boolean,
-  action: 'add' | 'edit' | 'remove',
-  errorDetails?: string
-): void {
-  trackEvent({
-    name: 'recipe_slash_command_set',
-    properties: { success, action, error_details: errorDetails },
-  });
-}
-
 // NOTE: slash_command_used is tracked by the backend (posthog.rs) with richer info:
-// - command_type: "builtin" | "recipe" | "unknown"
+// - command_type: "builtin" | "unknown"
 // - command_name: only for builtin commands (e.g., "compact", "summarize")
-// - success: true for builtin/recipe, false for unknown
+// - success: true for builtin, false for unknown
 
 // ============================================================================
 // Chat Input Bar Feature Tracking
@@ -566,20 +424,6 @@ export function trackModeChanged(fromMode: string, toMode: string): void {
 export function trackDiagnosticsOpened(): void {
   trackEvent({
     name: 'input_diagnostics_opened',
-    properties: {},
-  });
-}
-
-export function trackCreateRecipeOpened(): void {
-  trackEvent({
-    name: 'input_create_recipe_opened',
-    properties: {},
-  });
-}
-
-export function trackEditRecipeOpened(): void {
-  trackEvent({
-    name: 'input_edit_recipe_opened',
     properties: {},
   });
 }

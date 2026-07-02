@@ -42,16 +42,7 @@ fn require_mutable_type(source_type: SourceType) -> Result<(), Error> {
 }
 
 fn require_listable_type(source_type: Option<SourceType>) -> Result<SourceType, Error> {
-    match source_type.unwrap_or(SourceType::Skill) {
-        SourceType::Skill => Ok(SourceType::Skill),
-        SourceType::BuiltinSkill => Ok(SourceType::BuiltinSkill),
-        SourceType::Project => Ok(SourceType::Project),
-        SourceType::Agent => Ok(SourceType::Agent),
-        other => Err(Error::invalid_params().data(format!(
-            "Source type '{}' is not supported for listing.",
-            other
-        ))),
-    }
+    Ok(source_type.unwrap_or(SourceType::Skill))
 }
 
 // --- Project helpers ---
@@ -963,10 +954,6 @@ pub fn list_sources_with_roots(
                     sources.push(check.to_source_entry(global));
                 }
             }
-            SourceType::Recipe | SourceType::Subrecipe => {
-                return Err(Error::invalid_params()
-                    .data(format!("Source type '{}' listing is not supported.", kind)));
-            }
         }
     }
 
@@ -1628,24 +1615,7 @@ mod tests {
         .unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
-        let err = update_source_with_roots(
-            SourceType::Recipe,
-            "x",
-            "x",
-            "d",
-            "c",
-            UpdateSourceOptions {
-                properties: Some(HashMap::new()),
-                additional_roots: &[],
-            },
-        )
-        .unwrap_err();
-        assert!(format!("{:?}", err).contains("not supported"));
-
         let err = delete_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
-        assert!(format!("{:?}", err).contains("not supported"));
-
-        let err = delete_source(SourceType::Subrecipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let listed = list_sources(Some(SourceType::BuiltinSkill), Some(project), false).unwrap();
@@ -1653,13 +1623,7 @@ mod tests {
             .iter()
             .any(|source| source.source_type == SourceType::BuiltinSkill));
 
-        let err = list_sources(Some(SourceType::Recipe), Some(project), false).unwrap_err();
-        assert!(format!("{:?}", err).contains("not supported"));
-
         let err = export_source(SourceType::BuiltinSkill, "builtin://skills/x").unwrap_err();
-        assert!(format!("{:?}", err).contains("not supported"));
-
-        let err = export_source(SourceType::Recipe, "x").unwrap_err();
         assert!(format!("{:?}", err).contains("not supported"));
 
         let payload = serde_json::json!({

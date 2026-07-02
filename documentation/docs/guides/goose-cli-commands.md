@@ -15,7 +15,6 @@ goose provides a command-line interface (CLI) with several commands for managing
 goose CLI follows consistent patterns for flag naming to make commands intuitive and predictable:
 
 - **`--session-id`**: Used for session identifiers (e.g., `20251108_1`)
-- **`--schedule-id`**: Used for schedule job identifiers (e.g., `daily-report`)
 - **`-n, --name`**: Used for human-readable names
 - **`--path`**: Used for file paths (legacy support)
 - **`-o, --output`**: Used for output file paths
@@ -406,9 +405,6 @@ Execute commands from an instruction file or stdin. Check out the [full guide](/
 - **`-i, --instructions <FILE>`**: Path to instruction file containing commands. Use `-` for stdin
 - **`-t, --text <TEXT>`**: Input text to provide to goose directly
 - **`--system <TEXT>`**: Provide additional system instructions to customize the agent's behavior
-- **`--recipe <RECIPE_FILE_NAME> <OPTIONS>`**: Load a custom recipe in current session
-- **`--params <KEY=VALUE>`**: Key-value parameters to pass to the recipe file. Can be specified multiple times
-- **`--sub-recipe <RECIPE>`**: Specify sub-recipes to include alongside the main recipe. Can be specified multiple times
 
 **Session Options:**
 - **`-s, --interactive`**: Continue in interactive mode after processing initial input
@@ -427,8 +423,6 @@ Execute commands from an instruction file or stdin. Check out the [full guide](/
 - **`--debug`**: Output complete tool responses, detailed parameter values, and full file paths
 - **`--max-tool-repetitions <NUMBER>`**: Maximum number of times the same tool can be called consecutively with identical parameters. Helps prevent infinite loops
 - **`--max-turns <NUMBER>`**: Maximum number of turns allowed without user input (default: 1000)
-- **`--explain`**: Show a recipe's title, description, and parameters
-- **`--render-recipe`**: Print the rendered recipe instead of running it
 - **`-q, --quiet`**: Quiet mode. Suppress non-response output, printing only the model response to stdout
 - **`--output-format <FORMAT>`**: Output format (`text`, `json`, or `stream-json`). Default is `text`. Use JSON structured output for automation and scripting: `json` for results after completion, `stream-json` for events as they occur
 - **`--provider`**: Specify the provider to use for this session (overrides environment variable)
@@ -439,20 +433,8 @@ Execute commands from an instruction file or stdin. Check out the [full guide](/
 # Run from instruction file
 goose run --instructions plan.md
 
-# Load a recipe with a prompt that goose executes and then exits  
-goose run --recipe recipe.yaml
-
-# Load a recipe and stay in an interactive session
-goose run --recipe recipe.yaml --interactive
-
-# Load a recipe in debug mode
-goose run --recipe recipe.yaml --debug
-
-# Show recipe details
-goose run --recipe recipe.yaml --explain
-
-# Run a recipe with parameters
-goose run --recipe recipe.yaml --params environment=production --params region=us-west-2
+# Run from instruction file and stay in an interactive session
+goose run --instructions plan.md --interactive
 
 # Run instructions from a file without session storage
 goose run --no-session -i instructions.txt
@@ -461,55 +443,7 @@ goose run --no-session -i instructions.txt
 goose run --provider anthropic --model claude-4-sonnet -t "initial prompt"
 
 # Run with limited turns before prompting user
-goose run --recipe recipe.yaml --max-turns 10
-```
-
----
-
-#### recipe
-Used to validate recipe files, manage recipe sharing, list available recipes, and open recipes in goose desktop.
-
-**Commands:**
-- **`deeplink <RECIPE_NAME>`**: Generate a shareable link for a recipe file
-  - **`-p, --param <KEY=VALUE>`**: Pre-fill recipe parameter (can be specified multiple times)
-- **`list [OPTIONS]`**: List all available recipes from local directories and configured GitHub repositories
-  - **`--format <FORMAT>`**: Output format (`text` or `json`). Default is `text`
-  - **`-v, --verbose`**: Show verbose information including recipe titles and full file paths
-- **`open <RECIPE_NAME>`**: Open a recipe file directly in goose desktop
-  - **`-p, --param <KEY=VALUE>`**: Pre-fill recipe parameter (can be specified multiple times)
-- **`validate <RECIPE_NAME>`**: Validate a recipe file
-
-**Usage:**
-```bash
-# Generate a shareable link
-goose recipe deeplink my-recipe.yaml
-
-# Generate a deeplink and provide parameter values
-goose recipe deeplink my-recipe.yaml -p environment=production -p region=us-west-2
-
-# List all available recipes
-goose recipe list
-
-# List recipes with detailed information
-goose recipe list --verbose
-
-# List recipes in JSON format for automation
-goose recipe list --format json
-
-# Open a recipe in goose desktop
-goose recipe open my-recipe.yaml
-
-# Open a recipe by name
-goose recipe open my-recipe
-
-# Open a recipe and provide parameter value
-goose recipe open my-recipe --param name=myproject
-
-# Validate a recipe file
-goose recipe validate my-recipe.yaml
-
-# Get help about recipe commands
-goose recipe help
+goose run --instructions plan.md --max-turns 10
 ```
 
 ---
@@ -535,45 +469,6 @@ goose plugin update my-plugin
 ```
 
 Installed plugins are stored under `~/.agents/plugins/<plugin-name>/`. For more about plugin-provided skills, hooks, and update behavior, see the [Plugins guide](/docs/guides/context-engineering/plugins).
-
----
-
-#### schedule
-Automate recipes by running them on a [schedule](/docs/guides/recipes/session-recipes.md#schedule-recipe).
-
-**Commands:**
-- `add <OPTIONS>`: Create a new scheduled job. Copies the current version of the recipe to `~/.local/share/goose/scheduled_recipes`
-- `list`: View all scheduled jobs
-- `remove`: Delete a scheduled job
-- `sessions`: List sessions created by a scheduled recipe
-- `run-now`: Run a scheduled recipe immediately
-- `cron-help`: Show cron expression examples and help
-
-**Options:**
-- `--schedule-id <NAME>`: A unique ID for the scheduled job (e.g. `daily-report`)
-- `--cron "* * * * * *"`: Specifies when a job should run using a [cron expression](https://en.wikipedia.org/wiki/Cron#Cron_expression)
-- `--recipe-source <PATH>`: Path to the recipe YAML file
-- `-l, --limit <NUMBER>`: Max number of sessions to display when using the `sessions` command
-
-**Usage:**
-```bash
-goose schedule <COMMAND>
-
-# Add a new scheduled recipe which runs every day at 9 AM
-goose schedule add --schedule-id daily-report --cron "0 0 9 * * *" --recipe-source ./recipes/daily-report.yaml
-
-# List all scheduled jobs
-goose schedule list
-
-# List the 10 most recent goose sessions created by a scheduled job
-goose schedule sessions --schedule-id daily-report -l 10
-
-# Run a recipe immediately
-goose schedule run-now --schedule-id daily-report
-
-# Remove a scheduled job
-goose schedule remove --schedule-id daily-report
-```
 
 ---
 
@@ -661,7 +556,6 @@ Once you're in an interactive session (via `goose session` or `goose run --inter
 - **`/plan <message_text>`** - Enter 'plan' mode with optional message. Create a plan based on the current messages and ask user if they want to act on it
 - **`/prompt <n> [--info] [key=value...]`** - Get prompt info or execute a prompt
 - **`/prompts [--extension <name>]`** - List all available prompts, optionally filtered by extension
-- **`/recipe [filepath]`** - Generate a recipe from the current conversation and save it to the specified filepath (must end with .yaml). If no filepath is provided, it will be saved to ./recipe.yaml
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information
 - **`/r`** - Toggle full tool output display (show complete tool parameters without truncation)
 - **`/skills`** - List available skills
@@ -685,7 +579,6 @@ Once you're in an interactive session (via `goose session` or `goose run --inter
 # Clear the current conversation history
 /clear
 ```
-You can also create [custom slash commands for running recipes](/docs/guides/context-engineering/slash-commands) in goose Desktop or the CLI. 
 
 ---
 

@@ -7,7 +7,7 @@ goose follows a lightweight technical governance model designed to support rapid
 ## Core Values
 goose's governance is guided by three fundamental values:
 
-* **Open**: goose is open source, but we go beyond code availability. We plan and build in the open. Our roadmap as well as goose recipes, extensions, and prompts are editable and shareable. Our goal is to make goose the most hackable agent available.
+* **Open**: goose is open source, but we go beyond code availability. We plan and build in the open. Our roadmap as well as goose extensions and prompts are editable and shareable. Our goal is to make goose the most hackable agent available.
 * **Flexible**: we prefer open models – but we don’t restrict ourselves. goose equally supports remotely deployed frontier models as well as local private models, whether open or proprietary.
 * **Choice**: We're not bound to any one model, protocol, or stack. goose is built for choice and open standards, adapting to your tools, workflow, and identity as a creator.
 

@@ -1,13 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
-import {
-  callMcpAppTool,
-  exportMcpApp,
-  importMcpApp,
-  listMcpApps,
-  listMcpAppTools,
-  readMcpAppResource,
-} from '../mcp-apps';
+import { callMcpAppTool, listMcpAppTools, readMcpAppResource } from '../mcp-apps';
 
 vi.mock('../acpConnection', () => ({
   getAcpClient: vi.fn(),
@@ -19,9 +12,6 @@ function createClient() {
       resourcesRead_unstable: vi.fn(),
       toolsCall_unstable: vi.fn(),
       toolsList_unstable: vi.fn(),
-      appsList_unstable: vi.fn(),
-      appsExport_unstable: vi.fn(),
-      appsImport_unstable: vi.fn(),
     },
   };
 }
@@ -160,50 +150,5 @@ describe('ACP MCP app helpers', () => {
         },
       },
     ]);
-  });
-
-  it('lists apps through ACP', async () => {
-    client.goose.appsList_unstable.mockResolvedValue({
-      apps: [
-        {
-          uri: 'ui://apps/weather',
-          name: 'weather',
-          mimeType: 'text/html;profile=mcp-app',
-          text: '<main>Weather</main>',
-          mcpServers: ['apps'],
-        },
-      ],
-    });
-
-    const apps = await listMcpApps('session-1');
-
-    expect(client.goose.appsList_unstable).toHaveBeenCalledWith({ sessionId: 'session-1' });
-    expect(apps).toEqual([
-      {
-        uri: 'ui://apps/weather',
-        name: 'weather',
-        mimeType: 'text/html;profile=mcp-app',
-        text: '<main>Weather</main>',
-        mcpServers: ['apps'],
-      },
-    ]);
-  });
-
-  it('imports and exports apps through ACP', async () => {
-    client.goose.appsExport_unstable.mockResolvedValue({
-      html: '<html><body>Weather</body></html>',
-    });
-    client.goose.appsImport_unstable.mockResolvedValue({
-      name: 'weather',
-      message: 'ok',
-    });
-
-    await expect(exportMcpApp('weather')).resolves.toBe('<html><body>Weather</body></html>');
-    await importMcpApp('<html><body>Weather</body></html>');
-
-    expect(client.goose.appsExport_unstable).toHaveBeenCalledWith({ name: 'weather' });
-    expect(client.goose.appsImport_unstable).toHaveBeenCalledWith({
-      html: '<html><body>Weather</body></html>',
-    });
   });
 });

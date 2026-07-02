@@ -140,18 +140,6 @@ function FeaturesSection() {
         </div>
         <div className={styles.featuresGridBottom}>
           <SmallCard
-            icon="📋"
-            title="Recipes"
-            description={
-              <p>
-                Capture workflows as portable YAML configs. Share with your
-                team, run in CI, include instructions, extensions, parameters,
-                and{" "}
-                <Link to="/docs/guides/recipes/session-recipes">subrecipes</Link>.
-              </p>
-            }
-          />
-          <SmallCard
             icon="🧩"
             title="MCP Apps"
             description={
@@ -250,7 +238,7 @@ function CommunitySection() {
         <h2 className={styles.sectionTitle}>Community</h2>
         <p className={styles.sectionSubtitle}>
           An active community of developers, contributors, and users building
-          extensions, sharing recipes, and pushing the boundaries of what local
+          extensions, sharing workflows, and pushing the boundaries of what local
           AI agents can do.
         </p>
         <div className={styles.communityGrid}>

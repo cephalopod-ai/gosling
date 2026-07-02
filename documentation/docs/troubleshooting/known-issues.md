@@ -137,13 +137,6 @@ See [Keychain/Keyring Errors](#keychainkeyring-errors) for more details on keyri
 
 ---
 
-### New Recipe Warning
-
-The first time you run a given recipe in goose Desktop, you'll see a `New Recipe Warning` dialog that allows you to review the recipe's title, description, and instructions. If you trust the recipe, click `Trust and Execute` to continue. You won't be prompted again for the same recipe unless it changes.
-
-This warning helps protect against inadvertently executing potentially harmful recipe code.
-
----
 ### Uninstall goose or Remove Cached Data
 
 You may need to uninstall goose or clear existing data before re-installing. goose stores data in different locations depending on your operating system. Secrets, such as API keys, are stored in the system keychain/keyring by default (or in `secrets.yaml` when file-based secret storage is in use).

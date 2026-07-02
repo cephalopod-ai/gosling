@@ -1,6 +1,51 @@
-import type { RecipeExtensionDto } from '@aaif/goose-sdk';
-
 export type Envs = Record<string, string>;
+
+type BuiltinExtensionConfig = {
+  name: string;
+  description?: string | null;
+  display_name?: string | null;
+  timeout?: number | null;
+  bundled?: boolean | null;
+  available_tools?: string[] | null;
+  type: 'builtin';
+};
+
+type PlatformExtensionConfig = {
+  name: string;
+  description?: string | null;
+  display_name?: string | null;
+  bundled?: boolean | null;
+  available_tools?: string[] | null;
+  type: 'platform';
+};
+
+type StdioExtensionConfig = {
+  name: string;
+  description?: string | null;
+  cmd: string;
+  args?: string[];
+  envs?: Envs;
+  env_keys?: string[];
+  timeout?: number | null;
+  cwd?: string | null;
+  bundled?: boolean | null;
+  available_tools?: string[] | null;
+  type: 'stdio';
+};
+
+type StreamableHttpExtensionConfig = {
+  name: string;
+  description?: string | null;
+  uri: string;
+  envs?: Envs;
+  env_keys?: string[];
+  headers?: Record<string, string>;
+  timeout?: number | null;
+  socket?: string | null;
+  bundled?: boolean | null;
+  available_tools?: string[] | null;
+  type: 'streamable_http';
+};
 
 type LegacySseExtensionConfig = {
   description?: string | null;
@@ -42,7 +87,10 @@ type InlinePythonExtensionConfig = {
 };
 
 export type ExtensionConfig =
-  | RecipeExtensionDto
+  | BuiltinExtensionConfig
+  | PlatformExtensionConfig
+  | StdioExtensionConfig
+  | StreamableHttpExtensionConfig
   | LegacySseExtensionConfig
   | FrontendExtensionConfig
   | InlinePythonExtensionConfig;

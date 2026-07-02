@@ -520,7 +520,6 @@ impl Agent {
     pub(crate) async fn update_session_metrics(
         &self,
         session_id: &str,
-        schedule_id: Option<String>,
         usage: &ProviderUsage,
         is_compaction_usage: bool,
     ) -> Result<()> {
@@ -545,7 +544,6 @@ impl Agent {
 
         manager
             .update(session_id)
-            .schedule_id(schedule_id)
             .usage(current_usage)
             .accumulated_usage(accumulated_usage)
             .accumulated_cost(accumulated_cost)

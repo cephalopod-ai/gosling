@@ -4,11 +4,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-mod recipe;
-pub use recipe::*;
-mod schedule;
-pub use schedule::*;
-
 /// Schema descriptor for a single custom method, produced by the
 /// `#[custom_methods]` macro's generated `custom_method_schemas()` function.
 ///
@@ -116,45 +111,6 @@ pub struct GooseToolCallResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "_meta")]
     pub meta: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/unstable/apps/list", response = AppsListResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct AppsListRequest {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct AppsListResponse {
-    #[serde(default)]
-    pub apps: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/unstable/apps/export", response = AppsExportResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct AppsExportRequest {
-    pub name: String,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct AppsExportResponse {
-    pub html: String,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
-#[request(method = "_goose/unstable/apps/import", response = AppsImportResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct AppsImportRequest {
-    pub html: String,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
-pub struct AppsImportResponse {
-    pub name: String,
-    pub message: String,
 }
 
 /// Update the working directory for a session.
@@ -1320,8 +1276,6 @@ pub enum SourceType {
     #[default]
     Skill,
     BuiltinSkill,
-    Recipe,
-    Subrecipe,
     Agent,
     Project,
 }
@@ -1331,8 +1285,6 @@ impl std::fmt::Display for SourceType {
         match self {
             SourceType::Skill => write!(f, "skill"),
             SourceType::BuiltinSkill => write!(f, "builtin skill"),
-            SourceType::Recipe => write!(f, "recipe"),
-            SourceType::Subrecipe => write!(f, "subrecipe"),
             SourceType::Agent => write!(f, "agent"),
             SourceType::Project => write!(f, "project"),
         }
@@ -1448,7 +1400,7 @@ pub struct ListSourcesResponse {
     pub sources: Vec<SourceEntry>,
 }
 
-/// A user-facing `@` mention target backed by an agent, recipe, or subrecipe source.
+/// A user-facing `@` mention target backed by an agent source.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentMention {

@@ -195,7 +195,7 @@ This setting is stored as the `GOOSE_MAX_TURNS` environment variable in your [co
       │  ○ Toggle Extensions
       │  ○ Remove Extension
       // highlight-start
-      │  ● goose settings (Set the goose mode, Tool Output, Tool Permissions, Experiment, goose recipe github repo and more)
+      │  ● goose settings (Set the goose mode, Tool Output, Tool Permissions, Experiment and more)
       // highlight-end
       └ 
       ```
@@ -216,8 +216,6 @@ This setting is stored as the `GOOSE_MAX_TURNS` environment variable in your [co
       │  ● Max Turns (Set maximum number of turns without user input)
       // highlight-end
       │  ○ Toggle Experiment 
-      │  ○ goose recipe github repo 
-      │  ○ Scheduler Type 
       └ 
       ```
 

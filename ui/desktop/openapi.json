@@ -348,35 +348,6 @@
         }
       }
     },
-    "/agent/update_from_session": {
-      "post": {
-        "tags": [
-          "super::routes::agent"
-        ],
-        "operationId": "update_from_session",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateFromSessionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Update agent from session data successfully"
-          },
-          "401": {
-            "description": "Unauthorized - invalid secret key"
-          },
-          "424": {
-            "description": "Agent not initialized"
-          }
-        }
-      }
-    },
     "/agent/update_provider": {
       "post": {
         "tags": [
@@ -1450,142 +1421,6 @@
         }
       }
     },
-    "/dictation/models": {
-      "get": {
-        "tags": [
-          "super::routes::dictation"
-        ],
-        "operationId": "list_models",
-        "responses": {
-          "200": {
-            "description": "List of available Whisper models",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/WhisperModelResponse"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/dictation/models/{model_id}": {
-      "delete": {
-        "tags": [
-          "super::routes::dictation"
-        ],
-        "operationId": "delete_model",
-        "parameters": [
-          {
-            "name": "model_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Model deleted"
-          },
-          "404": {
-            "description": "Model not found or not downloaded"
-          },
-          "500": {
-            "description": "Failed to delete model"
-          }
-        }
-      }
-    },
-    "/dictation/models/{model_id}/download": {
-      "get": {
-        "tags": [
-          "super::routes::dictation"
-        ],
-        "operationId": "get_download_progress",
-        "parameters": [
-          {
-            "name": "model_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Download progress",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DownloadProgress"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Download not found"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "super::routes::dictation"
-        ],
-        "operationId": "download_model",
-        "parameters": [
-          {
-            "name": "model_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "Download started"
-          },
-          "400": {
-            "description": "Download already in progress"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "super::routes::dictation"
-        ],
-        "operationId": "cancel_download",
-        "parameters": [
-          {
-            "name": "model_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Download cancelled"
-          },
-          "404": {
-            "description": "Download not found"
-          }
-        }
-      }
-    },
     "/dictation/transcribe": {
       "post": {
         "tags": [
@@ -1643,368 +1478,6 @@
         }
       }
     },
-    "/recipes/decode": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "decode_recipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DecodeRecipeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Recipe decoded successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DecodeRecipeResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request"
-          }
-        }
-      }
-    },
-    "/recipes/delete": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "delete_recipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeleteRecipeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Recipe deleted successfully"
-          },
-          "401": {
-            "description": "Unauthorized - Invalid or missing API key"
-          },
-          "404": {
-            "description": "Recipe not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/recipes/encode": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "encode_recipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EncodeRecipeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Recipe encoded successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EncodeRecipeResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request"
-          }
-        }
-      }
-    },
-    "/recipes/list": {
-      "get": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "list_recipes",
-        "responses": {
-          "200": {
-            "description": "Get recipe list successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListRecipeResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized - Invalid or missing API key"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/recipes/parse": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "parse_recipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ParseRecipeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Recipe parsed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ParseRecipeResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request - Invalid recipe format",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/recipes/save": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "save_recipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveRecipeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Recipe saved to file successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SaveRecipeResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/recipes/scan": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "scan_recipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScanRecipeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Recipe scanned successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScanRecipeResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/recipes/schedule": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "schedule_recipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScheduleRecipeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Recipe scheduled successfully"
-          },
-          "404": {
-            "description": "Recipe not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/recipes/slash-command": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "set_recipe_slash_command",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetSlashCommandRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Slash command set successfully"
-          },
-          "404": {
-            "description": "Recipe not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/recipes/to-yaml": {
-      "post": {
-        "tags": [
-          "Recipe Management"
-        ],
-        "operationId": "recipe_to_yaml",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecipeToYamlRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Recipe converted to YAML successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecipeToYamlResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request - Failed to convert recipe to YAML",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/reply": {
       "post": {
         "tags": [
@@ -2034,354 +1507,6 @@
           },
           "424": {
             "description": "Agent not initialized"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/schedule/create": {
-      "post": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "create_schedule",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateScheduleRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Scheduled job created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScheduledJob"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid cron expression or recipe file"
-          },
-          "409": {
-            "description": "Job ID already exists"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/schedule/delete/{id}": {
-      "delete": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "delete_schedule",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "ID of the schedule to delete",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Scheduled job removed successfully"
-          },
-          "404": {
-            "description": "Scheduled job not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/schedule/list": {
-      "get": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "list_schedules",
-        "responses": {
-          "200": {
-            "description": "A list of scheduled jobs",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListSchedulesResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/schedule/{id}": {
-      "put": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "update_schedule",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "ID of the schedule to update",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateScheduleRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Scheduled job updated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScheduledJob"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Cannot update a currently running job or invalid request"
-          },
-          "404": {
-            "description": "Scheduled job not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/schedule/{id}/inspect": {
-      "get": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "inspect_running_job",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "ID of the schedule to inspect",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Running job information",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InspectJobResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scheduled job not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/schedule/{id}/kill": {
-      "post": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "kill_running_job",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Running job killed successfully"
-          }
-        }
-      }
-    },
-    "/schedule/{id}/pause": {
-      "post": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "pause_schedule",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "ID of the schedule to pause",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Scheduled job paused successfully"
-          },
-          "400": {
-            "description": "Cannot pause a currently running job"
-          },
-          "404": {
-            "description": "Scheduled job not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/schedule/{id}/run_now": {
-      "post": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "run_now_handler",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "ID of the schedule to run",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Scheduled job triggered successfully, returns new session ID",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunNowResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Scheduled job not found"
-          },
-          "500": {
-            "description": "Internal server error when trying to run the job"
-          }
-        }
-      }
-    },
-    "/schedule/{id}/sessions": {
-      "get": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "sessions_handler",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "ID of the schedule",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A list of session display info",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SessionDisplayInfo"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/schedule/{id}/unpause": {
-      "post": {
-        "tags": [
-          "schedule"
-        ],
-        "operationId": "unpause_schedule",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "ID of the schedule to unpause",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Scheduled job unpaused successfully"
-          },
-          "404": {
-            "description": "Scheduled job not found"
           },
           "500": {
             "description": "Internal server error"
@@ -2709,75 +1834,6 @@
         ]
       }
     },
-    "/sessions/{session_id}/user_recipe_values": {
-      "put": {
-        "tags": [
-          "Session Management"
-        ],
-        "operationId": "update_session_user_recipe_values",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "description": "Unique identifier for the session",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateSessionUserRecipeValuesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Session user recipe values updated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateSessionUserRecipeValuesResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized - Invalid or missing API key"
-          },
-          "404": {
-            "description": "Session not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "api_key": []
-          }
-        ]
-      }
-    },
     "/status": {
       "get": {
         "tags": [
@@ -2972,19 +2028,6 @@
           }
         }
       },
-      "Author": {
-        "type": "object",
-        "properties": {
-          "contact": {
-            "type": "string",
-            "nullable": true
-          },
-          "metadata": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
       "CancelRequest": {
         "type": "object",
         "required": [
@@ -3011,14 +2054,6 @@
             "description": "Override the server's conversation history. Only use this when you need absolute control\nover the conversation state (e.g., administrative tools). For normal operations, the server\nis the source of truth - use truncate/fork endpoints to modify conversation history instead.",
             "nullable": true
           },
-          "recipe_name": {
-            "type": "string",
-            "nullable": true
-          },
-          "recipe_version": {
-            "type": "string",
-            "nullable": true
-          },
           "session_id": {
             "type": "string"
           },
@@ -3042,7 +2077,6 @@
         "type": "string",
         "enum": [
           "Builtin",
-          "Recipe",
           "Skill",
           "Agent"
         ]
@@ -3372,63 +2406,6 @@
           }
         }
       },
-      "CreateScheduleRequest": {
-        "type": "object",
-        "required": [
-          "id",
-          "recipe",
-          "cron"
-        ],
-        "properties": {
-          "cron": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
-          }
-        }
-      },
-      "CspMetadata": {
-        "type": "object",
-        "description": "Content Security Policy metadata for MCP Apps\nSpecifies allowed domains for network connections and resource loading",
-        "properties": {
-          "baseUriDomains": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Domains allowed for base-uri",
-            "nullable": true
-          },
-          "connectDomains": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Domains allowed for connect-src (fetch, XHR, WebSocket)",
-            "nullable": true
-          },
-          "frameDomains": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Domains allowed for frame-src (nested iframes)",
-            "nullable": true
-          },
-          "resourceDomains": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Domains allowed for resource loading (scripts, styles, images, fonts, media)",
-            "nullable": true
-          }
-        }
-      },
       "DeclarativeProviderConfig": {
         "type": "object",
         "required": [
@@ -3523,39 +2500,6 @@
             "format": "int64",
             "nullable": true,
             "minimum": 0
-          }
-        }
-      },
-      "DecodeRecipeRequest": {
-        "type": "object",
-        "required": [
-          "deeplink"
-        ],
-        "properties": {
-          "deeplink": {
-            "type": "string"
-          }
-        }
-      },
-      "DecodeRecipeResponse": {
-        "type": "object",
-        "required": [
-          "recipe"
-        ],
-        "properties": {
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
-          }
-        }
-      },
-      "DeleteRecipeRequest": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
           }
         }
       },
@@ -3661,7 +2605,6 @@
           "extensions",
           "logs",
           "prompts",
-          "scheduledRecipes",
           "errors"
         ],
         "properties": {
@@ -3697,15 +2640,6 @@
               "$ref": "#/components/schemas/DiagnosticsPrompt"
             }
           },
-          "schedule": {
-            "nullable": true
-          },
-          "scheduledRecipes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DiagnosticsScheduledRecipe"
-            }
-          },
           "schemaVersion": {
             "type": "integer",
             "format": "int32",
@@ -3716,21 +2650,6 @@
           },
           "system": {
             "$ref": "#/components/schemas/SystemInfo"
-          }
-        }
-      },
-      "DiagnosticsScheduledRecipe": {
-        "type": "object",
-        "required": [
-          "path",
-          "content"
-        ],
-        "properties": {
-          "content": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
           }
         }
       },
@@ -3758,8 +2677,7 @@
         "enum": [
           "openai",
           "elevenlabs",
-          "groq",
-          "local"
+          "groq"
         ]
       },
       "DictationProviderStatus": {
@@ -3885,28 +2803,6 @@
           },
           "resource": {
             "$ref": "#/components/schemas/ResourceContents"
-          }
-        }
-      },
-      "EncodeRecipeRequest": {
-        "type": "object",
-        "required": [
-          "recipe"
-        ],
-        "properties": {
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
-          }
-        }
-      },
-      "EncodeRecipeResponse": {
-        "type": "object",
-        "required": [
-          "deeplink"
-        ],
-        "properties": {
-          "deeplink": {
-            "type": "string"
           }
         }
       },
@@ -4442,36 +3338,6 @@
           }
         }
       },
-      "GooseApp": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/McpAppResource"
-          },
-          {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/WindowProps"
-              }
-            ],
-            "nullable": true
-          },
-          {
-            "type": "object",
-            "properties": {
-              "mcpServers": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "prd": {
-                "type": "string",
-                "nullable": true
-              }
-            }
-          }
-        ]
-      },
       "GooseMode": {
         "type": "string",
         "enum": [
@@ -4575,66 +3441,9 @@
           }
         }
       },
-      "InspectJobResponse": {
-        "type": "object",
-        "properties": {
-          "processStartTime": {
-            "type": "string",
-            "nullable": true
-          },
-          "runningDurationSeconds": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          },
-          "sessionId": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
       "JsonObject": {
         "type": "object",
         "additionalProperties": true
-      },
-      "KillJobResponse": {
-        "type": "object",
-        "required": [
-          "message"
-        ],
-        "properties": {
-          "message": {
-            "type": "string"
-          }
-        }
-      },
-      "ListRecipeResponse": {
-        "type": "object",
-        "required": [
-          "manifests"
-        ],
-        "properties": {
-          "manifests": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecipeManifest"
-            }
-          }
-        }
-      },
-      "ListSchedulesResponse": {
-        "type": "object",
-        "required": [
-          "jobs"
-        ],
-        "properties": {
-          "jobs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ScheduledJob"
-            }
-          }
-        }
       },
       "LoadedProvider": {
         "type": "object",
@@ -4648,52 +3457,6 @@
           },
           "is_editable": {
             "type": "boolean"
-          }
-        }
-      },
-      "McpAppResource": {
-        "type": "object",
-        "description": "MCP App Resource\nRepresents a UI resource that can be rendered in an MCP App",
-        "required": [
-          "uri",
-          "name",
-          "mimeType"
-        ],
-        "properties": {
-          "_meta": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ResourceMetadata"
-              }
-            ],
-            "nullable": true
-          },
-          "blob": {
-            "type": "string",
-            "description": "Base64-encoded binary content (alternative to text)",
-            "nullable": true
-          },
-          "description": {
-            "type": "string",
-            "description": "Optional description of what this resource does",
-            "nullable": true
-          },
-          "mimeType": {
-            "type": "string",
-            "description": "MIME type (should be \"text/html;profile=mcp-app\" for MCP Apps)"
-          },
-          "name": {
-            "type": "string",
-            "description": "Human-readable name of the resource"
-          },
-          "text": {
-            "type": "string",
-            "description": "Text content of the resource (HTML for MCP Apps)",
-            "nullable": true
-          },
-          "uri": {
-            "type": "string",
-            "description": "URI of the resource (must use ui:// scheme)"
           }
         }
       },
@@ -5354,28 +4117,6 @@
           }
         }
       },
-      "ParseRecipeRequest": {
-        "type": "object",
-        "required": [
-          "content"
-        ],
-        "properties": {
-          "content": {
-            "type": "string"
-          }
-        }
-      },
-      "ParseRecipeResponse": {
-        "type": "object",
-        "required": [
-          "recipe"
-        ],
-        "properties": {
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
-          }
-        }
-      },
       "Permission": {
         "type": "string",
         "enum": [
@@ -5394,28 +4135,6 @@
           "ask_before",
           "never_allow"
         ]
-      },
-      "PermissionsMetadata": {
-        "type": "object",
-        "description": "Sandbox permissions for MCP Apps\nSpecifies which browser capabilities the UI needs access to.\nMaps to the iframe Permission Policy `allow` attribute.",
-        "properties": {
-          "camera": {
-            "type": "boolean",
-            "description": "Request camera access (maps to Permission Policy `camera` feature)"
-          },
-          "clipboardWrite": {
-            "type": "boolean",
-            "description": "Request clipboard write access (maps to Permission Policy `clipboard-write` feature)"
-          },
-          "geolocation": {
-            "type": "boolean",
-            "description": "Request geolocation access (maps to Permission Policy `geolocation` feature)"
-          },
-          "microphone": {
-            "type": "boolean",
-            "description": "Request microphone access (maps to Permission Policy `microphone` feature)"
-          }
-        }
       },
       "PrincipalType": {
         "type": "string",
@@ -5861,198 +4580,6 @@
           }
         }
       },
-      "Recipe": {
-        "type": "object",
-        "required": [
-          "title",
-          "description"
-        ],
-        "properties": {
-          "activities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true
-          },
-          "author": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Author"
-              }
-            ],
-            "nullable": true
-          },
-          "description": {
-            "type": "string"
-          },
-          "extensions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExtensionConfig"
-            },
-            "nullable": true
-          },
-          "instructions": {
-            "type": "string",
-            "nullable": true
-          },
-          "parameters": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RecipeParameter"
-            },
-            "nullable": true
-          },
-          "prompt": {
-            "type": "string",
-            "nullable": true
-          },
-          "response": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Response"
-              }
-            ],
-            "nullable": true
-          },
-          "retry": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RetryConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "settings": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Settings"
-              }
-            ],
-            "nullable": true
-          },
-          "sub_recipes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SubRecipe"
-            },
-            "nullable": true
-          },
-          "title": {
-            "type": "string"
-          },
-          "version": {
-            "type": "string"
-          }
-        }
-      },
-      "RecipeManifest": {
-        "type": "object",
-        "required": [
-          "id",
-          "recipe",
-          "file_path",
-          "last_modified"
-        ],
-        "properties": {
-          "file_path": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "last_modified": {
-            "type": "string"
-          },
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
-          },
-          "schedule_cron": {
-            "type": "string",
-            "nullable": true
-          },
-          "slash_command": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "RecipeParameter": {
-        "type": "object",
-        "required": [
-          "key",
-          "input_type",
-          "requirement",
-          "description"
-        ],
-        "properties": {
-          "default": {
-            "type": "string",
-            "nullable": true
-          },
-          "description": {
-            "type": "string"
-          },
-          "input_type": {
-            "$ref": "#/components/schemas/RecipeParameterInputType"
-          },
-          "key": {
-            "type": "string"
-          },
-          "options": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true
-          },
-          "requirement": {
-            "$ref": "#/components/schemas/RecipeParameterRequirement"
-          }
-        }
-      },
-      "RecipeParameterInputType": {
-        "type": "string",
-        "enum": [
-          "string",
-          "number",
-          "boolean",
-          "date",
-          "file",
-          "select"
-        ]
-      },
-      "RecipeParameterRequirement": {
-        "type": "string",
-        "enum": [
-          "required",
-          "optional",
-          "user_prompt"
-        ]
-      },
-      "RecipeToYamlRequest": {
-        "type": "object",
-        "required": [
-          "recipe"
-        ],
-        "properties": {
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
-          }
-        }
-      },
-      "RecipeToYamlResponse": {
-        "type": "object",
-        "required": [
-          "yaml"
-        ],
-        "properties": {
-          "yaml": {
-            "type": "string"
-          }
-        }
-      },
       "RedactedThinkingContent": {
         "type": "object",
         "required": [
@@ -6127,28 +4654,6 @@
           }
         ]
       },
-      "ResourceMetadata": {
-        "type": "object",
-        "description": "Resource metadata containing UI configuration",
-        "properties": {
-          "ui": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/UiMetadata"
-              }
-            ],
-            "nullable": true
-          }
-        }
-      },
-      "Response": {
-        "type": "object",
-        "properties": {
-          "json_schema": {
-            "nullable": true
-          }
-        }
-      },
       "RestartAgentRequest": {
         "type": "object",
         "required": [
@@ -6207,48 +4712,6 @@
           }
         }
       },
-      "RetryConfig": {
-        "type": "object",
-        "description": "Configuration for retry logic in recipe execution",
-        "required": [
-          "max_retries",
-          "checks"
-        ],
-        "properties": {
-          "checks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SuccessCheck"
-            },
-            "description": "List of success checks to validate recipe completion"
-          },
-          "max_retries": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum number of retry attempts before giving up",
-            "minimum": 0
-          },
-          "on_failure": {
-            "type": "string",
-            "description": "Optional shell command to run on failure for cleanup",
-            "nullable": true
-          },
-          "on_failure_timeout_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Timeout in seconds for on_failure commands (default: 600 seconds)",
-            "nullable": true,
-            "minimum": 0
-          },
-          "timeout_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Timeout in seconds for individual shell commands (default: 300 seconds)",
-            "nullable": true,
-            "minimum": 0
-          }
-        }
-      },
       "Role": {
         "oneOf": [
           {
@@ -6265,17 +4728,6 @@
           }
         ]
       },
-      "RunNowResponse": {
-        "type": "object",
-        "required": [
-          "session_id"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          }
-        }
-      },
       "SavePromptRequest": {
         "type": "object",
         "required": [
@@ -6283,137 +4735,6 @@
         ],
         "properties": {
           "content": {
-            "type": "string"
-          }
-        }
-      },
-      "SaveRecipeRequest": {
-        "type": "object",
-        "required": [
-          "recipe"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "nullable": true
-          },
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
-          }
-        }
-      },
-      "SaveRecipeResponse": {
-        "type": "object",
-        "required": [
-          "id",
-          "file_name",
-          "file_path"
-        ],
-        "properties": {
-          "file_name": {
-            "type": "string"
-          },
-          "file_path": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          }
-        }
-      },
-      "ScanRecipeRequest": {
-        "type": "object",
-        "required": [
-          "recipe"
-        ],
-        "properties": {
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
-          }
-        }
-      },
-      "ScanRecipeResponse": {
-        "type": "object",
-        "required": [
-          "has_security_warnings"
-        ],
-        "properties": {
-          "has_security_warnings": {
-            "type": "boolean"
-          }
-        }
-      },
-      "ScheduleRecipeRequest": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "cron_schedule": {
-            "type": "string",
-            "nullable": true
-          },
-          "id": {
-            "type": "string"
-          }
-        }
-      },
-      "ScheduledJob": {
-        "type": "object",
-        "required": [
-          "id",
-          "source",
-          "cron"
-        ],
-        "properties": {
-          "cron": {
-            "type": "string"
-          },
-          "current_session_id": {
-            "type": "string",
-            "nullable": true
-          },
-          "currently_running": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "last_run": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "parameters": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "allOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "string"
-                  }
-                ]
-              }
-            }
-          },
-          "paused": {
-            "type": "boolean"
-          },
-          "process_start_time": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "recipe_base_dir": {
-            "type": "string",
-            "description": "Original directory of the recipe file before it was copied to scheduled_recipes/.\nPreserved so that relative paths (sub-recipes, template includes) resolve correctly\nagainst the source tree rather than the scheduler's internal storage directory.",
-            "nullable": true
-          },
-          "source": {
             "type": "string"
           }
         }
@@ -6496,18 +4817,6 @@
             "type": "string",
             "nullable": true
           },
-          "recipe": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Recipe"
-              }
-            ],
-            "nullable": true
-          },
-          "schedule_id": {
-            "type": "string",
-            "nullable": true
-          },
           "session_type": {
             "$ref": "#/components/schemas/SessionType"
           },
@@ -6518,79 +4827,10 @@
           "usage": {
             "$ref": "#/components/schemas/Usage"
           },
-          "user_recipe_values": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "nullable": true
-          },
           "user_set_name": {
             "type": "boolean"
           },
           "working_dir": {
-            "type": "string"
-          }
-        }
-      },
-      "SessionDisplayInfo": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "createdAt",
-          "workingDir",
-          "messageCount"
-        ],
-        "properties": {
-          "accumulatedInputTokens": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "accumulatedOutputTokens": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "accumulatedTotalTokens": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "inputTokens": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "messageCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "name": {
-            "type": "string"
-          },
-          "outputTokens": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "scheduleId": {
-            "type": "string",
-            "nullable": true
-          },
-          "totalTokens": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          },
-          "workingDir": {
             "type": "string"
           }
         }
@@ -6655,18 +4895,6 @@
           "acp"
         ]
       },
-      "SessionsQuery": {
-        "type": "object",
-        "required": [
-          "limit"
-        ],
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
       "SetProviderRequest": {
         "type": "object",
         "required": [
@@ -6679,44 +4907,6 @@
           },
           "provider": {
             "type": "string"
-          }
-        }
-      },
-      "SetSlashCommandRequest": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "slash_command": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "Settings": {
-        "type": "object",
-        "properties": {
-          "goose_model": {
-            "type": "string",
-            "nullable": true
-          },
-          "goose_provider": {
-            "type": "string",
-            "nullable": true
-          },
-          "max_turns": {
-            "type": "integer",
-            "nullable": true,
-            "minimum": 0
-          },
-          "temperature": {
-            "type": "number",
-            "format": "float",
-            "nullable": true
           }
         }
       },
@@ -6766,22 +4956,6 @@
             },
             "nullable": true
           },
-          "recipe": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Recipe"
-              }
-            ],
-            "nullable": true
-          },
-          "recipe_deeplink": {
-            "type": "string",
-            "nullable": true
-          },
-          "recipe_id": {
-            "type": "string",
-            "nullable": true
-          },
           "working_dir": {
             "type": "string"
           }
@@ -6796,63 +4970,6 @@
           "session_id": {
             "type": "string"
           }
-        }
-      },
-      "SubRecipe": {
-        "type": "object",
-        "required": [
-          "name",
-          "path"
-        ],
-        "properties": {
-          "description": {
-            "type": "string",
-            "nullable": true
-          },
-          "name": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "sequential_when_repeated": {
-            "type": "boolean"
-          },
-          "values": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "nullable": true
-          }
-        }
-      },
-      "SuccessCheck": {
-        "oneOf": [
-          {
-            "type": "object",
-            "description": "Execute a shell command and check its exit status",
-            "required": [
-              "command",
-              "type"
-            ],
-            "properties": {
-              "command": {
-                "type": "string",
-                "description": "The shell command to execute"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "Shell"
-                ]
-              }
-            }
-          }
-        ],
-        "description": "A single success check to validate recipe completion",
-        "discriminator": {
-          "propertyName": "type"
         }
       },
       "SystemInfo": {
@@ -7312,33 +5429,6 @@
           }
         }
       },
-      "UiMetadata": {
-        "type": "object",
-        "description": "UI-specific metadata for MCP resources",
-        "properties": {
-          "csp": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CspMetadata"
-              }
-            ],
-            "nullable": true
-          },
-          "domain": {
-            "type": "string",
-            "description": "Preferred domain for the app (used for CORS)",
-            "nullable": true
-          },
-          "permissions": {
-            "$ref": "#/components/schemas/PermissionsMetadata"
-          },
-          "prefersBorder": {
-            "type": "boolean",
-            "description": "Whether the app prefers to have a border around it",
-            "nullable": true
-          }
-        }
-      },
       "UpdateCustomProviderRequest": {
         "type": "object",
         "required": [
@@ -7395,17 +5485,6 @@
           }
         }
       },
-      "UpdateFromSessionRequest": {
-        "type": "object",
-        "required": [
-          "session_id"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          }
-        }
-      },
       "UpdateProviderRequest": {
         "type": "object",
         "required": [
@@ -7435,17 +5514,6 @@
           }
         }
       },
-      "UpdateScheduleRequest": {
-        "type": "object",
-        "required": [
-          "cron"
-        ],
-        "properties": {
-          "cron": {
-            "type": "string"
-          }
-        }
-      },
       "UpdateSessionNameRequest": {
         "type": "object",
         "required": [
@@ -7470,32 +5538,6 @@
           },
           "session_id": {
             "type": "string"
-          }
-        }
-      },
-      "UpdateSessionUserRecipeValuesRequest": {
-        "type": "object",
-        "required": [
-          "userRecipeValues"
-        ],
-        "properties": {
-          "userRecipeValues": {
-            "type": "object",
-            "description": "Recipe parameter values entered by the user",
-            "additionalProperties": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "UpdateSessionUserRecipeValuesResponse": {
-        "type": "object",
-        "required": [
-          "recipe"
-        ],
-        "properties": {
-          "recipe": {
-            "$ref": "#/components/schemas/Recipe"
           }
         }
       },
@@ -7560,77 +5602,6 @@
             "type": "integer",
             "format": "int32",
             "nullable": true
-          }
-        }
-      },
-      "WhisperModelResponse": {
-        "allOf": [
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "size_mb",
-              "url",
-              "description"
-            ],
-            "properties": {
-              "description": {
-                "type": "string",
-                "description": "Description"
-              },
-              "id": {
-                "type": "string",
-                "description": "Model identifier (e.g., \"tiny\", \"base\", \"small\")"
-              },
-              "size_mb": {
-                "type": "integer",
-                "format": "int32",
-                "description": "Model file size in MB",
-                "minimum": 0
-              },
-              "url": {
-                "type": "string",
-                "description": "Download URL from HuggingFace"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "downloaded",
-              "recommended"
-            ],
-            "properties": {
-              "downloaded": {
-                "type": "boolean"
-              },
-              "recommended": {
-                "type": "boolean"
-              }
-            }
-          }
-        ]
-      },
-      "WindowProps": {
-        "type": "object",
-        "required": [
-          "width",
-          "height",
-          "resizable"
-        ],
-        "properties": {
-          "height": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "resizable": {
-            "type": "boolean"
-          },
-          "width": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
           }
         }
       }

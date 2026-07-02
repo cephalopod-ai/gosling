@@ -11,9 +11,6 @@ export function getSessionDisplayName(session: Session): string {
   if (session.user_set_name) {
     return session.name;
   }
-  if (session.recipe?.title) {
-    return session.recipe.title;
-  }
   if (shouldShowNewChatTitle(session)) {
     return DEFAULT_CHAT_TITLE;
   }
@@ -21,7 +18,7 @@ export function getSessionDisplayName(session: Session): string {
 }
 
 export function shouldShowNewChatTitle(session: Session): boolean {
-  return !session.user_set_name && session.message_count === 0 && !session.recipe?.title;
+  return !session.user_set_name && session.message_count === 0;
 }
 
 export function resumeSession(session: Session, setView: setViewType) {
@@ -43,8 +40,6 @@ export function resumeSession(session: Session, setView: setViewType) {
 }
 
 interface CreateSessionOptions {
-  recipeDeeplink?: string;
-  recipeId?: string;
   extensionConfigs?: ExtensionConfig[];
   allExtensions?: FixedExtensionEntry[];
 }
@@ -75,10 +70,7 @@ async function createAcpSession(
           .filter((entry) => selectedNames.has(gooseExtensionName(entry.extension)))
           .map((entry) => entry.extension)
       : [];
-  return acpChatSessionController.createSession(workingDir, gooseExtensions, {
-    recipeId: options?.recipeId,
-    recipeDeeplink: options?.recipeDeeplink,
-  });
+  return acpChatSessionController.createSession(workingDir, gooseExtensions);
 }
 
 export async function createSession(
@@ -93,8 +85,6 @@ export async function startNewSession(
   setView: setViewType,
   workingDir: string,
   options?: {
-    recipeDeeplink?: string;
-    recipeId?: string;
     allExtensions?: FixedExtensionEntry[];
   }
 ): Promise<Session> {
