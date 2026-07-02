@@ -50,7 +50,7 @@ impl SageMakerTgiProvider {
 
         // Re-export AWS_ prefixed config/secret keys into the environment for
         // aws_config to use as fallback (once per process; see aws_env).
-        crate::providers::aws_env::export_aws_env_once(
+        crate::providers::aws_env::export_aws_env(
             [config.all_values().ok(), config.all_secrets().ok()]
                 .into_iter()
                 .flatten(),

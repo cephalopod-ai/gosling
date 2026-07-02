@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing;
 use utoipa::ToSchema;
 
@@ -35,6 +35,7 @@ pub struct PermissionConfig {
 pub struct PermissionManager {
     config_path: PathBuf,
     permission_map: RwLock<HashMap<String, PermissionConfig>>,
+    persist_lock: Mutex<()>,
 }
 
 // Constants representing specific permission categories
@@ -70,6 +71,7 @@ impl PermissionManager {
         PermissionManager {
             config_path: permission_path,
             permission_map: RwLock::new(permission_map),
+            persist_lock: Mutex::new(()),
         }
     }
 
@@ -92,10 +94,18 @@ impl PermissionManager {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Persist a snapshot of the permission map. IO happens after the caller
-    /// has released the lock; a failure keeps the in-memory update and logs.
-    fn persist(&self, snapshot: &HashMap<String, PermissionConfig>) {
-        let result = serde_yaml::to_string(snapshot)
+    /// Persist the current permission map. Persists are serialized and the
+    /// snapshot is taken under the persist lock, so whichever writer runs
+    /// last always writes the newest state (a per-caller snapshot could
+    /// persist an older clone over a newer one). IO happens outside the map
+    /// lock; a failure keeps the in-memory update and logs.
+    fn persist(&self) {
+        let _persist_guard = self
+            .persist_lock
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let snapshot = self.read_map().clone();
+        let result = serde_yaml::to_string(&snapshot)
             .map_err(|e| e.to_string())
             .and_then(|yaml| fs::write(&self.config_path, yaml).map_err(|e| e.to_string()));
         if let Err(e) = result {
@@ -145,7 +155,7 @@ impl PermissionManager {
     }
 
     fn bulk_update_smart_approve_permissions(&self, tool_names: &[String], level: PermissionLevel) {
-        let snapshot = {
+        {
             let mut map = self.write_map();
             let permission_config = map.entry(SMART_APPROVE_PERMISSION.to_string()).or_default();
 
@@ -168,11 +178,9 @@ impl PermissionManager {
                     }
                 }
             }
+        }
 
-            map.clone()
-        };
-
-        self.persist(&snapshot);
+        self.persist();
     }
 
     /// Helper function to retrieve the permission level for a specific permission category and tool.
@@ -213,7 +221,7 @@ impl PermissionManager {
 
     /// Helper function to update a permission level for a specific tool in a given permission category.
     fn update_permission(&self, name: &str, principal_name: &str, level: PermissionLevel) {
-        let snapshot = {
+        {
             let mut map = self.write_map();
             // Get or create a new PermissionConfig for the specified category
             let permission_config = map.entry(name.to_string()).or_default();
@@ -239,16 +247,14 @@ impl PermissionManager {
                     .never_allow
                     .push(principal_name.to_string()),
             }
+        }
 
-            map.clone()
-        };
-
-        self.persist(&snapshot);
+        self.persist();
     }
 
     /// Removes all entries where the principal name starts with the given extension name.
     pub fn remove_extension(&self, extension_name: &str) {
-        let snapshot = {
+        {
             let mut map = self.write_map();
             for permission_config in map.values_mut() {
                 permission_config
@@ -261,10 +267,9 @@ impl PermissionManager {
                     .never_allow
                     .retain(|p| !p.starts_with(extension_name));
             }
-            map.clone()
-        };
+        }
 
-        self.persist(&snapshot);
+        self.persist();
     }
 }
 

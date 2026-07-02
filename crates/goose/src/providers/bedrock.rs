@@ -92,7 +92,7 @@ impl BedrockProvider {
                 .collect::<HashMap<_, _>>()
         });
 
-        crate::providers::aws_env::export_aws_env_once(
+        crate::providers::aws_env::export_aws_env(
             [config.all_values().ok(), filtered_secrets.ok()]
                 .into_iter()
                 .flatten(),

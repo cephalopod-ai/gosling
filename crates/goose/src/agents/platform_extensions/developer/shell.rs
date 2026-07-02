@@ -707,12 +707,24 @@ where
     R: tokio::io::AsyncRead + Unpin,
 {
     const MAX_LINE_BYTES: usize = 1024 * 1024;
+    const LINE_TRUNCATION_MARKER: &[u8] = b" ... [line truncated: exceeded 1 MiB]";
 
-    fn append_capped(line: &mut Vec<u8>, segment: &[u8]) {
+    /// Returns true when part of `segment` was dropped.
+    fn append_capped(line: &mut Vec<u8>, segment: &[u8]) -> bool {
         if line.len() < MAX_LINE_BYTES {
             let take = segment.len().min(MAX_LINE_BYTES - line.len());
             line.extend_from_slice(&segment[..take]);
+            take < segment.len()
+        } else {
+            !segment.is_empty()
         }
+    }
+
+    fn finish_line(line: &mut Vec<u8>, truncated: &mut bool) -> Vec<u8> {
+        if std::mem::take(truncated) {
+            line.extend_from_slice(LINE_TRUNCATION_MARKER);
+        }
+        std::mem::take(line)
     }
 
     async_stream::stream! {
@@ -720,6 +732,7 @@ where
         let mut reader = reader;
         let mut buf = [0u8; 8192];
         let mut line: Vec<u8> = Vec::new();
+        let mut truncated = false;
         loop {
             match reader.read(&mut buf).await {
                 Err(e) => {
@@ -731,17 +744,17 @@ where
                     let mut start = 0;
                     for i in 0..n {
                         if buf[i] == b'\n' {
-                            append_capped(&mut line, &buf[start..i]);
-                            yield Ok((is_stderr, std::mem::take(&mut line)));
+                            truncated |= append_capped(&mut line, &buf[start..i]);
+                            yield Ok((is_stderr, finish_line(&mut line, &mut truncated)));
                             start = i + 1;
                         }
                     }
-                    append_capped(&mut line, &buf[start..n]);
+                    truncated |= append_capped(&mut line, &buf[start..n]);
                 }
             }
         }
-        if !line.is_empty() {
-            yield Ok((is_stderr, line));
+        if !line.is_empty() || truncated {
+            yield Ok((is_stderr, finish_line(&mut line, &mut truncated)));
         }
     }
 }
