@@ -44,14 +44,10 @@ pub mod google;
 pub mod http_status {
     pub use goose_providers::http_status::*;
 }
-pub mod huggingface;
-pub mod huggingface_auth;
 mod init;
 pub mod inventory;
 pub mod kimicode;
 pub mod litellm;
-#[cfg(feature = "local-inference")]
-pub mod local_inference;
 pub mod nanogpt;
 pub mod oauth;
 pub mod oauth_device_flow;

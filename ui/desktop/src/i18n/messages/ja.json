@@ -29,14 +29,14 @@
   "authSettings.deleteCredential": {
     "defaultMessage": "認証情報を削除"
   },
-  "authSettings.deleted": {
-    "defaultMessage": "認証情報を削除しました"
-  },
   "authSettings.deleteMessage": {
     "defaultMessage": "{provider} の {name} 認証情報を削除しますか？"
   },
   "authSettings.deleteTitle": {
     "defaultMessage": "認証情報を削除"
+  },
+  "authSettings.deleted": {
+    "defaultMessage": "認証情報を削除しました"
   },
   "authSettings.description": {
     "defaultMessage": "goslingがローカルに保存したプロバイダー認証情報を管理します。"
@@ -62,11 +62,11 @@
   "authSettings.reauthorize": {
     "defaultMessage": "再認証"
   },
-  "authSettings.signedIn": {
-    "defaultMessage": "認証情報を設定しました"
-  },
   "authSettings.signIn": {
     "defaultMessage": "サインイン"
+  },
+  "authSettings.signedIn": {
+    "defaultMessage": "認証情報を設定しました"
   },
   "authSettings.storageProviderCache": {
     "defaultMessage": "プロバイダーキャッシュ"
@@ -86,12 +86,6 @@
   "baseChat.goHome": {
     "defaultMessage": "ホームへ"
   },
-  "bottomMenuExtensionSelection.extensionsForNewChats": {
-    "defaultMessage": "新しいチャットの拡張機能"
-  },
-  "bottomMenuExtensionSelection.extensionsForThisSession": {
-    "defaultMessage": "このチャットセッションの拡張機能"
-  },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "拡張機能を更新しました"
   },
@@ -100,6 +94,12 @@
   },
   "bottomMenuExtensionSelection.extensionWillBeEnabled": {
     "defaultMessage": "{name} は新しいチャットで有効になります"
+  },
+  "bottomMenuExtensionSelection.extensionsForNewChats": {
+    "defaultMessage": "新しいチャットの拡張機能"
+  },
+  "bottomMenuExtensionSelection.extensionsForThisSession": {
+    "defaultMessage": "このチャットセッションの拡張機能"
   },
   "bottomMenuExtensionSelection.manageExtensions": {
     "defaultMessage": "拡張機能を管理"
@@ -332,11 +332,11 @@
   "customProviderForm.attachments": {
     "defaultMessage": "添付ファイル"
   },
-  "customProviderForm.authentication": {
-    "defaultMessage": "認証"
-  },
   "customProviderForm.authHint": {
     "defaultMessage": "OllamaのようなローカルLLMは通常APIキーを必要としません。"
+  },
+  "customProviderForm.authentication": {
+    "defaultMessage": "認証"
   },
   "customProviderForm.availableModels": {
     "defaultMessage": "利用可能なモデル（カンマ区切り）"
@@ -635,20 +635,17 @@
   "elicitationRequest.waitingForResponse": {
     "defaultMessage": "あなたの応答を待っています（残り{timeRemaining}）"
   },
-  "environmentBadge.dev": {
-    "defaultMessage": "開発"
-  },
   "envVarsSection.add": {
     "defaultMessage": "追加"
   },
   "envVarsSection.bothRequired": {
     "defaultMessage": "変数名と値の両方を入力してください"
   },
-  "envVarsSection.environmentVariables": {
-    "defaultMessage": "環境変数"
-  },
   "envVarsSection.envVarsDescription": {
     "defaultMessage": "環境変数のキーと値のペアを追加します。両方のフィールドを入力後、「+」ボタンをクリックして追加してください。既存のシークレット値を変更するには、編集ボタンをクリックしてください。"
+  },
+  "envVarsSection.environmentVariables": {
+    "defaultMessage": "環境変数"
   },
   "envVarsSection.noSpaces": {
     "defaultMessage": "変数名にスペースは使用できません"
@@ -658,6 +655,9 @@
   },
   "envVarsSection.variableName": {
     "defaultMessage": "変数名"
+  },
+  "environmentBadge.dev": {
+    "defaultMessage": "開発"
   },
   "errorBoundary.errorGeneric": {
     "defaultMessage": "エラーが発生しました。"
@@ -818,6 +818,9 @@
   "extensionModal.unsavedChangesTitle": {
     "defaultMessage": "未保存の変更"
   },
+  "extensionTimeoutField.timeoutLabel": {
+    "defaultMessage": "タイムアウト"
+  },
   "extensionsSection.addCustomExtension": {
     "defaultMessage": "カスタム拡張機能を追加"
   },
@@ -853,9 +856,6 @@
   },
   "extensionsView.searchPlaceholder": {
     "defaultMessage": "拡張機能を検索..."
-  },
-  "extensionTimeoutField.timeoutLabel": {
-    "defaultMessage": "タイムアウト"
   },
   "externalBackendSection.certFingerprint": {
     "defaultMessage": "証明書フィンガープリント（任意）"
@@ -1036,57 +1036,6 @@
   },
   "hub.goodMorning": {
     "defaultMessage": "おはようございます"
-  },
-  "huggingFaceModelSearch.download": {
-    "defaultMessage": "ダウンロード"
-  },
-  "huggingFaceModelSearch.downloaded": {
-    "defaultMessage": "ダウンロード済み"
-  },
-  "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "ダウンロード中…"
-  },
-  "huggingFaceModelSearch.loadingVariants": {
-    "defaultMessage": "バリアントを読み込み中..."
-  },
-  "huggingFaceModelSearch.noGgufModels": {
-    "defaultMessage": "このクエリに一致する GGUF モデルは見つかりませんでした。"
-  },
-  "huggingFaceModelSearch.recommended": {
-    "defaultMessage": "おすすめ"
-  },
-  "huggingFaceModelSearch.searchError": {
-    "defaultMessage": "検索エラー: {details}"
-  },
-  "huggingFaceModelSearch.searchFailed": {
-    "defaultMessage": "検索に失敗しました。もう一度お試しください。"
-  },
-  "huggingFaceModelSearch.searchHuggingFace": {
-    "defaultMessage": "Hugging Faceを検索"
-  },
-  "huggingFaceModelSearch.searchNoData": {
-    "defaultMessage": "検索結果にデータがありません。"
-  },
-  "huggingFaceModelSearch.searchPlaceholder": {
-    "defaultMessage": "GGUFモデルを検索..."
-  },
-  "huggingFaceModelSearch.tooLarge": {
-    "defaultMessage": "メモリに収まらない可能性があります（{size}モデル、利用可能: {available}）"
-  },
-  "huggingFaceSignInPrompt.failedToConfigure": {
-    "defaultMessage": "Hugging Faceへのサインインに失敗しました: {error}"
-  },
-  "huggingFaceSignInPrompt.signedIn": {
-    "defaultMessage": "Hugging Faceにサインイン済み"
-  },
-  "huggingFaceSignInPrompt.signIn": {
-    "defaultMessage": "サインイン"
-  },
-  "huggingFaceSignInPrompt.signingIn": {
-    "defaultMessage": "サインイン中..."
-  },
-  "huggingFaceSignInPrompt.title": {
-    "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
     "defaultMessage": "gosling画像"
@@ -1307,156 +1256,6 @@
   "loadingGoose.waiting": {
     "defaultMessage": "goslingが待機中です…"
   },
-  "localInferenceSettings.deleteConfirm": {
-    "defaultMessage": "このモデルを削除しますか？後で再ダウンロードできます。"
-  },
-  "localInferenceSettings.description": {
-    "defaultMessage": "APIキーなしで推論できるローカルLLMモデルをダウンロード・管理します。Hugging Faceで任意のGGUFモデルを検索するか、以下の注目モデルを使用できます。"
-  },
-  "localInferenceSettings.dismiss": {
-    "defaultMessage": "閉じる"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "ダウンロード"
-  },
-  "localInferenceSettings.downloadCancelled": {
-    "defaultMessage": "ダウンロードがキャンセルされました"
-  },
-  "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "ダウンロード済みモデル"
-  },
-  "localInferenceSettings.downloadFailed": {
-    "defaultMessage": "ダウンロードに失敗しました"
-  },
-  "localInferenceSettings.downloading": {
-    "defaultMessage": "ダウンロード中"
-  },
-  "localInferenceSettings.downloadProgress": {
-    "defaultMessage": "{downloaded} / {total} ({percent}%)"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "注目モデル"
-  },
-  "localInferenceSettings.huggingFaceSignInNote": {
-    "defaultMessage": "モデルの検索・ダウンロード時のレート制限を緩和し、非公開またはゲート付きHugging Faceリポジトリにアクセスするにはサインインしてください。"
-  },
-  "localInferenceSettings.modelSettings": {
-    "defaultMessage": "モデル設定"
-  },
-  "localInferenceSettings.modelSettingsTitle": {
-    "defaultMessage": "モデル設定"
-  },
-  "localInferenceSettings.noModels": {
-    "defaultMessage": "利用可能なモデルはありません"
-  },
-  "localInferenceSettings.recommended": {
-    "defaultMessage": "おすすめ"
-  },
-  "localInferenceSettings.remaining": {
-    "defaultMessage": "残り{time}"
-  },
-  "localInferenceSettings.retry": {
-    "defaultMessage": "再試行"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "注目モデルをすべて表示（あと{count}件）"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "おすすめのみ表示"
-  },
-  "localInferenceSettings.title": {
-    "defaultMessage": "ローカル推論モデル"
-  },
-  "localInferenceSettings.vision": {
-    "defaultMessage": "ビジョン"
-  },
-  "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "ビジョンエンコーダーをダウンロード中…"
-  },
-  "localInferenceSettings.visionEncoderNotDownloaded": {
-    "defaultMessage": "ビジョンエンコーダー未ダウンロード"
-  },
-  "localModelManager.active": {
-    "defaultMessage": "アクティブ"
-  },
-  "localModelManager.deleteConfirm": {
-    "defaultMessage": "このモデルを削除しますか？後で再ダウンロードできます。"
-  },
-  "localModelManager.download": {
-    "defaultMessage": "ダウンロード"
-  },
-  "localModelManager.downloaded": {
-    "defaultMessage": "ダウンロード済み"
-  },
-  "localModelManager.gpuAcceleration": {
-    "defaultMessage": "GPUアクセラレーションに対応（NVIDIAはCUDA、Apple SiliconはMetal）。ハードウェアアクセラレーションを利用するには、ビルド時にGPU機能を有効にする必要があります。"
-  },
-  "localModelManager.noModels": {
-    "defaultMessage": "利用可能なモデルはありません"
-  },
-  "localModelManager.recommended": {
-    "defaultMessage": "おすすめ"
-  },
-  "localModelManager.recommendedForHardware": {
-    "defaultMessage": "お使いのハードウェアにおすすめ"
-  },
-  "localModelManager.showAllModels": {
-    "defaultMessage": "すべてのモデルを表示（あと{count}件）"
-  },
-  "localModelManager.showRecommendedOnly": {
-    "defaultMessage": "おすすめのみ表示"
-  },
-  "localModelPicker.bestForMachine": {
-    "defaultMessage": "お使いのマシンに最適"
-  },
-  "localModelPicker.cancelDownload": {
-    "defaultMessage": "ダウンロードをキャンセル"
-  },
-  "localModelPicker.checkingModels": {
-    "defaultMessage": "利用可能なモデルを確認中..."
-  },
-  "localModelPicker.downloading": {
-    "defaultMessage": "{modelId}をダウンロード中"
-  },
-  "localModelPicker.downloadModel": {
-    "defaultMessage": "{modelId}をダウンロード（{size}）"
-  },
-  "localModelPicker.failedToLoad": {
-    "defaultMessage": "利用可能なモデルの読み込みに失敗しました。もう一度お試しください。"
-  },
-  "localModelPicker.failedToStartDownload": {
-    "defaultMessage": "ダウンロードを開始できませんでした。もう一度お試しください。"
-  },
-  "localModelPicker.hideOtherSizes": {
-    "defaultMessage": "他のサイズを非表示"
-  },
-  "localModelPicker.localModelsNote": {
-    "defaultMessage": "ローカルモデルではすべてがお使いのマシン上に保持され、プライバシーが保たれます。パフォーマンスとコンテキストウィンドウサイズは、ハードウェアやモデルサイズによってクラウドプロバイダーと異なる場合があります。"
-  },
-  "localModelPicker.lostConnection": {
-    "defaultMessage": "ダウンロード接続が切断されました。もう一度お試しください。"
-  },
-  "localModelPicker.modelNotFound": {
-    "defaultMessage": "モデルが見つかりません"
-  },
-  "localModelPicker.ready": {
-    "defaultMessage": "準備完了"
-  },
-  "localModelPicker.selectModel": {
-    "defaultMessage": "モデルを選択"
-  },
-  "localModelPicker.showOtherSizes": {
-    "defaultMessage": "他のサイズを{count}件表示"
-  },
-  "localModelPicker.startingDownload": {
-    "defaultMessage": "ダウンロードを開始中..."
-  },
-  "localModelPicker.tryAgain": {
-    "defaultMessage": "再試行"
-  },
-  "localModelPicker.useModel": {
-    "defaultMessage": "{modelId}を使用"
-  },
   "markdownContent.cancel": {
     "defaultMessage": "キャンセル"
   },
@@ -1583,9 +1382,6 @@
   "messageQueue.paused": {
     "defaultMessage": "一時停止中"
   },
-  "messageQueue.queued": {
-    "defaultMessage": "キュー内"
-  },
   "messageQueue.queuePaused": {
     "defaultMessage": "キューを一時停止中"
   },
@@ -1594,6 +1390,9 @@
   },
   "messageQueue.queuePausedExpanded": {
     "defaultMessage": "キューは割り込みにより一時停止されました。「今すぐ送信」を使用するか、新しいメッセージを追加すると再開します。"
+  },
+  "messageQueue.queued": {
+    "defaultMessage": "キュー内"
   },
   "messageQueue.removeFromQueue": {
     "defaultMessage": "このメッセージをキューから削除"
@@ -1640,210 +1439,6 @@
   "microphoneSelector.test": {
     "defaultMessage": "テスト"
   },
-  "modelAndProviderContext.modelChangedTitle": {
-    "defaultMessage": "モデルを変更しました"
-  },
-  "modelAndProviderContext.modelChangeFailed": {
-    "defaultMessage": "{provider}/{model}に失敗しました"
-  },
-  "modelAndProviderContext.selectModel": {
-    "defaultMessage": "モデルを選択"
-  },
-  "modelAndProviderContext.switchModelSuccess": {
-    "defaultMessage": "モデルを切り替えました — {provider}の{model}を使用中"
-  },
-  "modelAndProviderContext.unknownProviderMsg": {
-    "defaultMessage": "設定内に不明なプロバイダーがあります -- config.yamlを確認してください"
-  },
-  "modelAndProviderContext.unknownProviderTitle": {
-    "defaultMessage": "プロバイダー名の確認"
-  },
-  "modelsBottomBar.changeModel": {
-    "defaultMessage": "モデルを変更"
-  },
-  "modelsBottomBar.currentModel": {
-    "defaultMessage": "現在のモデル"
-  },
-  "modelsBottomBar.loadingModel": {
-    "defaultMessage": "モデルを読み込み中..."
-  },
-  "modelsBottomBar.localModelSettings": {
-    "defaultMessage": "ローカルモデル設定"
-  },
-  "modelsBottomBar.localModelSettingsTitle": {
-    "defaultMessage": "ローカルモデル設定 — {modelName}"
-  },
-  "modelsBottomBar.resolvedModel": {
-    "defaultMessage": "解決済みモデル"
-  },
-  "modelsBottomBar.selectModel": {
-    "defaultMessage": "モデルを選択"
-  },
-  "modelSettingsButtons.configureProviders": {
-    "defaultMessage": "プロバイダーを設定"
-  },
-  "modelSettingsButtons.switchModels": {
-    "defaultMessage": "モデルを切り替え"
-  },
-  "modelSettingsPanel.batchSize": {
-    "defaultMessage": "バッチサイズ"
-  },
-  "modelSettingsPanel.batchSizeDescription": {
-    "defaultMessage": "プロンプト処理のバッチサイズ"
-  },
-  "modelSettingsPanel.builtinChatTemplate": {
-    "defaultMessage": "組み込みテンプレート"
-  },
-  "modelSettingsPanel.builtinChatTemplateDescription": {
-    "defaultMessage": "llama.cpp の組み込みテンプレート名を選択"
-  },
-  "modelSettingsPanel.chatTemplate": {
-    "defaultMessage": "チャットテンプレート"
-  },
-  "modelSettingsPanel.chatTemplateBuiltin": {
-    "defaultMessage": "組み込み"
-  },
-  "modelSettingsPanel.chatTemplateCustomInline": {
-    "defaultMessage": "カスタムインライン"
-  },
-  "modelSettingsPanel.chatTemplateDescription": {
-    "defaultMessage": "埋め込みのGGUFメタデータ、llama.cpp の組み込みテンプレート、またはインラインJinjaを使用"
-  },
-  "modelSettingsPanel.chatTemplateEmbedded": {
-    "defaultMessage": "埋め込み"
-  },
-  "modelSettingsPanel.contextAndGeneration": {
-    "defaultMessage": "コンテキストと生成"
-  },
-  "modelSettingsPanel.contextSize": {
-    "defaultMessage": "コンテキストサイズ"
-  },
-  "modelSettingsPanel.contextSizeDescription": {
-    "defaultMessage": "最大コンテキストウィンドウ（0 = モデルのデフォルト）"
-  },
-  "modelSettingsPanel.customChatTemplate": {
-    "defaultMessage": "カスタムチャットテンプレート"
-  },
-  "modelSettingsPanel.customChatTemplateDescription": {
-    "defaultMessage": "Jinjaチャットテンプレートの全文を貼り付け"
-  },
-  "modelSettingsPanel.etaLearningRate": {
-    "defaultMessage": "Eta（学習率）"
-  },
-  "modelSettingsPanel.flashAttention": {
-    "defaultMessage": "Flash Attention"
-  },
-  "modelSettingsPanel.flashAttentionDescription": {
-    "defaultMessage": "Flash Attention最適化を有効化"
-  },
-  "modelSettingsPanel.frequencyPenalty": {
-    "defaultMessage": "頻度ペナルティ"
-  },
-  "modelSettingsPanel.frequencyPenaltyDescription": {
-    "defaultMessage": "0.0 = オフ"
-  },
-  "modelSettingsPanel.gpuLayers": {
-    "defaultMessage": "GPUレイヤー"
-  },
-  "modelSettingsPanel.gpuLayersDescription": {
-    "defaultMessage": "GPUにオフロードするレイヤー数"
-  },
-  "modelSettingsPanel.loadingSettings": {
-    "defaultMessage": "設定を読み込み中..."
-  },
-  "modelSettingsPanel.lockModelInRam": {
-    "defaultMessage": "モデルをRAMにロック（mlock）"
-  },
-  "modelSettingsPanel.lockModelInRamDescription": {
-    "defaultMessage": "モデルがディスクにスワップされないようにします"
-  },
-  "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "最大出力トークン数"
-  },
-  "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "生成トークン数の上限"
-  },
-  "modelSettingsPanel.minP": {
-    "defaultMessage": "Min P"
-  },
-  "modelSettingsPanel.performance": {
-    "defaultMessage": "パフォーマンス"
-  },
-  "modelSettingsPanel.presencePenalty": {
-    "defaultMessage": "存在ペナルティ"
-  },
-  "modelSettingsPanel.presencePenaltyDescription": {
-    "defaultMessage": "0.0 = オフ"
-  },
-  "modelSettingsPanel.repeatPenalty": {
-    "defaultMessage": "繰り返しペナルティ"
-  },
-  "modelSettingsPanel.repeatPenaltyDescription": {
-    "defaultMessage": "1.0 = オフ"
-  },
-  "modelSettingsPanel.repeatWindow": {
-    "defaultMessage": "繰り返しウィンドウ"
-  },
-  "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "さかのぼって参照するトークン数"
-  },
-  "modelSettingsPanel.repetitionPenalty": {
-    "defaultMessage": "繰り返しペナルティ"
-  },
-  "modelSettingsPanel.reset": {
-    "defaultMessage": "リセット"
-  },
-  "modelSettingsPanel.resetToDefaults": {
-    "defaultMessage": "デフォルトにリセット"
-  },
-  "modelSettingsPanel.samplingStrategy": {
-    "defaultMessage": "サンプリング戦略"
-  },
-  "modelSettingsPanel.saving": {
-    "defaultMessage": "保存中..."
-  },
-  "modelSettingsPanel.seed": {
-    "defaultMessage": "シード"
-  },
-  "modelSettingsPanel.tauTargetEntropy": {
-    "defaultMessage": "Tau（目標エントロピー）"
-  },
-  "modelSettingsPanel.temperature": {
-    "defaultMessage": "温度"
-  },
-  "modelSettingsPanel.threads": {
-    "defaultMessage": "スレッド"
-  },
-  "modelSettingsPanel.threadsDescription": {
-    "defaultMessage": "生成に使用するCPUスレッド数"
-  },
-  "modelSettingsPanel.toolCalling": {
-    "defaultMessage": "ツール呼び出し"
-  },
-  "modelSettingsPanel.toolCallingAuto": {
-    "defaultMessage": "自動"
-  },
-  "modelSettingsPanel.toolCallingDescription": {
-    "defaultMessage": "ローカルモデルがネイティブまたはエミュレートされたツール呼び出しを選択する方法を指定"
-  },
-  "modelSettingsPanel.toolCallingForceEmulated": {
-    "defaultMessage": "エミュレートを強制"
-  },
-  "modelSettingsPanel.toolCallingForceNative": {
-    "defaultMessage": "ネイティブを強制"
-  },
-  "modelSettingsPanel.topK": {
-    "defaultMessage": "Top K"
-  },
-  "modelSettingsPanel.topP": {
-    "defaultMessage": "Top P"
-  },
-  "modelsSection.resetDescription": {
-    "defaultMessage": "選択したモデルとプロバイダー設定をクリアして最初からやり直します"
-  },
-  "modelsSection.resetTitle": {
-    "defaultMessage": "プロバイダーとモデルをリセット"
-  },
   "modeSelectionItem.autonomousDescription": {
     "defaultMessage": "ファイルを自由に編集、作成、削除できる完全なファイル変更権限。"
   },
@@ -1867,6 +1462,51 @@
   },
   "modeSelectionItem.smartLabel": {
     "defaultMessage": "スマート"
+  },
+  "modelAndProviderContext.modelChangeFailed": {
+    "defaultMessage": "{provider}/{model}に失敗しました"
+  },
+  "modelAndProviderContext.modelChangedTitle": {
+    "defaultMessage": "モデルを変更しました"
+  },
+  "modelAndProviderContext.selectModel": {
+    "defaultMessage": "モデルを選択"
+  },
+  "modelAndProviderContext.switchModelSuccess": {
+    "defaultMessage": "モデルを切り替えました — {provider}の{model}を使用中"
+  },
+  "modelAndProviderContext.unknownProviderMsg": {
+    "defaultMessage": "設定内に不明なプロバイダーがあります -- config.yamlを確認してください"
+  },
+  "modelAndProviderContext.unknownProviderTitle": {
+    "defaultMessage": "プロバイダー名の確認"
+  },
+  "modelSettingsButtons.configureProviders": {
+    "defaultMessage": "プロバイダーを設定"
+  },
+  "modelSettingsButtons.switchModels": {
+    "defaultMessage": "モデルを切り替え"
+  },
+  "modelsBottomBar.changeModel": {
+    "defaultMessage": "モデルを変更"
+  },
+  "modelsBottomBar.currentModel": {
+    "defaultMessage": "現在のモデル"
+  },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "モデルを読み込み中..."
+  },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "解決済みモデル"
+  },
+  "modelsBottomBar.selectModel": {
+    "defaultMessage": "モデルを選択"
+  },
+  "modelsSection.resetDescription": {
+    "defaultMessage": "選択したモデルとプロバイダー設定をクリアして最初からやり直します"
+  },
+  "modelsSection.resetTitle": {
+    "defaultMessage": "プロバイダーとモデルをリセット"
   },
   "navigation.itemExtensions": {
     "defaultMessage": "拡張機能"
@@ -1918,9 +1558,6 @@
   },
   "onboardingSuccess.learnMore": {
     "defaultMessage": "詳しく見る"
-  },
-  "onboardingSuccess.localModelReady": {
-    "defaultMessage": "ローカルモデルの準備ができました"
   },
   "onboardingSuccess.privacyDescription": {
     "defaultMessage": "匿名の使用データはgoslingの改善に役立ちます。会話、コード、個人データは収集しません。"
@@ -2045,11 +1682,11 @@
   "promptsSettings.edit": {
     "defaultMessage": "編集"
   },
-  "promptsSettings.editingLabel": {
-    "defaultMessage": "編集中: {name}"
-  },
   "promptsSettings.editPromptTitle": {
     "defaultMessage": "編集: {name}"
+  },
+  "promptsSettings.editingLabel": {
+    "defaultMessage": "編集中: {name}"
   },
   "promptsSettings.enterPromptContent": {
     "defaultMessage": "プロンプト内容を入力..."
@@ -2159,11 +1796,11 @@
   "providerConfigForm.noApiKey": {
     "defaultMessage": "APIキーをお持ちでないですか？"
   },
-  "providerConfigForm.signingIn": {
-    "defaultMessage": "サインイン中..."
-  },
   "providerConfigForm.signInWith": {
     "defaultMessage": "{providerName}でサインイン"
+  },
+  "providerConfigForm.signingIn": {
+    "defaultMessage": "サインイン中..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
     "defaultMessage": "goslingと連携するには、このプロバイダーのAPIキーを追加してください"
@@ -2207,9 +1844,6 @@
   "providerConfigurationModal.goBack": {
     "defaultMessage": "戻る"
   },
-  "providerConfigurationModal.huggingFaceOAuthDescription": {
-    "defaultMessage": "APIトークンを手動で入力せずにHugging Face Inference Providersを使用するにはサインインしてください。"
-  },
   "providerConfigurationModal.oauthLoginFailed": {
     "defaultMessage": "OAuthログインに失敗しました: {error}"
   },
@@ -2225,11 +1859,11 @@
   "providerConfigurationModal.seeDocumentation": {
     "defaultMessage": "詳細は<link>ドキュメント</link>をご覧ください。"
   },
-  "providerConfigurationModal.signingIn": {
-    "defaultMessage": "サインイン中..."
-  },
   "providerConfigurationModal.signInWith": {
     "defaultMessage": "{providerName}でサインイン"
+  },
+  "providerConfigurationModal.signingIn": {
+    "defaultMessage": "サインイン中..."
   },
   "providerGrid.addProvider": {
     "defaultMessage": "プロバイダーを追加"
@@ -2264,14 +1898,8 @@
   "providerSelector.connectProviderDescription": {
     "defaultMessage": "OpenAI、Anthropic、Googleなどに接続"
   },
-  "providerSelector.localModelDescription": {
-    "defaultMessage": "モデルをダウンロードして、すべて自分のマシン上で実行します。APIキーもアカウントも不要です。"
-  },
   "providerSelector.selectProvider": {
     "defaultMessage": "プロバイダーを選択"
-  },
-  "providerSelector.useLocalModel": {
-    "defaultMessage": "ローカルモデルを使用"
   },
   "providerSettings.configurationSettings": {
     "defaultMessage": "プロバイダー設定"
@@ -2426,14 +2054,14 @@
   "sessionActionsHeader.copyText": {
     "defaultMessage": "テキストをコピー"
   },
-  "sessionActionsHeader.duplicated": {
-    "defaultMessage": "セッションを複製しました"
-  },
   "sessionActionsHeader.duplicateFailed": {
     "defaultMessage": "セッションを複製できませんでした: {error}"
   },
   "sessionActionsHeader.duplicateSession": {
     "defaultMessage": "セッションを複製"
+  },
+  "sessionActionsHeader.duplicated": {
+    "defaultMessage": "セッションを複製しました"
   },
   "sessionActionsHeader.fullTextTitle": {
     "defaultMessage": "テキスト値"
@@ -2447,9 +2075,6 @@
   "sessionActionsHeader.loadingJson": {
     "defaultMessage": "JSONを読み込み中..."
   },
-  "sessionActionsHeader.renamed": {
-    "defaultMessage": "セッションの名前を変更しました"
-  },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "セッションの名前を変更できませんでした: {error}"
   },
@@ -2461,6 +2086,9 @@
   },
   "sessionActionsHeader.renameTitle": {
     "defaultMessage": "セッションの名前を変更"
+  },
+  "sessionActionsHeader.renamed": {
+    "defaultMessage": "セッションの名前を変更しました"
   },
   "sessionActionsHeader.save": {
     "defaultMessage": "保存"
@@ -2479,6 +2107,24 @@
   },
   "sessionIndicators.streaming": {
     "defaultMessage": "ストリーミング中"
+  },
+  "sessionViewComponents.empty.description": {
+    "defaultMessage": "このセッションにはメッセージがありません"
+  },
+  "sessionViewComponents.empty.title": {
+    "defaultMessage": "メッセージが見つかりません"
+  },
+  "sessionViewComponents.error.loading": {
+    "defaultMessage": "セッション詳細の読み込みエラー"
+  },
+  "sessionViewComponents.error.tryAgain": {
+    "defaultMessage": "再試行"
+  },
+  "sessionViewComponents.role.assistant": {
+    "defaultMessage": "Gosling"
+  },
+  "sessionViewComponents.role.user": {
+    "defaultMessage": "あなた"
   },
   "sessions.action.delete": {
     "defaultMessage": "セッションを削除"
@@ -2537,9 +2183,6 @@
   "sessions.import": {
     "defaultMessage": "セッションをインポート"
   },
-  "sessions.importing": {
-    "defaultMessage": "インポート中..."
-  },
   "sessions.importNostr": {
     "defaultMessage": "リンクをインポート"
   },
@@ -2551,6 +2194,9 @@
   },
   "sessions.importNostr.title": {
     "defaultMessage": "Nostrセッションをインポート"
+  },
+  "sessions.importing": {
+    "defaultMessage": "インポート中..."
   },
   "sessions.loadingMore": {
     "defaultMessage": "さらにセッションを読み込み中..."
@@ -2579,26 +2225,26 @@
   "sessions.toast.copied": {
     "defaultMessage": "クリップボードにコピーしました"
   },
-  "sessions.toast.deleted": {
-    "defaultMessage": "セッションを削除しました"
-  },
   "sessions.toast.deleteFailed": {
     "defaultMessage": "セッション「{name}」を削除できませんでした: {error}"
   },
-  "sessions.toast.duplicated": {
-    "defaultMessage": "セッション「{name}」を複製しました"
+  "sessions.toast.deleted": {
+    "defaultMessage": "セッションを削除しました"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "セッションを複製できませんでした: {error}"
   },
+  "sessions.toast.duplicated": {
+    "defaultMessage": "セッション「{name}」を複製しました"
+  },
   "sessions.toast.exported": {
     "defaultMessage": "セッションをエクスポートしました"
   },
-  "sessions.toast.imported": {
-    "defaultMessage": "セッションをインポートしました"
-  },
   "sessions.toast.importFailed": {
     "defaultMessage": "セッションをインポートできませんでした: {error}"
+  },
+  "sessions.toast.imported": {
+    "defaultMessage": "セッションをインポートしました"
   },
   "sessions.toast.shareNostr": {
     "defaultMessage": "暗号化Nostr共有リンクを作成しました"
@@ -2606,29 +2252,11 @@
   "sessions.toast.shareNostrFailed": {
     "defaultMessage": "Nostr共有リンクを作成できませんでした: {error}"
   },
-  "sessions.toast.updated": {
-    "defaultMessage": "セッションの説明を更新しました"
-  },
   "sessions.toast.updateFailed": {
     "defaultMessage": "セッションの説明を更新できませんでした: {error}"
   },
-  "sessionViewComponents.empty.description": {
-    "defaultMessage": "このセッションにはメッセージがありません"
-  },
-  "sessionViewComponents.empty.title": {
-    "defaultMessage": "メッセージが見つかりません"
-  },
-  "sessionViewComponents.error.loading": {
-    "defaultMessage": "セッション詳細の読み込みエラー"
-  },
-  "sessionViewComponents.error.tryAgain": {
-    "defaultMessage": "再試行"
-  },
-  "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Gosling"
-  },
-  "sessionViewComponents.role.user": {
-    "defaultMessage": "あなた"
+  "sessions.toast.updated": {
+    "defaultMessage": "セッションの説明を更新しました"
   },
   "settings.appearance.description": {
     "defaultMessage": "システム上でのgoslingの表示を設定します"
@@ -2810,9 +2438,6 @@
   "settingsView.tabKeyboard": {
     "defaultMessage": "キーボード"
   },
-  "settingsView.tabLocalInference": {
-    "defaultMessage": "ローカル推論"
-  },
   "settingsView.tabModels": {
     "defaultMessage": "モデル"
   },
@@ -2945,17 +2570,8 @@
   "switchModelModal.geminiOnly": {
     "defaultMessage": "（Gemini 3モデルのみ）"
   },
-  "switchModelModal.goToSettings": {
-    "defaultMessage": "設定へ移動"
-  },
   "switchModelModal.loadingModels": {
     "defaultMessage": "モデルを読み込み中…"
-  },
-  "switchModelModal.localModelsDescription": {
-    "defaultMessage": "ローカル推論を使用するには、先にモデルをコンピューターにダウンロードする必要があります。設定 → モデルでローカルモデルを管理できます。"
-  },
-  "switchModelModal.localModelsTitle": {
-    "defaultMessage": "ローカルモデルのダウンロードが必要です"
   },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "プロバイダーを選択（入力で検索）"
@@ -3068,11 +2684,11 @@
   "themeSelector.theme": {
     "defaultMessage": "テーマ"
   },
-  "toolApprovalButtons.allowedOnce": {
-    "defaultMessage": "1回のみ許可済み"
-  },
   "toolApprovalButtons.allowOnce": {
     "defaultMessage": "1回のみ許可"
+  },
+  "toolApprovalButtons.allowedOnce": {
+    "defaultMessage": "1回のみ許可済み"
   },
   "toolApprovalButtons.alwaysAllow": {
     "defaultMessage": "常に許可"
@@ -3155,17 +2771,17 @@
   "updateSection.disableAutoDownloadDesc": {
     "defaultMessage": "有効にすると、Gosling は新しいバージョンを通知しますが、自動的にはダウンロードしません。"
   },
-  "updateSection.downloadingProgress": {
-    "defaultMessage": "アップデートをダウンロード中... {percent}%"
-  },
-  "updateSection.downloadingUpdate": {
-    "defaultMessage": "アップデートをダウンロード中..."
-  },
   "updateSection.downloadNow": {
     "defaultMessage": "今すぐダウンロード"
   },
   "updateSection.downloadReady": {
     "defaultMessage": "アップデートのダウンロードが完了し、インストールの準備ができました！"
+  },
+  "updateSection.downloadingProgress": {
+    "defaultMessage": "アップデートをダウンロード中... {percent}%"
+  },
+  "updateSection.downloadingUpdate": {
+    "defaultMessage": "アップデートをダウンロード中..."
   },
   "updateSection.installAndRestart": {
     "defaultMessage": "インストールして再起動"
@@ -3191,11 +2807,11 @@
   "updateSection.readyInstallManual": {
     "defaultMessage": "✓ アップデートの準備ができました！インストール手順を表示するには「インストールして再起動」をクリックしてください。"
   },
-  "updateSection.updateAvailable": {
-    "defaultMessage": "アップデートがあります！"
-  },
   "updateSection.upToDate": {
     "defaultMessage": "(最新)"
+  },
+  "updateSection.updateAvailable": {
+    "defaultMessage": "アップデートがあります！"
   },
   "updateSection.versionAvailable": {
     "defaultMessage": "→ {version} が利用可能"

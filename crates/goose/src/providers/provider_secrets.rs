@@ -9,7 +9,6 @@ use utoipa::ToSchema;
 use crate::config::paths::Paths;
 use crate::config::{Config, ConfigError};
 use crate::providers::base::{ProviderMetadata, ProviderType};
-use crate::providers::huggingface_auth;
 
 pub const SECRET_STORE_ID_PREFIX: &str = "secret_store:";
 pub const PROVIDER_CACHE_ID_PREFIX: &str = "provider_cache:";
@@ -273,32 +272,6 @@ fn build_provider_cache_secret(
     })
 }
 
-fn build_huggingface_oauth_secret(
-    token: Option<huggingface_auth::HuggingFaceTokenData>,
-) -> ProviderSecret {
-    let expires_at = token.as_ref().and_then(|token| token.expires_at);
-    let has_secret = token.is_some();
-
-    ProviderSecret {
-        id: format!(
-            "{}{}",
-            PROVIDER_CACHE_ID_PREFIX,
-            huggingface_auth::HUGGINGFACE_PROVIDER_NAME
-        ),
-        provider: huggingface_auth::HUGGINGFACE_PROVIDER_NAME.to_string(),
-        provider_display_name: huggingface_auth::HUGGINGFACE_DISPLAY_NAME.to_string(),
-        name: huggingface_auth::HUGGINGFACE_OAUTH_TOKEN_NAME.to_string(),
-        storage: ProviderSecretStorage::ProviderCache,
-        expires_at,
-        status: provider_secret_status(expires_at),
-        configured: has_secret,
-        has_secret,
-        can_delete: has_secret,
-        can_configure: true,
-        configure_provider: Some(huggingface_auth::HUGGINGFACE_PROVIDER_NAME.to_string()),
-    }
-}
-
 fn build_secret_store_secrets(
     stored_secrets: &HashMap<String, Value>,
     providers: &[(ProviderMetadata, ProviderType)],
@@ -374,16 +347,6 @@ fn is_valid_provider_name(provider_name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-fn should_unconfigure_after_secret_delete(
-    provider: &str,
-    key: &str,
-    has_usable_huggingface_oauth_token: impl FnOnce() -> bool,
-) -> bool {
-    provider == huggingface_auth::HUGGINGFACE_PROVIDER_NAME
-        && key == huggingface_auth::HUGGINGFACE_TOKEN_SECRET_KEY
-        && !has_usable_huggingface_oauth_token()
-}
-
 pub async fn list_provider_secrets() -> Result<Vec<ProviderSecret>, ConfigError> {
     let config = Config::global();
     let stored_secrets = config.all_secrets()?;
@@ -401,16 +364,6 @@ pub async fn list_provider_secrets() -> Result<Vec<ProviderSecret>, ConfigError>
                 secrets.push(secret);
             }
         }
-    }
-
-    let huggingface_secret = build_huggingface_oauth_secret(huggingface_auth::load_oauth_token());
-    if let Some(existing) = secrets
-        .iter_mut()
-        .find(|existing| existing.id == huggingface_secret.id)
-    {
-        *existing = huggingface_secret;
-    } else {
-        secrets.push(huggingface_secret);
     }
 
     secrets.sort_by(|a, b| {
@@ -432,21 +385,10 @@ pub async fn delete_provider_secret(id: &str) -> Result<(), DeleteProviderSecret
         }
 
         config.delete_secret(key)?;
-        if should_unconfigure_after_secret_delete(provider, key, || {
-            huggingface_auth::has_configured_token().unwrap_or(false)
-        }) {
-            unconfigure_provider(config, provider)?;
-        }
         return Ok(());
     }
 
     if let Some(provider) = parse_provider_cache_id(id) {
-        if provider == huggingface_auth::HUGGINGFACE_PROVIDER_NAME {
-            huggingface_auth::clear_oauth_token()?;
-            unconfigure_provider(config, provider)?;
-            return Ok(());
-        }
-
         if !is_valid_provider_name(provider) || provider_cache_definition(provider).is_none() {
             return Err(DeleteProviderSecretError::InvalidId(id.to_string()));
         }
@@ -613,39 +555,32 @@ mod tests {
         let config = new_test_config();
         crate::config::set_provider_entry(
             &config,
-            "huggingface",
+            "test_provider",
             &ProviderEntry {
                 enabled: true,
-                model: "Qwen/Qwen3-Coder-480B-A35B-Instruct".to_string(),
+                model: "test-model".to_string(),
                 configured: true,
             },
         )
         .unwrap();
 
-        unconfigure_provider(&config, "huggingface").unwrap();
+        unconfigure_provider(&config, "test_provider").unwrap();
 
-        let entry = crate::config::get_provider_entry(&config, "huggingface").unwrap();
+        let entry = crate::config::get_provider_entry(&config, "test_provider").unwrap();
         assert!(entry.enabled);
-        assert_eq!(entry.model, "Qwen/Qwen3-Coder-480B-A35B-Instruct");
+        assert_eq!(entry.model, "test-model");
         assert!(!entry.configured);
     }
 
     #[test]
     fn unconfigure_provider_deletes_legacy_configured_marker() {
         let config = new_test_config();
-        config.set_param("huggingface_configured", true).unwrap();
+        config.set_param("test_provider_configured", true).unwrap();
 
-        unconfigure_provider(&config, "huggingface").unwrap();
+        unconfigure_provider(&config, "test_provider").unwrap();
 
-        assert!(config.get_param::<bool>("huggingface_configured").is_err());
-    }
-
-    #[test]
-    fn deleting_huggingface_token_unconfigures_without_oauth() {
-        assert!(should_unconfigure_after_secret_delete(
-            "huggingface",
-            "HF_TOKEN",
-            || false
-        ));
+        assert!(config
+            .get_param::<bool>("test_provider_configured")
+            .is_err());
     }
 }

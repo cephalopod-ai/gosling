@@ -156,20 +156,6 @@ mod tests {
             ["DATABRICKS_HOST", "DATABRICKS_TOKEN"]
         );
 
-        let huggingface = entries
-            .iter()
-            .find(|entry| entry.provider_id == "huggingface")
-            .expect("setup catalog should include huggingface");
-        assert_eq!(huggingface.setup_method, ProviderSetupMethod::SingleApiKey);
-        assert_eq!(
-            huggingface
-                .fields
-                .iter()
-                .map(|field| field.key.as_str())
-                .collect::<Vec<_>>(),
-            ["HF_TOKEN"]
-        );
-
         let atomic_chat = entries
             .iter()
             .find(|entry| entry.provider_id == "atomic_chat")

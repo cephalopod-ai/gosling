@@ -348,7 +348,7 @@ mod tests {
         assert!(is_direct_openai_host("https://eu.api.openai.com"));
         assert!(!is_direct_openai_host("https://api.openai.com.local:8000"));
         assert!(!is_direct_openai_host("https://localhost:1234"));
-        assert!(!is_direct_openai_host("https://router.huggingface.co/v1"));
+        assert!(!is_direct_openai_host("https://api.example-gateway.com/v1"));
     }
 
     #[test]

@@ -431,17 +431,6 @@
     "model_count": 3
   },
   {
-    "id": "huggingface",
-    "display_name": "Hugging Face",
-    "npm": "@ai-sdk/openai-compatible",
-    "api": "https://router.huggingface.co/v1",
-    "doc": "https://huggingface.co/docs/inference-providers",
-    "env": [
-      "HF_TOKEN"
-    ],
-    "model_count": 50
-  },
-  {
     "id": "iflowcn",
     "display_name": "iFlow",
     "npm": "@ai-sdk/openai-compatible",

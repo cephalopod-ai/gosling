@@ -5,7 +5,6 @@
 #
 # Platform Build Strategy:
 #  - Linux standard (x86_64 + aarch64): Builds inside manylinux_2_28 container for glibc 2.28+ compat
-#  - Linux Vulkan: Uses native Ubuntu 24.04 runners for newer Vulkan headers/tooling
 #  - Linux musl: Uses native Ubuntu 22.04 runners with reduced features for musl compatibility
 #  - macOS: Uses native macOS runners for each architecture
 #  - Windows: Uses Windows runner with native MSVC build
@@ -58,16 +57,6 @@ jobs:
             target-suffix: unknown-linux-musl
             build-on: ubuntu-22.04-arm
             variant: musl
-          - platform: linux
-            architecture: x86_64
-            target-suffix: unknown-linux-gnu
-            build-on: ubuntu-24.04
-            variant: vulkan
-          - platform: linux
-            architecture: aarch64
-            target-suffix: unknown-linux-gnu
-            build-on: ubuntu-24.04-arm
-            variant: vulkan
           - platform: macos
             architecture: x86_64
             target-suffix: apple-darwin
@@ -83,11 +72,6 @@ jobs:
             target-suffix: pc-windows-msvc
             build-on: windows-latest
             variant: standard
-          - platform: windows
-            architecture: x86_64
-            target-suffix: pc-windows-msvc
-            build-on: windows-2022
-            variant: cuda
 
     steps:
       - name: Checkout code
@@ -113,13 +97,6 @@ jobs:
             libdbus-1-dev \
             libxcb1-dev
 
-          if [ "${{ matrix.variant }}" = "vulkan" ]; then
-            sudo apt-get install -y \
-              libvulkan-dev \
-              libvulkan1 \
-              glslc
-          fi
-
           if [ "${{ matrix.variant }}" = "musl" ]; then
             sudo apt-get install -y musl-tools
           fi
@@ -129,7 +106,7 @@ jobs:
         run: |
           # perl-core provides FindBin, File::Compare, etc. that openssl-sys's
           # vendored openssl build needs; in AlmaLinux 8 these aren't standalone packages.
-          # clang provides libclang.so for bindgen (used by llama-cpp-sys-2).
+          # clang provides libclang.so for bindgen (used by aws-lc-sys and other sys crates).
           # Defensive: avoid actions/checkout falling back to a tarball download if base image changes.
           dnf install -y --setopt=install_weak_deps=False \
             openssl-devel \
@@ -166,17 +143,12 @@ jobs:
           echo "Rust toolchain info:"
           rustup show
 
-          FEATURE_ARGS=()
-          if [ "${{ matrix.variant }}" = "vulkan" ]; then
-            FEATURE_ARGS=(--features vulkan)
-          fi
-
           if [ "${{ matrix.variant }}" = "musl" ]; then
             cargo build --release --target ${TARGET} -p goose-cli --bin goose \
               --no-default-features \
               --features portable-default
           else
-            cargo build --release --target ${TARGET} -p goose-cli "${FEATURE_ARGS[@]}"
+            cargo build --release --target ${TARGET} -p goose-cli
           fi
 
       - name: Build CLI (manylinux container)
@@ -207,44 +179,12 @@ jobs:
           rustup show
           rustup target add x86_64-pc-windows-msvc
 
-      - name: Install CUDA toolkit (Windows CUDA)
-        if: ${{ matrix.platform == 'windows' && matrix.variant == 'cuda' }}
-        uses: Jimver/cuda-toolkit@v0.2.35
-        with:
-          cuda: '12.9.1'
-          method: 'local'
-          log-file-suffix: 'build-cli-windows-cuda.txt'
-
-      - name: Set up MSVC developer environment (Windows CUDA)
-        if: ${{ matrix.platform == 'windows' && matrix.variant == 'cuda' }}
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          arch: amd64
-
-      - name: Verify CUDA toolchain (Windows CUDA)
-        if: ${{ matrix.platform == 'windows' && matrix.variant == 'cuda' }}
-        shell: pwsh
-        env:
-          CUDA_COMPUTE_CAP: "80"
-        run: |
-          Write-Output "CUDA_PATH=$env:CUDA_PATH"
-          Write-Output "CUDA_COMPUTE_CAP=$env:CUDA_COMPUTE_CAP"
-          where.exe cl
-          where.exe nvcc
-          nvcc -V
-
       - name: Build CLI (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
-        env:
-          CUDA_COMPUTE_CAP: ${{ matrix.variant == 'cuda' && '80' || '' }}
         run: |
           Write-Output "Building Windows CLI executable..."
-          if ("${{ matrix.variant }}" -eq "cuda") {
-            cargo build --release --target x86_64-pc-windows-msvc -p goose-cli --features cuda
-          } else {
-            cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
-          }
+          cargo build --release --target x86_64-pc-windows-msvc -p goose-cli
 
           if (-not (Test-Path "./target/x86_64-pc-windows-msvc/release/goose.exe")) {
             Write-Error "Windows CLI binary not found."
@@ -264,9 +204,6 @@ jobs:
           fi
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
           export VARIANT_SUFFIX=""
-          if [ "${{ matrix.variant }}" = "vulkan" ]; then
-            VARIANT_SUFFIX="-vulkan"
-          fi
 
           # Create a directory for the package contents
           mkdir -p "target/${TARGET}/release/goose-package"
@@ -286,9 +223,6 @@ jobs:
         run: |
           export TARGET="${{ matrix.architecture }}-${{ matrix.target-suffix }}"
           export VARIANT_SUFFIX=""
-          if [ "${{ matrix.variant }}" = "cuda" ]; then
-            VARIANT_SUFFIX="-cuda"
-          fi
 
           mkdir -p "target/${TARGET}/release/goose-package"
 

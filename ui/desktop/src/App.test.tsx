@@ -43,7 +43,7 @@ vi.mock('./sessions', () => ({
 }));
 
 vi.mock('./acp/capabilities', () => ({
-  getAcpFeatureCapabilities: vi.fn().mockResolvedValue({ localInference: true }),
+  getAcpFeatureCapabilities: vi.fn().mockResolvedValue({}),
 }));
 
 // Mock the ACP providers module used by OnboardingGuard so it doesn't try to

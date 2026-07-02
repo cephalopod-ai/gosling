@@ -1037,57 +1037,6 @@
   "hub.goodMorning": {
     "defaultMessage": "Guten Morgen"
   },
-  "huggingFaceModelSearch.download": {
-    "defaultMessage": "Herunterladen"
-  },
-  "huggingFaceModelSearch.downloaded": {
-    "defaultMessage": "Heruntergeladen"
-  },
-  "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "Wird heruntergeladen…"
-  },
-  "huggingFaceModelSearch.loadingVariants": {
-    "defaultMessage": "Varianten werden geladen..."
-  },
-  "huggingFaceModelSearch.noGgufModels": {
-    "defaultMessage": "Keine kompatiblen lokalen Modelle für diese Suchanfrage gefunden."
-  },
-  "huggingFaceModelSearch.recommended": {
-    "defaultMessage": "Empfohlen"
-  },
-  "huggingFaceModelSearch.searchError": {
-    "defaultMessage": "Suchfehler: {details}"
-  },
-  "huggingFaceModelSearch.searchFailed": {
-    "defaultMessage": "Suche fehlgeschlagen. Bitte versuchen Sie es erneut."
-  },
-  "huggingFaceModelSearch.searchHuggingFace": {
-    "defaultMessage": "HuggingFace durchsuchen"
-  },
-  "huggingFaceModelSearch.searchNoData": {
-    "defaultMessage": "Die Suche lieferte keine Daten."
-  },
-  "huggingFaceModelSearch.searchPlaceholder": {
-    "defaultMessage": "Nach lokalen Modellen suchen..."
-  },
-  "huggingFaceModelSearch.tooLarge": {
-    "defaultMessage": "Passt möglicherweise nicht in den Speicher ({size}-Modell, {available} verfügbar)"
-  },
-  "huggingFaceSignInPrompt.failedToConfigure": {
-    "defaultMessage": "Anmeldung bei Hugging Face fehlgeschlagen: {error}"
-  },
-  "huggingFaceSignInPrompt.signIn": {
-    "defaultMessage": "Anmelden"
-  },
-  "huggingFaceSignInPrompt.signedIn": {
-    "defaultMessage": "Bei Hugging Face angemeldet"
-  },
-  "huggingFaceSignInPrompt.signingIn": {
-    "defaultMessage": "Wird angemeldet..."
-  },
-  "huggingFaceSignInPrompt.title": {
-    "defaultMessage": "Hugging Face"
-  },
   "imagePreview.altText": {
     "defaultMessage": "gosling-Bild"
   },
@@ -1306,156 +1255,6 @@
   },
   "loadingGoose.waiting": {
     "defaultMessage": "gosling wartet…"
-  },
-  "localInferenceSettings.deleteConfirm": {
-    "defaultMessage": "Dieses Modell löschen? Sie können es später erneut herunterladen."
-  },
-  "localInferenceSettings.description": {
-    "defaultMessage": "Lokale LLM-Modelle für die Inferenz ohne API-Schlüssel herunterladen und verwalten. Durchsuchen Sie HuggingFace nach GGUF- oder MLX-Modellen oder verwenden Sie die unten empfohlenen Modelle."
-  },
-  "localInferenceSettings.dismiss": {
-    "defaultMessage": "Schließen"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Herunterladen"
-  },
-  "localInferenceSettings.downloadCancelled": {
-    "defaultMessage": "Download abgebrochen"
-  },
-  "localInferenceSettings.downloadFailed": {
-    "defaultMessage": "Download fehlgeschlagen"
-  },
-  "localInferenceSettings.downloadProgress": {
-    "defaultMessage": "{downloaded} / {total} ({percent}%)"
-  },
-  "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "Heruntergeladene Modelle"
-  },
-  "localInferenceSettings.downloading": {
-    "defaultMessage": "Wird heruntergeladen"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Empfohlene Modelle"
-  },
-  "localInferenceSettings.huggingFaceSignInNote": {
-    "defaultMessage": "Melden Sie sich an, um die Ratenbegrenzungen beim Suchen und Herunterladen von Modellen zu erhöhen und auf private oder zugriffsbeschränkte Hugging-Face-Repositories zuzugreifen."
-  },
-  "localInferenceSettings.modelSettings": {
-    "defaultMessage": "Modelleinstellungen"
-  },
-  "localInferenceSettings.modelSettingsTitle": {
-    "defaultMessage": "Modelleinstellungen"
-  },
-  "localInferenceSettings.noModels": {
-    "defaultMessage": "Keine Modelle verfügbar"
-  },
-  "localInferenceSettings.recommended": {
-    "defaultMessage": "Empfohlen"
-  },
-  "localInferenceSettings.remaining": {
-    "defaultMessage": "{time} verbleibend"
-  },
-  "localInferenceSettings.retry": {
-    "defaultMessage": "Erneut versuchen"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Alle empfohlenen anzeigen ({count} weitere)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Nur empfohlene anzeigen"
-  },
-  "localInferenceSettings.title": {
-    "defaultMessage": "Lokale Inferenzmodelle"
-  },
-  "localInferenceSettings.vision": {
-    "defaultMessage": "Vision"
-  },
-  "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "Vision-Encoder wird heruntergeladen…"
-  },
-  "localInferenceSettings.visionEncoderNotDownloaded": {
-    "defaultMessage": "Vision-Encoder nicht heruntergeladen"
-  },
-  "localModelManager.active": {
-    "defaultMessage": "Aktiv"
-  },
-  "localModelManager.deleteConfirm": {
-    "defaultMessage": "Dieses Modell löschen? Sie können es später erneut herunterladen."
-  },
-  "localModelManager.download": {
-    "defaultMessage": "Herunterladen"
-  },
-  "localModelManager.downloaded": {
-    "defaultMessage": "Heruntergeladen"
-  },
-  "localModelManager.gpuAcceleration": {
-    "defaultMessage": "Unterstützt GPU-Beschleunigung (CUDA für NVIDIA, Metal für Apple Silicon). GPU-Funktionen müssen zur Build-Zeit aktiviert werden, um Hardwarebeschleunigung zu ermöglichen."
-  },
-  "localModelManager.noModels": {
-    "defaultMessage": "Keine Modelle verfügbar"
-  },
-  "localModelManager.recommended": {
-    "defaultMessage": "Empfohlen"
-  },
-  "localModelManager.recommendedForHardware": {
-    "defaultMessage": "Für Ihre Hardware empfohlen"
-  },
-  "localModelManager.showAllModels": {
-    "defaultMessage": "Alle Modelle anzeigen ({count} weitere)"
-  },
-  "localModelManager.showRecommendedOnly": {
-    "defaultMessage": "Nur empfohlene anzeigen"
-  },
-  "localModelPicker.bestForMachine": {
-    "defaultMessage": "Am besten für Ihren Computer"
-  },
-  "localModelPicker.cancelDownload": {
-    "defaultMessage": "Download abbrechen"
-  },
-  "localModelPicker.checkingModels": {
-    "defaultMessage": "Verfügbare Modelle werden geprüft..."
-  },
-  "localModelPicker.downloadModel": {
-    "defaultMessage": "{modelId} ({size}) herunterladen"
-  },
-  "localModelPicker.downloading": {
-    "defaultMessage": "{modelId} wird heruntergeladen"
-  },
-  "localModelPicker.failedToLoad": {
-    "defaultMessage": "Verfügbare Modelle konnten nicht geladen werden. Bitte versuchen Sie es erneut."
-  },
-  "localModelPicker.failedToStartDownload": {
-    "defaultMessage": "Download konnte nicht gestartet werden. Bitte versuchen Sie es erneut."
-  },
-  "localModelPicker.hideOtherSizes": {
-    "defaultMessage": "Andere Größen ausblenden"
-  },
-  "localModelPicker.localModelsNote": {
-    "defaultMessage": "Lokale Modelle behalten alles auf Ihrem Computer für vollständige Privatsphäre. Leistung und Kontextfenstergröße können je nach Hardware und Modellgröße im Vergleich zu Cloud-Anbietern variieren."
-  },
-  "localModelPicker.lostConnection": {
-    "defaultMessage": "Verbindung zum Download verloren. Bitte versuchen Sie es erneut."
-  },
-  "localModelPicker.modelNotFound": {
-    "defaultMessage": "Modell nicht gefunden"
-  },
-  "localModelPicker.ready": {
-    "defaultMessage": "Bereit"
-  },
-  "localModelPicker.selectModel": {
-    "defaultMessage": "Modell auswählen"
-  },
-  "localModelPicker.showOtherSizes": {
-    "defaultMessage": "{count} andere Größen anzeigen"
-  },
-  "localModelPicker.startingDownload": {
-    "defaultMessage": "Download wird gestartet..."
-  },
-  "localModelPicker.tryAgain": {
-    "defaultMessage": "Erneut versuchen"
-  },
-  "localModelPicker.useModel": {
-    "defaultMessage": "{modelId} verwenden"
   },
   "markdownContent.cancel": {
     "defaultMessage": "Abbrechen"
@@ -1688,159 +1487,6 @@
   "modelSettingsButtons.switchModels": {
     "defaultMessage": "Modelle wechseln"
   },
-  "modelSettingsPanel.batchSize": {
-    "defaultMessage": "Stapelgröße"
-  },
-  "modelSettingsPanel.batchSizeDescription": {
-    "defaultMessage": "Stapel für die Prompt-Verarbeitung"
-  },
-  "modelSettingsPanel.builtinChatTemplate": {
-    "defaultMessage": "Integrierte Vorlage"
-  },
-  "modelSettingsPanel.builtinChatTemplateDescription": {
-    "defaultMessage": "Wählen Sie den Namen einer in llama.cpp integrierten Vorlage aus"
-  },
-  "modelSettingsPanel.chatTemplate": {
-    "defaultMessage": "Chat-Vorlage"
-  },
-  "modelSettingsPanel.chatTemplateBuiltin": {
-    "defaultMessage": "Integriert"
-  },
-  "modelSettingsPanel.chatTemplateCustomInline": {
-    "defaultMessage": "Benutzerdefiniert inline"
-  },
-  "modelSettingsPanel.chatTemplateDescription": {
-    "defaultMessage": "Verwenden Sie eingebettete GGUF-Metadaten, eine in llama.cpp integrierte Vorlage oder Inline-Jinja"
-  },
-  "modelSettingsPanel.chatTemplateEmbedded": {
-    "defaultMessage": "Eingebettet"
-  },
-  "modelSettingsPanel.contextAndGeneration": {
-    "defaultMessage": "Kontext & Generierung"
-  },
-  "modelSettingsPanel.contextSize": {
-    "defaultMessage": "Kontextgröße"
-  },
-  "modelSettingsPanel.contextSizeDescription": {
-    "defaultMessage": "Max. Kontextfenster (0 = Modellstandard)"
-  },
-  "modelSettingsPanel.customChatTemplate": {
-    "defaultMessage": "Benutzerdefinierte Chat-Vorlage"
-  },
-  "modelSettingsPanel.customChatTemplateDescription": {
-    "defaultMessage": "Fügen Sie den vollständigen Jinja-Chat-Vorlagenquelltext ein"
-  },
-  "modelSettingsPanel.etaLearningRate": {
-    "defaultMessage": "Eta (Lernrate)"
-  },
-  "modelSettingsPanel.flashAttention": {
-    "defaultMessage": "Flash Attention"
-  },
-  "modelSettingsPanel.flashAttentionDescription": {
-    "defaultMessage": "Flash-Attention-Optimierung aktivieren"
-  },
-  "modelSettingsPanel.frequencyPenalty": {
-    "defaultMessage": "Häufigkeitsstrafe"
-  },
-  "modelSettingsPanel.frequencyPenaltyDescription": {
-    "defaultMessage": "0.0 = aus"
-  },
-  "modelSettingsPanel.gpuLayers": {
-    "defaultMessage": "GPU-Schichten"
-  },
-  "modelSettingsPanel.gpuLayersDescription": {
-    "defaultMessage": "Auf die GPU auszulagernde Schichten"
-  },
-  "modelSettingsPanel.loadingSettings": {
-    "defaultMessage": "Einstellungen werden geladen..."
-  },
-  "modelSettingsPanel.lockModelInRam": {
-    "defaultMessage": "Modell im RAM sperren (mlock)"
-  },
-  "modelSettingsPanel.lockModelInRamDescription": {
-    "defaultMessage": "Verhindern, dass das Modell auf die Festplatte ausgelagert wird"
-  },
-  "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "Max. Ausgabe-Tokens"
-  },
-  "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "Obergrenze für generierte Tokens"
-  },
-  "modelSettingsPanel.minP": {
-    "defaultMessage": "Min P"
-  },
-  "modelSettingsPanel.performance": {
-    "defaultMessage": "Leistung"
-  },
-  "modelSettingsPanel.presencePenalty": {
-    "defaultMessage": "Präsenzstrafe"
-  },
-  "modelSettingsPanel.presencePenaltyDescription": {
-    "defaultMessage": "0.0 = aus"
-  },
-  "modelSettingsPanel.repeatPenalty": {
-    "defaultMessage": "Wiederholungsstrafe"
-  },
-  "modelSettingsPanel.repeatPenaltyDescription": {
-    "defaultMessage": "1.0 = aus"
-  },
-  "modelSettingsPanel.repeatWindow": {
-    "defaultMessage": "Wiederholungsfenster"
-  },
-  "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "Zurückzublickende Tokens"
-  },
-  "modelSettingsPanel.repetitionPenalty": {
-    "defaultMessage": "Wiederholungsstrafe"
-  },
-  "modelSettingsPanel.reset": {
-    "defaultMessage": "Zurücksetzen"
-  },
-  "modelSettingsPanel.resetToDefaults": {
-    "defaultMessage": "Auf Standard zurücksetzen"
-  },
-  "modelSettingsPanel.samplingStrategy": {
-    "defaultMessage": "Sampling-Strategie"
-  },
-  "modelSettingsPanel.saving": {
-    "defaultMessage": "Wird gespeichert..."
-  },
-  "modelSettingsPanel.seed": {
-    "defaultMessage": "Seed"
-  },
-  "modelSettingsPanel.tauTargetEntropy": {
-    "defaultMessage": "Tau (Zielentropie)"
-  },
-  "modelSettingsPanel.temperature": {
-    "defaultMessage": "Temperatur"
-  },
-  "modelSettingsPanel.threads": {
-    "defaultMessage": "Threads"
-  },
-  "modelSettingsPanel.threadsDescription": {
-    "defaultMessage": "CPU-Threads für die Generierung"
-  },
-  "modelSettingsPanel.toolCalling": {
-    "defaultMessage": "Tool-Aufruf"
-  },
-  "modelSettingsPanel.toolCallingAuto": {
-    "defaultMessage": "Automatisch"
-  },
-  "modelSettingsPanel.toolCallingDescription": {
-    "defaultMessage": "Wählen Sie aus, wie lokale Modelle nativen oder emulierten Tool-Aufruf auswählen"
-  },
-  "modelSettingsPanel.toolCallingForceEmulated": {
-    "defaultMessage": "Emuliert erzwingen"
-  },
-  "modelSettingsPanel.toolCallingForceNative": {
-    "defaultMessage": "Nativ erzwingen"
-  },
-  "modelSettingsPanel.topK": {
-    "defaultMessage": "Top K"
-  },
-  "modelSettingsPanel.topP": {
-    "defaultMessage": "Top P"
-  },
   "modelsBottomBar.changeModel": {
     "defaultMessage": "Modell ändern"
   },
@@ -1849,12 +1495,6 @@
   },
   "modelsBottomBar.loadingModel": {
     "defaultMessage": "Modell wird geladen..."
-  },
-  "modelsBottomBar.localModelSettings": {
-    "defaultMessage": "Lokale Modelleinstellungen"
-  },
-  "modelsBottomBar.localModelSettingsTitle": {
-    "defaultMessage": "Lokale Modelleinstellungen — {modelName}"
   },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Aufgelöstes Modell"
@@ -1918,9 +1558,6 @@
   },
   "onboardingSuccess.learnMore": {
     "defaultMessage": "Mehr erfahren"
-  },
-  "onboardingSuccess.localModelReady": {
-    "defaultMessage": "Lokales Modell bereit"
   },
   "onboardingSuccess.privacyDescription": {
     "defaultMessage": "Anonyme Nutzungsdaten helfen, gosling zu verbessern. Wir erfassen niemals Ihre Konversationen, Ihren Code oder Ihre persönlichen Daten."
@@ -2207,9 +1844,6 @@
   "providerConfigurationModal.goBack": {
     "defaultMessage": "Zurück"
   },
-  "providerConfigurationModal.huggingFaceOAuthDescription": {
-    "defaultMessage": "Melden Sie sich an, um Hugging Face Inference Providers zu nutzen, ohne manuell einen API-Token einzugeben."
-  },
   "providerConfigurationModal.oauthLoginFailed": {
     "defaultMessage": "OAuth-Anmeldung fehlgeschlagen: {error}"
   },
@@ -2264,14 +1898,8 @@
   "providerSelector.connectProviderDescription": {
     "defaultMessage": "Verbinden Sie OpenAI, Anthropic, Google usw."
   },
-  "providerSelector.localModelDescription": {
-    "defaultMessage": "Laden Sie ein Modell herunter und führen Sie es vollständig auf Ihrem Rechner aus. Keine API-Schlüssel, keine Konten."
-  },
   "providerSelector.selectProvider": {
     "defaultMessage": "Einen Anbieter auswählen"
-  },
-  "providerSelector.useLocalModel": {
-    "defaultMessage": "Ein lokales Modell verwenden"
   },
   "providerSettings.configurationSettings": {
     "defaultMessage": "Einstellungen zur Anbieterkonfiguration"
@@ -2810,9 +2438,6 @@
   "settingsView.tabKeyboard": {
     "defaultMessage": "Tastatur"
   },
-  "settingsView.tabLocalInference": {
-    "defaultMessage": "Lokale Inferenz"
-  },
   "settingsView.tabModels": {
     "defaultMessage": "Modelle"
   },
@@ -2945,17 +2570,8 @@
   "switchModelModal.geminiOnly": {
     "defaultMessage": "(Nur Gemini-3-Modelle)"
   },
-  "switchModelModal.goToSettings": {
-    "defaultMessage": "Zu den Einstellungen"
-  },
   "switchModelModal.loadingModels": {
     "defaultMessage": "Modelle werden geladen…"
-  },
-  "switchModelModal.localModelsDescription": {
-    "defaultMessage": "Um lokale Inferenz zu nutzen, müssen Sie zunächst ein Modell auf Ihren Computer herunterladen. Gehen Sie zu Einstellungen → Modelle, um lokale Modelle zu verwalten."
-  },
-  "switchModelModal.localModelsTitle": {
-    "defaultMessage": "Lokale Modelle müssen zuerst heruntergeladen werden"
   },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "Anbieter, zum Suchen tippen"

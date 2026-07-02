@@ -2717,70 +2717,6 @@
           }
         }
       },
-      "DownloadProgress": {
-        "type": "object",
-        "required": [
-          "model_id",
-          "status",
-          "bytes_downloaded",
-          "total_bytes",
-          "progress_percent"
-        ],
-        "properties": {
-          "bytes_downloaded": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Bytes downloaded so far",
-            "minimum": 0
-          },
-          "error": {
-            "type": "string",
-            "description": "Error message if failed",
-            "nullable": true
-          },
-          "eta_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Estimated time remaining in seconds",
-            "nullable": true,
-            "minimum": 0
-          },
-          "model_id": {
-            "type": "string",
-            "description": "Model ID being downloaded"
-          },
-          "progress_percent": {
-            "type": "number",
-            "format": "float",
-            "description": "Download progress percentage (0-100)"
-          },
-          "speed_bps": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Download speed in bytes per second",
-            "nullable": true,
-            "minimum": 0
-          },
-          "status": {
-            "$ref": "#/components/schemas/DownloadStatus"
-          },
-          "total_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Total bytes to download",
-            "minimum": 0
-          }
-        }
-      },
-      "DownloadStatus": {
-        "type": "string",
-        "enum": [
-          "downloading",
-          "completed",
-          "failed",
-          "cancelled"
-        ]
-      },
       "EmbeddedResource": {
         "type": "object",
         "required": [
@@ -4891,7 +4827,6 @@
           "sub_agent",
           "hidden",
           "terminal",
-          "gateway",
           "acp"
         ]
       },

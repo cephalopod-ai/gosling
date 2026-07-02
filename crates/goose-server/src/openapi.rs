@@ -5,7 +5,6 @@ use goose::config::permission::PermissionLevel;
 use goose::config::ExtensionEntry;
 use goose::conversation::token_usage::Usage;
 use goose::conversation::Conversation;
-use goose::download_manager::{DownloadProgress, DownloadStatus};
 use goose::providers::base::{ConfigKey, ModelInfo, ProviderMetadata, ProviderType};
 use goose::session::{
     DiagnosticsConfig, DiagnosticsError, DiagnosticsExtensions, DiagnosticsLevel, DiagnosticsLogs,
@@ -570,33 +569,12 @@ derive_utoipa!(IconTheme as IconThemeSchema);
         super::routes::dictation::TranscribeResponse,
         goose::dictation::providers::DictationProvider,
         super::routes::dictation::DictationProviderStatus,
-        DownloadProgress,
-        DownloadStatus,
     ))
 )]
 pub struct ApiDoc;
 
-#[cfg(feature = "local-inference")]
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        super::routes::dictation::list_models,
-        super::routes::dictation::download_model,
-        super::routes::dictation::get_download_progress,
-        super::routes::dictation::cancel_download,
-        super::routes::dictation::delete_model,
-    ),
-    components(schemas(super::routes::dictation::WhisperModelResponse,))
-)]
-pub struct LocalInferenceApiDoc;
-
 #[allow(dead_code)] // Used by generate_schema binary
 pub fn generate_schema() -> String {
-    #[allow(unused_mut)]
-    let mut api_doc = ApiDoc::openapi();
-
-    #[cfg(feature = "local-inference")]
-    api_doc.merge(LocalInferenceApiDoc::openapi());
-
+    let api_doc = ApiDoc::openapi();
     serde_json::to_string_pretty(&api_doc).unwrap()
 }

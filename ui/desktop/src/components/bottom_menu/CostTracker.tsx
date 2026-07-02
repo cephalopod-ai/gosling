@@ -119,7 +119,7 @@ export function CostTracker({
     (!costInfo ||
       (costInfo.inputTokenCost === undefined && costInfo.outputTokenCost === undefined))
   ) {
-    const freeProviders = ['ollama', 'local', 'localhost'];
+    const freeProviders = ['ollama', 'localhost'];
     if (freeProviders.includes(currentProvider.toLowerCase())) {
       return (
         <div className="flex items-center justify-center h-full text-text-primary/70 transition-colors cursor-default translate-y-[1px]">

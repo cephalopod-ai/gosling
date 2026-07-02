@@ -6,34 +6,16 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-#[cfg(feature = "local-inference")]
-use axum::{extract::Path, routing::delete};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-#[cfg(feature = "local-inference")]
-use goose::dictation::providers::transcribe_local;
 use goose::dictation::providers::{
     all_providers, is_configured, transcribe_with_provider, DictationProvider,
 };
-#[cfg(feature = "local-inference")]
-use goose::dictation::whisper;
-#[cfg(feature = "local-inference")]
-use goose::download_manager::{get_download_manager, DownloadProgress};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
 const MAX_AUDIO_SIZE_BYTES: usize = 50 * 1024 * 1024;
-
-#[cfg(feature = "local-inference")]
-#[derive(Debug, Serialize, ToSchema)]
-pub struct WhisperModelResponse {
-    #[serde(flatten)]
-    #[schema(inline)]
-    model: &'static whisper::WhisperModel,
-    downloaded: bool,
-    recommended: bool,
-}
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct TranscribeRequest {
@@ -178,8 +160,6 @@ pub async fn transcribe_dictation(
         )
         .await
         .map_err(convert_error)?,
-        #[cfg(feature = "local-inference")]
-        DictationProvider::Local => transcribe_local(audio_bytes).await.map_err(convert_error)?,
     };
 
     Ok(Json(TranscribeResponse { text }))
@@ -230,145 +210,10 @@ pub async fn get_dictation_config(
     Ok(Json(providers))
 }
 
-#[cfg(feature = "local-inference")]
-#[utoipa::path(
-    get,
-    path = "/dictation/models",
-    responses(
-        (status = 200, description = "List of available Whisper models", body = Vec<WhisperModelResponse>)
-    )
-)]
-pub async fn list_models() -> Result<Json<Vec<WhisperModelResponse>>, ErrorResponse> {
-    let recommended_id = whisper::recommend_model();
-    let models = whisper::available_models()
-        .iter()
-        .map(|m| WhisperModelResponse {
-            model: m,
-            downloaded: m.is_downloaded(),
-            recommended: m.id == recommended_id,
-        })
-        .collect();
-
-    Ok(Json(models))
-}
-
-#[cfg(feature = "local-inference")]
-#[utoipa::path(
-    post,
-    path = "/dictation/models/{model_id}/download",
-    responses(
-        (status = 202, description = "Download started"),
-        (status = 400, description = "Download already in progress"),
-        (status = 500, description = "Internal server error")
-    )
-)]
-pub async fn download_model(Path(model_id): Path<String>) -> Result<StatusCode, ErrorResponse> {
-    let model = whisper::get_model(&model_id)
-        .ok_or_else(|| ErrorResponse::bad_request("Model not found"))?;
-
-    let manager = get_download_manager();
-    let model_id_for_config = model.id.to_string();
-    manager
-        .download_model(
-            model.id.to_string(),
-            model.url.to_string(),
-            model.local_path(),
-            Some(Box::new(move || {
-                let _ = goose::config::Config::global()
-                    .set_param(whisper::LOCAL_WHISPER_MODEL_CONFIG_KEY, model_id_for_config);
-            })),
-        )
-        .await
-        .map_err(convert_error)?;
-
-    Ok(StatusCode::ACCEPTED)
-}
-
-#[cfg(feature = "local-inference")]
-#[utoipa::path(
-    get,
-    path = "/dictation/models/{model_id}/download",
-    responses(
-        (status = 200, description = "Download progress", body = DownloadProgress),
-        (status = 404, description = "Download not found")
-    )
-)]
-pub async fn get_download_progress(
-    Path(model_id): Path<String>,
-) -> Result<Json<DownloadProgress>, ErrorResponse> {
-    let manager = get_download_manager();
-    let progress = manager
-        .get_progress(&model_id)
-        .ok_or_else(|| ErrorResponse::bad_request("Download not found"))?;
-
-    Ok(Json(progress))
-}
-
-#[cfg(feature = "local-inference")]
-#[utoipa::path(
-    delete,
-    path = "/dictation/models/{model_id}/download",
-    responses(
-        (status = 200, description = "Download cancelled"),
-        (status = 404, description = "Download not found")
-    )
-)]
-pub async fn cancel_download(Path(model_id): Path<String>) -> Result<StatusCode, ErrorResponse> {
-    let manager = get_download_manager();
-    manager.cancel_download(&model_id).map_err(convert_error)?;
-    Ok(StatusCode::OK)
-}
-
-#[cfg(feature = "local-inference")]
-#[utoipa::path(
-    delete,
-    path = "/dictation/models/{model_id}",
-    responses(
-        (status = 200, description = "Model deleted"),
-        (status = 404, description = "Model not found or not downloaded"),
-        (status = 500, description = "Failed to delete model")
-    )
-)]
-pub async fn delete_model(Path(model_id): Path<String>) -> Result<StatusCode, ErrorResponse> {
-    let model = whisper::get_model(&model_id)
-        .ok_or_else(|| ErrorResponse::bad_request("Model not found"))?;
-
-    let path = model.local_path();
-
-    if !path.exists() {
-        return Err(ErrorResponse::bad_request("Model not downloaded"));
-    }
-
-    tokio::fs::remove_file(&path)
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to delete model: {}", e)))?;
-
-    Ok(StatusCode::OK)
-}
-
 pub fn routes(state: Arc<AppState>) -> Router {
-    let router = Router::new()
+    Router::new()
         .route("/dictation/transcribe", post(transcribe_dictation))
-        .route("/dictation/config", get(get_dictation_config));
-
-    #[cfg(feature = "local-inference")]
-    let router = router
-        .route("/dictation/models", get(list_models))
-        .route(
-            "/dictation/models/{model_id}/download",
-            post(download_model),
-        )
-        .route(
-            "/dictation/models/{model_id}/download",
-            get(get_download_progress),
-        )
-        .route(
-            "/dictation/models/{model_id}/download",
-            delete(cancel_download),
-        )
-        .route("/dictation/models/{model_id}", delete(delete_model));
-
-    router
+        .route("/dictation/config", get(get_dictation_config))
         .layer(DefaultBodyLimit::max(MAX_AUDIO_SIZE_BYTES))
         .with_state(state)
 }

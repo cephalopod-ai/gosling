@@ -530,37 +530,6 @@ enum SessionCommand {
 }
 
 #[derive(Subcommand)]
-enum GatewayCommand {
-    #[command(about = "Show gateway status")]
-    Status {},
-
-    #[command(about = "Start a gateway")]
-    Start {
-        #[arg(help = "Gateway type (e.g., 'telegram')")]
-        gateway_type: String,
-
-        #[arg(
-            long = "bot-token",
-            help = "Bot token for the gateway platform",
-            long_help = "Authentication token for the gateway platform (e.g., Telegram bot token)"
-        )]
-        bot_token: String,
-    },
-
-    #[command(about = "Stop a running gateway")]
-    Stop {
-        #[arg(help = "Gateway type to stop (e.g., 'telegram')")]
-        gateway_type: String,
-    },
-
-    #[command(about = "Generate a pairing code for a gateway")]
-    Pair {
-        #[arg(help = "Gateway type to generate pairing code for")]
-        gateway_type: String,
-    },
-}
-
-#[derive(Subcommand)]
 enum PluginCommand {
     /// Install a plugin from a git repository URL
     #[command(about = "Install a plugin from a git repository URL")]
@@ -777,16 +746,6 @@ enum Command {
         command: PluginCommand,
     },
 
-    /// Manage gateways for external platform integrations (e.g., Telegram)
-    #[command(
-        about = "Manage gateways for external platform integrations",
-        visible_alias = "gw"
-    )]
-    Gateway {
-        #[command(subcommand)]
-        command: GatewayCommand,
-    },
-
     /// Update the goose CLI version
     #[cfg(feature = "update")]
     #[command(about = "Update the goose CLI version")]
@@ -842,14 +801,6 @@ enum Command {
         /// Arguments forwarded to the TUI
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
-    },
-
-    /// Manage local inference models
-    #[cfg(feature = "local-inference")]
-    #[command(about = "Manage local inference models", visible_alias = "lm")]
-    LocalModels {
-        #[command(subcommand)]
-        command: LocalModelsCommand,
     },
 
     /// Generate completions for various shells
@@ -973,39 +924,6 @@ enum Command {
     },
 }
 
-#[cfg(feature = "local-inference")]
-#[derive(Subcommand)]
-enum LocalModelsCommand {
-    /// Search HuggingFace for local models
-    #[command(about = "Search HuggingFace for local GGUF and MLX models")]
-    Search {
-        /// Search query
-        query: String,
-
-        /// Maximum number of results
-        #[arg(short, long, default_value = "10")]
-        limit: usize,
-    },
-
-    /// Download a model from HuggingFace
-    #[command(about = "Download a local model from a search result")]
-    Download {
-        /// Model spec/download id, e.g. user/repo:Q4_K_M or user/repo
-        spec: String,
-    },
-
-    /// List downloaded local models
-    #[command(about = "List downloaded local models")]
-    List,
-
-    /// Delete a downloaded model
-    #[command(about = "Delete a downloaded local model")]
-    Delete {
-        /// Model ID to delete
-        id: String,
-    },
-}
-
 #[derive(Subcommand)]
 enum TermCommand {
     /// Print shell initialization script
@@ -1122,7 +1040,6 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Project {}) => "project",
         Some(Command::Projects) => "projects",
         Some(Command::Run { .. }) => "run",
-        Some(Command::Gateway { .. }) => "gateway",
         #[cfg(feature = "update")]
         Some(Command::Update { .. }) => "update",
         Some(Command::Skills { .. }) => "skills",
@@ -1130,8 +1047,6 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Term { .. }) => "term",
         #[cfg(feature = "tui")]
         Some(Command::Tui { .. }) => "tui",
-        #[cfg(feature = "local-inference")]
-        Some(Command::LocalModels { .. }) => "local-models",
         Some(Command::Completion { .. }) => "completion",
         Some(Command::Review { .. }) => "review",
         Some(Command::ValidateExtensions { .. }) => "validate-extensions",
@@ -1638,23 +1553,6 @@ async fn handle_run_command(
     }
 }
 
-async fn handle_gateway_command(command: GatewayCommand) -> Result<()> {
-    use crate::commands::gateway;
-
-    match command {
-        GatewayCommand::Status {} => gateway::handle_gateway_status().await,
-        GatewayCommand::Start {
-            gateway_type,
-            bot_token,
-        } => {
-            let platform_config = serde_json::json!({ "bot_token": bot_token });
-            gateway::handle_gateway_start(gateway_type, platform_config).await
-        }
-        GatewayCommand::Stop { gateway_type } => gateway::handle_gateway_stop(gateway_type).await,
-        GatewayCommand::Pair { gateway_type } => gateway::handle_gateway_pair(gateway_type).await,
-    }
-}
-
 fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     match command {
         PluginCommand::Install { url, auto_update } => handle_plugin_install(&url, auto_update),
@@ -1679,152 +1577,6 @@ async fn handle_term_subcommand(command: TermCommand) -> Result<()> {
         TermCommand::Run { prompt } => handle_term_run(prompt).await,
         TermCommand::Info => handle_term_info().await,
     }
-}
-
-#[cfg(feature = "local-inference")]
-fn print_download_progress(manager: &goose::download_manager::DownloadManager) {
-    let Some(progress) = manager
-        .list_progress()
-        .into_iter()
-        .find(|progress| progress.status == goose::download_manager::DownloadStatus::Downloading)
-    else {
-        return;
-    };
-
-    print!(
-        "\r  {:.1}% ({:.0}MB / {:.0}MB)",
-        progress.progress_percent,
-        progress.bytes_downloaded as f64 / (1024.0 * 1024.0),
-        progress.total_bytes as f64 / (1024.0 * 1024.0),
-    );
-    use std::io::Write;
-    std::io::stdout().flush().ok();
-}
-
-#[cfg(feature = "local-inference")]
-async fn handle_local_models_command(command: LocalModelsCommand) -> Result<()> {
-    use goose::providers::local_inference::hf_models;
-    use goose::providers::local_inference::local_model_registry::get_registry;
-
-    match command {
-        LocalModelsCommand::Search { query, limit } => {
-            println!("Searching HuggingFace for '{}'...", query);
-            let results = hf_models::search_local_models(&query, limit).await?;
-
-            if results.is_empty() {
-                println!("No compatible local models found.");
-                return Ok(());
-            }
-
-            for model in &results {
-                println!(
-                    "\n{} (by {}) — {} downloads",
-                    model.model_name, model.author, model.downloads
-                );
-                for variant in &model.variants {
-                    let size = if variant.size_bytes > 0 {
-                        format!(
-                            "{:.1}GB",
-                            variant.size_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
-                        )
-                    } else {
-                        "unknown".to_string()
-                    };
-                    let support = if variant.supported {
-                        String::new()
-                    } else {
-                        format!(
-                            " ({})",
-                            variant
-                                .unsupported_reason
-                                .as_deref()
-                                .unwrap_or("unsupported on this platform")
-                        )
-                    };
-                    println!(
-                        "  [{}] {} — {} — {}{}",
-                        variant.format, variant.label, size, variant.description, support
-                    );
-                    if variant.supported {
-                        println!(
-                            "    Download: goose local-models download '{}'",
-                            variant.download_id
-                        );
-                    }
-                }
-            }
-        }
-        LocalModelsCommand::Download { spec } => {
-            println!("Resolving {}...", spec);
-            let manager = goose::download_manager::get_download_manager();
-            let resolve_task = hf_models::resolve_local_model_spec(&spec);
-            tokio::pin!(resolve_task);
-            let resolved = loop {
-                tokio::select! {
-                    result = &mut resolve_task => break result?,
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {
-                        print_download_progress(manager);
-                    }
-                }
-            };
-            let model_id = resolved.model_id();
-            let total_size = resolved.total_size();
-
-            println!(
-                "\nDownloaded {} ({}). Registering...",
-                model_id,
-                if total_size > 0 {
-                    format!("{:.1}GB", total_size as f64 / (1024.0 * 1024.0 * 1024.0))
-                } else {
-                    "unknown size".to_string()
-                }
-            );
-
-            let model_id = hf_models::register_resolved_model(resolved, &spec)?;
-
-            println!("Registered: {}", model_id);
-        }
-        LocalModelsCommand::List => {
-            let registry = get_registry()
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to acquire registry lock"))?;
-            let models = registry.list_models();
-
-            if models.is_empty() {
-                println!("No local models downloaded.");
-                return Ok(());
-            }
-
-            println!(
-                "{:<50} {:<10} {:<12} Downloaded",
-                "ID", "Backend", "Variant"
-            );
-            println!("{}", "-".repeat(88));
-            for m in models {
-                println!(
-                    "{:<50} {:<10} {:<12} {}",
-                    m.id,
-                    m.backend_id.as_deref().unwrap_or("llamacpp"),
-                    m.quantization,
-                    if m.is_downloaded() { "✓" } else { "✗" }
-                );
-            }
-        }
-        LocalModelsCommand::Delete { id } => {
-            let mut registry = get_registry()
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to acquire registry lock"))?;
-
-            if registry.get_model(&id).is_some() {
-                registry.delete_model(&id)?;
-                println!("Deleted model: {}", id);
-            } else {
-                println!("Model not found: {}", id);
-            }
-        }
-    }
-
-    Ok(())
 }
 
 async fn handle_default_session() -> Result<()> {
@@ -1968,7 +1720,6 @@ pub async fn cli() -> anyhow::Result<()> {
             )
             .await
         }
-        Some(Command::Gateway { command }) => handle_gateway_command(command).await,
         #[cfg(feature = "update")]
         Some(Command::Update {
             canary,
@@ -1982,8 +1733,6 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "tui")]
         Some(Command::Tui { args }) => crate::commands::tui::handle_tui(args),
-        #[cfg(feature = "local-inference")]
-        Some(Command::LocalModels { command }) => handle_local_models_command(command).await,
         Some(Command::Review {
             range,
             prompt,

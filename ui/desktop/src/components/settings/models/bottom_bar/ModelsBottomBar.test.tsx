@@ -46,14 +46,6 @@ vi.mock('../../../ui/dropdown-menu', () => ({
   DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('../../localInference/ModelSettingsPanel', () => ({
-  ModelSettingsPanel: () => null,
-}));
-
-vi.mock('../../../ui/scroll-area', () => ({
-  ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
-
 describe('ModelsBottomBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();

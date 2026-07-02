@@ -3,8 +3,6 @@ use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "aws-providers")]
 use super::bedrock::BedrockProvider;
-#[cfg(feature = "local-inference")]
-use super::local_inference::LocalInferenceProvider;
 #[cfg(feature = "aws-providers")]
 use super::sagemaker_tgi::SageMakerTgiProvider;
 use super::{
@@ -26,7 +24,6 @@ use super::{
     gemini_oauth::GeminiOAuthProvider,
     githubcopilot::GithubCopilotProvider,
     google::GoogleProvider,
-    huggingface::HuggingFaceProvider,
     kimicode::KimiCodeProvider,
     litellm::LiteLLMProvider,
     nanogpt::NanoGptProvider,
@@ -71,8 +68,6 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<AzureProvider>(false);
         #[cfg(feature = "aws-providers")]
         registry.register::<BedrockProvider>(false);
-        #[cfg(feature = "local-inference")]
-        registry.register::<LocalInferenceProvider>(false);
         registry.register_with_inventory::<ChatGptCodexProvider>(
             true,
             Some(registrations::chatgpt_codex_inventory()),
@@ -107,10 +102,6 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register_with_inventory::<GoogleProvider>(
             true,
             Some(registrations::google_inventory()),
-        );
-        registry.register_with_inventory::<HuggingFaceProvider>(
-            true,
-            Some(registrations::huggingface_inventory()),
         );
         registry.register::<KimiCodeProvider>(true);
         registry.register::<LiteLLMProvider>(false);
@@ -166,10 +157,6 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     registry.set_cleanup(
         "xai_oauth",
         Arc::new(|| Box::pin(XaiOAuthProvider::cleanup())),
-    );
-    registry.set_cleanup(
-        "huggingface",
-        Arc::new(|| Box::pin(HuggingFaceProvider::cleanup())),
     );
 
     if let Err(e) = load_custom_providers_into_registry(&mut registry) {
@@ -270,22 +257,6 @@ mod tests {
     use super::*;
     use crate::config::paths::Paths;
     use std::fs;
-
-    #[tokio::test]
-    async fn test_huggingface_provider_registry_wiring() {
-        let huggingface = get_from_registry("huggingface")
-            .await
-            .expect("huggingface provider should be registered");
-        let meta = huggingface.metadata();
-
-        assert_eq!(huggingface.provider_type(), ProviderType::Preferred);
-        assert_eq!(meta.display_name, "Hugging Face");
-        assert_eq!(meta.default_model, "Qwen/Qwen3-Coder-480B-A35B-Instruct");
-        assert!(meta
-            .config_keys
-            .iter()
-            .any(|key| key.name == "HF_TOKEN" && key.secret));
-    }
 
     #[tokio::test]
     async fn test_openai_compatible_providers_config_keys() {

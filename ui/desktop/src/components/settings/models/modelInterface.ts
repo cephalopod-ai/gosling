@@ -1,4 +1,3 @@
-import { listLocalModels } from '../../../acp/local-inference';
 import { acpListProviderDetails, acpListProviderModels } from '../../../acp/providers';
 import type { ProviderDetails, ThinkingEffort } from '../../../types/providers';
 import { errorMessage as getErrorMessage } from '../../../utils/conversionUtils';
@@ -55,15 +54,6 @@ export async function fetchModelsForProviders(
 ): Promise<ProviderModelsResult[]> {
   const modelPromises = activeProviders.map(async (p) => {
     try {
-      // For local provider, use listLocalModels and filter to only downloaded models
-      if (p.name === 'local') {
-        const allModels = await listLocalModels();
-        const downloadedModels = allModels
-          .filter((m) => m.status.state === 'Downloaded')
-          .map((m) => ({ name: m.id, provider: p.name }) as Model);
-        return { provider: p, models: downloadedModels, error: null, warning: null };
-      }
-
       const providerModels = await acpListProviderModels(p.name);
       const models = providerModels.map(
         (m) =>

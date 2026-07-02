@@ -29,14 +29,14 @@
   "authSettings.deleteCredential": {
     "defaultMessage": "Eliminar credencial"
   },
-  "authSettings.deleted": {
-    "defaultMessage": "Credencial eliminada"
-  },
   "authSettings.deleteMessage": {
     "defaultMessage": "¿Eliminar la credencial {name} de {provider}?"
   },
   "authSettings.deleteTitle": {
     "defaultMessage": "Eliminar credencial"
+  },
+  "authSettings.deleted": {
+    "defaultMessage": "Credencial eliminada"
   },
   "authSettings.description": {
     "defaultMessage": "Gestiona las credenciales de proveedores que gosling guarda localmente."
@@ -62,11 +62,11 @@
   "authSettings.reauthorize": {
     "defaultMessage": "Volver a autorizar"
   },
-  "authSettings.signedIn": {
-    "defaultMessage": "Credencial configurada"
-  },
   "authSettings.signIn": {
     "defaultMessage": "Iniciar sesión"
+  },
+  "authSettings.signedIn": {
+    "defaultMessage": "Credencial configurada"
   },
   "authSettings.storageProviderCache": {
     "defaultMessage": "Caché del proveedor"
@@ -86,12 +86,6 @@
   "baseChat.goHome": {
     "defaultMessage": "Ir al inicio"
   },
-  "bottomMenuExtensionSelection.extensionsForNewChats": {
-    "defaultMessage": "Extensiones para chats nuevos"
-  },
-  "bottomMenuExtensionSelection.extensionsForThisSession": {
-    "defaultMessage": "Extensiones para esta sesión de chat"
-  },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Extensión actualizada"
   },
@@ -100,6 +94,12 @@
   },
   "bottomMenuExtensionSelection.extensionWillBeEnabled": {
     "defaultMessage": "{name} se activará en los chats nuevos"
+  },
+  "bottomMenuExtensionSelection.extensionsForNewChats": {
+    "defaultMessage": "Extensiones para chats nuevos"
+  },
+  "bottomMenuExtensionSelection.extensionsForThisSession": {
+    "defaultMessage": "Extensiones para esta sesión de chat"
   },
   "bottomMenuExtensionSelection.manageExtensions": {
     "defaultMessage": "administrar extensiones"
@@ -332,11 +332,11 @@
   "customProviderForm.attachments": {
     "defaultMessage": "Adjuntos"
   },
-  "customProviderForm.authentication": {
-    "defaultMessage": "Autenticación"
-  },
   "customProviderForm.authHint": {
     "defaultMessage": "Los LLM locales como Ollama normalmente no requieren una API key."
+  },
+  "customProviderForm.authentication": {
+    "defaultMessage": "Autenticación"
   },
   "customProviderForm.availableModels": {
     "defaultMessage": "Modelos disponibles (separados por comas)"
@@ -635,20 +635,17 @@
   "elicitationRequest.waitingForResponse": {
     "defaultMessage": "Esperando tu respuesta ({timeRemaining} restantes)"
   },
-  "environmentBadge.dev": {
-    "defaultMessage": "Dev"
-  },
   "envVarsSection.add": {
     "defaultMessage": "Añadir"
   },
   "envVarsSection.bothRequired": {
     "defaultMessage": "Debes introducir tanto el nombre como el valor de la variable"
   },
-  "envVarsSection.environmentVariables": {
-    "defaultMessage": "Variables de entorno"
-  },
   "envVarsSection.envVarsDescription": {
     "defaultMessage": "Añade pares clave-valor para variables de entorno. Haz clic en el botón \"+\" para añadir después de rellenar ambos campos. Para valores secretos existentes, haz clic en el botón de editar para modificarlos."
+  },
+  "envVarsSection.environmentVariables": {
+    "defaultMessage": "Variables de entorno"
   },
   "envVarsSection.noSpaces": {
     "defaultMessage": "El nombre de la variable no puede contener espacios"
@@ -658,6 +655,9 @@
   },
   "envVarsSection.variableName": {
     "defaultMessage": "Nombre de la variable"
+  },
+  "environmentBadge.dev": {
+    "defaultMessage": "Dev"
   },
   "errorBoundary.errorGeneric": {
     "defaultMessage": "Ocurrió un error."
@@ -818,6 +818,9 @@
   "extensionModal.unsavedChangesTitle": {
     "defaultMessage": "Cambios sin guardar"
   },
+  "extensionTimeoutField.timeoutLabel": {
+    "defaultMessage": "Tiempo de espera"
+  },
   "extensionsSection.addCustomExtension": {
     "defaultMessage": "Añadir extensión personalizada"
   },
@@ -853,9 +856,6 @@
   },
   "extensionsView.searchPlaceholder": {
     "defaultMessage": "Buscar extensiones..."
-  },
-  "extensionTimeoutField.timeoutLabel": {
-    "defaultMessage": "Tiempo de espera"
   },
   "externalBackendSection.certFingerprint": {
     "defaultMessage": "Huella del certificado (opcional)"
@@ -1036,57 +1036,6 @@
   },
   "hub.goodMorning": {
     "defaultMessage": "Buenos días"
-  },
-  "huggingFaceModelSearch.download": {
-    "defaultMessage": "Descargar"
-  },
-  "huggingFaceModelSearch.downloaded": {
-    "defaultMessage": "Descargado"
-  },
-  "huggingFaceModelSearch.downloading": {
-    "defaultMessage": "Descargando…"
-  },
-  "huggingFaceModelSearch.loadingVariants": {
-    "defaultMessage": "Cargando variantes..."
-  },
-  "huggingFaceModelSearch.noGgufModels": {
-    "defaultMessage": "No se encontraron modelos GGUF para esta búsqueda."
-  },
-  "huggingFaceModelSearch.recommended": {
-    "defaultMessage": "Recomendado"
-  },
-  "huggingFaceModelSearch.searchError": {
-    "defaultMessage": "Error de búsqueda: {details}"
-  },
-  "huggingFaceModelSearch.searchFailed": {
-    "defaultMessage": "La búsqueda falló. Inténtalo de nuevo."
-  },
-  "huggingFaceModelSearch.searchHuggingFace": {
-    "defaultMessage": "Buscar en HuggingFace"
-  },
-  "huggingFaceModelSearch.searchNoData": {
-    "defaultMessage": "La búsqueda no devolvió datos."
-  },
-  "huggingFaceModelSearch.searchPlaceholder": {
-    "defaultMessage": "Buscar modelos GGUF..."
-  },
-  "huggingFaceModelSearch.tooLarge": {
-    "defaultMessage": "Puede que no quepa en memoria (modelo de {size}, {available} disponible)"
-  },
-  "huggingFaceSignInPrompt.failedToConfigure": {
-    "defaultMessage": "No se pudo iniciar sesión en Hugging Face: {error}"
-  },
-  "huggingFaceSignInPrompt.signedIn": {
-    "defaultMessage": "Sesión iniciada en Hugging Face"
-  },
-  "huggingFaceSignInPrompt.signIn": {
-    "defaultMessage": "Iniciar sesión"
-  },
-  "huggingFaceSignInPrompt.signingIn": {
-    "defaultMessage": "Iniciando sesión..."
-  },
-  "huggingFaceSignInPrompt.title": {
-    "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
     "defaultMessage": "imagen de gosling"
@@ -1307,156 +1256,6 @@
   "loadingGoose.waiting": {
     "defaultMessage": "gosling está esperando…"
   },
-  "localInferenceSettings.deleteConfirm": {
-    "defaultMessage": "¿Eliminar este modelo? Podrás volver a descargarlo más tarde."
-  },
-  "localInferenceSettings.description": {
-    "defaultMessage": "Descarga y gestiona modelos LLM locales para inferencia sin claves API. Busca cualquier modelo GGUF en HuggingFace o usa las opciones destacadas de abajo."
-  },
-  "localInferenceSettings.dismiss": {
-    "defaultMessage": "Descartar"
-  },
-  "localInferenceSettings.download": {
-    "defaultMessage": "Descargar"
-  },
-  "localInferenceSettings.downloadCancelled": {
-    "defaultMessage": "Descarga cancelada"
-  },
-  "localInferenceSettings.downloadedModels": {
-    "defaultMessage": "Modelos descargados"
-  },
-  "localInferenceSettings.downloadFailed": {
-    "defaultMessage": "La descarga falló"
-  },
-  "localInferenceSettings.downloading": {
-    "defaultMessage": "Descargando"
-  },
-  "localInferenceSettings.downloadProgress": {
-    "defaultMessage": "{downloaded} / {total} ({percent}%)"
-  },
-  "localInferenceSettings.featuredModels": {
-    "defaultMessage": "Modelos destacados"
-  },
-  "localInferenceSettings.huggingFaceSignInNote": {
-    "defaultMessage": "Inicia sesión para aumentar los límites de uso al buscar y descargar modelos, y para acceder a repositorios de Hugging Face privados o restringidos."
-  },
-  "localInferenceSettings.modelSettings": {
-    "defaultMessage": "Ajustes del modelo"
-  },
-  "localInferenceSettings.modelSettingsTitle": {
-    "defaultMessage": "Ajustes del modelo"
-  },
-  "localInferenceSettings.noModels": {
-    "defaultMessage": "No hay modelos disponibles"
-  },
-  "localInferenceSettings.recommended": {
-    "defaultMessage": "Recomendado"
-  },
-  "localInferenceSettings.remaining": {
-    "defaultMessage": "{time} restante"
-  },
-  "localInferenceSettings.retry": {
-    "defaultMessage": "Reintentar"
-  },
-  "localInferenceSettings.showAllFeatured": {
-    "defaultMessage": "Mostrar todos los destacados ({count} más)"
-  },
-  "localInferenceSettings.showRecommendedOnly": {
-    "defaultMessage": "Mostrar solo los recomendados"
-  },
-  "localInferenceSettings.title": {
-    "defaultMessage": "Modelos de inferencia local"
-  },
-  "localInferenceSettings.vision": {
-    "defaultMessage": "Visión"
-  },
-  "localInferenceSettings.visionEncoderDownloading": {
-    "defaultMessage": "Descargando codificador de visión…"
-  },
-  "localInferenceSettings.visionEncoderNotDownloaded": {
-    "defaultMessage": "Codificador de visión no descargado"
-  },
-  "localModelManager.active": {
-    "defaultMessage": "Activo"
-  },
-  "localModelManager.deleteConfirm": {
-    "defaultMessage": "¿Eliminar este modelo? Podrás volver a descargarlo más tarde."
-  },
-  "localModelManager.download": {
-    "defaultMessage": "Descargar"
-  },
-  "localModelManager.downloaded": {
-    "defaultMessage": "Descargado"
-  },
-  "localModelManager.gpuAcceleration": {
-    "defaultMessage": "Admite aceleración por GPU (CUDA para NVIDIA, Metal para Apple Silicon). Las funciones de GPU deben habilitarse al compilar para obtener aceleración por hardware."
-  },
-  "localModelManager.noModels": {
-    "defaultMessage": "No hay modelos disponibles"
-  },
-  "localModelManager.recommended": {
-    "defaultMessage": "Recomendado"
-  },
-  "localModelManager.recommendedForHardware": {
-    "defaultMessage": "Recomendado para tu hardware"
-  },
-  "localModelManager.showAllModels": {
-    "defaultMessage": "Mostrar todos los modelos ({count} más)"
-  },
-  "localModelManager.showRecommendedOnly": {
-    "defaultMessage": "Mostrar solo los recomendados"
-  },
-  "localModelPicker.bestForMachine": {
-    "defaultMessage": "El mejor para tu máquina"
-  },
-  "localModelPicker.cancelDownload": {
-    "defaultMessage": "Cancelar descarga"
-  },
-  "localModelPicker.checkingModels": {
-    "defaultMessage": "Comprobando modelos disponibles..."
-  },
-  "localModelPicker.downloading": {
-    "defaultMessage": "Descargando {modelId}"
-  },
-  "localModelPicker.downloadModel": {
-    "defaultMessage": "Descargar {modelId} ({size})"
-  },
-  "localModelPicker.failedToLoad": {
-    "defaultMessage": "No se pudieron cargar los modelos disponibles. Inténtalo de nuevo."
-  },
-  "localModelPicker.failedToStartDownload": {
-    "defaultMessage": "No se pudo iniciar la descarga. Inténtalo de nuevo."
-  },
-  "localModelPicker.hideOtherSizes": {
-    "defaultMessage": "Ocultar otros tamaños"
-  },
-  "localModelPicker.localModelsNote": {
-    "defaultMessage": "Los modelos locales mantienen todo en tu máquina para una privacidad total. El rendimiento y el tamaño de la ventana de contexto pueden variar respecto a los proveedores en la nube según tu hardware y el tamaño del modelo."
-  },
-  "localModelPicker.lostConnection": {
-    "defaultMessage": "Se perdió la conexión con la descarga. Inténtalo de nuevo."
-  },
-  "localModelPicker.modelNotFound": {
-    "defaultMessage": "Modelo no encontrado"
-  },
-  "localModelPicker.ready": {
-    "defaultMessage": "Listo"
-  },
-  "localModelPicker.selectModel": {
-    "defaultMessage": "Selecciona un modelo"
-  },
-  "localModelPicker.showOtherSizes": {
-    "defaultMessage": "Mostrar {count} tamaños más"
-  },
-  "localModelPicker.startingDownload": {
-    "defaultMessage": "Iniciando descarga..."
-  },
-  "localModelPicker.tryAgain": {
-    "defaultMessage": "Intentar de nuevo"
-  },
-  "localModelPicker.useModel": {
-    "defaultMessage": "Usar {modelId}"
-  },
   "markdownContent.cancel": {
     "defaultMessage": "Cancelar"
   },
@@ -1583,9 +1382,6 @@
   "messageQueue.paused": {
     "defaultMessage": "Pausado"
   },
-  "messageQueue.queued": {
-    "defaultMessage": "en cola"
-  },
   "messageQueue.queuePaused": {
     "defaultMessage": "Cola pausada"
   },
@@ -1594,6 +1390,9 @@
   },
   "messageQueue.queuePausedExpanded": {
     "defaultMessage": "Cola pausada por interrupción. Usa \"Enviar ahora\" o añade un nuevo mensaje para reanudar."
+  },
+  "messageQueue.queued": {
+    "defaultMessage": "en cola"
   },
   "messageQueue.removeFromQueue": {
     "defaultMessage": "Quitar este mensaje de la cola"
@@ -1640,210 +1439,6 @@
   "microphoneSelector.test": {
     "defaultMessage": "Probar"
   },
-  "modelAndProviderContext.modelChangedTitle": {
-    "defaultMessage": "Modelo cambiado"
-  },
-  "modelAndProviderContext.modelChangeFailed": {
-    "defaultMessage": "{provider}/{model} falló"
-  },
-  "modelAndProviderContext.selectModel": {
-    "defaultMessage": "Seleccionar modelo"
-  },
-  "modelAndProviderContext.switchModelSuccess": {
-    "defaultMessage": "Modelos cambiados correctamente: usando {model} de {provider}"
-  },
-  "modelAndProviderContext.unknownProviderMsg": {
-    "defaultMessage": "Proveedor desconocido en la configuración: revisa tu config.yaml"
-  },
-  "modelAndProviderContext.unknownProviderTitle": {
-    "defaultMessage": "Búsqueda del nombre del proveedor"
-  },
-  "modelsBottomBar.changeModel": {
-    "defaultMessage": "Cambiar modelo"
-  },
-  "modelsBottomBar.currentModel": {
-    "defaultMessage": "Modelo actual"
-  },
-  "modelsBottomBar.loadingModel": {
-    "defaultMessage": "Cargando modelo..."
-  },
-  "modelsBottomBar.localModelSettings": {
-    "defaultMessage": "Ajustes del modelo local"
-  },
-  "modelsBottomBar.localModelSettingsTitle": {
-    "defaultMessage": "Ajustes del modelo local — {modelName}"
-  },
-  "modelsBottomBar.resolvedModel": {
-    "defaultMessage": "Modelo resuelto"
-  },
-  "modelsBottomBar.selectModel": {
-    "defaultMessage": "Seleccionar modelo"
-  },
-  "modelSettingsButtons.configureProviders": {
-    "defaultMessage": "Configurar proveedores"
-  },
-  "modelSettingsButtons.switchModels": {
-    "defaultMessage": "Cambiar de modelo"
-  },
-  "modelSettingsPanel.batchSize": {
-    "defaultMessage": "Tamaño de lote"
-  },
-  "modelSettingsPanel.batchSizeDescription": {
-    "defaultMessage": "Lote de procesamiento del prompt"
-  },
-  "modelSettingsPanel.builtinChatTemplate": {
-    "defaultMessage": "Plantilla integrada"
-  },
-  "modelSettingsPanel.builtinChatTemplateDescription": {
-    "defaultMessage": "Selecciona el nombre de una plantilla integrada de llama.cpp"
-  },
-  "modelSettingsPanel.chatTemplate": {
-    "defaultMessage": "Plantilla de chat"
-  },
-  "modelSettingsPanel.chatTemplateBuiltin": {
-    "defaultMessage": "Integrada"
-  },
-  "modelSettingsPanel.chatTemplateCustomInline": {
-    "defaultMessage": "Personalizada en línea"
-  },
-  "modelSettingsPanel.chatTemplateDescription": {
-    "defaultMessage": "Usa metadatos GGUF embebidos, una plantilla integrada de llama.cpp o Jinja en línea"
-  },
-  "modelSettingsPanel.chatTemplateEmbedded": {
-    "defaultMessage": "Embebida"
-  },
-  "modelSettingsPanel.contextAndGeneration": {
-    "defaultMessage": "Contexto y generación"
-  },
-  "modelSettingsPanel.contextSize": {
-    "defaultMessage": "Tamaño del contexto"
-  },
-  "modelSettingsPanel.contextSizeDescription": {
-    "defaultMessage": "Ventana de contexto máxima (0 = valor por defecto del modelo)"
-  },
-  "modelSettingsPanel.customChatTemplate": {
-    "defaultMessage": "Plantilla de chat personalizada"
-  },
-  "modelSettingsPanel.customChatTemplateDescription": {
-    "defaultMessage": "Pega el código fuente completo de la plantilla de chat de Jinja"
-  },
-  "modelSettingsPanel.etaLearningRate": {
-    "defaultMessage": "Eta (tasa de aprendizaje)"
-  },
-  "modelSettingsPanel.flashAttention": {
-    "defaultMessage": "Flash attention"
-  },
-  "modelSettingsPanel.flashAttentionDescription": {
-    "defaultMessage": "Activar la optimización de flash attention"
-  },
-  "modelSettingsPanel.frequencyPenalty": {
-    "defaultMessage": "Penalización por frecuencia"
-  },
-  "modelSettingsPanel.frequencyPenaltyDescription": {
-    "defaultMessage": "0.0 = desactivado"
-  },
-  "modelSettingsPanel.gpuLayers": {
-    "defaultMessage": "Capas de GPU"
-  },
-  "modelSettingsPanel.gpuLayersDescription": {
-    "defaultMessage": "Capas a descargar en la GPU"
-  },
-  "modelSettingsPanel.loadingSettings": {
-    "defaultMessage": "Cargando ajustes..."
-  },
-  "modelSettingsPanel.lockModelInRam": {
-    "defaultMessage": "Bloquear el modelo en RAM (mlock)"
-  },
-  "modelSettingsPanel.lockModelInRamDescription": {
-    "defaultMessage": "Evitar que el modelo se pase al disco (swap)"
-  },
-  "modelSettingsPanel.maxOutputTokens": {
-    "defaultMessage": "Máximo de tokens de salida"
-  },
-  "modelSettingsPanel.maxOutputTokensDescription": {
-    "defaultMessage": "Límite de tokens generados"
-  },
-  "modelSettingsPanel.minP": {
-    "defaultMessage": "Min P"
-  },
-  "modelSettingsPanel.performance": {
-    "defaultMessage": "Rendimiento"
-  },
-  "modelSettingsPanel.presencePenalty": {
-    "defaultMessage": "Penalización por presencia"
-  },
-  "modelSettingsPanel.presencePenaltyDescription": {
-    "defaultMessage": "0.0 = desactivado"
-  },
-  "modelSettingsPanel.repeatPenalty": {
-    "defaultMessage": "Penalización por repetición"
-  },
-  "modelSettingsPanel.repeatPenaltyDescription": {
-    "defaultMessage": "1.0 = desactivado"
-  },
-  "modelSettingsPanel.repeatWindow": {
-    "defaultMessage": "Ventana de repetición"
-  },
-  "modelSettingsPanel.repeatWindowDescription": {
-    "defaultMessage": "Tokens hacia atrás a considerar"
-  },
-  "modelSettingsPanel.repetitionPenalty": {
-    "defaultMessage": "Penalización por repetición"
-  },
-  "modelSettingsPanel.reset": {
-    "defaultMessage": "Restablecer"
-  },
-  "modelSettingsPanel.resetToDefaults": {
-    "defaultMessage": "Restablecer a los valores predeterminados"
-  },
-  "modelSettingsPanel.samplingStrategy": {
-    "defaultMessage": "Estrategia de muestreo"
-  },
-  "modelSettingsPanel.saving": {
-    "defaultMessage": "Guardando..."
-  },
-  "modelSettingsPanel.seed": {
-    "defaultMessage": "Semilla"
-  },
-  "modelSettingsPanel.tauTargetEntropy": {
-    "defaultMessage": "Tau (entropía objetivo)"
-  },
-  "modelSettingsPanel.temperature": {
-    "defaultMessage": "Temperatura"
-  },
-  "modelSettingsPanel.threads": {
-    "defaultMessage": "Hilos"
-  },
-  "modelSettingsPanel.threadsDescription": {
-    "defaultMessage": "Hilos de CPU para la generación"
-  },
-  "modelSettingsPanel.toolCalling": {
-    "defaultMessage": "Llamada a herramientas"
-  },
-  "modelSettingsPanel.toolCallingAuto": {
-    "defaultMessage": "Auto"
-  },
-  "modelSettingsPanel.toolCallingDescription": {
-    "defaultMessage": "Elige cómo los modelos locales seleccionan la llamada a herramientas nativa o emulada"
-  },
-  "modelSettingsPanel.toolCallingForceEmulated": {
-    "defaultMessage": "Forzar emulada"
-  },
-  "modelSettingsPanel.toolCallingForceNative": {
-    "defaultMessage": "Forzar nativa"
-  },
-  "modelSettingsPanel.topK": {
-    "defaultMessage": "Top K"
-  },
-  "modelSettingsPanel.topP": {
-    "defaultMessage": "Top P"
-  },
-  "modelsSection.resetDescription": {
-    "defaultMessage": "Borra el modelo y los ajustes de proveedor seleccionados para empezar de cero"
-  },
-  "modelsSection.resetTitle": {
-    "defaultMessage": "Restablecer proveedor y modelo"
-  },
   "modeSelectionItem.autonomousDescription": {
     "defaultMessage": "Capacidades completas de modificación de archivos: edita, crea y elimina archivos libremente."
   },
@@ -1867,6 +1462,51 @@
   },
   "modeSelectionItem.smartLabel": {
     "defaultMessage": "Inteligente"
+  },
+  "modelAndProviderContext.modelChangeFailed": {
+    "defaultMessage": "{provider}/{model} falló"
+  },
+  "modelAndProviderContext.modelChangedTitle": {
+    "defaultMessage": "Modelo cambiado"
+  },
+  "modelAndProviderContext.selectModel": {
+    "defaultMessage": "Seleccionar modelo"
+  },
+  "modelAndProviderContext.switchModelSuccess": {
+    "defaultMessage": "Modelos cambiados correctamente: usando {model} de {provider}"
+  },
+  "modelAndProviderContext.unknownProviderMsg": {
+    "defaultMessage": "Proveedor desconocido en la configuración: revisa tu config.yaml"
+  },
+  "modelAndProviderContext.unknownProviderTitle": {
+    "defaultMessage": "Búsqueda del nombre del proveedor"
+  },
+  "modelSettingsButtons.configureProviders": {
+    "defaultMessage": "Configurar proveedores"
+  },
+  "modelSettingsButtons.switchModels": {
+    "defaultMessage": "Cambiar de modelo"
+  },
+  "modelsBottomBar.changeModel": {
+    "defaultMessage": "Cambiar modelo"
+  },
+  "modelsBottomBar.currentModel": {
+    "defaultMessage": "Modelo actual"
+  },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "Cargando modelo..."
+  },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "Modelo resuelto"
+  },
+  "modelsBottomBar.selectModel": {
+    "defaultMessage": "Seleccionar modelo"
+  },
+  "modelsSection.resetDescription": {
+    "defaultMessage": "Borra el modelo y los ajustes de proveedor seleccionados para empezar de cero"
+  },
+  "modelsSection.resetTitle": {
+    "defaultMessage": "Restablecer proveedor y modelo"
   },
   "navigation.itemExtensions": {
     "defaultMessage": "Extensiones"
@@ -1918,9 +1558,6 @@
   },
   "onboardingSuccess.learnMore": {
     "defaultMessage": "Más información"
-  },
-  "onboardingSuccess.localModelReady": {
-    "defaultMessage": "Modelo local listo"
   },
   "onboardingSuccess.privacyDescription": {
     "defaultMessage": "Los datos de uso anónimos ayudan a mejorar gosling. Nunca recopilamos tus conversaciones, código ni datos personales."
@@ -2045,11 +1682,11 @@
   "promptsSettings.edit": {
     "defaultMessage": "Editar"
   },
-  "promptsSettings.editingLabel": {
-    "defaultMessage": "Editando: {name}"
-  },
   "promptsSettings.editPromptTitle": {
     "defaultMessage": "Editar: {name}"
+  },
+  "promptsSettings.editingLabel": {
+    "defaultMessage": "Editando: {name}"
   },
   "promptsSettings.enterPromptContent": {
     "defaultMessage": "Introduce el contenido del prompt..."
@@ -2159,11 +1796,11 @@
   "providerConfigForm.noApiKey": {
     "defaultMessage": "¿No tienes una clave de API?"
   },
-  "providerConfigForm.signingIn": {
-    "defaultMessage": "Iniciando sesión..."
-  },
   "providerConfigForm.signInWith": {
     "defaultMessage": "Iniciar sesión con {providerName}"
+  },
+  "providerConfigForm.signingIn": {
+    "defaultMessage": "Iniciando sesión..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
     "defaultMessage": "Añade tu(s) clave(s) de API de este proveedor para integrarlo en gosling"
@@ -2207,9 +1844,6 @@
   "providerConfigurationModal.goBack": {
     "defaultMessage": "Volver"
   },
-  "providerConfigurationModal.huggingFaceOAuthDescription": {
-    "defaultMessage": "Inicia sesión para usar los Inference Providers de Hugging Face sin introducir manualmente un token de API."
-  },
   "providerConfigurationModal.oauthLoginFailed": {
     "defaultMessage": "Falló el inicio de sesión con OAuth: {error}"
   },
@@ -2225,11 +1859,11 @@
   "providerConfigurationModal.seeDocumentation": {
     "defaultMessage": "Consulta la <link>documentación</link> para más detalles."
   },
-  "providerConfigurationModal.signingIn": {
-    "defaultMessage": "Iniciando sesión..."
-  },
   "providerConfigurationModal.signInWith": {
     "defaultMessage": "Iniciar sesión con {providerName}"
+  },
+  "providerConfigurationModal.signingIn": {
+    "defaultMessage": "Iniciando sesión..."
   },
   "providerGrid.addProvider": {
     "defaultMessage": "Añadir proveedor"
@@ -2264,14 +1898,8 @@
   "providerSelector.connectProviderDescription": {
     "defaultMessage": "Conecta OpenAI, Anthropic, Google, etc."
   },
-  "providerSelector.localModelDescription": {
-    "defaultMessage": "Descarga un modelo y ejecútalo por completo en tu máquina. Sin API keys, sin cuentas."
-  },
   "providerSelector.selectProvider": {
     "defaultMessage": "Selecciona un proveedor"
-  },
-  "providerSelector.useLocalModel": {
-    "defaultMessage": "Usar un modelo local"
   },
   "providerSettings.configurationSettings": {
     "defaultMessage": "Ajustes de configuración del proveedor"
@@ -2426,14 +2054,14 @@
   "sessionActionsHeader.copyText": {
     "defaultMessage": "Copiar texto"
   },
-  "sessionActionsHeader.duplicated": {
-    "defaultMessage": "Sesión duplicada"
-  },
   "sessionActionsHeader.duplicateFailed": {
     "defaultMessage": "No se pudo duplicar la sesión: {error}"
   },
   "sessionActionsHeader.duplicateSession": {
     "defaultMessage": "Duplicar sesión"
+  },
+  "sessionActionsHeader.duplicated": {
+    "defaultMessage": "Sesión duplicada"
   },
   "sessionActionsHeader.fullTextTitle": {
     "defaultMessage": "Valor del texto"
@@ -2447,9 +2075,6 @@
   "sessionActionsHeader.loadingJson": {
     "defaultMessage": "Cargando JSON..."
   },
-  "sessionActionsHeader.renamed": {
-    "defaultMessage": "Sesión renombrada"
-  },
   "sessionActionsHeader.renameFailed": {
     "defaultMessage": "No se pudo renombrar la sesión: {error}"
   },
@@ -2461,6 +2086,9 @@
   },
   "sessionActionsHeader.renameTitle": {
     "defaultMessage": "Renombrar sesión"
+  },
+  "sessionActionsHeader.renamed": {
+    "defaultMessage": "Sesión renombrada"
   },
   "sessionActionsHeader.save": {
     "defaultMessage": "Guardar"
@@ -2479,6 +2107,24 @@
   },
   "sessionIndicators.streaming": {
     "defaultMessage": "Streaming"
+  },
+  "sessionViewComponents.empty.description": {
+    "defaultMessage": "Esta sesión no contiene ningún mensaje"
+  },
+  "sessionViewComponents.empty.title": {
+    "defaultMessage": "No se encontraron mensajes"
+  },
+  "sessionViewComponents.error.loading": {
+    "defaultMessage": "Error al cargar los detalles de la sesión"
+  },
+  "sessionViewComponents.error.tryAgain": {
+    "defaultMessage": "Reintentar"
+  },
+  "sessionViewComponents.role.assistant": {
+    "defaultMessage": "Gosling"
+  },
+  "sessionViewComponents.role.user": {
+    "defaultMessage": "Tú"
   },
   "sessions.action.delete": {
     "defaultMessage": "Eliminar sesión"
@@ -2537,9 +2183,6 @@
   "sessions.import": {
     "defaultMessage": "Importar sesión"
   },
-  "sessions.importing": {
-    "defaultMessage": "Importando..."
-  },
   "sessions.importNostr": {
     "defaultMessage": "Importar enlace"
   },
@@ -2551,6 +2194,9 @@
   },
   "sessions.importNostr.title": {
     "defaultMessage": "Importar sesión de Nostr"
+  },
+  "sessions.importing": {
+    "defaultMessage": "Importando..."
   },
   "sessions.loadingMore": {
     "defaultMessage": "Cargando más sesiones..."
@@ -2579,26 +2225,26 @@
   "sessions.toast.copied": {
     "defaultMessage": "Copiado al portapapeles"
   },
-  "sessions.toast.deleted": {
-    "defaultMessage": "Sesión eliminada correctamente"
-  },
   "sessions.toast.deleteFailed": {
     "defaultMessage": "No se pudo eliminar la sesión \"{name}\": {error}"
   },
-  "sessions.toast.duplicated": {
-    "defaultMessage": "Sesión \"{name}\" duplicada correctamente"
+  "sessions.toast.deleted": {
+    "defaultMessage": "Sesión eliminada correctamente"
   },
   "sessions.toast.duplicateFailed": {
     "defaultMessage": "No se pudo duplicar la sesión: {error}"
   },
+  "sessions.toast.duplicated": {
+    "defaultMessage": "Sesión \"{name}\" duplicada correctamente"
+  },
   "sessions.toast.exported": {
     "defaultMessage": "Sesión exportada correctamente"
   },
-  "sessions.toast.imported": {
-    "defaultMessage": "Sesión importada correctamente"
-  },
   "sessions.toast.importFailed": {
     "defaultMessage": "No se pudo importar la sesión: {error}"
+  },
+  "sessions.toast.imported": {
+    "defaultMessage": "Sesión importada correctamente"
   },
   "sessions.toast.shareNostr": {
     "defaultMessage": "Enlace cifrado de Nostr creado para compartir"
@@ -2606,29 +2252,11 @@
   "sessions.toast.shareNostrFailed": {
     "defaultMessage": "No se pudo crear el enlace de Nostr para compartir: {error}"
   },
-  "sessions.toast.updated": {
-    "defaultMessage": "Descripción de la sesión actualizada correctamente"
-  },
   "sessions.toast.updateFailed": {
     "defaultMessage": "No se pudo actualizar la descripción de la sesión: {error}"
   },
-  "sessionViewComponents.empty.description": {
-    "defaultMessage": "Esta sesión no contiene ningún mensaje"
-  },
-  "sessionViewComponents.empty.title": {
-    "defaultMessage": "No se encontraron mensajes"
-  },
-  "sessionViewComponents.error.loading": {
-    "defaultMessage": "Error al cargar los detalles de la sesión"
-  },
-  "sessionViewComponents.error.tryAgain": {
-    "defaultMessage": "Reintentar"
-  },
-  "sessionViewComponents.role.assistant": {
-    "defaultMessage": "Gosling"
-  },
-  "sessionViewComponents.role.user": {
-    "defaultMessage": "Tú"
+  "sessions.toast.updated": {
+    "defaultMessage": "Descripción de la sesión actualizada correctamente"
   },
   "settings.appearance.description": {
     "defaultMessage": "Configura cómo se ve gosling en tu sistema"
@@ -2810,9 +2438,6 @@
   "settingsView.tabKeyboard": {
     "defaultMessage": "Teclado"
   },
-  "settingsView.tabLocalInference": {
-    "defaultMessage": "Inferencia local"
-  },
   "settingsView.tabModels": {
     "defaultMessage": "Modelos"
   },
@@ -2945,17 +2570,8 @@
   "switchModelModal.geminiOnly": {
     "defaultMessage": "(Solo modelos Gemini 3)"
   },
-  "switchModelModal.goToSettings": {
-    "defaultMessage": "Ir a Ajustes"
-  },
   "switchModelModal.loadingModels": {
     "defaultMessage": "Cargando modelos…"
-  },
-  "switchModelModal.localModelsDescription": {
-    "defaultMessage": "Para usar inferencia local, primero debes descargar un modelo a tu computadora. Ve a Ajustes → Modelos para gestionar los modelos locales."
-  },
-  "switchModelModal.localModelsTitle": {
-    "defaultMessage": "Primero hay que descargar los modelos locales"
   },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "Proveedor, escribe para buscar"
@@ -3068,11 +2684,11 @@
   "themeSelector.theme": {
     "defaultMessage": "Tema"
   },
-  "toolApprovalButtons.allowedOnce": {
-    "defaultMessage": "Permitido una vez"
-  },
   "toolApprovalButtons.allowOnce": {
     "defaultMessage": "Permitir una vez"
+  },
+  "toolApprovalButtons.allowedOnce": {
+    "defaultMessage": "Permitido una vez"
   },
   "toolApprovalButtons.alwaysAllow": {
     "defaultMessage": "Permitir siempre"
@@ -3155,17 +2771,17 @@
   "updateSection.disableAutoDownloadDesc": {
     "defaultMessage": "Cuando está activado, Gosling te avisará de nuevas versiones pero no las descargará automáticamente."
   },
-  "updateSection.downloadingProgress": {
-    "defaultMessage": "Descargando actualización... {percent}%"
-  },
-  "updateSection.downloadingUpdate": {
-    "defaultMessage": "Descargando actualización..."
-  },
   "updateSection.downloadNow": {
     "defaultMessage": "Descargar ahora"
   },
   "updateSection.downloadReady": {
     "defaultMessage": "¡Actualización descargada y lista para instalar!"
+  },
+  "updateSection.downloadingProgress": {
+    "defaultMessage": "Descargando actualización... {percent}%"
+  },
+  "updateSection.downloadingUpdate": {
+    "defaultMessage": "Descargando actualización..."
   },
   "updateSection.installAndRestart": {
     "defaultMessage": "Instalar y reiniciar"
@@ -3191,11 +2807,11 @@
   "updateSection.readyInstallManual": {
     "defaultMessage": "✓ ¡La actualización está lista! Haz clic en \"Instalar y reiniciar\" para ver las instrucciones de instalación."
   },
-  "updateSection.updateAvailable": {
-    "defaultMessage": "¡Actualización disponible!"
-  },
   "updateSection.upToDate": {
     "defaultMessage": "(actualizado)"
+  },
+  "updateSection.updateAvailable": {
+    "defaultMessage": "¡Actualización disponible!"
   },
   "updateSection.versionAvailable": {
     "defaultMessage": "→ {version} disponible"

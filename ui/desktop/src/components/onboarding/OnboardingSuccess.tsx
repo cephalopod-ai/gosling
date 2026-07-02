@@ -3,13 +3,7 @@ import { Button } from '../ui/button';
 import PrivacyInfoModal from './PrivacyInfoModal';
 import { defineMessages, useIntl } from '../../i18n';
 
-const LOCAL_PROVIDER = 'local';
-
 const i18n = defineMessages({
-  localModelReady: {
-    id: 'onboardingSuccess.localModelReady',
-    defaultMessage: 'Local model ready',
-  },
   connectedTo: {
     id: 'onboardingSuccess.connectedTo',
     defaultMessage: 'Connected to {providerName}',
@@ -72,9 +66,7 @@ export default function OnboardingSuccess({ providerName, onFinish }: Onboarding
                 </svg>
               </div>
               <h2 className="text-xl font-light text-text-default mb-1">
-                {providerName === LOCAL_PROVIDER
-                  ? intl.formatMessage(i18n.localModelReady)
-                  : intl.formatMessage(i18n.connectedTo, { providerName })}
+                {intl.formatMessage(i18n.connectedTo, { providerName })}
               </h2>
               <p className="text-text-muted text-sm">{intl.formatMessage(i18n.allSet)}</p>
             </div>

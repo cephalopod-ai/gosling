@@ -5,10 +5,8 @@ import { useConfig } from '../../ConfigContext';
 import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
 import { trackSettingToggled } from '../../../utils/analytics';
-import { LocalModelManager } from './LocalModelManager';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import { DICTATION_ALLOWED_PROVIDERS } from '../../../updates';
-import { useFeatures } from '../../../contexts/FeaturesContext';
 import type { DictationProvider } from '../../../types/dictation';
 import {
   DropdownMenu,
@@ -84,7 +82,6 @@ const i18n = defineMessages({
 
 export const DictationSettings = () => {
   const intl = useIntl();
-  const { localInference, isLoading: isFeaturesLoading } = useFeatures();
   const [provider, setProvider] = useState<DictationProvider | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<Record<string, DictationProviderStatusEntry>>(
     {}
@@ -100,8 +97,6 @@ export const DictationSettings = () => {
   };
 
   useEffect(() => {
-    if (isFeaturesLoading) return;
-
     const loadSettings = async () => {
       const providerValue = await read('voice_dictation_provider', false);
       let loadedProvider: DictationProvider | null = (providerValue as DictationProvider) || null;
@@ -115,11 +110,6 @@ export const DictationSettings = () => {
         await upsert('voice_dictation_provider', '', false);
       }
 
-      if (!localInference && loadedProvider === 'local') {
-        loadedProvider = null;
-        await upsert('voice_dictation_provider', '', false);
-      }
-
       setProvider(loadedProvider);
 
       const micValue = await read('voice_dictation_preferred_mic', false);
@@ -129,7 +119,7 @@ export const DictationSettings = () => {
     };
 
     loadSettings();
-  }, [read, upsert, localInference, isFeaturesLoading]);
+  }, [read, upsert]);
 
   const handleProviderChange = (value: string) => {
     const newProvider = value === 'disabled' ? null : (value as DictationProvider);
@@ -219,11 +209,7 @@ export const DictationSettings = () => {
 
       {provider && providerStatuses[provider] && (
         <>
-          {provider === 'local' ? (
-            <div className="py-2 px-2">
-              <LocalModelManager />
-            </div>
-          ) : providerStatuses[provider].usesProviderConfig ? (
+          {providerStatuses[provider].usesProviderConfig ? (
             <div className="py-2 px-2 bg-background-secondary rounded-lg">
               {!providerStatuses[provider].configured ? (
                 <p className="text-xs text-text-secondary">

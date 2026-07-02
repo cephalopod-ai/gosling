@@ -1,4 +1,4 @@
-import { Sliders, Bot, LoaderCircle, Settings } from 'lucide-react';
+import { Sliders, Bot, LoaderCircle } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import { SwitchModelModal } from '../subcomponents/SwitchModelModal';
@@ -12,8 +12,6 @@ import {
 import { getProviderMetadata } from '../modelInterface';
 import { getModelDisplayName } from '../predefinedModelsUtils';
 
-import { ModelSettingsPanel } from '../../localInference/ModelSettingsPanel';
-import { ScrollArea } from '../../../ui/scroll-area';
 import { defineMessages, useIntl } from '../../../../i18n';
 import type { Message } from '../../../../types/message';
 
@@ -33,14 +31,6 @@ const i18n = defineMessages({
   changeModel: {
     id: 'modelsBottomBar.changeModel',
     defaultMessage: 'Change Model',
-  },
-  localModelSettings: {
-    id: 'modelsBottomBar.localModelSettings',
-    defaultMessage: 'Local Model Settings',
-  },
-  localModelSettingsTitle: {
-    id: 'modelsBottomBar.localModelSettingsTitle',
-    defaultMessage: 'Local Model Settings — {modelName}',
   },
   resolvedModel: {
     id: 'modelsBottomBar.resolvedModel',
@@ -81,7 +71,6 @@ export default function ModelsBottomBar({
     intl.formatMessage(i18n.selectModel)
   );
   const [isAddModelModalOpen, setIsAddModelModalOpen] = useState(false);
-  const [isLocalModelSettingsOpen, setIsLocalModelSettingsOpen] = useState(false);
   const [providerDefaultModel, setProviderDefaultModel] = useState<string | null>(null);
 
   // Show a visible loading placeholder while session metadata is still being fetched,
@@ -183,12 +172,6 @@ export default function ModelsBottomBar({
             <span>{intl.formatMessage(i18n.changeModel)}</span>
             <Sliders className="ml-auto h-4 w-4 rotate-90" />
           </DropdownMenuItem>
-          {currentProvider === 'local' && currentModel && (
-            <DropdownMenuItem onClick={() => setIsLocalModelSettingsOpen(true)}>
-              <span>{intl.formatMessage(i18n.localModelSettings)}</span>
-              <Settings className="ml-auto h-4 w-4" />
-            </DropdownMenuItem>
-          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -202,29 +185,6 @@ export default function ModelsBottomBar({
           onModelSelected={(model, provider) => handleModelSelected(model, provider)}
         />
       ) : null}
-
-      {isLocalModelSettingsOpen && currentModel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-background-primary border border-border-primary rounded-lg shadow-lg w-[480px] max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
-              <h3 className="text-sm font-medium text-text-default">
-                {intl.formatMessage(i18n.localModelSettingsTitle, {
-                  modelName: getModelDisplayName(currentModel),
-                })}
-              </h3>
-              <button
-                onClick={() => setIsLocalModelSettingsOpen(false)}
-                className="text-text-muted hover:text-text-default text-lg leading-none"
-              >
-                ×
-              </button>
-            </div>
-            <ScrollArea className="flex-1 px-4 py-3 overflow-y-auto max-h-[calc(80vh-52px)]">
-              <ModelSettingsPanel modelId={currentModel} />
-            </ScrollArea>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

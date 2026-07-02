@@ -48,7 +48,6 @@ pub enum SessionType {
     SubAgent,
     Hidden,
     Terminal,
-    Gateway,
     Acp,
 }
 

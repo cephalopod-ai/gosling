@@ -15,17 +15,14 @@ import {
   MessageSquare,
   FileText,
   Keyboard,
-  HardDrive,
   KeyRound,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import ChatSettingsSection from './chat/ChatSettingsSection';
 import KeyboardShortcutsSection from './keyboard/KeyboardShortcutsSection';
 import AuthSettingsSection from './auth/AuthSettingsSection';
-import LocalInferenceSection from './localInference/LocalInferenceSection';
 import { CONFIGURATION_ENABLED } from '../../updates';
 import { trackSettingsTabViewed } from '../../utils/analytics';
-import { useFeatures } from '../../contexts/FeaturesContext';
 import { defineMessages, useIntl } from '../../i18n';
 
 const i18n = defineMessages({
@@ -36,10 +33,6 @@ const i18n = defineMessages({
   tabModels: {
     id: 'settingsView.tabModels',
     defaultMessage: 'Models',
-  },
-  tabLocalInference: {
-    id: 'settingsView.tabLocalInference',
-    defaultMessage: 'Local Inference',
   },
   tabChat: {
     id: 'settingsView.tabChat',
@@ -84,7 +77,6 @@ export default function SettingsView({
 }) {
   const [activeTab, setActiveTab] = useState('models');
   const hasTrackedInitialTab = useRef(false);
-  const { localInference } = useFeatures();
   const intl = useIntl();
 
   const handleTabChange = (tab: string) => {
@@ -108,22 +100,14 @@ export default function SettingsView({
         prompts: 'prompts',
         keyboard: 'keyboard',
         auth: 'auth',
-        'local-inference': 'local-inference',
       };
 
       const targetTab = sectionToTab[viewOptions.section];
-      if (targetTab && (targetTab !== 'local-inference' || localInference)) {
+      if (targetTab) {
         setActiveTab(targetTab);
       }
     }
-  }, [viewOptions.section, localInference]);
-
-  // Reset active tab if local-inference becomes unavailable
-  useEffect(() => {
-    if (!localInference && activeTab === 'local-inference') {
-      setActiveTab('models');
-    }
-  }, [localInference, activeTab]);
+  }, [viewOptions.section]);
 
   useEffect(() => {
     if (!hasTrackedInitialTab.current) {
@@ -174,16 +158,6 @@ export default function SettingsView({
                     <Bot className="h-4 w-4" />
                     {intl.formatMessage(i18n.tabModels)}
                   </TabsTrigger>
-                  {localInference && (
-                    <TabsTrigger
-                      value="local-inference"
-                      className="flex gap-2"
-                      data-testid="settings-local-inference-tab"
-                    >
-                      <HardDrive className="h-4 w-4" />
-                      {intl.formatMessage(i18n.tabLocalInference)}
-                    </TabsTrigger>
-                  )}
                   <TabsTrigger value="chat" className="flex gap-2" data-testid="settings-chat-tab">
                     <MessageSquare className="h-4 w-4" />
                     {intl.formatMessage(i18n.tabChat)}
@@ -230,15 +204,6 @@ export default function SettingsView({
                 >
                   <ModelsSection setView={setView} />
                 </TabsContent>
-
-                {localInference && (
-                  <TabsContent
-                    value="local-inference"
-                    className="mt-0 focus-visible:outline-none focus-visible:ring-0"
-                  >
-                    <LocalInferenceSection />
-                  </TabsContent>
-                )}
 
                 <TabsContent
                   value="chat"

@@ -375,18 +375,18 @@ mod tests {
 
     fn test_config() -> DeclarativeProviderConfig {
         DeclarativeProviderConfig {
-            name: "custom_hf".to_string(),
+            name: "custom_gateway".to_string(),
             engine: ProviderEngine::OpenAI,
-            display_name: "Custom HF".to_string(),
+            display_name: "Custom Gateway".to_string(),
             description: None,
             api_key_env: String::new(),
-            base_url: "https://router.huggingface.co/v1".to_string(),
+            base_url: "https://api.example-gateway.com/v1".to_string(),
             models: vec![ModelInfo::new("test-model", 128_000)],
             headers: None,
             timeout_seconds: None,
             supports_streaming: Some(true),
             requires_auth: true,
-            catalog_provider_id: Some("huggingface".to_string()),
+            catalog_provider_id: Some("example_gateway".to_string()),
             base_path: None,
             env_vars: None,
             dynamic_models: None,
@@ -406,11 +406,16 @@ mod tests {
             ProviderType::Declarative,
             false,
             |_| unreachable!("constructor is not used by this test"),
-            || Ok(InventoryIdentityInput::new("custom_hf", "huggingface")),
+            || {
+                Ok(InventoryIdentityInput::new(
+                    "custom_gateway",
+                    "custom_gateway",
+                ))
+            },
             || false,
         );
 
-        let entry = registry.entries.get("custom_hf").unwrap();
+        let entry = registry.entries.get("custom_gateway").unwrap();
 
         assert!(!entry.inventory_configured());
     }

@@ -25,11 +25,6 @@ The list of experimental features may change as goose development progresses. So
       link="/docs/experimental/ollama"
     />
     <Card 
-      title="Remote Access"
-      description="Access goose remotely via the goose AI mobile app or messaging platforms like Telegram."
-      link="/docs/experimental/remote-access"
-    />
-    <Card 
       title="goose for VS Code Extension"
       description="Interact with goose directly from VS Code via ACP."
       link="/docs/experimental/vs-code-extension"
