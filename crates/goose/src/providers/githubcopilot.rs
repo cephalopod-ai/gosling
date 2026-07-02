@@ -108,6 +108,27 @@ fn token_secret_key(host: &str) -> String {
     }
 }
 
+/// Whether a token is stored under the key the *currently configured*
+/// `GITHUB_COPILOT_HOST` would use. The static `GITHUB_COPILOT_TOKEN`
+/// `ConfigKey` this provider declares in `metadata()` can't itself be
+/// host-scoped (config-key names are fixed at provider-registration time),
+/// so generic "is this provider configured" checks that key it directly -
+/// they'd report a provider as unconfigured after a successful non-default-host
+/// login, since the token is stored under a different key. Provider
+/// registration (see providers/init.rs) wires this in as the inventory
+/// `configured` resolver instead of the generic per-key check.
+pub fn has_configured_token() -> bool {
+    let config = Config::global();
+    let host = normalize_host(
+        &config
+            .get_param::<String>("GITHUB_COPILOT_HOST")
+            .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
+    );
+    config
+        .get_secret::<String>(&token_secret_key(&host))
+        .is_ok()
+}
+
 #[derive(Debug, Clone)]
 struct GithubCopilotUrls {
     device_code_url: String,

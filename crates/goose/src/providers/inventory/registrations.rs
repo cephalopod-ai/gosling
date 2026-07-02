@@ -148,6 +148,15 @@ pub fn xai_oauth_inventory() -> InventoryRegistration {
     .with_configured(|| XaiOAuthTokenCache::new().has_token())
 }
 
+pub fn github_copilot_inventory() -> InventoryRegistration {
+    InventoryRegistration {
+        supports_refresh: false,
+        identity: default_inventory_identity_resolver(),
+        configured: None,
+    }
+    .with_configured(crate::providers::githubcopilot::has_configured_token)
+}
+
 pub fn acp_inventory(
     provider_id: &'static str,
     command: &'static str,
