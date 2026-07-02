@@ -175,7 +175,18 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
       const allowedCommands = await window.electron.getAllowedExtensions();
 
       if (!allowedCommands || allowedCommands.length === 0) {
-        return 'trusted';
+        // Every path into this modal originates from an external
+        // gosling://extension deep link (see deliverExtensionOrSessionDeepLink
+        // / processProtocolUrl in main.ts) - there is no in-app "the user
+        // already trusts this" route to it. With no admin-configured
+        // allowlist, `cmd` is checked against a fixed set of package-runner
+        // binaries (npx, uvx, docker, ...), but their `args` - which fully
+        // determine what package/image actually gets fetched and executed -
+        // are unrestricted (deeplink.ts only special-cases `npx -c`). A
+        // link like gosling://extension?cmd=npx&arg=-y&arg=<pkg> is
+        // effectively "run this npm package", so default to the stronger
+        // warning instead of the plain "Are you sure?" prompt.
+        return 'untrusted';
       }
 
       const isCommandAllowed = allowedCommands.some((allowedCmd: string) =>
@@ -185,7 +196,8 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
       return isCommandAllowed ? 'trusted' : 'blocked';
     } catch (error) {
       console.error('Error checking allowlist:', error);
-      return 'trusted';
+      // Fail toward the more cautious prompt, not the more permissive one.
+      return 'untrusted';
     }
   };
 

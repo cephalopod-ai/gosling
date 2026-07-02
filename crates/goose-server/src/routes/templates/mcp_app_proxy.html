@@ -49,15 +49,25 @@
          * Store guest HTML on the server and get a nonce for retrieval.
          * This allows the guest iframe to load from a real HTTPS URL
          * instead of srcdoc (which has about: protocol).
+         *
+         * The CSP applied to the guest is derived server-side (see
+         * store_guest_html in mcp_app_proxy.rs) from these domain lists,
+         * the same ones used to build the outer frame's CSP - the client
+         * only declares which domains are needed, it never hands the
+         * server a pre-built policy string.
          */
-        async function storeGuestHtml(html) {
+        async function storeGuestHtml(html, csp) {
           var proxyParams = getProxyParams();
           var response = await fetch(proxyParams.baseUrl + '/mcp-app-guest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               secret: proxyParams.secret,
-              html: html
+              html: html,
+              connect_domains: (csp && csp.connectDomains) ? csp.connectDomains.join(',') : '',
+              resource_domains: (csp && csp.resourceDomains) ? csp.resourceDomains.join(',') : '',
+              frame_domains: (csp && csp.frameDomains) ? csp.frameDomains.join(',') : '',
+              base_uri_domains: (csp && csp.baseUriDomains) ? csp.baseUriDomains.join(',') : ''
             })
           });
 
@@ -69,18 +79,26 @@
           return data.nonce;
         }
 
-        async function createGuestIframe(html, permissions) {
+        async function createGuestIframe(html, permissions, csp) {
           if (guestIframe) {
             guestIframe.remove();
           }
 
           guestIframe = document.createElement('iframe');
 
-          // Sandbox permissions for the Guest UI
+          // Sandbox permissions for the Guest UI.
           // allow-scripts: needed for the app to run
-          // allow-same-origin: needed for localStorage, cookies, and real URL context
           // allow-forms: needed if the app has forms
-          guestIframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+          // allow-same-origin is intentionally NOT set: the guest iframe is
+          // served from this same origin (so it gets a real https:// URL
+          // instead of about:srcdoc), and a same-origin document that also
+          // carries allow-same-origin is not meaningfully sandboxed at all -
+          // it can reach straight into window.parent (this proxy frame,
+          // which carries the auth secret in its URL) with no postMessage
+          // needed. Omitting it forces the guest into a unique opaque
+          // origin regardless of its src, which is what actually contains
+          // an untrusted/malicious MCP app's UI.
+          guestIframe.setAttribute('sandbox', 'allow-scripts allow-forms');
 
           // Build Permission Policy allow attribute from requested permissions
           // These control access to sensitive browser APIs like camera, microphone, etc.
@@ -100,7 +118,7 @@
           // which is required by SDKs (like Square Web Payments) that check
           // window.location.protocol for secure context verification.
           try {
-            var nonce = await storeGuestHtml(html);
+            var nonce = await storeGuestHtml(html, csp);
             var proxyParams = getProxyParams();
             guestIframe.src = proxyParams.baseUrl + '/mcp-app-guest?secret=' + encodeURIComponent(proxyParams.secret) + '&nonce=' + encodeURIComponent(nonce);
           } catch (e) {
@@ -134,8 +152,9 @@
             var params = data.params || {};
             var html = params.html || '';
             var permissions = params.permissions || null;
+            var csp = params.csp || null;
 
-            createGuestIframe(html, permissions);
+            createGuestIframe(html, permissions, csp);
             return;
           }
 

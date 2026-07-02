@@ -8,7 +8,6 @@ import { screen, render, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AppInner } from './App';
 import { IntlTestWrapper } from './i18n/test-utils';
-import { FeaturesProvider } from './contexts/FeaturesContext';
 
 // Set up globals for jsdom
 Object.defineProperty(window, 'location', {
@@ -40,10 +39,6 @@ vi.mock('./sessions', () => ({
     .mockResolvedValue({ sessionId: 'test', messages: [], metadata: { description: '' } }),
   generateSessionId: vi.fn(),
   createSession: vi.fn(),
-}));
-
-vi.mock('./acp/capabilities', () => ({
-  getAcpFeatureCapabilities: vi.fn().mockResolvedValue({}),
 }));
 
 // Mock the ACP providers module used by OnboardingGuard so it doesn't try to
@@ -179,11 +174,7 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 function AppInnerTestWrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <IntlTestWrapper>
-      <FeaturesProvider>{children}</FeaturesProvider>
-    </IntlTestWrapper>
-  );
+  return <IntlTestWrapper>{children}</IntlTestWrapper>;
 }
 
 describe('App Component - Brand New State', () => {

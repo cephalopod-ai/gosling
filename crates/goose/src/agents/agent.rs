@@ -2565,7 +2565,13 @@ impl Agent {
     }
 
     pub async fn update_goose_mode(&self, mode: GooseMode, session_id: &str) -> Result<()> {
-        if let Some(provider) = self.provider.lock().await.as_ref() {
+        // Clone the Arc out and drop the guard before awaiting: holding the
+        // lock across update_mode's round-trip to the provider (which can
+        // be an external subprocess for ACP-backed providers, with no
+        // timeout) would stall every other task that needs self.provider,
+        // including the main reply loop, for as long as that hangs.
+        let provider = self.provider.lock().await.clone();
+        if let Some(provider) = provider {
             provider
                 .update_mode(session_id, mode)
                 .await
@@ -2736,8 +2742,10 @@ impl Agent {
 
         self.update_provider(provider, active_model_config, &session.id)
             .await?;
-        // Propagate session mode to the new provider
-        if let Some(provider) = self.provider.lock().await.as_ref() {
+        // Propagate session mode to the new provider. Clone the Arc out and
+        // drop the guard before awaiting - see update_goose_mode for why.
+        let provider = self.provider.lock().await.clone();
+        if let Some(provider) = provider {
             provider
                 .update_mode(&session.id, session.goose_mode)
                 .await

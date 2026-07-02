@@ -172,7 +172,7 @@ impl TokenCache {
             std::fs::create_dir_all(parent)?;
         }
         let contents = serde_json::to_string(data)?;
-        std::fs::write(&self.cache_path, contents)?;
+        crate::config::base::write_secrets_file(&self.cache_path, &contents)?;
         Ok(())
     }
 

@@ -61,7 +61,7 @@ const DEFAULT_LIST_LIMIT: usize = 10;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 struct ListSessionsParams {
-    /// Filter by session type: "user", "sub_agent", "scheduled", "hidden", "terminal", "gateway".
+    /// Filter by session type: "user", "sub_agent", "scheduled", "hidden", "terminal", "acp".
     /// If omitted, returns all session types.
     session_type: Option<String>,
     /// Maximum number of sessions to return (most recent first). Defaults to 10.

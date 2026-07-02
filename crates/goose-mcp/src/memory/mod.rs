@@ -153,12 +153,31 @@ impl MemoryServer {
         &self.instructions
     }
 
+    /// A memory category must be a single, ordinary path component - no
+    /// separators, `.`/`..`, or absolute-path prefixes. This is the only
+    /// thing standing between an LLM-controlled category string and an
+    /// arbitrary file read/write/delete via `get_memory_file`'s `join`.
+    fn validate_category(category: &str) -> io::Result<()> {
+        let mut components = std::path::Path::new(category).components();
+        match (components.next(), components.next()) {
+            (Some(std::path::Component::Normal(_)), None) => Ok(()),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Invalid memory category '{}': must not contain path separators or '.'/'..' ",
+                    category
+                ),
+            )),
+        }
+    }
+
     fn get_memory_file(
         &self,
         category: &str,
         is_global: bool,
         working_dir: Option<&PathBuf>,
-    ) -> PathBuf {
+    ) -> io::Result<PathBuf> {
+        Self::validate_category(category)?;
         let base_dir = if is_global {
             self.global_memory_dir.clone()
         } else {
@@ -168,7 +187,7 @@ impl MemoryServer {
                 .unwrap_or_else(|| PathBuf::from("."));
             local_base.join(".goose").join("memory")
         };
-        base_dir.join(format!("{}.txt", category))
+        Ok(base_dir.join(format!("{}.txt", category)))
     }
 
     pub fn retrieve_all(
@@ -211,7 +230,7 @@ impl MemoryServer {
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<()> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir);
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
 
         if let Some(parent) = memory_file_path.parent() {
             fs::create_dir_all(parent)?;
@@ -235,7 +254,7 @@ impl MemoryServer {
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<HashMap<String, Vec<String>>> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir);
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
         if !memory_file_path.exists() {
             return Ok(HashMap::new());
         }
@@ -276,7 +295,7 @@ impl MemoryServer {
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<()> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir);
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
         if !memory_file_path.exists() {
             return Ok(());
         }
@@ -303,7 +322,7 @@ impl MemoryServer {
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<()> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir);
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
         if memory_file_path.exists() {
             fs::remove_file(memory_file_path)?;
         }

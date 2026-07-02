@@ -228,7 +228,7 @@ pub fn create_custom_provider(
 
     let json_content = serde_json::to_string_pretty(&provider_config)?;
     let file_path = custom_providers_dir.join(format!("{}.json", id));
-    std::fs::write(file_path, json_content)?;
+    crate::config::base::write_secrets_file(&file_path, &json_content)?;
 
     Ok(provider_config)
 }
@@ -305,7 +305,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
 
         let file_path = custom_provider_file_path(&updated_config.name)?;
         let json_content = serde_json::to_string_pretty(&updated_config)?;
-        std::fs::write(file_path, json_content)?;
+        crate::config::base::write_secrets_file(&file_path, &json_content)?;
     }
     Ok(())
 }
@@ -327,12 +327,36 @@ pub fn remove_custom_provider(id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Custom-provider JSON files live in a plain directory (`custom_providers/`)
+/// that anything able to write into the user's config dir can populate -
+/// not just this app's own create/update API, which always sets
+/// `api_key_env` to `generate_api_key_name(id)`. Without this check, a
+/// dropped/synced file naming an unrelated, already-configured secret (e.g.
+/// `"api_key_env": "OPENAI_API_KEY"`) would have that real secret sent to
+/// whatever `base_url` the file declares.
+fn validate_custom_api_key_env(config: &DeclarativeProviderConfig) -> Result<()> {
+    if config.api_key_env.is_empty() {
+        return Ok(());
+    }
+    let expected = generate_api_key_name(&config.name);
+    if config.api_key_env != expected {
+        return Err(anyhow::anyhow!(
+            "Custom provider {:?} declares api_key_env {:?}, expected {:?} - refusing to load a config that references a secret it doesn't own",
+            config.name,
+            config.api_key_env,
+            expected
+        ));
+    }
+    Ok(())
+}
+
 pub fn load_provider(id: &str) -> Result<LoadedProvider> {
     let custom_file_path = custom_provider_file_path(id)?;
 
     if custom_file_path.exists() {
         let content = std::fs::read_to_string(&custom_file_path)?;
         let config = deserialize_provider_config(&content)?;
+        validate_custom_api_key_env(&config)?;
         return Ok(LoadedProvider {
             config,
             is_editable: true,
@@ -375,8 +399,11 @@ pub fn load_custom_providers(dir: &Path) -> Result<Vec<DeclarativeProviderConfig
         })
         .map(|path| {
             let content = std::fs::read_to_string(&path)?;
-            deserialize_provider_config(&content)
-                .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))
+            let config = deserialize_provider_config(&content)
+                .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))?;
+            validate_custom_api_key_env(&config)
+                .map_err(|e| anyhow::anyhow!("Failed to load {}: {}", path.display(), e))?;
+            Ok(config)
         })
         .collect()
 }
