@@ -35,7 +35,11 @@ fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
+/// Write `content` to `path` with owner-only (0600) permissions on Unix.
+/// Used for any file that may hold secrets (API keys, bearer tokens in
+/// custom HTTP headers, etc.) so it isn't left group/world-readable under
+/// a typical umask, matching the OS keyring's confidentiality guarantee.
+pub(crate) fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -652,11 +656,14 @@ impl Config {
         let temp_path = target_path.with_extension("tmp");
 
         {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&temp_path)?;
+            let mut open_options = OpenOptions::new();
+            open_options.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                open_options.mode(0o600);
+            }
+            let mut file = open_options.open(&temp_path)?;
 
             // Acquire an exclusive lock
             file.lock_exclusive()
