@@ -177,7 +177,7 @@ export default function UpdateSection() {
     });
 
     // Listen for updater events
-    window.electron.onUpdaterEvent((event) => {
+    const unsubscribeUpdaterEvents = window.electron.onUpdaterEvent((event) => {
       switch (event.event) {
         case 'checking-for-update':
           setUpdateStatus('checking');
@@ -245,6 +245,7 @@ export default function UpdateSection() {
     });
 
     return () => {
+      unsubscribeUpdaterEvents();
       if (progressTimeoutRef.current) {
         clearTimeout(progressTimeoutRef.current);
       }

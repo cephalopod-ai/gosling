@@ -15,6 +15,12 @@ export class SearchHighlighter {
   private currentMatchIndex: number = -1;
   private isScrollingProgrammatically: boolean = false;
   private highlightTimeout?: ReturnType<typeof setTimeout>;
+  private readonly onScroll = () => {
+    if (!this.isScrollingProgrammatically) {
+      // User is manually scrolling, update highlight positions
+      this.updateHighlightPositions();
+    }
+  };
 
   constructor(container: HTMLElement, onMatchesChange?: (count: number) => void) {
     this.container = container;
@@ -45,16 +51,7 @@ export class SearchHighlighter {
       this.scrollContainer.appendChild(this.overlay);
 
       // Add scroll end detection
-      this.scrollContainer.addEventListener(
-        'scroll',
-        () => {
-          if (!this.isScrollingProgrammatically) {
-            // User is manually scrolling, update highlight positions
-            this.updateHighlightPositions();
-          }
-        },
-        { passive: true }
-      );
+      this.scrollContainer.addEventListener('scroll', this.onScroll, { passive: true });
     } else {
       container.style.position = 'relative';
       container.appendChild(this.overlay);
@@ -283,6 +280,10 @@ export class SearchHighlighter {
     if (this.highlightTimeout) {
       clearTimeout(this.highlightTimeout);
     }
+    // A new highlighter is created per search on the long-lived chat
+    // viewport; leaving the listener behind would retain every destroyed
+    // instance and fire them all on each scroll.
+    this.scrollContainer?.removeEventListener('scroll', this.onScroll);
     this.resizeObserver.disconnect();
     this.mutationObserver.disconnect();
     this.overlay.remove();

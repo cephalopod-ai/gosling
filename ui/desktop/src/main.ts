@@ -1426,6 +1426,7 @@ const createChat = async (
     windowMap.delete(windowId);
 
     pendingInitialMessages.delete(windowId);
+    pendingInitialMessageNoAutoSubmit.delete(windowId);
     pendingDeepLinks.delete(windowId);
     reactReadyWindows.delete(windowId);
 
@@ -2141,11 +2142,13 @@ ipcMain.handle('check-ollama', async () => {
 
       ps.on('error', (error) => {
         console.error('Error executing ps command:', error);
+        grep.kill();
         resolve(false);
       });
 
       grep.on('error', (error) => {
         console.error('Error executing grep command:', error);
+        ps.kill();
         resolve(false);
       });
 
