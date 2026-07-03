@@ -19,7 +19,7 @@ pub enum ToolCallResult<T> {
     Error { error: String },
 }
 
-/// Custom deserializer for MessageContent that sanitizes Unicode Tags in text content
+/// Custom deserializer for MessageContent that sanitizes hidden prompt controls in text content.
 fn deserialize_sanitized_content<'de, D>(deserializer: D) -> Result<Vec<MessageContent>, D::Error>
 where
     D: Deserializer<'de>,
@@ -61,7 +61,7 @@ where
                     original = %original,
                     sanitized = %sanitized,
                     removed_count = original.len() - sanitized.len(),
-                    "Unicode Tags sanitized during Message deserialization"
+                    "Hidden prompt controls sanitized during Message deserialization"
                 );
                 text_content.text = sanitized;
             }
@@ -1451,8 +1451,7 @@ mod tests {
 
     #[test]
     fn test_message_deserialization_sanitizes_text_content() {
-        // Create a test string with Unicode Tags characters
-        let malicious_text = "Hello\u{E0041}\u{E0042}\u{E0043}world";
+        let malicious_text = "Hello\u{E0041}\u{E0042}\u{E0043}\u{202E}world";
         let malicious_json = format!(
             r#"{{
             "id": "test-id",
