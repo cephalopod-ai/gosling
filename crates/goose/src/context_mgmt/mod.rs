@@ -1,6 +1,5 @@
 use crate::config::Config;
-use crate::conversation::message::{ActionRequiredData, MessageMetadata};
-use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::message::{ActionRequiredData, Message, MessageContent, MessageMetadata};
 use crate::conversation::{merge_consecutive_messages, Conversation};
 use crate::prompt_template::render_template;
 use crate::providers::base::Provider;
@@ -174,7 +173,11 @@ pub async fn compact_messages(
 
     if let Some(user_msg) = preserved_user_message {
         if let Some(text) = extract_text(&user_msg) {
-            final_messages.push(Message::user().with_text(&text));
+            final_messages.push(
+                Message::user()
+                    .with_text(&text)
+                    .with_metadata(user_msg.metadata.clone()),
+            );
         }
     }
 
@@ -195,13 +198,29 @@ pub async fn check_if_compaction_needed(
         return Ok(false);
     }
 
-    let messages = conversation.messages();
     let config = Config::global();
     let threshold = threshold_override.unwrap_or_else(|| {
         config
             .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
             .unwrap_or(DEFAULT_COMPACTION_THRESHOLD)
     });
+
+    // Skip the tokenization pass entirely when auto-compact is disabled.
+    if threshold <= 0.0 || threshold >= 1.0 {
+        if threshold >= 1.0 {
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                tracing::warn!(
+                    "GOOSE_AUTO_COMPACT_THRESHOLD={} disables auto-compaction; use a value between 0 and 1 (or 0 to disable explicitly)",
+                    threshold
+                );
+            }
+        }
+        return Ok(false);
+    }
+
+    let messages = conversation.messages();
 
     // Sessions that never persisted a model config (imports, fresh ACP
     // sessions) would otherwise be checked against the 128k default limit
@@ -221,44 +240,25 @@ pub async fn check_if_compaction_needed(
         .await
         .unwrap_or_else(|_| model_config.context_limit());
 
-    let (current_tokens, _token_source) = match session.usage.total_tokens {
-        Some(tokens) => (tokens as usize, "session metadata"),
-        None => {
-            let token_counter = crate::token_counter::shared_token_counter()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
+    let token_counter = crate::token_counter::shared_token_counter()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
 
-            // One pass over the visible messages; counting each message as its
-            // own request added the per-request reply primer once per message.
-            // This still under-counts the system prompt and tool schemas,
-            // which are not available here.
-            (
-                token_counter.count_chat_tokens("", messages, &[]),
-                "estimated",
-            )
-        }
+    let estimated_tokens: usize = messages
+        .iter()
+        .filter(|m| m.is_agent_visible())
+        .map(|msg| token_counter.count_chat_tokens("", std::slice::from_ref(msg), &[]))
+        .sum();
+
+    // The stored value is recorded before tool responses are added, so it can miss
+    // large tool outputs. Use whichever count is higher.
+    let current_tokens = match session.usage.total_tokens {
+        Some(stored) => (stored as usize).max(estimated_tokens),
+        None => estimated_tokens,
     };
 
     let usage_ratio = current_tokens as f64 / context_limit as f64;
-
-    let needs_compaction = if threshold <= 0.0 || threshold >= 1.0 {
-        // Auto-compact is disabled. Zero is the documented way to disable;
-        // anything >= 1.0 is more likely a misconfiguration, so say so.
-        if threshold >= 1.0 {
-            static WARNED: std::sync::atomic::AtomicBool =
-                std::sync::atomic::AtomicBool::new(false);
-            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                tracing::warn!(
-                    "GOOSE_AUTO_COMPACT_THRESHOLD={} disables auto-compaction; use a value between 0 and 1 (or 0 to disable explicitly)",
-                    threshold
-                );
-            }
-        }
-        false
-    } else {
-        usage_ratio > threshold
-    };
-    Ok(needs_compaction)
+    Ok(usage_ratio > threshold)
 }
 
 fn filter_tool_responses(messages: &[Message], remove_percent: u32) -> Vec<&Message> {
@@ -935,5 +935,122 @@ mod tests {
         let result = tool_ids_to_summarize(&conversation, 2, 7);
         assert_eq!(result.len(), TOOLCALL_SUMMARIZATION_BATCH_SIZE);
         assert_eq!(result[0], "call0");
+    }
+
+    // compact_messages preserves the most recent user message across the compaction
+    // boundary so the agent keeps its current context. Agent-only messages (e.g. goal
+    // nudges) are valid user-role messages and must be found and preserved with their
+    // original visibility intact — not promoted to fully visible.
+    #[tokio::test]
+    async fn test_compact_messages_preserves_agent_only_user_message() {
+        let response_message = Message::assistant().with_text("<mock summary>");
+        let provider = MockProvider::new(response_message, 10_000);
+        let model_config = provider.config.clone();
+
+        let agent_only_msg = Message::user()
+            .with_text("Focus on completing the task.")
+            .with_visibility(false, true); // user_visible=false, agent_visible=true
+
+        let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+            agent_only_msg,
+        ]);
+
+        let (compacted, _usage) = compact_messages(
+            &provider,
+            &model_config,
+            "test-session-id",
+            &conversation,
+            false,
+        )
+        .await
+        .unwrap();
+
+        let preserved = compacted.messages().iter().find(|msg| {
+            msg.is_agent_visible()
+                && msg.content.iter().any(|c| {
+                    if let MessageContent::Text(text) = c {
+                        text.text.contains("Focus on completing")
+                    } else {
+                        false
+                    }
+                })
+        });
+
+        let preserved =
+            preserved.expect("Agent-only user message should be preserved through compaction");
+
+        assert!(
+            preserved.is_agent_visible(),
+            "Preserved message should be agent-visible"
+        );
+        assert!(
+            !preserved.is_user_visible(),
+            "Preserved message should remain agent-only (not user-visible) after compaction"
+        );
+    }
+
+    // session.usage.total_tokens is set at the time of the LLM call, before tool
+    // responses are appended. A large tool output can push the real context size
+    // above the compaction threshold without updating the stored count. The check
+    // must therefore use the higher of the two values to catch this case.
+    #[tokio::test]
+    async fn test_check_if_compaction_needed_uses_estimated_when_larger_than_stored() {
+        let response_message = Message::assistant().with_text("<mock summary>");
+        // context_limit=200, threshold=0.8 → triggers at 160 tokens
+        let provider = MockProvider::new(response_message, 200);
+
+        // Stored total (50) is below the 160-token threshold.
+        let session = crate::session::Session {
+            usage: Usage::new(Some(40), Some(10), Some(50)),
+            ..crate::session::Session::default()
+        };
+
+        // Two messages of ~100 tokens each → estimated ≈ 200 > 160.
+        let long_text: String = "hello world ".repeat(50);
+        let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text(&long_text),
+            Message::assistant().with_text(&long_text),
+        ]);
+
+        let needs_compact =
+            check_if_compaction_needed(&provider, &conversation, Some(0.8), &session)
+                .await
+                .unwrap();
+
+        assert!(
+            needs_compact,
+            "Compaction should be needed: estimated tokens exceed threshold \
+             even though stored tokens (50) are below it (160)"
+        );
+    }
+
+    // When auto-compact is disabled (threshold 0 or 1), check_if_compaction_needed
+    // must return false immediately without touching the tokenizer.
+    #[tokio::test]
+    async fn test_check_if_compaction_needed_returns_false_when_disabled() {
+        let provider = MockProvider::new(Message::assistant().with_text("x"), 1_000);
+        let session = crate::session::Session::default();
+        let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi"),
+        ]);
+
+        for disabled_threshold in [0.0, 1.0, 1.5] {
+            let result = check_if_compaction_needed(
+                &provider,
+                &conversation,
+                Some(disabled_threshold),
+                &session,
+            )
+            .await
+            .unwrap();
+
+            assert!(
+                !result,
+                "Compaction should be disabled for threshold {disabled_threshold}"
+            );
+        }
     }
 }

@@ -1630,28 +1630,18 @@ impl Agent {
                 );
 
                 let compact_model_config = self.model_config_for_session(&session_config.id).await?;
-                match compact_messages(
-                    self.provider().await?.as_ref(),
-                    &compact_model_config,
-                    &session_config.id,
-                    &conversation_to_compact,
-                    false,
-                )
-                .await
+                match self
+                    .perform_compact(&compact_model_config, &session_config, &conversation_to_compact)
+                    .await
                 {
-                    Ok((compacted_conversation, summarization_usage)) => {
-                        session_manager.replace_conversation(&session_config.id, &compacted_conversation).await?;
-                        self.update_session_metrics(&session_config.id, &summarization_usage, true).await?;
-
+                    Ok(compacted_conversation) => {
                         yield AgentEvent::HistoryReplaced(compacted_conversation.clone());
-
                         yield AgentEvent::Message(
                             Message::assistant().with_system_notification(
                                 SystemNotificationType::InlineMessage,
                                 "Compaction complete",
                             )
                         );
-
                         compacted_conversation
                     }
                     Err(e) => {
@@ -1670,6 +1660,29 @@ impl Agent {
                 yield event?;
             }
         }))
+    }
+
+    async fn perform_compact(
+        &self,
+        model_config: &goose_providers::model::ModelConfig,
+        session_config: &SessionConfig,
+        conversation: &Conversation,
+    ) -> Result<Conversation> {
+        let (compacted_conversation, usage) = compact_messages(
+            self.provider().await?.as_ref(),
+            model_config,
+            &session_config.id,
+            conversation,
+            false,
+        )
+        .await?;
+        let session_manager = self.config.session_manager.clone();
+        session_manager
+            .replace_conversation(&session_config.id, &compacted_conversation)
+            .await?;
+        self.update_session_metrics(&session_config.id, &usage, true)
+            .await?;
+        Ok(compacted_conversation)
     }
 
     async fn reply_internal(
@@ -1805,6 +1818,64 @@ impl Agent {
                     last_assistant_text = MAX_TURNS_MESSAGE.to_string();
                     yield AgentEvent::Message(Message::assistant().with_text(last_assistant_text.clone()));
                     break;
+                }
+
+                // Proactively compact if the conversation has grown past the threshold since
+                // the check in reply(). This catches growth during tool loops, including
+                // long approval-pending waits.
+                // Reload the session to get current token counts — the stale snapshot
+                // passed into reply_internal won't reflect updates from update_session_metrics.
+                let current_session_for_compact = session_manager.get_session(&session_config.id, false).await?;
+                if check_if_compaction_needed(
+                    self.provider().await?.as_ref(),
+                    &conversation,
+                    None,
+                    &current_session_for_compact,
+                )
+                .await?
+                {
+                    let config = Config::global();
+                    let threshold = config
+                        .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+                        .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
+                    let threshold_percentage = (threshold * 100.0) as u32;
+
+                    yield AgentEvent::Message(
+                        Message::assistant().with_system_notification(
+                            SystemNotificationType::InlineMessage,
+                            format!(
+                                "Exceeded auto-compact threshold of {}%. Performing auto-compaction...",
+                                threshold_percentage
+                            ),
+                        )
+                    );
+                    yield AgentEvent::Message(
+                        Message::assistant().with_system_notification(
+                            SystemNotificationType::ThinkingMessage,
+                            COMPACTION_THINKING_TEXT,
+                        )
+                    );
+
+                    match self.perform_compact(&model_config, &session_config, &conversation).await {
+                        Ok(compacted_conversation) => {
+                            conversation = compacted_conversation;
+                            yield AgentEvent::HistoryReplaced(conversation.clone());
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    "Compaction complete",
+                                )
+                            );
+                        }
+                        Err(e) => {
+                            yield AgentEvent::Message(
+                                Message::assistant().with_text(
+                                    format!("Ran into this error trying to compact: {e}.\n\nPlease try again or create a new session")
+                                )
+                            );
+                            break;
+                        }
+                    }
                 }
 
                 let conversation_with_moim = super::moim::inject_moim(
@@ -2243,18 +2314,11 @@ impl Agent {
                                 )
                             );
 
-                            match compact_messages(
-                                self.provider().await?.as_ref(),
-                                &model_config,
-                                &session_config.id,
-                                &conversation,
-                                false,
-                            )
-                            .await
+                            match self
+                                .perform_compact(&model_config, &session_config, &conversation)
+                                .await
                             {
-                                Ok((compacted_conversation, usage)) => {
-                                    session_manager.replace_conversation(&session_config.id, &compacted_conversation).await?;
-                                    self.update_session_metrics(&session_config.id, &usage, true).await?;
+                                Ok(compacted_conversation) => {
                                     conversation = compacted_conversation;
                                     did_recovery_compact_this_iteration = true;
                                     yield AgentEvent::HistoryReplaced(conversation.clone());

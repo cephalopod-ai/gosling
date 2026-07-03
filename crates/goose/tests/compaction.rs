@@ -14,6 +14,7 @@ use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use rmcp::model::Tool;
+use serial_test::serial;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -240,6 +241,153 @@ async fn setup_test_session(
     Ok(session)
 }
 
+/// Helper: Set up a session with a specific token usage (for threshold tests).
+async fn setup_test_session_with_usage(
+    agent: &Agent,
+    temp_dir: &TempDir,
+    session_name: &str,
+    messages: Vec<Message>,
+    usage: Usage,
+) -> Result<Session> {
+    let session = agent
+        .config
+        .session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            session_name.to_string(),
+            SessionType::Hidden,
+            GooseMode::default(),
+        )
+        .await?;
+
+    let conversation = Conversation::new_unvalidated(messages);
+    agent
+        .config
+        .session_manager
+        .replace_conversation(&session.id, &conversation)
+        .await?;
+
+    agent
+        .config
+        .session_manager
+        .update(&session.id)
+        .usage(usage)
+        .accumulated_usage(usage)
+        .apply()
+        .await?;
+
+    Ok(session)
+}
+
+/// Mock provider for proactive threshold-based compaction tests (Case 1 and Case 2).
+///
+/// - Compaction calls (containing "summarize") return a short summary and mark compaction seen.
+/// - Regular calls before compaction return `first_call_total_tokens`; after compaction return low tokens.
+/// - Using has_seen_compaction (rather than a raw call counter) makes the provider resilient to
+///   concurrent provider calls like session naming that would otherwise skew the counter.
+struct ThresholdCompactionProvider {
+    has_seen_compaction: Arc<AtomicBool>,
+    first_call_total_tokens: i32,
+}
+
+impl ThresholdCompactionProvider {
+    /// Case 1: session is already over threshold, so compaction fires before any LLM call.
+    fn for_case1() -> Self {
+        Self {
+            has_seen_compaction: Arc::new(AtomicBool::new(false)),
+            first_call_total_tokens: 5_000,
+        }
+    }
+
+    /// Case 2: first regular call returns high usage, crossing the threshold inside the loop.
+    fn for_case2() -> Self {
+        Self {
+            has_seen_compaction: Arc::new(AtomicBool::new(false)),
+            first_call_total_tokens: 110_000, // > 0.8 * 128_000 = 102_400
+        }
+    }
+}
+
+#[async_trait]
+impl Provider for ThresholdCompactionProvider {
+    async fn stream(
+        &self,
+        _model_config: &ModelConfig,
+        _system_prompt: &str,
+        messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        let is_compaction = messages.iter().any(|msg| {
+            msg.content.iter().any(|c| {
+                if let MessageContent::Text(text) = c {
+                    text.text.to_lowercase().contains("summarize")
+                } else {
+                    false
+                }
+            })
+        });
+
+        if is_compaction {
+            self.has_seen_compaction.store(true, Ordering::SeqCst);
+            return Ok(stream_from_single_message(
+                Message::assistant().with_text("<mock summary of conversation>"),
+                ProviderUsage::new(
+                    "mock-threshold".to_string(),
+                    Usage::new(Some(2_000), Some(200), Some(2_200)),
+                ),
+            ));
+        }
+
+        let total = if self.has_seen_compaction.load(Ordering::SeqCst) {
+            5_000
+        } else {
+            self.first_call_total_tokens
+        };
+        let output = 100i32;
+        let input = total - output;
+
+        Ok(stream_from_single_message(
+            Message::assistant().with_text("This is a mock response."),
+            ProviderUsage::new(
+                "mock-threshold".to_string(),
+                Usage::new(Some(input), Some(output), Some(total)),
+            ),
+        ))
+    }
+
+    fn get_name(&self) -> &str {
+        "mock-threshold"
+    }
+}
+
+impl goose::providers::base::ProviderDescriptor for ThresholdCompactionProvider {
+    fn metadata() -> ProviderMetadata {
+        ProviderMetadata {
+            name: "mock-threshold".to_string(),
+            display_name: "Mock Threshold Provider".to_string(),
+            description: "Mock provider for threshold compaction testing".to_string(),
+            default_model: "mock-model".to_string(),
+            known_models: vec![],
+            model_doc_link: "".to_string(),
+            config_keys: vec![],
+            setup_steps: vec![],
+            model_selection_hint: None,
+            fast_model: None,
+        }
+    }
+}
+
+impl ProviderDef for ThresholdCompactionProvider {
+    type Provider = Self;
+
+    fn from_env(
+        _extensions: Vec<goose::config::ExtensionConfig>,
+        _tls_config: Option<goose::providers::api_client::TlsConfig>,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
+        Box::pin(async { Ok(Self::for_case1()) })
+    }
+}
+
 /// Helper: Assert conversation has been compacted with proper message visibility
 fn assert_conversation_compacted(conversation: &Conversation) {
     let messages = conversation.messages();
@@ -311,13 +459,13 @@ fn assert_conversation_compacted(conversation: &Conversation) {
     }
 
     // Any messages AFTER the continuation (e.g., preserved recent user message)
-    // should be fully visible to both agent and user
+    // must be agent-visible; they may be agent-only (e.g. preserved goal nudges).
     let continuation_end = summary_index + 2;
     for (idx, msg) in messages.iter().enumerate() {
         if idx >= continuation_end {
             assert!(
-                msg.is_agent_visible() && msg.is_user_visible(),
-                "Message after compaction at index {} should be fully visible",
+                msg.is_agent_visible(),
+                "Message after compaction at index {} should be agent visible",
                 idx
             );
         }
@@ -325,6 +473,7 @@ fn assert_conversation_compacted(conversation: &Conversation) {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_manual_compaction_updates_token_counts_and_conversation() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let agent = Agent::new();
@@ -416,6 +565,7 @@ async fn test_manual_compaction_updates_token_counts_and_conversation() -> Resul
 }
 
 #[tokio::test]
+#[serial]
 async fn test_auto_compaction_during_reply() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let agent = Agent::new();
@@ -574,6 +724,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_context_limit_recovery_compaction() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let agent = Agent::new();
@@ -743,6 +894,167 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
         .conversation
         .expect("Session should have conversation");
     assert_conversation_compacted(&updated_conversation);
+
+    Ok(())
+}
+
+/// Case 1: check_if_compaction_needed fires in reply() before the first LLM call.
+/// The session token count is already above the threshold when reply() is called.
+#[tokio::test]
+#[serial]
+async fn test_compaction_fires_before_first_llm_call() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let agent = Agent::new();
+
+    let messages = vec![
+        Message::user().with_text("Hello"),
+        Message::assistant().with_text("Hi there"),
+    ];
+
+    // total_tokens = 110_000 > 0.8 * 128_000 = 102_400 — above threshold
+    let session = setup_test_session_with_usage(
+        &agent,
+        &temp_dir,
+        "case1-compaction-test",
+        messages,
+        Usage::new(Some(109_900), Some(100), Some(110_000)),
+    )
+    .await?;
+
+    let provider = Arc::new(ThresholdCompactionProvider::for_case1());
+    agent
+        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .await?;
+
+    let session_config = SessionConfig {
+        id: session.id.clone(),
+        max_turns: None,
+    };
+
+    let reply_stream = agent
+        .reply(Message::user().with_text("Continue"), session_config, None)
+        .await?;
+    tokio::pin!(reply_stream);
+
+    let mut regular_usage_before_compaction = 0u32;
+    let mut compaction_occurred = false;
+
+    while let Some(event_result) = reply_stream.next().await {
+        match event_result? {
+            AgentEvent::HistoryReplaced(_) => {
+                compaction_occurred = true;
+            }
+            AgentEvent::Usage(_) => {
+                if !compaction_occurred {
+                    regular_usage_before_compaction += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    assert!(
+        compaction_occurred,
+        "Compaction should have occurred (Case 1)"
+    );
+    assert_eq!(
+        regular_usage_before_compaction, 0,
+        "No regular LLM call should precede compaction in Case 1 — compaction fires before reply_internal"
+    );
+
+    let updated = agent
+        .config
+        .session_manager
+        .get_session(&session.id, true)
+        .await?;
+    assert_conversation_compacted(&updated.conversation.expect("should have conversation"));
+
+    Ok(())
+}
+
+/// Case 2: check_if_compaction_needed fires inside reply_internal's loop after a reply round
+/// pushes the session token count above the threshold.
+/// A goal is set on the agent so the loop iterates a second time after the first text reply,
+/// giving the in-loop check a chance to observe the elevated token count.
+#[tokio::test]
+#[serial]
+async fn test_compaction_fires_inside_reply_loop() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let agent = Agent::new();
+
+    // A goal forces the loop to run a second iteration after the first LLM reply.
+    agent
+        .set_goal(Some("Test goal for case 2 compaction".to_string()))
+        .await;
+
+    let messages = vec![
+        Message::user().with_text("Hello"),
+        Message::assistant().with_text("Hi there"),
+    ];
+
+    // total_tokens = 50_000 — below threshold so Case 1 check does not fire
+    let session = setup_test_session_with_usage(
+        &agent,
+        &temp_dir,
+        "case2-compaction-test",
+        messages,
+        Usage::new(Some(49_900), Some(100), Some(50_000)),
+    )
+    .await?;
+
+    // First regular call reports 110_000 total tokens, crossing the threshold.
+    let provider = Arc::new(ThresholdCompactionProvider::for_case2());
+    agent
+        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .await?;
+
+    let session_config = SessionConfig {
+        id: session.id.clone(),
+        max_turns: None,
+    };
+
+    let reply_stream = agent
+        .reply(
+            Message::user().with_text("Work on the goal"),
+            session_config,
+            None,
+        )
+        .await?;
+    tokio::pin!(reply_stream);
+
+    let mut regular_usage_before_compaction = 0u32;
+    let mut compaction_occurred = false;
+
+    while let Some(event_result) = reply_stream.next().await {
+        match event_result? {
+            AgentEvent::HistoryReplaced(_) => {
+                compaction_occurred = true;
+            }
+            AgentEvent::Usage(_) => {
+                if !compaction_occurred {
+                    regular_usage_before_compaction += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    assert!(
+        compaction_occurred,
+        "Compaction should have occurred (Case 2)"
+    );
+    assert!(
+        regular_usage_before_compaction >= 1,
+        "At least one regular LLM call should precede in-loop compaction in Case 2. Got: {}",
+        regular_usage_before_compaction
+    );
+
+    let updated = agent
+        .config
+        .session_manager
+        .get_session(&session.id, true)
+        .await?;
+    assert_conversation_compacted(&updated.conversation.expect("should have conversation"));
 
     Ok(())
 }
