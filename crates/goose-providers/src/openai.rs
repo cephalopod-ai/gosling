@@ -132,6 +132,10 @@ pub struct OpenAiProvider {
     custom_headers: Option<HashMap<String, String>>,
     supports_streaming: bool,
     name: String,
+    /// Canonical catalog id for model-metadata/filtering lookups when it differs
+    /// from `name` (e.g. a custom provider's `catalog_provider_id`). Falls back
+    /// to `name` when None.
+    canonical_provider_id: Option<String>,
     custom_models: Option<Vec<String>>,
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
@@ -153,6 +157,7 @@ pub struct OpenAiProviderBuilder {
     custom_headers: Option<HashMap<String, String>>,
     supports_streaming: bool,
     name: String,
+    canonical_provider_id: Option<String>,
     custom_models: Option<Vec<String>>,
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
@@ -169,6 +174,7 @@ impl OpenAiProviderBuilder {
             custom_headers: None,
             supports_streaming: true,
             name: OPEN_AI_PROVIDER_NAME.to_string(),
+            canonical_provider_id: None,
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
@@ -224,6 +230,11 @@ impl OpenAiProviderBuilder {
         self
     }
 
+    pub fn canonical_provider_id(mut self, canonical_provider_id: Option<String>) -> Self {
+        self.canonical_provider_id = canonical_provider_id;
+        self
+    }
+
     pub fn custom_models(mut self, custom_models: Option<Vec<String>>) -> Self {
         self.custom_models = custom_models;
         self
@@ -253,6 +264,7 @@ impl OpenAiProviderBuilder {
             custom_headers: self.custom_headers,
             supports_streaming: self.supports_streaming,
             name: self.name,
+            canonical_provider_id: self.canonical_provider_id,
             custom_models: self.custom_models,
             dynamic_models: self.dynamic_models,
             skip_canonical_filtering: self.skip_canonical_filtering,
@@ -273,6 +285,7 @@ impl OpenAiProvider {
             custom_headers: None,
             supports_streaming: true,
             name: OPEN_AI_PROVIDER_NAME.to_string(),
+            canonical_provider_id: None,
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
@@ -525,6 +538,10 @@ impl ProviderDescriptor for OpenAiProvider {
 impl Provider for OpenAiProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    fn canonical_provider_id(&self) -> &str {
+        self.canonical_provider_id.as_deref().unwrap_or(&self.name)
     }
 
     fn skip_canonical_filtering(&self) -> bool {
@@ -788,6 +805,7 @@ pub fn from_declarative_config(
         .custom_headers(config.headers)
         .supports_streaming(config.supports_streaming.unwrap_or(true))
         .name(config.name.clone())
+        .canonical_provider_id(config.catalog_provider_id.clone())
         .custom_models(custom_models)
         .dynamic_models(config.dynamic_models)
         .skip_canonical_filtering(config.skip_canonical_filtering)
@@ -845,12 +863,35 @@ mod tests {
             custom_headers: None,
             supports_streaming: true,
             name: name.to_string(),
+            canonical_provider_id: None,
             custom_models: None,
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    #[test]
+    fn canonical_provider_id_prefers_catalog_id_over_name() {
+        // A custom OpenAI-compatible provider keeps its prefixed name for
+        // identity but resolves canonical metadata against catalog_provider_id.
+        let provider = OpenAiProviderBuilder::new(
+            ApiClient::new_with_tls("http://localhost".to_string(), AuthMethod::NoAuth, None)
+                .unwrap(),
+        )
+        .name("custom_cortecs")
+        .canonical_provider_id(Some("cortecs".to_string()))
+        .build();
+
+        assert_eq!(provider.get_name(), "custom_cortecs");
+        assert_eq!(provider.canonical_provider_id(), "cortecs");
+    }
+
+    #[test]
+    fn canonical_provider_id_falls_back_to_name() {
+        let provider = make_provider("custom_thing");
+        assert_eq!(provider.canonical_provider_id(), "custom_thing");
     }
 
     #[test]
