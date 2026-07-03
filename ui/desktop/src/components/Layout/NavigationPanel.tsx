@@ -167,7 +167,6 @@ interface SessionRowProps {
   active: boolean;
   status: SessionStatus | undefined;
   onClick: () => void;
-  onRenamed: () => void;
   onRenameRequested: (sessionId: string) => void;
   onArchiveRequested: (session: SessionListItem) => void;
   onDeleteRequested: (session: SessionListItem) => void;
@@ -179,7 +178,6 @@ const SessionRow: React.FC<SessionRowProps> = ({
   active,
   status,
   onClick,
-  onRenamed,
   onRenameRequested,
   onArchiveRequested,
   onDeleteRequested,
@@ -209,7 +207,6 @@ const SessionRow: React.FC<SessionRowProps> = ({
               detail: { sessionId: session.id, newName, userInitiated: true },
             })
           );
-          onRenamed();
         }}
         placeholder={intl.formatMessage(i18n.untitledSession)}
         disabled={isStreaming}
@@ -477,7 +474,6 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
                     clearUnread(session.id);
                     handleSessionClick(session.id);
                   }}
-                  onRenamed={fetchSessions}
                   onRenameRequested={(sessionId) =>
                     setRenameRequest((prev) => ({
                       sessionId,

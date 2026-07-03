@@ -30,6 +30,10 @@ function mergeWithEmptyLocals(
   return [...emptyLocals, ...listed].slice(0, MAX_RECENT_SESSIONS);
 }
 
+export function activeSessionsOnly(sessions: SessionListItem[]): SessionListItem[] {
+  return sessions.filter((session) => !session.archivedAt);
+}
+
 export function sessionToListItem(s: Session): SessionListItem {
   return {
     id: s.id,
@@ -68,7 +72,9 @@ export function useNavigationSessions() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const sessions = await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active');
+      const sessions = activeSessionsOnly(
+        await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active')
+      );
       setRecentSessions(sessions);
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
@@ -111,7 +117,9 @@ export function useNavigationSessions() {
       const pollForUpdates = async () => {
         pollCount++;
         try {
-          const listed = await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active');
+          const listed = activeSessionsOnly(
+            await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active')
+          );
           setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
         } catch (error) {
           console.error('Failed to poll sessions:', error);
@@ -150,7 +158,9 @@ export function useNavigationSessions() {
       acpListRecentSessions(MAX_RECENT_SESSIONS, 'active')
         .then((sessions) => {
           if (version !== fetchVersion) return;
-          setRecentSessions(sessions.filter((session) => session.id !== sessionId));
+          setRecentSessions(
+            activeSessionsOnly(sessions).filter((session) => session.id !== sessionId)
+          );
         })
         .catch((error) => console.error('Failed to fetch sessions:', error));
     };
@@ -180,9 +190,8 @@ export function useNavigationSessions() {
     };
 
     const handleSessionUnarchived = (event: Event) => {
-      const { session } = (
-        event as CustomEvent<{ sessionId: string; session?: SessionListItem }>
-      ).detail;
+      const { session } = (event as CustomEvent<{ sessionId: string; session?: SessionListItem }>)
+        .detail;
 
       if (session) {
         setRecentSessions((prev) => prependUnique(prev, session));

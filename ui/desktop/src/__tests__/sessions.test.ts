@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getSessionDisplayName, shouldShowNewChatTitle } from '../sessions';
-import { prependUnique } from '../hooks/useNavigationSessions';
+import { activeSessionsOnly, prependUnique } from '../hooks/useNavigationSessions';
 import type { SessionListItem } from '../acp/sessions';
 import type { Session } from '../types/session';
 
@@ -85,5 +85,16 @@ describe('prependUnique', () => {
     const result = prependUnique(prev, makeListItem({ id: 'new' }));
     expect(result).toHaveLength(25);
     expect(result[0].id).toBe('new');
+  });
+});
+
+describe('activeSessionsOnly', () => {
+  it('filters archived sessions out of active sidebar results', () => {
+    const result = activeSessionsOnly([
+      makeListItem({ id: 'active' }),
+      makeListItem({ id: 'archived', archivedAt: '2026-07-03T12:00:00Z' }),
+    ]);
+
+    expect(result.map((session) => session.id)).toEqual(['active']);
   });
 });

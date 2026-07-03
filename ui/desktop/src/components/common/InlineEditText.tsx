@@ -58,6 +58,7 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const originalValue = useRef(value);
+  const lastEditTokenRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     if (!isEditing) {
@@ -81,7 +82,8 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
   }, [disabled, isSaving, value, onEditStart]);
 
   useEffect(() => {
-    if (editToken !== undefined) {
+    if (editToken !== undefined && editToken !== lastEditTokenRef.current) {
+      lastEditTokenRef.current = editToken;
       handleStartEdit();
     }
   }, [editToken, handleStartEdit]);
@@ -205,7 +207,13 @@ export const InlineEditText: React.FC<InlineEditTextProps> = ({
       `}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
-      title={disabled ? '' : singleClickEdit ? intl.formatMessage(i18n.clickToEdit) : intl.formatMessage(i18n.doubleClickToEdit)}
+      title={
+        disabled
+          ? ''
+          : singleClickEdit
+            ? intl.formatMessage(i18n.clickToEdit)
+            : intl.formatMessage(i18n.doubleClickToEdit)
+      }
     >
       {value || <span className="text-text-subtle italic">{resolvedPlaceholder}</span>}
     </div>
