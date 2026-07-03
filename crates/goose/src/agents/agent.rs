@@ -33,6 +33,7 @@ use crate::conversation::message::{
     SystemNotificationType, ToolRequest,
 };
 use crate::conversation::{debug_conversation_fix, fix_conversation, Conversation};
+use crate::hints::SubdirectoryHintTracker;
 use crate::mcp_utils::ToolResult;
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
@@ -232,6 +233,7 @@ pub struct Agent {
     pub(super) frontend_tools: Mutex<HashMap<String, FrontendTool>>,
     pub(super) frontend_instructions: Mutex<Option<String>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
+    pub(super) subdirectory_hint_tracker: Mutex<SubdirectoryHintTracker>,
     pub tool_confirmation_router: ToolConfirmationRouter,
     pub(super) tool_result_tx: mpsc::Sender<(String, ToolResult<CallToolResult>)>,
     pub(super) tool_result_rx: ToolResultReceiver,
@@ -355,6 +357,7 @@ impl Agent {
             frontend_tools: Mutex::new(HashMap::new()),
             frontend_instructions: Mutex::new(None),
             prompt_manager: Mutex::new(PromptManager::new()),
+            subdirectory_hint_tracker: Mutex::new(SubdirectoryHintTracker::new()),
             tool_confirmation_router: ToolConfirmationRouter::new(),
             tool_result_tx: tool_tx,
             tool_result_rx: Arc::new(Mutex::new(tool_rx)),
@@ -964,7 +967,7 @@ impl Agent {
         });
         tracing::Span::current().record("input", tracing::field::display(&input_summary));
 
-        self.prompt_manager
+        self.subdirectory_hint_tracker
             .lock()
             .await
             .record_tool_arguments(&tool_call.arguments, &session.working_dir);
@@ -2407,14 +2410,14 @@ impl Agent {
                 }
 
                 {
-                    let has_new_hints = self
-                        .prompt_manager
+                    let hint_text = self
+                        .subdirectory_hint_tracker
                         .lock()
                         .await
-                        .load_subdirectory_hints(&working_dir);
-                    if has_new_hints && !tools_updated {
-                        (tools, toolshim_tools, system_prompt, _) =
-                            self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
+                        .collect_new_hints(&working_dir);
+                    if let Some(hints) = hint_text {
+                        messages_to_add
+                            .push(Message::user().with_text(hints).with_visibility(false, true));
                     }
                 }
 

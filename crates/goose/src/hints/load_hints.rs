@@ -93,6 +93,24 @@ impl SubdirectoryHintTracker {
         }
         results
     }
+
+    /// Returns hint text for directories newly touched since the last call,
+    /// joined into a single block, or None if nothing new was discovered.
+    /// Intended to be injected as an agent-visible tail message so the system
+    /// prompt stays stable.
+    pub fn collect_new_hints(&mut self, working_dir: &Path) -> Option<String> {
+        let new_hints = self.load_new_hints(working_dir);
+        if new_hints.is_empty() {
+            return None;
+        }
+        Some(
+            new_hints
+                .into_iter()
+                .map(|(_, content)| content)
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        )
+    }
 }
 
 fn resolve_to_parent_dir(token: &str, working_dir: &Path) -> Option<PathBuf> {
