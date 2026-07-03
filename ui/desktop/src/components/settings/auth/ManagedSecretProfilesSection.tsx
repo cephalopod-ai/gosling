@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, Globe, KeyRound, Plus, Server, ShieldEllipsis, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { defineMessages, useIntl } from '../../../i18n';
-import type { ManagedSecretEntry, ManagedSecretProfile } from '../../../utils/settings';
+import { Select } from '../../ui/Select';
+import type {
+  ManagedSecretEntry,
+  ManagedSecretProfile,
+  ManagedSecretProfileUse,
+} from '../../../utils/settings';
 import { errorMessage } from '../../../utils/conversionUtils';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
@@ -41,6 +46,22 @@ const i18n = defineMessages({
   website: {
     id: 'managedSecrets.website',
     defaultMessage: 'Website or service',
+  },
+  useFor: {
+    id: 'managedSecrets.useFor',
+    defaultMessage: 'Use for',
+  },
+  useForAuthentication: {
+    id: 'managedSecrets.useForAuthentication',
+    defaultMessage: 'Authentication',
+  },
+  useForConfig: {
+    id: 'managedSecrets.useForConfig',
+    defaultMessage: 'Project config',
+  },
+  useForBoth: {
+    id: 'managedSecrets.useForBoth',
+    defaultMessage: 'Authentication + config',
   },
   note: {
     id: 'managedSecrets.note',
@@ -118,6 +139,13 @@ type Template = ManagedSecretProfile['template'];
 
 const SAVE_DEBOUNCE_MS = 300;
 
+function normalizeProfile(profile: ManagedSecretProfile): ManagedSecretProfile {
+  return {
+    ...profile,
+    useFor: profile.useFor ?? 'both',
+  };
+}
+
 function createId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -142,6 +170,7 @@ function createProfile(template: Template, intl: ReturnType<typeof useIntl>): Ma
         website: '',
         note: intl.formatMessage(i18n.vpsNote),
         template,
+        useFor: 'both',
         entries: [
           createEntry('VPS_SERVER_URL'),
           createEntry('VPS_SERVER_LOGIN'),
@@ -155,6 +184,7 @@ function createProfile(template: Template, intl: ReturnType<typeof useIntl>): Ma
         website: '',
         note: intl.formatMessage(i18n.supabaseNote),
         template,
+        useFor: 'both',
         entries: [
           createEntry('SUPABASE_PROJECT_URL'),
           createEntry('SUPABASE_PROJECT_REF'),
@@ -171,6 +201,7 @@ function createProfile(template: Template, intl: ReturnType<typeof useIntl>): Ma
         website: '',
         note: intl.formatMessage(i18n.customNote),
         template: 'custom',
+        useFor: 'both',
         entries: [createEntry()],
       };
   }
@@ -200,6 +231,18 @@ function templateIcon(template: Template) {
   }
 }
 
+function useForLabel(useFor: ManagedSecretProfileUse, intl: ReturnType<typeof useIntl>) {
+  switch (useFor) {
+    case 'authentication':
+      return intl.formatMessage(i18n.useForAuthentication);
+    case 'config':
+      return intl.formatMessage(i18n.useForConfig);
+    case 'both':
+    default:
+      return intl.formatMessage(i18n.useForBoth);
+  }
+}
+
 export default function ManagedSecretProfilesSection() {
   const intl = useIntl();
   const [profiles, setProfiles] = useState<ManagedSecretProfile[]>([]);
@@ -218,7 +261,7 @@ export default function ManagedSecretProfilesSection() {
         if (cancelled) {
           return;
         }
-        setProfiles(storedProfiles ?? []);
+        setProfiles((storedProfiles ?? []).map(normalizeProfile));
         hasLoaded.current = true;
       })
       .catch(() => {
@@ -401,7 +444,7 @@ export default function ManagedSecretProfilesSection() {
                     </Button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-3">
                     <div className="space-y-2">
                       <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
                         {intl.formatMessage(i18n.profileName)}
@@ -433,6 +476,45 @@ export default function ManagedSecretProfilesSection() {
                           className="pl-9"
                         />
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                        {intl.formatMessage(i18n.useFor)}
+                      </label>
+                      <Select
+                        value={{
+                          value: profile.useFor,
+                          label: useForLabel(profile.useFor, intl),
+                        }}
+                        onChange={(option: unknown) => {
+                          const selectedOption = option as {
+                            value: ManagedSecretProfileUse;
+                            label: string;
+                          } | null;
+                          if (!selectedOption) {
+                            return;
+                          }
+                          updateProfile(profile.id, (current) => ({
+                            ...current,
+                            useFor: selectedOption.value,
+                          }));
+                        }}
+                        options={[
+                          {
+                            value: 'authentication',
+                            label: intl.formatMessage(i18n.useForAuthentication),
+                          },
+                          {
+                            value: 'config',
+                            label: intl.formatMessage(i18n.useForConfig),
+                          },
+                          {
+                            value: 'both',
+                            label: intl.formatMessage(i18n.useForBoth),
+                          },
+                        ]}
+                        isSearchable={false}
+                      />
                     </div>
                   </div>
 

@@ -11,12 +11,15 @@ export interface ManagedSecretEntry {
   value: string;
 }
 
+export type ManagedSecretProfileUse = 'authentication' | 'config' | 'both';
+
 export interface ManagedSecretProfile {
   id: string;
   name: string;
   website: string;
   note: string;
   template: 'custom' | 'vps' | 'supabase';
+  useFor: ManagedSecretProfileUse;
   entries: ManagedSecretEntry[];
 }
 

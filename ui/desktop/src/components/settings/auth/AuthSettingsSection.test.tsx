@@ -147,6 +147,7 @@ describe('AuthSettingsSection', () => {
     expect(screen.getByDisplayValue('VPS_SERVER_URL')).toBeInTheDocument();
     expect(screen.getByDisplayValue('VPS_SERVER_LOGIN')).toBeInTheDocument();
     expect(screen.getByDisplayValue('VPS_SERVER_PASSWORD')).toBeInTheDocument();
+    expect(screen.getByText('Authentication + config')).toBeInTheDocument();
     expect(
       screen.getByDisplayValue('This is the password and login to manage the VPS server.')
     ).toBeInTheDocument();
@@ -158,6 +159,7 @@ describe('AuthSettingsSection', () => {
           expect.objectContaining({
             name: 'VPS Server',
             template: 'vps',
+            useFor: 'both',
             entries: expect.arrayContaining([
               expect.objectContaining({ key: 'VPS_SERVER_URL' }),
               expect.objectContaining({ key: 'VPS_SERVER_LOGIN' }),
@@ -184,6 +186,7 @@ describe('AuthSettingsSection', () => {
     expect(screen.getByDisplayValue('SUPABASE_ANON_KEY')).toBeInTheDocument();
     expect(screen.getByDisplayValue('SUPABASE_SERVICE_ROLE_KEY')).toBeInTheDocument();
     expect(screen.getByDisplayValue('SUPABASE_DB_PASSWORD')).toBeInTheDocument();
+    expect(screen.getByText('Authentication + config')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(mockedSetSetting).toHaveBeenCalledWith(
@@ -192,6 +195,7 @@ describe('AuthSettingsSection', () => {
           expect.objectContaining({
             name: 'Supabase Project',
             template: 'supabase',
+            useFor: 'both',
             entries: expect.arrayContaining([
               expect.objectContaining({ key: 'SUPABASE_PROJECT_URL' }),
               expect.objectContaining({ key: 'SUPABASE_PROJECT_REF' }),
