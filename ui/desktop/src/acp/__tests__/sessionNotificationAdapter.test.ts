@@ -414,6 +414,49 @@ describe('createAcpSessionNotificationAdapter', () => {
         });
       });
 
+      it('preserves structured tool output from rawOutput', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'tool_call',
+            toolCallId: 'tool-1',
+            title: 'Inspect data',
+            toolCall: {
+              status: 'success',
+              value: {
+                name: 'inspect_data',
+                arguments: {},
+              },
+            },
+          })
+        );
+
+        const toolResponseStateChanges = adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'tool-1',
+            status: 'completed',
+            rawOutput: { ok: true, count: 2 },
+          })
+        );
+        const messages = expectOnlyMessagesChange(toolResponseStateChanges);
+
+        expect(messages).toHaveLength(2);
+        expect(firstContent(messages[1])).toMatchObject({
+          type: 'toolResponse',
+          id: 'tool-1',
+          toolResult: {
+            status: 'success',
+            value: {
+              content: [],
+              structuredContent: { ok: true, count: 2 },
+              isError: false,
+            },
+          },
+        });
+      });
+
       it('uses failed tool response text content when raw output is absent', () => {
         const adapter = createAcpSessionNotificationAdapter();
 
