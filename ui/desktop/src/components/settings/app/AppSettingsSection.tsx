@@ -94,13 +94,6 @@ const i18n = defineMessages({
     id: 'settings.language.zhTW',
     defaultMessage: 'Chinese (Traditional)',
   },
-  helpTitle: { id: 'settings.help.title', defaultMessage: 'Help & feedback' },
-  helpDesc: {
-    id: 'settings.help.description',
-    defaultMessage: 'Help us improve gosling by reporting issues or requesting new features',
-  },
-  reportBug: { id: 'settings.help.reportBug', defaultMessage: 'Report a Bug' },
-  requestFeature: { id: 'settings.help.requestFeature', defaultMessage: 'Request a Feature' },
   versionTitle: { id: 'settings.version.title', defaultMessage: 'Version' },
   updatesTitle: { id: 'settings.updates.title', defaultMessage: 'Updates' },
   updatesDesc: {
@@ -576,41 +569,6 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
         </CardContent>
       </Card>
       <TelemetrySettings />
-
-      <Card className="rounded-lg">
-        <CardHeader className="pb-0">
-          <CardTitle className="mb-1">{intl.formatMessage(i18n.helpTitle)}</CardTitle>
-          <CardDescription>{intl.formatMessage(i18n.helpDesc)}</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-4 px-4">
-          <div className="flex space-x-4">
-            <Button
-              onClick={() => {
-                window.open(
-                  'https://github.com/aaif-goose/goose/issues/new?template=bug_report.md',
-                  '_blank'
-                );
-              }}
-              variant="secondary"
-              size="sm"
-            >
-              {intl.formatMessage(i18n.reportBug)}
-            </Button>
-            <Button
-              onClick={() => {
-                window.open(
-                  'https://github.com/aaif-goose/goose/issues/new?template=feature_request.md',
-                  '_blank'
-                );
-              }}
-              variant="secondary"
-              size="sm"
-            >
-              {intl.formatMessage(i18n.requestFeature)}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Version Section - only show if GOOSE_VERSION is set */}
       {!shouldShowUpdates && (

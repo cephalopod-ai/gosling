@@ -1,6 +1,6 @@
 import { AppEvents } from '../constants/events';
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { ArrowUp, Bug, ScrollText } from 'lucide-react';
+import { ArrowUp, ScrollText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
 import { Button } from './ui/button';
 import type { View } from '../utils/navigationUtils';
@@ -25,11 +25,10 @@ import { ContextWindowIndicator } from './bottom_menu/ContextWindowIndicator';
 import { DroppedFile, useFileDrop } from '../hooks/useFileDrop';
 import { MessageQueue, QueuedMessage } from './MessageQueue';
 import { detectInterruption } from '../utils/interruptionDetector';
-import { DiagnosticsModal } from './ui/Diagnostics';
 import type { Message } from '../types/message';
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { getPredefinedModelsFromEnv } from './settings/models/predefinedModelsUtils';
-import { trackFileAttached, trackVoiceDictation, trackDiagnosticsOpened } from '../utils/analytics';
+import { trackFileAttached, trackVoiceDictation } from '../utils/analytics';
 import { getNavigationShortcutText } from '../utils/keyboardShortcuts';
 import { UserInput, ImageData } from '../types/message';
 import { compressImageDataUrl } from '../utils/conversionUtils';
@@ -302,7 +301,6 @@ export default function ChatInput({
   }, [sessionModel, sessionProvider, configModel, configProvider, sessionId, modelOverride]);
   const [tokenLimit, setTokenLimit] = useState<number>(TOKEN_LIMIT_DEFAULT);
   const [isTokenLimitLoaded, setIsTokenLimitLoaded] = useState(false);
-  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [workingDirOverride, setWorkingDirOverride] = useState<string | null>(null);
   const currentWorkingDir = workingDirOverride ?? workingDir ?? getInitialWorkingDir();
 
@@ -1699,28 +1697,6 @@ export default function ChatInput({
               onNextChatExtensionDraftChange={onNextChatExtensionDraftChange}
             />
 
-            {/* Right: diagnostics */}
-            {sessionId && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      trackDiagnosticsOpened();
-                      setDiagnosticsOpen(true);
-                    }}
-                    variant="ghost"
-                    size="sm"
-                    shape="round"
-                    className="text-text-primary/70 hover:text-text-primary cursor-pointer transition-colors"
-                  >
-                    <Bug className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Generate diagnostics bundle</TooltipContent>
-              </Tooltip>
-            )}
-
             {/* Right: attach */}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1830,13 +1806,6 @@ export default function ChatInput({
               <p>{getSubmitButtonTooltip()}</p>
             </TooltipContent>
           </Tooltip>
-        )}
-        {sessionId && diagnosticsOpen && (
-          <DiagnosticsModal
-            isOpen={diagnosticsOpen}
-            onClose={() => setDiagnosticsOpen(false)}
-            sessionId={sessionId}
-          />
         )}
         <MentionPopover
           ref={mentionPopoverRef}

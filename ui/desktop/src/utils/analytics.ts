@@ -115,7 +115,6 @@ export type AnalyticsEvent =
       };
     }
   | { name: 'input_mode_changed'; properties: { from_mode: string; to_mode: string } }
-  | { name: 'input_diagnostics_opened'; properties: Record<string, never> }
   // Auto-update tracking events
   | {
       name: 'update_check_started';
@@ -418,13 +417,6 @@ export function trackModeChanged(fromMode: string, toMode: string): void {
   trackEvent({
     name: 'input_mode_changed',
     properties: { from_mode: fromMode, to_mode: toMode },
-  });
-}
-
-export function trackDiagnosticsOpened(): void {
-  trackEvent({
-    name: 'input_diagnostics_opened',
-    properties: {},
   });
 }
 

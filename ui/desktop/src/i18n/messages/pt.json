@@ -491,57 +491,6 @@
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "Mostrar {count} opções"
   },
-  "diagnosticsModal.attachHint": {
-    "defaultMessage": "Se você registrar um bug, considere anexar o relatório de diagnóstico a ele."
-  },
-  "diagnosticsModal.cancel": {
-    "defaultMessage": "Cancelar"
-  },
-  "diagnosticsModal.configSettings": {
-    "defaultMessage": "Definições de configuração"
-  },
-  "diagnosticsModal.description": {
-    "defaultMessage": "Você pode baixar um relatório de diagnóstico em JSON para compartilhar com a equipe ou registrar um bug diretamente no GitHub com os detalhes do seu sistema já preenchidos. Um relatório de diagnóstico contém o seguinte:"
-  },
-  "diagnosticsModal.diagnosticsErrorMsg": {
-    "defaultMessage": "Falha ao baixar o relatório de diagnóstico"
-  },
-  "diagnosticsModal.diagnosticsErrorTitle": {
-    "defaultMessage": "Erro de diagnóstico"
-  },
-  "diagnosticsModal.download": {
-    "defaultMessage": "Baixar"
-  },
-  "diagnosticsModal.downloading": {
-    "defaultMessage": "Baixando..."
-  },
-  "diagnosticsModal.fileBug": {
-    "defaultMessage": "Registrar bug no GitHub"
-  },
-  "diagnosticsModal.logFiles": {
-    "defaultMessage": "Arquivos de log recentes"
-  },
-  "diagnosticsModal.opening": {
-    "defaultMessage": "Abrindo..."
-  },
-  "diagnosticsModal.reportProblem": {
-    "defaultMessage": "Relatar um problema"
-  },
-  "diagnosticsModal.sensitiveWarning": {
-    "defaultMessage": "Se sua sessão contiver informações sensíveis, não compartilhe o arquivo de diagnóstico publicamente."
-  },
-  "diagnosticsModal.sessionMessages": {
-    "defaultMessage": "As mensagens da sua sessão atual"
-  },
-  "diagnosticsModal.systemInfo": {
-    "defaultMessage": "Informações básicas do sistema"
-  },
-  "diagnosticsModal.systemInfoErrorMsg": {
-    "defaultMessage": "Falha ao obter informações do sistema"
-  },
-  "diagnosticsModal.systemInfoErrorTitle": {
-    "defaultMessage": "Erro"
-  },
   "dialog.close": {
     "defaultMessage": "Fechar"
   },
@@ -2279,18 +2228,6 @@
   "settings.dockIcon.title": {
     "defaultMessage": "Ícone da dock"
   },
-  "settings.help.description": {
-    "defaultMessage": "Ajude-nos a melhorar o gosling comunicando problemas ou solicitando novas funcionalidades"
-  },
-  "settings.help.reportBug": {
-    "defaultMessage": "Comunicar um Erro"
-  },
-  "settings.help.requestFeature": {
-    "defaultMessage": "Solicitar uma Funcionalidade"
-  },
-  "settings.help.title": {
-    "defaultMessage": "Ajuda e comentários"
-  },
   "settings.language.description": {
     "defaultMessage": "Escolha o idioma de exibição do gosling"
   },
@@ -2863,5 +2800,146 @@
   },
   "userMessage.forkSessionTitle": {
     "defaultMessage": "Criar uma nova sessão com a mensagem editada"
+  },
+  "navigationPanel.archiveDetail": {
+    "defaultMessage": "Archive folder: {folder}. You can restore this session from Archived."
+  },
+  "navigationPanel.archiveFailed": {
+    "defaultMessage": "Failed to archive session \"{name}\": {error}"
+  },
+  "navigationPanel.archiveFolderMissing": {
+    "defaultMessage": "Configure an archive folder in App Settings before archiving sessions."
+  },
+  "navigationPanel.archiveMessage": {
+    "defaultMessage": "Archive \"{name}\" to the configured folder and hide it from active session history?"
+  },
+  "navigationPanel.archiveSession": {
+    "defaultMessage": "Archive session"
+  },
+  "navigationPanel.archiveSuccess": {
+    "defaultMessage": "Session archived successfully"
+  },
+  "navigationPanel.archiveTitle": {
+    "defaultMessage": "Archive Session"
+  },
+  "navigationPanel.cancel": {
+    "defaultMessage": "Cancel"
+  },
+  "navigationPanel.deleteArchiveFileFailed": {
+    "defaultMessage": "Deleted session, but failed to remove archive file on disk."
+  },
+  "navigationPanel.deleteFailed": {
+    "defaultMessage": "Failed to delete session \"{name}\": {error}"
+  },
+  "navigationPanel.deleteMessage": {
+    "defaultMessage": "Are you sure you want to permanently delete the session \"{name}\"? This action cannot be undone."
+  },
+  "navigationPanel.deleteSession": {
+    "defaultMessage": "Delete session"
+  },
+  "navigationPanel.deleteSuccess": {
+    "defaultMessage": "Session deleted successfully"
+  },
+  "navigationPanel.deleteTitle": {
+    "defaultMessage": "Delete Session"
+  },
+  "navigationPanel.deleteTrackedFileDetail": {
+    "defaultMessage": "Tracked archive file: {filePath}"
+  },
+  "navigationPanel.deleteWithArchiveFileMessage": {
+    "defaultMessage": "Delete the session \"{name}\" permanently? Its tracked archive file will also be removed from disk."
+  },
+  "navigationPanel.moreSessionActions": {
+    "defaultMessage": "Session actions"
+  },
+  "navigationPanel.renameSession": {
+    "defaultMessage": "Rename session"
+  },
+  "sessions.action.archive": {
+    "defaultMessage": "Archive session"
+  },
+  "sessions.action.restore": {
+    "defaultMessage": "Restore session"
+  },
+  "sessions.archive.detail": {
+    "defaultMessage": "Archive folder: {folder}. You can restore this session from Archived."
+  },
+  "sessions.archive.message": {
+    "defaultMessage": "Archive \"{name}\" to the configured folder and hide it from active session history?"
+  },
+  "sessions.archive.title": {
+    "defaultMessage": "Archive Session"
+  },
+  "sessions.archived.at": {
+    "defaultMessage": "Archived"
+  },
+  "sessions.archived.empty.description": {
+    "defaultMessage": "Archived sessions will appear here once you archive them."
+  },
+  "sessions.archived.empty.title": {
+    "defaultMessage": "No archived sessions found"
+  },
+  "sessions.archived.search.noResults": {
+    "defaultMessage": "No matching archived sessions found"
+  },
+  "sessions.archived.snippetFallback": {
+    "defaultMessage": "No message preview available"
+  },
+  "sessions.delete.trackedFileDetail": {
+    "defaultMessage": "Tracked archive file: {filePath}"
+  },
+  "sessions.delete.withArchiveFile": {
+    "defaultMessage": "Delete the session \"{name}\" permanently? Its tracked archive file will also be removed from disk."
+  },
+  "sessions.restore.message": {
+    "defaultMessage": "Restore \"{name}\" back into active session history?"
+  },
+  "sessions.restore.title": {
+    "defaultMessage": "Restore Session"
+  },
+  "sessions.search.archivedPlaceholder": {
+    "defaultMessage": "Search archived sessions..."
+  },
+  "sessions.tab.active": {
+    "defaultMessage": "Active"
+  },
+  "sessions.tab.archived": {
+    "defaultMessage": "Archived"
+  },
+  "sessions.toast.archiveFailed": {
+    "defaultMessage": "Failed to archive session \"{name}\": {error}"
+  },
+  "sessions.toast.archiveFolderMissing": {
+    "defaultMessage": "Configure an archive folder in App Settings before archiving sessions."
+  },
+  "sessions.toast.archived": {
+    "defaultMessage": "Session archived successfully"
+  },
+  "sessions.toast.deleteArchiveFileFailed": {
+    "defaultMessage": "Deleted session, but failed to remove archive file on disk."
+  },
+  "sessions.toast.restoreFailed": {
+    "defaultMessage": "Failed to restore session \"{name}\": {error}"
+  },
+  "sessions.toast.restored": {
+    "defaultMessage": "Session restored successfully"
+  },
+  "settings.archive.change": {
+    "defaultMessage": "Change folder"
+  },
+  "settings.archive.choose": {
+    "defaultMessage": "Choose folder"
+  },
+  "settings.archive.description": {
+    "defaultMessage": "Choose where archived session JSON files should be saved when you archive chats."
+  },
+  "settings.archive.empty": {
+    "defaultMessage": "No archive folder configured yet."
+  },
+  "settings.archive.savedTo": {
+    "defaultMessage": "Archived sessions will be exported to this folder."
+  },
+  "settings.archive.title": {
+    "defaultMessage": "Archive folder"
   }
 }
