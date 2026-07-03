@@ -65,6 +65,7 @@ const mockSettings: Record<string, unknown> = {
     url: '',
     secret: '',
   },
+  managedSecretProfiles: [],
   theme: 'light',
   useSystemTheme: true,
   language: 'system',

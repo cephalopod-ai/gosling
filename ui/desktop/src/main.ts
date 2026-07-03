@@ -1836,6 +1836,7 @@ const validSettingKeys: Set<SettingKey> = new Set([
   'archiveFolder',
   'archivedSessionFiles',
   'externalGoosed',
+  'managedSecretProfiles',
   'globalShortcut',
   'keyboardShortcuts',
   'theme',

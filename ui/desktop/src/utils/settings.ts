@@ -5,6 +5,21 @@ export interface ExternalGoosedConfig {
   certFingerprint?: string;
 }
 
+export interface ManagedSecretEntry {
+  id: string;
+  key: string;
+  value: string;
+}
+
+export interface ManagedSecretProfile {
+  id: string;
+  name: string;
+  website: string;
+  note: string;
+  template: 'custom' | 'vps' | 'supabase';
+  entries: ManagedSecretEntry[];
+}
+
 export interface KeyboardShortcuts {
   focusWindow: string | null;
   quickLauncher: string | null;
@@ -39,6 +54,7 @@ export interface Settings {
   archiveFolder: string | null;
   archivedSessionFiles: Record<string, string>;
   externalGoosed: ExternalGoosedConfig;
+  managedSecretProfiles: ManagedSecretProfile[];
   globalShortcut?: string | null;
   keyboardShortcuts: KeyboardShortcuts;
 
@@ -83,6 +99,7 @@ export const defaultSettings: Settings = {
     url: '',
     secret: '',
   },
+  managedSecretProfiles: [],
 
   // UI preferences
   theme: 'light',

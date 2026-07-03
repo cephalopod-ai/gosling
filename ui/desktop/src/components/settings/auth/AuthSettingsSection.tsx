@@ -13,6 +13,7 @@ import { Button } from '../../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
 import { defineMessages, useIntl } from '../../../i18n';
+import ManagedSecretProfilesSection from './ManagedSecretProfilesSection';
 
 const i18n = defineMessages({
   title: {
@@ -45,7 +46,8 @@ const i18n = defineMessages({
   },
   activeProviderWarning: {
     id: 'authSettings.activeProviderWarning',
-    defaultMessage: 'This is the active provider. New requests may fail until you configure another credential.',
+    defaultMessage:
+      'This is the active provider. New requests may fail until you configure another credential.',
   },
   delete: {
     id: 'authSettings.delete',
@@ -286,6 +288,8 @@ export default function AuthSettingsSection() {
           )}
         </CardContent>
       </Card>
+
+      <ManagedSecretProfilesSection />
 
       <ConfirmationModal
         isOpen={!!secretToDelete}
