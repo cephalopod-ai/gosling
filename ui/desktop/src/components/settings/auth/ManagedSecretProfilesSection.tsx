@@ -39,6 +39,10 @@ const i18n = defineMessages({
     id: 'managedSecrets.addProfile',
     defaultMessage: 'Add profile',
   },
+  profiles: {
+    id: 'managedSecrets.profiles',
+    defaultMessage: 'Profiles',
+  },
   profileName: {
     id: 'managedSecrets.profileName',
     defaultMessage: 'Profile name',
@@ -96,9 +100,17 @@ const i18n = defineMessages({
     id: 'managedSecrets.saving',
     defaultMessage: 'Saving changes...',
   },
+  save: {
+    id: 'managedSecrets.save',
+    defaultMessage: 'Save',
+  },
   saved: {
     id: 'managedSecrets.saved',
     defaultMessage: 'Saved',
+  },
+  unsaved: {
+    id: 'managedSecrets.unsaved',
+    defaultMessage: 'Unsaved changes',
   },
   failedToLoad: {
     id: 'managedSecrets.failedToLoad',
@@ -107,6 +119,10 @@ const i18n = defineMessages({
   failedToSave: {
     id: 'managedSecrets.failedToSave',
     defaultMessage: 'Failed to save local secret profiles: {error}',
+  },
+  profileSaved: {
+    id: 'managedSecrets.profileSaved',
+    defaultMessage: 'Local secret profiles saved',
   },
   customName: {
     id: 'managedSecrets.customName',
@@ -136,8 +152,6 @@ const i18n = defineMessages({
 });
 
 type Template = ManagedSecretProfile['template'];
-
-const SAVE_DEBOUNCE_MS = 300;
 
 function normalizeProfile(profile: ManagedSecretProfile): ManagedSecretProfile {
   return {
@@ -246,11 +260,12 @@ function useForLabel(useFor: ManagedSecretProfileUse, intl: ReturnType<typeof us
 export default function ManagedSecretProfilesSection() {
   const intl = useIntl();
   const [profiles, setProfiles] = useState<ManagedSecretProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [revealedValues, setRevealedValues] = useState<Record<string, boolean>>({});
   const hasLoaded = useRef(false);
-  const saveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -261,7 +276,9 @@ export default function ManagedSecretProfilesSection() {
         if (cancelled) {
           return;
         }
-        setProfiles((storedProfiles ?? []).map(normalizeProfile));
+        const normalizedProfiles = (storedProfiles ?? []).map(normalizeProfile);
+        setProfiles(normalizedProfiles);
+        setSelectedProfileId(normalizedProfiles[0]?.id ?? null);
         hasLoaded.current = true;
       })
       .catch(() => {
@@ -282,49 +299,27 @@ export default function ManagedSecretProfilesSection() {
     };
   }, [intl]);
 
-  useEffect(() => {
-    if (!hasLoaded.current) {
-      return;
-    }
-
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-
-    setSaving(true);
-    saveTimeoutRef.current = window.setTimeout(async () => {
-      try {
-        await window.electron.setSetting('managedSecretProfiles', profiles);
-      } catch (error) {
-        toast.error(
-          intl.formatMessage(i18n.failedToSave, {
-            error: errorMessage(error, 'Unknown error'),
-          })
-        );
-      } finally {
-        setSaving(false);
-      }
-    }, SAVE_DEBOUNCE_MS);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [profiles, intl]);
-
   const profileCountLabel = useMemo(() => {
     if (saving) {
       return intl.formatMessage(i18n.saving);
     }
-    if (!loading && profiles.length > 0) {
+    if (dirty) {
+      return intl.formatMessage(i18n.unsaved);
+    }
+    if (!loading && profiles.length > 0 && hasLoaded.current) {
       return intl.formatMessage(i18n.saved);
     }
     return null;
-  }, [intl, loading, profiles.length, saving]);
+  }, [dirty, intl, loading, profiles.length, saving]);
 
   const updateProfiles = (updater: (current: ManagedSecretProfile[]) => ManagedSecretProfile[]) => {
-    setProfiles((current) => updater(current));
+    setProfiles((current) => {
+      const next = updater(current);
+      if (hasLoaded.current) {
+        setDirty(true);
+      }
+      return next;
+    });
   };
 
   const updateProfile = (
@@ -351,7 +346,9 @@ export default function ManagedSecretProfilesSection() {
   };
 
   const addProfile = (template: Template) => {
-    updateProfiles((current) => [...current, createProfile(template, intl)]);
+    const nextProfile = createProfile(template, intl);
+    updateProfiles((current) => [...current, nextProfile]);
+    setSelectedProfileId(nextProfile.id);
   };
 
   const addEntry = (profileId: string) => {
@@ -362,7 +359,16 @@ export default function ManagedSecretProfilesSection() {
   };
 
   const removeProfile = (profileId: string) => {
-    updateProfiles((current) => current.filter((profile) => profile.id !== profileId));
+    updateProfiles((current) => {
+      const nextProfiles = current.filter((profile) => profile.id !== profileId);
+      setSelectedProfileId((currentSelected) => {
+        if (currentSelected !== profileId) {
+          return currentSelected;
+        }
+        return nextProfiles[0]?.id ?? null;
+      });
+      return nextProfiles;
+    });
   };
 
   const removeEntry = (profileId: string, entryId: string) => {
@@ -378,6 +384,32 @@ export default function ManagedSecretProfilesSection() {
       delete next[entryId];
       return next;
     });
+  };
+
+  const selectedProfile =
+    profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null;
+
+  useEffect(() => {
+    if (!selectedProfile && profiles.length > 0) {
+      setSelectedProfileId(profiles[0].id);
+    }
+  }, [profiles, selectedProfile]);
+
+  const saveProfiles = async () => {
+    setSaving(true);
+    try {
+      await window.electron.setSetting('managedSecretProfiles', profiles);
+      setDirty(false);
+      toast.success(intl.formatMessage(i18n.profileSaved));
+    } catch (error) {
+      toast.error(
+        intl.formatMessage(i18n.failedToSave, {
+          error: errorMessage(error, 'Unknown error'),
+        })
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -403,6 +435,9 @@ export default function ManagedSecretProfilesSection() {
             <ShieldEllipsis className="h-4 w-4" />
             {intl.formatMessage(i18n.supabaseTemplate)}
           </Button>
+          <Button type="button" size="sm" onClick={saveProfiles} disabled={saving || !dirty}>
+            {intl.formatMessage(i18n.save)}
+          </Button>
           {profileCountLabel && (
             <span className="text-xs text-text-secondary">{profileCountLabel}</span>
           )}
@@ -414,200 +449,217 @@ export default function ManagedSecretProfilesSection() {
           <div className="rounded-md border border-dashed border-border-primary p-4 text-sm text-text-secondary">
             {intl.formatMessage(i18n.empty)}
           </div>
-        ) : (
+        ) : selectedProfile ? (
           <div className="space-y-4">
-            {profiles.map((profile) => {
-              const ProfileIcon = templateIcon(profile.template);
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                {intl.formatMessage(i18n.profiles)}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {profiles.map((profile) => {
+                  const ProfileIcon = templateIcon(profile.template);
+                  const isSelected = profile.id === selectedProfile.id;
 
-              return (
-                <div
-                  key={profile.id}
-                  className="space-y-4 rounded-lg border border-border-primary bg-background-secondary/40 p-4"
-                  data-testid="managed-secret-profile"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <ProfileIcon className="h-4 w-4 text-text-secondary" />
-                      <span className="rounded border border-border-primary bg-background-primary px-2 py-0.5 text-xs text-text-secondary">
-                        {templateLabel(profile.template, intl)}
-                      </span>
-                    </div>
+                  return (
                     <Button
+                      key={profile.id}
                       type="button"
-                      variant="ghost"
+                      variant={isSelected ? 'default' : 'outline'}
                       size="sm"
-                      className="text-text-secondary hover:text-text-primary"
-                      onClick={() => removeProfile(profile.id)}
+                      onClick={() => setSelectedProfileId(profile.id)}
                     >
-                      <Trash2 className="h-4 w-4" />
-                      {intl.formatMessage(i18n.deleteProfile)}
+                      <ProfileIcon className="h-4 w-4" />
+                      {profile.name}
                     </Button>
-                  </div>
+                  );
+                })}
+              </div>
+            </div>
 
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
-                        {intl.formatMessage(i18n.profileName)}
-                      </label>
-                      <Input
-                        value={profile.name}
-                        onChange={(event) =>
-                          updateProfile(profile.id, (current) => ({
-                            ...current,
-                            name: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
-                        {intl.formatMessage(i18n.website)}
-                      </label>
-                      <div className="relative">
-                        <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-                        <Input
-                          value={profile.website}
-                          onChange={(event) =>
-                            updateProfile(profile.id, (current) => ({
-                              ...current,
-                              website: event.target.value,
-                            }))
-                          }
-                          className="pl-9"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
-                        {intl.formatMessage(i18n.useFor)}
-                      </label>
-                      <Select
-                        value={{
-                          value: profile.useFor,
-                          label: useForLabel(profile.useFor, intl),
-                        }}
-                        onChange={(option: unknown) => {
-                          const selectedOption = option as {
-                            value: ManagedSecretProfileUse;
-                            label: string;
-                          } | null;
-                          if (!selectedOption) {
-                            return;
-                          }
-                          updateProfile(profile.id, (current) => ({
-                            ...current,
-                            useFor: selectedOption.value,
-                          }));
-                        }}
-                        options={[
-                          {
-                            value: 'authentication',
-                            label: intl.formatMessage(i18n.useForAuthentication),
-                          },
-                          {
-                            value: 'config',
-                            label: intl.formatMessage(i18n.useForConfig),
-                          },
-                          {
-                            value: 'both',
-                            label: intl.formatMessage(i18n.useForBoth),
-                          },
-                        ]}
-                        isSearchable={false}
-                      />
-                    </div>
-                  </div>
+            <div
+              className="space-y-4 rounded-lg border border-border-primary bg-background-secondary/40 p-4"
+              data-testid="managed-secret-profile"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const ProfileIcon = templateIcon(selectedProfile.template);
+                    return <ProfileIcon className="h-4 w-4 text-text-secondary" />;
+                  })()}
+                  <span className="rounded border border-border-primary bg-background-primary px-2 py-0.5 text-xs text-text-secondary">
+                    {templateLabel(selectedProfile.template, intl)}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-text-secondary hover:text-text-primary"
+                  onClick={() => removeProfile(selectedProfile.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {intl.formatMessage(i18n.deleteProfile)}
+                </Button>
+              </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
-                      {intl.formatMessage(i18n.note)}
-                    </label>
-                    <textarea
-                      value={profile.note}
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                    {intl.formatMessage(i18n.profileName)}
+                  </label>
+                  <Input
+                    value={selectedProfile.name}
+                    onChange={(event) =>
+                      updateProfile(selectedProfile.id, (current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                    {intl.formatMessage(i18n.website)}
+                  </label>
+                  <div className="relative">
+                    <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+                    <Input
+                      value={selectedProfile.website}
                       onChange={(event) =>
-                        updateProfile(profile.id, (current) => ({
+                        updateProfile(selectedProfile.id, (current) => ({
                           ...current,
-                          note: event.target.value,
+                          website: event.target.value,
                         }))
                       }
-                      rows={3}
-                      className="flex w-full rounded-md border border-border-primary bg-background-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:border-border-secondary focus-visible:outline-none"
+                      className="pl-9"
                     />
                   </div>
-
-                  <div className="space-y-3">
-                    {profile.entries.map((entry) => {
-                      const isRevealed = !!revealedValues[entry.id];
-
-                      return (
-                        <div
-                          key={entry.id}
-                          className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]"
-                        >
-                          <Input
-                            value={entry.key}
-                            onChange={(event) =>
-                              updateEntry(profile.id, entry.id, 'key', event.target.value)
-                            }
-                            placeholder={intl.formatMessage(i18n.variableName)}
-                          />
-                          <Input
-                            value={entry.value}
-                            onChange={(event) =>
-                              updateEntry(profile.id, entry.id, 'value', event.target.value)
-                            }
-                            placeholder={intl.formatMessage(i18n.variableValue)}
-                            type={isRevealed ? 'text' : 'password'}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            shape="round"
-                            onClick={() =>
-                              setRevealedValues((current) => ({
-                                ...current,
-                                [entry.id]: !current[entry.id],
-                              }))
-                            }
-                            aria-label={isRevealed ? 'Hide secret value' : 'Show secret value'}
-                          >
-                            {isRevealed ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            shape="round"
-                            onClick={() => removeEntry(profile.id, entry.id)}
-                            aria-label="Remove secret variable"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      );
-                    })}
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => addEntry(profile.id)}
-                      className="w-fit"
-                    >
-                      <Plus className="h-4 w-4" />
-                      {intl.formatMessage(i18n.addVariable)}
-                    </Button>
-                  </div>
                 </div>
-              );
-            })}
+                <div className="space-y-2">
+                  <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                    {intl.formatMessage(i18n.useFor)}
+                  </label>
+                  <Select
+                    value={{
+                      value: selectedProfile.useFor,
+                      label: useForLabel(selectedProfile.useFor, intl),
+                    }}
+                    onChange={(option: unknown) => {
+                      const selectedOption = option as {
+                        value: ManagedSecretProfileUse;
+                        label: string;
+                      } | null;
+                      if (!selectedOption) {
+                        return;
+                      }
+                      updateProfile(selectedProfile.id, (current) => ({
+                        ...current,
+                        useFor: selectedOption.value,
+                      }));
+                    }}
+                    options={[
+                      {
+                        value: 'authentication',
+                        label: intl.formatMessage(i18n.useForAuthentication),
+                      },
+                      {
+                        value: 'config',
+                        label: intl.formatMessage(i18n.useForConfig),
+                      },
+                      {
+                        value: 'both',
+                        label: intl.formatMessage(i18n.useForBoth),
+                      },
+                    ]}
+                    isSearchable={false}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+                  {intl.formatMessage(i18n.note)}
+                </label>
+                <textarea
+                  value={selectedProfile.note}
+                  onChange={(event) =>
+                    updateProfile(selectedProfile.id, (current) => ({
+                      ...current,
+                      note: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  className="flex w-full rounded-md border border-border-primary bg-background-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:border-border-secondary focus-visible:outline-none"
+                />
+              </div>
+
+              <div className="space-y-3">
+                {selectedProfile.entries.map((entry) => {
+                  const isRevealed = !!revealedValues[entry.id];
+
+                  return (
+                    <div
+                      key={entry.id}
+                      className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]"
+                    >
+                      <Input
+                        value={entry.key}
+                        onChange={(event) =>
+                          updateEntry(selectedProfile.id, entry.id, 'key', event.target.value)
+                        }
+                        placeholder={intl.formatMessage(i18n.variableName)}
+                      />
+                      <Input
+                        value={entry.value}
+                        onChange={(event) =>
+                          updateEntry(selectedProfile.id, entry.id, 'value', event.target.value)
+                        }
+                        placeholder={intl.formatMessage(i18n.variableValue)}
+                        type={isRevealed ? 'text' : 'password'}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        shape="round"
+                        onClick={() =>
+                          setRevealedValues((current) => ({
+                            ...current,
+                            [entry.id]: !current[entry.id],
+                          }))
+                        }
+                        aria-label={isRevealed ? 'Hide secret value' : 'Show secret value'}
+                      >
+                        {isRevealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        shape="round"
+                        onClick={() => removeEntry(selectedProfile.id, entry.id)}
+                        aria-label="Remove secret variable"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addEntry(selectedProfile.id)}
+                  className="w-fit"
+                >
+                  <Plus className="h-4 w-4" />
+                  {intl.formatMessage(i18n.addVariable)}
+                </Button>
+              </div>
+            </div>
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
