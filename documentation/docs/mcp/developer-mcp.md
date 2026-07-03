@@ -11,7 +11,7 @@ import { Tornado } from 'lucide-react';
 
 <YouTubeShortEmbed videoUrl="https://www.youtube.com/embed/on_p-LeIrak" />
 
-The Developer extension allows goose to automate developer-centric tasks such as file editing, shell command execution, and project setup. It also provides tools for [enhanced code editing](/docs/guides/enhanced-code-editing) and [codebase analysis](/docs/guides/codebase-analysis).
+The Developer extension allows goose to automate developer-centric tasks such as file editing, shell command execution, and project setup. It also supports [enhanced code editing](/docs/guides/enhanced-code-editing). For semantic [codebase analysis](/docs/guides/codebase-analysis), see the separate Analyze extension.
 
 This tutorial will cover enabling and using the Developer MCP Server, which is a built-in goose extension. 
 
@@ -184,10 +184,10 @@ The Developer extension provides these tools:
 | Tool | Description | Use Cases | Risk Level |
 |------|-------------|-----------|------------|
 | `shell` | Execute shell commands | Running tests, installing packages, git operations | ⚠️ High<br />Can run any system command with your user privileges |
-| `text_editor` | Read, write, and edit files | Code refactoring, creating files, updating configs | ⚠️ High<br />Can modify any accessible file |
-| `analyze` | Analyze code structure | Understanding codebase, finding dependencies | ✅ Low<br />Read-only code analysis |
-| `screen_capture` | Take screenshots | Debugging UI issues, documenting state | ✅ Low<br />Visual information only |
-| `image_processor` | Process and resize images | Optimizing assets, format conversion | ✅ Low<br />Image manipulation only |
+| `write` | Create or overwrite files | Creating new files, generating code, writing configs | ⚠️ High<br />Can create or replace any accessible file |
+| `edit` | Find-and-replace edits within a file | Code refactoring, updating configs, targeted fixes | ⚠️ High<br />Can modify any accessible file |
+| `tree` | List a directory tree with line counts | Exploring project structure, locating files | ✅ Low<br />Read-only directory listing |
+| `read_image` | Read an image file as visual content | Inspecting screenshots, diagrams, UI assets | ✅ Low<br />Read-only image access |
 
 ### Access Control Features
 
