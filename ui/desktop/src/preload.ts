@@ -127,6 +127,7 @@ type ElectronAPI = {
   setDockIcon: (show: boolean) => Promise<boolean>;
   getDockIconState: () => Promise<boolean>;
   getSetting: <K extends SettingKey>(key: K) => Promise<Settings[K]>;
+  getSettings: <K extends SettingKey>(keys: K[]) => Promise<Pick<Settings, K>>;
   setSetting: <K extends SettingKey>(key: K, value: Settings[K]) => Promise<void>;
   getSecretKey: () => Promise<string | null>;
   getAcpUrl: () => Promise<string | null>;
@@ -236,6 +237,38 @@ const electronAPI: ElectronAPI = {
       console.error(`Failed to get setting '${key}', using default`, error);
       return defaultSettings[key];
     }
+  },
+  getSettings: async <K extends SettingKey>(keys: K[]): Promise<Pick<Settings, K>> => {
+    const values: Partial<Pick<Settings, K>> = {};
+    const ipcKeys: K[] = [];
+
+    for (const key of keys) {
+      const localStorageKey = localStorageKeyMap[key];
+      if (localStorageKey) {
+        const rawValue = localStorage.getItem(localStorageKey);
+        if (rawValue !== null) {
+          const parsed = parseLocalStorageValue(key, rawValue);
+          if (parsed !== null) {
+            values[key] = parsed;
+            continue;
+          }
+        }
+      }
+      ipcKeys.push(key);
+    }
+
+    if (ipcKeys.length > 0) {
+      try {
+        Object.assign(values, await ipcRenderer.invoke('get-settings', ipcKeys));
+      } catch (error) {
+        console.error(`Failed to get settings '${ipcKeys.join(', ')}', using defaults`, error);
+        for (const key of ipcKeys) {
+          values[key] = defaultSettings[key];
+        }
+      }
+    }
+
+    return values as Pick<Settings, K>;
   },
   setSetting: async <K extends SettingKey>(key: K, value: Settings[K]): Promise<void> => {
     // Clear any localStorage version when writing

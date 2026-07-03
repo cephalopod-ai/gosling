@@ -79,6 +79,9 @@ Object.defineProperty(window, 'electron', {
   value: {
     platform: 'darwin',
     getSetting: vi.fn((key: string) => Promise.resolve(mockSettings[key])),
+    getSettings: vi.fn((keys: string[]) =>
+      Promise.resolve(Object.fromEntries(keys.map((key) => [key, mockSettings[key]])))
+    ),
     setSetting: vi.fn((key: string, value: unknown) => {
       mockSettings[key] = value;
       return Promise.resolve();

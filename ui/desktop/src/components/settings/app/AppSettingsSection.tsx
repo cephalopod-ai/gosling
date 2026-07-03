@@ -239,9 +239,13 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
   }, []);
 
   useEffect(() => {
-    window.electron.getSetting('showPricing').then(setShowPricing);
-    window.electron.getSetting('language').then((value) => setLanguage(value ?? 'system'));
-    window.electron.getSetting('archiveFolder').then((value) => setArchiveFolder(value ?? null));
+    window.electron
+      .getSettings(['showPricing', 'language', 'archiveFolder'])
+      .then(({ showPricing, language, archiveFolder }) => {
+        setShowPricing(showPricing);
+        setLanguage(language ?? 'system');
+        setArchiveFolder(archiveFolder ?? null);
+      });
   }, []);
 
   useEffect(() => {
@@ -261,9 +265,9 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
       setWakelockEnabled(enabled);
     });
 
-    window.electron.getSetting('enableNotifications').then((enabled) => {
-      setNotificationsEnabled(enabled ?? true);
-    });
+    window.electron
+      .getSettings(['enableNotifications'])
+      .then(({ enableNotifications }) => setNotificationsEnabled(enableNotifications ?? true));
 
     if (isMacOS) {
       window.electron.getDockIconState().then((enabled) => {

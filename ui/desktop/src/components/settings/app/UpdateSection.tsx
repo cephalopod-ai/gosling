@@ -166,13 +166,14 @@ export default function UpdateSection() {
       setIsUsingGitHubFallback(isGitHub);
     });
 
-    window.electron.getSetting('disableAutoDownload').then((stored) => {
-      setDisableAutoDownload(!!stored);
+    const settingsPromise = window.electron.getSettings(['disableAutoDownload']);
+    settingsPromise.then(({ disableAutoDownload }) => {
+      setDisableAutoDownload(!!disableAutoDownload);
     });
     window.electron.getAutoDownloadDisabled().then((effective) => {
-      window.electron.getSetting('disableAutoDownload').then((stored) => {
+      settingsPromise.then(({ disableAutoDownload }) => {
         // If effective is true but user setting is false, env var is forcing it
-        setAutoDownloadForcedByEnv(effective && !stored);
+        setAutoDownloadForcedByEnv(effective && !disableAutoDownload);
       });
     });
 

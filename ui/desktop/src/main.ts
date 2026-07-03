@@ -1,4 +1,4 @@
-import type { OpenDialogOptions, OpenDialogReturnValue, Session } from 'electron';
+import type { Certificate, OpenDialogOptions, OpenDialogReturnValue, Session } from 'electron';
 import {
   app,
   App,
@@ -393,7 +393,7 @@ function installBackendCertificateVerifier(targetSession: Session) {
       return;
     }
 
-    const certificate = request.certificate as Electron.Certificate & {
+    const certificate = request.certificate as Certificate & {
       fingerprint256?: string;
     };
     const fingerprint = certificate.fingerprint256 ?? certificate.fingerprint;
@@ -418,7 +418,7 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
   }
 
   event.preventDefault();
-  const cert = certificate as Electron.Certificate & {
+  const cert = certificate as Certificate & {
     fingerprint256?: string;
   };
   callback(verifyBackendCertificate(parsed.hostname, cert.fingerprint256 ?? cert.fingerprint));
@@ -1827,7 +1827,7 @@ ipcMain.handle('get-setting', (_event, key: SettingKey) => {
 });
 
 // Valid setting keys for runtime validation
-const validSettingKeys: Set<string> = new Set([
+const validSettingKeys: Set<SettingKey> = new Set([
   'showMenuBarIcon',
   'showDockIcon',
   'enableWakelock',
@@ -1846,6 +1846,21 @@ const validSettingKeys: Set<string> = new Set([
   'seenAnnouncementIds',
   'disableAutoDownload',
 ]);
+
+ipcMain.handle('get-settings', (_event, keys: SettingKey[]) => {
+  const settings = getSettings();
+  const values: Record<string, unknown> = {};
+
+  for (const key of keys) {
+    if (!validSettingKeys.has(key)) {
+      console.error(`Invalid setting key rejected: ${key}`);
+      continue;
+    }
+    values[key] = settings[key];
+  }
+
+  return values;
+});
 
 ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
   // Validate key at runtime to prevent prototype pollution
@@ -2894,7 +2909,6 @@ async function appMain() {
       return false;
     }
   });
-
 }
 
 app.whenReady().then(async () => {

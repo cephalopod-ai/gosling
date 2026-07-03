@@ -143,6 +143,7 @@ const mockElectron = {
   platform: 'darwin',
   createChatWindow: vi.fn(),
   getSetting: vi.fn().mockResolvedValue(null),
+  getSettings: vi.fn().mockResolvedValue({}),
   setSetting: vi.fn().mockResolvedValue(undefined),
 };
 
