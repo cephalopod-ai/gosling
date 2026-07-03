@@ -1,6 +1,7 @@
 import { acpArchiveSession, acpExportSession } from './acp/sessions';
 
 const ARCHIVE_FILE_EXTENSION = '.json';
+const INVALID_FILE_NAME_CHARS = '<>:"/\\|?*';
 
 export class ArchiveFolderNotConfiguredError extends Error {
   constructor() {
@@ -21,7 +22,12 @@ function joinPath(dirPath: string, fileName: string): string {
 function sanitizeFileNamePart(value: string): string {
   const sanitized = value
     .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '-')
+    .split('')
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      return code <= 0x1f || INVALID_FILE_NAME_CHARS.includes(char) ? '-' : char;
+    })
+    .join('')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^[.-]+|[.-]+$/g, '');

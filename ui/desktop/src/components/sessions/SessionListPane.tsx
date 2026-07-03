@@ -785,11 +785,11 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
     const snippet = session.lastMessageSnippet?.trim()
       ? session.lastMessageSnippet
       : intl.formatMessage(i18n.archivedSnippetFallback);
-    const handleCardClick = useCallback(() => {
+    const handleCardClick = () => {
       if (mode === 'active' && onSelectSession) {
         onSelectSession(session.id);
       }
-    }, [mode, onSelectSession, session.id]);
+    };
 
     return (
       <Card

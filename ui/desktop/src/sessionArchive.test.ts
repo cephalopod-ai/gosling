@@ -84,6 +84,15 @@ describe('sessionArchive', () => {
     );
   });
 
+  it('sanitizes invalid archive filename characters', async () => {
+    await archiveSessionToConfiguredFolder('session-1', 'Bad\u0000<>:"/\\|?* name');
+
+    expect(writeFileMock).toHaveBeenCalledWith(
+      '/tmp/gosling-archives/2026-07-02T14-15-16-789Z-Bad-name-session-1.json',
+      '{"id":"session-1"}'
+    );
+  });
+
   it('rejects archiving when no archive folder is configured', async () => {
     archiveFolder = null;
 
