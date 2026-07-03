@@ -242,10 +242,25 @@ export interface ImageData {
 export interface UserInput {
   msg: string;
   images: ImageData[];
+  assistantContext?: string;
 }
 
-export function createUserMessage(text: string, images?: ImageData[]): Message {
+export function createUserMessage(
+  text: string,
+  images?: ImageData[],
+  assistantContext?: string
+): Message {
   const content: Message['content'] = [];
+
+  if (assistantContext?.trim()) {
+    content.push({
+      type: 'text',
+      text: assistantContext,
+      annotations: {
+        audience: ['assistant'],
+      },
+    });
+  }
 
   if (text.trim()) {
     content.push({ type: 'text', text });
@@ -283,6 +298,13 @@ export function getTextAndImageContent(message: Message): {
 
   for (const content of message.content) {
     if (content.type === 'text') {
+      const audience =
+        content.annotations && 'audience' in content.annotations
+          ? content.annotations.audience
+          : undefined;
+      if (Array.isArray(audience) && !audience.includes('user')) {
+        continue;
+      }
       textContent += content.text;
     } else if (content.type === 'image') {
       imagePaths.push(`data:${content.mimeType};base64,${content.data}`);

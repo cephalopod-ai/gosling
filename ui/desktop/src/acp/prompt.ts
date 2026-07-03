@@ -42,6 +42,7 @@ export function messageToAcpPromptContent(message: Message): ContentBlock[] {
           prompt.push({
             type: 'text',
             text: content.text,
+            ...(content.annotations ? { annotations: content.annotations } : {}),
           });
         }
         break;
@@ -50,6 +51,7 @@ export function messageToAcpPromptContent(message: Message): ContentBlock[] {
           type: 'image',
           data: content.data,
           mimeType: content.mimeType,
+          ...(content.annotations ? { annotations: content.annotations } : {}),
         });
         break;
     }

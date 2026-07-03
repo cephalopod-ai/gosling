@@ -178,7 +178,7 @@ export function useChatSession({
       }
 
       const newMessage = hasNewMessage
-        ? createUserMessage(userMessage, images)
+        ? createUserMessage(userMessage, images, input.assistantContext)
         : currentMessages[currentMessages.length - 1];
       const messagesForStore = clearsConversation
         ? []
@@ -221,7 +221,7 @@ export function useChatSession({
       }
 
       try {
-        const steeredMessage = createUserMessage(userMessage, images);
+        const steeredMessage = createUserMessage(userMessage, images, input.assistantContext);
         const response = await acpSteerSession(sessionId, steeredMessage, activeRunId);
         const localSteerMessage: Message = {
           ...steeredMessage,

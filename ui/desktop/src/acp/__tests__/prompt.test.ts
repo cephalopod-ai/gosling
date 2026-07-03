@@ -39,4 +39,30 @@ describe('messageToAcpPromptContent', () => {
 
     expect(messageToAcpPromptContent(message)).toEqual([]);
   });
+
+  it('preserves audience annotations on text blocks', () => {
+    const message: Message = {
+      id: 'message-1',
+      role: 'user',
+      created: 123,
+      content: [
+        {
+          type: 'text',
+          text: 'hidden profile context',
+          annotations: { audience: ['assistant'] },
+        },
+        { type: 'text', text: 'visible prompt' },
+      ],
+      metadata: { userVisible: true, agentVisible: true },
+    };
+
+    expect(messageToAcpPromptContent(message)).toEqual([
+      {
+        type: 'text',
+        text: 'hidden profile context',
+        annotations: { audience: ['assistant'] },
+      },
+      { type: 'text', text: 'visible prompt' },
+    ]);
+  });
 });

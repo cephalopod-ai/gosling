@@ -1,6 +1,6 @@
 import { AppEvents } from '../constants/events';
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { ArrowUp, ScrollText } from 'lucide-react';
+import { ArrowUp, KeyRound, ScrollText, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
 import { Button } from './ui/button';
 import type { View } from '../utils/navigationUtils';
@@ -16,6 +16,7 @@ import { cn } from '../utils';
 import { AlertType, useAlerts } from './alerts';
 import { useModelAndProvider } from './ModelAndProviderContext';
 import { acpListProviderDetails } from '../acp/providers';
+import { Select } from './ui/Select';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { toastError } from '../toasts';
 import MentionPopover, { DisplayItemWithMatch } from './MentionPopover';
@@ -36,6 +37,7 @@ import { fetchCanonicalModelInfo } from '../utils/canonical';
 import { defineMessages, useIntl } from '../i18n';
 import TurndownService from 'turndown';
 import type { NextChatExtensionDraft } from '../utils/nextChatExtensions';
+import type { ManagedSecretProfile } from '../utils/settings';
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
@@ -91,6 +93,40 @@ const getContextAlertType = (totalTokens: number, tokenLimit: number): AlertType
 // Manual compact trigger message - must match backend constant
 const MANUAL_COMPACT_TRIGGER = '/compact';
 
+const getCredentialStorageKey = (sessionId: string | null) =>
+  `gosling-chat-credential-profiles:${sessionId ?? 'hub'}`;
+
+function buildCredentialContext(profiles: ManagedSecretProfile[]): string {
+  if (profiles.length === 0) {
+    return '';
+  }
+
+  const sections = profiles.map((profile) => {
+    const entries = profile.entries
+      .filter((entry) => entry.key.trim() || entry.value.trim())
+      .map((entry) => `${entry.key}=${entry.value}`)
+      .join('\n');
+
+    return [
+      `<credential_profile>`,
+      `name: ${profile.name}`,
+      `template: ${profile.template}`,
+      `use_for: ${profile.useFor}`,
+      `website: ${profile.website || 'n/a'}`,
+      `note: ${profile.note || 'n/a'}`,
+      `secrets:`,
+      entries || '(none)',
+      `</credential_profile>`,
+    ].join('\n');
+  });
+
+  return [
+    'The user selected the following saved credential profiles for this chat.',
+    'Use them only when relevant to the task.',
+    ...sections,
+  ].join('\n\n');
+}
+
 const i18n = defineMessages({
   dictationError: {
     id: 'chatInput.dictationError',
@@ -111,6 +147,18 @@ const i18n = defineMessages({
   contextWindow: {
     id: 'chatInput.contextWindow',
     defaultMessage: 'Context window',
+  },
+  credentials: {
+    id: 'chatInput.credentials',
+    defaultMessage: 'Credentials',
+  },
+  addCredential: {
+    id: 'chatInput.addCredential',
+    defaultMessage: 'Add credential profile',
+  },
+  credentialsEmpty: {
+    id: 'chatInput.credentialsEmpty',
+    defaultMessage: 'No saved credential profiles yet. Add them in Settings -> Auth.',
   },
   waitingForImages: {
     id: 'chatInput.waitingForImages',
@@ -303,6 +351,8 @@ export default function ChatInput({
   const [isTokenLimitLoaded, setIsTokenLimitLoaded] = useState(false);
   const [workingDirOverride, setWorkingDirOverride] = useState<string | null>(null);
   const currentWorkingDir = workingDirOverride ?? workingDir ?? getInitialWorkingDir();
+  const [managedSecretProfiles, setManagedSecretProfiles] = useState<ManagedSecretProfile[]>([]);
+  const [selectedCredentialProfileIds, setSelectedCredentialProfileIds] = useState<string[]>([]);
 
   // Hide non-essential bottom-bar controls when the chat input is narrow.
   // Only the model selector, mic, and send button remain visible.
@@ -322,6 +372,84 @@ export default function ChatInput({
   useEffect(() => {
     setWorkingDirOverride(null);
   }, [sessionId, workingDir]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    window.electron
+      .getSetting('managedSecretProfiles')
+      .then((profiles) => {
+        if (!cancelled) {
+          setManagedSecretProfiles(profiles ?? []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setManagedSecretProfiles([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = window.sessionStorage.getItem(getCredentialStorageKey(sessionId));
+      const parsed = stored ? (JSON.parse(stored) as string[]) : [];
+      setSelectedCredentialProfileIds(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setSelectedCredentialProfileIds([]);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        getCredentialStorageKey(sessionId),
+        JSON.stringify(selectedCredentialProfileIds)
+      );
+    } catch {
+      // Ignore storage failures in composer state.
+    }
+  }, [selectedCredentialProfileIds, sessionId]);
+
+  useEffect(() => {
+    setSelectedCredentialProfileIds((current) =>
+      current.filter((profileId) =>
+        managedSecretProfiles.some((profile) => profile.id === profileId)
+      )
+    );
+  }, [managedSecretProfiles]);
+
+  const selectedCredentialProfiles = useMemo(
+    () =>
+      selectedCredentialProfileIds
+        .map((profileId) => managedSecretProfiles.find((profile) => profile.id === profileId))
+        .filter((profile): profile is ManagedSecretProfile => !!profile),
+    [managedSecretProfiles, selectedCredentialProfileIds]
+  );
+
+  const availableCredentialOptions = useMemo(
+    () =>
+      managedSecretProfiles
+        .filter((profile) => !selectedCredentialProfileIds.includes(profile.id))
+        .map((profile) => ({
+          value: profile.id,
+          label: profile.name,
+        })),
+    [managedSecretProfiles, selectedCredentialProfileIds]
+  );
+
+  const buildUserInput = useCallback(
+    (msg: string, images: ImageData[]): UserInput => ({
+      msg,
+      images,
+      assistantContext: buildCredentialContext(selectedCredentialProfiles) || undefined,
+    }),
+    [selectedCredentialProfiles]
+  );
 
   // Save queue state (paused/interrupted) to storage
   useEffect(() => {
@@ -388,7 +516,7 @@ export default function ChatInput({
 
       if (shouldProcessQueue) {
         LocalMessageStorage.addMessage(messageToSend.content);
-        handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
+        handleSubmit(buildUserInput(messageToSend.content, messageToSend.images));
         if (shouldSendAfterStop) {
           clearPendingSendAfterStop(messageToSend.id);
         }
@@ -650,7 +778,7 @@ export default function ChatInput({
       });
     }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalTokens, tokenLimit, isTokenLimitLoaded, isLoading, addAlert, clearAlerts]);
 
   // Cleanup effect for component unmount - prevent memory leaks
@@ -1091,7 +1219,7 @@ export default function ChatInput({
           }
         }
 
-        handleSubmit({ msg: textToSend, images: imageData });
+        handleSubmit(buildUserInput(textToSend, imageData));
 
         // Auto-resume queue after sending a NON-interruption message (if it was paused due to interruption)
         if (
@@ -1362,7 +1490,7 @@ export default function ChatInput({
     if (!isLoading) {
       setQueuedMessages((prev) => removeQueuedMessage(prev, messageId));
       LocalMessageStorage.addMessage(messageToSend.content);
-      handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
+      handleSubmit(buildUserInput(messageToSend.content, messageToSend.images));
       return;
     }
 
@@ -1378,6 +1506,7 @@ export default function ChatInput({
         const steerAccepted = await onSteerQueuedMessage({
           msg: messageToSend.content,
           images: messageToSend.images,
+          assistantContext: buildCredentialContext(selectedCredentialProfiles) || undefined,
         });
 
         if (steerAccepted) {
@@ -1408,7 +1537,7 @@ export default function ChatInput({
           return newQueue;
         });
         LocalMessageStorage.addMessage(messageToSend.content);
-        handleSubmit({ msg: messageToSend.content, images: messageToSend.images });
+        handleSubmit(buildUserInput(messageToSend.content, messageToSend.images));
         return;
       }
     }
@@ -1432,7 +1561,7 @@ export default function ChatInput({
     if (!isLoading && !queueProcessingBlocked && queuedMessages.length > 0) {
       const nextMessage = queuedMessages[0];
       LocalMessageStorage.addMessage(nextMessage.content);
-      handleSubmit({ msg: nextMessage.content, images: nextMessage.images });
+      handleSubmit(buildUserInput(nextMessage.content, nextMessage.images));
       setQueuedMessages((prev) => {
         const newQueue = prev.slice(1);
         // If queue becomes empty after processing, clear the paused state
@@ -1481,6 +1610,58 @@ export default function ChatInput({
           className="border-b border-border-primary"
         />
       )}
+      <div className="mb-3 flex flex-col gap-2">
+        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-text-secondary">
+          <KeyRound className="h-3.5 w-3.5" />
+          {intl.formatMessage(i18n.credentials)}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedCredentialProfiles.map((profile) => (
+            <span
+              key={profile.id}
+              className="inline-flex items-center gap-1 rounded-full border border-border-primary bg-background-secondary px-3 py-1 text-xs text-text-primary"
+            >
+              {profile.name}
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedCredentialProfileIds((current) =>
+                    current.filter((profileId) => profileId !== profile.id)
+                  )
+                }
+                aria-label={`Remove ${profile.name}`}
+                className="text-text-secondary hover:text-text-primary"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <div className="min-w-[220px] max-w-sm flex-1">
+            <Select
+              value={null}
+              onChange={(option: unknown) => {
+                const selectedOption = option as { value: string; label: string } | null;
+                if (!selectedOption) {
+                  return;
+                }
+                setSelectedCredentialProfileIds((current) =>
+                  current.includes(selectedOption.value)
+                    ? current
+                    : [...current, selectedOption.value]
+                );
+              }}
+              options={availableCredentialOptions}
+              placeholder={
+                managedSecretProfiles.length > 0
+                  ? intl.formatMessage(i18n.addCredential)
+                  : intl.formatMessage(i18n.credentialsEmpty)
+              }
+              isSearchable={false}
+              isDisabled={availableCredentialOptions.length === 0}
+            />
+          </div>
+        </div>
+      </div>
       {/* Input row with inline action buttons wrapped in form */}
       <form onSubmit={onFormSubmit} className="relative">
         <div className="relative">
