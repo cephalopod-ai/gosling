@@ -1610,58 +1610,6 @@ export default function ChatInput({
           className="border-b border-border-primary"
         />
       )}
-      <div className="mb-3 flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-text-secondary">
-          <KeyRound className="h-3.5 w-3.5" />
-          {intl.formatMessage(i18n.credentials)}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {selectedCredentialProfiles.map((profile) => (
-            <span
-              key={profile.id}
-              className="inline-flex items-center gap-1 rounded-full border border-border-primary bg-background-secondary px-3 py-1 text-xs text-text-primary"
-            >
-              {profile.name}
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedCredentialProfileIds((current) =>
-                    current.filter((profileId) => profileId !== profile.id)
-                  )
-                }
-                aria-label={`Remove ${profile.name}`}
-                className="text-text-secondary hover:text-text-primary"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-          <div className="min-w-[220px] max-w-sm flex-1">
-            <Select
-              value={null}
-              onChange={(option: unknown) => {
-                const selectedOption = option as { value: string; label: string } | null;
-                if (!selectedOption) {
-                  return;
-                }
-                setSelectedCredentialProfileIds((current) =>
-                  current.includes(selectedOption.value)
-                    ? current
-                    : [...current, selectedOption.value]
-                );
-              }}
-              options={availableCredentialOptions}
-              placeholder={
-                managedSecretProfiles.length > 0
-                  ? intl.formatMessage(i18n.addCredential)
-                  : intl.formatMessage(i18n.credentialsEmpty)
-              }
-              isSearchable={false}
-              isDisabled={availableCredentialOptions.length === 0}
-            />
-          </div>
-        </div>
-      </div>
       {/* Input row with inline action buttons wrapped in form */}
       <form onSubmit={onFormSubmit} className="relative">
         <div className="relative">
@@ -2003,6 +1951,58 @@ export default function ChatInput({
           workingDir={currentWorkingDir}
           sessionId={sessionId}
         />
+      </div>
+      <div className="flex justify-end px-3 pb-1">
+        <div className="flex max-w-[420px] flex-wrap items-center justify-end gap-2 text-xs">
+          <div className="flex items-center gap-1 text-text-secondary">
+            <KeyRound className="h-3.5 w-3.5" />
+            <span className="uppercase tracking-wide">{intl.formatMessage(i18n.credentials)}</span>
+          </div>
+          {selectedCredentialProfiles.map((profile) => (
+            <span
+              key={profile.id}
+              className="inline-flex items-center gap-1 rounded-full border border-border-primary bg-background-secondary px-2 py-0.5 text-xs text-text-primary"
+            >
+              {profile.name}
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedCredentialProfileIds((current) =>
+                    current.filter((profileId) => profileId !== profile.id)
+                  )
+                }
+                aria-label={`Remove ${profile.name}`}
+                className="text-text-secondary hover:text-text-primary"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <div className="min-w-[220px] max-w-[260px]">
+            <Select
+              value={null}
+              onChange={(option: unknown) => {
+                const selectedOption = option as { value: string; label: string } | null;
+                if (!selectedOption) {
+                  return;
+                }
+                setSelectedCredentialProfileIds((current) =>
+                  current.includes(selectedOption.value)
+                    ? current
+                    : [...current, selectedOption.value]
+                );
+              }}
+              options={availableCredentialOptions}
+              placeholder={
+                managedSecretProfiles.length > 0
+                  ? intl.formatMessage(i18n.addCredential)
+                  : intl.formatMessage(i18n.credentialsEmpty)
+              }
+              isSearchable={false}
+              isDisabled={availableCredentialOptions.length === 0}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
