@@ -14,7 +14,7 @@ import {
   type GooseMessageMeta,
   getGooseMessageMeta,
   isRecord,
-  messagesChange,
+  messageUpserted,
   rawInputToArguments,
   toolIdentity,
   type ToolIdentity,
@@ -29,7 +29,7 @@ export function applyToolCall(state: AdapterState, update: ToolCall): AcpChatSta
       (content) => content.type === 'toolRequest' && content.id === update.toolCallId
     )
   ) {
-    return messagesChange(state);
+    return [];
   }
 
   const identity = toolIdentity(update);
@@ -49,7 +49,7 @@ export function applyToolCall(state: AdapterState, update: ToolCall): AcpChatSta
     ...(update._meta ? { _meta: update._meta } : {}),
   });
 
-  return messagesChange(state);
+  return [messageUpserted(state, message)];
 }
 
 export function applyToolCallUpdate(
@@ -62,7 +62,7 @@ export function applyToolCallUpdate(
   }
 
   if (hasToolResponse(state, update.toolCallId)) {
-    return messagesChange(state);
+    return [];
   }
 
   const gooseMeta = getGooseMessageMeta(update);
@@ -80,7 +80,7 @@ export function applyToolCallUpdate(
     ...(metadata ? { metadata } : {}),
   });
 
-  return messagesChange(state);
+  return [messageUpserted(state, message)];
 }
 
 function getOrCreateAssistantMessageForUpdate(

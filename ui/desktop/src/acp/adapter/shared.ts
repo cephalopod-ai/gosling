@@ -4,6 +4,7 @@ import type { Message, NotificationEvent } from '../../types/message';
 
 export type AcpChatStateChange =
   | { type: 'messages'; messages: Message[] }
+  | { type: 'messageUpserted'; index: number; message: Message }
   | { type: 'tokenState'; tokenState: Partial<TokenState> }
   | {
       type: 'sessionInfo';
@@ -36,6 +37,18 @@ export const DEFAULT_VISIBLE_MESSAGE_METADATA: Message['metadata'] = {
 
 export function messagesChange(state: AdapterState): AcpChatStateChange[] {
   return [{ type: 'messages', messages: state.messages.map(cloneMessage) }];
+}
+
+export function messageUpserted(
+  state: AdapterState,
+  message: Message,
+  index = state.messages.indexOf(message)
+): Extract<AcpChatStateChange, { type: 'messageUpserted' }> {
+  return {
+    type: 'messageUpserted',
+    index,
+    message: cloneMessage(message),
+  };
 }
 
 export function cloneMessage(message: Message): Message {

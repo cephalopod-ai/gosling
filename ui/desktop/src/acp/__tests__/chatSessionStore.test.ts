@@ -212,6 +212,26 @@ describe('acpChatSessionStore', () => {
     expect(acpChatSessionStore.getSnapshot(secondSessionId)?.messages[0].id).toBe('message-2');
   });
 
+  it('preserves unchanged message identity for incremental message updates', () => {
+    const currentSessionId = sessionId('session-1');
+    acpChatSessionActions.setMessages(currentSessionId, [
+      message('message-1', 'One'),
+      { ...message('message-2', 'Two'), role: 'assistant' },
+    ]);
+
+    const before = acpChatSessionStore.getSnapshot(currentSessionId);
+    expect(before?.messages).toHaveLength(2);
+    const firstMessage = before?.messages[0];
+
+    const after = acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(currentSessionId, 'message-2', ' plus')
+    );
+
+    expect(after.messages[0]).toBe(firstMessage);
+    expect(after.messages[1]).not.toBe(before?.messages[1]);
+    expect(after.messages[1].content[0]).toMatchObject({ type: 'text', text: 'Two plus' });
+  });
+
   it('deletes session snapshots', () => {
     const currentSessionId = sessionId('session-1');
 

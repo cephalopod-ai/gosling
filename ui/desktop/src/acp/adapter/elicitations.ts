@@ -4,7 +4,7 @@ import {
   type AcpChatStateChange,
   type AdapterState,
   DEFAULT_VISIBLE_MESSAGE_METADATA,
-  messagesChange,
+  messageUpserted,
 } from './shared';
 
 export type ElicitationStatus = 'submitted' | 'cancelled';
@@ -14,10 +14,10 @@ export function applyElicitationRequest(
   request: AcpElicitationRequest
 ): AcpChatStateChange[] {
   if (hasExistingElicitation(state, request.id)) {
-    return messagesChange(state);
+    return [];
   }
 
-  state.messages.push({
+  const message: Message = {
     id: request.id,
     role: 'assistant',
     created: Math.floor(Date.now() / 1000),
@@ -33,9 +33,10 @@ export function applyElicitationRequest(
       },
     ],
     metadata: { ...DEFAULT_VISIBLE_MESSAGE_METADATA },
-  });
+  };
+  state.messages.push(message);
 
-  return messagesChange(state);
+  return [messageUpserted(state, message)];
 }
 
 export function applyElicitationStatus(
@@ -47,9 +48,9 @@ export function applyElicitationStatus(
     isSubmitted: status === 'submitted',
     isCancelled: status === 'cancelled',
   };
-  let changed = false;
+  const changes: AcpChatStateChange[] = [];
 
-  state.messages = state.messages.map((message) => {
+  state.messages = state.messages.map((message, index) => {
     let messageChanged = false;
     const content = message.content.map((content) => {
       if (
@@ -61,7 +62,6 @@ export function applyElicitationStatus(
       }
 
       messageChanged = true;
-      changed = true;
       return {
         ...content,
         data: {
@@ -71,10 +71,16 @@ export function applyElicitationStatus(
       };
     });
 
-    return messageChanged ? { ...message, content } : message;
+    if (!messageChanged) {
+      return message;
+    }
+
+    const updatedMessage = { ...message, content };
+    changes.push(messageUpserted(state, updatedMessage, index));
+    return updatedMessage;
   });
 
-  return changed ? messagesChange(state) : [];
+  return changes;
 }
 
 function hasExistingElicitation(state: AdapterState, elicitationId: string): boolean {

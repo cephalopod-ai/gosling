@@ -577,6 +577,10 @@ function applyChatStateChanges(entry: StoreEntry, changes: AcpChatStateChange[])
         entry.messages = cloneMessages(change.messages);
         retainPendingLocalSteerMessageIds(entry);
         break;
+      case 'messageUpserted':
+        upsertMessageAtIndex(entry, change.index, change.message);
+        retainPendingLocalSteerMessageIds(entry);
+        break;
       case 'tokenState':
         entry.tokenState = { ...entry.tokenState, ...change.tokenState };
         break;
@@ -608,6 +612,35 @@ function resetReplayState(entry: StoreEntry): void {
   entry.pendingUserInputRequestIds.clear();
   entry.pendingLocalSteerMessageIds.clear();
   entry.adapter = createAcpSessionNotificationAdapter();
+}
+
+function upsertMessageAtIndex(entry: StoreEntry, index: number, message: Message): void {
+  const clonedMessage = cloneMessage(message);
+  const resolvedIndex = resolveMessageIndex(entry, index, clonedMessage);
+
+  if (resolvedIndex >= 0 && resolvedIndex < entry.messages.length) {
+    entry.messages = entry.messages.map((existingMessage, currentIndex) =>
+      currentIndex === resolvedIndex ? clonedMessage : existingMessage
+    );
+    return;
+  }
+
+  entry.messages = [...entry.messages, clonedMessage];
+}
+
+function resolveMessageIndex(entry: StoreEntry, index: number, message: Message): number {
+  if (index >= 0 && index <= entry.messages.length) {
+    return index;
+  }
+
+  if (message.id) {
+    return entry.messages.findIndex(
+      (existingMessage) =>
+        existingMessage.id === message.id && existingMessage.role === message.role
+    );
+  }
+
+  return -1;
 }
 
 export function acpPermissionUserInputRequestId(toolCallId: string): string {
@@ -672,7 +705,7 @@ function confirmedLocalSteerTextByMessageId(entry: StoreEntry): Map<string, stri
 function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
   return {
     session: entry.session,
-    messages: cloneMessages(entry.messages),
+    messages: entry.messages,
     tokenState: { ...entry.tokenState },
     notifications: [...entry.notifications],
     chatState: entry.chatState,

@@ -8,7 +8,7 @@ import {
   type AdapterState,
   DEFAULT_VISIBLE_MESSAGE_METADATA,
   getGooseMessageMeta,
-  messagesChange,
+  messageUpserted,
 } from './shared';
 
 type StreamedContentBlock = Extract<ContentBlock, { type: 'text' | 'image' }>;
@@ -58,7 +58,7 @@ export function applyContentChunk(
     });
   }
 
-  return messagesChange(state);
+  return [messageUpserted(state, state.messages[state.messages.length - 1])];
 }
 
 export function applyThoughtChunk(
@@ -90,7 +90,7 @@ export function applyThoughtChunk(
     });
   }
 
-  return messagesChange(state);
+  return [messageUpserted(state, existing ?? state.messages[state.messages.length - 1])];
 }
 
 function messageContentFromAcpContentBlock(
@@ -170,7 +170,7 @@ function messagesChangeWithLocalSteerConfirmation(
   message: Message,
   isSteerChunk: boolean | undefined
 ): AcpChatStateChange[] {
-  const changes = messagesChange(state);
+  const changes: AcpChatStateChange[] = [messageUpserted(state, message)];
   if (isSteerChunk && message.metadata.steer && message.role === 'user' && message.id) {
     changes.push({ type: 'localSteerConfirmed', messageId: message.id });
   }

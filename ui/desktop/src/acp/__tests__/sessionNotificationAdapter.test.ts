@@ -53,34 +53,44 @@ function agentImage(data: string, mimeType: string): SessionNotification {
   });
 }
 
-function expectOnlyMessagesChange(chatStateChanges: AcpChatStateChange[]): Message[] {
+function expectOnlyMessagesChange(
+  adapter: ReturnType<typeof createAcpSessionNotificationAdapter>,
+  chatStateChanges: AcpChatStateChange[]
+): Message[] {
   expect(chatStateChanges).toHaveLength(1);
 
   const [chatStateChange] = chatStateChanges;
-  expect(chatStateChange.type).toBe('messages');
+  expect(['messages', 'messageUpserted']).toContain(chatStateChange.type);
 
-  if (chatStateChange.type !== 'messages') {
-    throw new Error('expected messages state change');
+  if (chatStateChange.type === 'messages') {
+    return chatStateChange.messages;
+  }
+  if (chatStateChange.type === 'messageUpserted') {
+    return adapter.getMessages();
   }
 
-  return chatStateChange.messages;
+  throw new Error('expected messages state change');
 }
 
 function expectMessagesAndLocalSteerConfirmation(
+  adapter: ReturnType<typeof createAcpSessionNotificationAdapter>,
   chatStateChanges: AcpChatStateChange[],
   messageId: string
 ): Message[] {
   expect(chatStateChanges).toHaveLength(2);
 
   const [messagesChange, confirmationChange] = chatStateChanges;
-  expect(messagesChange.type).toBe('messages');
+  expect(['messages', 'messageUpserted']).toContain(messagesChange.type);
   expect(confirmationChange).toEqual({ type: 'localSteerConfirmed', messageId });
 
-  if (messagesChange.type !== 'messages') {
-    throw new Error('expected messages state change');
+  if (messagesChange.type === 'messages') {
+    return messagesChange.messages;
+  }
+  if (messagesChange.type === 'messageUpserted') {
+    return adapter.getMessages();
   }
 
-  return messagesChange.messages;
+  throw new Error('expected messages state change');
 }
 
 function expectOnlyNotificationChange(chatStateChanges: AcpChatStateChange[]): NotificationEvent {
@@ -111,14 +121,14 @@ describe('createAcpSessionNotificationAdapter', () => {
         adapter.apply(agentText('Hello '));
 
         const secondChunkStateChanges = adapter.apply(agentText('world'));
-        let messages = expectOnlyMessagesChange(secondChunkStateChanges);
+        let messages = expectOnlyMessagesChange(adapter, secondChunkStateChanges);
 
         expect(messages).toHaveLength(1);
         expect(messages[0].role).toBe('assistant');
         expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'Hello world' });
 
         const userTextStateChanges = adapter.apply(userText('Question'));
-        messages = expectOnlyMessagesChange(userTextStateChanges);
+        messages = expectOnlyMessagesChange(adapter, userTextStateChanges);
 
         expect(messages).toHaveLength(2);
         expect(messages[1].role).toBe('user');
@@ -129,7 +139,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         const adapter = createAcpSessionNotificationAdapter();
 
         adapter.apply(agentText('Hel'));
-        const messages = expectOnlyMessagesChange(adapter.apply(agentText('l')));
+        const messages = expectOnlyMessagesChange(adapter, adapter.apply(agentText('l')));
 
         expect(messages).toHaveLength(1);
         expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'Hell' });
@@ -150,6 +160,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         ]);
 
         let messages = expectMessagesAndLocalSteerConfirmation(
+          adapter,
           adapter.apply(
             acpUpdate({
               sessionUpdate: 'user_message_chunk',
@@ -174,6 +185,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         expect(messages[0].metadata.steer).toBe(true);
 
         messages = expectMessagesAndLocalSteerConfirmation(
+          adapter,
           adapter.apply(
             acpUpdate({
               sessionUpdate: 'user_message_chunk',
@@ -192,6 +204,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'hello' });
 
         messages = expectMessagesAndLocalSteerConfirmation(
+          adapter,
           adapter.apply(
             acpUpdate({
               sessionUpdate: 'user_message_chunk',
@@ -225,6 +238,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         ]);
 
         let messages = expectMessagesAndLocalSteerConfirmation(
+          adapter,
           adapter.apply(
             acpUpdate({
               sessionUpdate: 'user_message_chunk',
@@ -243,6 +257,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'ha' });
 
         messages = expectMessagesAndLocalSteerConfirmation(
+          adapter,
           adapter.apply(
             acpUpdate({
               sessionUpdate: 'user_message_chunk',
@@ -265,7 +280,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         const imageAdapter = createAcpSessionNotificationAdapter();
 
         const imageStateChanges = imageAdapter.apply(agentImage('base64-image', 'image/png'));
-        const imageMessages = expectOnlyMessagesChange(imageStateChanges);
+        const imageMessages = expectOnlyMessagesChange(imageAdapter, imageStateChanges);
 
         expect(firstContent(imageMessages[0])).toMatchObject({
           type: 'image',
@@ -277,7 +292,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         thoughtAdapter.apply(agentThought('Thinking '));
 
         const thoughtStateChanges = thoughtAdapter.apply(agentThought('more'));
-        const thoughtMessages = expectOnlyMessagesChange(thoughtStateChanges);
+        const thoughtMessages = expectOnlyMessagesChange(thoughtAdapter, thoughtStateChanges);
 
         expect(thoughtMessages).toHaveLength(1);
         expect(firstContent(thoughtMessages[0])).toMatchObject({
@@ -311,7 +326,7 @@ describe('createAcpSessionNotificationAdapter', () => {
             },
           })
         );
-        let messages = expectOnlyMessagesChange(toolCallStateChanges);
+        let messages = expectOnlyMessagesChange(adapter, toolCallStateChanges);
 
         expect(messages).toHaveLength(1);
         expect(messages[0].role).toBe('assistant');
@@ -357,7 +372,7 @@ describe('createAcpSessionNotificationAdapter', () => {
             },
           })
         );
-        messages = expectOnlyMessagesChange(toolResponseStateChanges);
+        messages = expectOnlyMessagesChange(adapter, toolResponseStateChanges);
 
         expect(messages).toHaveLength(2);
         expect(messages[1].role).toBe('user');
@@ -395,7 +410,7 @@ describe('createAcpSessionNotificationAdapter', () => {
             rawOutput: 'permission denied',
           })
         );
-        const messages = expectOnlyMessagesChange(failedToolStateChanges);
+        const messages = expectOnlyMessagesChange(adapter, failedToolStateChanges);
 
         expect(messages).toHaveLength(1);
         expect(messages[0].role).toBe('user');
@@ -422,13 +437,7 @@ describe('createAcpSessionNotificationAdapter', () => {
             sessionUpdate: 'tool_call',
             toolCallId: 'tool-1',
             title: 'Inspect data',
-            toolCall: {
-              status: 'success',
-              value: {
-                name: 'inspect_data',
-                arguments: {},
-              },
-            },
+            rawInput: {},
           })
         );
 
@@ -440,7 +449,7 @@ describe('createAcpSessionNotificationAdapter', () => {
             rawOutput: { ok: true, count: 2 },
           })
         );
-        const messages = expectOnlyMessagesChange(toolResponseStateChanges);
+        const messages = expectOnlyMessagesChange(adapter, toolResponseStateChanges);
 
         expect(messages).toHaveLength(2);
         expect(firstContent(messages[1])).toMatchObject({
@@ -474,7 +483,7 @@ describe('createAcpSessionNotificationAdapter', () => {
             ],
           })
         );
-        const messages = expectOnlyMessagesChange(failedToolStateChanges);
+        const messages = expectOnlyMessagesChange(adapter, failedToolStateChanges);
 
         expect(firstContent(messages[0])).toMatchObject({
           type: 'toolResponse',
@@ -604,7 +613,7 @@ describe('createAcpSessionNotificationAdapter', () => {
           status: { type: 'notice', message: 'Checking files' },
         })
       );
-      let messages = expectOnlyMessagesChange(noticeStateChanges);
+      let messages = expectOnlyMessagesChange(adapter, noticeStateChanges);
 
       expect(messages).toHaveLength(1);
       expect(messages[0].metadata).toMatchObject({ userVisible: true, agentVisible: false });
@@ -615,7 +624,7 @@ describe('createAcpSessionNotificationAdapter', () => {
       });
 
       const textStateChanges = adapter.apply(agentText('Result'));
-      messages = expectOnlyMessagesChange(textStateChanges);
+      messages = expectOnlyMessagesChange(adapter, textStateChanges);
 
       expect(messages).toHaveLength(2);
       expect(firstContent(messages[1])).toMatchObject({ type: 'text', text: 'Result' });
@@ -626,7 +635,7 @@ describe('createAcpSessionNotificationAdapter', () => {
           status: { type: 'progress', message: 'Still working' },
         })
       );
-      messages = expectOnlyMessagesChange(progressStateChanges);
+      messages = expectOnlyMessagesChange(adapter, progressStateChanges);
 
       expect(firstContent(messages[2])).toMatchObject({
         type: 'systemNotification',
@@ -664,7 +673,7 @@ describe('createAcpSessionNotificationAdapter', () => {
       };
 
       const permissionStateChanges = adapter.applyPermissionRequest(request);
-      const messages = expectOnlyMessagesChange(permissionStateChanges);
+      const messages = expectOnlyMessagesChange(adapter, permissionStateChanges);
 
       expect(messages).toHaveLength(1);
       expect(messages[0].role).toBe('assistant');

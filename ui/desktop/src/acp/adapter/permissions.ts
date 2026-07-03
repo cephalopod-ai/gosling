@@ -1,9 +1,10 @@
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk';
+import type { Message } from '../../types/message';
 import {
   type AcpChatStateChange,
   type AdapterState,
   DEFAULT_VISIBLE_MESSAGE_METADATA,
-  messagesChange,
+  messageUpserted,
   rawInputToArguments,
   toolIdentity,
 } from './shared';
@@ -22,13 +23,13 @@ export function applyPermissionRequest(
     )
   );
   if (existing) {
-    return messagesChange(state);
+    return [];
   }
 
   const identity = toolIdentity(request.toolCall);
   const prompt = permissionPrompt(request);
 
-  state.messages.push({
+  const message: Message = {
     id: `acp_permission_${toolCallId}`,
     role: 'assistant',
     created: Math.floor(Date.now() / 1000),
@@ -45,9 +46,10 @@ export function applyPermissionRequest(
       },
     ],
     metadata: { ...DEFAULT_VISIBLE_MESSAGE_METADATA },
-  });
+  };
+  state.messages.push(message);
 
-  return messagesChange(state);
+  return [messageUpserted(state, message)];
 }
 
 function permissionPrompt(request: RequestPermissionRequest): string | undefined {
