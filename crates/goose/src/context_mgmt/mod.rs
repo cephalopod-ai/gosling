@@ -244,11 +244,7 @@ pub async fn check_if_compaction_needed(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
 
-    let estimated_tokens: usize = messages
-        .iter()
-        .filter(|m| m.is_agent_visible())
-        .map(|msg| token_counter.count_chat_tokens("", std::slice::from_ref(msg), &[]))
-        .sum();
+    let estimated_tokens = token_counter.count_chat_tokens("", messages, &[]);
 
     // The stored value is recorded before tool responses are added, so it can miss
     // large tool outputs. Use whichever count is higher.
