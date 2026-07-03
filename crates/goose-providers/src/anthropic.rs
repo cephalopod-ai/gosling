@@ -194,7 +194,8 @@ impl AnthropicProvider {
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown error");
-            return Err(ProviderError::Authentication(msg.to_string()));
+            let kind = err_obj.get("type").and_then(|v| v.as_str());
+            return Err(ProviderError::from_models_error_payload(kind, msg));
         }
 
         // A 200 response whose body isn't a models payload (no `data` array)
@@ -209,7 +210,8 @@ impl AnthropicProvider {
             Some(arr) => arr,
             None => {
                 if let Some(msg) = json.get("message").and_then(|v| v.as_str()) {
-                    return Err(ProviderError::Authentication(msg.to_string()));
+                    let kind = json.get("type").and_then(|v| v.as_str());
+                    return Err(ProviderError::from_models_error_payload(kind, msg));
                 }
                 return Err(ProviderError::EndpointNotFound(
                     "response is not a models payload (missing 'data' array)".into(),
@@ -604,6 +606,35 @@ mod tests {
         assert!(
             matches!(err, ProviderError::Authentication(_)),
             "expected Authentication error, got: {:?}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_preserves_server_error_payload() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "type": "error",
+                "error": {
+                    "type": "overloaded_error",
+                    "message": "server overloaded"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let provider =
+            make_provider_with_custom_models(&server.uri(), vec!["static-model".to_string()]);
+
+        let err = provider.fetch_supported_models().await.unwrap_err();
+        assert!(
+            matches!(err, ProviderError::ServerError(_)),
+            "expected ServerError, got: {:?}",
             err
         );
     }

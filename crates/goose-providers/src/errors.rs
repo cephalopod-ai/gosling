@@ -78,6 +78,45 @@ impl ProviderError {
         matches!(self, ProviderError::EndpointNotFound(_))
     }
 
+    pub fn from_models_error_payload(kind: Option<&str>, message: &str) -> Self {
+        let message = message.to_string();
+        let kind = kind.unwrap_or_default().to_ascii_lowercase();
+        let message_lower = message.to_ascii_lowercase();
+
+        if kind.contains("auth")
+            || kind.contains("permission")
+            || kind.contains("forbidden")
+            || message_lower.contains("api key")
+            || message_lower.contains("unauthorized")
+            || message_lower.contains("authentication")
+        {
+            return ProviderError::Authentication(message);
+        }
+
+        if kind.contains("rate")
+            || kind.contains("quota")
+            || message_lower.contains("rate limit")
+            || message_lower.contains("too many requests")
+        {
+            return ProviderError::RateLimitExceeded {
+                details: message,
+                retry_delay: None,
+            };
+        }
+
+        if kind.contains("server")
+            || kind.contains("overload")
+            || kind.contains("unavailable")
+            || message_lower.contains("server error")
+            || message_lower.contains("overloaded")
+            || message_lower.contains("unavailable")
+        {
+            return ProviderError::ServerError(message);
+        }
+
+        ProviderError::RequestFailed(message)
+    }
+
     /// Recover a typed `ProviderError` from a streaming decode error, falling
     /// back to a retryable stream decode error for errors that did not
     /// originate as one.

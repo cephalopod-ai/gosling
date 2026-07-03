@@ -452,7 +452,8 @@ impl OpenAiProvider {
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown error");
-            return Err(ProviderError::Authentication(msg.to_string()));
+            let kind = err_obj.get("type").and_then(|v| v.as_str());
+            return Err(ProviderError::from_models_error_payload(kind, msg));
         }
 
         let data = match json.get("data").and_then(|v| v.as_array()) {
@@ -465,7 +466,8 @@ impl OpenAiProvider {
             // {"data": [...], "message": "ok"} is not rejected.
             None => {
                 if let Some(msg) = json.get("message").and_then(|v| v.as_str()) {
-                    return Err(ProviderError::Authentication(msg.to_string()));
+                    let kind = json.get("type").and_then(|v| v.as_str());
+                    return Err(ProviderError::from_models_error_payload(kind, msg));
                 }
                 return Err(ProviderError::EndpointNotFound(
                     "response is not a models payload (missing 'data' array)".into(),
@@ -1399,6 +1401,37 @@ mod tests {
         assert!(
             matches!(err, ProviderError::Authentication(_)),
             "expected Authentication error, got: {:?}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_preserves_rate_limit_error_payload() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "error": {
+                    "type": "rate_limit_error",
+                    "message": "too many requests"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = make_provider_with_custom_models(
+            &server.uri(),
+            "v1/chat/completions",
+            vec!["static-model".to_string()],
+        );
+
+        let err = provider.fetch_supported_models().await.unwrap_err();
+        assert!(
+            matches!(err, ProviderError::RateLimitExceeded { .. }),
+            "expected RateLimitExceeded error, got: {:?}",
             err
         );
     }

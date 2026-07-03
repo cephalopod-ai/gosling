@@ -967,11 +967,6 @@ impl Agent {
         });
         tracing::Span::current().record("input", tracing::field::display(&input_summary));
 
-        self.subdirectory_hint_tracker
-            .lock()
-            .await
-            .record_tool_arguments(&tool_call.arguments, &session.working_dir);
-
         if self
             .hook_manager
             .has_hooks(crate::hooks::HookEvent::PreToolUse)
@@ -1004,6 +999,11 @@ impl Agent {
                 );
             }
         }
+
+        self.subdirectory_hint_tracker
+            .lock()
+            .await
+            .record_tool_arguments(&tool_call.arguments, &session.working_dir);
 
         let tool_input_for_extended = tool_call
             .arguments
@@ -3081,6 +3081,61 @@ cat > "$PLUGIN_ROOT/payload.json"
 exit 0
 "#;
 
+    const PRE_TOOL_BLOCK_SCRIPT: &str = r#"#!/bin/sh
+echo "path denied" >&2
+exit 2
+"#;
+
+    struct PreToolHookTestEnv {
+        temp_dir: TempDir,
+        plugin_dir: PathBuf,
+    }
+
+    impl PreToolHookTestEnv {
+        fn new(script: &str) -> Result<Self> {
+            let temp_dir = tempfile::tempdir()?;
+            let plugin_dir = temp_dir.path().join("pre-tool-blocker");
+            std::fs::create_dir_all(plugin_dir.join("hooks"))?;
+            std::fs::write(
+                plugin_dir.join("hooks/hooks.json"),
+                r#"{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh ${PLUGIN_ROOT}/block.sh" }
+        ]
+      }
+    ]
+  }
+}
+"#,
+            )?;
+            std::fs::write(plugin_dir.join("block.sh"), script)?;
+
+            Ok(Self {
+                temp_dir,
+                plugin_dir,
+            })
+        }
+
+        fn hook_manager(&self) -> crate::hooks::HookManager {
+            crate::hooks::HookManager::from_plugins_for_test(vec![DiscoveredPlugin {
+                name: "pre-tool-blocker".into(),
+                root: self.plugin_dir.clone(),
+                scope: PluginScope::Project,
+            }])
+        }
+
+        fn data_dir(&self) -> PathBuf {
+            self.temp_dir.path().join("data")
+        }
+
+        fn work_dir(&self) -> PathBuf {
+            self.temp_dir.path().join("work")
+        }
+    }
+
     struct StopHookTestEnv {
         temp_dir: TempDir,
         hook_log: PathBuf,
@@ -3286,6 +3341,69 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         fn get_name(&self) -> &str {
             "refusing"
         }
+    }
+
+    #[tokio::test]
+    async fn denied_pre_tool_use_does_not_inject_subdirectory_hints() -> Result<()> {
+        let env = PreToolHookTestEnv::new(PRE_TOOL_BLOCK_SCRIPT)?;
+        let work_dir = env.work_dir();
+        let sub_dir = work_dir.join("sub");
+        std::fs::create_dir_all(&sub_dir)?;
+        std::fs::write(
+            sub_dir.join(crate::hints::GOOSE_HINTS_FILENAME),
+            "denied hint",
+        )?;
+
+        let provider = Arc::new(CountingTextProvider::new());
+        let session_manager = Arc::new(SessionManager::new(env.data_dir()));
+        let permission_manager = PermissionManager::instance();
+        let config = AgentConfig::new(
+            session_manager.clone(),
+            permission_manager,
+            GooseMode::Auto,
+            true,
+            GoosePlatform::GooseCli,
+        );
+        let mut agent = Agent::with_config(config);
+        agent.set_hook_manager_for_test(env.hook_manager());
+        let session = session_manager
+            .create_session(
+                work_dir.clone(),
+                "pre-tool-deny".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await?;
+        agent
+            .update_provider(
+                provider,
+                goose_providers::model::ModelConfig::new("mock-model"),
+                &session.id,
+            )
+            .await?;
+
+        let tool_call = CallToolRequestParams::new("inspect")
+            .with_arguments(rmcp::object!({ "path": "sub/secret.txt" }));
+        let (_request_id, result) = agent
+            .dispatch_tool_call(
+                tool_call,
+                "request-1".to_string(),
+                None,
+                &session_manager.get_session(&session.id, false).await?,
+            )
+            .await;
+
+        assert!(result.is_err(), "policy hook should deny the tool call");
+        let hints = agent
+            .subdirectory_hint_tracker
+            .lock()
+            .await
+            .collect_new_hints(&work_dir);
+        assert!(
+            hints.is_none(),
+            "a denied tool path must not be converted into hidden agent-visible hints"
+        );
+        Ok(())
     }
 
     #[tokio::test]
