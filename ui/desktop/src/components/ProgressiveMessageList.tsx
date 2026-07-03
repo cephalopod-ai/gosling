@@ -26,10 +26,20 @@ import {
   CreditsExhaustedNotification,
   getCreditsExhaustedNotification,
 } from './context_management/CreditsExhaustedNotification';
-import type { Message, NotificationEvent, SystemNotificationContent } from '../types/message';
+import {
+  getAnyToolConfirmationData,
+  getPendingToolConfirmationIds,
+  getToolRequests,
+  getToolResponses,
+  type Message,
+  type NotificationEvent,
+  type SystemNotificationContent,
+  type ToolConfirmationData,
+  type ToolResponseMessageContent,
+} from '../types/message';
 import LoadingGoose from './LoadingGoose';
 import { ChatType } from '../types/chat';
-import { identifyConsecutiveToolCalls, isInChain } from '../utils/toolCallChaining';
+import { identifyConsecutiveToolCalls } from '../utils/toolCallChaining';
 import { getModelDisplayName } from './settings/models/predefinedModelsUtils';
 
 const i18n = defineMessages({
@@ -65,6 +75,15 @@ interface ProgressiveMessageListProps {
     elicitationId: string,
     userData: Record<string, unknown>
   ) => Promise<boolean>;
+}
+
+interface MessageRenderIndex {
+  confirmationByToolRequestId: Map<string, ToolConfirmationData>;
+  hiddenTimestampIndexes: Set<number>;
+  pendingConfirmationIds: Set<string>;
+  toolRequestIds: Set<string>;
+  toolResponseByRequestId: Map<string, ToolResponseMessageContent>;
+  toolCallChainIndexes: Set<number>;
 }
 
 export default function ProgressiveMessageList({
@@ -228,8 +247,51 @@ export default function ProgressiveMessageList({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLoading, messages.length]);
 
-  // Detect tool call chains
-  const toolCallChains = useMemo(() => identifyConsecutiveToolCalls(messages), [messages]);
+  const messageRenderIndex = useMemo<MessageRenderIndex>(() => {
+    const toolResponseByRequestId = new Map<string, ToolResponseMessageContent>();
+    const confirmationByToolRequestId = new Map<string, ToolConfirmationData>();
+    const toolRequestIds = new Set<string>();
+
+    for (const message of messages) {
+      for (const request of getToolRequests(message)) {
+        toolRequestIds.add(request.id);
+      }
+
+      for (const response of getToolResponses(message)) {
+        if (!toolResponseByRequestId.has(response.id)) {
+          toolResponseByRequestId.set(response.id, response);
+        }
+      }
+
+      const confirmationData = getAnyToolConfirmationData(message);
+      if (confirmationData && !confirmationByToolRequestId.has(confirmationData.id)) {
+        confirmationByToolRequestId.set(confirmationData.id, confirmationData);
+      }
+    }
+
+    const toolCallChains = identifyConsecutiveToolCalls(messages);
+    const toolCallChainIndexes = new Set<number>();
+    const hiddenTimestampIndexes = new Set<number>();
+
+    for (const chain of toolCallChains) {
+      for (const index of chain) {
+        toolCallChainIndexes.add(index);
+      }
+
+      for (const index of chain.slice(0, -1)) {
+        hiddenTimestampIndexes.add(index);
+      }
+    }
+
+    return {
+      confirmationByToolRequestId,
+      hiddenTimestampIndexes,
+      pendingConfirmationIds: getPendingToolConfirmationIds(messages),
+      toolRequestIds,
+      toolResponseByRequestId,
+      toolCallChainIndexes,
+    };
+  }, [messages]);
 
   // Render messages up to the current rendered count
   const renderMessages = useCallback(() => {
@@ -265,20 +327,22 @@ export default function ProgressiveMessageList({
         }
 
         const isUser = isUserMessage(message);
-        const messageIsInChain = isInChain(index, toolCallChains);
+        const messageIsInChain = messageRenderIndex.toolCallChainIndexes.has(index);
         const currentResolvedModel = getResolvedModel(message);
         const previousResolvedModel = currentResolvedModel ? getPreviousResolvedModel(index) : null;
         const showModelChangeDisclosure = Boolean(
           currentResolvedModel &&
-            previousResolvedModel &&
-            currentResolvedModel !== previousResolvedModel
+          previousResolvedModel &&
+          currentResolvedModel !== previousResolvedModel
         );
 
         const messageKey = message.id ?? `msg-${index}-${message.created}`;
 
         return (
           <Fragment key={messageKey}>
-            {showModelChangeDisclosure && currentResolvedModel && previousResolvedModel &&
+            {showModelChangeDisclosure &&
+              currentResolvedModel &&
+              previousResolvedModel &&
               renderModelChangeDisclosure(previousResolvedModel, currentResolvedModel)}
             <div
               className={`relative ${index === 0 ? 'mt-0' : 'mt-4'} ${isUser ? 'user' : 'assistant'} ${messageIsInChain ? 'in-chain' : ''}`}
@@ -292,7 +356,11 @@ export default function ProgressiveMessageList({
                 <GooseMessage
                   sessionId={chat.sessionId}
                   message={message}
-                  messages={messages}
+                  hideTimestamp={messageRenderIndex.hiddenTimestampIndexes.has(index)}
+                  toolResponsesById={messageRenderIndex.toolResponseByRequestId}
+                  confirmationByToolRequestId={messageRenderIndex.confirmationByToolRequestId}
+                  pendingConfirmationIds={messageRenderIndex.pendingConfirmationIds}
+                  toolRequestIds={messageRenderIndex.toolRequestIds}
                   append={append}
                   toolCallNotifications={toolCallNotifications}
                   isStreaming={
@@ -319,7 +387,7 @@ export default function ProgressiveMessageList({
     toolCallNotifications,
     isStreamingMessage,
     onMessageUpdate,
-    toolCallChains,
+    messageRenderIndex,
     submitElicitationResponse,
     getPreviousResolvedModel,
     getResolvedModel,

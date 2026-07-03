@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import ImagePreview from './ImagePreview';
 import { formatMessageTimestamp } from '../utils/timeUtils';
 import MarkdownContent from './MarkdownContent';
@@ -8,25 +8,27 @@ import {
   getTextAndImageContent,
   getThinkingContent,
   getToolRequests,
-  getToolResponses,
   getToolConfirmationContent,
   getElicitationContent,
-  getPendingToolConfirmationIds,
   getAnyToolConfirmationData,
   ToolConfirmationData,
   NotificationEvent,
+  ToolResponseMessageContent,
   type Message,
 } from '../types/message';
 import ToolCallConfirmation from './ToolCallConfirmation';
 import ElicitationRequest from './ElicitationRequest';
 import MessageCopyLink from './MessageCopyLink';
 import { cn } from '../utils';
-import { identifyConsecutiveToolCalls, shouldHideTimestamp } from '../utils/toolCallChaining';
 
 interface GooseMessageProps {
   sessionId: string;
   message: Message;
-  messages: Message[];
+  hideTimestamp: boolean;
+  toolResponsesById: Map<string, ToolResponseMessageContent>;
+  confirmationByToolRequestId: Map<string, ToolConfirmationData>;
+  pendingConfirmationIds: Set<string>;
+  toolRequestIds: Set<string>;
   metadata?: string[];
   toolCallNotifications: Map<string, NotificationEvent[]>;
   append: (value: string) => void;
@@ -37,10 +39,14 @@ interface GooseMessageProps {
   ) => Promise<boolean>;
 }
 
-export default function GooseMessage({
+function GooseMessage({
   sessionId,
   message,
-  messages,
+  hideTimestamp,
+  toolResponsesById,
+  confirmationByToolRequestId,
+  pendingConfirmationIds,
+  toolRequestIds,
   toolCallNotifications,
   append,
   isStreaming,
@@ -53,26 +59,8 @@ export default function GooseMessage({
 
   const timestamp = useMemo(() => formatMessageTimestamp(message.created), [message.created]);
   const toolRequests = getToolRequests(message);
-  const messageIndex = messages.findIndex((msg) => msg.id === message.id);
   const toolConfirmationContent = getToolConfirmationContent(message);
   const elicitationContent = getElicitationContent(message);
-
-  const findConfirmationForToolAcrossMessages = (
-    toolRequestId: string
-  ): ToolConfirmationData | undefined => {
-    for (const msg of messages) {
-      const confirmationData = getAnyToolConfirmationData(msg);
-      if (confirmationData && confirmationData.id === toolRequestId) {
-        return confirmationData;
-      }
-    }
-    return undefined;
-  };
-  const toolCallChains = useMemo(() => identifyConsecutiveToolCalls(messages), [messages]);
-  const hideTimestamp = useMemo(
-    () => shouldHideTimestamp(messageIndex, toolCallChains),
-    [messageIndex, toolCallChains]
-  );
   const hasToolConfirmation = toolConfirmationContent !== undefined;
   const hasElicitation = elicitationContent !== undefined;
   const elicitationData =
@@ -88,35 +76,8 @@ export default function GooseMessage({
     const confirmationData = getAnyToolConfirmationData(message);
     if (!confirmationData) return false;
 
-    for (const msg of messages) {
-      const requests = getToolRequests(msg);
-      if (requests.some((req) => req.id === confirmationData.id)) {
-        return true;
-      }
-    }
-    return false;
-  }, [toolConfirmationContent, message, messages]);
-
-  const toolResponsesMap = useMemo(() => {
-    const responseMap = new Map();
-
-    if (messageIndex !== undefined && messageIndex >= 0) {
-      for (let i = messageIndex + 1; i < messages.length; i++) {
-        const responses = getToolResponses(messages[i]);
-
-        for (const response of responses) {
-          const matchingRequest = toolRequests.find((req) => req.id === response.id);
-          if (matchingRequest) {
-            responseMap.set(response.id, response);
-          }
-        }
-      }
-    }
-
-    return responseMap;
-  }, [messages, messageIndex, toolRequests]);
-
-  const pendingConfirmationIds = getPendingToolConfirmationIds(messages);
+    return toolRequestIds.has(confirmationData.id);
+  }, [toolConfirmationContent, message, toolRequestIds]);
 
   return (
     <div className="goose-message flex w-[90%] justify-start min-w-0">
@@ -171,9 +132,10 @@ export default function GooseMessage({
             <div className="relative flex flex-col w-full">
               <div className="flex flex-col gap-3">
                 {toolRequests.map((toolRequest) => {
-                  const hasResponse = toolResponsesMap.has(toolRequest.id);
+                  const toolResponse = toolResponsesById.get(toolRequest.id);
+                  const hasResponse = toolResponse !== undefined;
                   const isPending = pendingConfirmationIds.has(toolRequest.id);
-                  const confirmationContent = findConfirmationForToolAcrossMessages(toolRequest.id);
+                  const confirmationContent = confirmationByToolRequestId.get(toolRequest.id);
                   const isApprovalClicked = confirmationContent && !isPending && hasResponse;
                   return (
                     <div className="goose-message-tool" key={toolRequest.id}>
@@ -181,7 +143,7 @@ export default function GooseMessage({
                         sessionId={sessionId}
                         isCancelledMessage={false}
                         toolRequest={toolRequest}
-                        toolResponse={toolResponsesMap.get(toolRequest.id)}
+                        toolResponse={toolResponse}
                         notifications={toolCallNotifications.get(toolRequest.id)}
                         isStreamingMessage={isStreaming}
                         isPendingApproval={isPending}
@@ -220,3 +182,41 @@ export default function GooseMessage({
     </div>
   );
 }
+
+function areGooseMessagePropsEqual(prev: GooseMessageProps, next: GooseMessageProps): boolean {
+  if (
+    prev.sessionId !== next.sessionId ||
+    prev.message !== next.message ||
+    prev.hideTimestamp !== next.hideTimestamp ||
+    prev.metadata !== next.metadata ||
+    prev.append !== next.append ||
+    prev.isStreaming !== next.isStreaming ||
+    prev.submitElicitationResponse !== next.submitElicitationResponse
+  ) {
+    return false;
+  }
+
+  const toolRequests = getToolRequests(prev.message);
+  for (const toolRequest of toolRequests) {
+    const id = toolRequest.id;
+    if (
+      prev.toolResponsesById.get(id) !== next.toolResponsesById.get(id) ||
+      prev.confirmationByToolRequestId.get(id) !== next.confirmationByToolRequestId.get(id) ||
+      prev.pendingConfirmationIds.has(id) !== next.pendingConfirmationIds.has(id) ||
+      prev.toolCallNotifications.get(id) !== next.toolCallNotifications.get(id)
+    ) {
+      return false;
+    }
+  }
+
+  const confirmationData = getAnyToolConfirmationData(prev.message);
+  if (confirmationData) {
+    return (
+      prev.toolRequestIds.has(confirmationData.id) === next.toolRequestIds.has(confirmationData.id)
+    );
+  }
+
+  return true;
+}
+
+export default memo(GooseMessage, areGooseMessagePropsEqual);
