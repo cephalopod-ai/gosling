@@ -2,6 +2,9 @@ import React from 'react';
 import ReactSelect from 'react-select';
 
 export const Select = (props: React.ComponentProps<typeof ReactSelect>) => {
+  const customClassNames = props.classNames ?? {};
+  const customStyles = props.styles ?? {};
+
   return (
     <ReactSelect
       {...props}
@@ -32,6 +35,7 @@ export const Select = (props: React.ComponentProps<typeof ReactSelect>) => {
 
           return classes;
         },
+        ...customClassNames,
       }}
       menuShouldBlockScroll={false}
       menuShouldScrollIntoView={false}
@@ -54,6 +58,7 @@ export const Select = (props: React.ComponentProps<typeof ReactSelect>) => {
           pointerEvents: 'auto',
           cursor: 'pointer',
         }),
+        ...customStyles,
       }}
     />
   );

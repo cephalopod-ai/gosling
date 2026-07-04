@@ -2000,6 +2000,15 @@ export default function ChatInput({
               }
               isSearchable={false}
               isDisabled={availableCredentialOptions.length === 0}
+              menuPlacement="top"
+              menuPosition="fixed"
+              menuPortalTarget={document.body}
+              styles={{
+                menuPortal: (base) => ({
+                  ...base,
+                  zIndex: 10000,
+                }),
+              }}
             />
           </div>
         </div>
