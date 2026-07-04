@@ -1,4 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use rmcp::model::Role;
 
@@ -22,22 +24,24 @@ fn has_tool_content(msg: &Message) -> bool {
 }
 
 /// A signature identifying a tool response's content, used to detect
-/// duplicate tool output (the same result repeated verbatim later).
-fn tool_response_signature(msg: &Message) -> Option<String> {
+/// duplicate tool output (the same result repeated verbatim later). Hashes
+/// the content instead of collecting it into a `String` so a large tool
+/// result isn't cloned just to be compared.
+fn tool_response_signature(msg: &Message) -> Option<u64> {
     msg.content.iter().find_map(|c| {
         let resp = c.as_tool_response()?;
         let result = resp.tool_result.as_ref().ok()?;
-        let text = result
-            .content
-            .iter()
-            .filter_map(|item| item.as_text().map(|t| t.text.clone()))
-            .collect::<Vec<_>>()
-            .join("\n");
-        if text.is_empty() {
-            None
-        } else {
-            Some(text)
+
+        let mut hasher = DefaultHasher::new();
+        let mut has_text = false;
+        for item in &result.content {
+            if let Some(text) = item.as_text() {
+                text.text.hash(&mut hasher);
+                has_text = true;
+            }
         }
+
+        has_text.then(|| hasher.finish())
     })
 }
 
@@ -71,7 +75,7 @@ pub fn classify_blocks(messages: &[Message], token_counter: &TokenCounter) -> Ve
 
     // Only the most recent occurrence of an identical tool response is kept;
     // earlier ones are duplicates.
-    let mut latest_signature_pos: HashMap<String, usize> = HashMap::new();
+    let mut latest_signature_pos: HashMap<u64, usize> = HashMap::new();
     for (pos, msg) in indexed.iter().enumerate() {
         if let Some(sig) = tool_response_signature(msg) {
             latest_signature_pos.insert(sig, pos);

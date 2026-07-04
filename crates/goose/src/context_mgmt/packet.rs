@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use crate::conversation::message::{Message, MessageMetadata};
+use crate::conversation::{fix_conversation, Conversation};
 use crate::token_counter::TokenCounter;
 
 use super::block::{ContextBlock, ContextPriority, ContextSlot};
@@ -104,8 +105,9 @@ fn summarize_group(
         .map(super::format_message_for_compacting)
         .collect();
     let joined = rendered.join("\n");
-    let preview: String = joined.chars().take(SUMMARY_PREVIEW_CHARS).collect();
-    let truncated = joined.chars().count() > SUMMARY_PREVIEW_CHARS;
+    let mut chars = joined.chars();
+    let preview: String = chars.by_ref().take(SUMMARY_PREVIEW_CHARS).collect();
+    let truncated = chars.next().is_some();
 
     let summary_text = format!(
         "[Context Manager summary of {} earlier message(s)]: {}{}",
@@ -135,6 +137,24 @@ fn summarize_group(
     };
 
     (block, record)
+}
+
+/// Collapses a contiguous run of same-slot `Medium` blocks into a single
+/// summary block appended to `result`, then clears the run. No-op if `run`
+/// is empty.
+fn flush_medium_run(
+    run: &mut Vec<ContextBlock>,
+    result: &mut Vec<ContextBlock>,
+    summarized_blocks: &mut Vec<ContextSummaryRecord>,
+    token_counter: &TokenCounter,
+) {
+    let Some(first) = run.first() else {
+        return;
+    };
+    let (summary, record) = summarize_group(first.slot, run, token_counter);
+    summarized_blocks.push(record);
+    result.push(summary);
+    run.clear();
 }
 
 /// Builds a [`ContextPacket`] from raw request inputs, applying the default
@@ -220,40 +240,35 @@ impl ContextManager {
         } else {
             strategy = ContextStrategy::RecentPlusSummary;
 
-            let mut kept = Vec::new();
-            let mut medium_conversation = Vec::new();
-            let mut medium_tool = Vec::new();
+            // Summarize in place rather than grouping all Medium blocks
+            // together: a long tool output can be Medium priority while still
+            // sitting inside the recent window, interleaved with High/Required
+            // blocks. Collapsing every Medium block to the front would hoist
+            // that summary ahead of its own tool request, breaking the
+            // request/response order the provider expects. Instead, only
+            // contiguous runs of same-slot Medium blocks are collapsed,
+            // in place, preserving chronological order everywhere else.
+            let mut result = Vec::with_capacity(blocks.len());
+            let mut run: Vec<ContextBlock> = Vec::new();
 
             for block in blocks {
-                match block.priority {
-                    ContextPriority::Medium if block.slot == ContextSlot::SummarizedToolResults => {
-                        medium_tool.push(block)
+                if block.priority == ContextPriority::Medium {
+                    if run.last().is_some_and(|b| b.slot != block.slot) {
+                        flush_medium_run(
+                            &mut run,
+                            &mut result,
+                            &mut summarized_blocks,
+                            token_counter,
+                        );
                     }
-                    ContextPriority::Medium => medium_conversation.push(block),
-                    _ => kept.push(block),
+                    run.push(block);
+                } else {
+                    flush_medium_run(&mut run, &mut result, &mut summarized_blocks, token_counter);
+                    result.push(block);
                 }
             }
+            flush_medium_run(&mut run, &mut result, &mut summarized_blocks, token_counter);
 
-            let mut result = Vec::new();
-            if !medium_conversation.is_empty() {
-                let (summary, record) = summarize_group(
-                    ContextSlot::OlderConversationSummary,
-                    &medium_conversation,
-                    token_counter,
-                );
-                summarized_blocks.push(record);
-                result.push(summary);
-            }
-            if !medium_tool.is_empty() {
-                let (summary, record) = summarize_group(
-                    ContextSlot::SummarizedToolResults,
-                    &medium_tool,
-                    token_counter,
-                );
-                summarized_blocks.push(record);
-                result.push(summary);
-            }
-            result.extend(kept);
             result
         };
 
@@ -312,7 +327,22 @@ impl ContextManager {
             _ => system_prompt,
         };
 
-        let messages: Vec<Message> = final_blocks.into_iter().flat_map(|b| b.messages).collect();
+        let assembled: Vec<Message> = final_blocks.into_iter().flat_map(|b| b.messages).collect();
+
+        // Dropping a duplicate/stale-failed tool response (Low priority) can
+        // leave its assistant tool-request orphaned, which providers like
+        // Anthropic/OpenAI reject. Reuse the same repair pass the rest of the
+        // pipeline already runs before a provider call rather than
+        // re-implementing tool-call pairing here.
+        let (fixed, fix_issues) = fix_conversation(Conversation::new_unvalidated(assembled));
+        if !fix_issues.is_empty() {
+            tracing::debug!(
+                target: "goose::context_mgmt",
+                issues = ?fix_issues,
+                "context manager repaired tool call/response pairing after dropping low-value blocks"
+            );
+        }
+        let messages = fixed.messages().clone();
 
         ContextPacket {
             system_prompt: final_system_prompt,
@@ -504,6 +534,57 @@ mod tests {
             .dropped_blocks
             .iter()
             .any(|d| d.reason == "duplicate_tool_output"));
+
+        // Dropping the earlier duplicate ToolResponse must not orphan its
+        // ToolRequest — the packet has to be valid provider input as-is.
+        Conversation::new(packet.messages.clone())
+            .expect("packet messages must not contain an orphaned tool call after dropping a duplicate response");
+    }
+
+    #[tokio::test]
+    async fn long_tool_output_inside_recent_window_keeps_valid_ordering() {
+        let tc = counter().await;
+        let mut messages = Vec::new();
+        // Enough older filler to push the conversation over budget.
+        for i in 0..40 {
+            messages.push(Message::user().with_text(format!(
+                "older turn {i} with some padding text to add a few tokens"
+            )));
+            messages.push(Message::assistant().with_text(format!(
+                "older reply {i} with some padding text to add a few tokens"
+            )));
+        }
+        // A tool call/response pair inside the recent window, with a response
+        // long enough to be classified Medium ("long_tool_output") even
+        // though it sits among High/Required blocks.
+        messages.push(
+            Message::assistant()
+                .with_tool_request("call1", Ok(CallToolRequestParams::new("search"))),
+        );
+        messages.push(Message::user().with_tool_response(
+            "call1",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::RawContent::text("x".repeat(10_000)).no_annotation(),
+            ])),
+        ));
+        messages.push(Message::assistant().with_text("here's what I found"));
+        messages.push(Message::user().with_text("final question"));
+
+        let packet = build(&tc, "system", None, messages, 2_000, 200);
+
+        assert_eq!(packet.metadata.strategy, ContextStrategy::RecentPlusSummary);
+        assert!(packet
+            .metadata
+            .summarized_blocks
+            .iter()
+            .any(|r| r.slot == ContextSlot::SummarizedToolResults));
+
+        // Every ToolResponse must be preceded by its matching ToolRequest —
+        // summarizing the long response in place must not hoist it ahead of
+        // the request that produced it.
+        Conversation::new(packet.messages.clone()).expect(
+            "packet messages must keep tool request/response pairs in order after in-place summarization",
+        );
     }
 
     #[tokio::test]
