@@ -92,6 +92,7 @@ mod tests {
                 conversation_messages: vec![Message::user().with_text("hi")],
                 context_limit: 128_000,
                 reserved_response_tokens: 4_000,
+                retrieved_memory: Vec::new(),
             },
             &token_counter,
         );

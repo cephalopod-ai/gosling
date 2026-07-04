@@ -132,7 +132,76 @@ pub fn classify_blocks(messages: &[Message], token_counter: &TokenCounter) -> Ve
     }
 
     blocks.reverse();
+    drop_paired_tool_requests(&mut blocks);
     blocks
+}
+
+/// Downgrades the assistant tool-request message paired with each dropped
+/// (`Low`) tool response so the exchange is removed as a unit. Dropping only
+/// the response side would leave an orphaned tool call in the packet —
+/// something providers reject — and would under-report the tokens the drop
+/// actually saves. A request block is only downgraded when it isn't
+/// `Required`, every tool call it carries points at a dropped response, and
+/// it contains nothing but the calls themselves (plus thinking content,
+/// which is meaningless without them).
+fn drop_paired_tool_requests(blocks: &mut [ContextBlock]) {
+    let mut dropped_response_reasons: HashMap<String, String> = HashMap::new();
+    for block in blocks.iter() {
+        if block.priority != ContextPriority::Low {
+            continue;
+        }
+        for content in block.messages.iter().flat_map(|m| m.content.iter()) {
+            if let Some(resp) = content.as_tool_response() {
+                let reason = block
+                    .reason
+                    .clone()
+                    .unwrap_or_else(|| "low_value".to_string());
+                dropped_response_reasons.insert(resp.id.clone(), reason);
+            }
+        }
+    }
+    if dropped_response_reasons.is_empty() {
+        return;
+    }
+
+    for block in blocks.iter_mut() {
+        if matches!(
+            block.priority,
+            ContextPriority::Required | ContextPriority::Low
+        ) {
+            continue;
+        }
+        let msg = &block.messages[0];
+        if msg.role != Role::Assistant {
+            continue;
+        }
+
+        let request_ids: Vec<&str> = msg
+            .content
+            .iter()
+            .filter_map(|c| c.as_tool_request().map(|r| r.id.as_str()))
+            .collect();
+        if request_ids.is_empty() {
+            continue;
+        }
+
+        let all_responses_dropped = request_ids
+            .iter()
+            .all(|id| dropped_response_reasons.contains_key(*id));
+        let nothing_else_of_value = msg.content.iter().all(|c| {
+            matches!(
+                c,
+                MessageContent::ToolRequest(_)
+                    | MessageContent::Thinking(_)
+                    | MessageContent::RedactedThinking(_)
+            )
+        });
+
+        if all_responses_dropped && nothing_else_of_value {
+            block.priority = ContextPriority::Low;
+            block.reason = dropped_response_reasons.get(request_ids[0]).cloned();
+        }
+    }
 }
 
 fn classify_non_duplicate(
@@ -256,6 +325,100 @@ mod tests {
         assert!(
             duplicate.is_some(),
             "expected the earlier identical tool response to be flagged as a duplicate"
+        );
+
+        // The paired request goes down with its duplicate response so the
+        // exchange is removed as a unit — never an orphaned tool call.
+        let low_duplicates: Vec<_> = blocks
+            .iter()
+            .filter(|b| {
+                b.priority == ContextPriority::Low
+                    && b.reason.as_deref() == Some("duplicate_tool_output")
+            })
+            .collect();
+        assert_eq!(low_duplicates.len(), 2, "response and its request");
+        assert!(low_duplicates
+            .iter()
+            .any(|b| b.messages[0].content.iter().any(|c| c
+                .as_tool_request()
+                .map(|r| r.id == "call1")
+                .unwrap_or(false))));
+
+        // The kept (latest) exchange is untouched on both sides.
+        assert!(blocks.iter().any(|b| b.priority != ContextPriority::Low
+            && b.messages[0].content.iter().any(|c| c
+                .as_tool_request()
+                .map(|r| r.id == "call2")
+                .unwrap_or(false))));
+    }
+
+    #[tokio::test]
+    async fn failed_tool_attempt_drops_its_request_too() {
+        let tc = counter().await;
+        let messages = vec![
+            Message::user().with_text("try the flaky tool"),
+            Message::assistant()
+                .with_tool_request("call1", Ok(CallToolRequestParams::new("flaky"))),
+            Message::user().with_tool_response(
+                "call1",
+                Err(rmcp::model::ErrorData::new(
+                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    "boom".to_string(),
+                    None,
+                )),
+            ),
+            Message::assistant().with_text("that failed, trying something else"),
+            Message::user().with_text("ok, thanks"),
+        ];
+        let blocks = classify_blocks(&messages, &tc);
+
+        let low_failed: Vec<_> = blocks
+            .iter()
+            .filter(|b| {
+                b.priority == ContextPriority::Low
+                    && b.reason.as_deref() == Some("stale_failed_attempt")
+            })
+            .collect();
+        assert_eq!(low_failed.len(), 2, "failed response and its request");
+    }
+
+    #[tokio::test]
+    async fn request_with_text_content_survives_paired_drop() {
+        let tc = counter().await;
+        let messages = vec![
+            Message::user().with_text("try the flaky tool"),
+            // The assistant message carries explanation text alongside the
+            // call — dropping the whole message would lose that text, so only
+            // the response goes; fix_conversation strips the orphaned call.
+            Message::assistant()
+                .with_text("I'll try the flaky tool now")
+                .with_tool_request("call1", Ok(CallToolRequestParams::new("flaky"))),
+            Message::user().with_tool_response(
+                "call1",
+                Err(rmcp::model::ErrorData::new(
+                    rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    "boom".to_string(),
+                    None,
+                )),
+            ),
+            Message::assistant().with_text("that failed"),
+            Message::user().with_text("ok"),
+        ];
+        let blocks = classify_blocks(&messages, &tc);
+
+        let request_block = blocks
+            .iter()
+            .find(|b| {
+                b.messages[0]
+                    .content
+                    .iter()
+                    .any(|c| c.as_tool_request().is_some())
+            })
+            .unwrap();
+        assert_ne!(
+            request_block.priority,
+            ContextPriority::Low,
+            "a request message carrying real text must not be dropped wholesale"
         );
     }
 

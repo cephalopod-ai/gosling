@@ -8,6 +8,7 @@ use crate::token_counter::TokenCounter;
 
 use super::block::{ContextBlock, ContextPriority, ContextSlot};
 use super::budget::ContextBudgetPolicy;
+use super::memory::MemoryItem;
 use super::policy::ContextManagerMode;
 use super::selector;
 
@@ -20,6 +21,10 @@ pub struct ContextBuildRequest {
     pub conversation_messages: Vec<Message>,
     pub context_limit: usize,
     pub reserved_response_tokens: usize,
+    /// Items recalled by a [`super::memory::MemorySource`] for this call.
+    /// Rendered into the `RetrievedMemory` slot, capped at the slot's
+    /// reserved budget; overflow is dropped and recorded in the metadata.
+    pub retrieved_memory: Vec<MemoryItem>,
 }
 
 /// Strategy the Context Manager used to fit the conversation into budget.
@@ -75,9 +80,9 @@ pub struct ContextPacketMetadata {
     pub slots: Vec<ContextSlotUsage>,
     pub dropped_blocks: Vec<ContextDropRecord>,
     pub summarized_blocks: Vec<ContextSummaryRecord>,
-    /// Always true in this MVP: the retrieved-memory slot is reserved but
-    /// never populated. Flipping this requires wiring an actual memory
-    /// retrieval step into `ContextManager::build`.
+    /// Whether the retrieved-memory slot ended up empty. True today because
+    /// the only [`super::memory::MemorySource`] is the no-op one; a real
+    /// backend flips this by returning items from `retrieve`.
     pub retrieved_memory_empty: bool,
 }
 
@@ -180,6 +185,7 @@ impl ContextManager {
             conversation_messages,
             context_limit,
             reserved_response_tokens,
+            retrieved_memory,
         } = request;
 
         let system_tokens = token_counter.count_tokens(&system_prompt);
@@ -208,7 +214,7 @@ impl ContextManager {
                 true
             }
         });
-        let dropped_blocks: Vec<ContextDropRecord> = dropped_totals
+        let mut dropped_blocks: Vec<ContextDropRecord> = dropped_totals
             .into_iter()
             .map(|((slot, reason), (count, tokens))| ContextDropRecord {
                 slot,
@@ -217,6 +223,49 @@ impl ContextManager {
                 estimated_tokens_saved: tokens,
             })
             .collect();
+
+        // Fill the retrieved-memory slot up to its reserved budget. Items
+        // are taken in the order the memory source returned them (most
+        // relevant first); whatever doesn't fit is dropped and recorded.
+        let memory_budget = policy.retrieved_memory_reserved_tokens();
+        let mut memory_lines: Vec<String> = Vec::new();
+        let mut memory_line_tokens = 0usize;
+        let mut memory_overflow_count = 0usize;
+        let mut memory_overflow_tokens = 0usize;
+        for item in &retrieved_memory {
+            let line = format!("- ({}) {}", item.source, item.content);
+            let line_tokens = token_counter.count_tokens(&line);
+            if memory_line_tokens + line_tokens <= memory_budget {
+                memory_line_tokens += line_tokens;
+                memory_lines.push(line);
+            } else {
+                memory_overflow_count += 1;
+                memory_overflow_tokens += line_tokens;
+            }
+        }
+        if memory_overflow_count > 0 {
+            dropped_blocks.push(ContextDropRecord {
+                slot: ContextSlot::RetrievedMemory,
+                reason: "retrieved_memory_over_budget".to_string(),
+                count: memory_overflow_count,
+                estimated_tokens_saved: memory_overflow_tokens,
+            });
+        }
+        let memory_message = (!memory_lines.is_empty()).then(|| {
+            let text = format!(
+                "[Retrieved memory — context recalled from earlier work. \
+                 Treat as background; the conversation below takes precedence.]\n{}",
+                memory_lines.join("\n")
+            );
+            Message::user()
+                .with_text(text)
+                .with_metadata(MessageMetadata::agent_only())
+        });
+        let memory_tokens = memory_message
+            .as_ref()
+            .map(|m| token_counter.count_chat_tokens("", std::slice::from_ref(m), &[]))
+            .unwrap_or(0);
+        let retrieved_memory_empty = memory_message.is_none();
 
         let required_tokens: usize = blocks
             .iter()
@@ -316,7 +365,7 @@ impl ContextManager {
             },
             ContextSlotUsage {
                 slot: ContextSlot::RetrievedMemory,
-                estimated_tokens: 0,
+                estimated_tokens: memory_tokens,
             },
         ];
 
@@ -327,19 +376,25 @@ impl ContextManager {
             _ => system_prompt,
         };
 
-        let assembled: Vec<Message> = final_blocks.into_iter().flat_map(|b| b.messages).collect();
+        // Retrieved memory leads the packet so it reads as background the
+        // conversation can override, then the (possibly summarized)
+        // conversation blocks in chronological order.
+        let assembled: Vec<Message> = memory_message
+            .into_iter()
+            .chain(final_blocks.into_iter().flat_map(|b| b.messages))
+            .collect();
 
-        // Dropping a duplicate/stale-failed tool response (Low priority) can
-        // leave its assistant tool-request orphaned, which providers like
-        // Anthropic/OpenAI reject. Reuse the same repair pass the rest of the
-        // pipeline already runs before a provider call rather than
-        // re-implementing tool-call pairing here.
+        // The selector drops duplicate/stale tool exchanges as request +
+        // response pairs, but this repair pass stays as the safety net for
+        // anything it can't see (e.g. a request sharing a message with other
+        // content, or pairing broken in the input itself) — the packet must
+        // always be valid provider input.
         let (fixed, fix_issues) = fix_conversation(Conversation::new_unvalidated(assembled));
         if !fix_issues.is_empty() {
             tracing::debug!(
                 target: "goose::context_mgmt",
                 issues = ?fix_issues,
-                "context manager repaired tool call/response pairing after dropping low-value blocks"
+                "context manager repaired packet messages before provider use"
             );
         }
         let messages = fixed.messages().clone();
@@ -356,7 +411,7 @@ impl ContextManager {
                 slots,
                 dropped_blocks,
                 summarized_blocks,
-                retrieved_memory_empty: true,
+                retrieved_memory_empty,
             },
         }
     }
@@ -398,6 +453,27 @@ mod tests {
         context_limit: usize,
         reserved_response_tokens: usize,
     ) -> ContextPacket {
+        build_with_memory(
+            token_counter,
+            system_prompt,
+            project_instructions,
+            messages,
+            context_limit,
+            reserved_response_tokens,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_with_memory(
+        token_counter: &TokenCounter,
+        system_prompt: &str,
+        project_instructions: Option<&str>,
+        messages: Vec<Message>,
+        context_limit: usize,
+        reserved_response_tokens: usize,
+        retrieved_memory: Vec<MemoryItem>,
+    ) -> ContextPacket {
         ContextManager::build_with_counter(
             ContextBuildRequest {
                 system_prompt: system_prompt.to_string(),
@@ -405,6 +481,7 @@ mod tests {
                 conversation_messages: messages,
                 context_limit,
                 reserved_response_tokens,
+                retrieved_memory,
             },
             token_counter,
         )
@@ -605,6 +682,149 @@ mod tests {
             .as_text()
             .map(|t| t.contains("retrieved memory"))
             .unwrap_or(false))));
+    }
+
+    #[tokio::test]
+    async fn retrieved_memory_items_fill_the_slot() {
+        let tc = counter().await;
+        let messages = vec![Message::user().with_text("what did we decide about the schema?")];
+        let memory = vec![
+            MemoryItem {
+                content: "The schema migration uses UUIDv7 primary keys.".to_string(),
+                source: "session:prior".to_string(),
+            },
+            MemoryItem {
+                content: "User prefers snake_case column names.".to_string(),
+                source: "note".to_string(),
+            },
+        ];
+        let packet = build_with_memory(&tc, "system", None, messages, 128_000, 4_000, memory);
+
+        assert!(!packet.metadata.retrieved_memory_empty);
+        let memory_usage = packet
+            .metadata
+            .slots
+            .iter()
+            .find(|s| s.slot == ContextSlot::RetrievedMemory)
+            .unwrap();
+        assert!(memory_usage.estimated_tokens > 0);
+
+        // Memory leads the packet, carries both items, and is agent-only so
+        // it never leaks into user-facing history.
+        let first = packet.messages.first().expect("packet has messages");
+        let text = first
+            .content
+            .iter()
+            .find_map(|c| c.as_text())
+            .expect("memory message has text");
+        assert!(text.contains("UUIDv7"));
+        assert!(text.contains("snake_case"));
+        assert!(first.is_agent_visible());
+        assert!(!first.is_user_visible());
+    }
+
+    #[tokio::test]
+    async fn retrieved_memory_overflow_is_dropped_and_recorded() {
+        let tc = counter().await;
+        let messages = vec![Message::user().with_text("hi")];
+        // 10% of a 2k context ≈ 200 tokens of memory budget: the short first
+        // item fits, the two large ones overflow.
+        let mut memory = vec![MemoryItem {
+            content: "schema uses UUIDv7 keys".to_string(),
+            source: "note".to_string(),
+        }];
+        memory.extend((0..2).map(|i| MemoryItem {
+            content: format!("fact {i}: {}", "lorem ipsum ".repeat(200)),
+            source: "session:prior".to_string(),
+        }));
+        let packet = build_with_memory(&tc, "system", None, messages, 2_000, 200, memory);
+
+        assert!(
+            !packet.metadata.retrieved_memory_empty,
+            "the small item should still be included"
+        );
+        let overflow = packet
+            .metadata
+            .dropped_blocks
+            .iter()
+            .find(|d| d.reason == "retrieved_memory_over_budget")
+            .expect("overflow should be recorded");
+        assert_eq!(overflow.count, 2);
+
+        let memory_usage = packet
+            .metadata
+            .slots
+            .iter()
+            .find(|s| s.slot == ContextSlot::RetrievedMemory)
+            .unwrap();
+        let budget = ContextBudgetPolicy::new(2_000, 200).retrieved_memory_reserved_tokens();
+        // Small slack for the header line and per-message overhead.
+        assert!(
+            memory_usage.estimated_tokens <= budget + 50,
+            "included memory ({}) should respect the reserved budget ({})",
+            memory_usage.estimated_tokens,
+            budget
+        );
+    }
+
+    #[tokio::test]
+    async fn duplicate_tool_exchange_is_dropped_as_a_pair() {
+        let tc = counter().await;
+        let messages = vec![
+            Message::user().with_text("look this up twice"),
+            Message::assistant()
+                .with_tool_request("call1", Ok(CallToolRequestParams::new("search"))),
+            Message::user().with_tool_response(
+                "call1",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    rmcp::model::RawContent::text("same result").no_annotation(),
+                ])),
+            ),
+            Message::assistant().with_text("let me check again"),
+            Message::assistant()
+                .with_tool_request("call2", Ok(CallToolRequestParams::new("search"))),
+            Message::user().with_tool_response(
+                "call2",
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    rmcp::model::RawContent::text("same result").no_annotation(),
+                ])),
+            ),
+            Message::user().with_text("thanks"),
+        ];
+        let packet = build(&tc, "system", None, messages, 128_000, 4_000);
+
+        // Both sides of the stale exchange are dropped and accounted for —
+        // not just the response with the request left for fix_conversation
+        // to sweep up unrecorded.
+        let dropped: usize = packet
+            .metadata
+            .dropped_blocks
+            .iter()
+            .filter(|d| d.reason == "duplicate_tool_output")
+            .map(|d| d.count)
+            .sum();
+        assert_eq!(dropped, 2, "request and response should both be recorded");
+
+        // The dropped call id is gone entirely; the kept exchange survives.
+        let mentions_call1 = packet.messages.iter().any(|m| {
+            m.content.iter().any(|c| {
+                c.as_tool_request()
+                    .map(|r| r.id == "call1")
+                    .unwrap_or(false)
+                    || c.as_tool_response()
+                        .map(|r| r.id == "call1")
+                        .unwrap_or(false)
+            })
+        });
+        assert!(!mentions_call1, "dropped exchange should leave no trace");
+        let mentions_call2 = packet.messages.iter().any(|m| {
+            m.content.iter().any(|c| {
+                c.as_tool_request()
+                    .map(|r| r.id == "call2")
+                    .unwrap_or(false)
+            })
+        });
+        assert!(mentions_call2, "latest exchange should be kept");
     }
 
     #[tokio::test]

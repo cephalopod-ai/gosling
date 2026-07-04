@@ -27,7 +27,8 @@ use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
 use crate::context_mgmt::{
     check_if_compaction_needed, compact_messages, context_manager_mode, resolve_provider_input,
-    ContextBuildRequest, ContextManager, ContextManagerMode, DEFAULT_COMPACTION_THRESHOLD,
+    ContextBuildRequest, ContextManager, ContextManagerMode, MemoryQuery, MemorySource,
+    NoopMemorySource, DEFAULT_COMPACTION_THRESHOLD,
 };
 use crate::conversation::message::{
     ActionRequiredData, InferenceMetadata, Message, MessageContent, ProviderMetadata,
@@ -1698,6 +1699,7 @@ impl Agent {
     /// a turn fail that would otherwise have succeeded.
     async fn apply_context_manager(
         &self,
+        session_id: &str,
         base_system_prompt: &str,
         project_addendum: Option<&str>,
         merged_system_prompt: &str,
@@ -1729,12 +1731,26 @@ impl Agent {
             .map(|tokens| tokens as usize)
             .unwrap_or(crate::context_mgmt::budget::DEFAULT_RESERVED_RESPONSE_TOKENS);
 
+        // This is the memory retrieval point: swap NoopMemorySource for a
+        // real backend to populate the packet's RetrievedMemory slot.
+        let memory_query = MemoryQuery {
+            session_id,
+            messages: conversation.messages(),
+            reserved_tokens: crate::context_mgmt::ContextBudgetPolicy::new(
+                context_limit,
+                reserved_response_tokens,
+            )
+            .retrieved_memory_reserved_tokens(),
+        };
+        let retrieved_memory = NoopMemorySource.retrieve(&memory_query);
+
         let request = ContextBuildRequest {
             system_prompt: base_system_prompt.to_string(),
             project_instructions: project_addendum.map(|s| s.to_string()),
             conversation_messages: conversation.messages().clone(),
             context_limit,
             reserved_response_tokens,
+            retrieved_memory,
         };
 
         match ContextManager::build(request).await {
@@ -1957,6 +1973,7 @@ impl Agent {
 
                 let (provider_system_prompt, provider_messages) = self
                     .apply_context_manager(
+                        &session_config.id,
                         &base_system_prompt,
                         project_addendum.as_deref(),
                         &system_prompt,
