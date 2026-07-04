@@ -17,6 +17,21 @@ use tokio::task::JoinHandle;
 use tracing::info;
 use tracing::log::warn;
 
+pub mod block;
+pub mod budget;
+pub mod packet;
+pub mod policy;
+pub mod selector;
+pub mod telemetry;
+
+pub use block::{ContextBlock, ContextPriority, ContextSlot};
+pub use budget::ContextBudgetPolicy;
+pub use packet::{
+    resolve_provider_input, ContextBuildRequest, ContextManager, ContextPacket,
+    ContextPacketMetadata, ContextStrategy,
+};
+pub use policy::{context_manager_mode, ContextManagerMode};
+
 pub const DEFAULT_COMPACTION_THRESHOLD: f64 = 0.8;
 
 const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;

@@ -26,7 +26,8 @@ use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
 use crate::context_mgmt::{
-    check_if_compaction_needed, compact_messages, DEFAULT_COMPACTION_THRESHOLD,
+    check_if_compaction_needed, compact_messages, context_manager_mode, resolve_provider_input,
+    ContextBuildRequest, ContextManager, ContextManagerMode, DEFAULT_COMPACTION_THRESHOLD,
 };
 use crate::conversation::message::{
     ActionRequiredData, InferenceMetadata, Message, MessageContent, ProviderMetadata,
@@ -1688,6 +1689,66 @@ impl Agent {
         Ok(compacted_conversation)
     }
 
+    /// Runs the Context Manager (`GOSLING_CONTEXT_MANAGER`) ahead of a provider
+    /// call and decides what to actually send. `off` skips packet assembly
+    /// entirely so behavior and cost are unchanged; `shadow` builds and logs
+    /// the packet but still returns the pre-existing prompt/messages; `on`
+    /// returns the packet's own prompt/messages. Falls back to the
+    /// pre-existing prompt/messages on any build error so this can never make
+    /// a turn fail that would otherwise have succeeded.
+    async fn apply_context_manager(
+        &self,
+        base_system_prompt: &str,
+        project_addendum: Option<&str>,
+        merged_system_prompt: &str,
+        conversation: &Conversation,
+        model_config: &goose_providers::model::ModelConfig,
+    ) -> (String, Vec<Message>) {
+        let mode = context_manager_mode();
+        let fallback = || {
+            (
+                merged_system_prompt.to_string(),
+                conversation.messages().clone(),
+            )
+        };
+
+        if mode == ContextManagerMode::Off {
+            return fallback();
+        }
+
+        let context_limit = match self.provider().await {
+            Ok(provider) => provider
+                .get_context_limit(model_config)
+                .await
+                .unwrap_or_else(|_| model_config.context_limit()),
+            Err(_) => model_config.context_limit(),
+        };
+        let reserved_response_tokens = model_config
+            .max_tokens
+            .filter(|tokens| *tokens > 0)
+            .map(|tokens| tokens as usize)
+            .unwrap_or(crate::context_mgmt::budget::DEFAULT_RESERVED_RESPONSE_TOKENS);
+
+        let request = ContextBuildRequest {
+            system_prompt: base_system_prompt.to_string(),
+            project_instructions: project_addendum.map(|s| s.to_string()),
+            conversation_messages: conversation.messages().clone(),
+            context_limit,
+            reserved_response_tokens,
+        };
+
+        match ContextManager::build(request).await {
+            Ok(packet) => {
+                crate::context_mgmt::telemetry::log_context_packet(mode, &packet);
+                resolve_provider_input(mode, &packet, merged_system_prompt, conversation.messages())
+            }
+            Err(e) => {
+                warn!("Context Manager failed to build context packet, falling back to existing behavior: {e}");
+                fallback()
+            }
+        }
+    }
+
     async fn reply_internal(
         &self,
         conversation: Conversation,
@@ -1708,8 +1769,13 @@ impl Agent {
             model_config,
         } = context;
 
-        if let Some(project_addendum) = self.load_project_instructions(&session).await {
-            system_prompt = format!("{system_prompt}\n\n{project_addendum}");
+        // Kept separately (rather than only the merged `system_prompt`) so the
+        // Context Manager can account for system vs. project-instructions
+        // tokens as distinct slots instead of double-counting the addendum.
+        let base_system_prompt = system_prompt.clone();
+        let project_addendum = self.load_project_instructions(&session).await;
+        if let Some(ref addendum) = project_addendum {
+            system_prompt = format!("{system_prompt}\n\n{addendum}");
         }
 
         let provider = self.provider().await?;
@@ -1889,12 +1955,22 @@ impl Agent {
                     max_turns,
                 ).await;
 
+                let (provider_system_prompt, provider_messages) = self
+                    .apply_context_manager(
+                        &base_system_prompt,
+                        project_addendum.as_deref(),
+                        &system_prompt,
+                        &conversation_with_moim,
+                        &model_config,
+                    )
+                    .await;
+
                 let mut stream = Self::stream_response_from_provider(
                     self.provider().await?,
                     model_config.clone(),
                     &session_config.id,
-                    &system_prompt,
-                    conversation_with_moim.messages(),
+                    &provider_system_prompt,
+                    &provider_messages,
                     &tools,
                     &toolshim_tools,
                 ).await?;
