@@ -1,6 +1,6 @@
 import { AppEvents } from '../constants/events';
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { ArrowUp, KeyRound, ScrollText, X } from 'lucide-react';
+import { ArrowUp, ScrollText, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
 import { Button } from './ui/button';
 import type { View } from '../utils/navigationUtils';
@@ -1952,12 +1952,8 @@ export default function ChatInput({
           sessionId={sessionId}
         />
       </div>
-      <div className="flex justify-end px-3 pb-1">
-        <div className="flex max-w-[420px] flex-wrap items-center justify-end gap-2 text-xs">
-          <div className="flex items-center gap-1 text-text-secondary">
-            <KeyRound className="h-3.5 w-3.5" />
-            <span className="uppercase tracking-wide">{intl.formatMessage(i18n.credentials)}</span>
-          </div>
+      <div className="flex items-center justify-between gap-3 px-3 pb-1">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs">
           {selectedCredentialProfiles.map((profile) => (
             <span
               key={profile.id}
@@ -1978,6 +1974,8 @@ export default function ChatInput({
               </button>
             </span>
           ))}
+        </div>
+        <div className="flex flex-shrink-0 justify-end">
           <div className="min-w-[220px] max-w-[260px]">
             <Select
               value={null}
