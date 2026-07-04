@@ -553,6 +553,7 @@ export default function ChatInput({
     clearPendingSendAfterStop,
     clearQueueState,
     pauseRemainingQueue,
+    buildUserInput,
   ]);
   const [mentionPopover, setMentionPopover] = useState<{
     isOpen: boolean;
@@ -1247,6 +1248,7 @@ export default function ChatInput({
       handleSubmit,
       lastInterruption,
       clearInputState,
+      buildUserInput,
     ]
   );
 
