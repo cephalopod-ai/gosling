@@ -171,7 +171,9 @@ fn drop_paired_tool_requests(blocks: &mut [ContextBlock]) {
         ) {
             continue;
         }
-        let msg = &block.messages[0];
+        let Some(msg) = block.messages.first() else {
+            continue;
+        };
         if msg.role != Role::Assistant {
             continue;
         }

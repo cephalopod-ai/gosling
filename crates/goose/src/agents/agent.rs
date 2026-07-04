@@ -27,8 +27,8 @@ use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
 use crate::context_mgmt::{
     check_if_compaction_needed, compact_messages, context_manager_mode, resolve_provider_input,
-    ContextBuildRequest, ContextManager, ContextManagerMode, MemoryQuery, MemorySource,
-    NoopMemorySource, DEFAULT_COMPACTION_THRESHOLD,
+    ContextBuildRequest, ContextManager, ContextManagerMode, FileMemorySource, MemoryQuery,
+    MemorySource, DEFAULT_COMPACTION_THRESHOLD,
 };
 use crate::conversation::message::{
     ActionRequiredData, InferenceMetadata, Message, MessageContent, ProviderMetadata,
@@ -1731,8 +1731,10 @@ impl Agent {
             .map(|tokens| tokens as usize)
             .unwrap_or(crate::context_mgmt::budget::DEFAULT_RESERVED_RESPONSE_TOKENS);
 
-        // This is the memory retrieval point: swap NoopMemorySource for a
-        // real backend to populate the packet's RetrievedMemory slot.
+        // This is the memory retrieval point: FileMemorySource recalls from
+        // the local memories.jsonl (GOSLING_MEMORY_FILE to override); with no
+        // file present it recalls nothing. Swap the source here to back the
+        // RetrievedMemory slot with something richer.
         let memory_query = MemoryQuery {
             session_id,
             messages: conversation.messages(),
@@ -1742,7 +1744,7 @@ impl Agent {
             )
             .retrieved_memory_reserved_tokens(),
         };
-        let retrieved_memory = NoopMemorySource.retrieve(&memory_query);
+        let retrieved_memory = FileMemorySource::from_config().retrieve(&memory_query);
 
         let request = ContextBuildRequest {
             system_prompt: base_system_prompt.to_string(),

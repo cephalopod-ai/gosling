@@ -27,7 +27,7 @@ pub mod telemetry;
 
 pub use block::{ContextBlock, ContextPriority, ContextSlot};
 pub use budget::ContextBudgetPolicy;
-pub use memory::{MemoryItem, MemoryQuery, MemorySource, NoopMemorySource};
+pub use memory::{FileMemorySource, MemoryItem, MemoryQuery, MemorySource, NoopMemorySource};
 pub use packet::{
     resolve_provider_input, ContextBuildRequest, ContextManager, ContextPacket,
     ContextPacketMetadata, ContextStrategy,

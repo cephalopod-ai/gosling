@@ -96,6 +96,9 @@ pub struct ContextPacket {
 
 const SUMMARY_PREVIEW_CHARS: usize = 600;
 
+const RETRIEVED_MEMORY_HEADER: &str = "[Retrieved memory — context recalled from earlier work. \
+     Treat as background; the conversation below takes precedence.]";
+
 fn summarize_group(
     slot: ContextSlot,
     blocks: &[ContextBlock],
@@ -224,10 +227,22 @@ impl ContextManager {
             })
             .collect();
 
-        // Fill the retrieved-memory slot up to its reserved budget. Items
-        // are taken in the order the memory source returned them (most
-        // relevant first); whatever doesn't fit is dropped and recorded.
-        let memory_budget = policy.retrieved_memory_reserved_tokens();
+        // Fill the retrieved-memory slot up to its reserved budget, charging
+        // the header and per-message overhead against the budget first so
+        // the rendered message can't exceed the reservation. Items are taken
+        // in the order the memory source returned them (most relevant
+        // first); whatever doesn't fit is dropped and recorded.
+        let header_overhead = if retrieved_memory.is_empty() {
+            0
+        } else {
+            let header_only = Message::user()
+                .with_text(RETRIEVED_MEMORY_HEADER)
+                .with_metadata(MessageMetadata::agent_only());
+            token_counter.count_chat_tokens("", std::slice::from_ref(&header_only), &[])
+        };
+        let memory_budget = policy
+            .retrieved_memory_reserved_tokens()
+            .saturating_sub(header_overhead);
         let mut memory_lines: Vec<String> = Vec::new();
         let mut memory_line_tokens = 0usize;
         let mut memory_overflow_count = 0usize;
@@ -252,11 +267,7 @@ impl ContextManager {
             });
         }
         let memory_message = (!memory_lines.is_empty()).then(|| {
-            let text = format!(
-                "[Retrieved memory — context recalled from earlier work. \
-                 Treat as background; the conversation below takes precedence.]\n{}",
-                memory_lines.join("\n")
-            );
+            let text = format!("{}\n{}", RETRIEVED_MEMORY_HEADER, memory_lines.join("\n"));
             Message::user()
                 .with_text(text)
                 .with_metadata(MessageMetadata::agent_only())
@@ -758,9 +769,11 @@ mod tests {
             .find(|s| s.slot == ContextSlot::RetrievedMemory)
             .unwrap();
         let budget = ContextBudgetPolicy::new(2_000, 200).retrieved_memory_reserved_tokens();
-        // Small slack for the header line and per-message overhead.
+        // Header overhead is charged against the budget, so the rendered
+        // message must fit the reservation (tiny slack for tokenizer
+        // boundary effects when lines are joined).
         assert!(
-            memory_usage.estimated_tokens <= budget + 50,
+            memory_usage.estimated_tokens <= budget + 8,
             "included memory ({}) should respect the reserved budget ({})",
             memory_usage.estimated_tokens,
             budget
