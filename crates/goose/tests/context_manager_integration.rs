@@ -21,6 +21,7 @@ use tempfile::TempDir;
 /// Snapshot of what the provider actually saw for one `stream()` call.
 struct CapturedCall {
     duplicate_tool_response_count: usize,
+    saw_retrieved_memory: bool,
 }
 
 struct CapturingProvider {
@@ -42,9 +43,15 @@ impl Provider for CapturingProvider {
             .filter_map(|c| c.as_tool_response_text())
             .filter(|text| text == "identical result")
             .count();
+        let saw_retrieved_memory = messages
+            .iter()
+            .flat_map(|m| m.content.iter())
+            .filter_map(|c| c.as_text())
+            .any(|t| t.contains("[Retrieved memory"));
 
         *self.last_call.lock().unwrap() = Some(CapturedCall {
             duplicate_tool_response_count,
+            saw_retrieved_memory,
         });
 
         Ok(stream_from_single_message(
@@ -212,6 +219,34 @@ async fn on_mode_drops_duplicate_tool_output() -> Result<()> {
     assert_eq!(
         captured.duplicate_tool_response_count, 1,
         "on mode should route provider input through the Context Manager and drop the earlier duplicate"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn on_mode_recalls_file_backed_memory() -> Result<()> {
+    let memory_dir = TempDir::new()?;
+    let memory_path = memory_dir.path().join("memories.jsonl");
+    // The trailing user message in run_and_capture is "go ahead"; this entry
+    // shares the keyword "ahead" so FileMemorySource recalls it.
+    std::fs::write(
+        &memory_path,
+        r#"{"content": "when told to go ahead, the lookup results are cached upstream", "source": "note"}"#,
+    )?;
+    std::env::set_var("GOSLING_MEMORY_FILE", &memory_path);
+
+    let on = run_and_capture("on").await;
+    let shadow = run_and_capture("shadow").await;
+    std::env::remove_var("GOSLING_MEMORY_FILE");
+
+    assert!(
+        on?.saw_retrieved_memory,
+        "on mode should surface recalled memory to the provider"
+    );
+    assert!(
+        !shadow?.saw_retrieved_memory,
+        "shadow mode must keep recalled memory out of provider input"
     );
     Ok(())
 }

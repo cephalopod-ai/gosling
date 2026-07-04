@@ -19,6 +19,7 @@ use tracing::log::warn;
 
 pub mod block;
 pub mod budget;
+pub mod memory;
 pub mod packet;
 pub mod policy;
 pub mod selector;
@@ -26,6 +27,7 @@ pub mod telemetry;
 
 pub use block::{ContextBlock, ContextPriority, ContextSlot};
 pub use budget::ContextBudgetPolicy;
+pub use memory::{FileMemorySource, MemoryItem, MemoryQuery, MemorySource, NoopMemorySource};
 pub use packet::{
     resolve_provider_input, ContextBuildRequest, ContextManager, ContextPacket,
     ContextPacketMetadata, ContextStrategy,
