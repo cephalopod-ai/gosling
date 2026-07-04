@@ -15,7 +15,7 @@ import UpdateSection from './UpdateSection';
 
 import { COST_TRACKING_ENABLED, UPDATES_ENABLED } from '../../../updates';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
-import ThemeSelector from '../../GooseSidebar/ThemeSelector';
+import ThemeSelector from '../../GoslingSidebar/ThemeSelector';
 import BlockLogoBlack from './icons/block-lockup_black.png';
 import BlockLogoWhite from './icons/block-lockup_white.png';
 import TelemetrySettings from './TelemetrySettings';
@@ -209,7 +209,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
   const [archiveFolder, setArchiveFolder] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const updateSectionRef = useRef<HTMLDivElement>(null);
-  const shouldShowUpdates = !window.appConfig.get('GOOSE_VERSION');
+  const shouldShowUpdates = !window.appConfig.get('GOSLING_VERSION');
 
   useEffect(() => {
     setIsMacOS(window.electron.platform === 'darwin');
@@ -570,7 +570,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
       </Card>
       <TelemetrySettings />
 
-      {/* Version Section - only show if GOOSE_VERSION is set */}
+      {/* Version Section - only show if GOSLING_VERSION is set */}
       {!shouldShowUpdates && (
         <Card className="rounded-lg">
           <CardHeader className="pb-0">
@@ -580,18 +580,18 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
             <div className="flex items-center gap-3">
               <img
                 src={isDarkMode ? BlockLogoWhite : BlockLogoBlack}
-                alt="Block Logo" // TODO: replace with AAIF logo asset
+                alt="Block Logo" // TODO: unaffiliated fork — replace with gosling's own logo asset (see GoslingLogo.tsx), not a Block/AAIF one
                 className="h-8 w-auto"
               />
               <span className="text-2xl font-mono text-black dark:text-white">
-                {String(window.appConfig.get('GOOSE_VERSION') || 'Development')}
+                {String(window.appConfig.get('GOSLING_VERSION') || 'Development')}
               </span>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Update Section - only show if GOOSE_VERSION is NOT set */}
+      {/* Update Section - only show if GOSLING_VERSION is NOT set */}
       {UPDATES_ENABLED && shouldShowUpdates && (
         <div ref={updateSectionRef}>
           <Card className="rounded-lg">
