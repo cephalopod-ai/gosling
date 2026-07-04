@@ -364,7 +364,7 @@
     "id": "gosling-docs",
     "name": "gosling Docs",
     "description": "GitMCP for gosling documentation",
-    "command": "npx mcp-remote https://block.gitmcp.io/gosling/",
+    "command": "npx mcp-remote https://repo-makeover.gitmcp.io/gosling/",
     "link": "https://github.com/idosal/git-mcp",
     "is_builtin": false,
     "endorsed": false,

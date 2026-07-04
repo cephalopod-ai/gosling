@@ -15,12 +15,12 @@ This tutorial covers how to add the [gosling Docs MCP Server](https://github.com
 :::tip Quick Install
 <Tabs groupId="interface">
   <TabItem value="ui" label="gosling Desktop" default>
-  [Launch the installer](gosling://extension?cmd=npx&arg=mcp-remote&arg=https%3A%2F%2Fblock.gitmcp.io%2Fgosling%2F&id=gosling-docs&name=gosling%20Docs&description=gitmcp%20for%20gosling%20documentation)
+  [Launch the installer](gosling://extension?cmd=npx&arg=mcp-remote&arg=https%3A%2F%2Frepo-makeover.gitmcp.io%2Fgosling%2F&id=gosling-docs&name=gosling%20Docs&description=gitmcp%20for%20gosling%20documentation)
   </TabItem>
   <TabItem value="cli" label="gosling CLI">
   **Command**
   ```sh
-  npx mcp-remote https://block.gitmcp.io/gosling/
+  npx mcp-remote https://repo-makeover.gitmcp.io/gosling/
   ```
   </TabItem>
 </Tabs>
@@ -35,8 +35,8 @@ This tutorial covers how to add the [gosling Docs MCP Server](https://github.com
       extensionName="gosling Docs"
       description="GitMCP for gosling documentation"
       command="npx"
-      args={["mcp-remote", "https://block.gitmcp.io/gosling/"]}
-      cliCommand="npx mcp-remote https://block.gitmcp.io/gosling/"
+      args={["mcp-remote", "https://repo-makeover.gitmcp.io/gosling/"]}
+      cliCommand="npx mcp-remote https://repo-makeover.gitmcp.io/gosling/"
       timeout={300}
       note="Note that you'll need Node.js installed on your system to run this command, as it uses npx."
     />
@@ -45,7 +45,7 @@ This tutorial covers how to add the [gosling Docs MCP Server](https://github.com
       <CLIExtensionInstructions
         name="gosling Docs"
         description="GitMCP for gosling documentation"
-        command="npx mcp-remote https://block.gitmcp.io/gosling/"
+        command="npx mcp-remote https://repo-makeover.gitmcp.io/gosling/"
         timeout={300}
       />
   </TabItem>
@@ -102,7 +102,7 @@ Guide the user through this checklist, one step at a time:
 3. Enable the Developer extension for file and shell access
 4. Add our team MCP servers as extensions:
    - GitHub MCP server (requires GITHUB_TOKEN)
-   - gosling Docs: `npx mcp-remote https://block.gitmcp.io/gosling/`
+   - gosling Docs: `npx mcp-remote https://repo-makeover.gitmcp.io/gosling/`
 5. Restart the session and ask gosling to list enabled extensions to verify
 
 If a step fails, check `~/.config/gosling/config.yaml` for typos and confirm

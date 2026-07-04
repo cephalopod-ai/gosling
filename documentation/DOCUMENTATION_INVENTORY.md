@@ -44,7 +44,7 @@ This inventory follows the repository's existing documentation layout. The canon
 
 ## Stale / Conflicting / Unknown Areas
 
-- `GOVERNANCE.md` was removed 2026-07-04 (see row above). Some other documentation paths may still present upstream goose governance/AAIF-affiliation naming; a full sweep of `documentation/docs/**` for the same pattern has not been done.
+- `GOVERNANCE.md` was removed 2026-07-04 (see row above). A follow-up rebrand audit (2026-07-04) swept `documentation/docs/**` for the same upstream governance/AAIF-affiliation pattern ("AAIF", "Agentic AI Foundation", "LF Projects", "Linux Foundation") and found zero hits — this item is resolved.
 - No canonical `documentation/INDEX.md` exists for repository documentation governance and stewardship artifacts.
 - No active documentation TODO ledger exists.
 - No test ledger exists.

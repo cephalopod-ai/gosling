@@ -28,7 +28,7 @@ Summary: 6 compliant / 3 drift / 2 violations. Tier A: 0 applied. Tier B: 0 rout
 | DOCSTEW-20260703-007 | Root documentation index is missing | `documentation/` | drift | medium | C | Add a durable `documentation/INDEX.md` or equivalent map that points to docs, blog, automation, architecture, test evidence, and stewardship artifacts. | Maintainer approval for docs IA |
 | DOCSTEW-20260703-008 | No active documentation TODO ledger | `documentation/` | drift | medium | C | Create a scoped docs TODO ledger after triaging source TODOs and separating code TODOs from documentation TODOs. | Maintainer approval for governance docs |
 | DOCSTEW-20260703-009 | No durable test ledger | `documentation/` | drift | medium | C | Create a test ledger from `AGENTS.md`, `.github/workflows/`, `documentation/package.json`, Rust tests, and UI tests. | Maintainer approval for governance docs |
-| DOCSTEW-20260703-010 | Documentation still contains upstream goose-oriented governance material | `GOVERNANCE.md` (removed 2026-07-04), `MAINTAINERS.md` (rewritten 2026-07-04), many `documentation/docs/**` files | partially resolved | medium | C | `GOVERNANCE.md` and `MAINTAINERS.md` fixed; `documentation/docs/**` not yet swept for the same upstream-governance/AAIF-affiliation pattern. | Maintainer decision on gosling fork policy |
+| DOCSTEW-20260703-010 | Documentation still contains upstream goose-oriented governance material | `GOVERNANCE.md` (removed 2026-07-04), `MAINTAINERS.md` (rewritten 2026-07-04), many `documentation/docs/**` files | resolved | medium | C | `GOVERNANCE.md` and `MAINTAINERS.md` fixed. Follow-up rebrand audit (2026-07-04) swept `documentation/docs/**` for "AAIF", "Agentic AI Foundation", "LF Projects", and "Linux Foundation" — zero hits. | Closed; no further action needed |
 | DOCSTEW-20260703-011 | Session/audit log convention is undeclared | `.dory/`, no `documentation/logs/` policy | violation | low | C | Decide whether Dory/session checkpoints are local-only or durable repo memory; if durable, define location and retention policy. | Maintainer approval for log retention |
 
 ## Tier B — Routed
@@ -49,9 +49,7 @@ No Tier B changes were identified or applied. No Giles or frozen governance auth
   - Recommended follow-up: document commands from `AGENTS.md`, `.github/workflows/`, `documentation/package.json`, `ui/desktop/package.json`, and Cargo workspace tests.
   - Impact estimate: 1 file, low behavior risk.
 
-- `DOCSTEW-20260703-010`: Run a branding/provenance audit.
-  - Recommended follow-up: classify `gosling` references as product compatibility, upstream provenance, API/env compatibility, or stale docs.
-  - Impact estimate: many documentation files, medium to high review risk.
+- `DOCSTEW-20260703-010`: Resolved 2026-07-04 — a follow-up rebrand audit swept `documentation/docs/**` for the AAIF/governance pattern and found no remaining hits. See that audit's report for the separate, unrelated findings it turned up elsewhere in the repo (CI identity, community-content attribution, runtime branding).
 
 - `DOCSTEW-20260703-011`: Define session/audit log retention.
   - Recommended follow-up: decide whether `.dory/` session state is intentionally local and should remain out of canonical docs, or whether monthly durable summaries should be introduced under `documentation/logs/`.

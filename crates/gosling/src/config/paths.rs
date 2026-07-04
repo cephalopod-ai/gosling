@@ -17,8 +17,8 @@ impl Paths {
             }
         } else {
             // NOTE: gosling deliberately uses its own app_name so its config/data/state
-            // directories never collide with an upstream gosling install on the same machine
-            // (e.g. ~/.config/gosling vs ~/.config/gosling).
+            // directories never collide with an upstream goose install on the same machine
+            // (e.g. ~/.config/goose vs ~/.config/gosling).
             let strategy = choose_app_strategy(AppStrategyArgs {
                 top_level_domain: "Block".to_string(),
                 author: "Block".to_string(),

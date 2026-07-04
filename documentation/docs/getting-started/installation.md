@@ -32,11 +32,9 @@ import { PanelLeft } from 'lucide-react';
           It's best to periodically [update gosling](/docs/guides/updating-gosling).
           :::
         </div>
-        <h3>Option 2: Install via Homebrew</h3>
-        Homebrew downloads the [same app](https://github.com/Homebrew/homebrew-cask/blob/master/Casks/b/block-gosling.rb) but can take care of updates too.
-        ```bash
-        brew install --cask block-gosling
-        ```
+        :::info Homebrew
+        gosling does not yet have an official Homebrew cask. Use Option 1 above until one is published.
+        :::
         ---
         <div style={{ marginTop: '1rem' }}>
           :::info Permissions
@@ -72,11 +70,9 @@ import { PanelLeft } from 'lucide-react';
         ```
         :::
 
-        <h3>Option 2: Install via Homebrew</h3>
-        Homebrew downloads the [a precompiled CLI tool](https://github.com/Homebrew/homebrew-core/blob/master/Formula/b/block-gosling-cli.rb) and can take care of updates.
-        ```bash
-        brew install block-gosling-cli
-        ```
+        :::info Homebrew
+        gosling does not yet have an official Homebrew formula. Use Option 1 above until one is published.
+        :::
       </TabItem>
     </Tabs>
   </TabItem>

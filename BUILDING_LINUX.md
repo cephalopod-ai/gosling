@@ -30,9 +30,8 @@ sudo zypper install dpkg fakeroot gcc gcc-c++ make
 **android / termux:**
 
 gosling is not officially support termux build yet, you need some minor patch to fix build issues.
-We will publish gosling (block-gosling) into termux-packages. <!-- NOTE: package name kept for backwards compat -->
-If you want to try there is a non-official build, https://github.com/shawn111/gosling/releases/download/termux/gosling-termux-aarch64.tar.bz2
-For more details, see: https://github.com/repo-makeover/gosling/pull/3890
+We will publish gosling into termux-packages once packaging is set up.
+For context on how upstream goose approached termux packaging, see: https://github.com/aaif-goose/goose/pull/3890
 
 ```bash
 pkg install rust

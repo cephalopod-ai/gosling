@@ -128,19 +128,19 @@ if (-not (Test-Path $env:GOSLING_BIN_DIR)) {
 }
 
 # --- 9) Install gosling binary ---
-$SOURCE_GOOSE = Join-Path $EXTRACT_DIR "gosling.exe"
-$DEST_GOOSE = Join-Path $env:GOSLING_BIN_DIR $OUT_FILE
+$SOURCE_GOSLING = Join-Path $EXTRACT_DIR "gosling.exe"
+$DEST_GOSLING = Join-Path $env:GOSLING_BIN_DIR $OUT_FILE
 
-if (Test-Path $SOURCE_GOOSE) {
-    Write-Host "Moving gosling to $DEST_GOOSE" -ForegroundColor Green
+if (Test-Path $SOURCE_GOSLING) {
+    Write-Host "Moving gosling to $DEST_GOSLING" -ForegroundColor Green
     try {
         # Remove existing file if it exists to avoid conflicts
-        if (Test-Path $DEST_GOOSE) {
-            Remove-Item -Path $DEST_GOOSE -Force
+        if (Test-Path $DEST_GOSLING) {
+            Remove-Item -Path $DEST_GOSLING -Force
         }
-        Move-Item -Path $SOURCE_GOOSE -Destination $DEST_GOOSE -Force
+        Move-Item -Path $SOURCE_GOSLING -Destination $DEST_GOSLING -Force
     } catch {
-        Write-Error "Failed to move gosling.exe to $DEST_GOOSE. Error: $($_.Exception.Message)"
+        Write-Error "Failed to move gosling.exe to $DEST_GOSLING. Error: $($_.Exception.Message)"
         Remove-Item -Path $TMP_DIR -Recurse -Force -ErrorAction SilentlyContinue
         exit 1
     }
@@ -180,7 +180,7 @@ if ($CONFIGURE -eq "true") {
     Write-Host "Configuring gosling" -ForegroundColor Green
     Write-Host ""
     try {
-        & $DEST_GOOSE configure
+        & $DEST_GOSLING configure
     } catch {
         Write-Warning "Failed to run gosling configure. You may need to run it manually later."
     }
@@ -205,4 +205,4 @@ if ($CURRENT_PATH -notlike "*$env:GOSLING_BIN_DIR*") {
 }
 
 Write-Host "gosling CLI installation completed successfully!" -ForegroundColor Green
-Write-Host "gosling is installed at: $DEST_GOOSE" -ForegroundColor Green
+Write-Host "gosling is installed at: $DEST_GOSLING" -ForegroundColor Green

@@ -128,13 +128,9 @@ const config: Config = {
             "./src/css/tailwind.css",
           ],
         },
-        gtag:
-          process.env.NODE_ENV === "production"
-            ? {
-                trackingID: "G-ZS5D6SB4ZJ",
-                anonymizeIP: true,
-              }
-            : false,
+        // Analytics disabled pending a GA4 property owned by this project — the
+        // previous trackingID was never rotated off the pre-fork property.
+        gtag: false,
       } satisfies Preset.Options,
     ],
   ],
@@ -513,14 +509,6 @@ const config: Config = {
             {
               label: "Twitter / X",
               href: "https://x.com/gosling_oss",
-            },
-            {
-              label: "BlueSky",
-              href: "https://bsky.app/profile/opensource.block.xyz",
-            },
-            {
-              label: "Nostr",
-              href: "https://njump.me/opensource@block.xyz",
             },
           ],
         },

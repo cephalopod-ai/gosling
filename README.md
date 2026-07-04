@@ -48,7 +48,7 @@ The gap traces almost entirely to the local-inference stack (candle, llama.cpp, 
 - **Runs side by side with goose** — gosling is fully deconflicted from an existing goose install:
   - separate config/data/state directories (`~/.config/goose` vs `~/.config/gosling`, etc.)
   - separate OS keyring service (`gosling`) for provider credentials
-  - its own `gosling://` deep-link scheme (gosling keeps `gosling://`; gosling still accepts `goose://` session share links for interop)
+  - its own `gosling://` deep-link scheme (goose keeps `goose://`; gosling still accepts `goose://` session share links for interop)
   - its own app identity (`Gosling.app` / `Gosling.exe` / `Gosling` packages) and updater feed
   - single-instance behavior is preserved per app: one running Goose and one running Gosling, each guarded by its own instance lock
 - **Provenance in the app** — Help → About shows that this is Gosling v0.0.1, a fork of goose v1.38.
