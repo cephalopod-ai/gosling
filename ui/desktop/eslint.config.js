@@ -112,6 +112,7 @@ module.exports = [
         MediaTrackConstraints: 'readonly',
         Blob: 'readonly',
         FormData: 'readonly',
+        crypto: 'readonly',
       },
     },
     plugins: {

@@ -26,6 +26,22 @@ gosling **v0.0.1** is a fork of [goose](https://github.com/aaif-goose/goose) **v
 
 gosling aims to be a **lighter version of goose**: the same trusted agent core with a smaller footprint, a simpler surface, and faster iteration. The goal is an agent you can install next to (or instead of) goose that stays lean — fewer moving parts, quicker startup, and an easier codebase to remix for custom distributions.
 
+## Footprint & performance vs. goose
+
+Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v1.40.0 (commit `5b7d039`), same host, matched Cargo feature flags (`code-mode` excluded from both — its `v8-goose` static-lib download is blocked by this environment's network policy, symmetrically for both builds).
+
+| | goose | gosling | Δ |
+|---|---|---|---|
+| Cargo.lock packages | 1251 | 1065 | -186 (-15%) |
+| Binary size (stripped) | 151 MB | 117 MB | -22% |
+| `target/release` build dir | 3.8 GB | 2.4 GB | -37% |
+| Build time (wall) | 17m12s | 11m26s | -33% |
+| Runtime shared libs (`ldd`) | libstdc++, libgcc_s, libm, libc | libgcc_s, libm, libc | no libstdc++ |
+| `--version` cold start | 8.4ms avg / 24.0 MB peak RSS | 6.1ms avg / 17.7 MB peak RSS | -27% time, -26% mem |
+| `doctor` cold start | 8.8ms avg / 28.9 MB peak RSS | 6.3ms avg / 22.0 MB peak RSS | -29% time, -24% mem |
+
+The gap traces almost entirely to the local-inference stack (candle, llama.cpp, MLX, Hugging Face downloads — 148 crates) that gosling extracts: gosling also drops the `recipe`, `schedule`, `gateway`, and `local-models` CLI subcommands. Core agent/session/MCP functionality is unchanged between the two. Actual LLM conversation/tool-calling throughput wasn't benchmarked (no provider configured in the comparison environment) and isn't expected to differ, since that path is dominated by the provider API in both.
+
 ## What's new in gosling
 
 - **New name, new mark** — the goose branding has been replaced by the gosling: a fresh flying-gosling logo across the desktop app, tray, docs, and installers.

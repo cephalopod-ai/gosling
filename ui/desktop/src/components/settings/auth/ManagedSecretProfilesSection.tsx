@@ -245,7 +245,7 @@ function templateIcon(template: Template) {
   }
 }
 
-function useForLabel(useFor: ManagedSecretProfileUse, intl: ReturnType<typeof useIntl>) {
+function getUseForLabel(useFor: ManagedSecretProfileUse, intl: ReturnType<typeof useIntl>) {
   switch (useFor) {
     case 'authentication':
       return intl.formatMessage(i18n.useForAuthentication);
@@ -542,7 +542,7 @@ export default function ManagedSecretProfilesSection() {
                   <Select
                     value={{
                       value: selectedProfile.useFor,
-                      label: useForLabel(selectedProfile.useFor, intl),
+                      label: getUseForLabel(selectedProfile.useFor, intl),
                     }}
                     onChange={(option: unknown) => {
                       const selectedOption = option as {
