@@ -505,8 +505,12 @@ async fn eval_all_scenarios_baseline_compaction() {
     }
 
     let json = serde_json::to_string_pretty(&results).expect("serialize results");
-    let out_path = std::env::var("MEMORY_EVAL_OUTPUT")
-        .unwrap_or_else(|_| "/tmp/gosling_baseline_compaction_eval_results.json".to_string());
+    let out_path = std::env::var("MEMORY_EVAL_OUTPUT").unwrap_or_else(|_| {
+        std::env::temp_dir()
+            .join("gosling_baseline_compaction_eval_results.json")
+            .to_string_lossy()
+            .into_owned()
+    });
     std::fs::write(&out_path, &json).expect("write results file");
     println!("Wrote {} results to {}", results.len(), out_path);
 
