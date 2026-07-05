@@ -1698,6 +1698,7 @@ impl Agent {
     /// returns the packet's own prompt/messages. Falls back to the
     /// pre-existing prompt/messages on any build error so this can never make
     /// a turn fail that would otherwise have succeeded.
+    #[allow(clippy::too_many_arguments)]
     async fn apply_context_manager(
         &self,
         session_id: &str,
@@ -1706,6 +1707,7 @@ impl Agent {
         merged_system_prompt: &str,
         conversation: &Conversation,
         model_config: &gosling_providers::model::ModelConfig,
+        working_dir: &std::path::Path,
     ) -> (String, Vec<Message>) {
         let mode = context_manager_mode();
         let fallback = || {
@@ -1718,6 +1720,28 @@ impl Agent {
         if mode == ContextManagerMode::Off {
             return fallback();
         }
+
+        // A self-managing backend (Claude Code, Codex/ACP, Gemini CLI) runs
+        // its own agent loop and compaction, so a Gosling-curated packet
+        // driving its input is wasted or counterproductive. Cap `on` to
+        // shadow — still build and log the packet, but hand the backend its
+        // own prompt/messages — and route the summarizer's extracted facts to
+        // the backend's durable file instead of the (unused) packet.
+        let (self_managing, summarizer_target) = match self.provider().await {
+            Ok(provider) => (
+                provider.manages_own_context(),
+                summarizer::target_for_provider(provider.as_ref(), working_dir),
+            ),
+            Err(_) => (false, summarizer::SummarizerTarget::ContextPacket),
+        };
+        let effective_mode = if self_managing && mode == ContextManagerMode::On {
+            debug!(
+                "Context Manager capped to shadow: provider manages its own context; skipping packet takeover"
+            );
+            ContextManagerMode::Shadow
+        } else {
+            mode
+        };
 
         let context_limit = match self.provider().await {
             Ok(provider) => provider
@@ -1758,9 +1782,14 @@ impl Agent {
 
         match ContextManager::build(request).await {
             Ok(packet) => {
-                crate::context_mgmt::telemetry::log_context_packet(mode, &packet);
-                self.maybe_dispatch_summarizer(session_id, &packet);
-                resolve_provider_input(mode, &packet, merged_system_prompt, conversation.messages())
+                crate::context_mgmt::telemetry::log_context_packet(effective_mode, &packet);
+                self.maybe_dispatch_summarizer(session_id, &packet, summarizer_target);
+                resolve_provider_input(
+                    effective_mode,
+                    &packet,
+                    merged_system_prompt,
+                    conversation.messages(),
+                )
             }
             Err(e) => {
                 warn!("Context Manager failed to build context packet, falling back to existing behavior: {e}");
@@ -1772,15 +1801,18 @@ impl Agent {
     /// Fires the local-LLM summarizer worker (`GOSLING_SUMMARIZER`) over any
     /// blocks the packet just rendered with the naive truncation stub.
     /// Spawned rather than awaited so it never sits on the critical path to
-    /// the provider call: in `on` mode, a successful run caches a better
-    /// digest for the *next* turn's packet build to pick up (see
-    /// `summarize_group` in `context_mgmt::packet`) and appends any
-    /// extracted facts to `memories.jsonl`; in `shadow` mode it only logs.
-    /// A no-op in `off` mode and whenever nothing needed summarizing.
+    /// the provider call. `target` (chosen from the current provider) decides
+    /// where the output lands: a raw API provider caches a better digest for
+    /// the *next* turn's packet (see `summarize_group` in
+    /// `context_mgmt::packet`) and appends facts to `memories.jsonl`; a
+    /// self-managing backend takes no digest handoff and routes facts to its
+    /// durable file (`CLAUDE.md` / `AGENTS.md`). In `shadow` mode it only
+    /// logs; a no-op in `off` mode and whenever nothing needed summarizing.
     fn maybe_dispatch_summarizer(
         &self,
         session_id: &str,
         packet: &crate::context_mgmt::ContextPacket,
+        target: summarizer::SummarizerTarget,
     ) {
         let mode = summarizer::summarizer_mode();
         if mode == SummarizerMode::Off || packet.metadata.pending_summaries.is_empty() {
@@ -1790,7 +1822,7 @@ impl Agent {
         let session_id = session_id.to_string();
         let pending = packet.metadata.pending_summaries.clone();
         tokio::spawn(async move {
-            summarizer::run_pending(mode, &session_id, pending).await;
+            summarizer::run_pending(mode, &session_id, pending, target).await;
         });
     }
 
@@ -2008,6 +2040,7 @@ impl Agent {
                         &system_prompt,
                         &conversation_with_moim,
                         &model_config,
+                        &working_dir,
                     )
                     .await;
 

@@ -1,4 +1,5 @@
 import { ModeSection } from '../mode/ModeSection';
+import { SummarizerSection } from './SummarizerSection';
 import { DictationSettings } from '../dictation/DictationSettings';
 import { SecurityToggle } from '../security/SecurityToggle';
 import { ResponseStylesSection } from '../response_styles/ResponseStylesSection';
@@ -24,6 +25,15 @@ const i18n = defineMessages({
   responseStylesDescription: {
     id: 'chatSettings.responseStylesDescription',
     defaultMessage: 'Choose how Gosling should format and style its responses',
+  },
+  summarizerTitle: {
+    id: 'chatSettings.summarizerTitle',
+    defaultMessage: 'Context Summarizer',
+  },
+  summarizerDescription: {
+    id: 'chatSettings.summarizerDescription',
+    defaultMessage:
+      'Use a local LLM to summarize older context and extract durable facts to memory. Falls back to deterministic truncation whenever the endpoint is unavailable.',
   },
 });
 
@@ -62,6 +72,16 @@ export default function ChatSettingsSection() {
         </CardHeader>
         <CardContent className="px-2">
           <ResponseStylesSection />
+        </CardContent>
+      </Card>
+
+      <Card className="pb-2 rounded-lg">
+        <CardHeader className="pb-0">
+          <CardTitle className="">{intl.formatMessage(i18n.summarizerTitle)}</CardTitle>
+          <CardDescription>{intl.formatMessage(i18n.summarizerDescription)}</CardDescription>
+        </CardHeader>
+        <CardContent className="px-2">
+          <SummarizerSection />
         </CardContent>
       </Card>
 

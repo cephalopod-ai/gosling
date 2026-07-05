@@ -376,6 +376,20 @@ pub fn stream_from_single_message(message: Message, usage: ProviderUsage) -> Mes
     Box::pin(stream)
 }
 
+/// Durable-file convention for a self-managing backend (a provider whose
+/// [`Provider::manages_own_context`] is true), keyed off its provider name:
+/// Claude Code reads `CLAUDE.md`; other agent CLIs (Codex, Amp, Copilot,
+/// Gemini, …) follow the cross-tool `AGENTS.md` convention. Extracted facts
+/// are routed here — the seam that survives the backend's own compaction —
+/// instead of into a prompt the backend would re-compact away.
+pub fn durable_memory_file_for(provider_name: &str) -> &'static str {
+    if provider_name.to_lowercase().contains("claude") {
+        "CLAUDE.md"
+    } else {
+        "AGENTS.md"
+    }
+}
+
 /// Base trait for AI providers (OpenAI, Anthropic, etc)
 #[async_trait]
 pub trait Provider: Send + Sync {
@@ -602,6 +616,16 @@ pub trait Provider: Send + Sync {
 mod tests {
     use super::*;
     use test_case::test_case;
+
+    #[test]
+    fn durable_memory_file_maps_claude_to_claude_md_and_rest_to_agents_md() {
+        assert_eq!(durable_memory_file_for("claude-acp"), "CLAUDE.md");
+        assert_eq!(durable_memory_file_for("claude-code"), "CLAUDE.md");
+        assert_eq!(durable_memory_file_for("codex-acp"), "AGENTS.md");
+        assert_eq!(durable_memory_file_for("codex"), "AGENTS.md");
+        assert_eq!(durable_memory_file_for("gemini-cli"), "AGENTS.md");
+        assert_eq!(durable_memory_file_for("amp-acp"), "AGENTS.md");
+    }
 
     fn content_from_str(s: String) -> MessageContent {
         if let Some(img_data) = s.strip_prefix("*img:") {
