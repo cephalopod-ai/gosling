@@ -45,6 +45,9 @@ export type Skill = {
   viewSourceUrl: string;         // Computed: GitHub link to skill source
   repoUrl: string;               // Repository URL (Agent-Skills for official, sourceUrl for external)
   isCommunity: boolean;          // True if author is not "gosling" (community-contributed)
+  sourceCatalog?: 'gosling' | 'goose'; // Optional upstream catalog provenance
+  sourceCatalogUrl?: string;     // Optional URL for the upstream catalog
+  compatibilityNote?: string;    // Optional note for compatibility-normalized entries
 };
 
 /**
@@ -98,6 +101,9 @@ type SkillInstallMethod = 'npx-single' | 'npx-multi' | 'download';`}
   viewSourceUrl: string;         // Computed: GitHub link to skill source
   repoUrl: string;               // Repository URL (Agent-Skills for official, sourceUrl for external)
   isCommunity: boolean;          // True if author is not "gosling" (community-contributed)
+  sourceCatalog?: 'gosling' | 'goose'; // Optional upstream catalog provenance
+  sourceCatalogUrl?: string;     // Optional URL for the upstream catalog
+  compatibilityNote?: string;    // Optional note for compatibility-normalized entries
 };`}
         </CodeBlock>
 

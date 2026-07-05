@@ -17,9 +17,20 @@ const PACKAGE_MANAGERS: { id: PackageManager; label: string; prefix: string }[] 
   { id: 'bun', label: 'bun', prefix: 'bunx' },
 ];
 
-function generateInstallCommand(repoUrl: string, skillId: string, packageManager: PackageManager): string {
+function applyPackageManager(command: string, packageManager: PackageManager): string {
   const prefix = PACKAGE_MANAGERS.find(pm => pm.id === packageManager)?.prefix || 'npx';
-  return `${prefix} skills add ${repoUrl} --skill ${skillId}`;
+  return command.replace(/^npx(?=\s)/, prefix);
+}
+
+function generateInstallCommand(skill: Skill, packageManager: PackageManager): string | undefined {
+  if (skill.installCommand) {
+    return applyPackageManager(skill.installCommand, packageManager);
+  }
+
+  if (skill.installMethod === "download" || !skill.repoUrl) return undefined;
+
+  const prefix = PACKAGE_MANAGERS.find(pm => pm.id === packageManager)?.prefix || 'npx';
+  return `${prefix} skills add ${skill.repoUrl} --skill ${skill.id}`;
 }
 
 export default function SkillDetailPage(): JSX.Element {
@@ -62,7 +73,8 @@ export default function SkillDetailPage(): JSX.Element {
 
   const handleCopyInstall = () => {
     if (skill) {
-      const command = generateInstallCommand(skill.repoUrl, skill.id, selectedPM);
+      const command = generateInstallCommand(skill, selectedPM);
+      if (!command) return;
       navigator.clipboard.writeText(command);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -107,7 +119,7 @@ export default function SkillDetailPage(): JSX.Element {
     );
   }
 
-  const currentCommand = generateInstallCommand(skill.repoUrl, skill.id, selectedPM);
+  const currentCommand = generateInstallCommand(skill, selectedPM);
 
   return (
     <Layout
@@ -201,31 +213,37 @@ export default function SkillDetailPage(): JSX.Element {
               </div>
 
               {/* Install command */}
-              <div className="flex items-center gap-2 mb-2">
-                <code className="flex-1 bg-zinc-200 dark:bg-zinc-800 px-3 py-2 rounded text-sm font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto">
-                  {currentCommand}
-                </code>
-                <Button
-                  onClick={handleCopyInstall}
-                  className={`flex items-center gap-2 flex-shrink-0 transition-colors ${
-                    copied
-                      ? "bg-green-600 hover:bg-green-700 text-white"
-                      : "bg-purple-600 hover:bg-purple-700 text-white"
-                  }`}
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-4 w-4" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4" />
-                      Copy
-                    </>
-                  )}
-                </Button>
-              </div>
+              {currentCommand ? (
+                <div className="flex items-center gap-2 mb-2">
+                  <code className="flex-1 bg-zinc-200 dark:bg-zinc-800 px-3 py-2 rounded text-sm font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto">
+                    {currentCommand}
+                  </code>
+                  <Button
+                    onClick={handleCopyInstall}
+                    className={`flex items-center gap-2 flex-shrink-0 transition-colors ${
+                      copied
+                        ? "bg-green-600 hover:bg-green-700 text-white"
+                        : "bg-purple-600 hover:bg-purple-700 text-white"
+                    }`}
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-4 w-4" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-500 dark:text-zinc-500 mb-2">
+                  Use the manual ZIP download below.
+                </p>
+              )}
               <p className="text-xs text-zinc-500 dark:text-zinc-500">
                 Requires <a href="https://gosling-docs.ai/docs/mcp/summon-mcp" className="text-purple-600 hover:underline">Summon extension</a> enabled
               </p>

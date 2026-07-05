@@ -5,6 +5,12 @@ import type {
   SupportingFilesType,
 } from "@site/src/pages/skills/types";
 import siteConfig from "@generated/docusaurus.config";
+import {
+  GOOSE_SKILLS_MANIFEST_URL,
+  dedupeAndSortById,
+  normalizeGooseSkill,
+  normalizeGoslingSkill,
+} from "./goose-compat";
 
 // Skills data is loaded from a generated JSON manifest at build time
 // Generated at: documentation/static/skills-manifest.json
@@ -76,33 +82,43 @@ export function loadAllSkillsSync(): Skill[] {
  * Fetch skills manifest from static files
  */
 async function fetchSkillsManifest(): Promise<Skill[]> {
-  try {
-    // In Docusaurus, baseUrl changes automatically for PR previews.
-    // Example:
-    //   prod:      /
-    //   PR preview: /pr-preview/pr-6752/
-    const baseUrl = siteConfig.baseUrl.endsWith("/")
-      ? siteConfig.baseUrl
-      : `${siteConfig.baseUrl}/`;
+  const baseUrl = siteConfig.baseUrl.endsWith("/")
+    ? siteConfig.baseUrl
+    : `${siteConfig.baseUrl}/`;
 
-    const manifestUrl = `${baseUrl}skills-manifest.json`;
+  const manifests = [
+    {
+      url: `${baseUrl}skills-manifest.json`,
+      normalize: normalizeGoslingSkill,
+    },
+    {
+      url: GOOSE_SKILLS_MANIFEST_URL,
+      normalize: normalizeGooseSkill,
+    },
+  ];
 
-    const response = await fetch(manifestUrl);
-    if (!response.ok) {
-      console.error(
-        "Failed to fetch skills manifest:",
-        response.status,
-        manifestUrl,
-      );
-      return [];
+  for (const manifest of manifests) {
+    try {
+      const response = await fetch(manifest.url);
+      if (!response.ok) {
+        console.error(
+          "Failed to fetch skills manifest:",
+          response.status,
+          manifest.url,
+        );
+        continue;
+      }
+
+      const data = await response.json();
+      if (!Array.isArray(data.skills) || data.skills.length === 0) continue;
+
+      return dedupeAndSortById(data.skills.map(manifest.normalize));
+    } catch (error) {
+      console.error("Error loading skills manifest:", manifest.url, error);
     }
-
-    const manifest = await response.json();
-    return manifest.skills || [];
-  } catch (error) {
-    console.error("Error loading skills manifest:", error);
-    return [];
   }
+
+  return [];
 }
 
 /**

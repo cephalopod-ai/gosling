@@ -72,6 +72,7 @@ ui/desktop/            # Electron app
 - Provider: Implement Provider trait see providers/base.rs
 - MCP: Extensions in crates/gosling-mcp/
 - UI Desktop: Use ACP SDK types or local `src/types/*` types. Do not import generated OpenAPI types/client code from `ui/desktop/src/api`
+- Goose compatibility: Extension and skills discovery intentionally falls back to Goose's AAIF-maintained catalogs through a deterministic gosling compatibility adapter. See `documentation/GOOSE_COMPATIBILITY.md` before changing those links or normalization scripts.
 
 ## Code Quality
 

@@ -19,3 +19,11 @@ This rule applies to:
 - Any other documentation content
 
 When editing or creating content in this documentation directory, always ensure "gosling" uses a lowercase "g".
+
+## Goose Catalog Compatibility
+
+The documentation site deliberately references Goose's AAIF-maintained extension and skills catalogs as a compatibility source for discovery. Keep this as an explicit adapter, not an accidental rename artifact.
+
+- See `documentation/GOOSE_COMPATIBILITY.md` before changing extension or skills discovery.
+- Use `documentation/scripts/goose-compat.js` for deterministic onboarding from Goose catalog JSON into gosling-compatible JSON.
+- Preserve provenance fields such as `sourceCatalog`, `sourceCatalogUrl`, and `compatibilityNote`.

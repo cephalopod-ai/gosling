@@ -21,4 +21,7 @@ export interface MCPServer {
     description: string;
     required: boolean;
   }[];
+  sourceCatalog?: "gosling" | "goose";
+  sourceCatalogUrl?: string;
+  compatibilityNote?: string;
 }
