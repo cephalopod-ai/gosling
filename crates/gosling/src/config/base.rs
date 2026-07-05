@@ -40,23 +40,26 @@ fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// custom HTTP headers, etc.) so it isn't left group/world-readable under
 /// a typical umask, matching the OS keyring's confidentiality guarantee.
 pub(crate) fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?;
+    // Write to a temporary file and atomically rename it into place. An in-place
+    // truncate+write leaves the secrets file empty/corrupt if the process dies
+    // between the two steps, irreversibly losing every locally-stored API key and
+    // OAuth token. This mirrors the atomic idiom already used by `save_values`.
+    let temp_path = path.with_extension("tmp");
 
-        file.write_all(content.as_bytes())
+    {
+        let mut open_options = OpenOptions::new();
+        open_options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            open_options.mode(0o600);
+        }
+        let mut file = open_options.open(&temp_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
     }
 
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, content)
-    }
+    std::fs::rename(&temp_path, path)
 }
 
 #[cfg(feature = "system-keyring")]
