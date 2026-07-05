@@ -1229,6 +1229,11 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
             "Toggle Experiment",
             "Enable or disable an experiment feature",
         )
+        .item(
+            "summarizer",
+            "Context Summarizer",
+            "Configure the local-LLM summarizer + memory write path",
+        )
         .interact()?;
 
     let mut should_print_config_path = true;
@@ -1253,6 +1258,9 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
         }
         "experiment" => {
             toggle_experiments_dialog()?;
+        }
+        "summarizer" => {
+            configure_summarizer_dialog()?;
         }
         _ => unreachable!(),
     };
@@ -1306,6 +1314,94 @@ pub fn configure_gosling_mode_dialog() -> anyhow::Result<()> {
         GoslingMode::Chat => "Set to Chat Mode - no tools or modifications enabled",
     };
     cliclack::outro(msg)?;
+    Ok(())
+}
+
+pub fn configure_summarizer_dialog() -> anyhow::Result<()> {
+    let config = Config::global();
+
+    for var in [
+        "GOSLING_SUMMARIZER",
+        "GOSLING_SUMMARIZER_ENDPOINT",
+        "GOSLING_SUMMARIZER_MODEL",
+        "GOSLING_SUMMARIZER_TIMEOUT_MS",
+    ] {
+        if std::env::var(var).is_ok() {
+            let _ = cliclack::log::info(format!(
+                "Notice: {var} environment variable is set and will override the configuration here."
+            ));
+        }
+    }
+
+    let current_mode: String = config
+        .get_param("GOSLING_SUMMARIZER")
+        .unwrap_or_else(|_| "off".to_string());
+
+    let mode = cliclack::select("Summarizer mode")
+        .initial_value(current_mode.as_str())
+        .item(
+            "off",
+            "Off",
+            "Disabled; no summarizer runs, no memory writes (default, zero cost)",
+        )
+        .item(
+            "shadow",
+            "Shadow",
+            "Observe only; logs the digest and would-be memory writes without changing what the model sees or writing to disk",
+        )
+        .item(
+            "on",
+            "On",
+            "Active; real summaries replace truncation and facts are written to memories.jsonl for durable recall",
+        )
+        .interact()?;
+
+    config.set_param("GOSLING_SUMMARIZER", mode)?;
+
+    if mode == "off" {
+        cliclack::outro("Summarizer disabled - context uses the deterministic truncation stub")?;
+        return Ok(());
+    }
+
+    let current_endpoint: String = config
+        .get_param("GOSLING_SUMMARIZER_ENDPOINT")
+        .unwrap_or_default();
+    let endpoint: String = cliclack::input("Summarizer endpoint (local OpenAI-compatible URL)")
+        .placeholder("http://localhost:11434/v1")
+        .default_input(&current_endpoint)
+        .interact()?;
+    config.set_param("GOSLING_SUMMARIZER_ENDPOINT", endpoint.trim())?;
+
+    let current_model: String = config
+        .get_param("GOSLING_SUMMARIZER_MODEL")
+        .unwrap_or_else(|_| "qwen2.5-coder:3b".to_string());
+    let model: String = cliclack::input("Summarizer model")
+        .placeholder("qwen2.5-coder:3b")
+        .default_input(&current_model)
+        .interact()?;
+    config.set_param("GOSLING_SUMMARIZER_MODEL", model.trim())?;
+
+    let current_timeout: u64 = config
+        .get_param("GOSLING_SUMMARIZER_TIMEOUT_MS")
+        .unwrap_or(4000);
+    let timeout_input: String = cliclack::input("Summarizer timeout (ms)")
+        .placeholder(&current_timeout.to_string())
+        .default_input(&current_timeout.to_string())
+        .validate(|input: &String| match input.parse::<u64>() {
+            Ok(value) if value >= 1 => Ok(()),
+            Ok(_) => Err("Value must be at least 1"),
+            Err(_) => Err("Please enter a valid number"),
+        })
+        .interact()?;
+    let timeout: u64 = timeout_input.parse()?;
+    config.set_param("GOSLING_SUMMARIZER_TIMEOUT_MS", timeout)?;
+
+    cliclack::outro(format!(
+        "Summarizer set to '{}' via {} using model {}",
+        mode,
+        endpoint.trim(),
+        model.trim()
+    ))?;
     Ok(())
 }
 
