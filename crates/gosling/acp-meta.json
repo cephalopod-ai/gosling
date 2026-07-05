@@ -276,6 +276,21 @@
       "responseType": "GetSessionInfoResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/session/messages/list",
+      "requestType": "ListSessionMessagesRequest_unstable",
+      "responseType": "ListSessionMessagesResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/messages/search",
+      "requestType": "SearchSessionMessagesRequest_unstable",
+      "responseType": "SearchSessionMessagesResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/summary/get",
+      "requestType": "GetSessionSummaryRequest_unstable",
+      "responseType": "GetSessionSummaryResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/session/conversation/truncate",
       "requestType": "TruncateSessionConversationRequest_unstable",
       "responseType": "EmptyResponse"

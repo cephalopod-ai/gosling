@@ -175,10 +175,11 @@ impl GoslingAcpAgent {
         let session_id_str = args.session_id.0.to_string();
         let sid = sid_short(&session_id_str);
         let t_start = std::time::Instant::now();
+        let load_options = compacted_load_options_from_meta(args.meta.as_ref())?;
 
         let mut session = self
             .session_manager
-            .get_session(&session_id_str, true)
+            .get_session(&session_id_str, !load_options.compacted)
             .await
             .map_err(|_| {
                 agent_client_protocol::Error::resource_not_found(Some(session_id_str.clone()))
@@ -186,19 +187,43 @@ impl GoslingAcpAgent {
             })?;
 
         session = self
-            .prepare_session_for_activation(session, args.cwd.clone(), args.mcp_servers, true)
+            .prepare_session_for_activation(
+                session,
+                args.cwd.clone(),
+                args.mcp_servers,
+                !load_options.compacted,
+            )
             .await?;
+        if load_options.compacted {
+            session = self
+                .session_manager
+                .get_session_for_compacted_resume(&session_id_str, load_options.tail_limit)
+                .await
+                .internal_err_ctx("Failed to load compacted session")?;
+        }
 
         let replay_tool_requests = replay_conversation_to_client(cx, &session)?;
         let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
-        self.register_acp_session(session_id_str.clone(), agent.clone(), replay_tool_requests)
-            .await;
+        self.register_acp_session(
+            session_id_str.clone(),
+            agent.clone(),
+            replay_tool_requests,
+            load_options.compacted,
+            load_options.tail_limit,
+        )
+        .await;
 
-        session = self
-            .session_manager
-            .get_session(&session_id_str, true)
-            .await
-            .internal_err_ctx("Failed to reload session")?;
+        session = if load_options.compacted {
+            self.session_manager
+                .get_session_for_compacted_resume(&session_id_str, load_options.tail_limit)
+                .await
+                .internal_err_ctx("Failed to reload compacted session")?
+        } else {
+            self.session_manager
+                .get_session(&session_id_str, true)
+                .await
+                .internal_err_ctx("Failed to reload session")?
+        };
 
         agent
             .extension_manager
@@ -219,7 +244,44 @@ impl GoslingAcpAgent {
             response = response.config_options(co);
         }
 
-        response = response.meta(session_response_meta(&session, &extension_results));
+        let mut response_meta = session_response_meta(&session, &extension_results);
+        if load_options.compacted {
+            let page = self
+                .session_manager
+                .get_session_tail_page(&session_id_str, load_options.tail_limit)
+                .await
+                .internal_err_ctx("Failed to load session history metadata")?;
+            response_meta.insert(
+                "historyLoad".to_string(),
+                serde_json::json!({
+                    "mode": "compacted",
+                    "tailLimit": load_options.tail_limit,
+                    "totalCount": page.total_count,
+                    "loadedCount": page.messages.len(),
+                    "oldestRowId": page.oldest_row_id,
+                    "newestRowId": page.newest_row_id,
+                    "nextBeforeCursor": page.next_before_cursor,
+                }),
+            );
+            if let Some(summary) = self
+                .session_manager
+                .get_session_summary(&session_id_str)
+                .await
+                .internal_err_ctx("Failed to load session summary metadata")?
+            {
+                response_meta.insert(
+                    "summary".to_string(),
+                    serde_json::json!({
+                        "status": summary.status.to_string(),
+                        "coverageThroughRowId": summary.covered_through_row_id,
+                        "coverageThroughTimestamp": summary.covered_through_timestamp,
+                        "coveredMessageCount": summary.covered_message_count,
+                        "updatedAt": summary.updated_at,
+                    }),
+                );
+            }
+        }
+        response = response.meta(response_meta);
 
         debug!(
             target: "perf",

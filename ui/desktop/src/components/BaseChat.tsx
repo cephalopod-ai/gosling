@@ -82,9 +82,12 @@ export default function BaseChat({
   const {
     session,
     messages,
+    historyHasMore,
+    historyLoading,
     chatState,
     updateSession,
     handleSubmit,
+    loadOlderMessages,
     onSteerQueuedMessage,
     submitElicitationResponse,
     stopStreaming,
@@ -203,6 +206,15 @@ export default function BaseChat({
       }
     }
   }, [messages.length]);
+
+  const handleHistoryScroll = useCallback(
+    (viewport: HTMLDivElement) => {
+      if (viewport.scrollTop < 240 && historyHasMore && !historyLoading) {
+        void loadOlderMessages();
+      }
+    },
+    [historyHasMore, historyLoading, loadOlderMessages]
+  );
 
   // Listen for global scroll-to-bottom requests (e.g., from MCP App message actions)
   useEffect(() => {
@@ -353,6 +365,7 @@ export default function BaseChat({
             autoScroll
             onDrop={handleDrop}
             onDragOver={handleDragOver}
+            handleScroll={handleHistoryScroll}
             data-drop-zone="true"
             paddingX={6}
             paddingY={0}
@@ -360,6 +373,18 @@ export default function BaseChat({
             {messages.length > 0 ? (
               <>
                 <SearchView>
+                  {historyHasMore ? (
+                    <div className="flex justify-center py-3">
+                      <button
+                        type="button"
+                        className="rounded border border-border-primary px-3 py-1 text-xs text-text-secondary hover:bg-background-secondary disabled:opacity-60"
+                        disabled={historyLoading}
+                        onClick={() => void loadOlderMessages()}
+                      >
+                        {historyLoading ? 'Loading older history' : 'Older history available'}
+                      </button>
+                    </div>
+                  ) : null}
                   <ProgressiveMessageList
                     messages={messages}
                     chat={{ sessionId }}

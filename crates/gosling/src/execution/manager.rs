@@ -12,7 +12,7 @@ use tokio::sync::{mpsc, Mutex, OnceCell, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
-pub const DEFAULT_MAX_SESSION: usize = 100;
+pub const DEFAULT_MAX_SESSION: usize = 5;
 
 static AGENT_MANAGER: OnceCell<Arc<AgentManager>> = OnceCell::const_new();
 
@@ -48,7 +48,7 @@ pub struct AgentManager {
 impl AgentManager {
     pub async fn new(agent_config: AgentConfig, max_sessions: Option<usize>) -> Result<Self> {
         let capacity = NonZeroUsize::new(max_sessions.unwrap_or(DEFAULT_MAX_SESSION))
-            .unwrap_or_else(|| NonZeroUsize::new(100).unwrap());
+            .unwrap_or_else(|| NonZeroUsize::new(DEFAULT_MAX_SESSION).unwrap());
 
         let manager = Self {
             sessions: Arc::new(RwLock::new(LruCache::new(capacity))),

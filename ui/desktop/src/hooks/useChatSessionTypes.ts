@@ -12,9 +12,12 @@ export interface UseChatSessionParams {
 export interface UseChatSessionResult {
   session?: Session;
   messages: Message[];
+  historyHasMore: boolean;
+  historyLoading: boolean;
   chatState: ChatState;
   updateSession: (updater: (session: Session) => Session) => void;
   handleSubmit: (input: UserInput) => Promise<void>;
+  loadOlderMessages: () => Promise<void>;
   onSteerQueuedMessage?: (input: UserInput) => Promise<boolean>;
   submitElicitationResponse: (
     elicitationId: string,

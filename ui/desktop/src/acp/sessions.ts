@@ -9,6 +9,7 @@ import type { GoslingExtension, SessionImportSource } from '@repo-makeover/gosli
 import { getAcpClient } from './acpConnection';
 import { DEFAULT_CHAT_TITLE } from '../contexts/ChatContext';
 import type { ExtensionLoadResult } from '../types/extensions';
+import type { Message } from '../types/message';
 import type { Session } from '../types/session';
 
 interface GoslingSessionInfoMeta {
@@ -22,6 +23,18 @@ interface GoslingSessionInfoMeta {
   sessionType?: Session['session_type'];
   userSetName?: boolean;
   lastMessageSnippet?: string;
+}
+
+export const COMPACTED_SESSION_TAIL_LIMIT = 50;
+
+export interface HistoryLoadMeta {
+  mode?: 'compacted' | 'full' | string;
+  tailLimit?: number;
+  totalCount?: number;
+  loadedCount?: number;
+  oldestRowId?: number | null;
+  newestRowId?: number | null;
+  nextBeforeCursor?: string | null;
 }
 
 export interface SessionListItem {
@@ -48,6 +61,7 @@ export interface SessionListPage {
 export interface LoadSessionMeta {
   extensionResults?: ExtensionLoadResult[] | null;
   workingDir?: string;
+  historyLoad?: HistoryLoadMeta;
 }
 
 export interface AcpLoadSessionResult {
@@ -63,7 +77,12 @@ function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
   return {
     extensionResults: meta.extensionResults,
     workingDir: typeof meta.workingDir === 'string' ? meta.workingDir : undefined,
+    historyLoad: isHistoryLoadMeta(meta.historyLoad) ? meta.historyLoad : undefined,
   };
+}
+
+function isHistoryLoadMeta(value: unknown): value is HistoryLoadMeta {
+  return typeof value === 'object' && value !== null;
 }
 
 export function parseLoadMeta(response: LoadSessionResponse): LoadSessionMeta {
@@ -214,6 +233,12 @@ async function loadAcpSession(sessionId: string): Promise<AcpLoadSessionResult> 
     sessionId,
     cwd: initialSessionInfo.cwd,
     mcpServers: [],
+    _meta: {
+      gosling: {
+        loadMode: 'compacted',
+        tailLimit: COMPACTED_SESSION_TAIL_LIMIT,
+      },
+    },
   });
   // Loading can populate missing provider/model metadata.
   const sessionInfoResponse = await client.gosling.sessionInfo_unstable({ sessionId });
@@ -223,6 +248,57 @@ async function loadAcpSession(sessionId: string): Promise<AcpLoadSessionResult> 
     response,
     meta: parseLoadMeta(response),
   };
+}
+
+export interface SessionMessagesPage {
+  messages: Message[];
+  nextBeforeCursor: string | null;
+  totalCount: number;
+  oldestRowId?: number | null;
+  newestRowId?: number | null;
+}
+
+export async function acpListSessionMessages(
+  sessionId: string,
+  beforeCursor?: string | null,
+  limit = COMPACTED_SESSION_TAIL_LIMIT
+): Promise<SessionMessagesPage> {
+  const client = await getAcpClient();
+  const response = await client.gosling.sessionMessagesList_unstable({
+    sessionId,
+    ...(beforeCursor ? { beforeCursor } : {}),
+    limit,
+  });
+  return {
+    messages: response.messages as Message[],
+    nextBeforeCursor: response.nextBeforeCursor ?? null,
+    totalCount: response.totalCount,
+    oldestRowId: response.oldestRowId,
+    newestRowId: response.newestRowId,
+  };
+}
+
+export interface SessionMessageSearchMatch {
+  rowId: number;
+  messageId?: string | null;
+  role: string;
+  snippet: string;
+  created: number;
+  beforeCursor?: string | null;
+}
+
+export async function acpSearchSessionMessages(
+  sessionId: string,
+  query: string,
+  limit = 20
+): Promise<SessionMessageSearchMatch[]> {
+  const client = await getAcpClient();
+  const response = await client.gosling.sessionMessagesSearch_unstable({
+    sessionId,
+    query,
+    limit,
+  });
+  return response.matches;
 }
 
 export interface AcpNewSessionResult {

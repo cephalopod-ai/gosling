@@ -25,4 +25,10 @@ pub struct SessionConfig {
     pub id: String,
     /// Maximum number of turns (iterations) allowed without user input
     pub max_turns: Option<u32>,
+    /// Whether provider context should be rebuilt from the compacted resume view.
+    #[serde(default)]
+    pub compacted_context: bool,
+    /// Tail size to use when compacted context is enabled.
+    #[serde(default)]
+    pub tail_limit: Option<usize>,
 }

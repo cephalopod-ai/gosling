@@ -53,8 +53,14 @@ impl GoslingAcpAgent {
 
         let (agent, extension_results) =
             self.prepare_acp_session_agent(cx, &gosling_session).await?;
-        self.register_acp_session(gosling_session.id.clone(), agent, HashMap::new())
-            .await;
+        self.register_acp_session(
+            gosling_session.id.clone(),
+            agent,
+            HashMap::new(),
+            false,
+            DEFAULT_SESSION_TAIL_LIMIT,
+        )
+        .await;
 
         let acp_session_id = SessionId::new(new_session_id.clone());
         let mut meta = session_meta(&gosling_session);

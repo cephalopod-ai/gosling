@@ -17,6 +17,10 @@ import type { AcpElicitationRequest } from './elicitationRequests';
 export interface AcpChatSessionSnapshot {
   session: Session | undefined;
   messages: Message[];
+  historyCursor: string | null;
+  historyHasMore: boolean;
+  historyLoading: boolean;
+  historyTotalCount: number | null;
   tokenState: TokenState;
   notifications: NotificationEvent[];
   chatState: ChatState;
@@ -77,6 +81,21 @@ export interface AcpChatSessionActions {
   ): AcpChatSessionSnapshot;
 
   setMessages(sessionId: string, messages: Message[]): AcpChatSessionSnapshot;
+  setHistoryPageState(
+    sessionId: string,
+    state: {
+      cursor?: string | null;
+      hasMore?: boolean;
+      loading?: boolean;
+      totalCount?: number | null;
+    }
+  ): AcpChatSessionSnapshot;
+  prependMessages(
+    sessionId: string,
+    messages: Message[],
+    nextCursor: string | null,
+    totalCount?: number | null
+  ): AcpChatSessionSnapshot;
   addPendingLocalSteerMessage(sessionId: string, message: Message): AcpChatSessionSnapshot;
   setChatState(sessionId: string, chatState: ChatState): AcpChatSessionSnapshot;
   resolveUserInputRequest(
@@ -153,6 +172,10 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     const entry: StoreEntry = {
       session: undefined,
       messages: [],
+      historyCursor: null,
+      historyHasMore: false,
+      historyLoading: false,
+      historyTotalCount: null,
       tokenState: { ...initialTokenState },
       notifications: [],
       chatState: ChatState.Idle,
@@ -215,6 +238,54 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
   const setMessages: AcpChatSessionActions['setMessages'] = (sessionId, messages) => {
     const entry = getOrCreateEntry(sessionId);
     entry.messages = cloneMessages(messages);
+    retainPendingLocalSteerMessageIds(entry);
+    entry.adapter = createAdapterForEntry(entry);
+    return notify(sessionId, entry);
+  };
+
+  const setHistoryPageState: AcpChatSessionActions['setHistoryPageState'] = (
+    sessionId,
+    state
+  ) => {
+    const entry = getOrCreateEntry(sessionId);
+    if ('cursor' in state) {
+      entry.historyCursor = state.cursor ?? null;
+    }
+    if (state.hasMore !== undefined) {
+      entry.historyHasMore = state.hasMore;
+    }
+    if (state.loading !== undefined) {
+      entry.historyLoading = state.loading;
+    }
+    if ('totalCount' in state) {
+      entry.historyTotalCount = state.totalCount ?? null;
+    }
+    return notify(sessionId, entry);
+  };
+
+  const prependMessages: AcpChatSessionActions['prependMessages'] = (
+    sessionId,
+    messages,
+    nextCursor,
+    totalCount
+  ) => {
+    const entry = getOrCreateEntry(sessionId);
+    const existingKeys = new Set(entry.messages.map(messageIdentity));
+    const olderMessages = cloneMessages(messages).filter((message) => {
+      const key = messageIdentity(message);
+      if (existingKeys.has(key)) {
+        return false;
+      }
+      existingKeys.add(key);
+      return true;
+    });
+    entry.messages = [...olderMessages, ...entry.messages];
+    entry.historyCursor = nextCursor;
+    entry.historyHasMore = nextCursor !== null;
+    entry.historyLoading = false;
+    if (totalCount !== undefined) {
+      entry.historyTotalCount = totalCount;
+    }
     retainPendingLocalSteerMessageIds(entry);
     entry.adapter = createAdapterForEntry(entry);
     return notify(sessionId, entry);
@@ -478,6 +549,8 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     failSessionLoad,
     setSessionLoadError,
     setMessages,
+    setHistoryPageState,
+    prependMessages,
     addPendingLocalSteerMessage,
     setChatState,
     resolveUserInputRequest,
@@ -556,6 +629,8 @@ function actionsFromStore(store: AcpChatSessionStoreInternal): AcpChatSessionAct
     failSessionLoad: store.failSessionLoad,
     setSessionLoadError: store.setSessionLoadError,
     setMessages: store.setMessages,
+    setHistoryPageState: store.setHistoryPageState,
+    prependMessages: store.prependMessages,
     addPendingLocalSteerMessage: store.addPendingLocalSteerMessage,
     setChatState: store.setChatState,
     resolveUserInputRequest: store.resolveUserInputRequest,
@@ -604,6 +679,10 @@ function applyChatStateChanges(entry: StoreEntry, changes: AcpChatStateChange[])
 
 function resetReplayState(entry: StoreEntry): void {
   entry.messages = [];
+  entry.historyCursor = null;
+  entry.historyHasMore = false;
+  entry.historyLoading = false;
+  entry.historyTotalCount = null;
   entry.tokenState = { ...initialTokenState };
   entry.notifications = [];
   entry.activeRunId = null;
@@ -706,6 +785,10 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
   return {
     session: entry.session,
     messages: entry.messages,
+    historyCursor: entry.historyCursor,
+    historyHasMore: entry.historyHasMore,
+    historyLoading: entry.historyLoading,
+    historyTotalCount: entry.historyTotalCount,
     tokenState: { ...entry.tokenState },
     notifications: [...entry.notifications],
     chatState: entry.chatState,
@@ -718,4 +801,8 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
 
 function cloneMessages(messages: Message[]): Message[] {
   return messages.map(cloneMessage);
+}
+
+function messageIdentity(message: Message): string {
+  return message.id ? `${message.role}:${message.id}` : `${message.role}:${message.created}`;
 }

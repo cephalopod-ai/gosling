@@ -202,6 +202,115 @@ impl GoslingAcpAgent {
         })
     }
 
+    pub(super) async fn on_list_session_messages(
+        &self,
+        req: ListSessionMessagesRequest,
+    ) -> Result<ListSessionMessagesResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+        let limit = req.limit.unwrap_or(DEFAULT_SESSION_TAIL_LIMIT);
+        let page = self
+            .session_manager
+            .get_session_message_page(session_id, req.before_cursor.as_deref(), limit)
+            .await
+            .map_err(|error| {
+                if error.to_string().contains("Invalid before cursor") {
+                    agent_client_protocol::Error::invalid_params().data(error.to_string())
+                } else {
+                    agent_client_protocol::Error::internal_error().data(error.to_string())
+                }
+            })?;
+        let messages = page
+            .messages
+            .into_iter()
+            .map(|message| serde_json::to_value(message).unwrap_or(serde_json::Value::Null))
+            .collect();
+        Ok(ListSessionMessagesResponse {
+            messages,
+            next_before_cursor: page.next_before_cursor,
+            total_count: page.total_count,
+            oldest_row_id: page.oldest_row_id,
+            newest_row_id: page.newest_row_id,
+        })
+    }
+
+    pub(super) async fn on_search_session_messages(
+        &self,
+        req: SearchSessionMessagesRequest,
+    ) -> Result<SearchSessionMessagesResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+        let results = self
+            .session_manager
+            .search_session_messages(session_id, req.query.trim(), req.limit.unwrap_or(20))
+            .await
+            .internal_err()?;
+        Ok(SearchSessionMessagesResponse {
+            matches: results
+                .matches
+                .into_iter()
+                .map(|m| SessionMessageSearchMatch {
+                    row_id: m.row_id,
+                    message_id: m.message_id,
+                    role: m.role,
+                    snippet: m.snippet,
+                    created: m.created,
+                    before_cursor: m.before_cursor,
+                })
+                .collect(),
+            total_matches: results.total_matches,
+        })
+    }
+
+    pub(super) async fn on_get_session_summary(
+        &self,
+        req: GetSessionSummaryRequest,
+    ) -> Result<GetSessionSummaryResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+        let summary = self
+            .session_manager
+            .get_session_summary(session_id)
+            .await
+            .internal_err()?
+            .map(|summary| SessionSummaryDto {
+                summary: summary.summary,
+                covered_through_row_id: summary.covered_through_row_id,
+                covered_through_timestamp: summary.covered_through_timestamp,
+                covered_message_count: summary.covered_message_count,
+                status: summary.status.to_string(),
+                error: summary.error,
+                updated_at: summary.updated_at.to_rfc3339(),
+            });
+        let facts = self
+            .session_manager
+            .get_session_summary_facts(session_id)
+            .await
+            .internal_err()?
+            .into_iter()
+            .map(|fact| SessionSummaryFactDto {
+                id: fact.id,
+                scope: fact.scope,
+                fact_type: fact.fact_type,
+                content: fact.content,
+                confidence: fact.confidence,
+            })
+            .collect();
+        Ok(GetSessionSummaryResponse { summary, facts })
+    }
+
     pub(super) async fn on_truncate_session_conversation(
         &self,
         req: TruncateSessionConversationRequest,

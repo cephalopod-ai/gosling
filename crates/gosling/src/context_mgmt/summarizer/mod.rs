@@ -18,11 +18,17 @@ pub mod writer;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use tracing::{debug, warn};
 
 use crate::config::Config;
+use crate::conversation::message::Message;
+use crate::session::{
+    SessionManager, SessionSummary, SessionSummaryFact, SessionSummaryStatus,
+    MAX_SESSION_MESSAGE_PAGE_LIMIT,
+};
 
 pub use schema::{ExtractedFact, FactType, WorkerResponse};
 pub use worker::SummarizerConfig;
@@ -316,6 +322,268 @@ pub async fn run_pending(
                 }
             },
         }
+    }
+}
+
+pub fn spawn_session_rollup(
+    mode: SummarizerMode,
+    session_manager: Arc<SessionManager>,
+    session_id: String,
+    tail_limit: usize,
+) {
+    if mode == SummarizerMode::Off {
+        return;
+    }
+
+    tokio::spawn(async move {
+        run_session_rollup(mode, session_manager, &session_id, tail_limit).await;
+    });
+}
+
+async fn run_session_rollup(
+    mode: SummarizerMode,
+    session_manager: Arc<SessionManager>,
+    session_id: &str,
+    tail_limit: usize,
+) {
+    if mode == SummarizerMode::Off {
+        return;
+    }
+    let Some(config) = SummarizerConfig::from_config() else {
+        return;
+    };
+
+    let session = match session_manager.get_session(session_id, false).await {
+        Ok(session) => session,
+        Err(error) => {
+            debug!(session_id, %error, "session summary rollup skipped: session unavailable");
+            return;
+        }
+    };
+    let tail = match session_manager
+        .get_session_tail_page(session_id, tail_limit)
+        .await
+    {
+        Ok(page) => page,
+        Err(error) => {
+            warn!("Failed to load session summary tail boundary: {error}");
+            return;
+        }
+    };
+    let Some(before_row_id) = tail.oldest_row_id else {
+        return;
+    };
+    if tail.total_count <= tail.messages.len() {
+        refresh_stale_summary_status(&session_manager, session_id).await;
+        return;
+    }
+
+    let mut summary = match session_manager.get_session_summary(session_id).await {
+        Ok(summary) => summary,
+        Err(error) => {
+            warn!("Failed to load existing session summary: {error}");
+            None
+        }
+    };
+    let mut after_row_id = summary
+        .as_ref()
+        .map(|summary| summary.covered_through_row_id)
+        .unwrap_or(0);
+
+    loop {
+        let rows = match session_manager
+            .get_session_message_rows_between(
+                session_id,
+                after_row_id,
+                before_row_id,
+                MAX_SESSION_MESSAGE_PAGE_LIMIT,
+            )
+            .await
+        {
+            Ok(rows) => rows,
+            Err(error) => {
+                warn!("Failed to load session summary chunk: {error}");
+                return;
+            }
+        };
+        if rows.is_empty() {
+            refresh_stale_summary_status(&session_manager, session_id).await;
+            return;
+        }
+
+        let Some((end_row_id, end_message)) = rows.last() else {
+            return;
+        };
+        let start_row_id = rows.first().map(|(row_id, _)| *row_id);
+        let source_hash = source_hash_for_summary_chunk(summary.as_ref(), &rows);
+        if summary
+            .as_ref()
+            .is_some_and(|existing| existing.source_hash == source_hash)
+        {
+            after_row_id = *end_row_id;
+            continue;
+        }
+
+        let prompt = rolling_summary_prompt(summary.as_ref(), &rows);
+        let Some(response) = worker::summarize(&prompt, &config).await else {
+            persist_failed_session_summary(
+                &session_manager,
+                session_id,
+                summary.as_ref(),
+                &config.model,
+                "summarizer worker produced no usable response",
+            )
+            .await;
+            return;
+        };
+
+        if mode == SummarizerMode::Shadow {
+            debug!(
+                target: "gosling::context_mgmt::summarizer",
+                session_id,
+                summary = %response.summary,
+                fact_count = response.facts.len(),
+                "session summary shadow mode: would persist rolling summary"
+            );
+            return;
+        }
+
+        let updated_at = chrono::Utc::now();
+        let covered_message_count = summary
+            .as_ref()
+            .map(|summary| summary.covered_message_count)
+            .unwrap_or(0)
+            + rows.len();
+        let next_summary = SessionSummary {
+            session_id: session_id.to_string(),
+            summary: response.summary.clone(),
+            covered_through_row_id: *end_row_id,
+            covered_through_timestamp: end_message.created,
+            covered_message_count,
+            source_hash,
+            summarizer_model: Some(config.model.clone()),
+            status: SessionSummaryStatus::Current,
+            error: None,
+            updated_at,
+        };
+        let facts = response
+            .facts
+            .iter()
+            .map(|fact| SessionSummaryFact {
+                id: 0,
+                session_id: session_id.to_string(),
+                project_id: session.project_id.clone(),
+                working_dir: session.working_dir.to_string_lossy().to_string(),
+                scope: "session".to_string(),
+                fact_type: fact.fact_type.as_str().to_string(),
+                content: fact.content.clone(),
+                confidence: fact.confidence,
+                source_start_row_id: start_row_id,
+                source_end_row_id: Some(*end_row_id),
+                created_at: updated_at,
+            })
+            .collect::<Vec<_>>();
+        if let Err(error) = session_manager.upsert_session_summary(&next_summary).await {
+            warn!("Failed to persist session summary: {error}");
+            return;
+        }
+        if let Err(error) = session_manager
+            .replace_session_summary_facts(session_id, &facts)
+            .await
+        {
+            warn!("Failed to persist session summary facts: {error}");
+            return;
+        }
+
+        after_row_id = *end_row_id;
+        summary = Some(next_summary);
+    }
+}
+
+fn rolling_summary_prompt(summary: Option<&SessionSummary>, rows: &[(i64, Message)]) -> String {
+    let mut rendered = String::new();
+    rendered.push_str("Merge the existing rolling session summary with the new message chunk.\n");
+    rendered.push_str(
+        "Return a complete replacement summary and durable facts for the merged session state.\n\n",
+    );
+    rendered.push_str("Existing summary:\n");
+    rendered.push_str(
+        summary
+            .and_then(|summary| {
+                let summary = summary.summary.as_str();
+                (!summary.trim().is_empty()).then_some(summary)
+            })
+            .unwrap_or("(none)"),
+    );
+    rendered.push_str("\n\nNew messages:\n");
+    for (row_id, message) in rows {
+        let role = match message.role {
+            rmcp::model::Role::User => "user",
+            rmcp::model::Role::Assistant => "assistant",
+        };
+        rendered.push_str(&format!(
+            "\n[row {row_id} {role}]\n{}\n",
+            message.as_concat_text()
+        ));
+    }
+    rendered
+}
+
+fn source_hash_for_summary_chunk(
+    summary: Option<&SessionSummary>,
+    rows: &[(i64, Message)],
+) -> String {
+    let mut hasher = blake3::Hasher::new();
+    if let Some(summary) = summary {
+        hasher.update(summary.source_hash.as_bytes());
+        hasher.update(summary.summary.as_bytes());
+        hasher.update(&summary.covered_through_row_id.to_le_bytes());
+    }
+    for (row_id, message) in rows {
+        hasher.update(&row_id.to_le_bytes());
+        hasher.update(message.as_concat_text().as_bytes());
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+async fn refresh_stale_summary_status(session_manager: &SessionManager, session_id: &str) {
+    let Ok(Some(mut summary)) = session_manager.get_session_summary(session_id).await else {
+        return;
+    };
+    summary.status = SessionSummaryStatus::Current;
+    summary.error = None;
+    summary.updated_at = chrono::Utc::now();
+    if let Err(error) = session_manager.upsert_session_summary(&summary).await {
+        warn!("Failed to refresh session summary status: {error}");
+    }
+}
+
+async fn persist_failed_session_summary(
+    session_manager: &SessionManager,
+    session_id: &str,
+    existing: Option<&SessionSummary>,
+    model: &str,
+    error: &str,
+) {
+    let summary = existing.cloned().unwrap_or_else(|| SessionSummary {
+        session_id: session_id.to_string(),
+        summary: String::new(),
+        covered_through_row_id: 0,
+        covered_through_timestamp: 0,
+        covered_message_count: 0,
+        source_hash: String::new(),
+        summarizer_model: Some(model.to_string()),
+        status: SessionSummaryStatus::Failed,
+        error: Some(error.to_string()),
+        updated_at: chrono::Utc::now(),
+    });
+    let mut failed = summary;
+    failed.status = SessionSummaryStatus::Failed;
+    failed.error = Some(error.to_string());
+    failed.summarizer_model = Some(model.to_string());
+    failed.updated_at = chrono::Utc::now();
+    if let Err(persist_error) = session_manager.upsert_session_summary(&failed).await {
+        warn!("Failed to persist failed session summary state: {persist_error}");
     }
 }
 

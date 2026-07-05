@@ -3506,6 +3506,257 @@
       "type": "string",
       "description": "A unique identifier for a conversation session between a client and agent.\n\nSessions maintain their own context, conversation history, and state,\nallowing multiple independent interactions with the same agent.\n\nSee protocol docs: [Session ID](https://agentclientprotocol.com/protocol/session-setup#session-id)"
     },
+    "ListSessionMessagesRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "beforeCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "List a page of persisted session messages without loading the whole conversation.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/messages/list"
+    },
+    "ListSessionMessagesResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": {}
+        },
+        "nextBeforeCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oldestRowId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "newestRowId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "messages",
+        "totalCount"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/messages/list"
+    },
+    "SearchSessionMessagesRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId",
+        "query"
+      ],
+      "description": "Search persisted messages within one session.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/messages/search"
+    },
+    "SearchSessionMessagesResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "matches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionMessageSearchMatch"
+          }
+        },
+        "totalMatches": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "matches",
+        "totalMatches"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/messages/search"
+    },
+    "SessionMessageSearchMatch": {
+      "type": "object",
+      "properties": {
+        "rowId": {
+          "type": "integer"
+        },
+        "messageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "snippet": {
+          "type": "string"
+        },
+        "created": {
+          "type": "integer"
+        },
+        "beforeCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "rowId",
+        "role",
+        "snippet",
+        "created"
+      ]
+    },
+    "GetSessionSummaryRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Return durable compacted summary state for a session.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/summary/get"
+    },
+    "GetSessionSummaryResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionSummaryDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionSummaryFactDto"
+          }
+        }
+      },
+      "required": [
+        "facts"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/summary/get"
+    },
+    "SessionSummaryDto": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "coveredThroughRowId": {
+          "type": "integer"
+        },
+        "coveredThroughTimestamp": {
+          "type": "integer"
+        },
+        "coveredMessageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary",
+        "coveredThroughRowId",
+        "coveredThroughTimestamp",
+        "coveredMessageCount",
+        "status",
+        "updatedAt"
+      ]
+    },
+    "SessionSummaryFactDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "factType": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "factType",
+        "content",
+        "confidence"
+      ]
+    },
     "TruncateSessionConversationRequest_unstable": {
       "type": "object",
       "properties": {
@@ -4944,6 +5195,33 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ListSessionMessagesRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/messages/list",
+                  "title": "ListSessionMessagesRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/SearchSessionMessagesRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/messages/search",
+                  "title": "SearchSessionMessagesRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetSessionSummaryRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/summary/get",
+                  "title": "GetSessionSummaryRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/TruncateSessionConversationRequest_unstable"
                     }
                   ],
@@ -5436,6 +5714,30 @@
                         }
                       ],
                       "title": "GetSessionInfoResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ListSessionMessagesResponse_unstable"
+                        }
+                      ],
+                      "title": "ListSessionMessagesResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/SearchSessionMessagesResponse_unstable"
+                        }
+                      ],
+                      "title": "SearchSessionMessagesResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetSessionSummaryResponse_unstable"
+                        }
+                      ],
+                      "title": "GetSessionSummaryResponse_unstable"
                     },
                     {
                       "allOf": [

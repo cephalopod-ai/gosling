@@ -35,6 +35,7 @@ use crate::providers::inventory::{
 };
 use crate::session::{
     EnabledExtensionsState, ExtensionData, ExtensionState, Session, SessionManager, SessionType,
+    DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
@@ -162,6 +163,8 @@ const PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY: usize = 16;
 struct GoslingAcpSession {
     agent: Arc<Agent>,
     tool_requests: HashMap<String, crate::conversation::message::ToolRequest>,
+    compacted_context: bool,
+    tail_limit: usize,
     /// For each tool_call_id that belongs to a multi-tool chain (run of
     /// consecutive ToolRequest blocks within one assistant message), the chain
     /// it belongs to. Populated when the assistant message is processed.
@@ -248,6 +251,60 @@ fn meta_string(
         );
     };
     Ok(Some(value.to_string()))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SessionLoadOptions {
+    compacted: bool,
+    tail_limit: usize,
+}
+
+fn compacted_load_options_from_meta(
+    meta: Option<&Meta>,
+) -> Result<SessionLoadOptions, agent_client_protocol::Error> {
+    let Some(gosling) = meta
+        .and_then(|m| m.get("gosling"))
+        .and_then(|value| value.as_object())
+    else {
+        return Ok(SessionLoadOptions {
+            compacted: false,
+            tail_limit: DEFAULT_SESSION_TAIL_LIMIT,
+        });
+    };
+
+    let load_mode = gosling
+        .get("loadMode")
+        .and_then(|value| value.as_str())
+        .unwrap_or("full");
+    let compacted = match load_mode {
+        "compacted" => true,
+        "full" => false,
+        other => {
+            return Err(agent_client_protocol::Error::invalid_params().data(format!(
+                "gosling.loadMode must be 'full' or 'compacted', got {other}"
+            )));
+        }
+    };
+
+    let tail_limit = match gosling.get("tailLimit") {
+        Some(value) if value.is_null() => DEFAULT_SESSION_TAIL_LIMIT,
+        Some(value) => {
+            let Some(raw_limit) = value.as_u64() else {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("gosling.tailLimit must be a number"));
+            };
+            raw_limit
+                .clamp(1, MAX_SESSION_MESSAGE_PAGE_LIMIT as u64)
+                .try_into()
+                .unwrap_or(DEFAULT_SESSION_TAIL_LIMIT)
+        }
+        None => DEFAULT_SESSION_TAIL_LIMIT,
+    };
+
+    Ok(SessionLoadOptions {
+        compacted,
+        tail_limit,
+    })
 }
 
 fn spawn_session_name_update_notifier(
@@ -1190,10 +1247,14 @@ impl GoslingAcpAgent {
         session_id: String,
         agent: Arc<Agent>,
         tool_requests: HashMap<String, ToolRequest>,
+        compacted_context: bool,
+        tail_limit: usize,
     ) {
         let acp_session = GoslingAcpSession {
             agent,
             tool_requests,
+            compacted_context,
+            tail_limit,
             chain_membership: HashMap::new(),
             responded_tool_ids: HashSet::new(),
             summarized_chains: HashSet::new(),
@@ -1208,8 +1269,14 @@ impl GoslingAcpAgent {
         tool_requests: HashMap<String, ToolRequest>,
     ) -> Result<(Arc<Agent>, Vec<ExtensionLoadResult>), agent_client_protocol::Error> {
         let (agent, extension_results) = self.prepare_acp_session_agent(cx, session).await?;
-        self.register_acp_session(session.id.clone(), agent.clone(), tool_requests)
-            .await;
+        self.register_acp_session(
+            session.id.clone(),
+            agent.clone(),
+            tool_requests,
+            false,
+            DEFAULT_SESSION_TAIL_LIMIT,
+        )
+        .await;
 
         Ok((agent, extension_results))
     }
@@ -2425,10 +2492,19 @@ impl GoslingAcpAgent {
         }
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
+        let (compacted_context, tail_limit) = {
+            let sessions = self.sessions.lock().await;
+            sessions
+                .get(&session_id)
+                .map(|session| (session.compacted_context, session.tail_limit))
+                .unwrap_or((false, DEFAULT_SESSION_TAIL_LIMIT))
+        };
 
         let session_config = SessionConfig {
             id: session_id.clone(),
             max_turns: None,
+            compacted_context,
+            tail_limit: Some(tail_limit),
         };
 
         let mut stream = match agent

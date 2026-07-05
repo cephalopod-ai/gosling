@@ -45,7 +45,7 @@ use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager, SessionNameUpdate};
+use crate::session::{Session, SessionManager, SessionNameUpdate, DEFAULT_SESSION_TAIL_LIMIT};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -1450,13 +1450,9 @@ impl Agent {
         let message_text = user_message.as_concat_text();
 
         let session = session_manager
-            .get_session(&session_config.id, true)
+            .get_session(&session_config.id, false)
             .await?;
-        let is_first_turn = session
-            .conversation
-            .as_ref()
-            .map(|conversation| conversation.messages().is_empty())
-            .unwrap_or(true);
+        let is_first_turn = session.message_count == 0;
         if is_first_turn {
             self.emit_hook(crate::hooks::HookEvent::SessionStart, &session_config.id)
                 .await;
@@ -1584,9 +1580,20 @@ impl Agent {
                     .await?;
             }
         }
-        let session = session_manager
-            .get_session(&session_config.id, true)
-            .await?;
+        let session = if session_config.compacted_context {
+            session_manager
+                .get_session_for_compacted_resume(
+                    &session_config.id,
+                    session_config
+                        .tail_limit
+                        .unwrap_or(DEFAULT_SESSION_TAIL_LIMIT),
+                )
+                .await?
+        } else {
+            session_manager
+                .get_session(&session_config.id, true)
+                .await?
+        };
         let conversation = session
             .conversation
             .clone()
@@ -2723,6 +2730,13 @@ impl Agent {
             if !stop_hook_handled_for_exit {
                 self.emit_stop_hook(&session_config.id, &last_assistant_text).await;
             }
+
+            summarizer::spawn_session_rollup(
+                summarizer::summarizer_mode(),
+                session_manager.clone(),
+                session_config.id.clone(),
+                session_config.tail_limit.unwrap_or(DEFAULT_SESSION_TAIL_LIMIT),
+            );
         }.instrument(reply_stream_span));
         Ok(inner)
     }
@@ -3574,6 +3588,8 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let session_config = SessionConfig {
             id: session_id,
             max_turns: Some(10),
+            compacted_context: false,
+            tail_limit: None,
         };
 
         let reply_stream = agent
@@ -3645,6 +3661,8 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let session_config = SessionConfig {
             id: session_id.to_string(),
             max_turns: Some(10),
+            compacted_context: false,
+            tail_limit: None,
         };
         let reply_stream = agent
             .reply(Message::user().with_text(text), session_config, None)

@@ -22,6 +22,7 @@ import {
   useAcpChatSessionSnapshot,
 } from '../acp/chatSessionStore';
 import { acpSteerSession } from '../acp/prompt';
+import { acpListSessionMessages } from '../acp/sessions';
 
 const initialTokenState: TokenState = {
   inputTokens: 0,
@@ -59,6 +60,8 @@ export function useChatSession({
   const intl = useIntl();
   const acpSnapshot = useAcpChatSessionSnapshot(sessionId);
   const messages = acpSnapshot?.messages ?? [];
+  const historyHasMore = acpSnapshot?.historyHasMore ?? false;
+  const historyLoading = acpSnapshot?.historyLoading ?? false;
   const session = acpSnapshot?.session;
   const chatState = acpSnapshot?.chatState ?? ChatState.LoadingConversation;
   const sessionLoadError = acpSnapshot?.sessionLoadError;
@@ -195,6 +198,31 @@ export function useChatSession({
     [getCurrentSnapshot, sessionId, submitToAcpSession]
   );
 
+  const loadOlderMessages = useCallback(async () => {
+    const currentSnapshot = getCurrentSnapshot();
+    if (
+      !currentSnapshot?.historyHasMore ||
+      currentSnapshot.historyLoading ||
+      !currentSnapshot.historyCursor
+    ) {
+      return;
+    }
+
+    acpChatSessionActions.setHistoryPageState(sessionId, { loading: true });
+    try {
+      const page = await acpListSessionMessages(sessionId, currentSnapshot.historyCursor);
+      acpChatSessionActions.prependMessages(
+        sessionId,
+        page.messages,
+        page.nextBeforeCursor,
+        page.totalCount
+      );
+    } catch (error) {
+      console.warn('Failed to load older session messages:', error);
+      acpChatSessionActions.setHistoryPageState(sessionId, { loading: false });
+    }
+  }, [getCurrentSnapshot, sessionId]);
+
   const onSteerQueuedMessage = useCallback(
     async (input: UserInput): Promise<boolean> => {
       const { msg: userMessage, images } = input;
@@ -317,10 +345,13 @@ export function useChatSession({
   return {
     sessionLoadError,
     messages,
+    historyHasMore,
+    historyLoading,
     session,
     chatState,
     updateSession,
     handleSubmit,
+    loadOlderMessages,
     onSteerQueuedMessage,
     submitElicitationResponse,
     stopStreaming,

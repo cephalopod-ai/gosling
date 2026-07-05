@@ -59,6 +59,8 @@ import type {
   GetSessionExtensionsResponse_unstable,
   GetSessionInfoRequest_unstable,
   GetSessionInfoResponse_unstable,
+  GetSessionSummaryRequest_unstable,
+  GetSessionSummaryResponse_unstable,
   GetToolsRequest_unstable,
   GetToolsResponse_unstable,
   GoslingSessionNotification_unstable,
@@ -74,6 +76,8 @@ import type {
   ListPromptsResponse_unstable,
   ListProvidersRequest_unstable,
   ListProvidersResponse_unstable,
+  ListSessionMessagesRequest_unstable,
+  ListSessionMessagesResponse_unstable,
   ListSlashCommandsRequest_unstable,
   ListSlashCommandsResponse_unstable,
   ListSourcesRequest_unstable,
@@ -115,6 +119,8 @@ import type {
   RenameSessionRequest_unstable,
   ResetPromptRequest_unstable,
   SavePromptRequest_unstable,
+  SearchSessionMessagesRequest_unstable,
+  SearchSessionMessagesResponse_unstable,
   SetConfigExtensionEnabledRequest_unstable,
   SetSessionSystemPromptRequest_unstable,
   SetToolPermissionsRequest_unstable,
@@ -150,6 +156,7 @@ import {
   zGetPromptResponse_unstable,
   zGetSessionExtensionsResponse_unstable,
   zGetSessionInfoResponse_unstable,
+  zGetSessionSummaryResponse_unstable,
   zGetToolsResponse_unstable,
   zGoslingSessionNotification_unstable,
   zGoslingToolCallResponse_unstable,
@@ -158,6 +165,7 @@ import {
   zListAgentMentionsResponse_unstable,
   zListPromptsResponse_unstable,
   zListProvidersResponse_unstable,
+  zListSessionMessagesResponse_unstable,
   zListSlashCommandsResponse_unstable,
   zListSourcesResponse_unstable,
   zOnboardingImportApplyResponse_unstable,
@@ -174,6 +182,7 @@ import {
   zProviderSupportedModelsListResponse_unstable,
   zReadResourceResponse_unstable,
   zRefreshProviderInventoryResponse_unstable,
+  zSearchSessionMessagesResponse_unstable,
   zSetToolPermissionsResponse_unstable,
   zShareSessionNostrResponse_unstable,
   zSteerSessionResponse_unstable,
@@ -781,6 +790,42 @@ export class GoslingExtClient {
     return zGetSessionInfoResponse_unstable.parse(
       raw,
     ) as GetSessionInfoResponse_unstable;
+  }
+
+  async sessionMessagesList_unstable(
+    params: ListSessionMessagesRequest_unstable,
+  ): Promise<ListSessionMessagesResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/messages/list",
+      params,
+    );
+    return zListSessionMessagesResponse_unstable.parse(
+      raw,
+    ) as ListSessionMessagesResponse_unstable;
+  }
+
+  async sessionMessagesSearch_unstable(
+    params: SearchSessionMessagesRequest_unstable,
+  ): Promise<SearchSessionMessagesResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/messages/search",
+      params,
+    );
+    return zSearchSessionMessagesResponse_unstable.parse(
+      raw,
+    ) as SearchSessionMessagesResponse_unstable;
+  }
+
+  async sessionSummaryGet_unstable(
+    params: GetSessionSummaryRequest_unstable,
+  ): Promise<GetSessionSummaryResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/summary/get",
+      params,
+    );
+    return zGetSessionSummaryResponse_unstable.parse(
+      raw,
+    ) as GetSessionSummaryResponse_unstable;
   }
 
   async sessionConversationTruncate_unstable(

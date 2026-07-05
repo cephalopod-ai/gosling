@@ -1472,6 +1472,106 @@ export const zGetSessionInfoResponse_unstable = z.object({
 });
 
 /**
+ * List a page of persisted session messages without loading the whole conversation.
+ */
+export const zListSessionMessagesRequest_unstable = z.object({
+    sessionId: z.string(),
+    beforeCursor: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    limit: z.union([
+        z.number().int().gte(0),
+        z.null()
+    ]).optional()
+});
+
+export const zListSessionMessagesResponse_unstable = z.object({
+    messages: z.array(z.unknown()),
+    nextBeforeCursor: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    totalCount: z.number().int().gte(0),
+    oldestRowId: z.union([
+        z.number().int(),
+        z.null()
+    ]).optional(),
+    newestRowId: z.union([
+        z.number().int(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Search persisted messages within one session.
+ */
+export const zSearchSessionMessagesRequest_unstable = z.object({
+    sessionId: z.string(),
+    query: z.string(),
+    limit: z.union([
+        z.number().int().gte(0),
+        z.null()
+    ]).optional()
+});
+
+export const zSessionMessageSearchMatch = z.object({
+    rowId: z.number().int(),
+    messageId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    role: z.string(),
+    snippet: z.string(),
+    created: z.number().int(),
+    beforeCursor: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zSearchSessionMessagesResponse_unstable = z.object({
+    matches: z.array(zSessionMessageSearchMatch),
+    totalMatches: z.number().int().gte(0)
+});
+
+/**
+ * Return durable compacted summary state for a session.
+ */
+export const zGetSessionSummaryRequest_unstable = z.object({
+    sessionId: z.string()
+});
+
+export const zSessionSummaryDto = z.object({
+    summary: z.string(),
+    coveredThroughRowId: z.number().int(),
+    coveredThroughTimestamp: z.number().int(),
+    coveredMessageCount: z.number().int().gte(0),
+    status: z.string(),
+    error: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    updatedAt: z.string()
+});
+
+export const zSessionSummaryFactDto = z.object({
+    id: z.number().int(),
+    scope: z.string(),
+    factType: z.string(),
+    content: z.string(),
+    confidence: z.number()
+});
+
+export const zGetSessionSummaryResponse_unstable = z.object({
+    summary: z.union([
+        zSessionSummaryDto,
+        z.null()
+    ]).optional(),
+    facts: z.array(zSessionSummaryFactDto)
+});
+
+/**
  * Truncate a session conversation from the given message timestamp onward.
  */
 export const zTruncateSessionConversationRequest_unstable = z.object({
@@ -1942,6 +2042,9 @@ export const zExtRequest = z.object({
             zImportSessionRequest_unstable,
             zShareSessionNostrRequest_unstable,
             zGetSessionInfoRequest_unstable,
+            zListSessionMessagesRequest_unstable,
+            zSearchSessionMessagesRequest_unstable,
+            zGetSessionSummaryRequest_unstable,
             zTruncateSessionConversationRequest_unstable,
             zUpdateSessionProjectRequest_unstable,
             zRenameSessionRequest_unstable,
@@ -2011,6 +2114,9 @@ export const zExtResponse = z.union([
                 zImportSessionResponse_unstable,
                 zShareSessionNostrResponse_unstable,
                 zGetSessionInfoResponse_unstable,
+                zListSessionMessagesResponse_unstable,
+                zSearchSessionMessagesResponse_unstable,
+                zGetSessionSummaryResponse_unstable,
                 zCreateSourceResponse_unstable,
                 zListSourcesResponse_unstable,
                 zListAgentMentionsResponse_unstable,

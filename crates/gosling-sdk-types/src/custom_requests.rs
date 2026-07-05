@@ -655,6 +655,110 @@ pub struct GetSessionInfoResponse {
     pub session: SessionInfo,
 }
 
+/// List a page of persisted session messages without loading the whole conversation.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/messages/list",
+    response = ListSessionMessagesResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionMessagesRequest {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_cursor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionMessagesResponse {
+    pub messages: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_before_cursor: Option<String>,
+    pub total_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oldest_row_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub newest_row_id: Option<i64>,
+}
+
+/// Search persisted messages within one session.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/messages/search",
+    response = SearchSessionMessagesResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchSessionMessagesRequest {
+    pub session_id: String,
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMessageSearchMatch {
+    pub row_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    pub role: String,
+    pub snippet: String,
+    pub created: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_cursor: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchSessionMessagesResponse {
+    pub matches: Vec<SessionMessageSearchMatch>,
+    pub total_matches: usize,
+}
+
+/// Return durable compacted summary state for a session.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/summary/get",
+    response = GetSessionSummaryResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSessionSummaryRequest {
+    pub session_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummaryDto {
+    pub summary: String,
+    pub covered_through_row_id: i64,
+    pub covered_through_timestamp: i64,
+    pub covered_message_count: usize,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummaryFactDto {
+    pub id: i64,
+    pub scope: String,
+    pub fact_type: String,
+    pub content: String,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSessionSummaryResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<SessionSummaryDto>,
+    pub facts: Vec<SessionSummaryFactDto>,
+}
+
 /// Truncate a session conversation from the given message timestamp onward.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(

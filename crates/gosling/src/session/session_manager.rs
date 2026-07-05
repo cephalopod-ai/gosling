@@ -1,6 +1,6 @@
 use crate::config::paths::Paths;
 use crate::config::GoslingMode;
-use crate::conversation::message::{Message, TokenState};
+use crate::conversation::message::{Message, MessageContent, TokenState};
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
 use crate::session::extension_data::ExtensionData;
@@ -15,16 +15,19 @@ use rmcp::model::Role;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Sqlite};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 15;
+pub const CURRENT_SCHEMA_VERSION: i32 = 16;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
+pub const DEFAULT_SESSION_TAIL_LIMIT: usize = 50;
+pub const MAX_SESSION_MESSAGE_PAGE_LIMIT: usize = 200;
 
 #[derive(
     Debug,
@@ -87,6 +90,97 @@ pub struct Session {
     pub project_id: Option<String>,
     #[serde(default)]
     pub last_message_snippet: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionSummaryStatus {
+    Current,
+    Stale,
+    Failed,
+}
+
+impl Default for SessionSummaryStatus {
+    fn default() -> Self {
+        Self::Stale
+    }
+}
+
+impl std::fmt::Display for SessionSummaryStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Current => write!(f, "current"),
+            Self::Stale => write!(f, "stale"),
+            Self::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl std::str::FromStr for SessionSummaryStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "current" => Ok(Self::Current),
+            "stale" => Ok(Self::Stale),
+            "failed" => Ok(Self::Failed),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub summary: String,
+    pub covered_through_row_id: i64,
+    pub covered_through_timestamp: i64,
+    pub covered_message_count: usize,
+    pub source_hash: String,
+    pub summarizer_model: Option<String>,
+    pub status: SessionSummaryStatus,
+    pub error: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionSummaryFact {
+    pub id: i64,
+    pub session_id: String,
+    pub project_id: Option<String>,
+    pub working_dir: String,
+    pub scope: String,
+    pub fact_type: String,
+    pub content: String,
+    pub confidence: f32,
+    pub source_start_row_id: Option<i64>,
+    pub source_end_row_id: Option<i64>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionMessagePage {
+    pub messages: Vec<Message>,
+    pub next_before_cursor: Option<String>,
+    pub total_count: usize,
+    pub oldest_row_id: Option<i64>,
+    pub newest_row_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionMessageSearchMatch {
+    pub row_id: i64,
+    pub message_id: Option<String>,
+    pub role: String,
+    pub snippet: String,
+    pub created: i64,
+    pub before_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionMessageSearchResults {
+    pub matches: Vec<SessionMessageSearchMatch>,
+    pub total_matches: usize,
 }
 
 impl From<&Session> for TokenState {
@@ -370,6 +464,78 @@ impl SessionManager {
 
     pub async fn get_session(&self, id: &str, include_messages: bool) -> Result<Session> {
         self.storage.get_session(id, include_messages).await
+    }
+
+    pub async fn get_session_for_compacted_resume(
+        &self,
+        id: &str,
+        tail_limit: usize,
+    ) -> Result<Session> {
+        self.storage
+            .get_session_for_compacted_resume(id, tail_limit)
+            .await
+    }
+
+    pub async fn get_session_message_page(
+        &self,
+        id: &str,
+        before_cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<SessionMessagePage> {
+        self.storage
+            .get_session_message_page(id, before_cursor, limit)
+            .await
+    }
+
+    pub async fn get_session_tail_page(
+        &self,
+        id: &str,
+        limit: usize,
+    ) -> Result<SessionMessagePage> {
+        self.storage.get_session_tail_page(id, limit).await
+    }
+
+    pub async fn get_session_message_rows_between(
+        &self,
+        id: &str,
+        after_row_id: i64,
+        before_row_id: i64,
+        limit: usize,
+    ) -> Result<Vec<(i64, Message)>> {
+        self.storage
+            .get_session_message_rows_between(id, after_row_id, before_row_id, limit)
+            .await
+    }
+
+    pub async fn search_session_messages(
+        &self,
+        id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<SessionMessageSearchResults> {
+        self.storage.search_session_messages(id, query, limit).await
+    }
+
+    pub async fn get_session_summary(&self, id: &str) -> Result<Option<SessionSummary>> {
+        self.storage.get_session_summary(id).await
+    }
+
+    pub async fn get_session_summary_facts(&self, id: &str) -> Result<Vec<SessionSummaryFact>> {
+        self.storage.get_session_summary_facts(id).await
+    }
+
+    pub async fn upsert_session_summary(&self, summary: &SessionSummary) -> Result<()> {
+        self.storage.upsert_session_summary(summary).await
+    }
+
+    pub async fn replace_session_summary_facts(
+        &self,
+        session_id: &str,
+        facts: &[SessionSummaryFact],
+    ) -> Result<()> {
+        self.storage
+            .replace_session_summary_facts(session_id, facts)
+            .await
     }
 
     pub fn update(&self, id: &str) -> SessionUpdateBuilder<'_> {
@@ -896,12 +1062,66 @@ impl SessionStorage {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_message_id ON messages(message_id)")
             .execute(&mut *tx)
             .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_row_desc ON messages(session_id, id DESC)",
+        )
+        .execute(&mut *tx)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC)")
             .execute(&mut *tx)
             .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_type ON sessions(session_type)")
             .execute(&mut *tx)
             .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_summaries (
+                session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+                summary TEXT NOT NULL DEFAULT '',
+                covered_through_row_id INTEGER NOT NULL DEFAULT 0,
+                covered_through_timestamp INTEGER NOT NULL DEFAULT 0,
+                covered_message_count INTEGER NOT NULL DEFAULT 0,
+                source_hash TEXT NOT NULL DEFAULT '',
+                summarizer_model TEXT,
+                status TEXT NOT NULL DEFAULT 'stale',
+                error TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        "#,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_summary_facts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                project_id TEXT,
+                working_dir TEXT NOT NULL,
+                scope TEXT NOT NULL DEFAULT 'session',
+                fact_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0,
+                source_start_row_id INTEGER,
+                source_end_row_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        "#,
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_session_summary_facts_session ON session_summary_facts(session_id)",
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_session_summary_facts_project ON session_summary_facts(project_id, scope)",
+        )
+        .execute(&mut *tx)
+        .await?;
 
         tx.commit().await?;
 
@@ -1323,6 +1543,63 @@ impl SessionStorage {
                         .await?;
                 }
             }
+            16 => {
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_session_row_desc ON messages(session_id, id DESC)",
+                )
+                .execute(&mut **tx)
+                .await?;
+
+                sqlx::query(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS session_summaries (
+                        session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+                        summary TEXT NOT NULL DEFAULT '',
+                        covered_through_row_id INTEGER NOT NULL DEFAULT 0,
+                        covered_through_timestamp INTEGER NOT NULL DEFAULT 0,
+                        covered_message_count INTEGER NOT NULL DEFAULT 0,
+                        source_hash TEXT NOT NULL DEFAULT '',
+                        summarizer_model TEXT,
+                        status TEXT NOT NULL DEFAULT 'stale',
+                        error TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    "#,
+                )
+                .execute(&mut **tx)
+                .await?;
+
+                sqlx::query(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS session_summary_facts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                        project_id TEXT,
+                        working_dir TEXT NOT NULL,
+                        scope TEXT NOT NULL DEFAULT 'session',
+                        fact_type TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        confidence REAL NOT NULL DEFAULT 0,
+                        source_start_row_id INTEGER,
+                        source_end_row_id INTEGER,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    "#,
+                )
+                .execute(&mut **tx)
+                .await?;
+
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_session_summary_facts_session ON session_summary_facts(session_id)",
+                )
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_session_summary_facts_project ON session_summary_facts(project_id, scope)",
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1600,6 +1877,409 @@ impl SessionStorage {
         Ok(Conversation::new_unvalidated(messages))
     }
 
+    fn row_to_message(
+        role_str: String,
+        content_json: String,
+        created_timestamp: i64,
+        metadata_json: Option<String>,
+        message_id: Option<String>,
+    ) -> Result<Option<Message>> {
+        let role = match role_str.as_str() {
+            "user" => Role::User,
+            "assistant" => Role::Assistant,
+            _ => return Ok(None),
+        };
+        let content = serde_json::from_str(&content_json)?;
+        let metadata = metadata_json
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+        let mut message = Message::new(role, created_timestamp, content);
+        message.metadata = metadata;
+        if let Some(id) = message_id {
+            message = message.with_id(id);
+        }
+        Ok(Some(message))
+    }
+
+    async fn get_message_page_rows(
+        &self,
+        session_id: &str,
+        before_row_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<(i64, Message)>> {
+        let pool = self.pool().await?;
+        let page_limit = limit.clamp(1, MAX_SESSION_MESSAGE_PAGE_LIMIT);
+        let rows = if let Some(before_row_id) = before_row_id {
+            sqlx::query_as::<_, (i64, String, String, i64, Option<String>, Option<String>)>(
+                    "SELECT id, role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?",
+                )
+                .bind(session_id)
+                .bind(before_row_id)
+                .bind((page_limit + 1) as i64)
+                .fetch_all(pool)
+                .await?
+        } else {
+            sqlx::query_as::<_, (i64, String, String, i64, Option<String>, Option<String>)>(
+                    "SELECT id, role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+                )
+                .bind(session_id)
+                .bind((page_limit + 1) as i64)
+                .fetch_all(pool)
+                .await?
+        };
+
+        let mut messages = Vec::new();
+        for (row_id, role, content_json, created, metadata_json, message_id) in rows {
+            if let Some(message) =
+                Self::row_to_message(role, content_json, created, metadata_json, message_id)?
+            {
+                messages.push((row_id, message));
+            }
+        }
+        Ok(messages)
+    }
+
+    async fn get_session_message_page(
+        &self,
+        session_id: &str,
+        before_cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<SessionMessagePage> {
+        let before_row_id = before_cursor
+            .map(|cursor| cursor.parse::<i64>())
+            .transpose()
+            .map_err(|_| anyhow::anyhow!("Invalid before cursor"))?;
+        let page_limit = limit.clamp(1, MAX_SESSION_MESSAGE_PAGE_LIMIT);
+        let total_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_one(self.pool().await?)
+                .await?;
+        let mut rows = self
+            .get_message_page_rows(session_id, before_row_id, page_limit)
+            .await?;
+        let has_more = rows.len() > page_limit;
+        if has_more {
+            rows.truncate(page_limit);
+        }
+        rows.reverse();
+
+        let oldest_row_id = rows.first().map(|(row_id, _)| *row_id);
+        let newest_row_id = rows.last().map(|(row_id, _)| *row_id);
+        let next_before_cursor = if has_more {
+            oldest_row_id.map(|row_id| row_id.to_string())
+        } else {
+            None
+        };
+        Ok(SessionMessagePage {
+            messages: rows.into_iter().map(|(_, message)| message).collect(),
+            next_before_cursor,
+            total_count: total_count as usize,
+            oldest_row_id,
+            newest_row_id,
+        })
+    }
+
+    async fn get_session_tail_page(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<SessionMessagePage> {
+        let mut page_limit = limit.clamp(1, MAX_SESSION_MESSAGE_PAGE_LIMIT);
+        loop {
+            let page = self
+                .get_session_message_page(session_id, None, page_limit)
+                .await?;
+            if !has_orphaned_tool_responses(&page.messages)
+                || page_limit >= MAX_SESSION_MESSAGE_PAGE_LIMIT
+                || page.messages.len() >= page.total_count
+            {
+                return Ok(page);
+            }
+            page_limit = (page_limit * 2).min(MAX_SESSION_MESSAGE_PAGE_LIMIT);
+        }
+    }
+
+    async fn get_session_message_rows_between(
+        &self,
+        session_id: &str,
+        after_row_id: i64,
+        before_row_id: i64,
+        limit: usize,
+    ) -> Result<Vec<(i64, Message)>> {
+        let page_limit = limit.clamp(1, MAX_SESSION_MESSAGE_PAGE_LIMIT);
+        let rows = sqlx::query_as::<_, (i64, String, String, i64, Option<String>, Option<String>)>(
+            "SELECT id, role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? AND id > ? AND id < ? ORDER BY id ASC LIMIT ?",
+        )
+        .bind(session_id)
+        .bind(after_row_id)
+        .bind(before_row_id)
+        .bind(page_limit as i64)
+        .fetch_all(self.pool().await?)
+        .await?;
+
+        let mut messages = Vec::new();
+        for (row_id, role, content_json, created, metadata_json, message_id) in rows {
+            if let Some(message) =
+                Self::row_to_message(role, content_json, created, metadata_json, message_id)?
+            {
+                messages.push((row_id, message));
+            }
+        }
+        Ok(messages)
+    }
+
+    async fn get_session_summary(&self, session_id: &str) -> Result<Option<SessionSummary>> {
+        let row = sqlx::query_as::<_, (String, String, i64, i64, i64, String, Option<String>, String, Option<String>, DateTime<Utc>)>(
+            "SELECT session_id, summary, covered_through_row_id, covered_through_timestamp, covered_message_count, source_hash, summarizer_model, status, error, updated_at FROM session_summaries WHERE session_id = ?",
+        )
+        .bind(session_id)
+        .fetch_optional(self.pool().await?)
+        .await?;
+
+        Ok(row.map(
+            |(
+                session_id,
+                summary,
+                covered_through_row_id,
+                covered_through_timestamp,
+                covered_message_count,
+                source_hash,
+                summarizer_model,
+                status,
+                error,
+                updated_at,
+            )| SessionSummary {
+                session_id,
+                summary,
+                covered_through_row_id,
+                covered_through_timestamp,
+                covered_message_count: covered_message_count as usize,
+                source_hash,
+                summarizer_model,
+                status: status.parse().unwrap_or(SessionSummaryStatus::Stale),
+                error,
+                updated_at,
+            },
+        ))
+    }
+
+    async fn get_session_summary_facts(&self, session_id: &str) -> Result<Vec<SessionSummaryFact>> {
+        let rows = sqlx::query_as::<_, (i64, String, Option<String>, String, String, String, String, f32, Option<i64>, Option<i64>, DateTime<Utc>)>(
+            "SELECT id, session_id, project_id, working_dir, scope, fact_type, content, confidence, source_start_row_id, source_end_row_id, created_at FROM session_summary_facts WHERE session_id = ? ORDER BY id",
+        )
+        .bind(session_id)
+        .fetch_all(self.pool().await?)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    session_id,
+                    project_id,
+                    working_dir,
+                    scope,
+                    fact_type,
+                    content,
+                    confidence,
+                    source_start_row_id,
+                    source_end_row_id,
+                    created_at,
+                )| SessionSummaryFact {
+                    id,
+                    session_id,
+                    project_id,
+                    working_dir,
+                    scope,
+                    fact_type,
+                    content,
+                    confidence,
+                    source_start_row_id,
+                    source_end_row_id,
+                    created_at,
+                },
+            )
+            .collect())
+    }
+
+    async fn upsert_session_summary(&self, summary: &SessionSummary) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO session_summaries (
+                session_id, summary, covered_through_row_id, covered_through_timestamp,
+                covered_message_count, source_hash, summarizer_model, status, error, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                summary = excluded.summary,
+                covered_through_row_id = excluded.covered_through_row_id,
+                covered_through_timestamp = excluded.covered_through_timestamp,
+                covered_message_count = excluded.covered_message_count,
+                source_hash = excluded.source_hash,
+                summarizer_model = excluded.summarizer_model,
+                status = excluded.status,
+                error = excluded.error,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(&summary.session_id)
+        .bind(&summary.summary)
+        .bind(summary.covered_through_row_id)
+        .bind(summary.covered_through_timestamp)
+        .bind(summary.covered_message_count as i64)
+        .bind(&summary.source_hash)
+        .bind(&summary.summarizer_model)
+        .bind(summary.status.to_string())
+        .bind(&summary.error)
+        .bind(summary.updated_at)
+        .execute(self.pool().await?)
+        .await?;
+        Ok(())
+    }
+
+    async fn replace_session_summary_facts(
+        &self,
+        session_id: &str,
+        facts: &[SessionSummaryFact],
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+        for fact in facts {
+            sqlx::query(
+                r#"
+                INSERT INTO session_summary_facts (
+                    session_id, project_id, working_dir, scope, fact_type, content, confidence,
+                    source_start_row_id, source_end_row_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(session_id)
+            .bind(&fact.project_id)
+            .bind(&fact.working_dir)
+            .bind(&fact.scope)
+            .bind(&fact.fact_type)
+            .bind(&fact.content)
+            .bind(fact.confidence)
+            .bind(fact.source_start_row_id)
+            .bind(fact.source_end_row_id)
+            .bind(fact.created_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn get_session_for_compacted_resume(
+        &self,
+        session_id: &str,
+        tail_limit: usize,
+    ) -> Result<Session> {
+        let mut session = self.get_session(session_id, false).await?;
+        let page = self.get_session_tail_page(session_id, tail_limit).await?;
+        let mut messages = Vec::new();
+        if let Some(summary) = self.get_session_summary(session_id).await? {
+            if !summary.summary.trim().is_empty() {
+                messages.push(
+                    Message::user()
+                        .with_text(format!(
+                            "[Compacted summary of {} earlier message(s)]: {}",
+                            summary.covered_message_count, summary.summary
+                        ))
+                        .with_visibility(false, true),
+                );
+            }
+        } else if page.total_count > page.messages.len() {
+            messages.push(
+                Message::user()
+                    .with_text(format!(
+                        "[Older session history exists: {} message(s) before the loaded tail. No durable summary is available yet.]",
+                        page.total_count.saturating_sub(page.messages.len())
+                    ))
+                    .with_visibility(false, true),
+            );
+        }
+        messages.extend(page.messages);
+        session.conversation = Some(Conversation::new_unvalidated(messages));
+        session.message_count = page.total_count;
+        Ok(session)
+    }
+
+    async fn search_session_messages(
+        &self,
+        session_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<SessionMessageSearchResults> {
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .filter(|term| !term.is_empty())
+            .map(|term| format!("%{}%", term.to_lowercase()))
+            .collect();
+        if terms.is_empty() {
+            return Ok(SessionMessageSearchResults {
+                matches: Vec::new(),
+                total_matches: 0,
+            });
+        }
+
+        let mut sql = String::from(
+            r#"
+            SELECT id, message_id, role, content_json, created_timestamp
+            FROM messages
+            WHERE session_id = ?
+              AND EXISTS (
+                SELECT 1
+                FROM json_each(content_json)
+                WHERE json_extract(value, '$.type') = 'text'
+                  AND (
+            "#,
+        );
+        for idx in 0..terms.len() {
+            if idx > 0 {
+                sql.push_str(" OR ");
+            }
+            sql.push_str("LOWER(json_extract(value, '$.text')) LIKE ?");
+        }
+        sql.push_str(")) ORDER BY id DESC LIMIT ?");
+
+        let mut q =
+            sqlx::query_as::<_, (i64, Option<String>, String, String, i64)>(&sql).bind(session_id);
+        for term in &terms {
+            q = q.bind(term);
+        }
+        q = q.bind(limit.clamp(1, MAX_SESSION_MESSAGE_PAGE_LIMIT) as i64);
+        let rows = q.fetch_all(self.pool().await?).await?;
+
+        let mut matches = Vec::new();
+        for (row_id, message_id, role, content_json, created) in rows {
+            let content: Vec<MessageContent> = serde_json::from_str(&content_json)?;
+            let snippet = content
+                .iter()
+                .filter_map(|content| content.as_text())
+                .collect::<Vec<_>>()
+                .join("\n");
+            matches.push(SessionMessageSearchMatch {
+                row_id,
+                message_id,
+                role,
+                snippet: snippet.chars().take(500).collect(),
+                created,
+                before_cursor: Some((row_id + 1).to_string()),
+            });
+        }
+        let total_matches = matches.len();
+        Ok(SessionMessageSearchResults {
+            matches,
+            total_matches,
+        })
+    }
+
     async fn add_message(&self, session_id: &str, message: &Message) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -1631,6 +2311,11 @@ impl SessionStorage {
             .execute(&mut *tx)
             .await?;
 
+        sqlx::query("UPDATE session_summaries SET status = 'stale', updated_at = datetime('now') WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
         tx.commit().await?;
         Ok(())
     }
@@ -1643,6 +2328,14 @@ impl SessionStorage {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         sqlx::query("DELETE FROM messages WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM session_summaries WHERE session_id = ?")
             .bind(session_id)
             .execute(&mut *tx)
             .await?;
@@ -1875,6 +2568,16 @@ impl SessionStorage {
             return Err(anyhow::anyhow!("Session not found"));
         }
 
+        sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM session_summaries WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
         sqlx::query("DELETE FROM messages WHERE session_id = ?")
             .bind(session_id)
             .execute(&mut *tx)
@@ -2010,12 +2713,22 @@ impl SessionStorage {
 
     async fn truncate_conversation(&self, session_id: &str, timestamp: i64) -> Result<()> {
         let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query("DELETE FROM messages WHERE session_id = ? AND created_timestamp >= ?")
             .bind(session_id)
             .bind(timestamp)
-            .execute(pool)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM session_summaries WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
             .await?;
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -2045,6 +2758,14 @@ impl SessionStorage {
             .bind(boundary_id)
             .execute(&mut *tx)
             .await?;
+            sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("DELETE FROM session_summaries WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
         }
 
         tx.commit().await?;
@@ -2180,6 +2901,25 @@ impl SessionStorage {
         tx.commit().await?;
         Ok(())
     }
+}
+
+fn has_orphaned_tool_responses(messages: &[Message]) -> bool {
+    let request_ids = messages
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .filter_map(|content| match content {
+            MessageContent::ToolRequest(request) => Some(request.id.as_str()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+
+    messages
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .any(|content| match content {
+            MessageContent::ToolResponse(response) => !request_ids.contains(response.id.as_str()),
+            _ => false,
+        })
 }
 
 /// Merge a JSON object `patch` into an existing optional object value,

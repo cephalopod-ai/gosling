@@ -496,6 +496,8 @@ impl OrchestratorClient {
         let session_config = SessionConfig {
             id: session_id.clone(),
             max_turns: None,
+            compacted_context: false,
+            tail_limit: None,
         };
 
         let mut stream = agent

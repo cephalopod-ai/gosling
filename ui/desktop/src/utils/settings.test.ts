@@ -20,7 +20,7 @@ describe('resolveStoredSettings', () => {
       secret: 'secret',
       certFingerprint: 'fingerprint',
     });
-    expect(Object.hasOwn(settings, 'externalGoosed')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(settings, 'externalGoosed')).toBe(false);
   });
 
   it('prefers externalGoslingd when both keys are present', () => {

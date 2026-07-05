@@ -173,6 +173,8 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
         let session_config = SessionConfig {
             id: session_id.clone(),
             max_turns: task_config.max_turns.map(|v| v as u32),
+            compacted_context: false,
+            tail_limit: None,
         };
 
         let mut stream =

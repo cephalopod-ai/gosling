@@ -134,6 +134,14 @@ async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
     acpChatSessionActions.finishSessionLoad(sessionId, sessionInfoToSession(sessionInfo, meta));
+    if (meta.historyLoad?.mode === 'compacted') {
+      acpChatSessionActions.setHistoryPageState(sessionId, {
+        cursor: meta.historyLoad.nextBeforeCursor ?? null,
+        hasMore: meta.historyLoad.nextBeforeCursor != null,
+        loading: false,
+        totalCount: meta.historyLoad.totalCount ?? null,
+      });
+    }
     options.onSessionLoaded?.();
   } catch (error) {
     console.error('Failed to load ACP session:', error);

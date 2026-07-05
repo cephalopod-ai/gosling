@@ -455,6 +455,30 @@ impl GoslingAcpAgent {
         self.on_get_session_info(req).await
     }
 
+    #[custom_method(ListSessionMessagesRequest)]
+    async fn dispatch_list_session_messages(
+        &self,
+        req: ListSessionMessagesRequest,
+    ) -> Result<ListSessionMessagesResponse, agent_client_protocol::Error> {
+        self.on_list_session_messages(req).await
+    }
+
+    #[custom_method(SearchSessionMessagesRequest)]
+    async fn dispatch_search_session_messages(
+        &self,
+        req: SearchSessionMessagesRequest,
+    ) -> Result<SearchSessionMessagesResponse, agent_client_protocol::Error> {
+        self.on_search_session_messages(req).await
+    }
+
+    #[custom_method(GetSessionSummaryRequest)]
+    async fn dispatch_get_session_summary(
+        &self,
+        req: GetSessionSummaryRequest,
+    ) -> Result<GetSessionSummaryResponse, agent_client_protocol::Error> {
+        self.on_get_session_summary(req).await
+    }
+
     #[custom_method(TruncateSessionConversationRequest)]
     async fn dispatch_truncate_session_conversation(
         &self,
