@@ -93,7 +93,12 @@ fn parse_google_retry_delay(payload: &Value) -> Option<Duration> {
                         .and_then(|delay| delay.as_str())
                         .and_then(|s| s.strip_suffix('s'))
                         .and_then(|num| num.parse::<u64>().ok())
-                        .map(Duration::from_secs)
+                        // Clamp to one hour. A hostile or misconfigured
+                        // endpoint could otherwise return a huge retryDelay
+                        // (e.g. "999999999s") and freeze the agent turn outside
+                        // any request timeout. Matches the generic Retry-After
+                        // clamp in gosling_providers::http_status.
+                        .map(|secs| Duration::from_secs(secs.min(3600)))
                 } else {
                     None
                 }
@@ -445,6 +450,24 @@ mod tests {
         assert_eq!(
             parse_google_retry_delay(&payload),
             Some(Duration::from_secs(42))
+        );
+    }
+
+    #[test]
+    fn test_parse_google_retry_delay_clamps_hostile_value() {
+        let payload = json!({
+            "error": {
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                        "retryDelay": "999999999s"
+                    }
+                ]
+            }
+        });
+        assert_eq!(
+            parse_google_retry_delay(&payload),
+            Some(Duration::from_secs(3600))
         );
     }
 }
