@@ -55,7 +55,15 @@ impl SummarizerMode {
 
 /// Reads `GOSLING_SUMMARIZER` (env var or config), defaulting to `off`.
 pub fn summarizer_mode() -> SummarizerMode {
-    let raw = Config::global()
+    summarizer_mode_from(Config::global())
+}
+
+/// [`summarizer_mode`] against an explicit [`Config`]. `get_param` reads the
+/// env var first, then the settings file, so an explicit
+/// `GOSLING_SUMMARIZER` env var wins over the value chosen in the config
+/// surface, which in turn wins over the built-in `off` default.
+pub fn summarizer_mode_from(config: &Config) -> SummarizerMode {
+    let raw = config
         .get_param::<String>("GOSLING_SUMMARIZER")
         .unwrap_or_else(|_| "off".to_string());
 
@@ -74,7 +82,13 @@ impl SummarizerConfig {
     /// when `GOSLING_SUMMARIZER_ENDPOINT` isn't set — the worker has nowhere
     /// to call, so the caller should skip it entirely rather than fail.
     pub fn from_config() -> Option<Self> {
-        let config = Config::global();
+        Self::from_config_with(Config::global())
+    }
+
+    /// [`from_config`](Self::from_config) against an explicit [`Config`]. Each
+    /// field follows the same env-over-settings-over-default precedence as
+    /// [`summarizer_mode_from`].
+    pub fn from_config_with(config: &Config) -> Option<Self> {
         let endpoint = config
             .get_param::<String>("GOSLING_SUMMARIZER_ENDPOINT")
             .ok()
@@ -249,6 +263,61 @@ mod tests {
         }
         let _guard = env_lock::lock_env([("GOSLING_SUMMARIZER", Some("ON"))]);
         assert_eq!(summarizer_mode(), SummarizerMode::On);
+    }
+
+    #[test]
+    fn settings_file_values_are_honored_and_env_overrides_them() {
+        use crate::config::Config;
+        use tempfile::NamedTempFile;
+
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+
+        config.set_param("GOSLING_SUMMARIZER", "shadow").unwrap();
+        config
+            .set_param("GOSLING_SUMMARIZER_ENDPOINT", "http://localhost:11434/v1")
+            .unwrap();
+        config
+            .set_param("GOSLING_SUMMARIZER_MODEL", "qwen2.5-coder:3b")
+            .unwrap();
+        config
+            .set_param("GOSLING_SUMMARIZER_TIMEOUT_MS", 9000u64)
+            .unwrap();
+
+        // Values chosen in the config surface (as `gosling configure` or the
+        // desktop settings UI would write them) are honored when no env var
+        // is set.
+        {
+            let _guard = env_lock::lock_env([
+                ("GOSLING_SUMMARIZER", None::<&str>),
+                ("GOSLING_SUMMARIZER_ENDPOINT", None),
+                ("GOSLING_SUMMARIZER_MODEL", None),
+                ("GOSLING_SUMMARIZER_TIMEOUT_MS", None),
+            ]);
+            assert_eq!(summarizer_mode_from(&config), SummarizerMode::Shadow);
+            let resolved = SummarizerConfig::from_config_with(&config)
+                .expect("endpoint set in the config surface should resolve a config");
+            assert_eq!(resolved.endpoint, "http://localhost:11434/v1");
+            assert_eq!(resolved.model, "qwen2.5-coder:3b");
+            assert_eq!(resolved.timeout_ms, 9000);
+        }
+
+        // An explicit env var wins over the settings value; fields without an
+        // env override still come from the settings file.
+        {
+            let _override = env_lock::lock_env([
+                ("GOSLING_SUMMARIZER", Some("on")),
+                ("GOSLING_SUMMARIZER_ENDPOINT", None),
+                ("GOSLING_SUMMARIZER_MODEL", Some("llama3.2:1b")),
+                ("GOSLING_SUMMARIZER_TIMEOUT_MS", None),
+            ]);
+            assert_eq!(summarizer_mode_from(&config), SummarizerMode::On);
+            let overridden = SummarizerConfig::from_config_with(&config).unwrap();
+            assert_eq!(overridden.model, "llama3.2:1b");
+            assert_eq!(overridden.endpoint, "http://localhost:11434/v1");
+        }
     }
 
     #[test]
