@@ -170,7 +170,10 @@ impl BedrockProvider {
             name: BEDROCK_PROVIDER_NAME.to_string(),
             region: resolved_region,
             bearer_token,
-            http_client: reqwest::Client::new(),
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(600))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             mantle_base_url: None,
         })
     }
@@ -922,7 +925,10 @@ mod tests {
                 name: "aws_bedrock".to_string(),
                 region: None,
                 bearer_token: None,
-                http_client: reqwest::Client::new(),
+                http_client: reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(600))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::Client::new()),
                 mantle_base_url: None,
             },
             ModelConfig {
@@ -1094,7 +1100,10 @@ mod tests {
             name: "aws_bedrock".to_string(),
             region: Some("us-east-1".to_string()),
             bearer_token: Some("test-token".to_string()),
-            http_client: reqwest::Client::new(),
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(600))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             mantle_base_url: Some(format!("{}/openai/v1/responses", server.uri())),
         };
 
