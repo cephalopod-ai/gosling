@@ -297,7 +297,7 @@ Expected boundary: Gate 4 §2 "Page language is declared."
 Impact: mispronunciation / degraded SR experience across all locales (Level A fail).
 
 Operational impact: Blast radius: Repo (every screen). Reversibility: reversible.
-Operator visibility: silent. 
+Operator visibility: silent.
 
 Recommended mitigation: set `lang` on `<html>` (default `en`) and update it from
 the active i18n locale on change. Test: assert `document.documentElement.lang`

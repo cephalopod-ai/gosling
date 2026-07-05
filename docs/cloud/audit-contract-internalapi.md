@@ -241,7 +241,7 @@ Non-goals:
 - **IAPI-010 Versionless evolution** — *Held (static).* Convention is the
   `_gosling/unstable/*` method prefix + `_unstable` generated-type suffix
   (`generate_acp_schema.rs:421-431`). B2 CI diff forces all callers' generated
-  types to move together. `git log` correlation not runnable (no git). 
+  types to move together. `git log` correlation not runnable (no git).
 - **IAPI-011 Nullable/optional drift** — *Not Confirmed* in sampled types;
   Option fields use `skip_serializing_if` and `#[serde(default)]` consistently. No
   unguarded deref traced. Full census not done (Validation Limit).

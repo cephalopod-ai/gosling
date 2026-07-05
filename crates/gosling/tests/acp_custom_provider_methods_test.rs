@@ -31,6 +31,26 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
         ("GOSLING_DISABLE_KEYRING", Some("1")),
         ("XAI_API_KEY", None),
         ("XAI_HOST", None),
+        ("AWS_PROFILE", None),
+        ("AWS_REGION", None),
+        ("AWS_DEFAULT_REGION", None),
+        ("AWS_BEARER_TOKEN_BEDROCK", None),
+        ("SAGEMAKER_ENDPOINT_NAME", None),
+        ("AZURE_OPENAI_ENDPOINT", None),
+        ("AZURE_OPENAI_DEPLOYMENT_NAME", None),
+        ("AZURE_OPENAI_API_KEY", None),
+        ("AZURE_OPENAI_AD_TOKEN", None),
+        ("CEREBRAS_API_KEY", None),
+        ("DATABRICKS_HOST", None),
+        ("DATABRICKS_TOKEN", None),
+        ("DEEPSEEK_API_KEY", None),
+        ("GEMINI_CLI_COMMAND", None),
+        ("INCEPTION_API_KEY", None),
+        ("NEARAI_API_KEY", None),
+        ("OVHCLOUD_API_KEY", None),
+        ("TENSORIX_API_KEY", None),
+        ("TETRATE_API_KEY", None),
+        ("VENICE_API_KEY", None),
         ("CUSTOM_STARK_ACP_PROVIDER_API_KEY", None),
     ]);
 
@@ -101,13 +121,66 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
                 "setup catalog should include {provider_id}"
             );
         }
-        for provider_id in ["codex", "claude_code", "gemini_cli"] {
+        for provider_id in [
+            "codex",
+            "claude_code",
+            "aws_bedrock",
+            "sagemaker_tgi",
+            "azure_openai",
+            "cerebras",
+            "databricks",
+            "databricks_v2",
+            "custom_deepseek",
+            "gemini-cli",
+            "gemini_cli",
+            "inception",
+            "nearai",
+            "ovhcloud",
+            "custom_tensorix",
+            "tetrate",
+            "venice",
+        ] {
             assert!(
                 setup_providers
                     .iter()
                     .all(|provider| provider.get("providerId")
                         != Some(&serde_json::json!(provider_id))),
-                "setup catalog should exclude deprecated provider {provider_id}"
+                "setup catalog should exclude {provider_id}"
+            );
+        }
+        let provider_list = send_custom(
+            conn.cx(),
+            "_gosling/unstable/providers/list",
+            serde_json::json!({}),
+        )
+        .await
+        .expect("provider list should succeed");
+        let provider_entries = provider_list
+            .get("entries")
+            .and_then(|entries| entries.as_array())
+            .expect("provider list response should include entries");
+        for provider_id in [
+            "aws_bedrock",
+            "sagemaker_tgi",
+            "azure_openai",
+            "cerebras",
+            "databricks",
+            "databricks_v2",
+            "custom_deepseek",
+            "gemini-cli",
+            "inception",
+            "nearai",
+            "ovhcloud",
+            "custom_tensorix",
+            "tetrate",
+            "venice",
+        ] {
+            assert!(
+                provider_entries
+                    .iter()
+                    .all(|provider| provider.get("providerId")
+                        != Some(&serde_json::json!(provider_id))),
+                "default provider list should exclude {provider_id}"
             );
         }
         let codex_setup = setup_providers

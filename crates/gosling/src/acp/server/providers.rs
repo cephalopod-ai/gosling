@@ -4,6 +4,27 @@ use crate::providers::inventory::ensure_refresh_identity_current;
 use crate::providers::provider_secrets;
 use std::str::FromStr;
 
+const HIDDEN_AUTOMATIC_PROVIDER_SETUP_IDS: &[&str] = &[
+    "aws_bedrock",
+    "sagemaker_tgi",
+    "azure_openai",
+    "cerebras",
+    "databricks",
+    "databricks_v2",
+    "custom_deepseek",
+    "gemini-cli",
+    "inception",
+    "nearai",
+    "ovhcloud",
+    "custom_tensorix",
+    "tetrate",
+    "venice",
+];
+
+fn hide_from_automatic_provider_setup(provider_id: &str) -> bool {
+    HIDDEN_AUTOMATIC_PROVIDER_SETUP_IDS.contains(&provider_id)
+}
+
 fn provider_secret_to_dto(secret: provider_secrets::ProviderSecret) -> ProviderSecretDto {
     let storage = match secret.storage {
         provider_secrets::ProviderSecretStorage::SecretStore => {
@@ -464,6 +485,14 @@ impl GoslingAcpAgent {
             .entries(&req.provider_ids)
             .await
             .internal_err()?;
+        let entries = if req.provider_ids.is_empty() {
+            entries
+                .into_iter()
+                .filter(|entry| !hide_from_automatic_provider_setup(&entry.provider_id))
+                .collect()
+        } else {
+            entries
+        };
         Ok(ListProvidersResponse {
             entries: entries.into_iter().map(inventory_entry_to_dto).collect(),
         })

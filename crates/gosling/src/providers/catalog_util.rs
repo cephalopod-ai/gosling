@@ -122,23 +122,6 @@ mod tests {
             Some("http://localhost:11434")
         );
 
-        let databricks = entries
-            .iter()
-            .find(|entry| entry.provider_id == "databricks")
-            .expect("setup catalog should include databricks");
-        assert_eq!(
-            databricks.setup_method,
-            ProviderSetupMethod::HostWithOauthFallback
-        );
-        assert_eq!(
-            databricks
-                .fields
-                .iter()
-                .map(|field| field.key.as_str())
-                .collect::<Vec<_>>(),
-            ["DATABRICKS_HOST", "DATABRICKS_TOKEN"]
-        );
-
         let featherless = entries
             .iter()
             .find(|entry| entry.provider_id == "featherless")
@@ -160,6 +143,27 @@ mod tests {
         assert!(provider_ids.contains("codex-acp"));
         assert!(!provider_ids.contains("claude_code"));
         assert!(!provider_ids.contains("codex"));
-        assert!(!provider_ids.contains("gemini_cli"));
+        for provider_id in [
+            "aws_bedrock",
+            "sagemaker_tgi",
+            "azure_openai",
+            "cerebras",
+            "databricks",
+            "databricks_v2",
+            "custom_deepseek",
+            "gemini-cli",
+            "gemini_cli",
+            "inception",
+            "nearai",
+            "ovhcloud",
+            "custom_tensorix",
+            "tetrate",
+            "venice",
+        ] {
+            assert!(
+                !provider_ids.contains(provider_id),
+                "setup catalog should exclude {provider_id}"
+            );
+        }
     }
 }
