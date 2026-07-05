@@ -241,7 +241,13 @@ impl AdcCredentials {
     }
 
     async fn load_from_metadata_server(base_url: &str) -> Result<Self, AuthError> {
-        let client = reqwest::Client::new();
+        // Bound the metadata-server request: off a GCP host the 169.254 metadata
+        // IP typically blackholes, and without a timeout the auth call (and the
+        // agent turn behind it) hangs indefinitely.
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let metadata_path = "/computeMetadata/v1/instance/service-accounts/default/token";
 
         let response = client
