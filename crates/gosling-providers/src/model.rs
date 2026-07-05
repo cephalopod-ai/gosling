@@ -104,6 +104,17 @@ impl ModelConfig {
             if self.reasoning.is_none() {
                 self.reasoning = canonical.reasoning;
             }
+        } else if self.context_limit.is_none()
+            && provider_name == crate::openai::OPEN_AI_PROVIDER_NAME
+            && self.model_name.to_lowercase().contains("gpt-5.5")
+        {
+            self.context_limit = Some(1_050_000);
+            if self.max_tokens.is_none() {
+                self.max_tokens = Some(128_000);
+            }
+            if self.reasoning.is_none() {
+                self.reasoning = Some(true);
+            }
         } else if self.context_limit.is_none() && self.model_name.to_lowercase().contains("claude")
         {
             // Claude releases newer than the bundled registry would otherwise
@@ -668,6 +679,19 @@ mod tests {
             let config = ModelConfig::new("claude-hypothetical-99-not-in-registry")
                 .with_canonical_limits("anthropic");
             assert_eq!(config.context_limit(), 200_000);
+        }
+
+        #[test]
+        fn gpt_55_uses_current_openai_fallback_limits_until_registry_updates() {
+            let _guard = env_lock::lock_env([
+                ("GOSLING_MAX_TOKENS", None::<&str>),
+                ("GOSLING_CONTEXT_LIMIT", None::<&str>),
+            ]);
+
+            let config = ModelConfig::new("gpt-5.5").with_canonical_limits("openai");
+            assert_eq!(config.context_limit, Some(1_050_000));
+            assert_eq!(config.max_tokens, Some(128_000));
+            assert_eq!(config.reasoning, Some(true));
         }
 
         #[test]

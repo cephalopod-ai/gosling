@@ -426,12 +426,20 @@ fn select_model_from_list(
     // If we have more than MAX_MODELS models, show the recommended models with additional search option.
     // Otherwise, show all models without search.
     if models.len() > MAX_MODELS {
-        let recommended_models: Vec<String> = provider_meta
+        let mut recommended_models: Vec<String> = models.iter().take(MAX_MODELS).cloned().collect();
+        for known_model in provider_meta
             .known_models
             .iter()
             .map(|m| m.name.clone())
             .filter(|name| models.contains(name))
-            .collect();
+        {
+            if recommended_models.len() >= MAX_MODELS {
+                break;
+            }
+            if !recommended_models.contains(&known_model) {
+                recommended_models.push(known_model);
+            }
+        }
 
         if !recommended_models.is_empty() {
             let mut model_items: Vec<(String, String, &str)> = recommended_models

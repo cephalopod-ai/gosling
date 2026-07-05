@@ -319,6 +319,166 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
     }
 }
 
+pub fn heuristic_model_family(_provider_name: &str, model_name: &str) -> Option<String> {
+    let model = model_name.to_ascii_lowercase();
+
+    if is_non_text_model_name(&model) {
+        return None;
+    }
+
+    if model.contains("claude") {
+        for family in ["fable", "opus", "sonnet", "haiku"] {
+            if model.contains(family) {
+                return Some(format!("claude-{}", family));
+            }
+        }
+        return Some("claude".to_string());
+    }
+
+    if contains_model_token(&model, "gpt-") || contains_model_token(&model, "chatgpt-") {
+        if model.contains("-mini") || model.contains("-nano") {
+            return Some("gpt-mini".to_string());
+        }
+        return Some("gpt".to_string());
+    }
+
+    if is_openai_o_series_model(&model) {
+        return Some("gpt".to_string());
+    }
+
+    if contains_model_token(&model, "gemini-") {
+        if model.contains("flash") {
+            return Some("gemini-flash".to_string());
+        }
+        if model.contains("pro") {
+            return Some("gemini-pro".to_string());
+        }
+        return Some("gemini".to_string());
+    }
+
+    if contains_model_token(&model, "gemma-") {
+        return Some("gemma".to_string());
+    }
+
+    if contains_model_token(&model, "glm-") {
+        return Some("glm".to_string());
+    }
+
+    None
+}
+
+fn contains_model_token(model: &str, token: &str) -> bool {
+    model.starts_with(token)
+        || model.contains(&format!("/{token}"))
+        || model.contains(&format!("-{token}"))
+}
+
+fn is_openai_o_series_model(model: &str) -> bool {
+    let trimmed = model
+        .rsplit(['/', ':'])
+        .next()
+        .unwrap_or(model)
+        .trim_start_matches("openai-");
+    let Some(rest) = trimmed.strip_prefix('o') else {
+        return false;
+    };
+    rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+}
+
+fn is_non_text_model_name(model: &str) -> bool {
+    model.contains("embedding")
+        || model.contains("moderation")
+        || model.contains("whisper")
+        || model.contains("transcribe")
+        || model.contains("tts")
+        || model.contains("realtime")
+        || model.contains("image")
+        || model.contains("dall-e")
+        || model.contains("video")
+}
+
+fn is_likely_text_generation_model(provider_name: &str, model_name: &str) -> bool {
+    let model = model_name.to_ascii_lowercase();
+
+    if is_non_text_model_name(&model) {
+        return false;
+    }
+
+    if heuristic_model_family(provider_name, model_name).is_some() {
+        return true;
+    }
+
+    [
+        "llama",
+        "mistral",
+        "mixtral",
+        "codestral",
+        "ministral",
+        "pixtral",
+        "devstral",
+        "deepseek",
+        "qwen",
+        "grok",
+        "command",
+        "jamba",
+    ]
+    .iter()
+    .any(|token| model.contains(token))
+}
+
+fn sort_recommended_candidates(mut models: Vec<(String, Option<String>, bool)>) -> Vec<String> {
+    models.sort_by(|a, b| match (a.2, b.2) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => match (&a.1, &b.1) {
+            (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.0.cmp(&b.0),
+        },
+    });
+
+    models.into_iter().map(|(name, _, _)| name).collect()
+}
+
+fn filter_recommended_models(
+    provider_name: &str,
+    all_models: &[String],
+    toolshim: bool,
+    registry: &CanonicalModelRegistry,
+) -> Vec<String> {
+    let models = all_models
+        .iter()
+        .filter_map(|model| {
+            let canonical_id = map_to_canonical_model(provider_name, model, registry);
+
+            let Some(canonical_id) = canonical_id else {
+                return is_likely_text_generation_model(provider_name, model)
+                    .then(|| (model.clone(), None, true));
+            };
+
+            let (provider, model_name) = canonical_id.split_once('/')?;
+            let canonical_model = registry.get(provider, model_name)?;
+
+            if !canonical_model
+                .modalities
+                .input
+                .contains(&crate::canonical::Modality::Text)
+            {
+                return None;
+            }
+
+            if !canonical_model.tool_call && !toolshim {
+                return None;
+            }
+
+            Some((model.clone(), canonical_model.release_date.clone(), false))
+        })
+        .collect();
+
+    sort_recommended_candidates(models)
+}
+
 /// Collect all chunks from a MessageStream into a single Message and ProviderUsage
 pub async fn collect_stream(
     mut stream: MessageStream,
@@ -467,7 +627,7 @@ pub trait Provider: Send + Sync {
         false
     }
 
-    /// Fetch inventory models filtered by canonical registry and usability.
+    /// Fetch inventory models filtered by canonical registry and conservative name heuristics.
     ///
     /// When `toolshim` is true, models that lack native tool-call support are
     /// retained because the toolshim layer emulates tool calling.
@@ -484,45 +644,8 @@ pub trait Provider: Send + Sync {
 
         let provider_name = self.canonical_provider_id();
 
-        // Get all text-capable models with their release dates
-        let mut models_with_dates: Vec<(String, Option<String>)> = all_models
-            .iter()
-            .filter_map(|model| {
-                let canonical_id = map_to_canonical_model(provider_name, model, registry)?;
-
-                let (provider, model_name) = canonical_id.split_once('/')?;
-                let canonical_model = registry.get(provider, model_name)?;
-
-                if !canonical_model
-                    .modalities
-                    .input
-                    .contains(&crate::canonical::Modality::Text)
-                {
-                    return None;
-                }
-
-                if !canonical_model.tool_call && !toolshim {
-                    return None;
-                }
-
-                let release_date = canonical_model.release_date.clone();
-
-                Some((model.clone(), release_date))
-            })
-            .collect();
-
-        // Sort by release date (most recent first), then alphabetically for models without dates
-        models_with_dates.sort_by(|a, b| match (&a.1, &b.1) {
-            (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.0.cmp(&b.0),
-        });
-
-        let inventory_models: Vec<String> = models_with_dates
-            .into_iter()
-            .map(|(name, _)| name)
-            .collect();
+        let inventory_models =
+            filter_recommended_models(provider_name, &all_models, toolshim, registry);
 
         if inventory_models.is_empty() {
             Ok(all_models)
@@ -750,6 +873,39 @@ mod tests {
             reasoning: false,
         };
         assert_ne!(info, info3);
+    }
+
+    #[test]
+    fn recommended_filter_keeps_live_unknown_llms() {
+        let registry = CanonicalModelRegistry::bundled().unwrap();
+        let models = vec![
+            "text-embedding-3-large".to_string(),
+            "gpt-4o".to_string(),
+            "gpt-5.5".to_string(),
+        ];
+
+        let recommended = filter_recommended_models("openai", &models, false, registry);
+
+        assert_eq!(recommended.first().map(String::as_str), Some("gpt-5.5"));
+        assert!(recommended.contains(&"gpt-4o".to_string()));
+        assert!(!recommended.contains(&"text-embedding-3-large".to_string()));
+    }
+
+    #[test]
+    fn heuristic_family_identifies_current_frontier_patterns() {
+        assert_eq!(
+            heuristic_model_family("openai", "gpt-5.5").as_deref(),
+            Some("gpt")
+        );
+        assert_eq!(
+            heuristic_model_family("anthropic", "claude-fable-5").as_deref(),
+            Some("claude-fable")
+        );
+        assert_eq!(
+            heuristic_model_family("google", "gemini-3-pro").as_deref(),
+            Some("gemini-pro")
+        );
+        assert_eq!(heuristic_model_family("openai", "gpt-image-2"), None);
     }
 
     #[test]

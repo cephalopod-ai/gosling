@@ -1115,18 +1115,31 @@ fn enriched_model(
         registry.get(provider, model).cloned()
     });
 
+    let fallback_config =
+        gosling_providers::model::ModelConfig::new(model_id).with_canonical_limits(provider_family);
+    let fallback_family =
+        gosling_providers::base::heuristic_model_family(provider_family, model_id);
+    let fallback_reasoning = fallback_config.is_reasoning_model();
+
     InventoryModel {
         id: model_id.to_string(),
         name: canonical
             .as_ref()
             .map(|model| model.name.clone())
             .unwrap_or_else(|| model_id.to_string()),
-        family: canonical.as_ref().and_then(|model| model.family.clone()),
+        family: canonical
+            .as_ref()
+            .and_then(|model| model.family.clone())
+            .or(fallback_family),
         context_limit: canonical
             .as_ref()
             .map(|model| model.limit.context)
-            .or(fallback_context_limit),
-        reasoning: canonical.as_ref().and_then(|model| model.reasoning),
+            .or(fallback_context_limit)
+            .or(fallback_config.context_limit),
+        reasoning: canonical
+            .as_ref()
+            .and_then(|model| model.reasoning)
+            .or(Some(fallback_reasoning)),
         recommended: false,
     }
 }
@@ -1359,6 +1372,17 @@ mod tests {
 
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "claude-sonnet-4-5");
+    }
+
+    #[test]
+    fn inventory_marks_unknown_live_frontier_models_recommended() {
+        let models = enrich_model_ids_with_canonical("openai", &["gpt-5.5".to_string()]);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "gpt-5.5");
+        assert_eq!(models[0].family.as_deref(), Some("gpt"));
+        assert!(models[0].recommended);
+        assert_eq!(models[0].reasoning, Some(true));
     }
 
     #[test]
