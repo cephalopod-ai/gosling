@@ -4,6 +4,8 @@ This website is built using [Docusaurus](https://docusaurus.io/), a modern stati
 
 Run all commands from the `documentation/` directory.
 
+For the repository-facing map of the documentation surface, see [INDEX.md](./INDEX.md).
+
 ### Installation
 
 ```

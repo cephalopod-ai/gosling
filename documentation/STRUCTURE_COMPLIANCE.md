@@ -1,6 +1,6 @@
 # Documentation Structure Compliance
 
-Run date: 2026-07-03
+Run date: 2026-07-04
 
 Governing authority: repo-declared conventions.
 
@@ -15,7 +15,7 @@ Authority sources:
 
 Giles status: not present. No `.giles/` directory, Giles declaration, or `GSESS` / `GAUD` convention markers were found.
 
-Summary: 6 compliant / 3 drift / 2 violations. Tier A: 0 applied. Tier B: 0 routed. Tier C: 3 follow-ups.
+Summary: 7 compliant / 2 drift / 1 violation. Tier A: 1 applied. Tier B: 0 routed. Tier C: 3 follow-ups.
 
 | ID | Rule / code | Location | Status | Severity | Tier | Recommended action | Authority needed |
 |---|---|---|---|---|---|---|---|
@@ -25,21 +25,21 @@ Summary: 6 compliant / 3 drift / 2 violations. Tier A: 0 applied. Tier B: 0 rout
 | DOCSTEW-20260703-004 | Documentation brand rule exists | `documentation/AGENTS.md` | compliant | low | A | Continue enforcing lowercase `gosling` in documentation edits. | Repo-declared style guide |
 | DOCSTEW-20260703-005 | Core user docs exist | `documentation/docs/getting-started/`, `documentation/docs/guides/`, `documentation/docs/troubleshooting/` | compliant | low | A | Maintain these as canonical user-facing docs categories. | Repo-declared layout |
 | DOCSTEW-20260703-006 | Architecture docs exist | `documentation/docs/gosling-architecture/` | compliant | low | A | Keep architecture material here unless a future repo decision renames it for gosling. | Repo-declared layout |
-| DOCSTEW-20260703-007 | Root documentation index is missing | `documentation/` | drift | medium | C | Add a durable `documentation/INDEX.md` or equivalent map that points to docs, blog, automation, architecture, test evidence, and stewardship artifacts. | Maintainer approval for docs IA |
+| DOCSTEW-20260703-007 | Root documentation index exists and maps the documentation surface | `documentation/INDEX.md` | compliant | low | A | Keep `documentation/INDEX.md` current as the canonical map for docs, blog, automation, and stewardship artifacts. | Repo-declared layout |
 | DOCSTEW-20260703-008 | No active documentation TODO ledger | `documentation/` | drift | medium | C | Create a scoped docs TODO ledger after triaging source TODOs and separating code TODOs from documentation TODOs. | Maintainer approval for governance docs |
 | DOCSTEW-20260703-009 | No durable test ledger | `documentation/` | drift | medium | C | Create a test ledger from `AGENTS.md`, `.github/workflows/`, `documentation/package.json`, Rust tests, and UI tests. | Maintainer approval for governance docs |
 | DOCSTEW-20260703-010 | Documentation still contains upstream goose-oriented governance material | `GOVERNANCE.md` (removed 2026-07-04), `MAINTAINERS.md` (rewritten 2026-07-04), many `documentation/docs/**` files | resolved | medium | C | `GOVERNANCE.md` and `MAINTAINERS.md` fixed. Follow-up rebrand audit (2026-07-04) swept `documentation/docs/**` for "AAIF", "Agentic AI Foundation", "LF Projects", and "Linux Foundation" — zero hits. | Closed; no further action needed |
 | DOCSTEW-20260703-011 | Session/audit log convention is undeclared | `.dory/`, no `documentation/logs/` policy | violation | low | C | Decide whether Dory/session checkpoints are local-only or durable repo memory; if durable, define location and retention policy. | Maintainer approval for log retention |
+
+## Tier A — Applied
+
+- `DOCSTEW-20260703-007`: Added `documentation/INDEX.md` and linked it from `documentation/README.md` to establish a canonical, version-controlled documentation map without changing the repo's declared docs root.
 
 ## Tier B — Routed
 
 No Tier B changes were identified or applied. No Giles or frozen governance authority files were edited.
 
 ## Tier C — Significant Follow-Ups
-
-- `DOCSTEW-20260703-007`: Add a canonical docs index.
-  - Recommended follow-up: create `documentation/INDEX.md` and link it from `README.md` or `documentation/README.md`.
-  - Impact estimate: 2 files, low behavior risk, docs information-architecture review needed.
 
 - `DOCSTEW-20260703-008`: Create an active documentation TODO ledger.
   - Recommended follow-up: triage actionable TODOs from source, docs, scripts, and CI; keep code implementation TODOs separate from documentation stewardship TODOs.
@@ -60,3 +60,6 @@ No Tier B changes were identified or applied. No Giles or frozen governance auth
 - Whole-tree hygiene findings, such as generated assets, vendored JavaScript, and non-doc build output, are out of scope for this skill and should be routed to `governance-repo-cleaning` if needed.
 - No raw logs were moved or deleted.
 - No source files were changed by this stewardship pass.
+- Tier A documentation fixes applied in this pass:
+  - created `documentation/INDEX.md`
+  - updated `documentation/README.md` to point to the docs index
