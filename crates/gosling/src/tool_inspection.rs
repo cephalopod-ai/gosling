@@ -108,9 +108,27 @@ impl ToolInspectionManager {
                     tracing::error!(
                         inspector_name = inspector.name(),
                         error = %e,
-                        "Tool inspector failed"
+                        "Tool inspector failed; failing closed by requiring approval for this batch"
                     );
-                    // Continue with other inspectors even if one fails
+                    // Fail closed. A safety inspector that cannot run must not
+                    // silently drop its verdict: in Auto mode the permission
+                    // baseline is Allow, so a lost restriction would let an
+                    // unjudged tool execute. Synthesize a RequireApproval for
+                    // every request in the batch so it escalates to human
+                    // approval instead of running ungated.
+                    for request in tool_requests {
+                        all_results.push(InspectionResult {
+                            tool_request_id: request.id.clone(),
+                            action: InspectionAction::RequireApproval(Some(format!(
+                                "Inspector '{}' failed to run; approval required as a safety fallback",
+                                inspector.name()
+                            ))),
+                            reason: format!("inspector '{}' error: {e}", inspector.name()),
+                            confidence: 1.0,
+                            inspector_name: inspector.name().to_string(),
+                            finding_id: None,
+                        });
+                    }
                 }
             }
         }
@@ -305,5 +323,61 @@ mod tests {
         assert_eq!(updated_result.approved.len(), 0);
         assert_eq!(updated_result.denied.len(), 1);
         assert_eq!(updated_result.denied[0].id, "req_1");
+    }
+
+    struct FailingInspector;
+
+    #[async_trait]
+    impl ToolInspector for FailingInspector {
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+
+        async fn inspect(
+            &self,
+            _session_id: &str,
+            _tool_requests: &[ToolRequest],
+            _messages: &[Message],
+            _gosling_mode: GoslingMode,
+        ) -> Result<Vec<InspectionResult>> {
+            Err(anyhow::anyhow!("inspector boom"))
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[tokio::test]
+    async fn test_inspector_failure_fails_closed() {
+        let mut manager = ToolInspectionManager::new();
+        manager.add_inspector(Box::new(FailingInspector));
+
+        let tool_request = ToolRequest {
+            id: "req_1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("test_tool").with_arguments(object!({}))),
+            metadata: None,
+            tool_meta: None,
+        };
+
+        // Even in Auto mode (baseline Allow), a failing inspector must not let
+        // the tool through unjudged: inspect_tools returns Ok with a synthesized
+        // RequireApproval rather than dropping the verdict.
+        let results = manager
+            .inspect_tools(
+                "session",
+                std::slice::from_ref(&tool_request),
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .expect("inspect_tools should not surface the inspector error");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].tool_request_id, "req_1");
+        assert!(matches!(
+            results[0].action,
+            InspectionAction::RequireApproval(_)
+        ));
     }
 }
