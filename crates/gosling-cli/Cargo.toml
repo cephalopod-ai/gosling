@@ -74,7 +74,6 @@ default = [
     "code-mode",
     "tui",
     "aws-providers",
-    "telemetry",
     "nostr",
     "otel",
     "rustls-tls",
@@ -89,7 +88,7 @@ otel = ["gosling/otel"]
 system-keyring = ["gosling/system-keyring"]
 tui = []
 update = ["dep:sigstore-verify"]
-portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel", "tui"]
+portable-default = ["rustls-tls", "aws-providers", "otel", "tui"]
 # disables the update command
 disable-update = []
 rustls-tls = [

@@ -14,7 +14,6 @@ workspace = true
 default = [
     "code-mode",
     "aws-providers",
-    "telemetry",
     "nostr",
     "otel",
     "rustls-tls",
@@ -26,7 +25,7 @@ telemetry = ["gosling/telemetry"]
 nostr = ["gosling/nostr"]
 otel = ["gosling/otel"]
 system-keyring = ["gosling/system-keyring"]
-portable-default = ["rustls-tls", "aws-providers", "telemetry", "otel"]
+portable-default = ["rustls-tls", "aws-providers", "otel"]
 rustls-tls = [
     "reqwest/rustls",
     "axum-server/tls-rustls",

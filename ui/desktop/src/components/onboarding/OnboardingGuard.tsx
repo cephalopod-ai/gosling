@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useConfig } from '../ConfigContext';
 import { useModelAndProvider } from '../ModelAndProviderContext';
 import { acpListProviderDetails, acpReadDefaults, acpSaveDefaults } from '../../acp/providers';
 import { Gosling } from '../icons';
@@ -11,8 +10,6 @@ import {
   trackOnboardingStarted,
   trackOnboardingCompleted,
   trackOnboardingProviderSelected,
-  trackTelemetryPreference,
-  setTelemetryEnabled as setAnalyticsTelemetryEnabled,
 } from '../../utils/analytics';
 import { defineMessages, useIntl } from '../../i18n';
 
@@ -39,8 +36,6 @@ const i18n = defineMessages({
   },
 });
 
-const TELEMETRY_CONFIG_KEY = 'GOSLING_TELEMETRY_ENABLED';
-
 interface OnboardingGuardProps {
   children: React.ReactNode;
 }
@@ -48,7 +43,6 @@ interface OnboardingGuardProps {
 export default function OnboardingGuard({ children }: OnboardingGuardProps) {
   const intl = useIntl();
   const navigate = useNavigate();
-  const { upsert } = useConfig();
   const { getFallbackModelAndProvider, refreshCurrentModelAndProvider } = useModelAndProvider();
 
   const [isCheckingProvider, setIsCheckingProvider] = useState(true);
@@ -124,18 +118,9 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
     setConfiguredProviderDisplayName(matchedProvider?.metadata.display_name || providerName);
   };
 
-  const finishOnboarding = async (telemetryEnabled: boolean) => {
-    try {
-      await upsert(TELEMETRY_CONFIG_KEY, telemetryEnabled, false);
-    } catch (error) {
-      console.error('Failed to save telemetry preference:', error);
-    }
-    trackTelemetryPreference(telemetryEnabled, 'onboarding');
+  const finishOnboarding = () => {
     if (configuredProvider) {
       trackOnboardingCompleted(configuredProvider, configuredModel ?? undefined);
-    }
-    if (!telemetryEnabled) {
-      setAnalyticsTelemetryEnabled(false);
     }
     navigate('/', { replace: true });
     setHasProvider(true);

@@ -1,13 +1,9 @@
 /**
  * Frontend Analytics Module
  *
- * Compatibility layer for existing UI tracking call sites. Frontend telemetry is
- * disabled during the ACP migration, so events are intentionally not sent.
+ * Compatibility layer for existing UI tracking call sites. Gosling does not
+ * send frontend telemetry, so events are intentionally not sent.
  */
-
-export function setTelemetryEnabled(_enabled: boolean): void {
-  // Frontend telemetry is disabled.
-}
 
 function sendEvent(
   _eventName: string,
@@ -23,14 +19,8 @@ function sendEvent(
 /**
  * Frontend-specific analytics events.
  *
- * NOTE: The backend (posthog.rs) already tracks:
- * - session_started (extensions, provider, model, tokens, session count, etc.)
- * - error (provider errors like rate_limit, auth, etc.)
- *
- * Frontend events focus on what the backend can't see:
- * - UI navigation patterns
- * - Onboarding funnel (where users drop off during setup)
- * - Frontend-only crashes (React errors, unhandled rejections)
+ * These types remain as a stable interface for existing call sites even though
+ * the transport is intentionally disabled.
  */
 export type AnalyticsEvent =
   | { name: 'page_view'; properties: { page: string; referrer?: string } }
@@ -64,10 +54,6 @@ export type AnalyticsEvent =
   | { name: 'model_changed'; properties: { provider: string; model: string } }
   | { name: 'settings_tab_viewed'; properties: { tab: string } }
   | { name: 'setting_toggled'; properties: { setting: string; enabled: boolean } }
-  | {
-      name: 'telemetry_preference_set';
-      properties: { enabled: boolean; location: 'settings' | 'onboarding' | 'modal' };
-    }
   | {
       name: 'extension_added';
       properties: {
@@ -272,13 +258,6 @@ export function trackSettingToggled(setting: string, enabled: boolean): void {
     name: 'setting_toggled',
     properties: { setting, enabled },
   });
-}
-
-export function trackTelemetryPreference(
-  enabled: boolean,
-  location: 'settings' | 'onboarding' | 'modal'
-): void {
-  sendEvent('telemetry_preference_set', { enabled, location });
 }
 
 export function getErrorType(error: unknown): string {

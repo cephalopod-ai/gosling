@@ -16,39 +16,17 @@ use uuid::Uuid;
 const POSTHOG_API_KEY: &str = "phc_RyX5CaY01VtZJCQyhSR5KFh6qimUy81YwxsEpotAftT";
 const POSTHOG_CAPTURE_URL: &str = "https://us.i.posthog.com/capture/";
 
-/// Config key for telemetry opt-out preference
+/// Legacy config key retained for compatibility with existing configuration.
 pub const TELEMETRY_ENABLED_KEY: &str = "GOSLING_TELEMETRY_ENABLED";
 
-static TELEMETRY_DISABLED_BY_ENV: Lazy<AtomicBool> = Lazy::new(|| {
-    std::env::var("GOSLING_TELEMETRY_OFF")
-        .map(|v| v == "1" || v.to_lowercase() == "true")
-        .unwrap_or(false)
-        .into()
-});
-
-/// Check if the user has made a telemetry choice.
-///
-/// Returns Some(true) if telemetry is enabled, Some(false) if disabled,
-/// or None if the user hasn't made a choice yet.
+/// Gosling does not permit product telemetry collection.
 pub fn get_telemetry_choice() -> Option<bool> {
-    if TELEMETRY_DISABLED_BY_ENV.load(Ordering::Relaxed) {
-        return Some(false);
-    }
-
-    let config = Config::global();
-    config.get_param::<bool>(TELEMETRY_ENABLED_KEY).ok()
+    Some(false)
 }
 
-/// Check if telemetry is enabled.
-///
-/// Returns false if:
-/// - GOSLING_TELEMETRY_OFF environment variable is set to "1" or "true"
-/// - GOSLING_TELEMETRY_ENABLED config value is set to false
-/// - User has not made a telemetry choice yet (opt-in required)
-///
-/// Returns true only if the user has explicitly opted in.
+/// Gosling does not permit product telemetry collection.
 pub fn is_telemetry_enabled() -> bool {
-    get_telemetry_choice().unwrap_or(false)
+    false
 }
 
 // ============================================================================
@@ -570,51 +548,8 @@ fn sanitize_value(value: serde_json::Value) -> serde_json::Value {
 // Generic Event API (for frontend)
 // ============================================================================
 pub async fn emit_event(
-    event_name: &str,
-    mut properties: HashMap<String, serde_json::Value>,
+    _event_name: &str,
+    _properties: HashMap<String, serde_json::Value>,
 ) -> Result<(), String> {
-    // Only onboarding events are enabled for now. These bypass the telemetry
-    // check so we can track the funnel before the user makes their choice.
-    let is_onboarding_event =
-        event_name.starts_with("onboarding_") || event_name == "telemetry_preference_set";
-    if !is_onboarding_event {
-        return Ok(());
-    }
-
-    let installation = load_or_create_installation();
-
-    insert(&mut properties, "os", std::env::consts::OS);
-    insert(&mut properties, "arch", std::env::consts::ARCH);
-    insert(&mut properties, "version", env!("CARGO_PKG_VERSION"));
-    insert(&mut properties, "interface", "desktop");
-    insert(&mut properties, "source", "ui");
-
-    if let Some(platform_version) = get_platform_version() {
-        insert(&mut properties, "platform_version", platform_version);
-    }
-
-    if event_name == "error_occurred" || event_name == "app_crashed" {
-        if let Some(serde_json::Value::String(error_type)) = properties.get("error_type") {
-            let classified = classify_error(error_type);
-            properties.insert(
-                "error_category".to_string(),
-                serde_json::Value::String(classified.to_string()),
-            );
-        }
-    }
-
-    let sanitized: HashMap<String, serde_json::Value> = properties
-        .into_iter()
-        .filter(|(key, _)| {
-            let key_lower = key.to_lowercase();
-            !key_lower.contains("key")
-                && !key_lower.contains("token")
-                && !key_lower.contains("secret")
-                && !key_lower.contains("password")
-                && !key_lower.contains("credential")
-        })
-        .map(|(k, v)| (k, sanitize_value(v)))
-        .collect();
-
-    posthog_capture(event_name, &installation.installation_id, sanitized).await
+    Ok(())
 }

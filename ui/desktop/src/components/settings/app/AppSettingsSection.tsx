@@ -17,7 +17,6 @@ import { COST_TRACKING_ENABLED, UPDATES_ENABLED } from '../../../updates';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import ThemeSelector from '../../GoslingSidebar/ThemeSelector';
 import GoslingLogo from '../../GoslingLogo';
-import TelemetrySettings from './TelemetrySettings';
 import { trackSettingToggled } from '../../../utils/analytics';
 import type { LanguageSetting } from '../../../utils/settings';
 
@@ -550,8 +549,6 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
           </div>
         </CardContent>
       </Card>
-      <TelemetrySettings />
-
       {/* Version Section - only show if GOSLING_VERSION is set */}
       {!shouldShowUpdates && (
         <Card className="rounded-lg">
