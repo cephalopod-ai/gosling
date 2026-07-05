@@ -20,7 +20,7 @@ gosling works with 15+ providers — Anthropic, OpenAI, Google, Ollama, OpenRout
 
 ## Provenance
 
-gosling **v0.0.1** is a fork of [goose](https://github.com/aaif-goose/goose) **v1.38**, the open source AI agent from the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation. All credit for the underlying agent framework goes to the goose project and its contributors. gosling is licensed under the same Apache 2.0 license and is not endorsed by or affiliated with the goose project or AAIF.
+gosling **v0.0.5** is a fork of [goose](https://github.com/aaif-goose/goose) **v1.38**, the open source AI agent from the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation. All credit for the underlying agent framework goes to the goose project and its contributors. gosling is licensed under the same Apache 2.0 license and is not endorsed by or affiliated with the goose project or AAIF.
 
 ## Vision
 
@@ -28,7 +28,7 @@ gosling aims to be a **lighter version of goose**: the same trusted agent core w
 
 ## Footprint & performance vs. goose
 
-Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v1.40.0 (commit `5b7d039`), same host, matched Cargo feature flags (`code-mode` excluded from both — its `v8-goose` static-lib download is blocked by this environment's network policy, symmetrically for both builds).
+Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), same host, matched Cargo feature flags (`code-mode` excluded from both — its `v8-goose` static-lib download is blocked by this environment's network policy, symmetrically for both builds).
 
 | | goose | gosling | Δ |
 |---|---|---|---|
@@ -40,7 +40,47 @@ Comparison performed **2026-07-04** between release builds of `goose-cli` from `
 | `--version` cold start | 8.4ms avg / 24.0 MB peak RSS | 6.1ms avg / 17.7 MB peak RSS | -27% time, -26% mem |
 | `doctor` cold start | 8.8ms avg / 28.9 MB peak RSS | 6.3ms avg / 22.0 MB peak RSS | -29% time, -24% mem |
 
-The gap traces almost entirely to the local-inference stack (candle, llama.cpp, MLX, Hugging Face downloads — 148 crates) that gosling extracts: gosling also drops the `recipe`, `schedule`, `gateway`, and `local-models` CLI subcommands. Core agent/session/MCP functionality is unchanged between the two. Actual LLM conversation/tool-calling throughput wasn't benchmarked (no provider configured in the comparison environment) and isn't expected to differ, since that path is dominated by the provider API in both.
+The footprint reduction traces to the local-inference stack (candle, llama.cpp, MLX, Hugging Face downloads — 148 crates) that gosling extracts, along with dropping the `recipe`, `schedule`, `gateway`, and `local-models` subcommands. 
+
+### Key Performance & Resource Optimizations
+
+In addition to footprint reduction, Gosling implements several targeted performance enhancements to reduce CPU overhead, memory footprint, and latency in hot paths:
+
+* **Smart Configuration & Secret Caching**: In upstream, `Config::load` re-read, parsed, and deep-cloned the entire configuration mapping on every parameter/secret lookup (~300 call sites, several per turn). Gosling introduces a `ConfigSnapshot` cache using file modification times (mtimes) and lengths, sharing the parsed mapping behind an `Arc`. Lookups are now zero-clone cache hits.
+* **Cached Keyring Failures**: Platform keyring access failures (e.g. locked keychain in a headless or SSH session) are now cached (`KEYRING_RUNTIME_DISABLED`) to immediately fallback to file-based secret storage, preventing repeated slow OS keyring timeouts that block the runtime.
+* **Process-Wide Token Counter Cache**: Gosling replaces short-lived token counter instances with a process-wide `shared_token_counter` wrapping an LRU cache (size 1024). This persists tokenizations across agent turns, avoiding redundant re-encoding of unchanged conversation prefixes during usage estimation and compaction checks.
+* **Offloaded Tokenizer Setup**: Tokenizer BPE ranking table construction is CPU-heavy. Gosling offloads this from async worker threads using `tokio::task::spawn_blocking` and caches the result behind a `OnceCell` to prevent blocking the async runtime.
+* **Hot Path Allocation Trimming**: 
+  - **Repetition Inspector**: Replaced short-lived temporary inspector clones in the tool loop with `would_exceed_limit` checks using borrowed data, removing unnecessary map allocations.
+  - **Telemetry Clients**: Telemetry (Posthog) now reuses a single static `reqwest::Client` with an explicit 10s timeout, instead of creating a connection pool per event, preventing socket exhaustion.
+* **Memory & Event Bus Bounds**: Bound event buses and replay buffers with LRUs, and capped in-memory subprocess stdio logs to prevent unbounded memory growth during long-running sessions.
+
+### Key Security Hardening
+
+Comparing `gosling` v0.0.5 against `goose` v1.41.0, Gosling implements several safety and security hardening improvements:
+
+* **Fail-Closed Tool Inspection**: In upstream, if a tool inspector encountered an error (e.g., timeout, network issue, or internal error), it logged the error and allowed the loop to continue. Because the permission baseline in auto-approval mode is `Allow`, a failing safety inspector would silently let tools execute ungated. Gosling fixes this by synthesizing a `RequireApproval` safety action when a tool inspector fails, forcing execution to halt for manual human approval.
+* **Confined MCP Cache & Memory Tool Paths (Directory Traversal Hardening)**: 
+  - Restricts the MCP `cache` command to the sandbox/cache directory via path canonicalization and membership verification, preventing directory traversal injections from reading or deleting files outside the sandbox.
+  - Validates memory categories in the MCP memory server to ensure they are single, ordinary path components, preventing path traversal reads/writes.
+* **Restricted File & Directory Permissions**: 
+  - Enforces safe file permissions (`0o600`) for token and session files containing sensitive API keys and OAuth tokens.
+  - Restricts the session database directory (`sessions.db` along with SQLite `-wal` and `-shm` sidecar files) to owner-only access (`0o700`), keeping conversation history and echoed secrets protected from other local users.
+* **Option Injection Protection**: Added `--` end-of-options guards to `git clone` during plugin installation, preventing command/option injection attacks via malicious URL strings starting with a hyphen.
+
+### Feature Comparison
+
+| Feature | Goose | Gosling | Notes |
+|---|---|---|---|
+| **Core AI Agent Engine** | Yes | Yes | Both support standard LLM chat and tool-calling loops. |
+| **Model Context Protocol (MCP)** | Yes | Yes | Full compatibility with 70+ external extensions and tools. |
+| **Cloud Providers** | 15+ | 15+ | Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Azure, Bedrock, etc. |
+| **Local Inference/Models** | **Yes** | **No** | Goose bundles candle, MLX, llama.cpp, and Hugging Face loaders. Gosling removed these to stay lightweight. |
+| **CLI Command Suite** | `goose`, `goose serve`, `recipe`, `schedule`, `gateway`, `local-models` | `gosling`, `gosling serve` | Gosling drops `recipe`, `schedule`, `gateway`, and `local-models` subcommands. |
+| **Coexistence** | No | **Yes** | Gosling is fully deconflicted and runs cleanly side-by-side with Goose (isolated configs, databases, keyring, and deep links). |
+| **Context Manager MVP** | No | **Yes** | Gosling features an MVP context manager with localized LLM summarization and a `FileMemorySource` backend for retrieved memory. |
+| **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
+| **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in memory/cache extensions. |
 
 ## What's new in gosling
 
@@ -51,7 +91,7 @@ The gap traces almost entirely to the local-inference stack (candle, llama.cpp, 
   - its own `gosling://` deep-link scheme (goose keeps `goose://`)
   - its own app identity (`Gosling.app` / `Gosling.exe` / `Gosling` packages) and updater feed
   - single-instance behavior is preserved per app: one running Goose and one running Gosling, each guarded by its own instance lock
-- **Provenance in the app** — Help → About shows that this is Gosling v0.0.1, a fork of goose v1.38.
+- **Provenance in the app** — Help → About shows that this is Gosling v0.0.5, a fork of goose v1.38.
 
 ## Get started
 
