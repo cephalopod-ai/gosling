@@ -8,10 +8,13 @@ Builds on `docs/cloud/00-orientation.md`.
 
 **Nothing in this report was executed live.** The skill is designed to playtest a
 *running* application; a full Electron + Rust release build with a configured LLM
-provider is not available in this environment. I attempted a single
-`cargo build -p gosling-cli` in the background (as permitted); **it did not finish
-within the session and produced no runnable binary** (`target/debug/gosling` never
-appeared). No `--help`, no interactive session, no provider call, no MCP subprocess
+provider is not available in this environment. I attempted `cargo build -p gosling-cli`
+(as permitted). **The build failed and produced no runnable binary** — it aborted inside
+a dependency build script (`build_script_build::download_static_lib_binaries` →
+`build failed`), i.e. a compile-time step that tries to **download a static-lib binary
+over the network**, which the sandbox blocks. `target/debug/gosling` never appeared, and
+`./target/debug/gosling --help` returned exit 127 (No such file). The failure is an
+environment/network limitation, not a code defect in gosling. No `--help`, no interactive session, no provider call, no MCP subprocess
 was observed. Every behavioral claim below is **simulation-reasoned** from the code
 paths I read, and every finding is capped at **Likely / Plausible** per
 `evidence_discipline.md` (no `Confirmed` — confirmation requires a live run I could
@@ -289,9 +292,11 @@ looks graceful (still simulation-reasoned — not run live):
 
 ## Validation Limits (what was NOT exercised)
 
-- **No live execution of anything.** `cargo build -p gosling-cli` was attempted once in the
-  background and never completed within the session; no binary, no `--help`, no REPL, no
-  headless run, no provider call, no MCP subprocess, no TUI, no Electron desktop.
+- **No live execution of anything.** `cargo build -p gosling-cli` was attempted and
+  **failed in a dependency build script that requires a network download**
+  (`download_static_lib_binaries`), which the sandbox blocks; no binary was produced
+  (`gosling --help` → exit 127). No `--help`, no REPL, no headless run, no provider call,
+  no MCP subprocess, no TUI, no Electron desktop was observed.
 - **Desktop (`ui/desktop`) and TUI (`ui/text`) were not opened.** All GUI/Ink claims would
   require a live render; none were made as Confirmed. The Ink overflow risks noted in
   `AGENTS.md` were not visually verified.
