@@ -23,6 +23,7 @@ pub mod memory;
 pub mod packet;
 pub mod policy;
 pub mod selector;
+pub mod summarizer;
 pub mod telemetry;
 
 pub use block::{ContextBlock, ContextPriority, ContextSlot};
@@ -33,6 +34,7 @@ pub use packet::{
     ContextPacketMetadata, ContextStrategy,
 };
 pub use policy::{context_manager_mode, ContextManagerMode};
+pub use summarizer::{summarizer_mode, PendingSummary, SummarizerMode};
 
 pub const DEFAULT_COMPACTION_THRESHOLD: f64 = 0.8;
 
