@@ -19,7 +19,7 @@ use gosling::config::{
     PermissionManager,
 };
 #[cfg(feature = "telemetry")]
-use gosling::posthog::{get_telemetry_choice, TELEMETRY_ENABLED_KEY};
+use gosling::posthog::TELEMETRY_ENABLED_KEY;
 use gosling::providers::base::ConfigKey;
 use gosling::providers::provider_test::test_provider_configuration;
 use gosling::providers::{create, providers, retry_operation, RetryConfig};
@@ -53,63 +53,8 @@ pub async fn handle_configure() -> anyhow::Result<()> {
 #[cfg(feature = "telemetry")]
 pub fn configure_telemetry_consent_dialog() -> anyhow::Result<bool> {
     let config = Config::global();
-
-    println!();
-    println!("{}", style("Help improve gosling").bold());
-    println!();
-    println!(
-        "{}",
-        style("Would you like to help improve gosling by sharing anonymous usage data?").dim()
-    );
-    println!(
-        "{}",
-        style("This helps us understand how gosling is used and identify areas for improvement.")
-            .dim()
-    );
-    println!();
-    println!("{}", style("What we collect:").dim());
-    println!(
-        "{}",
-        style("  • Operating system, version, and architecture").dim()
-    );
-    println!("{}", style("  • gosling version and install method").dim());
-    println!("{}", style("  • Provider and model used").dim());
-    println!(
-        "{}",
-        style("  • Extensions and tool usage counts (names only)").dim()
-    );
-    println!(
-        "{}",
-        style("  • Session metrics (duration, interaction count, token usage)").dim()
-    );
-    println!(
-        "{}",
-        style("  • Error types (e.g., \"rate_limit\", \"auth\" - no details)").dim()
-    );
-    println!();
-    println!(
-        "{}",
-        style("We never collect your conversations, code, tool arguments, error messages,").dim()
-    );
-    println!(
-        "{}",
-        style("or any personal data. You can change this anytime with 'gosling configure'.").dim()
-    );
-    println!();
-
-    let enabled = cliclack::confirm("Share anonymous usage data to help improve gosling?")
-        .initial_value(true)
-        .interact()?;
-
-    config.set_param(TELEMETRY_ENABLED_KEY, enabled)?;
-
-    if enabled {
-        let _ = cliclack::log::success("Thank you for helping improve gosling!");
-    } else {
-        let _ = cliclack::log::info("Telemetry disabled. You can enable it anytime in settings.");
-    }
-
-    Ok(enabled)
+    config.set_param(TELEMETRY_ENABLED_KEY, false)?;
+    Ok(false)
 }
 
 async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
@@ -1258,14 +1203,6 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
         "gosling mode",
         "Configure gosling mode",
     );
-    #[cfg(feature = "telemetry")]
-    {
-        setting_select = setting_select.item(
-            "telemetry",
-            "Telemetry",
-            "Enable or disable anonymous usage data collection",
-        );
-    }
     let setting_type = setting_select
         .item(
             "tool_permission",
@@ -1299,10 +1236,6 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
     match setting_type {
         "gosling_mode" => {
             configure_gosling_mode_dialog()?;
-        }
-        #[cfg(feature = "telemetry")]
-        "telemetry" => {
-            configure_telemetry_dialog()?;
         }
         "tool_permission" => {
             configure_tool_permissions_dialog().await.and(Ok(()))?;
@@ -1379,34 +1312,8 @@ pub fn configure_gosling_mode_dialog() -> anyhow::Result<()> {
 #[cfg(feature = "telemetry")]
 pub fn configure_telemetry_dialog() -> anyhow::Result<()> {
     let config = Config::global();
-
-    if std::env::var("GOSLING_TELEMETRY_OFF").is_ok() {
-        let _ = cliclack::log::info(
-            "Notice: GOSLING_TELEMETRY_OFF environment variable is set and will override the configuration here.",
-        );
-    }
-
-    let current_choice = get_telemetry_choice();
-    let current_status = match current_choice {
-        Some(true) => "Enabled",
-        Some(false) => "Disabled",
-        None => "Not set",
-    };
-
-    let _ = cliclack::log::info(format!("Current telemetry status: {}", current_status));
-
-    let enabled = cliclack::confirm("Share anonymous usage data to help improve gosling?")
-        .initial_value(current_choice.unwrap_or(true))
-        .interact()?;
-
-    config.set_param(TELEMETRY_ENABLED_KEY, enabled)?;
-
-    if enabled {
-        cliclack::outro("Telemetry enabled - thank you for helping improve gosling!")?;
-    } else {
-        cliclack::outro("Telemetry disabled")?;
-    }
-
+    config.set_param(TELEMETRY_ENABLED_KEY, false)?;
+    cliclack::outro("Telemetry is disabled in gosling.")?;
     Ok(())
 }
 

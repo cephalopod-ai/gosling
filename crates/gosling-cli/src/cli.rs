@@ -5,14 +5,10 @@ use clap_complete_nushell::Nushell as ClapNushell;
 use gosling::agents::GoslingPlatform;
 use gosling::builtin_extension::register_builtin_extensions;
 use gosling::config::{Config, GoslingMode};
-#[cfg(feature = "telemetry")]
-use gosling::posthog::get_telemetry_choice;
 use gosling::source_roots::SourceRoot;
 use gosling_mcp::mcp_server_runner::{serve, McpCommand};
 use gosling_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
-#[cfg(feature = "telemetry")]
-use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::handle_configure;
 use crate::commands::info::handle_info;
 use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
@@ -1298,11 +1294,6 @@ async fn handle_interactive_session(
     session_opts: SessionOptions,
     extension_opts: ExtensionOptions,
 ) -> Result<()> {
-    #[cfg(feature = "telemetry")]
-    if get_telemetry_choice().is_none() {
-        configure_telemetry_consent_dialog()?;
-    }
-
     let session_start = std::time::Instant::now();
     let session_type = if fork {
         "forked"
@@ -1478,11 +1469,6 @@ async fn handle_run_command(
     output_opts: OutputOptions,
     model_opts: ModelOptions,
 ) -> Result<()> {
-    #[cfg(feature = "telemetry")]
-    if run_behavior.interactive && get_telemetry_choice().is_none() {
-        configure_telemetry_consent_dialog()?;
-    }
-
     let Some(input_config) = parse_run_input(&input_opts)? else {
         return Ok(());
     };
@@ -1582,11 +1568,6 @@ async fn handle_term_subcommand(command: TermCommand) -> Result<()> {
 async fn handle_default_session() -> Result<()> {
     if !Config::global().exists() {
         return handle_configure().await;
-    }
-
-    #[cfg(feature = "telemetry")]
-    if get_telemetry_choice().is_none() {
-        configure_telemetry_consent_dialog()?;
     }
 
     let gosling_mode = Config::global().get_gosling_mode().unwrap_or_default();
