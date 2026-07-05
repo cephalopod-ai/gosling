@@ -656,7 +656,13 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     let config = Config::global();
 
     // Get all available providers and their metadata
-    let mut available_providers = providers().await;
+    let mut available_providers = providers()
+        .await
+        .into_iter()
+        .filter(|(provider, _)| {
+            !gosling::providers::catalog::hide_from_automatic_provider_setup(&provider.name)
+        })
+        .collect::<Vec<_>>();
 
     // Sort providers alphabetically by display name
     available_providers.sort_by(|a, b| a.0.display_name.cmp(&b.0.display_name));
@@ -669,7 +675,13 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
 
     // Get current default provider if it exists
     let current_provider: Option<String> = config.get_gosling_provider().ok();
-    let default_provider = current_provider.unwrap_or_default();
+    let default_provider = current_provider
+        .filter(|provider_name| {
+            available_providers
+                .iter()
+                .any(|(provider, _)| provider.name == *provider_name)
+        })
+        .unwrap_or_default();
 
     // Select provider
     let provider_name = cliclack::select("Which model provider should we use?")

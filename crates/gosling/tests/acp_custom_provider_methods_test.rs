@@ -160,6 +160,8 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
             .and_then(|entries| entries.as_array())
             .expect("provider list response should include entries");
         for provider_id in [
+            "codex",
+            "claude_code",
             "aws_bedrock",
             "sagemaker_tgi",
             "azure_openai",

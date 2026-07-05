@@ -153,6 +153,9 @@ async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOp
     let mut providers = crate::providers::providers()
         .await
         .into_iter()
+        .filter(|(metadata, _)| {
+            !crate::providers::catalog::hide_from_automatic_provider_setup(&metadata.name)
+        })
         .map(|(metadata, _)| ProviderOptionEntry {
             id: metadata.name,
             label: metadata.display_name,
@@ -163,6 +166,7 @@ async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOp
 
     if let Some(current_provider) = current_provider {
         if current_provider != DEFAULT_PROVIDER_ID
+            && !crate::providers::catalog::hide_from_automatic_provider_setup(current_provider)
             && !providers
                 .iter()
                 .any(|provider| provider.id == current_provider)

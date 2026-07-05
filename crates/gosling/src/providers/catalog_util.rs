@@ -8,6 +8,29 @@ use std::collections::{HashMap, HashSet};
 
 use super::base::{ConfigKey, ProviderMetadata};
 
+const HIDDEN_AUTOMATIC_PROVIDER_SETUP_IDS: &[&str] = &[
+    "codex",
+    "claude_code",
+    "aws_bedrock",
+    "sagemaker_tgi",
+    "azure_openai",
+    "cerebras",
+    "databricks",
+    "databricks_v2",
+    "custom_deepseek",
+    "gemini-cli",
+    "inception",
+    "nearai",
+    "ovhcloud",
+    "custom_tensorix",
+    "tetrate",
+    "venice",
+];
+
+pub fn hide_from_automatic_provider_setup(provider_id: &str) -> bool {
+    HIDDEN_AUTOMATIC_PROVIDER_SETUP_IDS.contains(&provider_id)
+}
+
 fn setup_config_key(config_key: ConfigKey) -> ProviderSetupConfigKey {
     ProviderSetupConfigKey {
         name: config_key.name,
