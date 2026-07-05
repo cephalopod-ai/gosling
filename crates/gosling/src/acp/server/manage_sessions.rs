@@ -279,7 +279,15 @@ impl GoslingAcpAgent {
 }
 
 fn is_nostr_session_link(input: &str) -> bool {
-    crate::session::nostr_share::is_session_share_deeplink(input)
+    #[cfg(feature = "nostr")]
+    {
+        crate::session::nostr_share::is_session_share_deeplink(input)
+    }
+    #[cfg(not(feature = "nostr"))]
+    {
+        let _ = input;
+        false
+    }
 }
 
 #[cfg(feature = "nostr")]
