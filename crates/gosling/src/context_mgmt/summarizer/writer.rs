@@ -73,6 +73,66 @@ pub fn append_memories(path: &Path, records: &[MemoryRecord]) -> std::io::Result
     Ok(())
 }
 
+/// Heading under which extracted facts are grouped when appended to a
+/// self-managing backend's durable file (`CLAUDE.md` / `AGENTS.md`).
+const DURABLE_SECTION_HEADING: &str = "## Gosling extracted memory";
+
+/// Appends `facts` as Markdown bullets to a self-managing backend's durable
+/// file (e.g. `CLAUDE.md` / `AGENTS.md`), creating it (and any missing parent
+/// directory) if needed. The section heading is written once, the first time
+/// this producer touches the file, so repeated appends accumulate under a
+/// single heading rather than repeating it. A no-op for an empty slice.
+///
+/// Unlike [`append_memories`], the target is a human-facing Markdown file the
+/// backend reads as instructions, so facts are rendered as readable bullets
+/// with light provenance rather than JSON lines.
+pub fn append_facts_to_durable_file(
+    path: &Path,
+    label: &str,
+    facts: &[ExtractedFact],
+    session_id: &str,
+    created_at: &str,
+) -> std::io::Result<()> {
+    if facts.is_empty() {
+        return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let needs_heading = match std::fs::read_to_string(path) {
+        Ok(existing) => !existing.contains(DURABLE_SECTION_HEADING),
+        Err(_) => true,
+    };
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+
+    if needs_heading {
+        writeln!(file, "\n{DURABLE_SECTION_HEADING}")?;
+        writeln!(
+            file,
+            "<!-- appended by gosling from {label}; safe to edit or curate -->\n"
+        )?;
+    }
+
+    for fact in facts {
+        writeln!(
+            file,
+            "- {} _({}, session {}, {})_",
+            fact.content,
+            fact.fact_type.as_str(),
+            session_id,
+            created_at
+        )?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +187,46 @@ mod tests {
             .iter()
             .any(|item| item.content.contains("anyhow::Result")
                 && item.source == "summarizer:preference"));
+    }
+
+    #[test]
+    fn durable_file_writes_heading_once_and_accumulates_bullets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+
+        append_facts_to_durable_file(
+            &path,
+            "AGENTS.md",
+            &[fact("Project renamed to gosling", FactType::Fact)],
+            "session-a",
+            "2026-07-05T00:00:00Z",
+        )
+        .unwrap();
+        append_facts_to_durable_file(
+            &path,
+            "AGENTS.md",
+            &[fact("Use anyhow::Result", FactType::Preference)],
+            "session-b",
+            "2026-07-05T00:01:00Z",
+        )
+        .unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            contents.matches(DURABLE_SECTION_HEADING).count(),
+            1,
+            "the managed heading should be written exactly once across appends"
+        );
+        assert!(contents.contains("- Project renamed to gosling _(fact, session session-a,"));
+        assert!(contents.contains("- Use anyhow::Result _(preference, session session-b,"));
+    }
+
+    #[test]
+    fn durable_file_is_noop_for_empty_slice() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("CLAUDE.md");
+        append_facts_to_durable_file(&path, "CLAUDE.md", &[], "s", "t").unwrap();
+        assert!(!path.exists());
     }
 
     #[test]

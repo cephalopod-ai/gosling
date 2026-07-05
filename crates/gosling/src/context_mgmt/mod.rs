@@ -34,7 +34,7 @@ pub use packet::{
     ContextPacketMetadata, ContextStrategy,
 };
 pub use policy::{context_manager_mode, ContextManagerMode};
-pub use summarizer::{summarizer_mode, PendingSummary, SummarizerMode};
+pub use summarizer::{summarizer_mode, PendingSummary, SummarizerMode, SummarizerTarget};
 
 pub const DEFAULT_COMPACTION_THRESHOLD: f64 = 0.8;
 

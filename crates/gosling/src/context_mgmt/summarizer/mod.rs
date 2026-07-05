@@ -17,6 +17,7 @@ pub mod worker;
 pub mod writer;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use tracing::{debug, warn};
@@ -25,6 +26,8 @@ use crate::config::Config;
 
 pub use schema::{ExtractedFact, FactType, WorkerResponse};
 pub use worker::SummarizerConfig;
+
+use gosling_providers::base::{durable_memory_file_for, Provider};
 
 use super::block::ContextSlot;
 
@@ -119,6 +122,22 @@ pub struct PendingSummary {
     pub message_count: usize,
 }
 
+/// Where a run's digest and extracted facts should land, decided by whether
+/// the current provider drives a self-managing backend (see
+/// [`gosling_providers::base::Provider::manages_own_context`]).
+#[derive(Debug, Clone)]
+pub enum SummarizerTarget {
+    /// Raw API provider: Gosling assembles the prompt. The digest replaces
+    /// the packet's truncation stub on the next turn, and extracted facts
+    /// append to `memories.jsonl`.
+    ContextPacket,
+    /// Self-managing CLI/agent backend (Claude Code, Codex, Gemini CLI, …):
+    /// no packet takeover, so the digest is not cached. Extracted facts are
+    /// routed to the backend's own durable file — the seam that survives its
+    /// internal compaction — instead of `memories.jsonl` or the prompt.
+    DurableFile { path: PathBuf, label: String },
+}
+
 /// A worker-produced digest cached in place of the naive truncation stub.
 #[derive(Debug, Clone)]
 pub struct CachedDigest {
@@ -183,12 +202,45 @@ pub fn store_digest_for_test(key: u64, summary: String) {
 /// `mode`, updates the digest cache and/or appends extracted facts to
 /// `memories.jsonl`.
 ///
+/// Picks the [`SummarizerTarget`] for the current provider. A self-managing
+/// backend (Claude Code, Codex/ACP, Gemini CLI — anything whose
+/// [`Provider::manages_own_context`] is true) routes extracted facts to its
+/// durable file (`CLAUDE.md` / `AGENTS.md`) under `working_dir` and takes no
+/// packet handoff; every other provider uses the packet digest cache plus
+/// `memories.jsonl`.
+pub fn target_for_provider(
+    provider: &dyn Provider,
+    working_dir: &std::path::Path,
+) -> SummarizerTarget {
+    if provider.manages_own_context() {
+        let label = durable_memory_file_for(provider.get_name());
+        SummarizerTarget::DurableFile {
+            path: working_dir.join(label),
+            label: label.to_string(),
+        }
+    } else {
+        SummarizerTarget::ContextPacket
+    }
+}
+
 /// Intended to be spawned (e.g. via `tokio::spawn`) right after a packet is
 /// built, so it never sits on the critical path to the provider call: by the
 /// time it completes, the current turn's packet has already gone out with
 /// the deterministic truncation stub, and only the *next* turn benefits from
 /// whatever this call caches.
-pub async fn run_pending(mode: SummarizerMode, session_id: &str, pending: Vec<PendingSummary>) {
+///
+/// `target` decides where the output lands. For a raw API provider
+/// ([`SummarizerTarget::ContextPacket`]) the digest is cached for next
+/// turn's packet and facts append to `memories.jsonl`. For a self-managing
+/// backend ([`SummarizerTarget::DurableFile`]) the digest is *not* cached —
+/// the backend owns the prompt and would re-compact any packet away — and
+/// facts are routed to its durable file instead.
+pub async fn run_pending(
+    mode: SummarizerMode,
+    session_id: &str,
+    pending: Vec<PendingSummary>,
+    target: SummarizerTarget,
+) {
     if mode == SummarizerMode::Off || pending.is_empty() {
         return;
     }
@@ -214,31 +266,55 @@ pub async fn run_pending(mode: SummarizerMode, session_id: &str, pending: Vec<Pe
                     slot = ?item.slot,
                     summary = %response.summary,
                     fact_count = response.facts.len(),
+                    target = ?target,
                     "summarizer shadow mode: would replace summary and write memories"
                 );
             }
-            SummarizerMode::On => {
-                store_digest(
-                    item.cache_key,
-                    CachedDigest {
-                        summary: response.summary.clone(),
-                    },
-                );
+            SummarizerMode::On => match &target {
+                SummarizerTarget::ContextPacket => {
+                    store_digest(
+                        item.cache_key,
+                        CachedDigest {
+                            summary: response.summary.clone(),
+                        },
+                    );
 
-                if !response.facts.is_empty() {
-                    let created_at = chrono::Utc::now().to_rfc3339();
-                    let records =
-                        writer::records_for_facts(&response.facts, session_id, &created_at);
-                    let path = super::memory::memories_file_path();
-                    if let Err(e) = writer::append_memories(&path, &records) {
-                        warn!(
-                            "Failed to append summarizer memories to {}: {}",
-                            path.display(),
-                            e
-                        );
+                    if !response.facts.is_empty() {
+                        let created_at = chrono::Utc::now().to_rfc3339();
+                        let records =
+                            writer::records_for_facts(&response.facts, session_id, &created_at);
+                        let path = super::memory::memories_file_path();
+                        if let Err(e) = writer::append_memories(&path, &records) {
+                            warn!(
+                                "Failed to append summarizer memories to {}: {}",
+                                path.display(),
+                                e
+                            );
+                        }
                     }
                 }
-            }
+                SummarizerTarget::DurableFile { path, label } => {
+                    // Self-managing backend: no packet takeover, so the digest
+                    // is deliberately not cached. Only the write-path applies,
+                    // routed to the backend's durable file.
+                    if !response.facts.is_empty() {
+                        let created_at = chrono::Utc::now().to_rfc3339();
+                        if let Err(e) = writer::append_facts_to_durable_file(
+                            path,
+                            label,
+                            &response.facts,
+                            session_id,
+                            &created_at,
+                        ) {
+                            warn!(
+                                "Failed to append summarizer facts to {}: {}",
+                                path.display(),
+                                e
+                            );
+                        }
+                    }
+                }
+            },
         }
     }
 }
@@ -383,7 +459,13 @@ mod tests {
             message_count: 3,
         }];
 
-        run_pending(SummarizerMode::Off, "session-off", pending).await;
+        run_pending(
+            SummarizerMode::Off,
+            "session-off",
+            pending,
+            SummarizerTarget::ContextPacket,
+        )
+        .await;
 
         assert!(cached_digest(key).is_none());
         assert!(
@@ -422,7 +504,13 @@ mod tests {
             message_count: 4,
         }];
 
-        run_pending(SummarizerMode::Shadow, "session-shadow", pending).await;
+        run_pending(
+            SummarizerMode::Shadow,
+            "session-shadow",
+            pending,
+            SummarizerTarget::ContextPacket,
+        )
+        .await;
 
         assert!(
             cached_digest(key).is_none(),
@@ -461,7 +549,13 @@ mod tests {
             message_count: 5,
         }];
 
-        run_pending(SummarizerMode::On, "session-on", pending).await;
+        run_pending(
+            SummarizerMode::On,
+            "session-on",
+            pending,
+            SummarizerTarget::ContextPacket,
+        )
+        .await;
 
         let digest = cached_digest(key).expect("on mode should cache the worker's digest");
         assert_eq!(digest.summary, "on-mode digest preserving gosling.toml");
@@ -469,6 +563,62 @@ mod tests {
         let contents = std::fs::read_to_string(&memory_path).unwrap();
         assert!(contents.contains("config lives in gosling.toml"));
         assert!(contents.contains("session-on"));
+    }
+
+    #[tokio::test]
+    async fn on_mode_self_managing_backend_routes_facts_to_durable_file_and_skips_cache() {
+        clear_cache_for_test();
+        let dir = tempfile::tempdir().unwrap();
+        let memory_path = dir.path().join("memories.jsonl");
+        let durable_path = dir.path().join("AGENTS.md");
+        let server = mock_server_replying(
+            r#"{"summary": "on-mode digest", "facts": [{"content": "prefers AGENTS.md convention", "type": "preference", "confidence": 0.9}]}"#,
+        )
+        .await;
+
+        let _guard = env_lock::lock_env([
+            ("GOSLING_SUMMARIZER_ENDPOINT", Some(server.uri().as_str())),
+            ("GOSLING_SUMMARIZER_MODEL", None),
+            ("GOSLING_SUMMARIZER_TIMEOUT_MS", None),
+            (
+                "GOSLING_MEMORY_FILE",
+                Some(memory_path.to_string_lossy().as_ref()),
+            ),
+        ]);
+
+        let key = cache_key_for(
+            "on_mode_self_managing_backend_routes_facts_to_durable_file_and_skips_cache",
+        );
+        let pending = vec![PendingSummary {
+            slot: ContextSlot::OlderConversationSummary,
+            cache_key: key,
+            text: "some older conversation on a self-managing backend".to_string(),
+            message_count: 5,
+        }];
+
+        run_pending(
+            SummarizerMode::On,
+            "session-selfmanaging",
+            pending,
+            SummarizerTarget::DurableFile {
+                path: durable_path.clone(),
+                label: "AGENTS.md".to_string(),
+            },
+        )
+        .await;
+
+        assert!(
+            cached_digest(key).is_none(),
+            "a self-managing backend takes no packet digest handoff"
+        );
+        assert!(
+            !memory_path.exists(),
+            "facts route to the durable file, not memories.jsonl"
+        );
+        let durable = std::fs::read_to_string(&durable_path).unwrap();
+        assert!(durable.contains("## Gosling extracted memory"));
+        assert!(durable.contains("prefers AGENTS.md convention"));
+        assert!(durable.contains("session-selfmanaging"));
     }
 
     #[tokio::test]
@@ -496,7 +646,13 @@ mod tests {
             message_count: 2,
         }];
 
-        run_pending(SummarizerMode::On, "session-empty-facts", pending).await;
+        run_pending(
+            SummarizerMode::On,
+            "session-empty-facts",
+            pending,
+            SummarizerTarget::ContextPacket,
+        )
+        .await;
 
         let digest = cached_digest(key).expect("summary should still be cached");
         assert_eq!(digest.summary, "nothing durable here");
@@ -525,7 +681,13 @@ mod tests {
             message_count: 3,
         }];
 
-        run_pending(SummarizerMode::On, "session-malformed", pending).await;
+        run_pending(
+            SummarizerMode::On,
+            "session-malformed",
+            pending,
+            SummarizerTarget::ContextPacket,
+        )
+        .await;
 
         assert!(
             cached_digest(key).is_none(),
@@ -563,7 +725,13 @@ mod tests {
             message_count: 3,
         }];
 
-        run_pending(SummarizerMode::On, "session-timeout", pending).await;
+        run_pending(
+            SummarizerMode::On,
+            "session-timeout",
+            pending,
+            SummarizerTarget::ContextPacket,
+        )
+        .await;
 
         assert!(cached_digest(key).is_none());
     }
