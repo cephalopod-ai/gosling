@@ -294,6 +294,9 @@ fn clone_git_repo(source: &str, destination: &Path) -> Result<()> {
         .arg("clone")
         .arg("--depth")
         .arg("1")
+        // `--` terminates option parsing so a `source` beginning with `-`
+        // (e.g. `--upload-pack=...`) is treated as a path, not a git flag.
+        .arg("--")
         .arg(source)
         .arg(destination)
         .set_no_window()
