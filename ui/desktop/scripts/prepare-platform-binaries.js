@@ -162,10 +162,8 @@ function cleanBinDirectory(targetPlatform) {
         const filePath = path.join(srcBinDir, file.name);
         
         if (targetPlatform === 'darwin' || targetPlatform === 'linux') {
-            const isLegacyBackendBinary = file.name === 'goosed';
-            if (isLegacyBackendBinary || matchesPattern(file.name, windowsFiles)) {
-                const fileType = isLegacyBackendBinary ? 'legacy backend binary' : 'Windows file';
-                console.log(`Removing ${fileType}: ${file.name}`);
+            if (matchesPattern(file.name, windowsFiles)) {
+                console.log(`Removing Windows file: ${file.name}`);
                 if (file.isDirectory()) {
                     fs.rmSync(filePath, { recursive: true, force: true });
                 } else {

@@ -355,10 +355,7 @@ export function AppInner() {
       const link = args[0] as string;
       window.electron.logInfo('Opening session share link');
 
-      if (
-        !link.startsWith('gosling://sessions/nostr') &&
-        !link.startsWith('gosling://sessions/nostr')
-      ) {
+      if (!link.startsWith('gosling://sessions/nostr')) {
         toast.error('Unsupported session share link');
         navigate('/sessions');
         return;

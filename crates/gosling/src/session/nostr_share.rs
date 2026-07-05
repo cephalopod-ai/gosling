@@ -244,10 +244,13 @@ pub fn build_deeplink(nevent: &str, decryption_key: &str) -> String {
     )
 }
 
+pub fn is_session_share_deeplink(input: &str) -> bool {
+    input.trim_start().starts_with("gosling://sessions/nostr")
+}
+
 pub fn parse_deeplink(deeplink: &str) -> Result<ParsedShareLink> {
     let parsed = url::Url::parse(deeplink).context("Invalid Gosling session share link")?;
-    // Accept both gosling:// links and goose:// links shared from upstream goose.
-    if !matches!(parsed.scheme(), "gosling" | "goose")
+    if parsed.scheme() != "gosling"
         || parsed.host_str() != Some("sessions")
         || parsed.path() != "/nostr"
     {
@@ -367,5 +370,23 @@ mod tests {
         let parsed = parse_deeplink("gosling://sessions/nostr?nevent=abc&key=def").unwrap();
         assert_eq!(parsed.nevent, "abc");
         assert_eq!(parsed.decryption_key, "def");
+    }
+
+    #[test]
+    fn rejects_legacy_goose_deeplink() {
+        let err = parse_deeplink("goose://sessions/nostr?nevent=abc&key=def").unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("Invalid Gosling Nostr session share link"));
+    }
+
+    #[test]
+    fn detects_gosling_share_deeplinks() {
+        assert!(is_session_share_deeplink(
+            "gosling://sessions/nostr?nevent=abc&key=def"
+        ));
+        assert!(!is_session_share_deeplink(
+            "goose://sessions/nostr?nevent=abc&key=def"
+        ));
     }
 }

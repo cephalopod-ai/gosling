@@ -34,8 +34,8 @@ import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
 import { errorMessage, formatErrorForLogging } from './utils/conversionUtils';
-import type { Settings, SettingKey } from './utils/settings';
-import { defaultSettings, getKeyboardShortcuts } from './utils/settings';
+import type { LegacySettings, Settings, SettingKey } from './utils/settings';
+import { defaultSettings, getKeyboardShortcuts, resolveStoredSettings } from './utils/settings';
 import * as crypto from 'crypto';
 import * as yaml from 'yaml';
 import windowStateKeeper from 'electron-window-state';
@@ -201,26 +201,23 @@ function getSettings(): Settings {
     return settingsCache;
   }
   if (fsSync.existsSync(SETTINGS_FILE)) {
-    let stored: Partial<Settings>;
+    let stored: LegacySettings;
     try {
       const data = fsSync.readFileSync(SETTINGS_FILE, 'utf8');
-      stored = JSON.parse(data) as Partial<Settings>;
+      stored = JSON.parse(data) as LegacySettings;
     } catch (err) {
       console.error('Failed to read settings.json, using defaults:', err);
       return defaultSettings;
     }
-    settingsCache = {
-      ...defaultSettings,
-      ...stored,
-      externalGoslingd: {
-        ...defaultSettings.externalGoslingd,
-        ...(stored.externalGoslingd ?? {}),
-      },
-      keyboardShortcuts: {
-        ...defaultSettings.keyboardShortcuts,
-        ...(stored.keyboardShortcuts ?? {}),
-      },
-    };
+    const { settings, migratedLegacyExternalBackend } = resolveStoredSettings(stored);
+    settingsCache = settings;
+    if (migratedLegacyExternalBackend) {
+      try {
+        fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+      } catch (err) {
+        console.error('Failed to persist migrated settings.json:', err);
+      }
+    }
     return settingsCache;
   }
   return defaultSettings;

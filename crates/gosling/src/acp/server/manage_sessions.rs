@@ -279,8 +279,7 @@ impl GoslingAcpAgent {
 }
 
 fn is_nostr_session_link(input: &str) -> bool {
-    let input = input.trim_start();
-    input.starts_with("gosling://sessions/nostr") || input.starts_with("gosling://sessions/nostr")
+    crate::session::nostr_share::is_session_share_deeplink(input)
 }
 
 #[cfg(feature = "nostr")]

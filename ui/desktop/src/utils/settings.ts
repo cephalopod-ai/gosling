@@ -72,6 +72,10 @@ export interface Settings {
 
 export type SettingKey = keyof Settings;
 
+export interface LegacySettings extends Partial<Settings> {
+  externalGoosed?: Partial<ExternalGoslingdConfig>;
+}
+
 export const defaultKeyboardShortcuts: DefaultKeyboardShortcuts = {
   focusWindow: 'CommandOrControl+Alt+G',
   quickLauncher: 'CommandOrControl+Alt+Shift+G',
@@ -112,6 +116,31 @@ export const defaultSettings: Settings = {
   showPricing: true,
   seenAnnouncementIds: [],
 };
+
+export function resolveStoredSettings(stored: LegacySettings): {
+  settings: Settings;
+  migratedLegacyExternalBackend: boolean;
+} {
+  const { externalGoosed, externalGoslingd, keyboardShortcuts, ...rest } = stored;
+  const migratedLegacyExternalBackend =
+    externalGoslingd === undefined && externalGoosed !== undefined;
+
+  return {
+    settings: {
+      ...defaultSettings,
+      ...rest,
+      externalGoslingd: {
+        ...defaultSettings.externalGoslingd,
+        ...(externalGoslingd ?? externalGoosed ?? {}),
+      },
+      keyboardShortcuts: {
+        ...defaultSettings.keyboardShortcuts,
+        ...(keyboardShortcuts ?? {}),
+      },
+    },
+    migratedLegacyExternalBackend,
+  };
+}
 
 export function getKeyboardShortcuts(settings: Settings): KeyboardShortcuts {
   if (!settings.keyboardShortcuts && settings.globalShortcut !== undefined) {
