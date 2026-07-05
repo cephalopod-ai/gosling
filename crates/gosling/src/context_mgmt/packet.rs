@@ -84,6 +84,13 @@ pub struct ContextPacketMetadata {
     /// the only [`super::memory::MemorySource`] is the no-op one; a real
     /// backend flips this by returning items from `retrieve`.
     pub retrieved_memory_empty: bool,
+    /// Blocks that got the naive truncation-stub summary because no cached
+    /// digest was available for them (see [`super::summarizer`]). Excluded
+    /// from the packet's own JSON telemetry (it can carry the full raw
+    /// text of the summarized blocks); callers that want a better digest
+    /// dispatch the summarizer worker over these.
+    #[serde(skip)]
+    pub pending_summaries: Vec<super::summarizer::PendingSummary>,
 }
 
 /// The assembled, inspectable input to a provider call.
@@ -99,11 +106,23 @@ const SUMMARY_PREVIEW_CHARS: usize = 600;
 const RETRIEVED_MEMORY_HEADER: &str = "[Retrieved memory — context recalled from earlier work. \
      Treat as background; the conversation below takes precedence.]";
 
+/// Renders `blocks` into a single summary block. If the summarizer worker
+/// (see [`super::summarizer`]) has already produced a digest for this exact
+/// content, that replaces the naive front-truncation stub; otherwise the
+/// truncation stub is used (as before) and the block's rendered text is
+/// returned as a [`super::summarizer::PendingSummary`] for the caller to
+/// dispatch the worker on. The cache is only ever populated in
+/// `GOSLING_SUMMARIZER=on`, so this always falls back to the truncation stub
+/// — unchanged from Slice 1 — when the summarizer is off or in shadow mode.
 fn summarize_group(
     slot: ContextSlot,
     blocks: &[ContextBlock],
     token_counter: &TokenCounter,
-) -> (ContextBlock, ContextSummaryRecord) {
+) -> (
+    ContextBlock,
+    ContextSummaryRecord,
+    Option<super::summarizer::PendingSummary>,
+) {
     let original_message_count: usize = blocks.iter().map(|b| b.messages.len()).sum();
     let original_tokens: usize = blocks.iter().map(|b| b.estimated_tokens).sum();
 
@@ -113,16 +132,35 @@ fn summarize_group(
         .map(super::format_message_for_compacting)
         .collect();
     let joined = rendered.join("\n");
-    let mut chars = joined.chars();
-    let preview: String = chars.by_ref().take(SUMMARY_PREVIEW_CHARS).collect();
-    let truncated = chars.next().is_some();
+    let cache_key = super::summarizer::cache_key_for(&joined);
 
-    let summary_text = format!(
-        "[Context Manager summary of {} earlier message(s)]: {}{}",
-        original_message_count,
-        preview,
-        if truncated { " ... [truncated]" } else { "" }
-    );
+    let (summary_text, pending) = match super::summarizer::cached_digest(cache_key) {
+        Some(digest) => (
+            format!(
+                "[Context Manager summary of {} earlier message(s)]: {}",
+                original_message_count, digest.summary
+            ),
+            None,
+        ),
+        None => {
+            let mut chars = joined.chars();
+            let preview: String = chars.by_ref().take(SUMMARY_PREVIEW_CHARS).collect();
+            let truncated = chars.next().is_some();
+            let text = format!(
+                "[Context Manager summary of {} earlier message(s)]: {}{}",
+                original_message_count,
+                preview,
+                if truncated { " ... [truncated]" } else { "" }
+            );
+            let pending = super::summarizer::PendingSummary {
+                slot,
+                cache_key,
+                text: joined,
+                message_count: original_message_count,
+            };
+            (text, Some(pending))
+        }
+    };
 
     let summary_tokens = token_counter.count_tokens(&summary_text);
     let message = Message::user()
@@ -144,7 +182,7 @@ fn summarize_group(
         summary_tokens,
     };
 
-    (block, record)
+    (block, record, pending)
 }
 
 /// Collapses a contiguous run of same-slot `Medium` blocks into a single
@@ -154,13 +192,17 @@ fn flush_medium_run(
     run: &mut Vec<ContextBlock>,
     result: &mut Vec<ContextBlock>,
     summarized_blocks: &mut Vec<ContextSummaryRecord>,
+    pending_summaries: &mut Vec<super::summarizer::PendingSummary>,
     token_counter: &TokenCounter,
 ) {
     let Some(first) = run.first() else {
         return;
     };
-    let (summary, record) = summarize_group(first.slot, run, token_counter);
+    let (summary, record, pending) = summarize_group(first.slot, run, token_counter);
     summarized_blocks.push(record);
+    if let Some(pending) = pending {
+        pending_summaries.push(pending);
+    }
     result.push(summary);
     run.clear();
 }
@@ -201,7 +243,8 @@ impl ContextManager {
             + token_counter.count_chat_tokens("", &conversation_messages, &[]);
 
         let policy = ContextBudgetPolicy::new(context_limit, reserved_response_tokens);
-        let mut blocks = selector::classify_blocks(&conversation_messages, token_counter);
+        let mut blocks =
+            selector::classify_blocks(&conversation_messages, token_counter, context_limit);
 
         // Unconditionally drop clearly low-value blocks (duplicates, stale
         // failed attempts) — these never add value regardless of budget.
@@ -293,6 +336,7 @@ impl ContextManager {
             .sum();
 
         let mut summarized_blocks = Vec::new();
+        let mut pending_summaries = Vec::new();
         let mut strategy = ContextStrategy::FullContext;
 
         let final_blocks: Vec<ContextBlock> = if candidate_tokens <= available {
@@ -318,16 +362,29 @@ impl ContextManager {
                             &mut run,
                             &mut result,
                             &mut summarized_blocks,
+                            &mut pending_summaries,
                             token_counter,
                         );
                     }
                     run.push(block);
                 } else {
-                    flush_medium_run(&mut run, &mut result, &mut summarized_blocks, token_counter);
+                    flush_medium_run(
+                        &mut run,
+                        &mut result,
+                        &mut summarized_blocks,
+                        &mut pending_summaries,
+                        token_counter,
+                    );
                     result.push(block);
                 }
             }
-            flush_medium_run(&mut run, &mut result, &mut summarized_blocks, token_counter);
+            flush_medium_run(
+                &mut run,
+                &mut result,
+                &mut summarized_blocks,
+                &mut pending_summaries,
+                token_counter,
+            );
 
             result
         };
@@ -423,6 +480,7 @@ impl ContextManager {
                 dropped_blocks,
                 summarized_blocks,
                 retrieved_memory_empty,
+                pending_summaries,
             },
         }
     }
@@ -873,5 +931,132 @@ mod tests {
         assert_eq!(system_prompt, packet.system_prompt);
         assert_eq!(resolved_messages.len(), packet.messages.len());
         assert_ne!(system_prompt, "original system prompt");
+    }
+
+    // Summarizer worker integration: `summarize_group` consults the digest
+    // cache before falling back to the naive truncation stub. The cache is
+    // only ever populated by the summarizer worker in `on` mode, so these
+    // tests drive it directly rather than standing up a mock endpoint.
+    #[tokio::test]
+    async fn summary_uses_truncation_stub_when_no_digest_is_cached() {
+        crate::context_mgmt::summarizer::clear_cache_for_test();
+        let tc = counter().await;
+        let mut messages = Vec::new();
+        for i in 0..50 {
+            messages.push(Message::user().with_text(format!(
+                "this is a fairly long older turn number {i} with some padding text to add tokens"
+            )));
+            messages.push(Message::assistant().with_text(format!(
+                "this is a fairly long older reply number {i} with some padding text to add tokens"
+            )));
+        }
+        messages.push(Message::user().with_text("final question"));
+
+        let packet = build(&tc, "system", None, messages, 2_000, 200);
+
+        let summary_text = packet
+            .messages
+            .iter()
+            .find_map(|m| {
+                m.content.iter().find_map(|c| {
+                    c.as_text()
+                        .filter(|t| t.contains("Context Manager summary"))
+                        .map(str::to_string)
+                })
+            })
+            .expect("packet should contain a summary block");
+        assert!(
+            summary_text.contains("... [truncated]"),
+            "without a cached digest, the naive truncation stub should still be used"
+        );
+        assert!(!packet.metadata.pending_summaries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn on_mode_uses_cached_digest_in_place_of_truncation_stub() {
+        crate::context_mgmt::summarizer::clear_cache_for_test();
+        let tc = counter().await;
+        let mut messages = Vec::new();
+        for i in 0..50 {
+            messages.push(Message::user().with_text(format!(
+                "this is a distinctive older turn number {i} mentioning gosling.toml padding text"
+            )));
+            messages.push(Message::assistant().with_text(format!(
+                "this is a distinctive older reply number {i} mentioning gosling.toml padding text"
+            )));
+        }
+        messages.push(Message::user().with_text("final question"));
+
+        // First build (nothing cached yet) discovers the cache key the
+        // deterministic path would use for this exact block of text — the
+        // same key the summarizer worker would compute and store under in
+        // `on` mode after this packet goes out.
+        let first_packet = build(&tc, "system", None, messages.clone(), 2_000, 200);
+        let pending = first_packet
+            .metadata
+            .pending_summaries
+            .first()
+            .expect("long older conversation should need summarizing")
+            .clone();
+
+        crate::context_mgmt::summarizer::store_digest_for_test(
+            pending.cache_key,
+            "A faithful digest preserving gosling.toml and the UUIDv7 key decision.".to_string(),
+        );
+
+        let second_packet = build(&tc, "system", None, messages, 2_000, 200);
+        let summary_text = second_packet
+            .messages
+            .iter()
+            .find_map(|m| {
+                m.content.iter().find_map(|c| {
+                    c.as_text()
+                        .filter(|t| t.contains("Context Manager summary"))
+                        .map(str::to_string)
+                })
+            })
+            .expect("packet should contain a summary block");
+
+        assert!(summary_text.contains("A faithful digest preserving gosling.toml"));
+        assert!(!summary_text.contains("... [truncated]"));
+        crate::context_mgmt::summarizer::clear_cache_for_test();
+    }
+
+    // Deterministic sub-task: RECENT_MESSAGE_WINDOW and the long-tool-output
+    // threshold scale with the provider's context limit so 128K/200K/1M
+    // models don't all get squeezed to the same packet size.
+    #[tokio::test]
+    async fn packet_size_scales_with_context_limit_across_common_tiers() {
+        let tc = counter().await;
+        let mut messages = Vec::new();
+        let filler = "filler word padding text ".repeat(300);
+        for i in 0..150 {
+            messages.push(Message::user().with_text(format!("turn {i} {filler}")));
+            messages.push(Message::assistant().with_text(format!("reply {i} {filler}")));
+        }
+        messages.push(Message::user().with_text("final question"));
+
+        let packet_128k = build(&tc, "system", None, messages.clone(), 128_000, 4_000);
+        let packet_200k = build(&tc, "system", None, messages.clone(), 200_000, 4_000);
+        let packet_1m = build(&tc, "system", None, messages, 1_000_000, 4_000);
+
+        assert_eq!(
+            packet_128k.metadata.strategy,
+            ContextStrategy::RecentPlusSummary,
+            "128K should still need to summarize this much history"
+        );
+        assert!(
+            packet_128k.metadata.estimated_tokens_after
+                < packet_200k.metadata.estimated_tokens_after,
+            "200K should retain more raw conversation than 128K (128K: {}, 200K: {})",
+            packet_128k.metadata.estimated_tokens_after,
+            packet_200k.metadata.estimated_tokens_after
+        );
+        assert!(
+            packet_200k.metadata.estimated_tokens_after < packet_1m.metadata.estimated_tokens_after,
+            "1M should retain more raw conversation than 200K (200K: {}, 1M: {})",
+            packet_200k.metadata.estimated_tokens_after,
+            packet_1m.metadata.estimated_tokens_after
+        );
     }
 }

@@ -55,6 +55,17 @@ impl MemorySource for NoopMemorySource {
     }
 }
 
+/// Resolves the memories file path from `GOSLING_MEMORY_FILE` (env or
+/// config), falling back to `memories.jsonl` in the gosling config dir.
+/// Shared by [`FileMemorySource::from_config`] (the read side) and the
+/// summarizer's writer (the write side) so both agree on one location.
+pub fn memories_file_path() -> PathBuf {
+    Config::global()
+        .get_param::<String>("GOSLING_MEMORY_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| Paths::in_config_dir("memories.jsonl"))
+}
+
 /// Cap on recalled items per call, applied before the packet's token budget.
 /// Keeps a huge memory file from turning every retrieval into a large sort
 /// result the packet then has to throw away.
@@ -98,11 +109,7 @@ impl FileMemorySource {
     /// Resolves the memory file from `GOSLING_MEMORY_FILE` (env or config),
     /// falling back to `memories.jsonl` in the gosling config dir.
     pub fn from_config() -> Self {
-        let path = Config::global()
-            .get_param::<String>("GOSLING_MEMORY_FILE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| Paths::in_config_dir("memories.jsonl"));
-        Self::new(path)
+        Self::new(memories_file_path())
     }
 
     fn load(&self) -> Vec<StoredMemory> {

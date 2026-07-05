@@ -8,7 +8,7 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::token_counter::TokenCounter;
 
 use super::block::{ContextBlock, ContextPriority, ContextSlot};
-use super::policy::{LONG_TOOL_OUTPUT_TOKEN_THRESHOLD, RECENT_MESSAGE_WINDOW};
+use super::policy::{long_tool_output_threshold_for, recent_message_window_for};
 
 fn message_estimated_tokens(msg: &Message, token_counter: &TokenCounter) -> usize {
     token_counter.count_chat_tokens("", std::slice::from_ref(msg), &[])
@@ -63,7 +63,17 @@ fn tool_response_failed(msg: &Message) -> bool {
 /// in which case it's `Low` priority (droppable).
 ///
 /// The returned blocks are in chronological order.
-pub fn classify_blocks(messages: &[Message], token_counter: &TokenCounter) -> Vec<ContextBlock> {
+///
+/// `context_limit` scales the recent-message window and long-tool-output
+/// threshold (see [`recent_message_window_for`] and
+/// [`long_tool_output_threshold_for`]) so large-context models keep
+/// proportionally more raw conversation before older turns become
+/// summarization candidates.
+pub fn classify_blocks(
+    messages: &[Message],
+    token_counter: &TokenCounter,
+    context_limit: usize,
+) -> Vec<ContextBlock> {
     let indexed: Vec<&Message> = messages.iter().filter(|m| m.is_agent_visible()).collect();
     if indexed.is_empty() {
         return Vec::new();
@@ -82,8 +92,9 @@ pub fn classify_blocks(messages: &[Message], token_counter: &TokenCounter) -> Ve
         }
     }
 
+    let long_tool_output_threshold = long_tool_output_threshold_for(context_limit);
     let mut blocks = Vec::with_capacity(indexed.len());
-    let mut recent_window_remaining = RECENT_MESSAGE_WINDOW;
+    let mut recent_window_remaining = recent_message_window_for(context_limit);
 
     for pos in (0..=last_pos).rev() {
         let msg = indexed[pos];
@@ -110,6 +121,7 @@ pub fn classify_blocks(messages: &[Message], token_counter: &TokenCounter) -> Ve
                     is_tool_content,
                     estimated_tokens,
                     &mut recent_window_remaining,
+                    long_tool_output_threshold,
                 )
             }
         } else {
@@ -118,6 +130,7 @@ pub fn classify_blocks(messages: &[Message], token_counter: &TokenCounter) -> Ve
                 is_tool_content,
                 estimated_tokens,
                 &mut recent_window_remaining,
+                long_tool_output_threshold,
             )
         };
 
@@ -211,6 +224,7 @@ fn classify_non_duplicate(
     is_tool_content: bool,
     estimated_tokens: usize,
     recent_window_remaining: &mut usize,
+    long_tool_output_threshold: usize,
 ) -> (ContextPriority, ContextSlot, Option<String>) {
     if tool_response_failed(msg) {
         return (
@@ -222,7 +236,7 @@ fn classify_non_duplicate(
 
     if *recent_window_remaining > 0 {
         *recent_window_remaining -= 1;
-        if is_tool_content && estimated_tokens > LONG_TOOL_OUTPUT_TOKEN_THRESHOLD {
+        if is_tool_content && estimated_tokens > long_tool_output_threshold {
             return (
                 ContextPriority::Medium,
                 ContextSlot::SummarizedToolResults,
@@ -255,6 +269,7 @@ fn classify_non_duplicate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context_mgmt::policy::{BASELINE_CONTEXT_LIMIT, RECENT_MESSAGE_WINDOW};
     use crate::token_counter::create_token_counter;
     use rmcp::model::{AnnotateAble, CallToolRequestParams};
 
@@ -270,7 +285,7 @@ mod tests {
             Message::assistant().with_text("hi there"),
             Message::user().with_text("what's next?"),
         ];
-        let blocks = classify_blocks(&messages, &tc);
+        let blocks = classify_blocks(&messages, &tc, BASELINE_CONTEXT_LIMIT);
 
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[2].priority, ContextPriority::Required);
@@ -288,7 +303,7 @@ mod tests {
             Message::assistant()
                 .with_tool_request("call1", Ok(CallToolRequestParams::new("read_file"))),
         ];
-        let blocks = classify_blocks(&messages, &tc);
+        let blocks = classify_blocks(&messages, &tc, BASELINE_CONTEXT_LIMIT);
 
         assert!(blocks
             .iter()
@@ -319,7 +334,7 @@ mod tests {
             ),
             Message::user().with_text("thanks"),
         ];
-        let blocks = classify_blocks(&messages, &tc);
+        let blocks = classify_blocks(&messages, &tc, BASELINE_CONTEXT_LIMIT);
 
         let duplicate = blocks
             .iter()
@@ -372,7 +387,7 @@ mod tests {
             Message::assistant().with_text("that failed, trying something else"),
             Message::user().with_text("ok, thanks"),
         ];
-        let blocks = classify_blocks(&messages, &tc);
+        let blocks = classify_blocks(&messages, &tc, BASELINE_CONTEXT_LIMIT);
 
         let low_failed: Vec<_> = blocks
             .iter()
@@ -406,7 +421,7 @@ mod tests {
             Message::assistant().with_text("that failed"),
             Message::user().with_text("ok"),
         ];
-        let blocks = classify_blocks(&messages, &tc);
+        let blocks = classify_blocks(&messages, &tc, BASELINE_CONTEXT_LIMIT);
 
         let request_block = blocks
             .iter()
@@ -442,7 +457,7 @@ mod tests {
             Message::assistant().with_text("that failed, trying something else"),
             Message::user().with_text("ok, thanks"),
         ];
-        let blocks = classify_blocks(&messages, &tc);
+        let blocks = classify_blocks(&messages, &tc, BASELINE_CONTEXT_LIMIT);
 
         let failed = blocks
             .iter()
@@ -459,11 +474,42 @@ mod tests {
             messages.push(Message::assistant().with_text(format!("reply {i}")));
         }
         messages.push(Message::user().with_text("final question"));
-        let blocks = classify_blocks(&messages, &tc);
+        let blocks = classify_blocks(&messages, &tc, BASELINE_CONTEXT_LIMIT);
 
         assert!(blocks.iter().any(|b| b.priority == ContextPriority::Medium
             && b.reason.as_deref() == Some("older_conversation")));
         assert!(blocks.iter().any(|b| b.priority == ContextPriority::High));
         assert_eq!(blocks.last().unwrap().priority, ContextPriority::Required);
+    }
+
+    // Deterministic sub-task: the recent-message window scales with the
+    // provider's context limit, so a 200K or 1M model keeps proportionally
+    // more raw conversation as `High` priority before older turns become
+    // summarization candidates, instead of every model being squeezed to
+    // the same fixed 10-message window.
+    #[tokio::test]
+    async fn recent_window_scales_with_context_limit_across_common_tiers() {
+        let tc = counter().await;
+        let mut messages = Vec::new();
+        for i in 0..100 {
+            messages.push(Message::user().with_text(format!("turn {i}")));
+            messages.push(Message::assistant().with_text(format!("reply {i}")));
+        }
+        messages.push(Message::user().with_text("final question"));
+
+        let high_priority_count = |context_limit: usize| {
+            classify_blocks(&messages, &tc, context_limit)
+                .iter()
+                .filter(|b| b.priority == ContextPriority::High)
+                .count()
+        };
+
+        let count_128k = high_priority_count(128_000);
+        let count_200k = high_priority_count(200_000);
+        let count_1m = high_priority_count(1_000_000);
+
+        assert_eq!(count_128k, RECENT_MESSAGE_WINDOW);
+        assert!(count_200k > count_128k);
+        assert!(count_1m > count_200k);
     }
 }
