@@ -13,7 +13,7 @@ function unregisterAllProtocolHandlers() {
   console.log('Unregistering ALL gosling:// protocol handlers...');
   
   try {
-    // Get all registered Goose apps
+    // Get all registered Gosling apps
     console.log('Finding all registered Gosling applications...');
     const lsregisterOutput = execSync(`/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -dump | grep -B 10 -A 10 "claimed schemes:.*${PROTOCOL}:"`, { encoding: 'utf8' });
     

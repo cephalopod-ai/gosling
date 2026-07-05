@@ -61,6 +61,7 @@ do_not_version/
 /temporal.db
 /ui/desktop/src/bin/gosling-scheduler-executor
 /ui/desktop/src/bin/gosling
+/ui/desktop/src/bin/goose
 /.env
 
 /working_dir
