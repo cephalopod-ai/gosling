@@ -27,8 +27,8 @@ use crate::config::permission::PermissionManager;
 use crate::config::{Config, GoslingMode};
 use crate::context_mgmt::{
     check_if_compaction_needed, compact_messages, context_manager_mode, resolve_provider_input,
-    ContextBuildRequest, ContextManager, ContextManagerMode, FileMemorySource, MemoryQuery,
-    MemorySource, DEFAULT_COMPACTION_THRESHOLD,
+    summarizer, ContextBuildRequest, ContextManager, ContextManagerMode, FileMemorySource,
+    MemoryQuery, MemorySource, SummarizerMode, DEFAULT_COMPACTION_THRESHOLD,
 };
 use crate::conversation::message::{
     ActionRequiredData, InferenceMetadata, Message, MessageContent, ProviderMetadata,
@@ -1759,6 +1759,7 @@ impl Agent {
         match ContextManager::build(request).await {
             Ok(packet) => {
                 crate::context_mgmt::telemetry::log_context_packet(mode, &packet);
+                self.maybe_dispatch_summarizer(session_id, &packet);
                 resolve_provider_input(mode, &packet, merged_system_prompt, conversation.messages())
             }
             Err(e) => {
@@ -1766,6 +1767,31 @@ impl Agent {
                 fallback()
             }
         }
+    }
+
+    /// Fires the local-LLM summarizer worker (`GOSLING_SUMMARIZER`) over any
+    /// blocks the packet just rendered with the naive truncation stub.
+    /// Spawned rather than awaited so it never sits on the critical path to
+    /// the provider call: in `on` mode, a successful run caches a better
+    /// digest for the *next* turn's packet build to pick up (see
+    /// `summarize_group` in `context_mgmt::packet`) and appends any
+    /// extracted facts to `memories.jsonl`; in `shadow` mode it only logs.
+    /// A no-op in `off` mode and whenever nothing needed summarizing.
+    fn maybe_dispatch_summarizer(
+        &self,
+        session_id: &str,
+        packet: &crate::context_mgmt::ContextPacket,
+    ) {
+        let mode = summarizer::summarizer_mode();
+        if mode == SummarizerMode::Off || packet.metadata.pending_summaries.is_empty() {
+            return;
+        }
+
+        let session_id = session_id.to_string();
+        let pending = packet.metadata.pending_summaries.clone();
+        tokio::spawn(async move {
+            summarizer::run_pending(mode, &session_id, pending).await;
+        });
     }
 
     async fn reply_internal(
