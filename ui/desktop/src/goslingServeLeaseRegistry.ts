@@ -15,6 +15,7 @@ export interface GoslingServeLease {
 }
 
 export class GoslingServeLeaseRegistry {
+  private leases = new Set<GoslingServeLease>();
   private leasesByWindowId = new Map<number, GoslingServeLease>();
 
   constructor(private readonly logger: Logger) {}
@@ -67,6 +68,7 @@ export class GoslingServeLeaseRegistry {
       markExited({ code: exitDetails.code, signal: exitDetails.signal, logUnexpected: false });
     }
 
+    this.leases.add(lease);
     return lease;
   }
 
@@ -75,7 +77,7 @@ export class GoslingServeLeaseRegistry {
     secretKey: string,
     cleanup: () => Promise<void> = async () => undefined
   ): GoslingServeLease {
-    return {
+    const lease = {
       acpUrl,
       secretKey,
       cleanup,
@@ -85,6 +87,8 @@ export class GoslingServeLeaseRegistry {
       exitCode: null,
       exitSignal: null,
     };
+    this.leases.add(lease);
+    return lease;
   }
 
   get(windowId: number): GoslingServeLease | null {
@@ -138,6 +142,7 @@ export class GoslingServeLeaseRegistry {
     }
 
     lease.cleanedUp = true;
+    this.leases.delete(lease);
     for (const windowId of lease.windowIds) {
       this.leasesByWindowId.delete(windowId);
     }
@@ -151,7 +156,7 @@ export class GoslingServeLeaseRegistry {
   }
 
   activeLeaseCount(): number {
-    return this.uniqueLeases().length;
+    return this.leases.size;
   }
 
   async cleanupAll() {
@@ -159,6 +164,6 @@ export class GoslingServeLeaseRegistry {
   }
 
   private uniqueLeases(): GoslingServeLease[] {
-    return [...new Set(this.leasesByWindowId.values())];
+    return [...this.leases];
   }
 }

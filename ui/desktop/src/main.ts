@@ -28,6 +28,7 @@ import 'dotenv/config';
 import { checkBackendStatus } from './backendStatus';
 import { startGoslingServe } from './goslingServe';
 import { GoslingServeLeaseRegistry, type GoslingServeLease } from './goslingServeLeaseRegistry';
+import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
 import { acpWebSocketUrlFromHttpBase, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde } from './utils/pathUtils';
 import log from './utils/logger';
@@ -166,6 +167,7 @@ function translateMenuLabels(items: MenuItem[]): void {
 // Settings management
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const STARTUP_LOGS_DIR = path.join(app.getPath('userData'), 'logs', 'startup');
+const BACKEND_PROCESS_REGISTRY_PATH = path.join(app.getPath('userData'), 'backend-processes.json');
 const validLanguageSettings = new Set<Settings['language']>([
   'system',
   'en',
@@ -542,64 +544,61 @@ if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
   app.setAsDefaultProtocolClient('gosling');
 }
 
-// Apply single instance lock on Windows and Linux where it's needed for deep links
-// macOS uses the 'open-url' event instead
-let gotTheLock = true;
 let openUrlHandledLaunch = false;
-if (process.platform !== 'darwin') {
-  gotTheLock = app.requestSingleInstanceLock();
+let shouldQuitForSingleInstance = false;
 
-  if (!gotTheLock) {
-    app.quit();
-  } else {
-    app.on('second-instance', (_event, commandLine) => {
-      const protocolUrl = commandLine.find((arg) => arg.startsWith('gosling://'));
-      if (protocolUrl) {
-        let parsedUrl: URL;
-        try {
-          parsedUrl = new URL(protocolUrl);
-        } catch (error) {
-          log.warn('[Main] Ignoring invalid second-instance protocol URL:', errorMessage(error));
-          return;
-        }
-        // Handle new-session URL by creating a fresh chat window
-        if (parsedUrl.hostname === 'new-session') {
-          app.whenReady().then(async () => {
-            const recentDirs = loadRecentDirs();
-            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-            const prompt = parsedUrl.searchParams.get('prompt') || undefined;
-            await createChat(app, {
-              dir: openDir || undefined,
-              initialMessage: prompt,
-              initialMessageNoAutoSubmit: prompt !== undefined,
-            });
-          });
-          return;
-        }
-
-        if (parsedUrl.hostname === 'resume') {
-          app.whenReady().then(async () => {
-            const recentDirs = loadRecentDirs();
-            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-            await createResumeChatWindow(parsedUrl, openDir || undefined);
-          });
-          return;
-        }
-
-        handleProtocolUrl(protocolUrl, parsedUrl);
-      }
-
-      const existingWindows = BrowserWindow.getAllWindows();
-      if (existingWindows.length > 0) {
-        const mainWindow = existingWindows[0];
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-        mainWindow.focus();
-      }
-    });
+function focusExistingWindow(): boolean {
+  const existingWindows = BrowserWindow.getAllWindows();
+  if (existingWindows.length === 0) {
+    return false;
   }
 
+  const mainWindow = existingWindows[0];
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  return true;
+}
+
+function handleSecondInstanceCommandLine(commandLine: string[]): void {
+  const protocolUrl = commandLine.find((arg) => arg.startsWith('gosling://'));
+  if (!protocolUrl) {
+    void app.whenReady().then(() => {
+      focusExistingWindow();
+    });
+    return;
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(protocolUrl);
+  } catch (error) {
+    log.warn('[Main] Ignoring invalid second-instance protocol URL:', errorMessage(error));
+    return;
+  }
+
+  void app.whenReady().then(async () => {
+    try {
+      await handleProtocolUrl(protocolUrl, parsedUrl);
+    } catch (error) {
+      log.error('[Main] Failed to handle second-instance protocol URL:', errorMessage(error));
+      focusExistingWindow();
+    }
+  });
+}
+
+if (!app.requestSingleInstanceLock()) {
+  shouldQuitForSingleInstance = true;
+  app.quit();
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    handleSecondInstanceCommandLine(commandLine);
+  });
+}
+
+if (process.platform !== 'darwin') {
   // Handle protocol URLs on Windows and Linux startup
   const protocolUrl = process.argv.find((arg) => arg.startsWith('gosling://'));
   if (protocolUrl) {
@@ -1206,6 +1205,7 @@ const createChat = async (
         resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
         logger: log,
         diagnosticsDir: STARTUP_LOGS_DIR,
+        processRegistryPath: BACKEND_PROCESS_REGISTRY_PATH,
         readinessFetch: globalThis.fetch,
         usePinnedTlsReadiness: useLocalBackendTls,
       });
@@ -2402,10 +2402,20 @@ const registerGlobalShortcuts = () => {
 };
 
 async function appMain() {
+  if (shouldQuitForSingleInstance) {
+    return;
+  }
+
   await configureProxy();
 
   // Ensure Windows shims are available before any MCP processes are spawned
   await ensureWinShims();
+
+  try {
+    await cleanupRecordedBackendProcesses(BACKEND_PROCESS_REGISTRY_PATH, log);
+  } catch (error) {
+    log.error('Failed to clean up stale gosling serve processes:', error);
+  }
 
   registerUpdateIpcHandlers();
 
@@ -2940,7 +2950,7 @@ async function appMain() {
   // Handle app restart
   ipcMain.on('restart-app', () => {
     app.relaunch();
-    app.exit(0);
+    app.quit();
   });
 
   // Handler for getting app version
@@ -3001,11 +3011,20 @@ async function getAllowList(): Promise<string[]> {
   }
 }
 
-app.on('will-quit', async () => {
+let shutdownCleanupPromise: Promise<void> | null = null;
+let shutdownCleanupComplete = false;
+
+async function runShutdownCleanup(): Promise<void> {
   const goslingServeLeaseCount = goslingServeLeases.activeLeaseCount();
   if (goslingServeLeaseCount > 0) {
     log.info(`App quitting, cleaning up ${goslingServeLeaseCount} backend lease(s)`);
     await goslingServeLeases.cleanupAll();
+  }
+
+  try {
+    await cleanupRecordedBackendProcesses(BACKEND_PROCESS_REGISTRY_PATH, log);
+  } catch (error) {
+    log.error('Failed to clean up recorded gosling serve processes during quit:', error);
   }
 
   for (const [windowId, blockerId] of windowPowerSaveBlockers.entries()) {
@@ -3024,7 +3043,26 @@ app.on('will-quit', async () => {
   windowPowerSaveBlockers.clear();
 
   globalShortcut.unregisterAll();
-});
+}
+
+function scheduleShutdownCleanup(event: { preventDefault: () => void }): void {
+  if (shutdownCleanupComplete) {
+    return;
+  }
+
+  event.preventDefault();
+  if (!shutdownCleanupPromise) {
+    shutdownCleanupPromise = runShutdownCleanup();
+  }
+
+  void shutdownCleanupPromise.finally(() => {
+    shutdownCleanupComplete = true;
+    app.exit(0);
+  });
+}
+
+app.on('before-quit', scheduleShutdownCleanup);
+app.on('will-quit', scheduleShutdownCleanup);
 
 app.on('window-all-closed', () => {
   // Only quit if we're not on macOS or don't have a tray icon

@@ -93,9 +93,24 @@ describe('GoslingServeLeaseRegistry', () => {
     expect(store.getSecretKey(2)).toBeNull();
   });
 
+  it('cleans up leases that were created but never attached to a window', async () => {
+    const cleanup = vi.fn(async () => undefined);
+    const store = new GoslingServeLeaseRegistry(createLogger());
+
+    store.create(createGoslingServeResult({ cleanup }), 'local-secret');
+
+    expect(store.activeLeaseCount()).toBe(1);
+    await store.cleanupAll();
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(store.activeLeaseCount()).toBe(0);
+  });
+
   it('creates an external ACP lease without process cleanup', async () => {
     const store = new GoslingServeLeaseRegistry(createLogger());
-    const lease = store.createExternal('wss://example.com/gosling/acp?token=test', 'external-secret');
+    const lease = store.createExternal(
+      'wss://example.com/gosling/acp?token=test',
+      'external-secret'
+    );
 
     store.attachWindow(1, lease);
 

@@ -10,6 +10,7 @@ import {
   createGoslingServeStartupDiagnostics,
   type GoslingServeStartupDiagnostics,
 } from './startupDiagnostics';
+import { registerBackendProcess, unregisterBackendProcess } from './backendProcessRegistry';
 
 export interface Logger {
   info: (...args: unknown[]) => void;
@@ -37,6 +38,7 @@ export interface StartGoslingServeOptions extends FindGoslingBinaryOptions {
   env?: Record<string, string | undefined>;
   logger?: Logger;
   diagnosticsDir?: string;
+  processRegistryPath?: string;
   readinessFetch?: ReadinessFetch;
   usePinnedTlsReadiness?: boolean;
 }
@@ -390,6 +392,7 @@ export const startGoslingServe = async ({
   resourcesPath,
   logger = defaultLogger,
   diagnosticsDir,
+  processRegistryPath,
   readinessFetch = fetch,
   usePinnedTlsReadiness = false,
 }: StartGoslingServeOptions): Promise<GoslingServeResult> => {
@@ -465,6 +468,36 @@ export const startGoslingServe = async ({
   if (startupTrace) {
     startupTrace.diagnostics.pid = goslingProcess.pid ?? null;
     startupTrace.record('spawn_success', { pid: goslingProcess.pid ?? null });
+  }
+
+  let unregisterProcessRecordPromise: Promise<void> | null = null;
+  const unregisterTrackedProcess = async () => {
+    if (!processRegistryPath || !goslingProcess.pid) {
+      return;
+    }
+    unregisterProcessRecordPromise ??= unregisterBackendProcess(
+      processRegistryPath,
+      goslingProcess.pid
+    ).catch((error) => {
+      logger.error('Failed to unregister gosling serve process:', error);
+    });
+    await unregisterProcessRecordPromise;
+  };
+
+  if (processRegistryPath && goslingProcess.pid) {
+    try {
+      await registerBackendProcess(processRegistryPath, {
+        pid: goslingProcess.pid,
+        parentPid: process.pid,
+        binaryPath: goslingPath,
+        args,
+        workingDir,
+        startedAt: new Date().toISOString(),
+      });
+      startupTrace?.record('process_registry_recorded', { pid: goslingProcess.pid });
+    } catch (error) {
+      logger.error('Failed to register gosling serve process:', error);
+    }
   }
 
   let exited = false;
@@ -551,6 +584,7 @@ export const startGoslingServe = async ({
       startupTrace.record('child_exit', { code, signal });
     }
     resolveFingerprint(null);
+    void unregisterTrackedProcess();
   });
 
   goslingProcess.on('error', (error) => {
@@ -561,7 +595,7 @@ export const startGoslingServe = async ({
   });
 
   const cleanup = async (): Promise<void> => {
-    return new Promise<void>((resolve) => {
+    await new Promise<void>((resolve) => {
       if (exited || goslingProcess.killed) {
         resolve();
         return;
@@ -597,6 +631,7 @@ export const startGoslingServe = async ({
         finish();
       }, 5000);
     });
+    await unregisterTrackedProcess();
   };
 
   const stopOutputCollection = () => {

@@ -158,6 +158,42 @@ describe('startGoslingServe', () => {
     }
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'records and unregisters the launched backend process',
+    async () => {
+      const tempDir = makeTempDir();
+      const processRegistryPath = path.join(tempDir, 'backend-processes.json');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        '#!/usr/bin/env sh\nwhile true; do sleep 1; done\n'
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        processRegistryPath,
+        readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+      });
+
+      try {
+        const registry = JSON.parse(fs.readFileSync(processRegistryPath, 'utf8'));
+        expect(registry.processes).toHaveLength(1);
+        expect(registry.processes[0]).toMatchObject({
+          pid: result.process.pid,
+          binaryPath: goslingPath,
+          args: expect.arrayContaining(['serve', '--platform', 'desktop']),
+          workingDir: tempDir,
+        });
+      } finally {
+        await result.cleanup();
+      }
+
+      const registryAfterCleanup = JSON.parse(fs.readFileSync(processRegistryPath, 'utf8'));
+      expect(registryAfterCleanup.processes).toEqual([]);
+    }
+  );
+
   it.skipIf(process.platform === 'win32')('captures the TLS fingerprint from stdout', async () => {
     const tempDir = makeTempDir();
     const goslingPath = makeExecutable(
@@ -202,51 +238,54 @@ describe('startGoslingServe', () => {
     }
   });
 
-  it.skipIf(process.platform === 'win32')('uses TLS URLs and args when TLS is enabled', async () => {
-    const tempDir = makeTempDir();
-    const argsPath = path.join(tempDir, 'args.txt');
-    const goslingPath = makeExecutable(
-      path.join(tempDir, 'gosling'),
-      [
-        '#!/usr/bin/env sh',
-        'printf "%s\\n" "$@" > "$TEST_ARGS_PATH"',
-        'printf "GOSLINGD_CERT_FINGERPRINT=DD:EE:FF\\n"',
-        'while true; do sleep 1; done',
-        '',
-      ].join('\n')
-    );
-    vi.stubEnv('GOSLING_BINARY', goslingPath);
+  it.skipIf(process.platform === 'win32')(
+    'uses TLS URLs and args when TLS is enabled',
+    async () => {
+      const tempDir = makeTempDir();
+      const argsPath = path.join(tempDir, 'args.txt');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        [
+          '#!/usr/bin/env sh',
+          'printf "%s\\n" "$@" > "$TEST_ARGS_PATH"',
+          'printf "GOSLINGD_CERT_FINGERPRINT=DD:EE:FF\\n"',
+          'while true; do sleep 1; done',
+          '',
+        ].join('\n')
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
 
-    const readinessUrls: string[] = [];
-    const logger = {
-      info: vi.fn(),
-      error: vi.fn(),
-    };
-    const readinessFetch = vi.fn(async (input: string, _init?: ReadinessFetchInit) => {
-      readinessUrls.push(input);
-      return new Response(null, { status: 200 });
-    });
+      const readinessUrls: string[] = [];
+      const logger = {
+        info: vi.fn(),
+        error: vi.fn(),
+      };
+      const readinessFetch = vi.fn(async (input: string, _init?: ReadinessFetchInit) => {
+        readinessUrls.push(input);
+        return new Response(null, { status: 200 });
+      });
 
-    const result = await startGoslingServe({
-      serverSecret: 'test-secret',
-      dir: tempDir,
-      tls: true,
-      env: {
-        TEST_ARGS_PATH: argsPath,
-      },
-      logger,
-      readinessFetch,
-    });
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        tls: true,
+        env: {
+          TEST_ARGS_PATH: argsPath,
+        },
+        logger,
+        readinessFetch,
+      });
 
-    try {
-      expect(readinessUrls[0]).toMatch(/^https:\/\/127\.0\.0\.1:\d+\/status$/);
-      expect(result.acpUrl).toMatch(/^wss:\/\/127\.0\.0\.1:\d+\/acp\?token=test-secret$/);
-      expect(result.certFingerprint).toBe('DD:EE:FF');
-      await expect(waitForFileLines(argsPath)).resolves.toContain('--tls');
-    } finally {
-      await result.cleanup();
+      try {
+        expect(readinessUrls[0]).toMatch(/^https:\/\/127\.0\.0\.1:\d+\/status$/);
+        expect(result.acpUrl).toMatch(/^wss:\/\/127\.0\.0\.1:\d+\/acp\?token=test-secret$/);
+        expect(result.certFingerprint).toBe('DD:EE:FF');
+        await expect(waitForFileLines(argsPath)).resolves.toContain('--tls');
+      } finally {
+        await result.cleanup();
+      }
     }
-  });
+  );
 
   it.skipIf(process.platform === 'win32')('allows the packaged file origin', async () => {
     const tempDir = makeTempDir();
@@ -285,34 +324,37 @@ describe('startGoslingServe', () => {
     }
   });
 
-  it.skipIf(process.platform === 'win32')('waits for TLS fingerprint after readiness succeeds', async () => {
-    const tempDir = makeTempDir();
-    const goslingPath = makeExecutable(
-      path.join(tempDir, 'gosling'),
-      [
-        '#!/usr/bin/env sh',
-        'sleep 0.1',
-        'printf "GOSLINGD_CERT_FINGERPRINT=11:22:33\\n"',
-        'while true; do sleep 1; done',
-        '',
-      ].join('\n')
-    );
-    vi.stubEnv('GOSLING_BINARY', goslingPath);
+  it.skipIf(process.platform === 'win32')(
+    'waits for TLS fingerprint after readiness succeeds',
+    async () => {
+      const tempDir = makeTempDir();
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        [
+          '#!/usr/bin/env sh',
+          'sleep 0.1',
+          'printf "GOSLINGD_CERT_FINGERPRINT=11:22:33\\n"',
+          'while true; do sleep 1; done',
+          '',
+        ].join('\n')
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
 
-    const readinessFetch = vi.fn(async () => new Response(null, { status: 200 }));
+      const readinessFetch = vi.fn(async () => new Response(null, { status: 200 }));
 
-    const result = await startGoslingServe({
-      serverSecret: 'test-secret',
-      dir: tempDir,
-      tls: true,
-      readinessFetch,
-    });
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        tls: true,
+        readinessFetch,
+      });
 
-    try {
-      expect(readinessFetch).toHaveBeenCalled();
-      expect(result.certFingerprint).toBe('11:22:33');
-    } finally {
-      await result.cleanup();
+      try {
+        expect(readinessFetch).toHaveBeenCalled();
+        expect(result.certFingerprint).toBe('11:22:33');
+      } finally {
+        await result.cleanup();
+      }
     }
-  });
+  );
 });
