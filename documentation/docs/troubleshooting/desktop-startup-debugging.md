@@ -19,16 +19,16 @@ Typical locations:
 The files are named like:
 
 ```text
-goslingd-startup-2026-04-21T01-24-03.149Z-23416.json
+gosling-serve-startup-2026-07-06T10-55-30.989Z-76442.json
 ```
 
-If several files exist, use the newest one.
+If several files exist, use the newest one. Older Gosling builds may also leave files named `goslingd-startup-*.json`; include the newest `gosling-serve-startup-*.json` file when available.
 
 ## What To Share
 
 When reporting a desktop startup failure, share:
 
-- the newest `goslingd-startup-*.json`
+- the newest `gosling-serve-startup-*.json`
 - your gosling version
 - your operating system and version
 
@@ -46,7 +46,7 @@ Look for a `Report.wer` related to `goslingd.exe`.
 
 If you are filing a GitHub issue or asking for support, this is usually enough:
 
-- the newest `goslingd-startup-*.json`
+- the newest `gosling-serve-startup-*.json`
 - your gosling version
 - your operating system and version
 - on Windows, `Report.wer` for `goslingd.exe` if Windows created one

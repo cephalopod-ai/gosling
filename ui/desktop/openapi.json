@@ -6,7 +6,7 @@
     "license": {
       "name": "Apache-2.0"
     },
-    "version": "0.0.5"
+    "version": "0.0.6"
   },
   "paths": {
     "/action-required/tool-confirmation": {

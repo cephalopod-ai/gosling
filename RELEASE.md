@@ -4,6 +4,26 @@ You'll generally create one of two release types: a regular feature release (min
 
 gosling uses GitHub actions to automate the release process. The actual releases are triggered by tags.
 
+## Current release target
+
+The current release target is **v0.0.6**.
+
+Release theme:
+- Desktop startup, shutdown, and backend process cleanup hardening
+- Packaged desktop local ACP connectivity fixes
+- Local summarizer, memory, and compacted-session resume improvements
+- Code execution runtime configuration
+- MCP app proxy, ACP, and generated SDK/OpenAPI updates
+- Goose compatibility documentation and adapters
+- Security hardening around permissions, tool inspection, plugin clone handling, providers, and secret writes
+
+Before tagging v0.0.6, keep these version surfaces aligned:
+- `Cargo.toml` workspace package version
+- workspace package entries in `Cargo.lock`
+- `ui/desktop/package.json`
+- `ui/desktop/openapi.json` `info.version`
+- root README and docs release notes
+
 ## Minor version releases
 
 These are typically done once per week. The process has two automated phases:

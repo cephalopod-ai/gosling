@@ -17,6 +17,7 @@ This file is the durable map for the repository's documentation surface.
 - [getting started](./docs/getting-started/)
 - [guides](./docs/guides/)
 - [troubleshooting](./docs/troubleshooting/)
+- [release notes](./docs/release-notes/)
 - [tutorials](./docs/tutorials/)
 - [experimental](./docs/experimental/)
 - [mcp catalog](./docs/mcp/)

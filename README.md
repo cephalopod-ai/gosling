@@ -20,7 +20,7 @@ gosling works with 15+ providers — Anthropic, OpenAI, Google, Ollama, OpenRout
 
 ## Provenance
 
-gosling **v0.0.5** is a fork of [goose](https://github.com/aaif-goose/goose) **v1.38**, the open source AI agent from the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation. All credit for the underlying agent framework goes to the goose project and its contributors. gosling is licensed under the same Apache 2.0 license and is not endorsed by or affiliated with the goose project or AAIF.
+gosling **v0.0.6** is a fork of [goose](https://github.com/aaif-goose/goose) **v1.38**, the open source AI agent from the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation. All credit for the underlying agent framework goes to the goose project and its contributors. gosling is licensed under the same Apache 2.0 license and is not endorsed by or affiliated with the goose project or AAIF.
 
 ## Vision
 
@@ -28,7 +28,7 @@ gosling aims to be a **lighter version of goose**: the same trusted agent core w
 
 ## Footprint & performance vs. goose
 
-Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), same host, matched Cargo feature flags (`code-mode` excluded from both — its `v8-goose` static-lib download is blocked by this environment's network policy, symmetrically for both builds).
+Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), same host, matched Cargo feature flags (`code-mode` excluded from both — its `v8-goose` static-lib download is blocked by this environment's network policy, symmetrically for both builds). v0.0.6 preserves the same lightweight direction while adding reliability and security hardening; rerun these measurements before publishing new v0.0.6 performance deltas.
 
 | | goose | gosling | Δ |
 |---|---|---|---|
@@ -57,7 +57,7 @@ In addition to footprint reduction, Gosling implements several targeted performa
 
 ### Key Security Hardening
 
-Comparing `gosling` v0.0.5 against `goose` v1.41.0, Gosling implements several safety and security hardening improvements:
+Comparing `gosling` v0.0.6 against `goose` v1.41.0, Gosling implements several safety and security hardening improvements:
 
 * **Fail-Closed Tool Inspection**: In upstream, if a tool inspector encountered an error (e.g., timeout, network issue, or internal error), it logged the error and allowed the loop to continue. Because the permission baseline in auto-approval mode is `Allow`, a failing safety inspector would silently let tools execute ungated. Gosling fixes this by synthesizing a `RequireApproval` safety action when a tool inspector fails, forcing execution to halt for manual human approval.
 * **Confined MCP Cache & Memory Tool Paths (Directory Traversal Hardening)**: 
@@ -67,6 +67,7 @@ Comparing `gosling` v0.0.5 against `goose` v1.41.0, Gosling implements several s
   - Enforces safe file permissions (`0o600`) for token and session files containing sensitive API keys and OAuth tokens.
   - Restricts the session database directory (`sessions.db` along with SQLite `-wal` and `-shm` sidecar files) to owner-only access (`0o700`), keeping conversation history and echoed secrets protected from other local users.
 * **Option Injection Protection**: Added `--` end-of-options guards to `git clone` during plugin installation, preventing command/option injection attacks via malicious URL strings starting with a hyphen.
+* **Safer Defaults for Agent Execution**: Tightened default agent permissions and fail-safe paths around code execution, provider configuration, and security scanning so uncertain states move toward review instead of silent execution.
 
 ### Feature Comparison
 
@@ -82,7 +83,19 @@ Comparing `gosling` v0.0.5 against `goose` v1.41.0, Gosling implements several s
 | **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
 | **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in memory/cache extensions. |
 
-## What's new in gosling
+## What's new in gosling v0.0.6
+
+- **Desktop startup and shutdown hardening** — Gosling Desktop records backend processes it launches, checks for stale desktop backend processes on startup, and performs a closeout cleanup on quit so orphaned `gosling serve --platform desktop` processes do not survive app restarts.
+- **Single-instance desktop behavior** — macOS now participates in the same single-instance lock behavior as other platforms; second launches route protocol URLs or focus the existing window instead of creating competing desktop sessions.
+- **Packaged desktop connectivity fix** — the packaged app's static Content Security Policy now allows loopback HTTP and WebSocket connections needed for the local ACP backend.
+- **Local summarizer and memory path** — added the local LLM summarizer worker, durable file-backed facts, per-backend summarizer routing, and compacted session resume paging.
+- **Code execution runtime controls** — exposed code execution runtime configuration through CLI and desktop settings, including the V8 runtime path.
+- **MCP app proxy and ACP updates** — expanded MCP app proxy routes, custom ACP request support, generated SDK/OpenAPI types, and proxy rendering behavior.
+- **Goose compatibility docs and adapters** — added deterministic Goose compatibility support for documentation skills and catalog normalization.
+- **Security hardening** — tightened default permissions, made tool inspection fail closed, added safer plugin clone handling, bounded provider auth HTTP clients, clamped Google retry delays, and made secret writes atomic.
+- **Audit and repair records** — added cloud/audit documentation covering security, reliability, performance, dataflow, workflow, lifecycle, and repair-campaign findings.
+
+## What's new since the fork
 
 - **New name, new mark** — the goose branding has been replaced by gosling: a fresh flying-gosling logo across the desktop app, tray, docs, and installers.
 - **Runs side by side with goose** — gosling is fully deconflicted from an existing goose install:
@@ -91,7 +104,7 @@ Comparing `gosling` v0.0.5 against `goose` v1.41.0, Gosling implements several s
   - its own `gosling://` deep-link scheme (goose keeps `goose://`)
   - its own app identity (`Gosling.app` / `Gosling.exe` / `Gosling` packages) and updater feed
   - single-instance behavior is preserved per app: one running Goose and one running Gosling, each guarded by its own instance lock
-- **Provenance in the app** — Help → About shows that this is Gosling v0.0.5, a fork of goose v1.38.
+- **Provenance in the app** — Help → About shows that this is Gosling v0.0.6, a fork of goose v1.38.
 
 ## Get started
 
