@@ -119,15 +119,89 @@ fn build_outer_csp(
     )
 }
 
-/// Parse comma-separated domains, filtering out empty strings
+fn normalize_csp_source(source: &str) -> Option<String> {
+    let source = source.trim();
+    if source.is_empty()
+        || source
+            .chars()
+            .any(|c| c.is_ascii_whitespace() || matches!(c, ';' | ',' | '"' | '\''))
+    {
+        return None;
+    }
+
+    if let Some((scheme, rest)) = source.split_once("://") {
+        let scheme = scheme.to_ascii_lowercase();
+        if !matches!(scheme.as_str(), "http" | "https" | "ws" | "wss") {
+            return None;
+        }
+
+        let authority = rest.split(['/', '?', '#']).next()?;
+        if !is_valid_csp_host_source(authority) {
+            return None;
+        }
+
+        return Some(format!("{scheme}://{}", authority.to_ascii_lowercase()));
+    }
+
+    if is_valid_csp_host_source(source) {
+        return Some(source.to_ascii_lowercase());
+    }
+
+    None
+}
+
+fn is_valid_csp_host_source(source: &str) -> bool {
+    if source.is_empty() || source == "*" || source.contains('@') {
+        return false;
+    }
+
+    let (host, port) = split_host_and_port(source);
+    if host.is_empty() {
+        return false;
+    }
+    if port.is_some_and(|port| port.is_empty() || port.parse::<u16>().is_err()) {
+        return false;
+    }
+
+    let host = host.strip_prefix("*.").unwrap_or(host);
+    if host.eq_ignore_ascii_case("localhost")
+        || host.parse::<std::net::Ipv4Addr>().is_ok()
+        || host.parse::<std::net::Ipv6Addr>().is_ok()
+    {
+        return true;
+    }
+
+    !host.is_empty()
+        && host.contains('.')
+        && host
+            .split('.')
+            .all(|label| is_valid_dns_label(label) && label != "*")
+}
+
+fn split_host_and_port(source: &str) -> (&str, Option<&str>) {
+    if let Some(remainder) = source.strip_prefix('[') {
+        if let Some((host, tail)) = remainder.split_once(']') {
+            let port = tail.strip_prefix(':');
+            return (host, port);
+        }
+    }
+
+    match source.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => (host, Some(port)),
+        _ => (source, None),
+    }
+}
+
+fn is_valid_dns_label(label: &str) -> bool {
+    !label.is_empty()
+        && !label.starts_with('-')
+        && !label.ends_with('-')
+        && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 fn parse_domains(domains: Option<&String>) -> Vec<String> {
     domains
-        .map(|d| {
-            d.split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
+        .map(|d| d.split(',').filter_map(normalize_csp_source).collect())
         .unwrap_or_default()
 }
 
@@ -308,4 +382,79 @@ pub fn routes(secret_key: String) -> Router {
         .route("/mcp-app-guest", get(serve_guest_html))
         .route("/mcp-app-guest", post(store_guest_html))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_outer_csp, normalize_csp_source, parse_domains};
+
+    #[test]
+    fn normalizes_url_sources_to_origins() {
+        assert_eq!(
+            normalize_csp_source("https://cdn.example.com/assets/app.js"),
+            Some("https://cdn.example.com".to_string())
+        );
+        assert_eq!(
+            normalize_csp_source("wss://api.example.com/socket"),
+            Some("wss://api.example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn accepts_wildcard_and_host_sources() {
+        assert_eq!(
+            normalize_csp_source("https://*.cloudflare.com"),
+            Some("https://*.cloudflare.com".to_string())
+        );
+        assert_eq!(
+            normalize_csp_source("cdn.example.com"),
+            Some("cdn.example.com".to_string())
+        );
+        assert_eq!(
+            normalize_csp_source("localhost:3000"),
+            Some("localhost:3000".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_csp_sources() {
+        assert_eq!(normalize_csp_source("*"), None);
+        assert_eq!(normalize_csp_source("'unsafe-inline'"), None);
+        assert_eq!(normalize_csp_source("javascript:alert(1)"), None);
+        assert_eq!(normalize_csp_source("https://example.com;"), None);
+        assert_eq!(normalize_csp_source("https://user@example.com"), None);
+        assert_eq!(
+            normalize_csp_source("https://example.com\" autofocus"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_domains_filters_invalid_sources() {
+        let domains =
+            "https://cdn.example.com/app.js, https://*.cloudflare.com, *, cdn.example.com"
+                .to_string();
+
+        assert_eq!(
+            parse_domains(Some(&domains)),
+            vec![
+                "https://cdn.example.com".to_string(),
+                "https://*.cloudflare.com".to_string(),
+                "cdn.example.com".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn csp_omits_rejected_source_tokens() {
+        let domains = "https://cdn.example.com/app.js, *, 'unsafe-inline', javascript:alert(1), https://example.com;".to_string();
+        let resource_domains = parse_domains(Some(&domains));
+
+        let csp = build_outer_csp(&[], &resource_domains, &[], &[], &[], "'nonce-test'");
+
+        assert!(csp.contains("https://cdn.example.com"));
+        assert!(!csp.contains("javascript:"));
+        assert!(!csp.contains("https://example.com;"));
+        assert!(!csp.contains("script-src 'self' 'nonce-test' *"));
+    }
 }

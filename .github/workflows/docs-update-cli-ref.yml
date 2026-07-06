@@ -174,7 +174,11 @@ jobs:
           echo "🔍 Environment diagnostics:"
           echo "  GOSLING_PROVIDER: $GOSLING_PROVIDER"
           echo "  GOSLING_MODEL: $GOSLING_MODEL"
-          echo "  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:0:8}..." # Show first 8 chars only
+          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "  ANTHROPIC_API_KEY: configured"
+          else
+            echo "  ANTHROPIC_API_KEY: not set"
+          fi
           echo "  CLI_COMMANDS_PATH: $CLI_COMMANDS_PATH"
           echo "  HOME: $HOME"
           echo "  PATH: $PATH"

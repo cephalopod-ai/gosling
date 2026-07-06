@@ -113,7 +113,7 @@ fn filter_by_config(
                 }
             }
             None => {
-                let enabled = match plugin.scope {
+                let is_enabled = match plugin.scope {
                     PluginScope::User => true,
                     PluginScope::Project => {
                         settings_state(&plugin.name, scoped_settings) == Some(true)
@@ -122,12 +122,12 @@ fn filter_by_config(
                 entries.insert(
                     key,
                     PluginConfigEntry {
-                        enabled,
-                        trusted: plugin.scope == PluginScope::User || enabled,
+                        enabled: is_enabled,
+                        trusted: plugin.scope == PluginScope::User || is_enabled,
                     },
                 );
                 dirty = true;
-                if enabled {
+                if is_enabled {
                     enabled.push(plugin);
                 }
             }
@@ -400,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn newly_discovered_plugin_is_added_to_config_as_enabled() {
+    fn newly_discovered_project_plugin_is_added_to_config_disabled() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
@@ -409,7 +409,7 @@ mod tests {
         let config = test_config(cfg_dir.path());
 
         let found = discover_enabled_plugins_with_config(Some(project), &config);
-        assert!(found.iter().any(|p| p.name == "demo"));
+        assert!(found.iter().all(|p| p.name != "demo"));
 
         let entries: HashMap<String, PluginConfigEntry> =
             config.get_param(PLUGINS_CONFIG_KEY).unwrap();
@@ -419,10 +419,9 @@ mod tests {
             .join("demo")
             .to_string_lossy()
             .to_string();
-        assert!(
-            entries.get(&key).is_some_and(|e| e.enabled),
-            "got: {entries:?}"
-        );
+        let entry = entries.get(&key).expect("project plugin entry persisted");
+        assert!(!entry.enabled, "got: {entries:?}");
+        assert!(!entry.trusted, "got: {entries:?}");
     }
 
     #[test]
@@ -439,7 +438,13 @@ mod tests {
             .join("demo")
             .to_string_lossy()
             .to_string();
-        let entries = HashMap::from([(key, PluginConfigEntry { enabled: false })]);
+        let entries = HashMap::from([(
+            key,
+            PluginConfigEntry {
+                enabled: false,
+                trusted: false,
+            },
+        )]);
         config.set_param(PLUGINS_CONFIG_KEY, entries).unwrap();
 
         let found = discover_enabled_plugins_with_config(Some(project), &config);
@@ -463,7 +468,13 @@ mod tests {
         config
             .set_param(
                 PLUGINS_CONFIG_KEY,
-                HashMap::from([(key.clone(), PluginConfigEntry { enabled: true })]),
+                HashMap::from([(
+                    key.clone(),
+                    PluginConfigEntry {
+                        enabled: true,
+                        trusted: true,
+                    },
+                )]),
             )
             .unwrap();
 
