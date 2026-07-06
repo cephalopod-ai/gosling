@@ -4,6 +4,8 @@ const {
   normalizeMcpServer,
   normalizeServersCatalog,
   normalizeSkillsManifest,
+  convertGooseText,
+  convertGooseCommand,
 } = require("./goose-compat");
 
 describe("goose compatibility conversion", () => {
@@ -61,5 +63,31 @@ describe("goose compatibility conversion", () => {
     assert.strictEqual(manifest.skills[0].author, "gosling via goose");
     assert.strictEqual(manifest.skills[0].isCommunity, false);
     assert.strictEqual(manifest.skills[0].sourceCatalog, "goose");
+  });
+
+  test("rewrites Goose branding regardless of source casing", () => {
+    assert.strictEqual(convertGooseText("GOOSE session in progress"), "gosling session in progress");
+    assert.strictEqual(convertGooseText("Goose mcp demo"), "gosling mcp demo");
+    assert.strictEqual(convertGooseText("Visit goose://open"), "Visit gosling://open");
+    assert.strictEqual(convertGooseCommand("Goose mcp start"), "gosling mcp start");
+  });
+
+  test("drops catalog entries with a missing id and warns instead of silently discarding them", () => {
+    const originalWarn = console.warn;
+    const warnings = [];
+    console.warn = (...args) => warnings.push(args);
+
+    try {
+      const servers = normalizeServersCatalog([
+        { name: "No ID Server" },
+        { id: "ok", name: "OK Server" },
+      ]);
+
+      assert.strictEqual(servers.length, 1);
+      assert.strictEqual(servers[0].id, "ok");
+      assert.strictEqual(warnings.length, 1);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 });

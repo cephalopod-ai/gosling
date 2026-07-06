@@ -199,7 +199,7 @@ export function useChatSession({
   );
 
   const loadOlderMessages = useCallback(async () => {
-    const currentSnapshot = getCurrentSnapshot();
+    const currentSnapshot = acpChatSessionStore.getSnapshot(sessionId);
     if (
       !currentSnapshot?.historyHasMore ||
       currentSnapshot.historyLoading ||
@@ -220,8 +220,13 @@ export function useChatSession({
     } catch (error) {
       console.warn('Failed to load older session messages:', error);
       acpChatSessionActions.setHistoryPageState(sessionId, { loading: false });
+      const { toastError } = await import('../toasts');
+      toastError({
+        title: 'Failed to load older messages',
+        msg: errorMessage(error),
+      });
     }
-  }, [getCurrentSnapshot, sessionId]);
+  }, [sessionId]);
 
   const onSteerQueuedMessage = useCallback(
     async (input: UserInput): Promise<boolean> => {

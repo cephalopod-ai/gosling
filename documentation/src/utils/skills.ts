@@ -112,7 +112,10 @@ async function fetchSkillsManifest(): Promise<Skill[]> {
       const data = await response.json();
       if (!Array.isArray(data.skills) || data.skills.length === 0) continue;
 
-      return dedupeAndSortById(data.skills.map(manifest.normalize));
+      const normalized: Skill[] = dedupeAndSortById(data.skills.map(manifest.normalize));
+      if (normalized.length === 0) continue;
+
+      return normalized;
     } catch (error) {
       console.error("Error loading skills manifest:", manifest.url, error);
     }

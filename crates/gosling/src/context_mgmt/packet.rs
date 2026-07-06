@@ -939,7 +939,6 @@ mod tests {
     // tests drive it directly rather than standing up a mock endpoint.
     #[tokio::test]
     async fn summary_uses_truncation_stub_when_no_digest_is_cached() {
-        crate::context_mgmt::summarizer::clear_cache_for_test();
         let tc = counter().await;
         let mut messages = Vec::new();
         for i in 0..50 {
@@ -974,7 +973,6 @@ mod tests {
 
     #[tokio::test]
     async fn on_mode_uses_cached_digest_in_place_of_truncation_stub() {
-        crate::context_mgmt::summarizer::clear_cache_for_test();
         let tc = counter().await;
         let mut messages = Vec::new();
         for i in 0..50 {
@@ -1019,7 +1017,7 @@ mod tests {
 
         assert!(summary_text.contains("A faithful digest preserving gosling.toml"));
         assert!(!summary_text.contains("... [truncated]"));
-        crate::context_mgmt::summarizer::clear_cache_for_test();
+        crate::context_mgmt::summarizer::remove_digest_for_test(pending.cache_key);
     }
 
     // Deterministic sub-task: RECENT_MESSAGE_WINDOW and the long-tool-output

@@ -188,20 +188,23 @@ fn store_digest(key: u64, digest: CachedDigest) {
         .insert(key, digest);
 }
 
-#[cfg(test)]
-pub fn clear_cache_for_test() {
-    digest_cache()
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clear();
-}
-
 /// Test-only seam for [`super::packet`]'s tests to populate the digest cache
 /// directly, exercising "the cache already has a digest" without spinning up
 /// a mock endpoint and running the full async worker.
 #[cfg(test)]
 pub fn store_digest_for_test(key: u64, summary: String) {
     store_digest(key, CachedDigest { summary });
+}
+
+/// Test-only seam to evict a single test's own cache entry. Scoped to one
+/// `key` on purpose: a full-map clear has process-global blast radius and
+/// races other tests' cache entries in the same (parallel) test binary.
+#[cfg(test)]
+pub fn remove_digest_for_test(key: u64) {
+    digest_cache()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(&key);
 }
 
 /// Runs the summarizer worker for each pending block and, depending on
@@ -835,7 +838,6 @@ mod tests {
 
     #[tokio::test]
     async fn on_mode_self_managing_backend_routes_facts_to_durable_file_and_skips_cache() {
-        clear_cache_for_test();
         let dir = tempfile::tempdir().unwrap();
         let memory_path = dir.path().join("memories.jsonl");
         let durable_path = dir.path().join("AGENTS.md");

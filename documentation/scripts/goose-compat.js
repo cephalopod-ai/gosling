@@ -20,18 +20,16 @@ function asArray(value) {
 
 function convertGooseText(value) {
   return asString(value)
-    .replace(/goose:\/\//g, "gosling://")
-    .replace(/\bgoose session\b/g, "gosling session")
-    .replace(/\bgoose mcp\b/g, "gosling mcp")
-    .replace(/\bgoose\b/g, "gosling")
-    .replace(/\.goose\b/g, ".gosling");
+    .replace(/goose:\/\//gi, "gosling://")
+    .replace(/\bgoose session\b/gi, "gosling session")
+    .replace(/\bgoose mcp\b/gi, "gosling mcp")
+    .replace(/\bgoose\b/gi, "gosling");
 }
 
 function convertGooseCommand(value) {
   return asString(value)
-    .replace(/goose:\/\//g, "gosling://")
-    .replace(/\bgoose\b/g, "gosling")
-    .replace(/\.goose\b/g, ".gosling");
+    .replace(/goose:\/\//gi, "gosling://")
+    .replace(/\bgoose\b/gi, "gosling");
 }
 
 function normalizeNameDescriptionRequired(entry) {
@@ -127,7 +125,11 @@ function compareByIdThenName(a, b) {
 function dedupeById(items) {
   const byId = new Map();
   for (const item of items) {
-    if (!item.id || byId.has(item.id)) continue;
+    if (!item.id) {
+      console.warn("goose-compat: dropping catalog entry with missing id", item);
+      continue;
+    }
+    if (byId.has(item.id)) continue;
     byId.set(item.id, item);
   }
   return Array.from(byId.values()).sort(compareByIdThenName);

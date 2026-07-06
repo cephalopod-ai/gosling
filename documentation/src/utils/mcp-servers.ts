@@ -25,7 +25,10 @@ export async function fetchMCPServers(): Promise<MCPServer[]> {
       const data = await fetchCatalog(catalog.url);
       if (!Array.isArray(data) || data.length === 0) continue;
 
-      return dedupeAndSortById(data.map(catalog.normalize));
+      const normalized = dedupeAndSortById(data.map(catalog.normalize));
+      if (normalized.length === 0) continue;
+
+      return normalized;
     } catch (error) {
       console.error("Error fetching MCP servers:", catalog.url, error);
     }

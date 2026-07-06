@@ -273,8 +273,8 @@ impl GoslingAcpAgent {
                     "summary".to_string(),
                     serde_json::json!({
                         "status": summary.status.to_string(),
-                        "coverageThroughRowId": summary.covered_through_row_id,
-                        "coverageThroughTimestamp": summary.covered_through_timestamp,
+                        "coveredThroughRowId": summary.covered_through_row_id,
+                        "coveredThroughTimestamp": summary.covered_through_timestamp,
                         "coveredMessageCount": summary.covered_message_count,
                         "updatedAt": summary.updated_at,
                     }),
