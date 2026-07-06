@@ -983,6 +983,7 @@ impl SummonClient {
             true, // disable session naming for subagents
             crate::agents::GoslingPlatform::GoslingCli,
         )
+        .with_code_execution_runtime(self.context.code_execution_runtime)
         .with_use_login_shell_path(self.context.use_login_shell_path);
 
         let subagent_session = self
@@ -1399,6 +1400,7 @@ impl SummonClient {
             true, // disable session naming for subagents
             crate::agents::GoslingPlatform::GoslingCli,
         )
+        .with_code_execution_runtime(self.context.code_execution_runtime)
         .with_use_login_shell_path(self.context.use_login_shell_path);
 
         let subagent_session = self
@@ -1669,6 +1671,7 @@ mod tests {
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             session: None,
             use_login_shell_path: false,
+            code_execution_runtime: crate::config::CodeExecutionRuntime::Enabled,
         }
     }
 

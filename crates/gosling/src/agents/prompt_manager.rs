@@ -429,6 +429,7 @@ mod tests {
             session_manager,
             session: Some(Arc::new(session)),
             use_login_shell_path: false,
+            code_execution_runtime: crate::config::CodeExecutionRuntime::Enabled,
         };
 
         let mut extensions: Vec<ExtensionInfo> = PLATFORM_EXTENSIONS

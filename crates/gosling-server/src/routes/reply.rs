@@ -258,6 +258,8 @@ pub async fn reply(
         let session_config = SessionConfig {
             id: session_id.clone(),
             max_turns: None,
+            compacted_context: false,
+            tail_limit: None,
         };
 
         let mut all_messages = match override_conversation {

@@ -113,6 +113,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session.id,
                 max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -301,6 +303,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session.id,
                 max_turns: Some(5),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -508,6 +512,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session.id.clone(),
                 max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -864,6 +870,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session_id.clone(),
                 max_turns: Some(2),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -912,6 +920,8 @@ mod tests {
             let session_config2 = SessionConfig {
                 id: session_id.clone(),
                 max_turns: Some(2),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream2 = agent
@@ -1098,6 +1108,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session_id.clone(),
                 max_turns: Some(2),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -1295,6 +1307,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session_id.clone(),
                 max_turns: Some(2),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -1453,6 +1467,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session_id.clone(),
                 max_turns: Some(2),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -1638,6 +1654,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session.id.clone(),
                 max_turns: Some(10),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -1715,6 +1733,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session.id.clone(),
                 max_turns: Some(10),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -1809,6 +1829,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session.id.clone(),
                 max_turns: Some(10),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -1871,6 +1893,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session.id.clone(),
                 max_turns: Some(10),
+                compacted_context: false,
+                tail_limit: None,
             };
 
             let reply_stream = agent
@@ -1944,6 +1968,8 @@ mod tests {
             let session_config = SessionConfig {
                 id: session_id.to_string(),
                 max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
             };
             let stream = agent
                 .reply(Message::user().with_text(text), session_config, None)

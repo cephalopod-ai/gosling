@@ -582,6 +582,7 @@ impl GcpAuth {
 mod tests {
     use super::*;
     use mockall::predicate::eq;
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
     use tokio::time::sleep;
     use wiremock::matchers::{header, method, path};
     // Only import what we need

@@ -14,6 +14,22 @@ Code Mode is a method of interacting with MCP tools programmatically instead of 
 This functionality requires the built-in [Code Mode extension](/docs/mcp/code-mode-mcp) to be enabled.
 :::
 
+## Runtime Control
+
+Code Mode uses a V8-backed execution runtime through pctx. You can block that runtime for new Gosling processes with:
+
+```yaml title="config.yaml"
+GOSLING_CODE_EXECUTION_RUNTIME: disabled
+```
+
+Or with an environment variable:
+
+```bash
+export GOSLING_CODE_EXECUTION_RUNTIME=disabled
+```
+
+Changing this setting requires restarting Gosling, or restarting the configured backend when using an external backend. Disabling the runtime prevents Code Mode from loading and removes its tools from active sessions, but it does not change compile time, binary size, or linked dependency cost for builds that include Code Mode support.
+
 Code Mode controls how tools are discovered and called:
 
 - Tools from enabled extensions are discovered on-demand and loaded into context as needed
@@ -42,4 +58,3 @@ Traditional MCP tool calling and Code Mode are two different approaches to the s
 :::info Text-Only Results
 Code Mode only supports text content from tool results. Images, binary data, and other content types are ignored.
 :::
-

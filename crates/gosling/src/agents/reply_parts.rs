@@ -152,10 +152,11 @@ impl Agent {
         let mut tools = self.list_tools(session_id, None).await;
 
         #[cfg(feature = "code-mode")]
-        let code_execution_active = self
-            .extension_manager
-            .is_extension_enabled(code_execution::EXTENSION_NAME)
-            .await;
+        let code_execution_active = self.extension_manager.is_code_execution_runtime_enabled()
+            && self
+                .extension_manager
+                .is_extension_enabled(code_execution::EXTENSION_NAME)
+                .await;
         #[cfg(not(feature = "code-mode"))]
         let code_execution_active = false;
         #[cfg(feature = "code-mode")]

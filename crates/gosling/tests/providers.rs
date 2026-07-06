@@ -530,6 +530,8 @@ impl ProviderFixture {
         let session_config = SessionConfig {
             id: self.session_id.clone(),
             max_turns: Some(5),
+            compacted_context: false,
+            tail_limit: None,
         };
 
         let mut stream = self.agent.reply(message, session_config, None).await?;

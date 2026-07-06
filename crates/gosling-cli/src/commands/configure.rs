@@ -15,8 +15,8 @@ use gosling::config::paths::Paths;
 use gosling::config::permission::PermissionLevel;
 use gosling::config::signup_tetrate::TetrateAuth;
 use gosling::config::{
-    configure_tetrate, Config, ConfigError, ExperimentManager, ExtensionEntry, GoslingMode,
-    PermissionManager,
+    configure_tetrate, CodeExecutionRuntime, Config, ConfigError, ExperimentManager,
+    ExtensionEntry, GoslingMode, PermissionManager, GOSLING_CODE_EXECUTION_RUNTIME_KEY,
 };
 #[cfg(feature = "telemetry")]
 use gosling::posthog::TELEMETRY_ENABLED_KEY;
@@ -1254,6 +1254,11 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
             "Context Summarizer",
             "Configure the local-LLM summarizer + memory write path",
         )
+        .item(
+            "code_execution_runtime",
+            "Code Execution Runtime",
+            "Allow or block Code Mode's V8-backed execution runtime",
+        )
         .interact()?;
 
     let mut should_print_config_path = true;
@@ -1282,6 +1287,9 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
         "summarizer" => {
             configure_summarizer_dialog()?;
         }
+        "code_execution_runtime" => {
+            configure_code_execution_runtime_dialog()?;
+        }
         _ => unreachable!(),
     };
 
@@ -1289,6 +1297,37 @@ pub async fn configure_settings_dialog() -> anyhow::Result<()> {
         print_config_file_saved()?;
     }
 
+    Ok(())
+}
+
+pub fn configure_code_execution_runtime_dialog() -> anyhow::Result<()> {
+    let config = Config::global();
+
+    if std::env::var(GOSLING_CODE_EXECUTION_RUNTIME_KEY).is_ok() {
+        let _ = cliclack::log::info(format!(
+            "Notice: {GOSLING_CODE_EXECUTION_RUNTIME_KEY} environment variable is set and will override the configuration here."
+        ));
+    }
+
+    let current = config.resolve_gosling_code_execution_runtime();
+    let runtime = cliclack::select("Code execution runtime")
+        .initial_value(current)
+        .item(
+            CodeExecutionRuntime::Enabled,
+            "Enabled",
+            "Allow Code Mode when the extension is enabled",
+        )
+        .item(
+            CodeExecutionRuntime::Disabled,
+            "Disabled",
+            "Block Code Mode runtime loading",
+        )
+        .interact()?;
+
+    config.set_gosling_code_execution_runtime(runtime)?;
+    cliclack::outro(
+        "Code execution runtime updated. Restart Gosling for this change to take effect.",
+    )?;
     Ok(())
 }
 

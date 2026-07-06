@@ -277,6 +277,7 @@ mod tests {
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             session: Some(session),
             use_login_shell_path: false,
+            code_execution_runtime: crate::config::CodeExecutionRuntime::Enabled,
         })
         .unwrap();
 
@@ -304,6 +305,7 @@ mod tests {
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             session: None,
             use_login_shell_path: false,
+            code_execution_runtime: crate::config::CodeExecutionRuntime::Enabled,
         })
         .unwrap();
 

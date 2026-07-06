@@ -76,7 +76,8 @@ impl AgentManager {
                     default_mode,
                     config.get_gosling_disable_session_naming().unwrap_or(false),
                     GoslingPlatform::GoslingDesktop,
-                );
+                )
+                .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime());
                 let manager = Self::new(agent_config, Some(max_sessions)).await?;
                 Ok(Arc::new(manager))
             })

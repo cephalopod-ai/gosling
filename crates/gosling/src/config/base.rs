@@ -86,6 +86,31 @@ pub enum ConfigError {
     FallbackToFileStorage,
 }
 
+pub const GOSLING_CODE_EXECUTION_RUNTIME_KEY: &str = "GOSLING_CODE_EXECUTION_RUNTIME";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CodeExecutionRuntime {
+    #[default]
+    Enabled,
+    Disabled,
+}
+
+impl CodeExecutionRuntime {
+    pub fn is_enabled(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
+
+impl std::fmt::Display for CodeExecutionRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Enabled => write!(f, "enabled"),
+            Self::Disabled => write!(f, "disabled"),
+        }
+    }
+}
+
 impl From<serde_json::Error> for ConfigError {
     fn from(err: serde_json::Error) -> Self {
         ConfigError::DeserializeError(err.to_string())
@@ -1201,10 +1226,26 @@ config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
 
 config_value!(GOSLING_SEARCH_PATHS, Vec<String>);
 config_value!(GOSLING_MODE, GoslingMode);
+config_value!(GOSLING_CODE_EXECUTION_RUNTIME, CodeExecutionRuntime);
 // GOSLING_PROVIDER and GOSLING_MODEL are handled by crate::config::providers
 // which checks the structured `providers:` block first and falls back to
 // the legacy flat keys. The accessors below delegate to that module.
 impl Config {
+    pub fn resolve_gosling_code_execution_runtime(&self) -> CodeExecutionRuntime {
+        match self.get_gosling_code_execution_runtime() {
+            Ok(runtime) => runtime,
+            Err(ConfigError::NotFound(_)) => CodeExecutionRuntime::Enabled,
+            Err(error) => {
+                tracing::warn!(
+                    key = GOSLING_CODE_EXECUTION_RUNTIME_KEY,
+                    error = %error,
+                    "Invalid code execution runtime configuration; disabling Code Mode for this process"
+                );
+                CodeExecutionRuntime::Disabled
+            }
+        }
+    }
+
     pub fn get_gosling_provider(&self) -> Result<String, ConfigError> {
         crate::config::providers::get_active_provider(self)
             .ok_or_else(|| ConfigError::NotFound("GOSLING_PROVIDER".to_string()))
@@ -1406,6 +1447,75 @@ mod tests {
 
         let result: Result<String, ConfigError> = config.get_param("nonexistent_key");
         assert!(matches!(result, Err(ConfigError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_code_execution_runtime_defaults_to_enabled() {
+        let _guard = env_lock::lock_env([(GOSLING_CODE_EXECUTION_RUNTIME_KEY, None::<&str>)]);
+        let config = new_test_config();
+
+        assert_eq!(
+            config.resolve_gosling_code_execution_runtime(),
+            CodeExecutionRuntime::Enabled
+        );
+    }
+
+    #[test]
+    fn test_code_execution_runtime_parses_valid_values() -> Result<(), ConfigError> {
+        let _guard = env_lock::lock_env([(GOSLING_CODE_EXECUTION_RUNTIME_KEY, None::<&str>)]);
+        let config = new_test_config();
+
+        config.set_gosling_code_execution_runtime(CodeExecutionRuntime::Disabled)?;
+        assert_eq!(
+            config.get_gosling_code_execution_runtime()?,
+            CodeExecutionRuntime::Disabled
+        );
+
+        config.set_gosling_code_execution_runtime(CodeExecutionRuntime::Enabled)?;
+        assert_eq!(
+            config.get_gosling_code_execution_runtime()?,
+            CodeExecutionRuntime::Enabled
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_code_execution_runtime_env_overrides_config() -> Result<(), ConfigError> {
+        let _guard = env_lock::lock_env([(GOSLING_CODE_EXECUTION_RUNTIME_KEY, Some("enabled"))]);
+        let config = new_test_config();
+
+        config.set_gosling_code_execution_runtime(CodeExecutionRuntime::Disabled)?;
+
+        assert_eq!(
+            config.get_gosling_code_execution_runtime()?,
+            CodeExecutionRuntime::Enabled
+        );
+        assert_eq!(
+            config.resolve_gosling_code_execution_runtime(),
+            CodeExecutionRuntime::Enabled
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_code_execution_runtime_invalid_value_fails_closed() -> Result<(), ConfigError> {
+        let _guard = env_lock::lock_env([(GOSLING_CODE_EXECUTION_RUNTIME_KEY, None::<&str>)]);
+        let config = new_test_config();
+
+        config.set_param(GOSLING_CODE_EXECUTION_RUNTIME_KEY, "invalid")?;
+
+        assert!(matches!(
+            config.get_gosling_code_execution_runtime(),
+            Err(ConfigError::DeserializeError(_))
+        ));
+        assert_eq!(
+            config.resolve_gosling_code_execution_runtime(),
+            CodeExecutionRuntime::Disabled
+        );
+
+        Ok(())
     }
 
     #[test]

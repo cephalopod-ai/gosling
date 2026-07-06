@@ -956,13 +956,15 @@ impl GoslingAcpAgent {
 
         let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
         let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
+        let config = Config::global();
         let agent_config = AgentConfig::new(
             Arc::clone(&session_manager),
             Arc::clone(&permission_manager),
-            Config::global().get_gosling_mode().unwrap_or_default(),
+            config.get_gosling_mode().unwrap_or_default(),
             options.disable_session_naming,
             options.gosling_platform.clone(),
-        );
+        )
+        .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime());
         let agent_manager = Arc::new(AgentManager::new(agent_config, None).await?);
 
         Ok(Self {

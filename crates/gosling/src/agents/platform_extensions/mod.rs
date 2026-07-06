@@ -13,6 +13,7 @@ pub mod tom;
 use std::collections::HashMap;
 
 use crate::agents::mcp_client::McpClientTrait;
+use crate::config::CodeExecutionRuntime;
 use crate::session::Session;
 use once_cell::sync::Lazy;
 
@@ -198,6 +199,7 @@ pub struct PlatformExtensionContext {
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub session: Option<std::sync::Arc<Session>>,
     pub use_login_shell_path: bool,
+    pub code_execution_runtime: CodeExecutionRuntime,
 }
 
 impl PlatformExtensionContext {

@@ -277,6 +277,7 @@ These variables control how gosling handles [tool execution](/docs/guides/managi
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
 | `GOSLING_MODE` | Controls how gosling handles tool execution | "auto", "approve", "chat", "smart_approve" | "smart_approve" |
+| `GOSLING_CODE_EXECUTION_RUNTIME` | Allows or blocks [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new Gosling processes. Changing it requires restart. | "enabled", "disabled" | "enabled" |
 | `GOSLING_TOOLSHIM` | Enables/disables tool call interpretation | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_TOOLSHIM_OLLAMA_MODEL` | Specifies the model for [tool call interpretation](/docs/experimental/ollama) | Model name (e.g. llama3.2, qwen2.5) | System default |
 | `GOSLING_CLI_MIN_PRIORITY` | Controls verbosity of [tool output](/docs/guides/managing-tools/adjust-tool-output) | Float between 0.0 and 1.0 | 0.0 |
@@ -293,6 +294,7 @@ These variables control how gosling handles [tool execution](/docs/guides/managi
 export GOSLING_TOOLSHIM=true
 export GOSLING_TOOLSHIM_OLLAMA_MODEL=llama3.2
 export GOSLING_MODE="auto"
+export GOSLING_CODE_EXECUTION_RUNTIME=disabled
 export GOSLING_CLI_MIN_PRIORITY=0.2  # Show only medium and high importance output
 export GOSLING_CLI_TOOL_PARAMS_MAX_LENGTH=100  # Show up to 100 characters for tool parameters in CLI output
 

@@ -322,6 +322,8 @@ pub async fn session_reply(
         let session_config = gosling::agents::types::SessionConfig {
             id: session_id.clone(),
             max_turns: None,
+            compacted_context: false,
+            tail_limit: None,
         };
         let _ = agent
             .reply(user_message, session_config, None)
@@ -392,6 +394,8 @@ pub async fn session_reply(
         let session_config = SessionConfig {
             id: task_session_id.clone(),
             max_turns: None,
+            compacted_context: false,
+            tail_limit: None,
         };
 
         let mut all_messages = match override_conversation {

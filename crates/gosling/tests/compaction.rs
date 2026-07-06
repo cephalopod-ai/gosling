@@ -604,6 +604,8 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
     let session_config = SessionConfig {
         id: session.id.clone(),
         max_turns: None,
+        compacted_context: false,
+        tail_limit: None,
     };
 
     let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -756,6 +758,8 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
     let session_config = SessionConfig {
         id: session.id.clone(),
         max_turns: None,
+        compacted_context: false,
+        tail_limit: None,
     };
 
     let reply_stream = agent
@@ -929,6 +933,8 @@ async fn test_compaction_fires_before_first_llm_call() -> Result<()> {
     let session_config = SessionConfig {
         id: session.id.clone(),
         max_turns: None,
+        compacted_context: false,
+        tail_limit: None,
     };
 
     let reply_stream = agent
@@ -1011,6 +1017,8 @@ async fn test_compaction_fires_inside_reply_loop() -> Result<()> {
     let session_config = SessionConfig {
         id: session.id.clone(),
         max_turns: None,
+        compacted_context: false,
+        tail_limit: None,
     };
 
     let reply_stream = agent

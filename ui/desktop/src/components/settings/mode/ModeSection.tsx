@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { all_gosling_modes, ModeSelectionItem } from './ModeSelectionItem';
 import { useConfig } from '../../ConfigContext';
 import { ConversationLimitsDropdown } from './ConversationLimitsDropdown';
+import { CodeExecutionRuntimeSection } from './CodeExecutionRuntimeSection';
 
 export const ModeSection = () => {
   const [currentMode, setCurrentMode] = useState('auto');
@@ -65,6 +66,8 @@ export const ModeSection = () => {
 
       {/* Conversation Limits Dropdown */}
       <ConversationLimitsDropdown maxTurns={maxTurns} onMaxTurnsChange={handleMaxTurnsChange} />
+
+      <CodeExecutionRuntimeSection />
     </div>
   );
 };

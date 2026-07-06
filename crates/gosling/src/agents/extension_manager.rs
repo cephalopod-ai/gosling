@@ -44,7 +44,7 @@ use crate::agents::mcp_client::{
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
-use crate::config::{get_all_extensions, Config};
+use crate::config::{get_all_extensions, CodeExecutionRuntime, Config};
 use crate::oauth::{oauth_flow, GoslingCredentialStore};
 use crate::prompt_template;
 use crate::subprocess::configure_subprocess;
@@ -185,12 +185,14 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__gosling_tool_update_met
 /// Manages gosling extensions / MCP clients and their interactions
 pub struct ExtensionManager {
     extensions: Mutex<HashMap<String, Extension>>,
+    runtime_blocked_extensions: Mutex<HashMap<String, ExtensionConfig>>,
     context: PlatformExtensionContext,
     provider: SharedProvider,
     tools_cache: Mutex<Option<Arc<Vec<Tool>>>>,
     tools_cache_version: AtomicU64,
     client_name: String,
     capabilities: ExtensionManagerCapabilities,
+    code_execution_runtime: CodeExecutionRuntime,
 }
 
 /// A flattened representation of a resource used by the agent to prepare inference
@@ -863,20 +865,24 @@ impl ExtensionManager {
         client_name: String,
         capabilities: ExtensionManagerCapabilities,
         use_login_shell_path: bool,
+        code_execution_runtime: CodeExecutionRuntime,
     ) -> Self {
         Self {
             extensions: Mutex::new(HashMap::new()),
+            runtime_blocked_extensions: Mutex::new(HashMap::new()),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 session_manager,
                 session: None,
                 use_login_shell_path,
+                code_execution_runtime,
             },
             provider,
             tools_cache: Mutex::new(None),
             tools_cache_version: AtomicU64::new(0),
             client_name,
             capabilities,
+            code_execution_runtime,
         }
     }
 
@@ -891,6 +897,7 @@ impl ExtensionManager {
                 host_info: None,
             },
             false,
+            CodeExecutionRuntime::Enabled,
         )
     }
 
@@ -991,6 +998,20 @@ impl ExtensionManager {
                     None
                 };
                 let normalized_name = name_to_key(name);
+
+                if normalized_name == "code_execution" && !self.code_execution_runtime.is_enabled()
+                {
+                    self.runtime_blocked_extensions
+                        .lock()
+                        .await
+                        .insert(sanitized_name.clone(), config.clone());
+                    return Err(ExtensionError::ConfigError(
+                        "Code execution runtime is disabled by \
+                         GOSLING_CODE_EXECUTION_RUNTIME=disabled. Set it to enabled and restart \
+                         Gosling to use Code Mode."
+                            .to_string(),
+                    ));
+                }
 
                 if let Some(def) = PLATFORM_EXTENSIONS.get(normalized_name.as_str()) {
                     // Platform extension: create via in-process client factory
@@ -1160,6 +1181,11 @@ impl ExtensionManager {
 
         let server_info = client.get_info().cloned();
 
+        self.runtime_blocked_extensions
+            .lock()
+            .await
+            .remove(&sanitized_name);
+
         let mut extensions = self.extensions.lock().await;
         extensions.insert(
             sanitized_name,
@@ -1212,6 +1238,10 @@ impl ExtensionManager {
     pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
         self.extensions.lock().await.remove(&sanitized_name);
+        self.runtime_blocked_extensions
+            .lock()
+            .await
+            .remove(&sanitized_name);
         self.invalidate_tools_cache_and_bump_version().await;
         Ok(())
     }
@@ -1253,6 +1283,22 @@ impl ExtensionManager {
             .values()
             .map(|ext| ext.config.clone())
             .collect()
+    }
+
+    pub async fn get_extension_configs_for_persistence(&self) -> Vec<ExtensionConfig> {
+        let mut configs = self.get_extension_configs().await;
+        configs.extend(
+            self.runtime_blocked_extensions
+                .lock()
+                .await
+                .values()
+                .cloned(),
+        );
+        configs
+    }
+
+    pub fn is_code_execution_runtime_enabled(&self) -> bool {
+        self.code_execution_runtime.is_enabled()
     }
 
     /// Get all tools from all clients with proper prefixing
@@ -2226,6 +2272,34 @@ mod tests {
         }
     }
 
+    fn extension_manager_with_runtime(
+        data_dir: std::path::PathBuf,
+        runtime: CodeExecutionRuntime,
+    ) -> ExtensionManager {
+        let session_manager = Arc::new(crate::session::SessionManager::new(data_dir));
+        ExtensionManager::new(
+            Arc::new(tokio::sync::Mutex::new(None)),
+            session_manager,
+            "gosling-cli".to_string(),
+            ExtensionManagerCapabilities {
+                mcpui: false,
+                host_info: None,
+            },
+            false,
+            runtime,
+        )
+    }
+
+    fn platform_extension_config(name: &str) -> ExtensionConfig {
+        ExtensionConfig::Platform {
+            name: name.to_string(),
+            description: name.to_string(),
+            display_name: Some(name.to_string()),
+            bundled: Some(true),
+            available_tools: vec![],
+        }
+    }
+
     #[tokio::test]
     async fn test_dispatch_tool_call() {
         use super::super::tool_execution::ToolCallContext;
@@ -2726,6 +2800,58 @@ mod tests {
             em.extensions.lock().await.len(),
             1,
             "extension must not be removed on no-op"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_code_execution_runtime_disabled_blocks_active_extension_and_preserves_config() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let em = Arc::new(extension_manager_with_runtime(
+            temp_dir.path().to_path_buf(),
+            CodeExecutionRuntime::Disabled,
+        ));
+        let config = platform_extension_config("code_execution");
+
+        let err = em
+            .add_extension(config.clone(), None, None, None)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ExtensionError::ConfigError(_)));
+        assert!(!em.is_extension_enabled("code_execution").await);
+        assert!(em.get_extension_configs().await.is_empty());
+        assert!(em
+            .get_prefixed_tools("test-session", None)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            em.get_extension_configs_for_persistence().await,
+            vec![config.clone()]
+        );
+
+        em.remove_extension("code_execution").await.unwrap();
+        assert!(em.get_extension_configs_for_persistence().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_code_execution_runtime_disabled_allows_unrelated_platform_extensions() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let em = Arc::new(extension_manager_with_runtime(
+            temp_dir.path().to_path_buf(),
+            CodeExecutionRuntime::Disabled,
+        ));
+        let config = platform_extension_config("todo");
+
+        em.add_extension(config.clone(), None, None, None)
+            .await
+            .unwrap();
+
+        assert!(em.is_extension_enabled("todo").await);
+        assert_eq!(em.get_extension_configs().await, vec![config.clone()]);
+        assert_eq!(
+            em.get_extension_configs_for_persistence().await,
+            vec![config]
         );
     }
 

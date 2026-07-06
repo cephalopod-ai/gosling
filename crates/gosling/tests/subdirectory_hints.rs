@@ -154,6 +154,8 @@ async fn subdirectory_hints_injected_once_agent_only() -> Result<()> {
     let session_config = SessionConfig {
         id: session.id.clone(),
         max_turns: Some(5),
+        compacted_context: false,
+        tail_limit: None,
     };
 
     let reply_stream = agent

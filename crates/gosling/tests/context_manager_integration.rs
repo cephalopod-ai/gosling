@@ -175,6 +175,8 @@ async fn run_and_capture(mode: &str) -> Result<CapturedCall> {
     let session_config = SessionConfig {
         id: session.id.clone(),
         max_turns: None,
+        compacted_context: false,
+        tail_limit: None,
     };
     let reply_stream = agent
         .reply(Message::user().with_text("go ahead"), session_config, None)

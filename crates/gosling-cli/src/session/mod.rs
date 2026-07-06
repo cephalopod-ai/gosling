@@ -1119,6 +1119,8 @@ impl CliSession {
         let session_config = SessionConfig {
             id: self.session_id.clone(),
             max_turns: self.max_turns,
+            compacted_context: false,
+            tail_limit: None,
         };
         let user_message = self
             .messages

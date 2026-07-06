@@ -24,7 +24,7 @@ use crate::agents::prompt_manager::PromptManager;
 use crate::agents::types::{FrontendTool, SessionConfig, SharedProvider, ToolResultReceiver};
 use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
-use crate::config::{Config, GoslingMode};
+use crate::config::{CodeExecutionRuntime, Config, GoslingMode};
 use crate::context_mgmt::{
     check_if_compaction_needed, compact_messages, context_manager_mode, resolve_provider_input,
     summarizer, ContextBuildRequest, ContextManager, ContextManagerMode, FileMemorySource,
@@ -170,6 +170,7 @@ pub struct AgentConfig {
     pub session_manager: Arc<SessionManager>,
     pub permission_manager: Arc<PermissionManager>,
     pub gosling_mode: GoslingMode,
+    pub code_execution_runtime: CodeExecutionRuntime,
     pub disable_session_naming: bool,
     pub gosling_platform: GoslingPlatform,
     pub mcp_host_info: Option<GoslingMcpHostInfo>,
@@ -189,6 +190,7 @@ impl AgentConfig {
             session_manager,
             permission_manager,
             gosling_mode,
+            code_execution_runtime: CodeExecutionRuntime::Enabled,
             disable_session_naming,
             gosling_platform,
             mcp_host_info: None,
@@ -199,6 +201,11 @@ impl AgentConfig {
 
     pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GoslingMcpHostInfo>) -> Self {
         self.mcp_host_info = mcp_host_info;
+        self
+    }
+
+    pub fn with_code_execution_runtime(mut self, runtime: CodeExecutionRuntime) -> Self {
+        self.code_execution_runtime = runtime;
         self
     }
 
@@ -308,13 +315,15 @@ where
 impl Agent {
     pub fn new() -> Self {
         let config = Config::global();
-        Self::with_config(AgentConfig::new(
+        let agent_config = AgentConfig::new(
             Arc::new(SessionManager::instance()),
             PermissionManager::instance(),
             config.get_gosling_mode().unwrap_or_default(),
             config.get_gosling_disable_session_naming().unwrap_or(false),
             GoslingPlatform::GoslingCli,
-        ))
+        )
+        .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime());
+        Self::with_config(agent_config)
     }
 
     pub fn with_config(config: AgentConfig) -> Self {
@@ -344,6 +353,7 @@ impl Agent {
         let inspection_session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
         let use_login_shell_path = config.resolve_use_login_shell_path();
+        let code_execution_runtime = config.code_execution_runtime;
         Self {
             provider: provider.clone(),
             config,
@@ -354,6 +364,7 @@ impl Agent {
                 client_name,
                 capabilities,
                 use_login_shell_path,
+                code_execution_runtime,
             )),
             frontend_extensions: Mutex::new(HashMap::new()),
             frontend_tools: Mutex::new(HashMap::new()),
@@ -938,7 +949,10 @@ impl Agent {
     }
 
     async fn extension_configs_for_persistence(&self) -> Vec<ExtensionConfig> {
-        let mut extension_configs = self.extension_manager.get_extension_configs().await;
+        let mut extension_configs = self
+            .extension_manager
+            .get_extension_configs_for_persistence()
+            .await;
         extension_configs.extend(self.frontend_extension_configs().await);
         extension_configs
     }
@@ -1360,7 +1374,9 @@ impl Agent {
     }
 
     pub async fn get_extension_configs(&self) -> Vec<ExtensionConfig> {
-        self.extension_configs_for_persistence().await
+        let mut extension_configs = self.extension_manager.get_extension_configs().await;
+        extension_configs.extend(self.frontend_extension_configs().await);
+        extension_configs
     }
 
     /// Handle a confirmation response for a tool request
@@ -3640,6 +3656,68 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             )
             .await?;
         Ok((agent, session.id))
+    }
+
+    #[cfg(feature = "code-mode")]
+    #[tokio::test]
+    async fn disabled_code_execution_runtime_omits_code_mode_prompt_behavior() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let data_dir = temp_dir.path().join("data");
+        let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
+        let permission_manager = Arc::new(PermissionManager::new(data_dir));
+        let config = AgentConfig::new(
+            session_manager.clone(),
+            permission_manager,
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        )
+        .with_code_execution_runtime(CodeExecutionRuntime::Disabled);
+        let agent = Agent::with_config(config);
+        let session = session_manager
+            .create_session(
+                PathBuf::default(),
+                "code-runtime-disabled".to_string(),
+                SessionType::Hidden,
+                GoslingMode::Auto,
+            )
+            .await?;
+        agent
+            .update_provider(
+                Arc::new(CountingTextProvider::new()),
+                gosling_providers::model::ModelConfig::new("mock-model"),
+                &session.id,
+            )
+            .await?;
+
+        let code_execution_config = ExtensionConfig::Platform {
+            name: "code_execution".to_string(),
+            description: "Code Mode".to_string(),
+            display_name: Some("Code Mode".to_string()),
+            bundled: Some(true),
+            available_tools: vec![],
+        };
+        let error = agent
+            .add_extension(code_execution_config.clone(), &session.id)
+            .await
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("GOSLING_CODE_EXECUTION_RUNTIME=disabled"));
+        let (tools, toolshim_tools, system_prompt, _model_config) = agent
+            .prepare_tools_and_prompt(&session.id, &session.working_dir)
+            .await?;
+
+        assert!(tools.is_empty());
+        assert!(toolshim_tools.is_empty());
+        assert!(system_prompt.contains("# Extensions"));
+        assert!(system_prompt.contains("No extensions are defined"));
+        assert_eq!(
+            agent.extension_configs_for_persistence().await,
+            vec![code_execution_config]
+        );
+        Ok(())
     }
 
     async fn create_stop_hook_test_agent(

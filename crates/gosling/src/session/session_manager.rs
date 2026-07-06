@@ -92,18 +92,13 @@ pub struct Session {
     pub last_message_snippet: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionSummaryStatus {
     Current,
+    #[default]
     Stale,
     Failed,
-}
-
-impl Default for SessionSummaryStatus {
-    fn default() -> Self {
-        Self::Stale
-    }
 }
 
 impl std::fmt::Display for SessionSummaryStatus {

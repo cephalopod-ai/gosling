@@ -266,6 +266,7 @@ async fn test_replayed_session(
             host_info: None,
         },
         true,
+        gosling::config::CodeExecutionRuntime::Enabled,
     ));
 
     #[allow(clippy::redundant_closure_call)]

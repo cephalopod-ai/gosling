@@ -1066,6 +1066,7 @@ mod tests {
     use super::*;
     use crate::conversation::message::Message;
     use gosling_test_support::TEST_IMAGE_B64;
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use rmcp::model::{CallToolRequestParams, CallToolResult, Content, ErrorCode, ErrorData};
     use rmcp::object;
@@ -1358,6 +1359,7 @@ mod tests {
         assert_eq!(tokens.expires_in, Some(1800));
     }
 
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
     #[derive(Serialize)]
     struct TestClaims {
         exp: usize,
