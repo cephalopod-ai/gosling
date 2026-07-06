@@ -42,14 +42,14 @@ const i18n = defineMessages({
 });
 
 const runtimeFromConfig = (value: unknown): CodeExecutionRuntime => {
-  if (value === undefined || value === null) return 'enabled';
+  if (value === undefined || value === null) return 'disabled';
   return value === 'enabled' ? 'enabled' : 'disabled';
 };
 
 export function CodeExecutionRuntimeSection() {
   const intl = useIntl();
   const { config, upsert } = useConfig();
-  const [currentRuntime, setCurrentRuntime] = useState<CodeExecutionRuntime>('enabled');
+  const [currentRuntime, setCurrentRuntime] = useState<CodeExecutionRuntime>('disabled');
   const [restartRequired, setRestartRequired] = useState(false);
   const [usesExternalBackend, setUsesExternalBackend] = useState(false);
 

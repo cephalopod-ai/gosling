@@ -149,24 +149,68 @@ items cross-department, synthesize one unified result).
     per-specialist files). Wrote the unified
     `repair-campaign-log-delta-2026-07-05.md` and this session log.
 
+11. **Operator decision, made directly in the specialist's session.** Rather
+    than replying in `dataflow-lead`'s own session, the operator navigated
+    directly into `senior-security-officer`'s child session (session
+    addressing is independent per the gateway's architecture) and typed the
+    decision verbatim: **"let's do 2, disabled/opt-in default"** — selecting
+    the officer's own recommended mitigation for `CER-GSL-002`. `dataflow-lead`
+    discovered this by polling the child session rather than waiting on a
+    callback to its own session, consistent with the standing practice of not
+    assuming all operator input arrives through one channel.
+
+12. **Delegated implementation.** `senior-security-officer` delegated the
+    actual code change to `dataflow-architect` (a lateral, cross-department
+    delegation — parented to the officer's session, not `dataflow-lead`'s)
+    with a precise, testable spec: flip the default at all 4 sites
+    (`config/base.rs`'s enum `#[default]` and its `NotFound` resolution arm,
+    `agent.rs`'s `AgentConfig` default, and the TS default in
+    `CodeExecutionRuntimeSection.tsx`), preserve the fail-closed behavior on
+    the parse-error arm, leave the 5 other `::Enabled` references
+    (`#[cfg(test)]` fixtures) untouched, and add a proving test.
+    `dataflow-architect` caught a gap in the spec's own verification command —
+    the new proving test requires the `code-mode` Cargo feature, not pulled in
+    by the standard `--features nostr` test invocation — and ran `cargo test -p
+    gosling --features nostr,code-mode` instead, landing at 1298/0.
+
+13. **Sign-off and independent re-verification.** `senior-security-officer`
+    reviewed the resulting diff against its own spec line-by-line, confirmed
+    no scope creep and `CER-GSL-001` untouched as fenced, and issued a formal
+    sign-off: "Verified independently — the diff is exactly to spec, nothing
+    more... APPROVED / closed." `dataflow-lead` then independently
+    re-verified the same 3 files via its own `git diff` (not relying on the
+    officer's report alone) — confirmed the diff matched exactly what was
+    reported.
+
+14. **Fold-in.** Updated the unified `repair-campaign-log-delta-2026-07-05.md`
+    (fixed-findings table, regression-coverage counts, a new "Escalation
+    resolution — CER-GSL-002" section, the disposition ledger, and Final
+    status) and this session log to reflect `CER-GSL-002` moving from
+    escalated-and-open to fixed-and-verified, leaving `CER-GSL-001` as the
+    sole remaining open escalation.
+
 ## Key outcomes
 
-- **7 real defects fixed** across Rust core (2), documentation tooling (4:
-  case-sensitivity, silent-drop, fallback-emptiness bugs + a self-caught TS
-  regression from one of those fixes), and the frontend session-resume
-  consumer (2: silent pagination-error and a stale-ref concurrency guard) — all
-  compile/test-verified, nothing left half-applied.
+- **8 real defects fixed** — the original 7 (Rust core (2), documentation
+  tooling (4: case-sensitivity, silent-drop, fallback-emptiness bugs + a
+  self-caught TS regression from one of those fixes), and the frontend
+  session-resume consumer (2: silent pagination-error and a stale-ref
+  concurrency guard)), plus `CER-GSL-002` (unsafe `Enabled` default, resolved
+  via steps 11–13 above) — all compile/test-verified, nothing left
+  half-applied.
 - **6 findings dispositioned** with concrete owners and reasons — session-resume
   integrity edge cases needing a live environment or a behavior decision, an
   API-semantics call, a subprocess-tuning call, an a11y item, and two
   plausible-but-unconfirmed frontend items.
 - **2 findings escalated cross-department** (`CER-GSL-001` High,
-  `CER-GSL-002` Medium) rather than silently dispositioned or dismissed —
-  independently re-verified by `senior-security-officer` against source, both
-  severities confirmed, and now awaiting an explicit operator decision on
-  rollout posture for the new code-execution-runtime feature. This mirrors the
-  prior audit's Cluster A theme (default-permissive security posture)
-  recurring in brand-new code, exactly the kind of regression this delta-audit
+  `CER-GSL-002` Medium), independently re-verified by `senior-security-officer`
+  against source with both severities confirmed. `CER-GSL-002` is now
+  **resolved** — the operator decided directly, the fix was implemented and
+  independently double-verified (by the officer and by `dataflow-lead`).
+  `CER-GSL-001` **remains open**, awaiting an operator decision on
+  architecture-level remediation. This mirrors the prior audit's Cluster A
+  theme (default-permissive security posture) recurring in brand-new code,
+  exactly the kind of regression this delta-audit
   was meant to catch.
 - **One self-found, self-diagnosed, delegated-not-self-patched bug**
   (`CTR-GSL-011`) caught during final verification rather than dismissed as
@@ -197,10 +241,9 @@ items cross-department, synthesize one unified result).
 
 ## Follow-ups the operator should commission
 
-- **Decide on `CER-GSL-002`:** flip the code-execution-runtime's default from
-  `Enabled` to `Disabled`/opt-in now (security officer's recommendation) —
-  low-cost, reversible, closes the "default-reachable" half of the exposure
-  immediately.
+- ~~**Decide on `CER-GSL-002`**~~ — **done.** Operator approved flipping the
+  code-execution-runtime's default from `Enabled` to `Disabled`/opt-in;
+  implemented and verified this engagement (steps 11–13 above).
 - **Decide on rollout posture for `CER-GSL-001`:** hold further rollout of the
   code-execution-runtime feature (in `Approve`/`SmartApprove` modes
   specifically — it's moot under default `Auto`) until code-mode callbacks are
@@ -215,6 +258,6 @@ items cross-department, synthesize one unified result).
   deliberate design pass on stale/gapped-summary handling and orphaned
   tool-response pruning — not urgent, but real correctness gaps in the resume
   path.
-- **Explicit commit decision:** all 9 modified files + 4 new report docs remain
-  uncommitted in the working tree, per instruction. Nothing has been committed
-  on the operator's behalf.
+- **Explicit commit decision:** all 10 modified files + 4 new report docs
+  remain uncommitted in the working tree, per instruction. Nothing has been
+  committed on the operator's behalf.

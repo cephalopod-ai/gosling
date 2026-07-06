@@ -43,7 +43,7 @@ were reviewed **by hunk**, not whole-file, to avoid stepping on each other:
   (no network install needed): `node --test`, `npx tsc` / `npx tsc --noEmit`,
   `vitest run` all ran directly.
 
-## Findings — Fixed (7 defects, all working-tree, all verified)
+## Findings — Fixed (8 defects, all working-tree, all verified)
 
 | ID | Severity | Owner | File(s) | What |
 |---|---|---|---|---|
@@ -55,6 +55,7 @@ were reviewed **by hunk**, not whole-file, to avoid stepping on each other:
 | DWF-004 | Low | pipeline-analyst | same two files | Catalog entries missing `id` were silently dropped via a bare `continue`. Added a `console.warn` before the drop in both `.js`/`.ts`. |
 | DWF-005 | Low | pipeline-analyst | `documentation/src/utils/mcp-servers.ts`, `documentation/src/utils/skills.ts` | Fallback-to-Goose-catalog logic checked raw-fetch emptiness instead of post-dedupe/normalization emptiness, breaking the documented fallback contract when dedupe/missing-id filtering collapsed a non-empty fetch to zero. Fixed to check emptiness after normalization. Self-caused regression (loss of generic-type inference on `dedupeAndSortById<T>`, TS2322 in `skills.ts`) caught and fixed with an explicit `: Skill[]` annotation in the same pass — confirmed via `git stash`/`npx tsc`/`git stash pop` that the error did not exist on the original baseline. |
 | DWF-006 | — | pipeline-analyst | `documentation/scripts/goose-compat.test.js` | 2 new regression tests added (12→14) covering DWF-003/004. |
+| CER-GSL-002 | Medium | dataflow-architect (security-approved implementation) | `config/base.rs`, `agents/agent.rs`, `CodeExecutionRuntimeSection.tsx` | Code-execution-runtime default flipped `Enabled → Disabled` at all 4 sites, per operator decision (see Escalation Resolution below). Fail-closed-on-parse-error behavior preserved; a proving test confirms an unset config registers no `code_execution` extension and omits `execute_typescript` from the tool list/prompt. |
 
 **Regression coverage:** `cargo test -p gosling --features nostr --lib` = **1289
 passed / 0 failed**, confirmed across 4 back-to-back parallel runs (post
@@ -63,7 +64,50 @@ CTR-GSL-011 fix). `node --test scripts/*.test.js` = 14/14. `ui/desktop`: `npx ts
 unrelated via git-stash diff — 2 in `AuthSettingsSection.test.tsx`, 1 in
 `sessions.test.ts` predating this delta). `documentation`: `npx tsc` output
 byte-for-byte identical to the stashed baseline outside touched files, zero new
-errors in touched files.
+errors in touched files. Post CER-GSL-002 fix: `cargo test -p gosling --features
+nostr` = 1289/0; `cargo test -p gosling --features nostr,code-mode` = **1298/0**
+(the wider feature set is required to exercise the code-mode proving test —
+`dataflow-architect` caught that the standard `--features nostr` run wouldn't
+have pulled it in, and ran the broader set to actually confirm it).
+
+## Escalation resolution — CER-GSL-002 (closed this engagement)
+
+Escalated to `senior-security-officer` (see below), who confirmed Medium
+severity and recommended flipping the default to `Disabled`/opt-in as the
+low-cost, reversible mitigation. **The operator (this repo's de facto
+maintainer) approved the flip directly.** The security officer delegated
+implementation to `dataflow-architect` with a fixed, testable spec (flip the 4
+default sites; grep for any other silent `::Enabled` reliance; add a proving
+test; keep CER-GSL-001 explicitly out of scope) and independently verified the
+resulting diff and test run before signing off:
+
+- Enum default (`base.rs:93-95`), unset-resolve arm (`base.rs:1237`),
+  `AgentConfig::new` default (`agent.rs:193`), and the UI default
+  (`CodeExecutionRuntimeSection.tsx:42-49`) all now resolve to `Disabled`.
+  Fail-closed-on-parse-error path untouched (still resolves `Disabled` + logs a
+  warning, so it was already conservative on that arm).
+  All 5 other hardcoded `::Enabled` occurrences in the crate are inside
+  `#[cfg(test)]`/`mod tests` blocks (explicit fixtures), not default-reliant —
+  confirmed via grep, correctly left untouched.
+- New proving test (`agent.rs`, `#[cfg(feature = "code-mode")]`): with the
+  runtime unset, `AgentConfig::new` resolves `Disabled`, `add_extension` for
+  `code_execution` errors with `GOSLING_CODE_EXECUTION_RUNTIME=disabled`, and
+  `prepare_tools_and_prompt` returns no tools and a prompt without
+  `execute_typescript`.
+- **CER-GSL-001 (the callback-bypass) is unaffected and still open** —
+  `code_execution.rs`/`extension_manager.rs`/`reply_parts.rs` were explicitly
+  fenced out of this task and remain unchanged. The practical effect of this
+  fix: the bypass is **no longer default-reachable** — a fresh install now
+  ships `execute_typescript` off, so an operator must explicitly opt in before
+  that code path exists at all. The "enabled + hardened mode" combination
+  remains unsafe until CER-GSL-001 itself is fixed; anyone who re-enables the
+  runtime should be aware the bypass is live the moment they harden to
+  `Approve`/`SmartApprove`.
+
+`dataflow-lead` independently re-verified the working-tree diff against this
+description before folding it into this report — matches exactly, no scope
+creep. Changes remain **uncommitted**, left for the operator alongside the
+rest of this engagement's fixes.
 
 ## Escalated findings — new code-execution-runtime feature (not silently patched)
 
@@ -115,7 +159,7 @@ a confirmation/denial in `SmartApprove`, and an unset-config runtime registers
 no `code_execution` tool. **Owner: senior-security-officer + dataflow-architect**,
 once picked up.
 
-### CER-GSL-002 — Runtime defaults to `Enabled` — **Medium, DISPOSITIONED → ESCALATE-SECURITY**
+### CER-GSL-002 — Runtime defaults to `Enabled` — **Medium, ESCALATE-SECURITY → FIXED ✅ (see Escalation Resolution above)**
 `config/base.rs:92-97,1237`; `agent.rs:193`; TS default at
 `CodeExecutionRuntimeSection.tsx:45` — all default `Enabled` when unset. Fails
 closed only on a parse error, not on unset. This is the same "default=Auto is
@@ -186,11 +230,18 @@ items it couldn't verify without a running app.
 ## Disposition ledger — NOT fixed this engagement (with reasons)
 
 ### Escalated — security/policy decision (operator = maintainer here)
-- **CER-GSL-001** (permission-gate bypass in code-mode) — architecture-level
-  fix, needs a live v8 build to verify. → `senior-security-officer` +
-  `dataflow-architect`, once the operator green-lights work on it.
-- **CER-GSL-002** (unsafe `Enabled` default) — policy/default-posture flip.
-  → operator decision (this repo's human maintainer).
+- **CER-GSL-001** (permission-gate bypass in code-mode) — still open.
+  Architecture-level fix, needs a live v8 build to verify. → owned jointly by
+  `senior-security-officer` + `dataflow-architect`, once the operator
+  green-lights work on it. **Note:** CER-GSL-002's fix (below) makes this
+  no longer default-reachable, but the underlying bypass mechanism is
+  unchanged and becomes live again the moment an operator opts the runtime
+  back on under `Approve`/`SmartApprove`.
+- ~~**CER-GSL-002** (unsafe `Enabled` default)~~ — **resolved this engagement.**
+  Operator approved flipping to `Disabled`/opt-in; implemented by
+  `dataflow-architect`, security-signed-off by `senior-security-officer`. See
+  "Escalation resolution — CER-GSL-002" above. Moved out of this ledger into
+  the Fixed table.
 
 ### Deferred — needs a live app / integration environment to verify safely
 - **SRP-GSL-001** (Medium, Likely) — `get_session_for_compacted_resume`
@@ -233,17 +284,35 @@ items it couldn't verify without a running app.
 
 ## Final status
 
-**Completed and verified** for the in-scope eligible-defect set: 7 defects
-fixed across Rust core, docs tooling, and the frontend session-resume consumer,
-all compile/test verified (`cargo test --lib` 1289/0 across 4 runs; `node
+**Completed and verified** for the in-scope eligible-defect set: **8 defects
+fixed** across Rust core, docs tooling, the frontend session-resume consumer,
+and the code-execution-runtime default posture, all compile/test verified
+(`cargo test --lib` 1289/0 across 4 runs; `cargo test -p gosling --features
+nostr,code-mode` 1298/0 for the CER-GSL-002 proving test specifically; `node
 --test` 14/14; `vitest` 379/382 with all 3 failures confirmed pre-existing;
 `tsc` clean in touched files both repos). 6 further findings dispositioned with
 concrete owners and reasons (session-resume edge cases, an API-semantics call,
 a subprocess-tuning call, an a11y item, two plausible-but-unconfirmed frontend
-items). 2 findings escalated cross-department to `senior-security-officer` and
-independently confirmed (High / Medium) rather than silently patched or
-dismissed — both now await an explicit operator decision on rollout posture for
-the new code-execution-runtime feature.
+items). Of the 2 findings escalated cross-department to
+`senior-security-officer`:
+
+- **CER-GSL-002** (unsafe `Enabled` default) is **resolved this engagement** —
+  confirmed Medium, operator approved flipping to `Disabled`/opt-in directly in
+  the security officer's session, implemented by `dataflow-architect` under a
+  security-issued spec, independently verified by both the security officer and
+  `dataflow-lead`. See "Escalation resolution — CER-GSL-002" above.
+- **CER-GSL-001** (permission-gate bypass in code-mode script callbacks)
+  **remains open** — confirmed High by two independent specialists
+  (`concurrency-engineer` and `senior-security-officer`), architecture-level fix
+  needed, not verifiable in this sandbox (network-gated v8 build dependency).
+  CER-GSL-002's fix narrows exposure (the runtime is no longer on-by-default)
+  but does not touch the underlying bypass — it reawakens the moment an
+  operator opts the runtime back on. Awaits an operator decision on when/who
+  picks up the architecture-level remediation.
+
+All changes across this engagement (10 modified source files + 4 new report
+docs) remain **uncommitted**, per instruction to every specialist not to touch
+git history.
 
 Nothing has been committed. All fixes remain as uncommitted working-tree
 changes pending the operator's go-ahead.

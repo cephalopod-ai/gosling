@@ -190,7 +190,7 @@ impl AgentConfig {
             session_manager,
             permission_manager,
             gosling_mode,
-            code_execution_runtime: CodeExecutionRuntime::Enabled,
+            code_execution_runtime: CodeExecutionRuntime::Disabled,
             disable_session_naming,
             gosling_platform,
             mcp_host_info: None,
@@ -3718,6 +3718,72 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             agent.extension_configs_for_persistence().await,
             vec![code_execution_config]
         );
+        Ok(())
+    }
+
+    #[cfg(feature = "code-mode")]
+    #[tokio::test]
+    async fn default_code_execution_runtime_is_disabled_and_omits_code_mode() -> Result<()> {
+        // PROVING TEST for CER-GSL-002: with GOSLING_CODE_EXECUTION_RUNTIME unset,
+        // the default AgentConfig (no explicit .with_code_execution_runtime call)
+        // must be fail-closed — no code_execution extension registered, no
+        // execute_typescript tool offered, no code-mode prompt disclosure.
+        let temp_dir = tempfile::tempdir()?;
+        let data_dir = temp_dir.path().join("data");
+        let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
+        let permission_manager = Arc::new(PermissionManager::new(data_dir));
+        // Note: no .with_code_execution_runtime(...) — this exercises the default.
+        let config = AgentConfig::new(
+            session_manager.clone(),
+            permission_manager,
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        );
+        assert_eq!(
+            config.code_execution_runtime,
+            CodeExecutionRuntime::Disabled,
+            "unset code execution runtime must default to Disabled (opt-in)"
+        );
+        let agent = Agent::with_config(config);
+        let session = session_manager
+            .create_session(
+                PathBuf::default(),
+                "code-runtime-default".to_string(),
+                SessionType::Hidden,
+                GoslingMode::Auto,
+            )
+            .await?;
+        agent
+            .update_provider(
+                Arc::new(CountingTextProvider::new()),
+                gosling_providers::model::ModelConfig::new("mock-model"),
+                &session.id,
+            )
+            .await?;
+
+        let code_execution_config = ExtensionConfig::Platform {
+            name: "code_execution".to_string(),
+            description: "Code Mode".to_string(),
+            display_name: Some("Code Mode".to_string()),
+            bundled: Some(true),
+            available_tools: vec![],
+        };
+        let error = agent
+            .add_extension(code_execution_config, &session.id)
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("GOSLING_CODE_EXECUTION_RUNTIME=disabled"));
+
+        let (tools, toolshim_tools, system_prompt, _model_config) = agent
+            .prepare_tools_and_prompt(&session.id, &session.working_dir)
+            .await?;
+
+        assert!(tools.is_empty());
+        assert!(toolshim_tools.is_empty());
+        assert!(!system_prompt.contains("execute_typescript"));
         Ok(())
     }
 

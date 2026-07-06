@@ -91,8 +91,8 @@ pub const GOSLING_CODE_EXECUTION_RUNTIME_KEY: &str = "GOSLING_CODE_EXECUTION_RUN
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CodeExecutionRuntime {
-    #[default]
     Enabled,
+    #[default]
     Disabled,
 }
 
@@ -1234,7 +1234,7 @@ impl Config {
     pub fn resolve_gosling_code_execution_runtime(&self) -> CodeExecutionRuntime {
         match self.get_gosling_code_execution_runtime() {
             Ok(runtime) => runtime,
-            Err(ConfigError::NotFound(_)) => CodeExecutionRuntime::Enabled,
+            Err(ConfigError::NotFound(_)) => CodeExecutionRuntime::Disabled,
             Err(error) => {
                 tracing::warn!(
                     key = GOSLING_CODE_EXECUTION_RUNTIME_KEY,
@@ -1450,13 +1450,13 @@ mod tests {
     }
 
     #[test]
-    fn test_code_execution_runtime_defaults_to_enabled() {
+    fn test_code_execution_runtime_defaults_to_disabled() {
         let _guard = env_lock::lock_env([(GOSLING_CODE_EXECUTION_RUNTIME_KEY, None::<&str>)]);
         let config = new_test_config();
 
         assert_eq!(
             config.resolve_gosling_code_execution_runtime(),
-            CodeExecutionRuntime::Enabled
+            CodeExecutionRuntime::Disabled
         );
     }
 
