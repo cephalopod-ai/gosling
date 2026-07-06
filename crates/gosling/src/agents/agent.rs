@@ -3713,10 +3713,96 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         assert!(toolshim_tools.is_empty());
         assert!(system_prompt.contains("# Extensions"));
         assert!(system_prompt.contains("No extensions are defined"));
+        assert!(!system_prompt.contains("execute_typescript"));
         assert_eq!(
             agent.extension_configs_for_persistence().await,
             vec![code_execution_config]
         );
+        Ok(())
+    }
+
+    #[cfg(feature = "code-mode")]
+    #[tokio::test]
+    async fn disabled_code_execution_runtime_does_not_resurrect_persisted_extension_on_resume(
+    ) -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let data_dir = temp_dir.path().join("data");
+        let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
+        let permission_manager = Arc::new(PermissionManager::new(data_dir));
+
+        let enabled_config = AgentConfig::new(
+            session_manager.clone(),
+            permission_manager.clone(),
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        )
+        .with_code_execution_runtime(CodeExecutionRuntime::Enabled);
+        let agent = Agent::with_config(enabled_config);
+        let session = session_manager
+            .create_session(
+                PathBuf::default(),
+                "code-runtime-resume".to_string(),
+                SessionType::Hidden,
+                GoslingMode::Auto,
+            )
+            .await?;
+        agent
+            .update_provider(
+                Arc::new(CountingTextProvider::new()),
+                gosling_providers::model::ModelConfig::new("mock-model"),
+                &session.id,
+            )
+            .await?;
+
+        let code_execution_config = ExtensionConfig::Platform {
+            name: "code_execution".to_string(),
+            description: "Code Mode".to_string(),
+            display_name: Some("Code Mode".to_string()),
+            bundled: Some(true),
+            available_tools: vec![],
+        };
+        agent
+            .add_extension(code_execution_config.clone(), &session.id)
+            .await?;
+        assert_eq!(
+            agent.extension_configs_for_persistence().await,
+            vec![code_execution_config.clone()]
+        );
+
+        let disabled_config = AgentConfig::new(
+            session_manager.clone(),
+            permission_manager,
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        )
+        .with_code_execution_runtime(CodeExecutionRuntime::Disabled);
+        let resumed_agent = Arc::new(Agent::with_config(disabled_config));
+        resumed_agent
+            .update_provider(
+                Arc::new(CountingTextProvider::new()),
+                gosling_providers::model::ModelConfig::new("mock-model"),
+                &session.id,
+            )
+            .await?;
+
+        let persisted_session = session_manager.get_session(&session.id, false).await?;
+        let load_results = resumed_agent
+            .load_extensions_from_session(&persisted_session)
+            .await;
+        assert!(
+            load_results.iter().all(|result| !result.success),
+            "code_execution should not load while runtime is disabled: {load_results:?}"
+        );
+
+        let (tools, toolshim_tools, system_prompt, _model_config) = resumed_agent
+            .prepare_tools_and_prompt(&session.id, &session.working_dir)
+            .await?;
+
+        assert!(tools.is_empty());
+        assert!(toolshim_tools.is_empty());
+        assert!(!system_prompt.contains("execute_typescript"));
         Ok(())
     }
 

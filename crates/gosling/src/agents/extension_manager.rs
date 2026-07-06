@@ -999,18 +999,27 @@ impl ExtensionManager {
                 };
                 let normalized_name = name_to_key(name);
 
-                if normalized_name == "code_execution" && !self.code_execution_runtime.is_enabled()
-                {
-                    self.runtime_blocked_extensions
-                        .lock()
-                        .await
-                        .insert(sanitized_name.clone(), config.clone());
-                    return Err(ExtensionError::ConfigError(
-                        "Code execution runtime is disabled by \
-                         GOSLING_CODE_EXECUTION_RUNTIME=disabled. Set it to enabled and restart \
-                         Gosling to use Code Mode."
-                            .to_string(),
-                    ));
+                if normalized_name == "code_execution" {
+                    if !self.code_execution_runtime.is_enabled() {
+                        self.runtime_blocked_extensions
+                            .lock()
+                            .await
+                            .insert(sanitized_name.clone(), config.clone());
+                        return Err(ExtensionError::ConfigError(
+                            "Code execution runtime is disabled by \
+                             GOSLING_CODE_EXECUTION_RUNTIME=disabled. Set it to enabled and \
+                             restart Gosling to use Code Mode."
+                                .to_string(),
+                        ));
+                    }
+
+                    if !PLATFORM_EXTENSIONS.contains_key(normalized_name.as_str()) {
+                        return Err(ExtensionError::ConfigError(
+                            "Code Mode (code_execution) is not available in this build. \
+                             Rebuild Gosling with the 'code-mode' feature enabled to use it."
+                                .to_string(),
+                        ));
+                    }
                 }
 
                 if let Some(def) = PLATFORM_EXTENSIONS.get(normalized_name.as_str()) {

@@ -93,7 +93,43 @@ describe('CodeExecutionRuntimeSection', () => {
       expect(upsert).toHaveBeenCalledWith('GOSLING_CODE_EXECUTION_RUNTIME', 'disabled', false);
     });
     expect(
-      screen.getByText('Restart Gosling or the configured backend for this change to take effect.')
+      screen.getByText('Restart Gosling for this change to take effect.')
+    ).toBeInTheDocument();
+  });
+
+  it('tells the user to restart the external backend when one is configured', async () => {
+    vi.mocked(window.electron.getSetting).mockImplementation((key: string) =>
+      key === 'externalGoslingd'
+        ? Promise.resolve({ enabled: true, url: 'https://example.com', secret: '' })
+        : Promise.resolve(undefined)
+    );
+
+    const user = userEvent.setup();
+    mockedUseConfig.mockReturnValue({
+      config: { GOSLING_CODE_EXECUTION_RUNTIME: 'enabled' },
+      providersList: [],
+      extensionsList: [],
+      extensionWarnings: [],
+      upsert,
+      read: vi.fn(),
+      remove: vi.fn(),
+      addExtension: vi.fn(),
+      setExtensionEnabled: vi.fn(),
+      removeExtension: vi.fn(),
+      getProviders: vi.fn(),
+      getExtensions: vi.fn(),
+    });
+
+    render(<CodeExecutionRuntimeSection />, { wrapper: IntlTestWrapper });
+
+    await waitFor(() => {
+      expect(window.electron.getSetting).toHaveBeenCalledWith('externalGoslingd');
+    });
+
+    await user.click(screen.getByRole('button', { name: /Disabled/ }));
+
+    expect(
+      await screen.findByText('Restart the external backend process for this change to take effect.')
     ).toBeInTheDocument();
   });
 });

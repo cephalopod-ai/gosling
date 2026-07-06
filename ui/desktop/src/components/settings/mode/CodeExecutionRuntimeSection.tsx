@@ -33,7 +33,11 @@ const i18n = defineMessages({
   },
   restartRequired: {
     id: 'codeExecutionRuntime.restartRequired',
-    defaultMessage: 'Restart Gosling or the configured backend for this change to take effect.',
+    defaultMessage: 'Restart Gosling for this change to take effect.',
+  },
+  restartRequiredExternalBackend: {
+    id: 'codeExecutionRuntime.restartRequiredExternalBackend',
+    defaultMessage: 'Restart the external backend process for this change to take effect.',
   },
 });
 
@@ -47,10 +51,19 @@ export function CodeExecutionRuntimeSection() {
   const { config, upsert } = useConfig();
   const [currentRuntime, setCurrentRuntime] = useState<CodeExecutionRuntime>('enabled');
   const [restartRequired, setRestartRequired] = useState(false);
+  const [usesExternalBackend, setUsesExternalBackend] = useState(false);
 
   useEffect(() => {
     setCurrentRuntime(runtimeFromConfig(config[CONFIG_KEY]));
   }, [config]);
+
+  useEffect(() => {
+    const loadExternalBackendSetting = async () => {
+      const externalGoslingd = await window.electron.getSetting('externalGoslingd');
+      setUsesExternalBackend(Boolean(externalGoslingd?.enabled));
+    };
+    loadExternalBackendSetting();
+  }, []);
 
   const handleRuntimeChange = async (runtime: CodeExecutionRuntime) => {
     await upsert(CONFIG_KEY, runtime, false);
@@ -119,7 +132,9 @@ export function CodeExecutionRuntimeSection() {
       </div>
       {restartRequired && (
         <p className="text-xs text-text-secondary mt-2">
-          {intl.formatMessage(i18n.restartRequired)}
+          {intl.formatMessage(
+            usesExternalBackend ? i18n.restartRequiredExternalBackend : i18n.restartRequired
+          )}
         </p>
       )}
     </div>

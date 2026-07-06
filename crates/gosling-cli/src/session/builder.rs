@@ -4,6 +4,7 @@ use super::output;
 use super::CliSession;
 use console::style;
 use gosling::agents::{Agent, Container, ExtensionError};
+use gosling::config::extensions::name_to_key;
 use gosling::config::resolve_extensions_for_new_session;
 use gosling::config::{Config, ExtensionConfig, GoslingMode};
 use gosling::model_config::model_config_from_user_config;
@@ -409,6 +410,25 @@ async fn collect_extension_configs(
         &session_config.streamable_http_extensions,
         &session_config.builtins,
     );
+
+    if !Config::global()
+        .resolve_gosling_code_execution_runtime()
+        .is_enabled()
+    {
+        for builtin_str in &session_config.builtins {
+            if builtin_str
+                .split(',')
+                .any(|name| name_to_key(name.trim()) == "code_execution")
+            {
+                return Err(ExtensionError::ConfigError(
+                    "Cannot start '--with-builtin code_execution': code execution runtime is \
+                     disabled by GOSLING_CODE_EXECUTION_RUNTIME=disabled. Set it to enabled and \
+                     restart Gosling to use Code Mode."
+                        .to_string(),
+                ));
+            }
+        }
+    }
 
     let mut all: Vec<ExtensionConfig> = configured_extensions;
     if !session_config.no_profile && !session_config.resume {
