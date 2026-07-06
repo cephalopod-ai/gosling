@@ -551,20 +551,22 @@ impl Config {
     }
 
     /// Load only the writable config file for read-modify-write operations.
-    /// Returns an empty mapping if the file doesn't exist or can't be parsed.
+    /// Parse errors are returned instead of treating corrupt content as empty;
+    /// otherwise a routine settings write can permanently replace the user's
+    /// previous config with a one-key fresh file.
     fn load_write_config(&self) -> Result<Mapping, ConfigError> {
         if !self.write_path().exists() {
             return Ok(Mapping::new());
         }
         let content = std::fs::read_to_string(self.write_path())?;
-        let mut values = parse_yaml_content(&content).unwrap_or_else(|e| {
+        let mut values = parse_yaml_content(&content).map_err(|e| {
             tracing::warn!(
-                "Config file {:?} is corrupt: {}. Starting fresh.",
+                "Config file {:?} is corrupt: {}. Refusing read-modify-write update.",
                 self.write_path(),
                 e
             );
-            Mapping::new()
-        });
+            e
+        })?;
 
         if crate::config::migrations::run_migrations(&mut values) {
             if let Err(e) = self.save_values(&values) {
@@ -2189,6 +2191,24 @@ mod tests {
         assert_eq!(value, "default_val");
 
         Ok(())
+    }
+
+    #[test]
+    fn set_param_refuses_to_overwrite_corrupt_config() {
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        let original = "valid: before\n  invalid";
+        std::fs::write(config_file.path(), original).unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+
+        let err = config.set_param("new_key", "new_value").unwrap_err();
+
+        assert!(matches!(err, ConfigError::DeserializeError(_)));
+        assert_eq!(
+            std::fs::read_to_string(config_file.path()).unwrap(),
+            original
+        );
     }
 
     #[test]

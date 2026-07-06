@@ -23,7 +23,7 @@
     </style>
   </head>
   <body>
-    <script>
+    <script nonce="{{SCRIPT_NONCE}}">
       (function () {
         'use strict';
 
@@ -31,9 +31,10 @@
 
         function getProxyParams() {
           var params = new URLSearchParams(window.location.search);
+          var fragmentParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
           var colorScheme = params.get('color_scheme');
           return {
-            secret: params.get('secret') || '',
+            secret: fragmentParams.get('secret') || '',
             baseUrl: getProxyBaseUrl(),
             colorScheme: colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : null
           };
@@ -113,6 +114,10 @@
           document.body.appendChild(errorElement);
         }
 
+        function createGuestCsp(csp) {
+          return String(csp || '').replace(/'nonce-[A-Za-z0-9+/_=-]+'/g, "'unsafe-inline'");
+        }
+
         async function storeGuestHtml(html) {
           var proxyParams = getProxyParams();
           var cspMeta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
@@ -122,7 +127,7 @@
             body: JSON.stringify({
               secret: proxyParams.secret,
               html: html,
-              csp: cspMeta ? cspMeta.content : ''
+              csp: cspMeta ? createGuestCsp(cspMeta.content) : ''
             })
           });
 

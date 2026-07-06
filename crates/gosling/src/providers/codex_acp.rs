@@ -59,7 +59,7 @@ impl ProviderDef for CodexAcpProvider {
                 .with_npm()
                 .resolve(CODEX_ACP_PROVIDER_NAME)?;
             let env = vec![];
-            let gosling_mode = config.get_gosling_mode().unwrap_or(GoslingMode::Auto);
+            let gosling_mode = config.get_gosling_mode().unwrap_or_default();
             let mcp_servers = extension_configs_to_mcp_servers(&extensions);
 
             // fixed gosling mode via -c overrides until session/set-mode works

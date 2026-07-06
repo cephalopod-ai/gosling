@@ -13,6 +13,8 @@ const PLUGINS_CONFIG_KEY: &str = "plugins";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PluginConfigEntry {
     enabled: bool,
+    #[serde(default)]
+    trusted: bool,
 }
 
 /// A plugin found on disk and not disabled by any settings file.
@@ -79,16 +81,20 @@ fn discover_enabled_plugins_with_config(
 
     let enabled_by_settings: Vec<DiscoveredPlugin> = found
         .into_values()
-        .filter(|plugin| is_enabled(&plugin.name, &scoped_settings))
+        .filter(|plugin| settings_state(&plugin.name, &scoped_settings) != Some(false))
         .collect();
 
-    filter_by_config(enabled_by_settings, config)
+    filter_by_config(enabled_by_settings, config, &scoped_settings)
 }
 
-/// Apply the `plugins` map in `config.yaml`. Newly discovered plugins are added
-/// to the map with `enabled: true`; plugins explicitly set to `enabled: false`
-/// are dropped.
-fn filter_by_config(plugins: Vec<DiscoveredPlugin>, config: &Config) -> Vec<DiscoveredPlugin> {
+/// Apply the `plugins` map in `config.yaml`. Newly discovered user plugins stay
+/// enabled for compatibility; project plugins require explicit trust through
+/// settings or a persisted enabled config entry.
+fn filter_by_config(
+    plugins: Vec<DiscoveredPlugin>,
+    config: &Config,
+    scoped_settings: &[(SettingsScope, PluginSettings)],
+) -> Vec<DiscoveredPlugin> {
     let mut entries: HashMap<String, PluginConfigEntry> =
         config.get_param(PLUGINS_CONFIG_KEY).unwrap_or_default();
 
@@ -98,14 +104,32 @@ fn filter_by_config(plugins: Vec<DiscoveredPlugin>, config: &Config) -> Vec<Disc
         let key = plugin.root.to_string_lossy().to_string();
         match entries.get(&key) {
             Some(entry) => {
-                if entry.enabled {
+                let explicitly_enabled =
+                    settings_state(&plugin.name, scoped_settings) == Some(true);
+                let trusted =
+                    plugin.scope == PluginScope::User || entry.trusted || explicitly_enabled;
+                if entry.enabled && trusted {
                     enabled.push(plugin);
                 }
             }
             None => {
-                entries.insert(key, PluginConfigEntry { enabled: true });
+                let enabled = match plugin.scope {
+                    PluginScope::User => true,
+                    PluginScope::Project => {
+                        settings_state(&plugin.name, scoped_settings) == Some(true)
+                    }
+                };
+                entries.insert(
+                    key,
+                    PluginConfigEntry {
+                        enabled,
+                        trusted: plugin.scope == PluginScope::User || enabled,
+                    },
+                );
                 dirty = true;
-                enabled.push(plugin);
+                if enabled {
+                    enabled.push(plugin);
+                }
             }
         }
     }
@@ -119,7 +143,10 @@ fn filter_by_config(plugins: Vec<DiscoveredPlugin>, config: &Config) -> Vec<Disc
     enabled
 }
 
-fn is_enabled(plugin_name: &str, scoped_settings: &[(SettingsScope, PluginSettings)]) -> bool {
+fn settings_state(
+    plugin_name: &str,
+    scoped_settings: &[(SettingsScope, PluginSettings)],
+) -> Option<bool> {
     for scope in [
         SettingsScope::Local,
         SettingsScope::Project,
@@ -136,14 +163,14 @@ fn is_enabled(plugin_name: &str, scoped_settings: &[(SettingsScope, PluginSettin
         let listed_enabled = settings.enabled.iter().any(|n| n == plugin_name);
 
         if listed_disabled {
-            return false;
+            return Some(false);
         }
         if listed_enabled {
-            return true;
+            return Some(true);
         }
     }
 
-    true
+    None
 }
 
 fn project_plugin_dir(project_root: &Path) -> PathBuf {
@@ -260,14 +287,26 @@ mod tests {
     }
 
     #[test]
-    fn finds_project_scope_plugin() {
+    fn project_scope_plugin_requires_explicit_enable() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
 
         let found = discover(project);
-        let names: Vec<_> = found.iter().map(|p| p.name.as_str()).collect();
-        assert!(names.contains(&"demo"), "got: {names:?}");
+        assert!(found.iter().all(|p| p.name != "demo"), "got: {found:?}");
+    }
+
+    #[test]
+    fn explicit_enabled_project_plugin_loads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+        write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
+        write_settings(
+            &project.join(".config").join("gosling"),
+            r#"{"enabledPlugins":["demo"]}"#,
+        );
+
+        let found = discover(project);
         let demo = found.iter().find(|p| p.name == "demo").unwrap();
         assert_eq!(demo.scope, PluginScope::Project);
     }
@@ -302,7 +341,7 @@ mod tests {
         let found = discover(project);
         let names: Vec<_> = found.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"demo"), "got: {names:?}");
-        assert!(names.contains(&"other"), "got: {names:?}");
+        assert!(!names.contains(&"other"), "got: {names:?}");
     }
 
     #[test]

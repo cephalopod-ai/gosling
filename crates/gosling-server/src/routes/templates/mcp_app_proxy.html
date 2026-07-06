@@ -28,7 +28,7 @@
     </style>
   </head>
   <body>
-    <script>
+    <script nonce="{{SCRIPT_NONCE}}">
       (function () {
         'use strict';
 
@@ -39,8 +39,9 @@
          */
         function getProxyParams() {
           var params = new URLSearchParams(window.location.search);
+          var fragmentParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
           return {
-            secret: params.get('secret') || '',
+            secret: fragmentParams.get('secret') || '',
             baseUrl: window.location.origin
           };
         }
@@ -120,7 +121,7 @@
           try {
             var nonce = await storeGuestHtml(html, csp);
             var proxyParams = getProxyParams();
-            guestIframe.src = proxyParams.baseUrl + '/mcp-app-guest?secret=' + encodeURIComponent(proxyParams.secret) + '&nonce=' + encodeURIComponent(nonce);
+            guestIframe.src = proxyParams.baseUrl + '/mcp-app-guest?nonce=' + encodeURIComponent(nonce);
           } catch (e) {
             // Fallback to srcdoc if the store endpoint is not available
             console.warn('Failed to use /mcp-app-guest endpoint, falling back to srcdoc:', e);

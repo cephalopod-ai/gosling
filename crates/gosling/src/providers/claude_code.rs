@@ -391,7 +391,7 @@ impl ClaudeCodeProvider {
     /// Returns true when the control protocol is enabled.
     fn apply_permission_flags(cmd: &mut Command) -> Result<bool, ProviderError> {
         let config = Config::global();
-        let gosling_mode = config.get_gosling_mode().unwrap_or(GoslingMode::Auto);
+        let gosling_mode = config.get_gosling_mode().unwrap_or_default();
 
         match gosling_mode {
             GoslingMode::Auto => {

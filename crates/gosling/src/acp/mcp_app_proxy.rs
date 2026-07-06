@@ -29,7 +29,6 @@ struct GuestHtmlEntry {
 
 #[derive(Deserialize)]
 struct ProxyQuery {
-    secret: String,
     connect_domains: Option<String>,
     resource_domains: Option<String>,
     frame_domains: Option<String>,
@@ -170,6 +169,7 @@ fn build_outer_csp(
     base_uri_domains: &[String],
     script_domains: &[String],
     guest_origin: &str,
+    script_inline_source: &str,
 ) -> String {
     let resources = if resource_domains.is_empty() {
         String::new()
@@ -206,8 +206,8 @@ fn build_outer_csp(
 
     format!(
         "default-src 'none'; \
-         script-src 'self' 'unsafe-inline'{resources}{scripts}; \
-         script-src-elem 'self' 'unsafe-inline'{resources}{scripts}; \
+         script-src 'self' {script_inline_source}{resources}{scripts}; \
+         script-src-elem 'self' {script_inline_source}{resources}{scripts}; \
          style-src 'self' 'unsafe-inline'{resources}; \
          style-src-elem 'self' 'unsafe-inline'{resources}; \
          connect-src 'self'{connections}; \
@@ -225,9 +225,6 @@ async fn mcp_app_proxy(
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     Query(params): Query<ProxyQuery>,
 ) -> Response {
-    if params.secret != state.secret_key {
-        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
-    }
     if !peer_addr_is_loopback(&peer_addr) {
         return (
             StatusCode::BAD_REQUEST,
@@ -236,17 +233,22 @@ async fn mcp_app_proxy(
             .into_response();
     }
 
-    let html = MCP_APP_PROXY_HTML.replace(
-        "{{OUTER_CSP}}",
-        &build_outer_csp(
-            &parse_domains(params.connect_domains.as_ref()),
-            &parse_domains(params.resource_domains.as_ref()),
-            &parse_domains(params.frame_domains.as_ref()),
-            &parse_domains(params.base_uri_domains.as_ref()),
-            &parse_domains(params.script_domains.as_ref()),
-            &state.guest_base_url,
-        ),
-    );
+    let script_nonce = Uuid::new_v4().simple().to_string();
+    let script_inline_source = format!("'nonce-{script_nonce}'");
+    let html = MCP_APP_PROXY_HTML
+        .replace(
+            "{{OUTER_CSP}}",
+            &build_outer_csp(
+                &parse_domains(params.connect_domains.as_ref()),
+                &parse_domains(params.resource_domains.as_ref()),
+                &parse_domains(params.frame_domains.as_ref()),
+                &parse_domains(params.base_uri_domains.as_ref()),
+                &parse_domains(params.script_domains.as_ref()),
+                &state.guest_base_url,
+                &script_inline_source,
+            ),
+        )
+        .replace("{{SCRIPT_NONCE}}", &script_nonce);
 
     (
         [
@@ -321,7 +323,7 @@ async fn serve_guest_html(
         let mut store = state.guest_store.write().await;
         let cutoff = Instant::now() - Duration::from_secs(GUEST_HTML_TTL_SECS);
         store.retain(|_, entry| entry.created > cutoff);
-        store.get(&params.nonce).cloned()
+        store.remove(&params.nonce)
     };
 
     match entry {

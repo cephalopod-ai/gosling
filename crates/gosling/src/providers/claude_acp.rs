@@ -59,7 +59,7 @@ impl ProviderDef for ClaudeAcpProvider {
             let resolved_command = SearchPaths::builder()
                 .with_npm()
                 .resolve(CLAUDE_ACP_BINARY)?;
-            let gosling_mode = config.get_gosling_mode().unwrap_or(GoslingMode::Auto);
+            let gosling_mode = config.get_gosling_mode().unwrap_or_default();
 
             let mode_mapping = HashMap::from([
                 // Closest to "autonomous": bypassPermissions skips confirmations.

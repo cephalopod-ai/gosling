@@ -1,13 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { buildConnectSrc, shouldUpgradeInsecureRequests, buildCSP } from '../csp';
+import { buildConnectSrc, buildFrameSrc, shouldUpgradeInsecureRequests, buildCSP } from '../csp';
 import type { ExternalGoslingdConfig } from '../settings';
 
 describe('buildConnectSrc', () => {
   it('includes default sources when no external backend is configured', () => {
     const result = buildConnectSrc(undefined);
     expect(result).toContain("'self'");
-    expect(result).toContain('http://127.0.0.1:*');
-    expect(result).toContain('wss://127.0.0.1:*');
+    expect(result).not.toContain('http://127.0.0.1:*');
+    expect(result).not.toContain('wss://127.0.0.1:*');
+  });
+
+  it('includes scoped loopback origins for the active local ACP URL', () => {
+    const result = buildConnectSrc(undefined, 'ws://127.0.0.1:64027/acp?token=secret');
+    expect(result).toContain('ws://127.0.0.1:64027');
+    expect(result).toContain('http://127.0.0.1:64027');
   });
 
   it('includes external backend origin when enabled', () => {
@@ -51,6 +57,24 @@ describe('buildConnectSrc', () => {
     const result = buildConnectSrc(config);
     expect(result).toContain("'self'");
     expect(result).not.toContain('not-a-valid-url');
+  });
+});
+
+describe('buildFrameSrc', () => {
+  it('allows only self without an active local ACP URL', () => {
+    expect(buildFrameSrc(undefined)).toBe("'self'");
+  });
+
+  it('includes only the HTTP origin for the active local ACP URL', () => {
+    const result = buildFrameSrc('ws://127.0.0.1:64027/acp?token=secret');
+    expect(result).toContain("'self'");
+    expect(result).toContain('http://127.0.0.1:64027');
+    expect(result).not.toContain('ws://127.0.0.1:64027');
+    expect(result).not.toContain('http://127.0.0.1:*');
+  });
+
+  it('ignores non-loopback ACP URLs', () => {
+    expect(buildFrameSrc('ws://dev.company.net:64027/acp?token=secret')).toBe("'self'");
   });
 });
 
@@ -141,8 +165,18 @@ describe('buildCSP', () => {
     };
     const csp = buildCSP(config);
     expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(csp).toContain('connect-src');
     expect(csp).toContain("object-src 'none'");
+    expect(csp).not.toContain("frame-src 'self' https: http:");
+  });
+
+  it('scopes loopback connect-src to the active ACP URL', () => {
+    const csp = buildCSP(undefined, 'ws://127.0.0.1:12345/acp?token=test');
+
+    expect(csp).toContain('ws://127.0.0.1:12345');
+    expect(csp).toContain('http://127.0.0.1:12345');
+    expect(csp).not.toContain('http://127.0.0.1:*');
   });
 });

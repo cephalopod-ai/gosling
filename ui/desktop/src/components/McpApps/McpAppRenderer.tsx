@@ -34,7 +34,6 @@ import type { CallToolResult, JSONRPCRequest, Tool } from '@modelcontextprotocol
 import { GripHorizontal, Maximize2, PictureInPicture2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { callMcpAppTool, readMcpAppResource } from '../../acp/mcp-apps';
-import { httpBaseFromAcpWebSocketUrl, isLoopbackAcpWebSocketUrl } from '../../acp/url';
 import { getCachedTools } from './toolsCache';
 import { AppEvents } from '../../constants/events';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -182,37 +181,11 @@ function getContainerDimensions(
 
 async function fetchMcpAppProxyUrl(csp: McpUiResourceCsp | null): Promise<string | null> {
   try {
-    const acpUrl = await window.electron.getAcpUrl();
-    const secretKey = await window.electron.getSecretKey();
-
-    if (!acpUrl || !secretKey) {
-      console.error('[McpAppRenderer] Failed to get ACP URL or secret key');
-      return null;
+    const proxyUrl = await window.electron.getMcpAppProxyUrl(csp);
+    if (!proxyUrl) {
+      console.error('[McpAppRenderer] Failed to get MCP app proxy URL');
     }
-
-    if (!isLoopbackAcpWebSocketUrl(acpUrl)) {
-      console.error('[McpAppRenderer] MCP app proxy is only supported for loopback ACP backends');
-      return null;
-    }
-
-    const httpBase = httpBaseFromAcpWebSocketUrl(acpUrl).replace(/\/+$/, '');
-    const proxyUrl = new URL(`${httpBase}/mcp-app-proxy`);
-    proxyUrl.searchParams.set('secret', secretKey);
-
-    if (csp?.connectDomains?.length) {
-      proxyUrl.searchParams.set('connect_domains', csp.connectDomains.join(','));
-    }
-    if (csp?.resourceDomains?.length) {
-      proxyUrl.searchParams.set('resource_domains', csp.resourceDomains.join(','));
-    }
-    if (csp?.frameDomains?.length) {
-      proxyUrl.searchParams.set('frame_domains', csp.frameDomains.join(','));
-    }
-    if (csp?.baseUriDomains?.length) {
-      proxyUrl.searchParams.set('base_uri_domains', csp.baseUriDomains.join(','));
-    }
-
-    return proxyUrl.toString();
+    return proxyUrl;
   } catch (error) {
     console.error('[McpAppRenderer] Error fetching MCP App Proxy URL:', error);
     return null;

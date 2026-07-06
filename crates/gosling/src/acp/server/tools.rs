@@ -91,12 +91,10 @@ impl GoslingAcpAgent {
             params
         };
 
-        let ctx = crate::agents::ToolCallContext::new(session_id.clone(), None, None);
         let tool_result = agent
-            .extension_manager
-            .dispatch_tool_call(&ctx, tool_call, CancellationToken::new())
+            .dispatch_app_tool_call(session_id, tool_call, CancellationToken::new())
             .await
-            .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
+            .map_err(|e| agent_client_protocol::Error::invalid_params().data(e.to_string()))?;
 
         let result = tool_result
             .result

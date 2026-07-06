@@ -1170,7 +1170,8 @@ impl CliSession {
                                     // Approve/SmartApprove modes since auto-allowing would
                                     // bypass the safety contract those modes are meant to enforce.
                                     let config = Config::global();
-                                    let gosling_mode = config.get_gosling_mode().unwrap_or(GoslingMode::Auto);
+                                    let gosling_mode =
+                                        config.get_gosling_mode().unwrap_or_default();
                                     if gosling_mode == GoslingMode::Approve || gosling_mode == GoslingMode::SmartApprove {
                                         cancel_token_clone.cancel();
                                         drop(stream);

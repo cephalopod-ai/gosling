@@ -23,7 +23,6 @@ type GuestHtmlStore = Arc<RwLock<HashMap<String, (String, String, Instant)>>>;
 
 #[derive(Deserialize)]
 struct ProxyQuery {
-    secret: String,
     /// Comma-separated list of domains for connect-src (fetch, XHR, WebSocket)
     connect_domains: Option<String>,
     /// Comma-separated list of domains for resource loading (scripts, styles, images, fonts, media)
@@ -38,7 +37,6 @@ struct ProxyQuery {
 
 #[derive(Deserialize)]
 struct GuestQuery {
-    secret: String,
     nonce: String,
 }
 
@@ -72,6 +70,7 @@ fn build_outer_csp(
     frame_domains: &[String],
     base_uri_domains: &[String],
     script_domains: &[String],
+    script_inline_source: &str,
 ) -> String {
     let resources = if resource_domains.is_empty() {
         String::new()
@@ -106,8 +105,8 @@ fn build_outer_csp(
 
     format!(
         "default-src 'none'; \
-         script-src 'self' 'unsafe-inline'{resources}{scripts}; \
-         script-src-elem 'self' 'unsafe-inline'{resources}{scripts}; \
+         script-src 'self' {script_inline_source}{resources}{scripts}; \
+         script-src-elem 'self' {script_inline_source}{resources}{scripts}; \
          style-src 'self' 'unsafe-inline'{resources}; \
          style-src-elem 'self' 'unsafe-inline'{resources}; \
          connect-src 'self'{connections}; \
@@ -142,7 +141,6 @@ struct AppState {
     get,
     path = "/mcp-app-proxy",
     params(
-        ("secret" = String, Query, description = "Secret key for authentication"),
         ("connect_domains" = Option<String>, Query, description = "Comma-separated domains for connect-src"),
         ("resource_domains" = Option<String>, Query, description = "Comma-separated domains for resource loading"),
         ("frame_domains" = Option<String>, Query, description = "Comma-separated origins for nested iframes (frame-src)"),
@@ -155,13 +153,9 @@ struct AppState {
     )
 )]
 async fn mcp_app_proxy(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    axum::extract::State(_state): axum::extract::State<AppState>,
     Query(params): Query<ProxyQuery>,
 ) -> Response {
-    if !token_matches(Some(params.secret.as_str()), &state.secret_key) {
-        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
-    }
-
     // Parse domains from query params
     let connect_domains = parse_domains(params.connect_domains.as_ref());
     let resource_domains = parse_domains(params.resource_domains.as_ref());
@@ -170,16 +164,21 @@ async fn mcp_app_proxy(
     let script_domains = parse_domains(params.script_domains.as_ref());
 
     // Build the outer CSP based on declared domains
+    let script_nonce = Uuid::new_v4().simple().to_string();
+    let script_inline_source = format!("'nonce-{script_nonce}'");
     let csp = build_outer_csp(
         &connect_domains,
         &resource_domains,
         &frame_domains,
         &base_uri_domains,
         &script_domains,
+        &script_inline_source,
     );
 
     // Replace the CSP placeholder in the HTML template
-    let html = MCP_APP_PROXY_HTML.replace("{{OUTER_CSP}}", &csp);
+    let html = MCP_APP_PROXY_HTML
+        .replace("{{OUTER_CSP}}", &csp)
+        .replace("{{SCRIPT_NONCE}}", &script_nonce);
 
     (
         [
@@ -218,6 +217,7 @@ async fn store_guest_html(
         &parse_domains(body.frame_domains.as_ref()),
         &parse_domains(body.base_uri_domains.as_ref()),
         &[],
+        "'unsafe-inline'",
     );
 
     {
@@ -256,10 +256,6 @@ async fn serve_guest_html(
     axum::extract::State(state): axum::extract::State<AppState>,
     Query(params): Query<GuestQuery>,
 ) -> Response {
-    if !token_matches(Some(params.secret.as_str()), &state.secret_key) {
-        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
-    }
-
     // Consume the entry (one-time use)
     let entry = {
         let mut store = state.guest_store.write().await;

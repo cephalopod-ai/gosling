@@ -238,6 +238,24 @@ fn resolve_command(cmd: &str) -> PathBuf {
         })
 }
 
+fn minimal_child_environment() -> HashMap<String, String> {
+    let mut env = HashMap::new();
+    for key in ["PATH", "HOME", "USER", "TMPDIR", "TEMP", "TMP"] {
+        if let Ok(value) = std::env::var(key) {
+            env.insert(key.to_string(), value);
+        }
+    }
+
+    #[cfg(windows)]
+    for key in ["SystemRoot", "COMSPEC", "PATHEXT", "USERPROFILE"] {
+        if let Ok(value) = std::env::var(key) {
+            env.insert(key.to_string(), value);
+        }
+    }
+
+    env
+}
+
 fn require_str_parameter<'a>(v: &'a serde_json::Value, name: &str) -> Result<&'a str, ErrorData> {
     let v = v.get(name).ok_or_else(|| {
         ErrorData::new(
@@ -1131,8 +1149,11 @@ impl ExtensionManager {
                     })
                 } else {
                     let cmd = resolve_command(cmd);
+                    for (key, value) in minimal_child_environment() {
+                        all_envs.entry(key).or_insert(value);
+                    }
                     Command::new(cmd).configure(|command| {
-                        command.args(args).envs(all_envs);
+                        command.env_clear().args(args).envs(all_envs);
                     })
                 };
 

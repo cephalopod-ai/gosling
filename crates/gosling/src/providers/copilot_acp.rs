@@ -62,7 +62,7 @@ impl ProviderDef for CopilotAcpProvider {
             let resolved_command = SearchPaths::builder()
                 .with_npm()
                 .resolve(COPILOT_ACP_BINARY)?;
-            let gosling_mode = config.get_gosling_mode().unwrap_or(GoslingMode::Auto);
+            let gosling_mode = config.get_gosling_mode().unwrap_or_default();
             let model = config
                 .get_gosling_model()
                 .unwrap_or_else(|_| ACP_CURRENT_MODEL.to_string());

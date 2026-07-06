@@ -32,7 +32,7 @@ impl Default for RetryConfig {
             initial_interval_ms: DEFAULT_INITIAL_RETRY_INTERVAL_MS,
             backoff_multiplier: DEFAULT_BACKOFF_MULTIPLIER,
             max_interval_ms: DEFAULT_MAX_RETRY_INTERVAL_MS,
-            transient_only: false,
+            transient_only: true,
         }
     }
 }
@@ -264,10 +264,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_retries_request_failed() {
+    fn default_config_skips_request_failed() {
         let config = RetryConfig::default();
         let error = ProviderError::RequestFailed("Bad request (400): model not found".into());
-        assert!(should_retry(&error, &config));
+        assert!(!should_retry(&error, &config));
     }
 
     #[test]

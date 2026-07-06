@@ -49,7 +49,7 @@ import {
 } from './utils/autoUpdater';
 import { UPDATES_ENABLED } from './updates';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
-import { BLOCKED_PROTOCOLS, WEB_PROTOCOLS } from './utils/urlSecurity';
+import { isProtocolSafe, WEB_PROTOCOLS } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
 
 function shouldSetupUpdater(): boolean {
@@ -200,6 +200,7 @@ function getSettings(): Settings {
   if (settingsCache) {
     return settingsCache;
   }
+
   if (fsSync.existsSync(SETTINGS_FILE)) {
     let stored: LegacySettings;
     try {
@@ -221,6 +222,92 @@ function getSettings(): Settings {
     return settingsCache;
   }
   return defaultSettings;
+}
+
+function resolveRendererPath(filePath: string): string {
+  return path.resolve(expandTilde(filePath));
+}
+
+function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
+  const relative = path.relative(rootPath, targetPath);
+  return (
+    relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
+  );
+}
+
+function rendererFileRoots(): string[] {
+  const roots = new Set<string>();
+  roots.add(path.resolve(app.getPath('userData')));
+  for (const dir of loadRecentDirs()) {
+    roots.add(path.resolve(dir));
+  }
+
+  const archiveFolder = getSettings().archiveFolder;
+  if (archiveFolder) {
+    roots.add(resolveRendererPath(archiveFolder));
+  }
+
+  return [...roots];
+}
+
+function assertRendererFileAccess(filePath: string): string {
+  const resolvedPath = resolveRendererPath(filePath);
+  const allowed = rendererFileRoots().some((root) => isPathWithinRoot(resolvedPath, root));
+  if (!allowed) {
+    throw new Error('Renderer file access denied for path outside approved roots');
+  }
+  return resolvedPath;
+}
+
+async function openExternalIfSafe(url: string): Promise<void> {
+  if (!isProtocolSafe(url)) {
+    console.warn(`[Main] Blocked unsafe external URL: ${url}`);
+    return;
+  }
+
+  await shell.openExternal(url);
+}
+
+function loopbackHttpBaseFromAcpUrl(acpUrl: string): string | null {
+  try {
+    const parsed = new URL(acpUrl);
+    if (!['ws:', 'wss:'].includes(parsed.protocol)) {
+      return null;
+    }
+    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(parsed.hostname)) {
+      return null;
+    }
+
+    parsed.protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:';
+    parsed.pathname = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+type McpAppProxyCsp = {
+  connectDomains?: string[];
+  resourceDomains?: string[];
+  frameDomains?: string[];
+  baseUriDomains?: string[];
+};
+
+function appendDomainParams(proxyUrl: URL, csp?: McpAppProxyCsp | null): void {
+  if (csp?.connectDomains?.length) {
+    proxyUrl.searchParams.set('connect_domains', csp.connectDomains.join(','));
+  }
+  if (csp?.resourceDomains?.length) {
+    proxyUrl.searchParams.set('resource_domains', csp.resourceDomains.join(','));
+  }
+  if (csp?.frameDomains?.length) {
+    proxyUrl.searchParams.set('frame_domains', csp.frameDomains.join(','));
+  }
+  if (csp?.baseUriDomains?.length) {
+    proxyUrl.searchParams.set('base_uri_domains', csp.baseUriDomains.join(','));
+  }
 }
 
 function updateSettings(modifier: (settings: Settings) => void): void {
@@ -1136,7 +1223,9 @@ const createChat = async (
           localCertificateTrust.trust.fingerprint !== localCertFingerprint
         ) {
           await goslingServeResult.cleanup();
-          throw new Error('gosling serve TLS certificate fingerprint did not match readiness probe');
+          throw new Error(
+            'gosling serve TLS certificate fingerprint did not match readiness probe'
+          );
         }
         localCertificateTrust.trust.fingerprint = localCertFingerprint;
         installBackendCertificateVerifier(session.fromPartition(MAIN_WINDOW_SESSION_PARTITION));
@@ -1323,16 +1412,7 @@ const createChat = async (
 
   // Handle new window creation for links (fallback for any links not handled by onClick)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    try {
-      const protocol = new URL(url).protocol;
-      if (BLOCKED_PROTOCOLS.includes(protocol)) {
-        return { action: 'deny' };
-      }
-    } catch {
-      return { action: 'deny' };
-    }
-
-    shell.openExternal(url);
+    void openExternalIfSafe(url);
     return { action: 'deny' };
   });
 
@@ -1341,15 +1421,7 @@ const createChat = async (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mainWindow.webContents.on('new-window' as any, function (event: any, url: string) {
     event.preventDefault();
-    try {
-      const protocol = new URL(url).protocol;
-      if (BLOCKED_PROTOCOLS.includes(protocol)) {
-        return;
-      }
-    } catch {
-      return;
-    }
-    shell.openExternal(url);
+    void openExternalIfSafe(url);
   });
 
   const windowId = mainWindow.id;
@@ -1787,14 +1859,7 @@ ipcMain.on('react-ready', (event) => {
 });
 
 ipcMain.handle('open-external', async (_event, url: string) => {
-  const parsedUrl = new URL(url);
-
-  if (BLOCKED_PROTOCOLS.includes(parsedUrl.protocol)) {
-    console.warn(`[Main] Blocked dangerous protocol: ${parsedUrl.protocol}`);
-    return;
-  }
-
-  await shell.openExternal(url);
+  await openExternalIfSafe(url);
 });
 
 ipcMain.handle('directory-chooser', async () => {
@@ -1891,20 +1956,35 @@ ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
   }
 });
 
-ipcMain.handle('get-secret-key', (event) => {
-  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
-  if (!windowId) {
-    return null;
-  }
-  return goslingServeLeases.getSecretKey(windowId) ?? null;
-});
-
 ipcMain.handle('get-acp-url', async (event) => {
   const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
   if (!windowId) {
     return null;
   }
   return goslingServeLeases.getAcpUrl(windowId) ?? null;
+});
+
+ipcMain.handle('get-mcp-app-proxy-url', async (event, csp?: McpAppProxyCsp | null) => {
+  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+  if (!windowId) {
+    return null;
+  }
+
+  const acpUrl = goslingServeLeases.getAcpUrl(windowId);
+  const secretKey = goslingServeLeases.getSecretKey(windowId);
+  if (!acpUrl || !secretKey) {
+    return null;
+  }
+
+  const httpBase = loopbackHttpBaseFromAcpUrl(acpUrl);
+  if (!httpBase) {
+    return null;
+  }
+
+  const proxyUrl = new URL(`${httpBase}/mcp-app-proxy`);
+  appendDomainParams(proxyUrl, csp);
+  proxyUrl.hash = new URLSearchParams({ secret: secretKey }).toString();
+  return proxyUrl.toString();
 });
 
 // Handle menu bar icon visibility
@@ -2202,48 +2282,23 @@ ipcMain.handle('check-ollama', async () => {
 
 ipcMain.handle('read-file', async (_event, filePath) => {
   try {
-    const expandedPath = expandTilde(filePath);
-    if (process.platform === 'win32') {
-      const buffer = await fs.readFile(expandedPath);
-      return { file: buffer.toString('utf8'), filePath: expandedPath, error: null, found: true };
-    }
-    // Non-Windows: keep previous behavior via cat for parity
-    return await new Promise((resolve) => {
-      const cat = spawn('cat', [expandedPath]);
-      let output = '';
-      let errorOutput = '';
-
-      cat.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-
-      cat.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      cat.on('close', (code) => {
-        if (code !== 0) {
-          resolve({ file: '', filePath: expandedPath, error: errorOutput || null, found: false });
-          return;
-        }
-        resolve({ file: output, filePath: expandedPath, error: null, found: true });
-      });
-
-      cat.on('error', (error) => {
-        console.error('Error reading file:', error);
-        resolve({ file: '', filePath: expandedPath, error, found: false });
-      });
-    });
+    const expandedPath = assertRendererFileAccess(filePath);
+    const buffer = await fs.readFile(expandedPath);
+    return { file: buffer.toString('utf8'), filePath: expandedPath, error: null, found: true };
   } catch (error) {
     console.error('Error reading file:', error);
-    return { file: '', filePath: expandTilde(filePath), error, found: false };
+    return {
+      file: '',
+      filePath: resolveRendererPath(filePath),
+      error: errorMessage(error),
+      found: false,
+    };
   }
 });
 
 ipcMain.handle('write-file', async (_event, filePath, content) => {
   try {
-    // Expand tilde to home directory
-    const expandedPath = expandTilde(filePath);
+    const expandedPath = assertRendererFileAccess(filePath);
     await fs.writeFile(expandedPath, content, { encoding: 'utf8' });
     return true;
   } catch (error) {
@@ -2254,7 +2309,7 @@ ipcMain.handle('write-file', async (_event, filePath, content) => {
 
 ipcMain.handle('delete-file', async (_event, filePath) => {
   try {
-    const expandedPath = expandTilde(filePath);
+    const expandedPath = assertRendererFileAccess(filePath);
     await fs.unlink(expandedPath);
     return true;
   } catch (error) {
@@ -2266,9 +2321,7 @@ ipcMain.handle('delete-file', async (_event, filePath) => {
 // Enhanced file operations
 ipcMain.handle('ensure-directory', async (_event, dirPath) => {
   try {
-    // Expand tilde to home directory
-    const expandedPath = expandTilde(dirPath);
-
+    const expandedPath = assertRendererFileAccess(dirPath);
     await fs.mkdir(expandedPath, { recursive: true });
     return true;
   } catch (error) {
@@ -2279,9 +2332,7 @@ ipcMain.handle('ensure-directory', async (_event, dirPath) => {
 
 ipcMain.handle('list-files', async (_event, dirPath, extension) => {
   try {
-    // Expand tilde to home directory
-    const expandedPath = expandTilde(dirPath);
-
+    const expandedPath = assertRendererFileAccess(dirPath);
     const files = await fs.readdir(expandedPath);
     if (extension) {
       return files.filter((file) => file.endsWith(extension));
@@ -2361,23 +2412,25 @@ async function appMain() {
   // Handle microphone permission requests
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     console.log('Permission requested:', permission);
-    // Allow microphone and media access
-    if (permission === 'media') {
-      callback(true);
-    } else {
-      // Default behavior for other permissions
-      callback(true);
-    }
+    callback(permission === 'media');
   });
 
   // Add CSP headers to all sessions, recomputed on every response so external
   // backend settings take effect without restarting the app.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const currentSettings = getSettings();
+    const webContentsId = (details as { webContentsId?: number }).webContentsId;
+    let localAcpUrl: string | null = null;
+    try {
+      localAcpUrl =
+        typeof webContentsId === 'number' ? goslingServeLeases.getAcpUrl(webContentsId) : null;
+    } catch {
+      localAcpUrl = null;
+    }
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': buildCSP(getExternalBackendForCsp(currentSettings)),
+        'Content-Security-Policy': buildCSP(getExternalBackendForCsp(currentSettings), localAcpUrl),
       },
     });
   });

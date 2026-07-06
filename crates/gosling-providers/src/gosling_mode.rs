@@ -22,9 +22,9 @@ use utoipa::ToSchema;
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum GoslingMode {
-    #[default]
     #[strum(message = "Automatically approve tool calls")]
     Auto,
+    #[default]
     #[strum(message = "Ask before every tool call")]
     Approve,
     #[strum(message = "Ask only for sensitive tool calls")]

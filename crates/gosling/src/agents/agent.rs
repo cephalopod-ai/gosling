@@ -969,6 +969,84 @@ impl Agent {
         )
     }
 
+    pub async fn dispatch_app_tool_call(
+        &self,
+        session_id: &str,
+        tool_call: CallToolRequestParams,
+        cancellation_token: CancellationToken,
+    ) -> Result<ToolCallResult, ErrorData> {
+        let request_id = format!("app_tool_{}", Uuid::new_v4().simple());
+        let request = ToolRequest {
+            id: request_id.clone(),
+            tool_call: Ok(tool_call.clone()),
+            metadata: None,
+            tool_meta: None,
+        };
+        let requests = vec![request];
+        let gosling_mode = self.gosling_mode().await;
+        let inspection_results = self
+            .tool_inspection_manager
+            .inspect_tools(session_id, &requests, &[], gosling_mode)
+            .await
+            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+
+        let permission_result = self
+            .tool_inspection_manager
+            .process_inspection_results_with_permission_inspector(&requests, &inspection_results)
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    "Tool permission inspector is unavailable".to_string(),
+                    None,
+                )
+            })?;
+
+        if let Some(denied) = permission_result.denied.first() {
+            let tool_name = denied
+                .tool_call
+                .as_ref()
+                .map(|call| call.name.to_string())
+                .unwrap_or_else(|_| "tool".to_string());
+            return Err(ErrorData::new(
+                ErrorCode::INVALID_REQUEST,
+                format!("Tool `{tool_name}` is denied by current permissions"),
+                None,
+            ));
+        }
+
+        if let Some(needs_approval) = permission_result.needs_approval.first() {
+            let tool_name = needs_approval
+                .tool_call
+                .as_ref()
+                .map(|call| call.name.to_string())
+                .unwrap_or_else(|_| "tool".to_string());
+            return Err(ErrorData::new(
+                ErrorCode::INVALID_REQUEST,
+                format!("Tool `{tool_name}` requires approval before app clients can call it"),
+                None,
+            ));
+        }
+
+        if permission_result.approved.is_empty() {
+            return Err(ErrorData::new(
+                ErrorCode::INVALID_REQUEST,
+                "Tool call was not approved by current permissions".to_string(),
+                None,
+            ));
+        }
+
+        let session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+        let (_, result) = self
+            .dispatch_tool_call(tool_call, request_id, Some(cancellation_token), &session)
+            .await;
+        result
+    }
+
     /// Dispatch a single tool call to the appropriate client
     #[instrument(skip(self, tool_call, request_id, cancellation_token, session), fields(input, output, session.id = %session.id))]
     pub async fn dispatch_tool_call(
