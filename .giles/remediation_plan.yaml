@@ -1,0 +1,151 @@
+schema_version: 2
+artifact_type: giles_remediation_plan
+repo: gosling
+repo_path: /Users/eric/Work/vscode/forked/gosling
+generated_at: '2026-07-07T15:12:14.491748Z'
+authority:
+  source: Giles audit
+  role: advisory_work_order
+  canonical: false
+  promotion_required: true
+  canonical_source_of_truth: governance/logs/giles_compliance_todo.json
+disposition: blocked_by_giles_limitation
+progress:
+  total_actions: 9
+  completed: 0
+  remaining: 9
+  blocking: 5
+  percent_complete: 0.0
+minimum_path:
+- align-agents-contract
+- align-semantic-structure
+- create-repo-config
+- migrate-repo-yaml
+- repair-docs-drift
+- set-standard-version
+- system-fix-audit-structure
+- decide-manifest-mode
+- recheck
+graph:
+  cycle_detected: false
+  cycle_members: []
+  missing_dependencies: []
+actions:
+- id: system-fix-audit-structure
+  type: system_fix
+  classification: system_fault
+  status: pending
+  path: null
+  description: Giles `audit-structure` raised an unhandled exception while indexing
+    this repo. Fix the failure inside Giles (see src/giles/index/store.py and src/giles/index/builder.py);
+    do NOT add repo-side workarounds here.
+  depends_on: []
+- id: create-repo-config
+  type: create_file
+  classification: mechanical
+  status: pending
+  path: governance/repo_config.yaml
+  description: Create governance/repo_config.yaml declaring repo_id, repo_type, owners,
+    and fleet-policy alignment. Required before structure audit can resolve the repo
+    type.
+  depends_on: []
+- id: migrate-repo-yaml
+  type: edit_file
+  classification: mechanical
+  status: pending
+  path: .giles/repo.yaml
+  description: Author or repair .giles/repo.yaml to conform to the v2.2 RepoManifest
+    schema (repo_id, canon_version, mode).
+  depends_on: []
+- id: decide-manifest-mode
+  type: decision_required
+  classification: human_required
+  status: pending
+  path: .giles/repo.yaml
+  description: Choose the manifest `mode` value (canonical / extended / translated-compatible
+    / declared-divergent) based on this repo's compliance posture.
+  depends_on:
+  - migrate-repo-yaml
+- id: set-standard-version
+  type: edit_file
+  classification: mechanical
+  status: pending
+  path: governance/repo_manifest.yaml
+  description: 'Add `repo_standard.version: "1.0"` to governance/repo_manifest.yaml
+    so Giles considers this repo governed under the v6 standard.'
+  depends_on: []
+- id: align-agents-contract
+  type: decision_required
+  classification: human_required
+  status: pending
+  path: AGENTS.md
+  description: Align AGENTS contract to fleet standard and document repo-specific
+    exceptions in a canonical governance lane.
+  depends_on: []
+  annotations:
+    source_metadata:
+      drift_family: agents_drift
+      finding_codes:
+      - GILES-AGENTS-DRIFT
+      finding_sources:
+      - scan-repo
+      scan_categories:
+      - agent_alias_drift
+      - agent_contract_block_missing
+      source_findings_blocking: true
+- id: align-semantic-structure
+  type: decision_required
+  classification: human_required
+  status: pending
+  path: governance/local_semantics.yaml
+  description: Align repository semantic slots and control-layer structure expectations;
+    record explicit exceptions.
+  depends_on: []
+  annotations:
+    source_metadata:
+      drift_family: structure_drift
+      finding_codes:
+      - GILES-STRUCTURE-SLOT
+      - GILES-SYS-AUDIT-STRUCTURE
+      finding_sources:
+      - audit-structure
+      - scan-repo
+      scan_categories:
+      - semantic_slot_missing
+      source_findings_blocking: true
+- id: repair-docs-drift
+  type: decision_required
+  classification: human_required
+  status: pending
+  path: docs
+  description: Repair documentation drift and ensure discoverable docs inventory is
+    current for current behavior.
+  depends_on: []
+  annotations:
+    source_metadata:
+      drift_family: docs_drift
+      finding_codes:
+      - GILES-DOC-DRIFT
+      finding_sources:
+      - scan-repo
+      scan_categories:
+      - stale_doc_reference
+      source_findings_blocking: false
+- id: recheck
+  type: decision_required
+  classification: human_required
+  status: pending
+  path: null
+  description: After applying the above actions, re-run `giles compliance-todo --refresh
+    <repo>` to refresh this artifact and confirm the recheck status.
+  depends_on:
+  - align-agents-contract
+  - align-semantic-structure
+  - create-repo-config
+  - decide-manifest-mode
+  - migrate-repo-yaml
+  - repair-docs-drift
+  - set-standard-version
+  annotations:
+    source_metadata:
+      source_findings_blocking: true

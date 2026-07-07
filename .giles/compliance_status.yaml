@@ -1,0 +1,52 @@
+schema_version: 2
+artifact_type: giles_compliance_status
+repo: gosling
+repo_path: /Users/eric/Work/vscode/forked/gosling
+generated_at: '2026-07-07T15:12:14.491748Z'
+authority:
+  source: Giles audit
+  role: advisory_work_order
+  canonical: false
+  promotion_required: true
+  canonical_source_of_truth: governance/logs/giles_compliance_todo.json
+status: blocked
+disposition: blocked_by_giles_limitation
+execution_status: crashed
+compliance_status: blocked
+result: crashed
+progress:
+  total_actions: 9
+  completed: 0
+  remaining: 9
+  blocking: 5
+  percent_complete: 0.0
+open_findings: 100
+raw_open_findings: 106
+resolved_findings: 0
+blocking_actions: 5
+compliance_result: scan_error
+acceptance_state: blocked
+cleanliness: not_clean
+unresolved_blocking_count: 16
+accepted_exception_count: 0
+audit_structure_crashed: true
+baseline: true
+git:
+  is_git_repo: true
+  branch: main
+  upstream: origin/main
+  behind: 0
+  ahead: 0
+  diverged: false
+  has_uncommitted_files: false
+  dirty: false
+  detail: behind 0, ahead 0 of origin/main
+declared_family: null
+policy_pack: null
+recheck_status: 106 finding(s) remain after reconciliation; 5 blocking action(s) outstanding.
+  First baseline created; unresolved findings remain. Apply fixes, then run --refresh
+  to reconcile status. Structure audit crashed inside Giles — see system_fix action.
+patch_todo_ref: .giles/patch_todo.yaml
+remediation_plan_ref: .giles/remediation_plan.yaml
+audit_report_ref: .giles/audit_report.yaml
+canonical_compliance_log: governance/logs/giles_compliance_todo.json

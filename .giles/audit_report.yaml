@@ -1,0 +1,3332 @@
+schema_version: 2
+artifact_type: giles_audit_report
+repo: gosling
+repo_path: /Users/eric/Work/vscode/forked/gosling
+generated_at: '2026-07-07T15:12:14.491748Z'
+authority:
+  source: Giles audit
+  role: advisory_work_order
+  canonical: false
+  promotion_required: true
+  canonical_source_of_truth: governance/logs/giles_compliance_todo.json
+summary:
+  total_findings: 91
+  open_findings: 91
+  resolved_findings: 0
+  raw_open_findings: 106
+  raw_resolved_findings: 0
+  audit_structure_crashed: true
+  baseline: true
+findings:
+- code: GACT-003
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .github/copilot-instructions.md
+  source: scan
+  evidence:
+    summary: .github/copilot-instructions.md does not explicitly defer to AGENTS.md.
+    details:
+      file: .github/copilot-instructions.md
+      expected: 'A line such as: ''Read and follow AGENTS.md first.'''
+  rule_ref: agent_contract:adapter_defers
+  source_finding_id: d1346b4b485f5d6f2b96320b8ae68843a894
+  finding_identity_key: GFI-8ca0a3b3d5b0f363
+  fingerprint: 886e956cbeae1eed
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .github/copilot-instructions.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: .github/copilot-instructions.md does not explicitly defer to
+      AGENTS.md.
+    action_id: null
+    action_description: null
+    fingerprint: 886e956cbeae1eed
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .github/copilot-instructions.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .github/copilot-instructions.md
+  source: scan
+  evidence:
+    summary: .github/copilot-instructions.md does not state that cloud/remote agents
+      may ignore Giles and Dory requirements when those local tools are unavailable.
+    details:
+      rule_id: cloud_sidecar_waiver
+      file: .github/copilot-instructions.md
+      expected: State that cloud/remote agents or agents without local Giles/Dory
+        access may ignore Giles and Dory requirements; those requirements are waived
+        when the tools are unavailable.
+  rule_ref: agent_contract:cloud_sidecar_waiver
+  source_finding_id: 09b3fec871306a0ed4ca833a003f0ab7ef53
+  finding_identity_key: GFI-9ee7145eeb73284b
+  fingerprint: 5560b70862c558d5
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .github/copilot-instructions.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: .github/copilot-instructions.md does not state that cloud/remote
+      agents may ignore Giles and Dory requirements when those local tools are unavailable.
+    action_id: null
+    action_description: null
+    fingerprint: 5560b70862c558d5
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .github/copilot-instructions.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'inspect_existing_context'.
+    details:
+      rule_id: inspect_existing_context
+      description: Inspect existing code and context before writing new code
+      file: AGENTS.md
+  rule_ref: agent_contract:inspect_existing_context
+  source_finding_id: 843aebc78e3471b00dd556c4f3f4b3499065
+  finding_identity_key: GFI-0c0b27f2ea22427b
+  fingerprint: c95f9185b12054a4
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'inspect_existing_context'.
+    action_id: null
+    action_description: null
+    fingerprint: c95f9185b12054a4
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'do_not_invent_apis_paths'.
+    details:
+      rule_id: do_not_invent_apis_paths
+      description: Do not invent APIs, imports, commands, files, or paths — verify
+        before use
+      file: AGENTS.md
+  rule_ref: agent_contract:do_not_invent_apis_paths
+  source_finding_id: f865879d9b8b7d17650266e079ae0086cfab
+  finding_identity_key: GFI-69f5c0e158ab7843
+  fingerprint: ed87156b713e70fc
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'do_not_invent_apis_paths'.
+    action_id: null
+    action_description: null
+    fingerprint: ed87156b713e70fc
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'preserve_project_style'.
+    details:
+      rule_id: preserve_project_style
+      description: Preserve project style, naming, formatting, and conventions
+      file: AGENTS.md
+  rule_ref: agent_contract:preserve_project_style
+  source_finding_id: 778c3eefb6b873b958d78177fca402291f78
+  finding_identity_key: GFI-33ce5396c9c12552
+  fingerprint: 60d0fa1d381892ff
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'preserve_project_style'.
+    action_id: null
+    action_description: null
+    fingerprint: 60d0fa1d381892ff
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'one_task_per_run'.
+    details:
+      rule_id: one_task_per_run
+      description: Execute one coherent task per run; do not bundle unrelated changes
+      file: AGENTS.md
+  rule_ref: agent_contract:one_task_per_run
+  source_finding_id: ffb7f32c3b5581a15649a08173b8b356ff3e
+  finding_identity_key: GFI-21bea4e3421ea85f
+  fingerprint: 193f0fee2d1d1527
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'one_task_per_run'.
+    action_id: null
+    action_description: null
+    fingerprint: 193f0fee2d1d1527
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'stay_in_scope'.
+    details:
+      rule_id: stay_in_scope
+      description: Stay in scope; disclose changes that touch adjacent scope
+      file: AGENTS.md
+  rule_ref: agent_contract:stay_in_scope
+  source_finding_id: 4a8c25784a246c6fac6aae9e819b9f954ec5
+  finding_identity_key: GFI-6be4cf64ad1e5be7
+  fingerprint: 994101efb6c0b182
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'stay_in_scope'.
+    action_id: null
+    action_description: null
+    fingerprint: 994101efb6c0b182
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'smallest_coherent_change'.
+    details:
+      rule_id: smallest_coherent_change
+      description: Prefer the smallest coherent change that satisfies the task
+      file: AGENTS.md
+  rule_ref: agent_contract:smallest_coherent_change
+  source_finding_id: 6d05a72f2d473edeac26a561fc11caf0f3d5
+  finding_identity_key: GFI-7178c8e011a6245c
+  fingerprint: a50323f33d54fe6f
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'smallest_coherent_change'.
+    action_id: null
+    action_description: null
+    fingerprint: a50323f33d54fe6f
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'never_silent_fail'.
+    details:
+      rule_id: never_silent_fail
+      description: Never silently fail; surface partial success, blocked work, and
+        visible errors
+      file: AGENTS.md
+  rule_ref: agent_contract:never_silent_fail
+  source_finding_id: bae4c4d3c4a64c58edd6e2ac4ab3c823c30c
+  finding_identity_key: GFI-d35d42edb6f447cd
+  fingerprint: d5e73a4c78911e9a
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'never_silent_fail'.
+    action_id: null
+    action_description: null
+    fingerprint: d5e73a4c78911e9a
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'do_not_treat_uncommitted_as_failure_by_default'.
+    details:
+      rule_id: do_not_treat_uncommitted_as_failure_by_default
+      description: Do not treat uncommitted files as failure by default
+      file: AGENTS.md
+  rule_ref: agent_contract:do_not_treat_uncommitted_as_failure_by_default
+  source_finding_id: 7605447078077dbce559d32794294473d761
+  finding_identity_key: GFI-76b7560b2a43558e
+  fingerprint: 0a51b3811a0a4238
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'do_not_treat_uncommitted_as_failure_by_default'.
+    action_id: null
+    action_description: null
+    fingerprint: 0a51b3811a0a4238
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'info_severity_not_failure_by_default'.
+    details:
+      rule_id: info_severity_not_failure_by_default
+      description: info severity findings are not automatic failures
+      file: AGENTS.md
+  rule_ref: agent_contract:info_severity_not_failure_by_default
+  source_finding_id: 96bf46aa89f4df64007ebedd3b0d607e171d
+  finding_identity_key: GFI-da0648130d30182b
+  fingerprint: cde0a451a015abbd
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'info_severity_not_failure_by_default'.
+    action_id: null
+    action_description: null
+    fingerprint: cde0a451a015abbd
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'respect_documented_exceptions'.
+    details:
+      rule_id: respect_documented_exceptions
+      description: Respect documented exceptions; report as covered, not rediscovered
+      file: AGENTS.md
+  rule_ref: agent_contract:respect_documented_exceptions
+  source_finding_id: 873438bee2dd7256af240850291ba88923b2
+  finding_identity_key: GFI-ee9548c3cc3e67a0
+  fingerprint: abde568711a64872
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'respect_documented_exceptions'.
+    action_id: null
+    action_description: null
+    fingerprint: abde568711a64872
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'audit_does_not_patch_unless_instructed'.
+    details:
+      rule_id: audit_does_not_patch_unless_instructed
+      description: For audit tasks, write the audit report; do not patch unless instructed
+      file: AGENTS.md
+  rule_ref: agent_contract:audit_does_not_patch_unless_instructed
+  source_finding_id: 76978e703bf15cb45551ed906b6f4d8ff236
+  finding_identity_key: GFI-6abe46651509cbd2
+  fingerprint: f8ddd37c328df43d
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'audit_does_not_patch_unless_instructed'.
+    action_id: null
+    action_description: null
+    fingerprint: f8ddd37c328df43d
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: Canonical AGENTS.md does not cover rule 'orchestrator_router_contract'.
+    details:
+      rule_id: orchestrator_router_contract
+      description: Orchestrator/router files must only register/route and may not
+        host business, persistence, validation, lifecycle, dedup, merge, repair, or
+        archive-parsing logic; new behavior goes in focused domain modules.
+      file: AGENTS.md
+  rule_ref: agent_contract:orchestrator_router_contract
+  source_finding_id: 376a22a40697c46891c8768baa3d83e4a55a
+  finding_identity_key: GFI-ebe67c40ec8da70b
+  fingerprint: 6afe5fbbc73827c3
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Canonical AGENTS.md does not cover rule 'orchestrator_router_contract'.
+    action_id: null
+    action_description: null
+    fingerprint: 6afe5fbbc73827c3
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not state that cloud/remote agents may ignore Giles and
+      Dory requirements when those local tools are unavailable.
+    details:
+      rule_id: cloud_sidecar_waiver
+      file: AGENTS.md
+      expected: State that cloud/remote agents or agents without local Giles/Dory
+        access may ignore Giles and Dory requirements; those requirements are waived
+        when the tools are unavailable.
+  rule_ref: agent_contract:cloud_sidecar_waiver
+  source_finding_id: 74c828eb55a6693fa460ea60548c1234efa6
+  finding_identity_key: GFI-2d0388d53d9f1451
+  fingerprint: 9a52a48a171993c9
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not state that cloud/remote agents may ignore
+      Giles and Dory requirements when those local tools are unavailable.
+    action_id: null
+    action_description: null
+    fingerprint: 9a52a48a171993c9
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GACT-004
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: CLAUDE.md
+  source: scan
+  evidence:
+    summary: CLAUDE.md does not state that cloud/remote agents may ignore Giles and
+      Dory requirements when those local tools are unavailable.
+    details:
+      rule_id: cloud_sidecar_waiver
+      file: CLAUDE.md
+      expected: State that cloud/remote agents or agents without local Giles/Dory
+        access may ignore Giles and Dory requirements; those requirements are waived
+        when the tools are unavailable.
+  rule_ref: agent_contract:cloud_sidecar_waiver
+  source_finding_id: 538abdd9ead4fac052f2d4a5e10192a03c22
+  finding_identity_key: GFI-7fb9d9ae337cb465
+  fingerprint: 20fb57bc8d096a61
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: CLAUDE.md does not state that cloud/remote agents may ignore
+      Giles and Dory requirements when those local tools are unavailable.
+    action_id: null
+    action_description: null
+    fingerprint: 20fb57bc8d096a61
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - CLAUDE.md
+- code: GAGENT-002
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: CLAUDE.md
+  source: scan
+  evidence:
+    summary: CLAUDE.md does not delegate to AGENTS.md (missing canonical reference
+      or delegation phrase).
+    details:
+      size_bytes: '11'
+      has_agents_md_reference: 'True'
+      expected: Include literal 'AGENTS.md' plus a delegation phrase such as 'read
+        and follow', 'canonical', 'delegate', 'defer', 'single source of truth', or
+        'if this conflicts'.
+      snippet: '@AGENTS.md'
+  rule_ref: governance:agents:alias_delegate_required
+  source_finding_id: af1ea6ac24cf1ff95fd306cb38df9d4842c0
+  finding_identity_key: GFI-72824504b95500d7
+  fingerprint: 1872c3522d614bac
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: CLAUDE.md does not delegate to AGENTS.md (missing canonical
+      reference or delegation phrase).
+    action_id: null
+    action_description: null
+    fingerprint: 1872c3522d614bac
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - CLAUDE.md
+- code: GCFG-001
+  title: null
+  severity: info
+  classification: human_required
+  blocking: false
+  subject: ''
+  source: scan
+  evidence:
+    summary: No authoritative config surface detected in repo.
+    details:
+      scanned_script_files: '14'
+      confidence: medium
+  rule_ref: observability:config_centralization:sprawl
+  source_finding_id: b50316e092bbc27c7c3f93c53fc1f1df6593
+  finding_identity_key: GFI-e41c7ee803dcec8b
+  fingerprint: 9fa8d06558edafbf
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: No authoritative config surface detected in repo.
+    action_id: null
+    action_description: null
+    fingerprint: 9fa8d06558edafbf
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects: []
+- code: GCFG-003
+  title: null
+  severity: info
+  classification: human_required
+  blocking: false
+  subject: ''
+  source: scan
+  evidence:
+    summary: 1 operational constant name(s) repeat across scripts.
+    details:
+      sample: TESTDIR
+      confidence: medium
+  rule_ref: observability:config_centralization:duplicated
+  source_finding_id: 3d447b6914ebdcf715decd87b3d32578080d
+  finding_identity_key: GFI-218501f3cd89fc76
+  fingerprint: 6c2beef6536d450a
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: 1 operational constant name(s) repeat across scripts.
+    action_id: null
+    action_description: null
+    fingerprint: 6c2beef6536d450a
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects: []
+- code: GCFG-004
+  title: null
+  severity: info
+  classification: human_required
+  blocking: false
+  subject: ''
+  source: scan
+  evidence:
+    summary: 5 script(s) define operational constants with no apparent config-surface
+      reference.
+    details:
+      sample: scripts/bench-postprocess-scripts/llm-judges/llm_judge.py,scripts/bench-postprocess-scripts/llm-judges/run_vibes_judge.sh,scripts/parse-benchmark-results.sh,scripts/pre-release.sh,scripts/test_mcp.sh
+      confidence: high
+  rule_ref: observability:config_centralization:no_reference
+  source_finding_id: 7e3806a1151c712b70877d446fb7f183c447
+  finding_identity_key: GFI-2de54c50a0be1b1b
+  fingerprint: 252a939b23c79a9e
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: 5 script(s) define operational constants with no apparent config-surface
+      reference.
+    action_id: null
+    action_description: null
+    fingerprint: 252a939b23c79a9e
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects: []
+- code: GDAS-003
+  title: null
+  severity: high
+  classification: human_required
+  blocking: true
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md missing required Giles-managed marker block.
+    details:
+      file: AGENTS.md
+      start_marker: <!-- GILES:DOCS-GOVERNANCE:START -->
+      end_marker: <!-- GILES:DOCS-GOVERNANCE:END -->
+      start_count: '0'
+      end_count: '0'
+      finding_id: DOC_AGENT_SURFACE_MISSING_AGENTS_MARKER
+  rule_ref: doc_agent_surface:marker:AGENTS.md
+  source_finding_id: c653acdc40c1dbe5128cd4762ddf5b5c2c1a
+  finding_identity_key: GFI-d6bdbc71e35d78a9
+  fingerprint: e4d9a8222d355f08
+  approval:
+    required: true
+    status: pending
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md missing required Giles-managed marker block.
+    action_id: null
+    action_description: null
+    fingerprint: e4d9a8222d355f08
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDAS-005
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not cover required rule 'agents_read_first'.
+    details:
+      file: AGENTS.md
+      rule_id: agents_read_first
+      description: States agents must read AGENTS.md first
+      finding_id: DOC_AGENT_SURFACE_INCOMPLETE_AGENTS_CONTRACT
+  rule_ref: doc_agent_surface:agents_read_first
+  source_finding_id: f7e8973c65340c9830c6cf6b6117609d1308
+  finding_identity_key: GFI-21e309afad8e601c
+  fingerprint: ea27040c5ec4444e
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not cover required rule 'agents_read_first'.
+    action_id: null
+    action_description: null
+    fingerprint: ea27040c5ec4444e
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDAS-005
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not cover required rule 'mentions_gemini'.
+    details:
+      file: AGENTS.md
+      rule_id: mentions_gemini
+      description: Mentions GEMINI.md
+      finding_id: DOC_AGENT_SURFACE_INCOMPLETE_AGENTS_CONTRACT
+  rule_ref: doc_agent_surface:mentions_gemini
+  source_finding_id: 609bc44f4dbbc7c911907b2da01692184d44
+  finding_identity_key: GFI-d393c69b1e03ffab
+  fingerprint: f719f5bf214d9016
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not cover required rule 'mentions_gemini'.
+    action_id: null
+    action_description: null
+    fingerprint: f719f5bf214d9016
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDAS-005
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not cover required rule 'mentions_readme'.
+    details:
+      file: AGENTS.md
+      rule_id: mentions_readme
+      description: Mentions README.md
+      finding_id: DOC_AGENT_SURFACE_INCOMPLETE_AGENTS_CONTRACT
+  rule_ref: doc_agent_surface:mentions_readme
+  source_finding_id: c455a4ecb7b57b7073ee154de70d2ea41e63
+  finding_identity_key: GFI-00901c235c42f0ee
+  fingerprint: ef1e88950645cd7b
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not cover required rule 'mentions_readme'.
+    action_id: null
+    action_description: null
+    fingerprint: ef1e88950645cd7b
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDAS-005
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not cover required rule 'mentions_docs_index'.
+    details:
+      file: AGENTS.md
+      rule_id: mentions_docs_index
+      description: Mentions docs/INDEX.md
+      finding_id: DOC_AGENT_SURFACE_INCOMPLETE_AGENTS_CONTRACT
+  rule_ref: doc_agent_surface:mentions_docs_index
+  source_finding_id: 1bd816caf8c8056f7a1a367ace61413b8fa2
+  finding_identity_key: GFI-3773eb92514b27f7
+  fingerprint: 6adc220568895076
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not cover required rule 'mentions_docs_index'.
+    action_id: null
+    action_description: null
+    fingerprint: 6adc220568895076
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDAS-005
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not cover required rule 'giles_yaml_advisory'.
+    details:
+      file: AGENTS.md
+      rule_id: giles_yaml_advisory
+      description: States .giles/*.yaml or .giles/repo.yaml is advisory unless validated
+        by a fresh Giles scan
+      finding_id: DOC_AGENT_SURFACE_INCOMPLETE_AGENTS_CONTRACT
+  rule_ref: doc_agent_surface:giles_yaml_advisory
+  source_finding_id: f4c0f601ffa02d2edaab6fb0ae54c2f6e63f
+  finding_identity_key: GFI-cc360c6eaa999d2d
+  fingerprint: ff8af92a496b5ece
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not cover required rule 'giles_yaml_advisory'.
+    action_id: null
+    action_description: null
+    fingerprint: ff8af92a496b5ece
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDAS-005
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not cover required rule 'evidence_over_claims'.
+    details:
+      file: AGENTS.md
+      rule_id: evidence_over_claims
+      description: Says agents record evidence and do not declare compliance
+      finding_id: DOC_AGENT_SURFACE_INCOMPLETE_AGENTS_CONTRACT
+  rule_ref: doc_agent_surface:evidence_over_claims
+  source_finding_id: b1a7379e536e93810c7ba0ac18431d7a3ad2
+  finding_identity_key: GFI-f4957b3489d4ffab
+  fingerprint: 757b3044d0809bed
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not cover required rule 'evidence_over_claims'.
+    action_id: null
+    action_description: null
+    fingerprint: 757b3044d0809bed
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDAS-005
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not cover required rule 'source_grounding'.
+    details:
+      file: AGENTS.md
+      rule_id: source_grounding
+      description: Includes documentation patch rules or equivalent source-grounding
+        constraint
+      finding_id: DOC_AGENT_SURFACE_INCOMPLETE_AGENTS_CONTRACT
+  rule_ref: doc_agent_surface:source_grounding
+  source_finding_id: b4ebd687ef1e7811f79d4c972b88666fe67a
+  finding_identity_key: GFI-286e6d71bf63d41a
+  fingerprint: bbd2e381a3a353c2
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not cover required rule 'source_grounding'.
+    action_id: null
+    action_description: null
+    fingerprint: bbd2e381a3a353c2
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDAS-005
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md does not cover required rule 'cloud_sidecar_waiver'.
+    details:
+      file: AGENTS.md
+      rule_id: cloud_sidecar_waiver
+      description: States cloud/remote agents may ignore Giles/Dory when local tools
+        are unavailable
+      finding_id: DOC_AGENT_SURFACE_INCOMPLETE_AGENTS_CONTRACT
+  rule_ref: doc_agent_surface:cloud_sidecar_waiver
+  source_finding_id: 61eee2001a1d0fb75e20233497ca40b0c719
+  finding_identity_key: GFI-e070d18dc61b3466
+  fingerprint: 6942ea5a1dc4f806
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md does not cover required rule 'cloud_sidecar_waiver'.
+    action_id: null
+    action_description: null
+    fingerprint: 6942ea5a1dc4f806
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDOC-023
+  title: null
+  severity: high
+  classification: human_required
+  blocking: true
+  subject: docs/INDEX.md
+  source: scan
+  evidence:
+    summary: docs/INDEX.md missing while docs/ exists.
+    details: {}
+  rule_ref: governance:docs:index_presence
+  source_finding_id: ebf6fd0a8e6ed93d860903197fc5bc424e48
+  finding_identity_key: GFI-3927b0a006721d5b
+  fingerprint: a2f4b2aec68b86b2
+  approval:
+    required: true
+    status: pending
+    target:
+      kind: file
+      path: docs/INDEX.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: docs/INDEX.md missing while docs/ exists.
+    action_id: null
+    action_description: null
+    fingerprint: a2f4b2aec68b86b2
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - docs/INDEX.md
+- code: GDOC-058
+  title: null
+  severity: high
+  classification: human_required
+  blocking: true
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md is missing required execution/governance instruction clauses.
+    details:
+      missing_1: read existing code before edits
+      missing_2: do not invent APIs/paths
+      missing_3: surface partial success
+      missing_4: one task per run
+      missing_5: preserve style/conventions
+      missing_6: run validation before done
+      missing_7: do not delete/overwrite user work
+      missing_8: no fake success/stub completion
+  rule_ref: governance:agents:required_clauses
+  source_finding_id: 3fffe43e33c6b82e79247681b1241f77d8e6
+  finding_identity_key: GFI-e04862ebf82afb5e
+  fingerprint: 19886fcb37cdb140
+  approval:
+    required: true
+    status: pending
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md is missing required execution/governance instruction
+      clauses.
+    action_id: null
+    action_description: null
+    fingerprint: 19886fcb37cdb140
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GDOC-062
+  title: null
+  severity: info
+  classification: human_required
+  blocking: false
+  subject: ''
+  source: scan
+  evidence:
+    summary: 'Deviation detected: commits_without_registry_linkage (5 items)'
+    details:
+      sample: 51c877053e65c3f679b0ef7a87d15b1aecb2c67b,36dea67ca42d0030df87c24290df68525a300bbc,0a54ed90c4f85fb2a0b516b3dda7b56745147cb1
+  rule_ref: observability:deviation:commits_without_registry_linkage
+  source_finding_id: 062852575d3daf0ae78d183d07a2269eab4b
+  finding_identity_key: GFI-8c4f3ed3c4aebc21
+  fingerprint: 17cfeb492ab1e5b6
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: 'Deviation detected: commits_without_registry_linkage (5 items)'
+    action_id: null
+    action_description: null
+    fingerprint: 17cfeb492ab1e5b6
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects: []
+- code: GM-001
+  title: null
+  severity: critical
+  classification: human_required
+  blocking: true
+  subject: /Users/eric/Work/vscode/forked/gosling/.giles/repo.yaml
+  source: scan
+  evidence:
+    summary: Manifest .giles/repo.yaml is missing.
+    details: {}
+  rule_ref: schema:manifest:presence
+  recommended_action: Run `giles migrate-manifest <repo>` to convert the legacy .giles/repo.yaml
+    into the v2.2 RepoManifest shape. The mode value is a governance choice.
+  source_finding_id: 9d7725f903c22f9dc141313d4bd1dffaddb9
+  mechanical_fix: Run `giles migrate-manifest <repo>` to convert the legacy .giles/repo.yaml
+    into the v2.2 RepoManifest shape. The mode value is a governance choice.
+  human_decision: Choosing the manifest's mode (canonical / extended / translated-compatible
+    / declared-divergent) is a compliance posture decision.
+  finding_identity_key: GFI-6be9e6cda01ffd1a
+  fingerprint: 5eb4ac77e1ac5761
+  approval:
+    required: true
+    status: pending
+    target:
+      kind: file
+      path: /Users/eric/Work/vscode/forked/gosling/.giles/repo.yaml
+      selector: null
+    reason: Choosing the manifest's mode (canonical / extended / translated-compatible
+      / declared-divergent) is a compliance posture decision.
+    cannot_auto_fix_because: Choosing the manifest's mode (canonical / extended /
+      translated-compatible / declared-divergent) is a compliance posture decision.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Manifest .giles/repo.yaml is missing.
+    action_id: null
+    action_description: null
+    fingerprint: 5eb4ac77e1ac5761
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - /Users/eric/Work/vscode/forked/gosling/.giles/repo.yaml
+- code: GR-001
+  title: null
+  severity: high
+  classification: human_required
+  blocking: true
+  subject: governance/repo_config.yaml
+  source: scan
+  evidence:
+    summary: governance/repo_config.yaml not found
+    details:
+      expected_path: governance/repo_config.yaml
+  rule_ref: canon:config:schema_compliance
+  recommended_action: Create governance/repo_config.yaml with the canon-aligned schema.
+    Field values (repo_id, repo_type, owners) require human input.
+  source_finding_id: f0dd320cae87ad21d5f2bc232cb6e8793b10
+  mechanical_fix: Create governance/repo_config.yaml with the canon-aligned schema.
+    Field values (repo_id, repo_type, owners) require human input.
+  human_decision: Repo config carries the repo_id, repo_type, ownership, and fleet-policy
+    alignment — all governance choices.
+  finding_identity_key: GFI-111027cbd09a5672
+  fingerprint: 63585a758d1e5ce6
+  approval:
+    required: true
+    status: pending
+    target:
+      kind: file
+      path: governance/repo_config.yaml
+      selector: null
+    reason: Repo config carries the repo_id, repo_type, ownership, and fleet-policy
+      alignment — all governance choices.
+    cannot_auto_fix_because: Repo config carries the repo_id, repo_type, ownership,
+      and fleet-policy alignment — all governance choices.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: governance/repo_config.yaml not found
+    action_id: null
+    action_description: null
+    fingerprint: 63585a758d1e5ce6
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - governance/repo_config.yaml
+- code: GSESS-003
+  title: null
+  severity: info
+  classification: human_required
+  blocking: false
+  subject: AGENTS.md
+  source: scan
+  evidence:
+    summary: AGENTS.md is missing the <!-- session-log-convention --> marker block
+      that documents where future session logs go.
+    details:
+      remediation: Add a <!-- session-log-convention --> ... <!-- /session-log-convention
+        --> block to AGENTS.md, mirroring the audit-retention-convention block.
+      rule_id: session_log_retention:agent_convention_missing
+      sample_count: '1'
+  rule_ref: session_log_retention:agent_convention_missing
+  source_finding_id: 2ef025a9c4d50bb45037f1531cf95b565671
+  finding_identity_key: GFI-cf1707ab4057bfb5
+  fingerprint: 6d0f56101cb9d828
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: AGENTS.md is missing the <!-- session-log-convention --> marker
+      block that documents where future session logs go.
+    action_id: null
+    action_description: null
+    fingerprint: 6d0f56101cb9d828
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - AGENTS.md
+- code: GSESS-007
+  title: null
+  severity: info
+  classification: human_required
+  blocking: false
+  subject: logs
+  source: scan
+  evidence:
+    summary: Top-level logs/ exists but has no recognized session-log root, no allowed
+      subdir, and no README.md.
+    details:
+      remediation: Create docs/logs/session/ for human-authored logs, or add logs/README.md
+        explaining what the directory is for (runtime telemetry, fixtures, tooling-required
+        path).
+      rule_id: session_log_retention:top_level_logs_unexplained
+      sample_count: '1'
+  rule_ref: session_log_retention:top_level_logs_unexplained
+  source_finding_id: 7e39818f41ab16b8c508f81855e5ba688c2e
+  finding_identity_key: GFI-20c62f8a99b0fcdf
+  fingerprint: 50c6c9fd1294f4de
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields:
+    - details
+    - summary
+    evidence_summary: Top-level logs/ exists but has no recognized session-log root,
+      no allowed subdir, and no README.md.
+    action_id: null
+    action_description: null
+    fingerprint: 50c6c9fd1294f4de
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - logs
+- code: GILES-AGENTS-DRIFT
+  title: null
+  severity: high
+  classification: human_required
+  blocking: true
+  subject: AGENTS.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: agent_contract_block_missing
+    scan_finding_id: GILES-AGENT-BLOCK-MISSING-REPOSITORY_CONTRACT
+    scan_symbol: Repository Contract
+    drift_family: agents_drift
+    observation_count: 4
+  finding_identity_key: GFI-9e00a750332b3816
+  fingerprint: 44baec4b2b244f73
+  approval:
+    required: true
+    status: pending
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 44baec4b2b244f73
+  raw_observation_count: 4
+  duplicate_group_count: 1
+  duplicate_observation_count: 3
+  distinct_subjects:
+  - AGENTS.md
+- code: GILES-AGENTS-DRIFT
+  title: null
+  severity: medium
+  classification: human_required
+  blocking: false
+  subject: .github/copilot-instructions.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: agent_alias_drift
+    scan_finding_id: GILES-AGENT-ALIAS-DRIFT-GITHUB_COPILOT_INSTRUCTIONS_MD
+    scan_symbol: .github/copilot-instructions.md
+    drift_family: agents_drift
+  finding_identity_key: GFI-9722104147fd5463
+  fingerprint: 7b1f934f94a6ddd8
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .github/copilot-instructions.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 7b1f934f94a6ddd8
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .github/copilot-instructions.md
+- code: GILES-AGENTS-DRIFT
+  title: null
+  severity: medium
+  classification: human_required
+  blocking: false
+  subject: CLAUDE.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: agent_alias_drift
+    scan_finding_id: GILES-AGENT-ALIAS-DRIFT-CLAUDE_MD
+    scan_symbol: CLAUDE.md
+    drift_family: agents_drift
+  finding_identity_key: GFI-d631c9aebe4d5f64
+  fingerprint: 9e3d89ca2826855b
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 9e3d89ca2826855b
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - CLAUDE.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/agent-client-protocol-schema-1.1.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/agent-client-protocol-schema-1.1.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/agent-client-protocol-schema-1.1.0/schema/v1/schema.json
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/agent-client-protocol-schema-1.1.0/schema/v1/schema.json
+    drift_family: docs_drift
+    observation_count: 2
+  finding_identity_key: GFI-83d6fa628582d968
+  fingerprint: 85e58d5e96b98b01
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/agent-client-protocol-schema-1.1.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 85e58d5e96b98b01
+  raw_observation_count: 2
+  duplicate_group_count: 1
+  duplicate_observation_count: 1
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/agent-client-protocol-schema-1.1.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstream-1.0.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstream-1.0.0/README.md-.hermit/rust/registry/src/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-a536ecd9821c1746
+  fingerprint: ce4646768d6f81a0
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstream-1.0.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: ce4646768d6f81a0
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstream-1.0.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-1.0.14/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-1.0.14/README.md-.hermit/rust/registry/src/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-f1806e3b982f9d27
+  fingerprint: e2ac59ef3b9a511a
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-1.0.14/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: e2ac59ef3b9a511a
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-1.0.14/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-parse-1.0.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-parse-1.0.0/README.md-.hermit/rust/registry/src/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-72c9f008662b5520
+  fingerprint: d6f27b8da470c8e4
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-parse-1.0.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: d6f27b8da470c8e4
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-parse-1.0.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-query-1.1.5/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-query-1.1.5/README.md-.hermit/rust/registry/src/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-d9bd04c7882d61f9
+  fingerprint: d3eaed05abfd27e4
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-query-1.1.5/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: d3eaed05abfd27e4
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-query-1.1.5/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/bindgen-0.72.1/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/bindgen-0.72.1/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/bindgen-0.72.1/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/bindgen-0.72.1/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-3c5090171a4df7a9
+  fingerprint: d0e9b6cd1965d4f7
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/bindgen-0.72.1/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: d0e9b6cd1965d4f7
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/bindgen-0.72.1/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_builder-4.6.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_builder-4.6.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_builder-4.6.0/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_builder-4.6.0/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-f7a44100997d2d24
+  fingerprint: e190f9fb6eae2fe3
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_builder-4.6.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: e190f9fb6eae2fe3
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_builder-4.6.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_complete_nushell-4.6.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_complete_nushell-4.6.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-33857abf2b951413
+  fingerprint: 828f961d0ed7b232
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_complete_nushell-4.6.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 828f961d0ed7b232
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_complete_nushell-4.6.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_derive-4.6.1/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_derive-4.6.1/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_derive-4.6.1/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_derive-4.6.1/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-acb14918566cd5dd
+  fingerprint: ff28c2fa4d5a4b1b
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_derive-4.6.1/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: ff28c2fa4d5a4b1b
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/clap_derive-4.6.1/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/colorchoice-1.0.5/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/colorchoice-1.0.5/README.md-.hermit/rust/registry/src/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-735c57f1f16f7fdd
+  fingerprint: 981c4e8ce9982234
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/colorchoice-1.0.5/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 981c4e8ce9982234
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/colorchoice-1.0.5/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/deno_core-0.381.1/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/deno_core-0.381.1/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ops/README.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ops/README.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-68b60a2b92daed5d
+  fingerprint: 9f670e6c96dbd75d
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/deno_core-0.381.1/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 9f670e6c96dbd75d
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/deno_core-0.381.1/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-0.14.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-0.14.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-0.14.0/docs/design_doc.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-0.14.0/docs/design_doc.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-1b2359828b89b794
+  fingerprint: 7a1976e882f7962d
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-0.14.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 7a1976e882f7962d
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-0.14.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-runtime-0.14.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-runtime-0.14.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-runtime-0.14.0/docs/design_doc.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-runtime-0.14.0/docs/design_doc.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-ed543710fa444b98
+  fingerprint: 20dfcd1b23fdf08d
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-runtime-0.14.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 20dfcd1b23fdf08d
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat-runtime-0.14.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat_core-0.14.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat_core-0.14.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat_core-0.14.0/docs/design_doc.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat_core-0.14.0/docs/design_doc.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-ae13a5012b9ff992
+  fingerprint: 9b75f743f02cac51
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat_core-0.14.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 9b75f743f02cac51
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/diplomat_core-0.14.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dispatch2-0.3.1/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dispatch2-0.3.1/README.md-.hermit/rust/registry/src/LICENSE.md
+    scan_symbol: .hermit/rust/registry/src/LICENSE.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-494204e9ae014cfa
+  fingerprint: 8fad739f2b33b660
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dispatch2-0.3.1/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 8fad739f2b33b660
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dispatch2-0.3.1/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dotenvy-0.15.7/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dotenvy-0.15.7/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dotenvy-0.15.7/CHANGELOG.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dotenvy-0.15.7/CHANGELOG.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-a00f7e557aeaaaab
+  fingerprint: feeaae8416654770
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dotenvy-0.15.7/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: feeaae8416654770
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/dotenvy-0.15.7/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ed25519-dalek-2.2.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ed25519-dalek-2.2.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-e8d539127bfb0f6a
+  fingerprint: ad06df3d34af91a1
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ed25519-dalek-2.2.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: ad06df3d34af91a1
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ed25519-dalek-2.2.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/gimli-0.32.3/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/gimli-0.32.3/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/gimli-0.32.3/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/gimli-0.32.3/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-c2006acf8574c12a
+  fingerprint: aafa145ccc595dfb
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/gimli-0.32.3/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: aafa145ccc595dfb
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/gimli-0.32.3/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.10.1/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.10.1/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.10.1/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.10.1/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-8d86054108173276
+  fingerprint: 9e62c30a7c997dd6
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.10.1/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 9e62c30a7c997dd6
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.10.1/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-32fda01d81c81320
+  fingerprint: 213b8ad1f974ed9e
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 213b8ad1f974ed9e
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/libm-0.2.16/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/libm-0.2.16/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-2da81e7bbedcb342
+  fingerprint: 0ca07eddd38c68bf
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/libm-0.2.16/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 0ca07eddd38c68bf
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/libm-0.2.16/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.20.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.20.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.20.0/UPDATING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.20.0/UPDATING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-7d2bc49738460490
+  fingerprint: 3665d74f47a042bb
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.20.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 3665d74f47a042bb
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.20.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.21.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.21.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.21.0/UPDATING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.21.0/UPDATING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-56eeb852c90f8c8d
+  fingerprint: 8d4dec2041aff30e
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.21.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 8d4dec2041aff30e
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.21.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.31.3/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.31.3/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.31.3/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.31.3/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-4cdd28f64d1128a8
+  fingerprint: 86a8b7aa1bbdaac2
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.31.3/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 86a8b7aa1bbdaac2
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.31.3/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/README.md-.hermit/rust/registry/src/LICENSE.md
+    scan_symbol: .hermit/rust/registry/src/LICENSE.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-f7fd10994096f672
+  fingerprint: b6d6397dd21f5d99
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: b6d6397dd21f5d99
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-app-kit-0.3.2/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-app-kit-0.3.2/README.md-.hermit/rust/registry/src/LICENSE.md
+    scan_symbol: .hermit/rust/registry/src/LICENSE.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-f46d3067a3d95d7f
+  fingerprint: 2a9ac0cbf76979b6
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-app-kit-0.3.2/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 2a9ac0cbf76979b6
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-app-kit-0.3.2/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-foundation-0.3.2/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-foundation-0.3.2/README.md-.hermit/rust/registry/src/LICENSE.md
+    scan_symbol: .hermit/rust/registry/src/LICENSE.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-457f441e50414a7c
+  fingerprint: cab8ec0cd8f6aa10
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-foundation-0.3.2/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: cab8ec0cd8f6aa10
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-foundation-0.3.2/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-graphics-0.3.2/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-graphics-0.3.2/README.md-.hermit/rust/registry/src/LICENSE.md
+    scan_symbol: .hermit/rust/registry/src/LICENSE.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-6ab129a23aaab628
+  fingerprint: c684d580eac509c2
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-graphics-0.3.2/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: c684d580eac509c2
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-graphics-0.3.2/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-foundation-0.3.2/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-foundation-0.3.2/README.md-.hermit/rust/registry/src/LICENSE.md
+    scan_symbol: .hermit/rust/registry/src/LICENSE.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-7827b6e511cff070
+  fingerprint: dd16c046f244b82c
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-foundation-0.3.2/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: dd16c046f244b82c
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-foundation-0.3.2/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-io-surface-0.3.2/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-io-surface-0.3.2/README.md-.hermit/rust/registry/src/LICENSE.md
+    scan_symbol: .hermit/rust/registry/src/LICENSE.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-b9759e332fe49c6c
+  fingerprint: ce896eb1c9beb01b
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-io-surface-0.3.2/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: ce896eb1c9beb01b
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-io-surface-0.3.2/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/opentelemetry_sdk-0.31.0/CHANGELOG.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/opentelemetry_sdk-0.31.0/CHANGELOG.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/docs/migration_0.28.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/docs/migration_0.28.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-274b129cce0bee46
+  fingerprint: 599055241baa4ff1
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/opentelemetry_sdk-0.31.0/CHANGELOG.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 599055241baa4ff1
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/opentelemetry_sdk-0.31.0/CHANGELOG.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/opentelemetry_sdk-0.32.1/CHANGELOG.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/opentelemetry_sdk-0.32.1/CHANGELOG.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/docs/migration_0.28.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/docs/migration_0.28.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-821a81f459b503e7
+  fingerprint: 4d3404307fa8c848
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/opentelemetry_sdk-0.32.1/CHANGELOG.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 4d3404307fa8c848
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/opentelemetry_sdk-0.32.1/CHANGELOG.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pctx_code_execution_runtime-0.2.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pctx_code_execution_runtime-0.2.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pctx_code_execution_runtime-0.2.0/JS_LOCAL_TOOLS.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pctx_code_execution_runtime-0.2.0/JS_LOCAL_TOOLS.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-ce9abf575c517af2
+  fingerprint: 2b748268cf177fea
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pctx_code_execution_runtime-0.2.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 2b748268cf177fea
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pctx_code_execution_runtime-0.2.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4/CONTRIBUTING.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4/CONTRIBUTING.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-50c4b8211337f33d
+  fingerprint: af4c8685aa7a18d4
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: af4c8685aa7a18d4
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.8.6/CHANGELOG.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.8.6/CHANGELOG.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.8.6/rand_core/CHANGELOG.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.8.6/rand_core/CHANGELOG.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-c326d07f905b5daa
+  fingerprint: e7220a1e5f80d495
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.8.6/CHANGELOG.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: e7220a1e5f80d495
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.8.6/CHANGELOG.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.9.4/CHANGELOG.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.9.4/CHANGELOG.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.9.4/rand_core/CHANGELOG.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.9.4/rand_core/CHANGELOG.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-30b15c1389bb26d1
+  fingerprint: e449751abe89ca8e
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.9.4/CHANGELOG.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: e449751abe89ca8e
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.9.4/CHANGELOG.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/SIDE-CHANNELS.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/SIDE-CHANNELS.md
+    drift_family: docs_drift
+    observation_count: 2
+  finding_identity_key: GFI-31b77a849baf4422
+  fingerprint: f905b3aed65625db
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: f905b3aed65625db
+  raw_observation_count: 2
+  duplicate_group_count: 1
+  duplicate_observation_count: 1
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-1.7.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-1.7.0/README.md-.hermit/rust/registry/src/README.md
+    scan_symbol: .hermit/rust/registry/src/README.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-f8984bad67acfb2a
+  fingerprint: 43658a1bb236838b
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-1.7.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 43658a1bb236838b
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-1.7.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-1.8.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-1.8.0/README.md-.hermit/rust/registry/src/README.md
+    scan_symbol: .hermit/rust/registry/src/README.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-fc9595fe423c8458
+  fingerprint: be936d0481162baa
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-1.8.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: be936d0481162baa
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-1.8.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-macros-1.7.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-macros-1.7.0/README.md-.hermit/rust/registry/src/README.md
+    scan_symbol: .hermit/rust/registry/src/README.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-614933d597cca6da
+  fingerprint: 60c65ec0e621ecd8
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-macros-1.7.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 60c65ec0e621ecd8
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-macros-1.7.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-macros-1.8.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-macros-1.8.0/README.md-.hermit/rust/registry/src/README.md
+    scan_symbol: .hermit/rust/registry/src/README.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-7647bd6e6a1466b4
+  fingerprint: 52f9686c1dc84f79
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-macros-1.8.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 52f9686c1dc84f79
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rmcp-macros-1.8.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/ROADMAP.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/ROADMAP.md
+    drift_family: docs_drift
+    observation_count: 3
+  finding_identity_key: GFI-ec732115be754709
+  fingerprint: 1a091b29badf543f
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 1a091b29badf543f
+  raw_observation_count: 3
+  duplicate_group_count: 1
+  duplicate_observation_count: 2
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.41/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.41/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.41/ROADMAP.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.41/ROADMAP.md
+    drift_family: docs_drift
+    observation_count: 3
+  finding_identity_key: GFI-a444220b7f498760
+  fingerprint: 0c05ab48dc71ffd4
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.41/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 0c05ab48dc71ffd4
+  raw_observation_count: 3
+  duplicate_group_count: 1
+  duplicate_observation_count: 2
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.41/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.13/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.13/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.13/SECURITY.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.13/SECURITY.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-e1105ed7a4a29a68
+  fingerprint: 6053e19c01cc2c0a
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.13/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 6053e19c01cc2c0a
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-webpki-0.103.13/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/sigstore-trust-root-0.9.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/sigstore-trust-root-0.9.0/README.md-.hermit/rust/registry/src/.github/workflows/check-embedded-root.yml
+    scan_symbol: .hermit/rust/registry/src/.github/workflows/check-embedded-root.yml
+    drift_family: docs_drift
+  finding_identity_key: GFI-d9254c23f597215e
+  fingerprint: 3d0a2517bf8507aa
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/sigstore-trust-root-0.9.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 3d0a2517bf8507aa
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/sigstore-trust-root-0.9.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/temporal_rs-0.1.2/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/temporal_rs-0.1.2/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/temporal_rs-0.1.2/docs/FAQ.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/temporal_rs-0.1.2/docs/FAQ.md
+    drift_family: docs_drift
+    observation_count: 2
+  finding_identity_key: GFI-1c2d1426c1f50dc2
+  fingerprint: 7bc92231b0d3197e
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/temporal_rs-0.1.2/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 7bc92231b0d3197e
+  raw_observation_count: 2
+  duplicate_group_count: 1
+  duplicate_observation_count: 1
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/temporal_rs-0.1.2/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/CHANGELOG.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/CHANGELOG.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-gen/CHANGELOG.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-gen/CHANGELOG.md
+    drift_family: docs_drift
+  finding_identity_key: GFI-ea2378256cc87184
+  fingerprint: 8f2c44ac1158d5cc
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/CHANGELOG.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 8f2c44ac1158d5cc
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/CHANGELOG.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/utoipa-config/README.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/utoipa-config/README.md
+    drift_family: docs_drift
+    observation_count: 3
+  finding_identity_key: GFI-0304ea240446c7c4
+  fingerprint: 74f5ef70864cf25c
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: 74f5ef70864cf25c
+  raw_observation_count: 3
+  duplicate_group_count: 1
+  duplicate_observation_count: 2
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-5.5.0/README.md
+- code: GILES-DOC-DRIFT
+  title: null
+  severity: low
+  classification: human_required
+  blocking: false
+  subject: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-gen-5.5.0/README.md
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: stale_doc_reference
+    scan_finding_id: GILES-DOC-STALE-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-gen-5.5.0/README.md-.hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-gen-5.5.0/utoipa-config/README.md
+    scan_symbol: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-gen-5.5.0/utoipa-config/README.md
+    drift_family: docs_drift
+    observation_count: 3
+  finding_identity_key: GFI-31937e6029003e19
+  fingerprint: f06da2e768b044c0
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-gen-5.5.0/README.md
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: f06da2e768b044c0
+  raw_observation_count: 3
+  duplicate_group_count: 1
+  duplicate_observation_count: 2
+  distinct_subjects:
+  - .hermit/rust/registry/src/index.crates.io-1949cf8c6b5b557f/utoipa-gen-5.5.0/README.md
+- code: GILES-STRUCTURE-SLOT
+  title: null
+  severity: high
+  classification: human_required
+  blocking: true
+  subject: .
+  source: scan-repo
+  source_metadata:
+    origin: scan_repo_alignment
+    scan_category: semantic_slot_missing
+    scan_finding_id: GILES-SLOT-MISSING-tests
+    scan_symbol: tests
+    drift_family: structure_drift
+    observation_count: 2
+  finding_identity_key: GFI-651adebfc97a42e9
+  fingerprint: c44207a70b4fff75
+  approval:
+    required: true
+    status: pending
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: null
+    action_id: null
+    action_description: null
+    fingerprint: c44207a70b4fff75
+  raw_observation_count: 2
+  duplicate_group_count: 1
+  duplicate_observation_count: 1
+  distinct_subjects:
+  - .
+- code: GILES-010
+  title: unversioned_repo
+  severity: warn
+  classification: mechanical
+  blocking: false
+  subject: governance/repo_manifest.yaml
+  source: repo-check
+  message: Repo has no v6 repo_standard.version declaration and is ungoverned.
+  evidence:
+    error: missing
+  rule_ref: GILES-010
+  recommended_action: 'Add repo_standard.version: "1.0" to governance/repo_manifest.yaml
+    after the manifest itself is authored.'
+  source_finding_id: GF-7ade4b6064f8
+  mechanical_fix: 'Add repo_standard.version: "1.0" to governance/repo_manifest.yaml
+    after the manifest itself is authored.'
+  source_metadata:
+    pipeline: repo_check
+  finding_identity_key: GFI-e639bef836e9f8b0
+  fingerprint: 10f7d5a1ce938fe9
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: file
+      path: governance/repo_manifest.yaml
+      selector: null
+    reason: null
+    cannot_auto_fix_because: null
+    decision_fields:
+    - error
+    evidence_summary: Repo has no v6 repo_standard.version declaration and is ungoverned.
+    action_id: null
+    action_description: null
+    fingerprint: 10f7d5a1ce938fe9
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - governance/repo_manifest.yaml
+- code: GILES-SYS-AUDIT-STRUCTURE
+  title: null
+  severity: high
+  classification: system_fault
+  blocking: true
+  subject: 'Giles audit-structure crashed during indexing: IntegrityError: UNIQUE
+    constraint failed: files.path'
+  source: audit-structure
+  message: 'Giles audit-structure crashed during indexing: IntegrityError: UNIQUE
+    constraint failed: files.path'
+  source_finding_id: 'audit_structure:GILES-SYS-AUDIT-STRUCTURE:Giles audit-structure
+    crashed during indexing: IntegrityError: UNIQUE constraint failed: files.path'
+  source_metadata:
+    pipeline: audit_structure
+    drift_family: structure_drift
+  finding_identity_key: GFI-1bac1f980406b501
+  fingerprint: 172c753aec1ec540
+  approval:
+    required: false
+    status: not_required
+    target:
+      kind: unknown
+      path: null
+      selector: null
+    reason: null
+    cannot_auto_fix_because: Giles has no registered mechanical fix for this rule.
+    decision_fields: []
+    evidence_summary: 'Giles audit-structure crashed during indexing: IntegrityError:
+      UNIQUE constraint failed: files.path'
+    action_id: null
+    action_description: null
+    fingerprint: 172c753aec1ec540
+  raw_observation_count: 1
+  duplicate_group_count: 0
+  duplicate_observation_count: 0
+  distinct_subjects:
+  - 'Giles audit-structure crashed during indexing: IntegrityError: UNIQUE constraint
+    failed: files.path'
+resolved_findings: []
+sources:
+- audit-structure
+- repo-check
+- scan
+- scan-repo

@@ -1,0 +1,428 @@
+schema_version: 2
+artifact_type: giles_patch_todo
+repo: gosling
+repo_path: /Users/eric/Work/vscode/forked/gosling
+generated_at: '2026-07-07T15:12:14.491748Z'
+giles_profile: null
+policy_pack: null
+status: active
+authority:
+  source: Giles audit
+  role: advisory_work_order
+  canonical: false
+  promotion_required: true
+  canonical_source_of_truth: governance/logs/giles_compliance_todo.json
+summary:
+  compliance_state: blocked_by_giles_limitation
+  blocking_classes:
+  - GDAS-003
+  - GDOC-023
+  - GDOC-058
+  - GILES-AGENTS-DRIFT
+  - GILES-STRUCTURE-SLOT
+  - GILES-SYS-AUDIT-STRUCTURE
+  - GM-001
+  - GR-001
+  open_actions: 9
+  total_actions: 9
+  source_metadata:
+    drift_family_counts:
+      agents_drift: 6
+      structure_drift: 3
+      docs_drift: 60
+      public_surface_documentation_gap: 0
+tasks:
+- id: system-fix-audit-structure
+  title: Giles `audit-structure` raised an unhandled exception while indexing this
+    repo. Fix the failure inside Giles (see src/giles/index/store.py and src/giles/index/builder.py);
+    do NOT add repo-side workarounds here.
+  scope: repo
+  priority: critical
+  status: pending
+  depends_on: []
+  finding:
+    category: system_fault
+    severity: critical
+    description: Giles `audit-structure` raised an unhandled exception while indexing
+      this repo. Fix the failure inside Giles (see src/giles/index/store.py and src/giles/index/builder.py);
+      do NOT add repo-side workarounds here.
+  required_change:
+    intent: Giles `audit-structure` raised an unhandled exception while indexing this
+      repo. Fix the failure inside Giles (see src/giles/index/store.py and src/giles/index/builder.py);
+      do NOT add repo-side workarounds here.
+    affected_paths: []
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - Giles internal crash root-caused and fix landed in giles
+  - rerun of the same audit completes without crashing
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations: {}
+- id: create-repo-config
+  title: Create governance/repo_config.yaml declaring repo_id, repo_type, owners,
+    and fleet-policy alignment. Required before structure audit can resolve the repo
+    type.
+  scope: repo
+  priority: low
+  status: pending
+  depends_on: []
+  finding:
+    category: compliance
+    severity: medium
+    description: Create governance/repo_config.yaml declaring repo_id, repo_type,
+      owners, and fleet-policy alignment. Required before structure audit can resolve
+      the repo type.
+  required_change:
+    intent: Create governance/repo_config.yaml declaring repo_id, repo_type, owners,
+      and fleet-policy alignment. Required before structure audit can resolve the
+      repo type.
+    affected_paths:
+    - governance/repo_config.yaml
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - '`governance/repo_config.yaml` exists at the path indicated'
+  - change matches the action description verbatim
+  - no governance content was invented by the agent
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    - git diff --check
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations: {}
+- id: migrate-repo-yaml
+  title: Author or repair .giles/repo.yaml to conform to the v2.2 RepoManifest schema
+    (repo_id, canon_version, mode).
+  scope: repo
+  priority: low
+  status: pending
+  depends_on: []
+  finding:
+    category: compliance
+    severity: medium
+    description: Author or repair .giles/repo.yaml to conform to the v2.2 RepoManifest
+      schema (repo_id, canon_version, mode).
+  required_change:
+    intent: Author or repair .giles/repo.yaml to conform to the v2.2 RepoManifest
+      schema (repo_id, canon_version, mode).
+    affected_paths:
+    - .giles/repo.yaml
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - '`.giles/repo.yaml` exists at the path indicated'
+  - change matches the action description verbatim
+  - no governance content was invented by the agent
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    - git diff --check
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations: {}
+- id: decide-manifest-mode
+  title: Choose the manifest `mode` value (canonical / extended / translated-compatible
+    / declared-divergent) based on this repo's compliance posture.
+  scope: repo
+  priority: high
+  status: pending
+  depends_on:
+  - migrate-repo-yaml
+  finding:
+    category: compliance
+    severity: medium
+    description: Choose the manifest `mode` value (canonical / extended / translated-compatible
+      / declared-divergent) based on this repo's compliance posture.
+  required_change:
+    intent: Choose the manifest `mode` value (canonical / extended / translated-compatible
+      / declared-divergent) based on this repo's compliance posture.
+    affected_paths:
+    - .giles/repo.yaml
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - '`.giles/repo.yaml` exists at the path indicated'
+  - decision recorded in governance, with rationale
+  - the underlying finding no longer appears in a fresh `giles compliance-todo` run
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    - git diff --check
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations: {}
+- id: set-standard-version
+  title: 'Add `repo_standard.version: "1.0"` to governance/repo_manifest.yaml so Giles
+    considers this repo governed under the v6 standard.'
+  scope: repo
+  priority: low
+  status: pending
+  depends_on: []
+  finding:
+    category: compliance
+    severity: medium
+    description: 'Add `repo_standard.version: "1.0"` to governance/repo_manifest.yaml
+      so Giles considers this repo governed under the v6 standard.'
+  required_change:
+    intent: 'Add `repo_standard.version: "1.0"` to governance/repo_manifest.yaml so
+      Giles considers this repo governed under the v6 standard.'
+    affected_paths:
+    - governance/repo_manifest.yaml
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - '`governance/repo_manifest.yaml` exists at the path indicated'
+  - change matches the action description verbatim
+  - no governance content was invented by the agent
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    - git diff --check
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations: {}
+- id: align-agents-contract
+  title: Align AGENTS contract to fleet standard and document repo-specific exceptions
+    in a canonical governance lane.
+  scope: repo
+  priority: high
+  status: pending
+  depends_on: []
+  finding:
+    category: compliance
+    severity: medium
+    description: Align AGENTS contract to fleet standard and document repo-specific
+      exceptions in a canonical governance lane.
+  required_change:
+    intent: Align AGENTS contract to fleet standard and document repo-specific exceptions
+      in a canonical governance lane.
+    affected_paths:
+    - AGENTS.md
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - '`AGENTS.md` exists at the path indicated'
+  - decision recorded in governance, with rationale
+  - the underlying finding no longer appears in a fresh `giles compliance-todo` run
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    - git diff --check
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations:
+    source_metadata:
+      drift_family: agents_drift
+      finding_codes: &id001
+      - GILES-AGENTS-DRIFT
+      finding_sources: &id002
+      - scan-repo
+      scan_categories: &id003
+      - agent_alias_drift
+      - agent_contract_block_missing
+      source_findings_blocking: true
+  source_metadata:
+    drift_family: agents_drift
+    finding_codes: *id001
+    finding_sources: *id002
+    scan_categories: *id003
+    source_findings_blocking: true
+- id: align-semantic-structure
+  title: Align repository semantic slots and control-layer structure expectations;
+    record explicit exceptions.
+  scope: repo
+  priority: high
+  status: pending
+  depends_on: []
+  finding:
+    category: compliance
+    severity: medium
+    description: Align repository semantic slots and control-layer structure expectations;
+      record explicit exceptions.
+  required_change:
+    intent: Align repository semantic slots and control-layer structure expectations;
+      record explicit exceptions.
+    affected_paths:
+    - governance/local_semantics.yaml
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - '`governance/local_semantics.yaml` exists at the path indicated'
+  - decision recorded in governance, with rationale
+  - the underlying finding no longer appears in a fresh `giles compliance-todo` run
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    - git diff --check
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations:
+    source_metadata:
+      drift_family: structure_drift
+      finding_codes: &id004
+      - GILES-STRUCTURE-SLOT
+      - GILES-SYS-AUDIT-STRUCTURE
+      finding_sources: &id005
+      - audit-structure
+      - scan-repo
+      scan_categories: &id006
+      - semantic_slot_missing
+      source_findings_blocking: true
+  source_metadata:
+    drift_family: structure_drift
+    finding_codes: *id004
+    finding_sources: *id005
+    scan_categories: *id006
+    source_findings_blocking: true
+- id: repair-docs-drift
+  title: Repair documentation drift and ensure discoverable docs inventory is current
+    for current behavior.
+  scope: repo
+  priority: high
+  status: pending
+  depends_on: []
+  finding:
+    category: compliance
+    severity: medium
+    description: Repair documentation drift and ensure discoverable docs inventory
+      is current for current behavior.
+  required_change:
+    intent: Repair documentation drift and ensure discoverable docs inventory is current
+      for current behavior.
+    affected_paths:
+    - docs
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - '`docs` exists at the path indicated'
+  - decision recorded in governance, with rationale
+  - the underlying finding no longer appears in a fresh `giles compliance-todo` run
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    - git diff --check
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations:
+    source_metadata:
+      drift_family: docs_drift
+      finding_codes: &id007
+      - GILES-DOC-DRIFT
+      finding_sources: &id008
+      - scan-repo
+      scan_categories: &id009
+      - stale_doc_reference
+      source_findings_blocking: false
+  source_metadata:
+    drift_family: docs_drift
+    finding_codes: *id007
+    finding_sources: *id008
+    scan_categories: *id009
+    source_findings_blocking: false
+- id: recheck
+  title: After applying the above actions, re-run `giles compliance-todo --refresh
+    <repo>` to refresh this artifact and confirm the recheck status.
+  scope: repo
+  priority: high
+  status: pending
+  depends_on:
+  - align-agents-contract
+  - align-semantic-structure
+  - create-repo-config
+  - decide-manifest-mode
+  - migrate-repo-yaml
+  - repair-docs-drift
+  - set-standard-version
+  finding:
+    category: compliance
+    severity: medium
+    description: After applying the above actions, re-run `giles compliance-todo --refresh
+      <repo>` to refresh this artifact and confirm the recheck status.
+  required_change:
+    intent: After applying the above actions, re-run `giles compliance-todo --refresh
+      <repo>` to refresh this artifact and confirm the recheck status.
+    affected_paths: []
+  constraints:
+    do_not:
+    - invent governance values Giles did not provide
+    - mark task complete unless acceptance criteria are satisfied
+    - promote .giles artifacts to canonical authority
+    - delete unresolved tasks
+  acceptance_criteria:
+  - decision recorded in governance, with rationale
+  - the underlying finding no longer appears in a fresh `giles compliance-todo` run
+  validation:
+    commands:
+    - giles compliance-todo /Users/eric/Work/vscode/forked/gosling --refresh
+    - git diff --check
+    required_evidence:
+    - changed_files
+    - commands_run
+    - residual_risks
+  evidence: []
+  annotations:
+    source_metadata:
+      source_findings_blocking: true
+  source_metadata:
+    source_findings_blocking: true
