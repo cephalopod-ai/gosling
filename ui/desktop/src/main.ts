@@ -2964,7 +2964,8 @@ async function appMain() {
 
   ipcMain.handle('open-directory-in-explorer', async (_event, path: string) => {
     try {
-      return !!(await shell.openPath(path));
+      const errorMessage = await shell.openPath(path);
+      return errorMessage === '';
     } catch (error) {
       console.error('Error opening directory in explorer:', error);
       return false;
