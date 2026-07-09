@@ -41,7 +41,7 @@ export default function WorkingDirectoriesSummary({
   onSessionChange,
 }: WorkingDirectoriesSummaryProps) {
   const intl = useIntl();
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const directories = useMemo(() => {
     if (!session?.working_dir) {
@@ -82,7 +82,7 @@ export default function WorkingDirectoriesSummary({
   }
 
   return (
-    <div className="flex min-w-[220px] max-w-[420px] flex-col items-end gap-2">
+    <div className="pointer-events-auto flex min-w-[220px] max-w-[420px] flex-col items-end gap-2">
       <div className="flex items-center gap-2">
         <button
           type="button"

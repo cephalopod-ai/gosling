@@ -3,6 +3,7 @@ import {
   app,
   App,
   BrowserWindow,
+  clipboard,
   dialog,
   globalShortcut,
   ipcMain,
@@ -2360,6 +2361,14 @@ ipcMain.handle('show-message-box', async (_event, options) => {
 
 ipcMain.handle('show-save-dialog', async (_event, options) => {
   return dialog.showSaveDialog(options);
+});
+
+ipcMain.handle('write-clipboard-text', async (_event, text: string) => {
+  clipboard.writeText(text);
+});
+
+ipcMain.handle('write-clipboard-html', async (_event, html: string, text: string) => {
+  clipboard.write({ html, text });
 });
 
 ipcMain.handle('get-allowed-extensions', async () => {

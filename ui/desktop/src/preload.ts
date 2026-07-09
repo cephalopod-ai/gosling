@@ -1,4 +1,4 @@
-import Electron, { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron';
+import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
 import {
   desktopCommandChannels,
   rendererEventChannels,
@@ -348,10 +348,10 @@ const electronAPI: ElectronAPI = {
   listRecentDirs: () => ipcRenderer.invoke('list-recent-dirs'),
   listGitWorktreeDirs: (dir: string) => ipcRenderer.invoke('list-git-worktree-dirs', dir),
   writeClipboardText: async (text: string): Promise<void> => {
-    clipboard.writeText(text);
+    await ipcRenderer.invoke('write-clipboard-text', text);
   },
   writeClipboardHtml: async (html: string, text: string): Promise<void> => {
-    clipboard.write({ html, text });
+    await ipcRenderer.invoke('write-clipboard-html', html, text);
   },
 };
 

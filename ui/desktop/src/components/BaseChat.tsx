@@ -362,8 +362,8 @@ export default function BaseChat({
 
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Gosling watermark - top right */}
-          <div className="absolute top-[14px] right-4 z-[60] flex flex-col items-end gap-2">
-            <div className="flex flex-row items-center gap-2">
+          <div className="pointer-events-none absolute top-[14px] right-4 z-[60] flex flex-col items-end gap-2">
+            <div className="pointer-events-auto flex flex-row items-center gap-2">
               <a
                 href="https://github.com/repo-makeover/gosling"
                 target="_blank"
