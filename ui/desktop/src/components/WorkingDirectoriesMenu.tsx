@@ -24,6 +24,10 @@ const i18n = defineMessages({
     id: 'workingDirectoriesMenu.workingDirectories',
     defaultMessage: 'Working Directories',
   },
+  directoriesShort: {
+    id: 'workingDirectoriesMenu.directoriesShort',
+    defaultMessage: 'Dirs',
+  },
   primary: {
     id: 'workingDirectoriesMenu.primary',
     defaultMessage: 'Primary',
@@ -190,12 +194,13 @@ export default function WorkingDirectoriesMenu({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <button
-                className={`no-drag flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary transition-colors ${className ?? ''}`}
+                className={`no-drag flex items-center gap-1 text-xs transition-colors ${className ?? 'text-text-secondary hover:text-text-primary'}`}
               >
-                <Folder size={14} />
-                {additionalWorkingDirs.length > 0 && (
-                  <span className="tabular-nums">{additionalWorkingDirs.length + 1}</span>
-                )}
+                <FolderPlus size={14} />
+                <span>{intl.formatMessage(i18n.directoriesShort)}</span>
+                <span className="tabular-nums text-[11px] text-text-secondary">
+                  {additionalWorkingDirs.length + 1}
+                </span>
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>

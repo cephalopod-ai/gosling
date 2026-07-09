@@ -3274,8 +3274,8 @@
         "type": "string",
         "enum": [
           "auto",
-          "approve",
           "smart_approve",
+          "approve",
           "chat"
         ]
       },
@@ -3748,7 +3748,6 @@
           },
           {
             "type": "object",
-            "description": "Sent at the start of an SSE stream to inform the client about\nin-flight requests it can reattach to.",
             "required": [
               "request_ids",
               "type"
@@ -4691,6 +4690,13 @@
           "accumulated_usage": {
             "$ref": "#/components/schemas/Usage"
           },
+          "additional_working_dirs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra directories the agent has full tool access to, beyond `working_dir`."
+          },
           "archived_at": {
             "type": "string",
             "format": "date-time",
@@ -4748,6 +4754,10 @@
           "provider_name": {
             "type": "string",
             "nullable": true
+          },
+          "restrict_tools_to_working_dirs": {
+            "type": "boolean",
+            "description": "Opt-in, off by default. When true, tool calls that touch a path outside\nevery working directory require approval with a message explaining why,\ninstead of following the session's normal approval mode."
           },
           "session_type": {
             "$ref": "#/components/schemas/SessionType"

@@ -28,7 +28,6 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Gosling } from './icons';
 import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
-import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -193,20 +192,26 @@ export default function BaseChat({
   // Track if this is the initial render for session resuming
   const initialRenderRef = useRef(true);
 
+  const requestScrollToBottom = useCallback((delayMs = 0) => {
+    window.setTimeout(() => {
+      scrollRef.current?.scrollToBottom?.();
+    }, delayMs);
+  }, []);
+
+  useEffect(() => {
+    initialRenderRef.current = true;
+  }, [sessionId]);
+
   // Auto-scroll when messages are loaded (for session resuming)
   const handleRenderingComplete = React.useCallback(() => {
     // Only force scroll on the very first render
     if (initialRenderRef.current && messages.length > 0) {
       initialRenderRef.current = false;
-      if (scrollRef.current?.scrollToBottom) {
-        scrollRef.current.scrollToBottom();
-      }
+      requestScrollToBottom();
     } else if (scrollRef.current?.isFollowing) {
-      if (scrollRef.current?.scrollToBottom) {
-        scrollRef.current.scrollToBottom();
-      }
+      requestScrollToBottom();
     }
-  }, [messages.length]);
+  }, [messages.length, requestScrollToBottom]);
 
   const handleHistoryScroll = useCallback(
     (viewport: HTMLDivElement) => {
@@ -220,18 +225,13 @@ export default function BaseChat({
   // Listen for global scroll-to-bottom requests (e.g., from MCP App message actions)
   useEffect(() => {
     const handleGlobalScrollRequest = () => {
-      // Add a small delay to ensure content has been rendered
-      setTimeout(() => {
-        if (scrollRef.current?.scrollToBottom) {
-          scrollRef.current.scrollToBottom();
-        }
-      }, 200);
+      requestScrollToBottom(200);
     };
 
     window.addEventListener(AppEvents.SCROLL_CHAT_TO_BOTTOM, handleGlobalScrollRequest);
     return () =>
       window.removeEventListener(AppEvents.SCROLL_CHAT_TO_BOTTOM, handleGlobalScrollRequest);
-  }, []);
+  }, [requestScrollToBottom]);
 
   useEffect(() => {
     if (
@@ -344,7 +344,6 @@ export default function BaseChat({
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Gosling watermark - top right */}
           <div className="absolute top-[14px] right-4 z-[60] flex flex-row items-center gap-2">
-            <WorkingDirectoriesMenu session={session} onSessionChange={updateSession} />
             <a
               href="https://gosling-docs.ai"
               target="_blank"
@@ -460,6 +459,8 @@ export default function BaseChat({
             workingDir={session?.working_dir}
             onWorkingDirChange={handleWorkingDirChange}
             latestInference={latestInference}
+            session={session}
+            onSessionChange={updateSession}
             {...customChatInputProps}
           />
         </ChatInputCard>
