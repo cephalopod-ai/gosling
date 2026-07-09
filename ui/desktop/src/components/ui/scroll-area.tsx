@@ -6,7 +6,7 @@ type ScrollBehavior = 'auto' | 'smooth';
 import { cn } from '../../utils';
 
 export interface ScrollAreaHandle {
-  scrollToBottom: () => void;
+  scrollToBottom: (behavior?: ScrollBehavior) => void;
   scrollToPosition: (options: { top: number; behavior?: ScrollBehavior }) => void;
   isAtBottom: () => boolean;
   isFollowing: boolean;
@@ -38,6 +38,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
   ) => {
     const rootRef = React.useRef<React.ElementRef<typeof ScrollAreaPrimitive.Root>>(null);
     const viewportRef = React.useRef<HTMLDivElement>(null);
+    const contentRef = React.useRef<HTMLDivElement>(null);
     const viewportEndRef = React.useRef<HTMLDivElement>(null);
     const [isFollowing, setIsFollowing] = React.useState(true);
     const [isScrolled, setIsScrolled] = React.useState(false);
@@ -58,11 +59,11 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
       return distanceFromBottom <= BOTTOM_SCROLL_THRESHOLD;
     }, []);
 
-    const scrollToBottom = React.useCallback(() => {
+    const scrollToBottom = React.useCallback((behavior: ScrollBehavior = 'smooth') => {
       if (viewportRef.current) {
         viewportRef.current.scrollTo({
           top: viewportRef.current.scrollHeight,
-          behavior: 'smooth',
+          behavior,
         });
         // When explicitly scrolling to bottom, reset the following state
         setIsFollowing(true);
@@ -167,16 +168,36 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
         // Use requestAnimationFrame to ensure DOM has updated
         requestAnimationFrame(() => {
           if (viewportRef.current && !isActivelyScrollingRef.current) {
-            viewportRef.current.scrollTo({
-              top: viewportRef.current.scrollHeight,
-              behavior: 'smooth',
-            });
+            scrollToBottom('smooth');
           }
         });
       }
 
       lastScrollHeightRef.current = currentScrollHeight;
-    }, [children, autoScroll, isFollowing]);
+    }, [children, autoScroll, isFollowing, scrollToBottom]);
+
+    React.useEffect(() => {
+      if (!autoScroll || !contentRef.current) {
+        return;
+      }
+
+      const observer = new ResizeObserver(() => {
+        if (
+          isFollowing &&
+          !userScrolledUpRef.current &&
+          !isActivelyScrollingRef.current
+        ) {
+          requestAnimationFrame(() => {
+            if (viewportRef.current && !isActivelyScrollingRef.current) {
+              scrollToBottom('auto');
+            }
+          });
+        }
+      });
+
+      observer.observe(contentRef.current);
+      return () => observer.disconnect();
+    }, [autoScroll, isFollowing, scrollToBottom]);
 
     // Add scroll event listener
     React.useEffect(() => {
@@ -204,7 +225,10 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
           ref={viewportRef}
           className="h-full w-full rounded-[inherit] [&>div]:!block"
         >
-          <div className={cn(paddingX ? `px-${paddingX}` : '', paddingY ? `py-${paddingY}` : '')}>
+          <div
+            ref={contentRef}
+            className={cn(paddingX ? `px-${paddingX}` : '', paddingY ? `py-${paddingY}` : '')}
+          >
             {children}
             {autoScroll && <div ref={viewportEndRef} style={{ height: '1px' }} />}
           </div>

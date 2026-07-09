@@ -193,9 +193,9 @@ export default function BaseChat({
   const initialRenderRef = useRef(true);
   const initialSessionScrollRef = useRef<string | null>(null);
 
-  const requestScrollToBottom = useCallback((delayMs = 0) => {
+  const requestScrollToBottom = useCallback((delayMs = 0, behavior: 'auto' | 'smooth' = 'smooth') => {
     window.setTimeout(() => {
-      scrollRef.current?.scrollToBottom?.();
+      scrollRef.current?.scrollToBottom?.(behavior);
     }, delayMs);
   }, []);
 
@@ -215,8 +215,9 @@ export default function BaseChat({
     }
 
     initialSessionScrollRef.current = sessionId;
-    requestScrollToBottom();
-    requestScrollToBottom(150);
+    requestScrollToBottom(0, 'auto');
+    requestScrollToBottom(150, 'auto');
+    requestScrollToBottom(500, 'auto');
   }, [sessionId, messages.length, chatState, requestScrollToBottom]);
 
   // Auto-scroll when messages are loaded (for session resuming)
@@ -224,7 +225,7 @@ export default function BaseChat({
     // Only force scroll on the very first render
     if (initialRenderRef.current && messages.length > 0) {
       initialRenderRef.current = false;
-      requestScrollToBottom();
+      requestScrollToBottom(0, 'auto');
     } else if (scrollRef.current?.isFollowing) {
       requestScrollToBottom();
     }
