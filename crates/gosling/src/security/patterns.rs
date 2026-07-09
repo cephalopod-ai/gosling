@@ -91,7 +91,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "python_remote_exec",
-        pattern: r"python[23]?\s+-c\s+.*urllib|requests.*exec",
+        pattern: r"python[23]?\s+-c\s+.*(urllib|requests).*exec",
         description: "Python remote code execution",
         risk_level: RiskLevel::High,
         category: ThreatCategory::RemoteCodeExecution,
@@ -251,7 +251,7 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "container_escape",
-        pattern: r"(chroot|unshare|nsenter).*--mount|--pid|--net",
+        pattern: r"(chroot|unshare|nsenter).*(--mount|--pid|--net)",
         description: "Container escape techniques",
         risk_level: RiskLevel::High,
         category: ThreatCategory::PrivilegeEscalation,
@@ -526,5 +526,28 @@ mod tests {
         assert!(matches(pat, r"\U00000041\U00000042\U00000043"));
         // Mixed 4-digit and 8-digit forms should also match
         assert!(matches(pat, r"\u0065\U00000076\u0061"));
+    }
+
+    #[test]
+    fn container_escape_requires_both_sides_of_alternation() {
+        let pat = "container_escape";
+        assert!(matches(pat, "unshare --mount --pid --net bash"));
+        assert!(matches(pat, "nsenter --pid=/proc/1/ns/pid bash"));
+        assert!(matches(pat, "chroot /mnt --net"));
+        // Bare option text without an escape-syscall prefix should NOT match
+        assert!(!matches(pat, "curl --netrc https://example.com"));
+        assert!(!matches(pat, "ps aux --pid 123"));
+    }
+
+    #[test]
+    fn python_remote_exec_requires_both_sides_of_alternation() {
+        let pat = "python_remote_exec";
+        assert!(matches(pat, "python -c \"import urllib.request; exec(x)\""));
+        assert!(matches(pat, "python3 -c \"import requests; exec(x)\""));
+        // Bare mention of requests/exec without python -c should NOT match
+        assert!(!matches(
+            pat,
+            "the requests package supports async and can execute callbacks"
+        ));
     }
 }
