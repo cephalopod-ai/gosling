@@ -60,9 +60,9 @@ fn materialize_model_config_inner(
         .with_default_max_tokens(config.get_gosling_max_tokens()?);
 
     if provider_name == "chatgpt_codex" {
-        model = model.with_default_context_limit(
-            crate::providers::chatgpt_codex::context_limit_for_model(&model.model_name),
-        );
+        let context_limit =
+            crate::providers::chatgpt_codex::context_limit_for_model(&model.model_name);
+        model = model.with_default_context_limit(context_limit);
     }
 
     if include_default_thinking_effort {

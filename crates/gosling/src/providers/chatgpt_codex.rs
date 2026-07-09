@@ -288,44 +288,72 @@ fn create_codex_request(
     messages: &[Message],
     tools: &[Tool],
 ) -> Result<Value> {
-    let input_items = build_input_items(messages)?;
+    let responses_lite = uses_responses_lite(&model_config.model_name);
+    let mut input_items = build_input_items(messages)?;
     let reasoning_effort = reasoning_effort_for_config(model_config);
+    let tools_spec: Vec<Value> = tools
+        .iter()
+        .map(|tool| {
+            json!({
+                "type": "function",
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema,
+            })
+        })
+        .collect();
 
     let instructions = match model_config.model_name.as_str() {
         "gpt-5.3-codex" => format!("{GPT_53_CODEX_TOOL_PREAMBLE}\n\n{system}"),
         _ => system.to_string(),
     };
 
+    if responses_lite {
+        let mut prefix = vec![json!({
+            "type": "additional_tools",
+            "role": "developer",
+            "tools": &tools_spec,
+        })];
+        if !instructions.is_empty() {
+            prefix.push(json!({
+                "type": "message",
+                "role": "developer",
+                "content": [{
+                    "type": "input_text",
+                    "text": &instructions,
+                }],
+            }));
+        }
+        input_items.splice(0..0, prefix);
+    }
+
     let mut payload = json!({
         "model": model_config.model_name,
         "input": input_items,
         "store": false,
-        "instructions": instructions,
+        "instructions": if responses_lite { "" } else { instructions.as_str() },
     });
 
     let payload_obj = payload
         .as_object_mut()
         .ok_or_else(|| anyhow!("Codex payload must be a JSON object"))?;
 
-    if !tools.is_empty() {
-        let tools_spec: Vec<Value> = tools
-            .iter()
-            .map(|tool| {
-                json!({
-                    "type": "function",
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema,
-                })
-            })
-            .collect();
-
+    if responses_lite {
+        payload_obj.insert("tool_choice".to_string(), json!("auto"));
+        payload_obj.insert("parallel_tool_calls".to_string(), json!(false));
+    } else if !tools_spec.is_empty() {
         payload_obj.insert("tools".to_string(), json!(tools_spec));
         payload_obj.insert("tool_choice".to_string(), json!("auto"));
         payload_obj.insert("parallel_tool_calls".to_string(), json!(true));
     }
 
-    if let Some(reasoning_effort) = reasoning_effort {
+    if responses_lite {
+        let mut reasoning = json!({ "context": "all_turns" });
+        if let Some(reasoning_effort) = reasoning_effort {
+            reasoning["effort"] = json!(reasoning_effort);
+        }
+        payload_obj.insert("reasoning".to_string(), reasoning);
+    } else if let Some(reasoning_effort) = reasoning_effort {
         payload_obj.insert(
             "reasoning".to_string(),
             json!({ "effort": reasoning_effort }),
@@ -1496,6 +1524,22 @@ mod tests {
     ) {
         assert_eq!(uses_responses_lite(model), expected_lite);
         assert_eq!(context_limit_for_model(model), expected_context_limit);
+    }
+
+    #[test]
+    fn test_gpt56_request_uses_responses_lite_shape() {
+        let model = ModelConfig::new("gpt-5.6-luna");
+        let payload = create_codex_request(&model, "system prompt", &[], &[]).unwrap();
+
+        assert_eq!(payload["reasoning"]["context"], "all_turns");
+        assert_eq!(payload["parallel_tool_calls"], false);
+        assert_eq!(payload["tool_choice"], "auto");
+        assert_eq!(payload["instructions"], "");
+        assert!(payload.get("tools").is_none());
+        assert_eq!(payload["input"][0]["type"], "additional_tools");
+        assert_eq!(payload["input"][1]["type"], "message");
+        assert_eq!(payload["input"][1]["role"], "developer");
+        assert_eq!(payload["input"][1]["content"][0]["text"], "system prompt");
     }
 
     #[test]
