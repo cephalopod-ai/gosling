@@ -106,6 +106,20 @@ Comparing `gosling` v0.0.6 against `goose` v1.41.0, Gosling implements several s
   - single-instance behavior is preserved per app: one running Goose and one running Gosling, each guarded by its own instance lock
 - **Provenance in the app** — Help → About shows that this is Gosling v0.0.6, a fork of goose v1.38.
 
+## Tagteam provider
+
+gosling includes a built-in `tagteam` provider for profile-backed multi-model workflows.
+
+- `coding-adversarial`: `tagteam` adversarial mode with `codex:gpt-5.4-high` as coder and `claude:sonnet-5-high` as adversary.
+- `relay`: `tagteam` relay mode with `claude:opus-4.8` supervisor, `codex:gpt-5.4-mini` worker, and `agy:gemini-3.5-flash-medium` scout.
+- `supervisor-worker`: `tagteam` supervisor mode with `codex:gpt-5.5-high` supervisor and `codex:codex-5.3-codex/spark-high` worker.
+
+```bash
+gosling run --provider tagteam --model <profile> --text "..."
+```
+
+`tagteam` and the underlying vendor CLIs must be installed and authenticated separately; gosling does not handle that setup.
+
 ## Get started
 
 Build the desktop app or CLI from source:

@@ -38,6 +38,8 @@ sudo dnf install dpkg-dev fakeroot
 
 This is an electron forge app, using vite and react.js. `goslingd` runs as multi process binaries on each window/tab similar to chrome.
 
+Gosling Desktop uses an embedded backend binary at `/Applications/Gosling.app/Contents/Resources/bin/gosling` in installed apps, and `ui/desktop/src/bin/gosling` in source or bundled builds. If a new Rust provider such as `tagteam` does not show up in the GUI provider picker, rebuild or copy the updated `gosling` backend binary into the desktop bundle and restart the app. The `tagteam` provider exposes the `coding-adversarial`, `relay`, and `supervisor-worker` profile models.
+
 ## Building for different platforms
 
 ### macOS
