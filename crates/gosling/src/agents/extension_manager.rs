@@ -1176,6 +1176,11 @@ impl ExtensionManager {
                 dependencies,
                 ..
             } => {
+                // Check for malicious packages before launching the process
+                if let Some(deps) = dependencies.as_deref() {
+                    extension_malware_check::deny_if_malicious_pypi_dependencies(deps).await?;
+                }
+
                 let dir = tempdir()?;
                 let file_path = dir.path().join(format!("{}.py", name));
                 temp_dir = Some(dir);
