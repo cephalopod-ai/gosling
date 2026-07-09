@@ -10,6 +10,7 @@ use super::base::{ConfigKey, ProviderMetadata};
 
 const HIDDEN_AUTOMATIC_PROVIDER_SETUP_IDS: &[&str] = &[
     "codex",
+    "codex-acp",
     "claude_code",
     "aws_bedrock",
     "sagemaker_tgi",
@@ -90,6 +91,13 @@ pub fn get_provider_template(provider_id: &str) -> Option<ProviderTemplate> {
 mod tests {
     use super::*;
     use crate::providers::base::ProviderType;
+
+    #[test]
+    fn automatic_provider_setup_hides_deprecated_codex_entries() {
+        assert!(hide_from_automatic_provider_setup("codex"));
+        assert!(hide_from_automatic_provider_setup("codex-acp"));
+        assert!(!hide_from_automatic_provider_setup("chatgpt_codex"));
+    }
 
     #[tokio::test]
     async fn test_featherless_provider() {
