@@ -147,7 +147,7 @@ function getProviders(): ProviderConfig[] {
     },
     {
       provider: 'chatgpt_codex',
-      models: ['gpt-5.4'],
+      models: ['gpt-5.6-sol'],
       available: () =>
         hasEnv('CHATGPT_CODEX_TOKEN') ||
         hasFile(path.join(os.homedir(), '.config/gosling/chatgpt_codex/tokens.json')),

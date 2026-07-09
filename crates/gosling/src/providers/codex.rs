@@ -27,17 +27,18 @@ use rmcp::model::Role;
 use rmcp::model::Tool;
 
 const CODEX_PROVIDER_NAME: &str = "codex";
-pub const CODEX_DEFAULT_MODEL: &str = "gpt-5.2-codex";
+pub const CODEX_DEFAULT_MODEL: &str = "gpt-5.6-sol";
 pub const CODEX_KNOWN_MODELS: &[&str] = &[
-    "gpt-5.2-codex",
-    "gpt-5.2",
-    "gpt-5.1-codex-max",
-    "gpt-5.1-codex-mini",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex-spark",
 ];
 pub const CODEX_DOC_URL: &str = "https://developers.openai.com/codex/cli";
 
 /// Valid reasoning effort levels for Codex
-pub const CODEX_REASONING_LEVELS: &[&str] = &["none", "low", "medium", "high", "xhigh"];
+pub const CODEX_REASONING_LEVELS: &[&str] = &["none", "low", "medium", "high", "xhigh", "max"];
 
 /// Spawns the Codex CLI (`codex exec`) as a one-shot child process per turn.
 /// Text prompt is piped via stdin (`-`), images are passed as temporary files
@@ -71,7 +72,7 @@ impl CodexProvider {
             })
     }
 
-    fn map_thinking_effort(_model_name: &str, effort: Option<ThinkingEffort>) -> Option<String> {
+    fn map_thinking_effort(model_name: &str, effort: Option<ThinkingEffort>) -> Option<String> {
         use ThinkingEffort;
         match effort
             .or_else(Self::legacy_reasoning_effort)
@@ -81,17 +82,24 @@ impl CodexProvider {
             ThinkingEffort::Low => Some("low".to_string()),
             ThinkingEffort::Medium => Some("medium".to_string()),
             ThinkingEffort::High => Some("high".to_string()),
-            ThinkingEffort::Max => Some("xhigh".to_string()),
+            ThinkingEffort::Max => Some(
+                if Self::supports_reasoning_effort(model_name, "max") {
+                    "max"
+                } else {
+                    "xhigh"
+                }
+                .to_string(),
+            ),
         }
     }
 
-    #[cfg(test)]
-    fn supports_reasoning_effort(_model_name: &str, reasoning_effort: &str) -> bool {
+    fn supports_reasoning_effort(model_name: &str, reasoning_effort: &str) -> bool {
         if !CODEX_REASONING_LEVELS.contains(&reasoning_effort) {
             return false;
         }
 
-        true
+        reasoning_effort != "max"
+            || matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna")
     }
 
     /// Apply permission flags based on GoslingMode
@@ -1016,29 +1024,64 @@ mod tests {
         assert!(CODEX_REASONING_LEVELS.contains(&"medium"));
         assert!(CODEX_REASONING_LEVELS.contains(&"high"));
         assert!(CODEX_REASONING_LEVELS.contains(&"xhigh"));
+        assert!(CODEX_REASONING_LEVELS.contains(&"max"));
         assert!(!CODEX_REASONING_LEVELS.contains(&"minimal"));
         assert!(!CODEX_REASONING_LEVELS.contains(&"invalid"));
     }
 
     #[test]
     fn test_reasoning_effort_support_by_model() {
-        assert!(CodexProvider::supports_reasoning_effort("gpt-5.2", "none"));
         assert!(CodexProvider::supports_reasoning_effort(
-            "gpt-5.2-codex",
+            "gpt-5.6-sol",
             "none"
         ));
         assert!(CodexProvider::supports_reasoning_effort(
-            "gpt-5.2-codex",
+            "gpt-5.6-terra",
+            "max"
+        ));
+        assert!(CodexProvider::supports_reasoning_effort(
+            "gpt-5.3-codex-spark",
             "xhigh"
+        ));
+        assert!(!CodexProvider::supports_reasoning_effort(
+            "gpt-5.3-codex-spark",
+            "max"
         ));
     }
 
     #[test]
     fn test_known_models() {
-        assert!(CODEX_KNOWN_MODELS.contains(&"gpt-5.2-codex"));
-        assert!(CODEX_KNOWN_MODELS.contains(&"gpt-5.2"));
-        assert!(CODEX_KNOWN_MODELS.contains(&"gpt-5.1-codex-max"));
-        assert!(CODEX_KNOWN_MODELS.contains(&"gpt-5.1-codex-mini"));
+        assert_eq!(
+            CODEX_KNOWN_MODELS,
+            &[
+                "gpt-5.6-sol",
+                "gpt-5.6-terra",
+                "gpt-5.6-luna",
+                "gpt-5.4-mini",
+                "gpt-5.3-codex-spark",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_known_model_context_limits() {
+        let metadata = CodexProvider::metadata();
+        let contexts: Vec<(&str, usize)> = metadata
+            .known_models
+            .iter()
+            .map(|model| (model.name.as_str(), model.context_limit))
+            .collect();
+
+        assert_eq!(
+            contexts,
+            vec![
+                ("gpt-5.6-sol", 1_050_000),
+                ("gpt-5.6-terra", 1_050_000),
+                ("gpt-5.6-luna", 1_050_000),
+                ("gpt-5.4-mini", 400_000),
+                ("gpt-5.3-codex-spark", 128_000),
+            ]
+        );
     }
 
     #[test]
@@ -1247,19 +1290,23 @@ mod tests {
         ]);
 
         assert_eq!(
-            CodexProvider::map_thinking_effort("gpt-5.2-codex", Some(ThinkingEffort::Off)),
+            CodexProvider::map_thinking_effort("gpt-5.6-sol", Some(ThinkingEffort::Off)),
             Some("none".to_string())
         );
         assert_eq!(
-            CodexProvider::map_thinking_effort("gpt-5.2", Some(ThinkingEffort::Off)),
+            CodexProvider::map_thinking_effort("gpt-5.4-mini", Some(ThinkingEffort::Off)),
             Some("none".to_string())
         );
         assert_eq!(
-            CodexProvider::map_thinking_effort("gpt-5.2-codex", Some(ThinkingEffort::Max)),
+            CodexProvider::map_thinking_effort("gpt-5.6-sol", Some(ThinkingEffort::Max)),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-5.3-codex-spark", Some(ThinkingEffort::Max)),
             Some("xhigh".to_string())
         );
         assert_eq!(
-            CodexProvider::map_thinking_effort("gpt-5.2-codex", None),
+            CodexProvider::map_thinking_effort("gpt-5.6-sol", None),
             Some("high".to_string())
         );
     }
@@ -1272,7 +1319,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            CodexProvider::map_thinking_effort("gpt-5.2-codex", None),
+            CodexProvider::map_thinking_effort("gpt-5.6-sol", None),
             Some("low".to_string())
         );
     }
@@ -1310,7 +1357,7 @@ mod tests {
 
     #[test]
     fn test_default_model() {
-        assert_eq!(CODEX_DEFAULT_MODEL, "gpt-5.2-codex");
+        assert_eq!(CODEX_DEFAULT_MODEL, "gpt-5.6-sol");
     }
 
     #[test_case(GoslingMode::Auto, &["--yolo"] ; "auto_yolo")]

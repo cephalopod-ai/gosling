@@ -46,7 +46,7 @@ const OAUTH_TIMEOUT_SECS: u64 = 300;
 const HTML_AUTO_CLOSE_TIMEOUT_MS: u64 = 2000;
 
 const CHATGPT_CODEX_PROVIDER_NAME: &str = "chatgpt_codex";
-pub const CHATGPT_CODEX_DEFAULT_MODEL: &str = "gpt-5.5";
+pub const CHATGPT_CODEX_DEFAULT_MODEL: &str = "gpt-5.6-sol";
 
 #[derive(Debug)]
 pub struct ChatGptCodexModelAttrs {
@@ -56,15 +56,23 @@ pub struct ChatGptCodexModelAttrs {
 
 pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     ChatGptCodexModelAttrs {
-        name: "gpt-5.5",
+        name: "gpt-5.6-sol",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-5.6-terra",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-5.6-luna",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-5.4-mini",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
     ChatGptCodexModelAttrs {
-        name: "gpt-5.4",
-        reasoning_levels: &["low", "medium", "high", "xhigh"],
-    },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.3-codex",
+        name: "gpt-5.3-codex-spark",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
 ];
@@ -1415,6 +1423,16 @@ mod tests {
         assert_eq!(claims.chatgpt_account_id.as_deref(), Some("account-1"));
     }
 
+    #[test_case(
+        "gpt-5.6-sol",
+        &["low", "medium", "high", "xhigh", "max"];
+        "gpt-5.6-sol supports max reasoning"
+    )]
+    #[test_case(
+        "gpt-5.3-codex-spark",
+        &["low", "medium", "high", "xhigh"];
+        "codex spark keeps xhigh as its ceiling"
+    )]
     #[test_case("unknown-model", &["medium", "high"]; "unknown model gets default reasoning levels")]
     fn test_reasoning_levels_for_model(model: &str, expected: &[&str]) {
         assert_eq!(reasoning_levels_for_model(model), expected);
