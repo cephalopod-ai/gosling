@@ -3,6 +3,7 @@ pub mod agent;
 pub mod config_management;
 pub mod dictation;
 pub mod errors;
+pub(crate) mod history_override;
 pub mod mcp_app_proxy;
 pub mod prompts;
 pub mod reply;

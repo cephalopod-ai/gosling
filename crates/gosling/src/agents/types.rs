@@ -1,12 +1,8 @@
-use crate::mcp_utils::ToolResult;
 use crate::providers::base::Provider;
-use rmcp::model::{CallToolResult, Tool};
+use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-
-/// Type alias for the tool result channel receiver
-pub type ToolResultReceiver = Arc<Mutex<mpsc::Receiver<(String, ToolResult<CallToolResult>)>>>;
+use tokio::sync::Mutex;
 
 // We use double Arc here to allow easy provider swaps while sharing concurrent access
 pub type SharedProvider = Arc<Mutex<Option<Arc<dyn Provider>>>>;

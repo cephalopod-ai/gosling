@@ -1,4 +1,7 @@
 use crate::routes::errors::ErrorResponse;
+use crate::routes::history_override::{
+    apply_conversation_override, is_early_provider_failure_message, rollback_conversation_override,
+};
 use crate::state::AppState;
 #[cfg(test)]
 use axum::http::StatusCode;
@@ -262,40 +265,21 @@ pub async fn reply(
             tail_limit: None,
         };
 
-        let mut all_messages = match override_conversation {
-            Some(history) => {
-                let conv = Conversation::new_unvalidated(history);
-                if let Err(e) = state
-                    .session_manager()
-                    .replace_conversation(&session_id, &conv)
-                    .await
-                {
-                    tracing::warn!(
-                        "Failed to replace session conversation for {}: {}",
-                        session_id,
-                        e
-                    );
-                }
-                // The stored token counts described the old conversation;
-                // clearing them makes auto-compaction re-estimate instead of
-                // trusting stale numbers from before the override.
-                if let Err(e) = state
-                    .session_manager()
-                    .update(&session_id)
-                    .usage(Default::default())
-                    .apply()
-                    .await
-                {
-                    tracing::warn!(
-                        "Failed to reset session usage after history override for {}: {}",
-                        session_id,
-                        e
-                    );
-                }
-                conv
+        let mut rollback_state = None;
+        let mut all_messages = session.conversation.clone().unwrap_or_default();
+        if let Some(history) = override_conversation {
+            if let Some((override_conversation, rollback)) = apply_conversation_override(
+                state.session_manager(),
+                &session,
+                &user_message,
+                history,
+            )
+            .await
+            {
+                all_messages = override_conversation;
+                rollback_state = Some(rollback);
             }
-            None => session.conversation.unwrap_or_default(),
-        };
+        }
         all_messages.push(user_message.clone());
 
         let mut stream = match agent
@@ -308,6 +292,10 @@ pub async fn reply(
         {
             Ok(stream) => stream,
             Err(e) => {
+                if let Some(rollback) = rollback_state.take() {
+                    rollback_conversation_override(state.session_manager(), &session_id, rollback)
+                        .await;
+                }
                 tracing::error!("Failed to start reply stream: {:?}", e);
                 stream_event(
                     MessageEvent::Error {
@@ -322,9 +310,20 @@ pub async fn reply(
         };
 
         let mut heartbeat_interval = tokio::time::interval(Duration::from_millis(500));
+        let mut reply_progressed = false;
         loop {
             tokio::select! {
                 _ = task_cancel.cancelled() => {
+                    if !reply_progressed {
+                        if let Some(rollback) = rollback_state.take() {
+                            rollback_conversation_override(
+                                state.session_manager(),
+                                &session_id,
+                                rollback,
+                            )
+                            .await;
+                        }
+                    }
                     tracing::info!("Agent task cancelled");
                     break;
                 }
@@ -334,6 +333,21 @@ pub async fn reply(
                 response = timeout(Duration::from_millis(500), stream.next()) => {
                     match response {
                         Ok(Some(Ok(AgentEvent::Message(message)))) => {
+                            let rollback_for_message = !reply_progressed
+                                && rollback_state.is_some()
+                                && is_early_provider_failure_message(&message);
+                            if rollback_for_message {
+                                if let Some(rollback) = rollback_state.take() {
+                                    rollback_conversation_override(
+                                        state.session_manager(),
+                                        &session_id,
+                                        rollback,
+                                    )
+                                    .await;
+                                }
+                            } else {
+                                reply_progressed = true;
+                            }
                             for content in &message.content {
                                 track_tool_telemetry(content, all_messages.messages());
                             }
@@ -346,11 +360,13 @@ pub async fn reply(
                         }
                         Ok(Some(Ok(AgentEvent::Usage(_)))) => {}
                         Ok(Some(Ok(AgentEvent::HistoryReplaced(new_messages)))) => {
+                            reply_progressed = true;
                             all_messages = new_messages.clone();
                             stream_event(MessageEvent::UpdateConversation {conversation: new_messages}, &tx, &cancel_token).await;
 
                         }
                         Ok(Some(Ok(AgentEvent::McpNotification((request_id, n))))) => {
+                            reply_progressed = true;
                             stream_event(MessageEvent::Notification{
                                 request_id: request_id.clone(),
                                 message: n,
@@ -358,6 +374,16 @@ pub async fn reply(
                         }
 
                         Ok(Some(Err(e))) => {
+                            if !reply_progressed {
+                                if let Some(rollback) = rollback_state.take() {
+                                    rollback_conversation_override(
+                                        state.session_manager(),
+                                        &session_id,
+                                        rollback,
+                                    )
+                                    .await;
+                                }
+                            }
                             tracing::error!("Error processing message: {}", e);
                             stream_event(
                                 MessageEvent::Error {
@@ -369,6 +395,16 @@ pub async fn reply(
                             break;
                         }
                         Ok(None) => {
+                            if !reply_progressed {
+                                if let Some(rollback) = rollback_state.take() {
+                                    rollback_conversation_override(
+                                        state.session_manager(),
+                                        &session_id,
+                                        rollback,
+                                    )
+                                    .await;
+                                }
+                            }
                             break;
                         }
                         Err(_) => {
@@ -462,9 +498,38 @@ mod tests {
 
     mod integration_tests {
         use super::*;
-        use axum::{body::Body, http::Request};
+        use async_trait::async_trait;
+        use axum::body::{to_bytes, Body};
+        use axum::http::Request;
         use gosling::conversation::message::Message;
+        use gosling::providers::base::{MessageStream, Provider};
+        use gosling::session::SessionType;
+        use gosling_providers::errors::ProviderError;
+        use gosling_providers::model::ModelConfig;
+        use rmcp::model::Tool;
+        use std::path::PathBuf;
         use tower::ServiceExt;
+
+        struct FailingProvider;
+
+        #[async_trait]
+        impl Provider for FailingProvider {
+            fn get_name(&self) -> &str {
+                "failing-test-provider"
+            }
+
+            async fn stream(
+                &self,
+                _model_config: &ModelConfig,
+                _system_prompt: &str,
+                _messages: &[Message],
+                _tools: &[Tool],
+            ) -> Result<MessageStream, ProviderError> {
+                Err(ProviderError::ExecutionError(
+                    "intentional startup failure".into(),
+                ))
+            }
+        }
 
         #[tokio::test(flavor = "multi_thread")]
         async fn test_reply_endpoint() {
@@ -490,6 +555,84 @@ mod tests {
             let response = app.oneshot(request).await.unwrap();
 
             assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn test_override_conversation_rolls_back_on_reply_start_failure() {
+            let state = AppState::new(true).await.unwrap();
+            let session = state
+                .session_manager()
+                .create_session(
+                    PathBuf::default(),
+                    "reply-override-rollback-test".to_string(),
+                    SessionType::Hidden,
+                    gosling::config::GoslingMode::default(),
+                )
+                .await
+                .unwrap();
+
+            let original_message = Message::user().with_text("original history");
+            let original_conversation =
+                Conversation::new_unvalidated(vec![original_message.clone()]);
+            state
+                .session_manager()
+                .replace_conversation(&session.id, &original_conversation)
+                .await
+                .unwrap();
+
+            let agent = state.get_agent(session.id.clone()).await.unwrap();
+            agent
+                .update_provider(
+                    Arc::new(FailingProvider),
+                    ModelConfig::new("failing-test-model"),
+                    &session.id,
+                )
+                .await
+                .unwrap();
+
+            let failed_prompt = Message::user().with_text("failed prompt");
+            let app = routes(state.clone());
+            let request = Request::builder()
+                .uri("/reply")
+                .method("POST")
+                .header("content-type", "application/json")
+                .header("x-secret-key", "test-secret")
+                .body(Body::from(
+                    serde_json::to_string(&ChatRequest {
+                        user_message: failed_prompt.clone(),
+                        override_conversation: Some(vec![
+                            Message::user().with_text("override history")
+                        ]),
+                        session_id: session.id.clone(),
+                    })
+                    .unwrap(),
+                ))
+                .unwrap();
+
+            let response = app.oneshot(request).await.unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body_text = String::from_utf8(body.to_vec()).unwrap();
+            assert!(body_text.contains("intentional startup failure"));
+
+            let persisted = state
+                .session_manager()
+                .get_session(&session.id, true)
+                .await
+                .unwrap();
+            let messages = persisted
+                .conversation
+                .unwrap()
+                .messages()
+                .iter()
+                .map(|message| message.as_concat_text())
+                .collect::<Vec<_>>();
+
+            assert_eq!(
+                messages,
+                vec!["original history".to_string(), "failed prompt".to_string()]
+            );
         }
     }
 }

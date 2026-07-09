@@ -11,6 +11,9 @@ use tracing_futures::Instrument;
 use uuid::Uuid;
 
 use super::container::Container;
+use super::frontend_tool_result_router::{
+    FrontendToolResultRegistration, FrontendToolResultRouter,
+};
 use super::mcp_client::GoslingMcpHostInfo;
 use super::tool_confirmation_router::ToolConfirmationRouter;
 use super::tool_execution::{ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
@@ -21,7 +24,7 @@ use crate::agents::extension_manager::{
 };
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::prompt_manager::PromptManager;
-use crate::agents::types::{FrontendTool, SessionConfig, SharedProvider, ToolResultReceiver};
+use crate::agents::types::{FrontendTool, SessionConfig, SharedProvider};
 use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{CodeExecutionRuntime, Config, GoslingMode};
@@ -245,8 +248,7 @@ pub struct Agent {
     pub(super) prompt_manager: Mutex<PromptManager>,
     pub(super) subdirectory_hint_tracker: Mutex<SubdirectoryHintTracker>,
     pub tool_confirmation_router: ToolConfirmationRouter,
-    pub(super) tool_result_tx: mpsc::Sender<(String, ToolResult<CallToolResult>)>,
-    pub(super) tool_result_rx: ToolResultReceiver,
+    pub(super) frontend_tool_result_router: FrontendToolResultRouter,
 
     pub(super) tool_inspection_manager: ToolInspectionManager,
     pub(super) hook_manager: crate::hooks::HookManager,
@@ -328,7 +330,6 @@ impl Agent {
     }
 
     pub fn with_config(config: AgentConfig) -> Self {
-        let (tool_tx, tool_rx) = mpsc::channel(32);
         let provider = Arc::new(Mutex::new(None));
 
         let gosling_platform = config.gosling_platform.clone();
@@ -373,8 +374,7 @@ impl Agent {
             prompt_manager: Mutex::new(PromptManager::new()),
             subdirectory_hint_tracker: Mutex::new(SubdirectoryHintTracker::new()),
             tool_confirmation_router: ToolConfirmationRouter::new(),
-            tool_result_tx: tool_tx,
-            tool_result_rx: Arc::new(Mutex::new(tool_rx)),
+            frontend_tool_result_router: FrontendToolResultRouter::new(),
             tool_inspection_manager: Self::create_tool_inspection_manager(
                 permission_manager,
                 provider.clone(),
@@ -3184,8 +3184,16 @@ impl Agent {
     }
 
     pub async fn handle_tool_result(&self, id: String, result: ToolResult<CallToolResult>) {
-        if let Err(e) = self.tool_result_tx.send((id, result)).await {
-            error!("Failed to send tool result: {}", e);
+        self.frontend_tool_result_router.deliver(id, result).await;
+    }
+
+    pub(super) async fn wait_for_frontend_tool_result(
+        &self,
+        request_id: String,
+    ) -> Option<ToolResult<CallToolResult>> {
+        match self.frontend_tool_result_router.register(request_id).await {
+            FrontendToolResultRegistration::Ready(result) => Some(result),
+            FrontendToolResultRegistration::Pending(rx) => rx.await.ok(),
         }
     }
 }

@@ -1,4 +1,7 @@
 use crate::routes::errors::ErrorResponse;
+use crate::routes::history_override::{
+    apply_conversation_override, is_early_provider_failure_message, rollback_conversation_override,
+};
 use crate::routes::reply::{get_token_state, track_tool_telemetry, MessageEvent};
 use crate::session_event_bus::RequestGuard;
 use crate::state::AppState;
@@ -13,7 +16,6 @@ use bytes::Bytes;
 use futures::{stream::StreamExt, Stream};
 use gosling::agents::{AgentEvent, SessionConfig};
 use gosling::conversation::message::Message;
-use gosling::conversation::Conversation;
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,
@@ -398,24 +400,21 @@ pub async fn session_reply(
             tail_limit: None,
         };
 
-        let mut all_messages = match override_conversation {
-            Some(history) => {
-                let conv = Conversation::new_unvalidated(history);
-                if let Err(e) = task_state
-                    .session_manager()
-                    .replace_conversation(&task_session_id, &conv)
-                    .await
-                {
-                    tracing::warn!(
-                        "Failed to replace session conversation for {}: {}",
-                        task_session_id,
-                        e
-                    );
-                }
-                conv
+        let mut rollback_state = None;
+        let mut all_messages = session.conversation.clone().unwrap_or_default();
+        if let Some(history) = override_conversation {
+            if let Some((override_conversation, rollback)) = apply_conversation_override(
+                task_state.session_manager(),
+                &session,
+                &user_message,
+                history,
+            )
+            .await
+            {
+                all_messages = override_conversation;
+                rollback_state = Some(rollback);
             }
-            None => session.conversation.unwrap_or_default(),
-        };
+        }
         all_messages.push(user_message.clone());
 
         let mut stream = match agent
@@ -428,6 +427,14 @@ pub async fn session_reply(
         {
             Ok(stream) => stream,
             Err(e) => {
+                if let Some(rollback) = rollback_state.take() {
+                    rollback_conversation_override(
+                        task_state.session_manager(),
+                        &task_session_id,
+                        rollback,
+                    )
+                    .await;
+                }
                 tracing::error!("Failed to start reply stream: {:?}", e);
                 publish(
                     Some(task_request_id.clone()),
@@ -440,15 +447,41 @@ pub async fn session_reply(
             }
         };
 
+        let mut reply_progressed = false;
         loop {
             tokio::select! {
                 _ = task_cancel.cancelled() => {
+                    if !reply_progressed {
+                        if let Some(rollback) = rollback_state.take() {
+                            rollback_conversation_override(
+                                task_state.session_manager(),
+                                &task_session_id,
+                                rollback,
+                            )
+                            .await;
+                        }
+                    }
                     tracing::info!("Agent task cancelled for request {}", task_request_id);
                     break;
                 }
                 response = timeout(Duration::from_millis(500), stream.next()) => {
                     match response {
                         Ok(Some(Ok(AgentEvent::Message(message)))) => {
+                            let rollback_for_message = !reply_progressed
+                                && rollback_state.is_some()
+                                && is_early_provider_failure_message(&message);
+                            if rollback_for_message {
+                                if let Some(rollback) = rollback_state.take() {
+                                    rollback_conversation_override(
+                                        task_state.session_manager(),
+                                        &task_session_id,
+                                        rollback,
+                                    )
+                                    .await;
+                                }
+                            } else {
+                                reply_progressed = true;
+                            }
                             for content in &message.content {
                                 track_tool_telemetry(content, all_messages.messages());
                             }
@@ -469,6 +502,7 @@ pub async fn session_reply(
                         }
                         Ok(Some(Ok(AgentEvent::Usage(_)))) => {}
                         Ok(Some(Ok(AgentEvent::HistoryReplaced(new_messages)))) => {
+                            reply_progressed = true;
                             all_messages = new_messages.clone();
                             publish(
                                 Some(task_request_id.clone()),
@@ -479,6 +513,7 @@ pub async fn session_reply(
                             .await;
                         }
                         Ok(Some(Ok(AgentEvent::McpNotification((notification_request_id, n))))) => {
+                            reply_progressed = true;
                             publish(
                                 Some(task_request_id.clone()),
                                 MessageEvent::Notification {
@@ -489,6 +524,16 @@ pub async fn session_reply(
                             .await;
                         }
                         Ok(Some(Err(e))) => {
+                            if !reply_progressed {
+                                if let Some(rollback) = rollback_state.take() {
+                                    rollback_conversation_override(
+                                        task_state.session_manager(),
+                                        &task_session_id,
+                                        rollback,
+                                    )
+                                    .await;
+                                }
+                            }
                             tracing::error!("Error processing message: {}", e);
                             publish(
                                 Some(task_request_id.clone()),
@@ -500,6 +545,16 @@ pub async fn session_reply(
                             break;
                         }
                         Ok(None) => {
+                            if !reply_progressed {
+                                if let Some(rollback) = rollback_state.take() {
+                                    rollback_conversation_override(
+                                        task_state.session_manager(),
+                                        &task_session_id,
+                                        rollback,
+                                    )
+                                    .await;
+                                }
+                            }
                             break;
                         }
                         Err(_) => {

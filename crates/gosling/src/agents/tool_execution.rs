@@ -180,14 +180,18 @@ impl Agent {
         try_stream! {
                 if let Ok(tool_call) = tool_request.tool_call.clone() {
                     if self.is_frontend_tool(&tool_call.name).await {
+                        let expected_request_id = tool_request.id.clone();
                         yield Message::assistant().with_frontend_tool_request(
-                            tool_request.id.clone(),
+                            expected_request_id.clone(),
                             Ok(tool_call.clone())
                         );
 
-                        if let Some((id, result)) = self.tool_result_rx.lock().await.recv().await {
+                        if let Some(result) = self
+                            .wait_for_frontend_tool_result(expected_request_id.clone())
+                            .await
+                        {
                             message_tool_response.add_tool_response_with_metadata(
-                                id,
+                                expected_request_id,
                                 result,
                                 tool_request.metadata.as_ref(),
                             );

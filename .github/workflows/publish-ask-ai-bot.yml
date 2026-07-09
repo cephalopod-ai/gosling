@@ -13,6 +13,8 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
 
 jobs:
   docker:
@@ -42,6 +44,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: docker-push
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # pin@v7.2.0
         with:
           context: .
@@ -52,3 +55,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+
+      - name: Attest Docker image
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/ask-ai-bot
+          subject-digest: ${{ steps.docker-push.outputs.digest }}
+          push-to-registry: true

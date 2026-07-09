@@ -87,6 +87,7 @@ name = "generate_schema"
 path = "src/bin/generate_schema.rs"
 
 [dev-dependencies]
+async-trait.workspace = true
 tower = { version = "0.5.2", default-features = false }
 
 [package.metadata.cargo-machete]
