@@ -1,6 +1,8 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use crate::formats::openai::extract_reasoning_effort;
+
 // Patterns for normalizing version numbers and stripping suffixes
 static NORMALIZE_VERSION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"-(\d)-(\d)(-|@|$)").unwrap());
 
@@ -316,7 +318,7 @@ pub fn strip_version_suffix(model: &str) -> String {
         changed = result != before;
     }
 
-    result
+    extract_reasoning_effort(&result).0
 }
 
 #[cfg(test)]
@@ -339,6 +341,10 @@ mod tests {
         assert_eq!(
             map_to_canonical_model("openai", "gpt-4-turbo-2024-04-09", r),
             Some("openai/gpt-4-turbo".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("openai", "gpt-5.5-high", r),
+            Some("openai/gpt-5.5".to_string())
         );
         assert_eq!(
             map_to_canonical_model("opencode_go", "kimi-k2.6", r),

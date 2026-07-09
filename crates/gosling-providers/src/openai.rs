@@ -38,13 +38,14 @@ pub const OPEN_AI_DEFAULT_FAST_MODEL: &str = "gpt-4o-mini";
 pub const OPEN_AI_KNOWN_MODELS: &[(&str, usize)] = &[
     ("gpt-4o", 128_000),
     ("gpt-4o-mini", 128_000),
-    ("gpt-4.1", 128_000),
-    ("gpt-4.1-mini", 128_000),
+    ("gpt-4.1", 1_047_576),
+    ("gpt-4.1-mini", 1_047_576),
+    ("gpt-4.1-nano", 1_047_576),
     ("o1", 200_000),
     ("o3", 200_000),
     ("gpt-3.5-turbo", 16_385),
     ("gpt-4-turbo", 128_000),
-    ("o4-mini", 128_000),
+    ("o4-mini", 200_000),
     ("gpt-5", 400_000),
     ("gpt-5-mini", 400_000),
     ("gpt-5-nano", 400_000),
@@ -61,6 +62,7 @@ pub const OPEN_AI_KNOWN_MODELS: &[(&str, usize)] = &[
     ("gpt-5.4-nano", 400_000),
     ("gpt-5.4-pro", 1_050_000),
     ("gpt-5.5", 1_050_000),
+    ("gpt-5.5-pro", 1_050_000),
 ];
 
 pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
@@ -1526,5 +1528,22 @@ mod tests {
             .await
             .expect("valid payload with extra message field should succeed");
         assert_eq!(models, vec!["model-a".to_string(), "model-b".to_string()]);
+    }
+
+    #[test]
+    fn metadata_uses_current_openai_context_windows() {
+        let metadata = OpenAiProvider::metadata();
+        let limits: std::collections::HashMap<_, _> = metadata
+            .known_models
+            .iter()
+            .map(|model| (model.name.as_str(), model.context_limit))
+            .collect();
+
+        assert_eq!(limits.get("gpt-4.1"), Some(&1_047_576));
+        assert_eq!(limits.get("gpt-4.1-mini"), Some(&1_047_576));
+        assert_eq!(limits.get("gpt-4.1-nano"), Some(&1_047_576));
+        assert_eq!(limits.get("o4-mini"), Some(&200_000));
+        assert_eq!(limits.get("gpt-5.5"), Some(&1_050_000));
+        assert_eq!(limits.get("gpt-5.5-pro"), Some(&1_050_000));
     }
 }
