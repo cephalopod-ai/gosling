@@ -2,7 +2,7 @@ schema_version: 2
 artifact_type: giles_compliance_status
 repo: gosling
 repo_path: /Users/eric/Work/vscode/forked/gosling
-generated_at: '2026-07-07T15:12:14.491748Z'
+generated_at: '2026-07-07T16:36:31.748483Z'
 authority:
   source: Giles audit
   role: advisory_work_order
@@ -30,7 +30,7 @@ cleanliness: not_clean
 unresolved_blocking_count: 16
 accepted_exception_count: 0
 audit_structure_crashed: true
-baseline: true
+baseline: false
 git:
   is_git_repo: true
   branch: main
@@ -44,8 +44,7 @@ git:
 declared_family: null
 policy_pack: null
 recheck_status: 106 finding(s) remain after reconciliation; 5 blocking action(s) outstanding.
-  First baseline created; unresolved findings remain. Apply fixes, then run --refresh
-  to reconcile status. Structure audit crashed inside Giles — see system_fix action.
+  Structure audit crashed inside Giles — see system_fix action.
 patch_todo_ref: .giles/patch_todo.yaml
 remediation_plan_ref: .giles/remediation_plan.yaml
 audit_report_ref: .giles/audit_report.yaml

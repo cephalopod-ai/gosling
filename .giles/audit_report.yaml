@@ -2,7 +2,7 @@ schema_version: 2
 artifact_type: giles_audit_report
 repo: gosling
 repo_path: /Users/eric/Work/vscode/forked/gosling
-generated_at: '2026-07-07T15:12:14.491748Z'
+generated_at: '2026-07-07T16:36:31.748483Z'
 authority:
   source: Giles audit
   role: advisory_work_order
@@ -16,7 +16,7 @@ summary:
   raw_open_findings: 106
   raw_resolved_findings: 0
   audit_structure_crashed: true
-  baseline: true
+  baseline: false
 findings:
 - code: GACT-003
   title: null
@@ -1238,13 +1238,13 @@ findings:
   subject: ''
   source: scan
   evidence:
-    summary: 'Deviation detected: commits_without_registry_linkage (5 items)'
+    summary: 'Deviation detected: commits_without_registry_linkage (4 items)'
     details:
       sample: 51c877053e65c3f679b0ef7a87d15b1aecb2c67b,36dea67ca42d0030df87c24290df68525a300bbc,0a54ed90c4f85fb2a0b516b3dda7b56745147cb1
   rule_ref: observability:deviation:commits_without_registry_linkage
-  source_finding_id: 062852575d3daf0ae78d183d07a2269eab4b
-  finding_identity_key: GFI-8c4f3ed3c4aebc21
-  fingerprint: 17cfeb492ab1e5b6
+  source_finding_id: 02ebc738f4501b3b0728e1355eb5b8ed7c8c
+  finding_identity_key: GFI-6e62aede61f0b690
+  fingerprint: 21268ba5e9ede9af
   approval:
     required: false
     status: not_required
@@ -1257,10 +1257,10 @@ findings:
     decision_fields:
     - details
     - summary
-    evidence_summary: 'Deviation detected: commits_without_registry_linkage (5 items)'
+    evidence_summary: 'Deviation detected: commits_without_registry_linkage (4 items)'
     action_id: null
     action_description: null
-    fingerprint: 17cfeb492ab1e5b6
+    fingerprint: 21268ba5e9ede9af
   raw_observation_count: 1
   duplicate_group_count: 0
   duplicate_observation_count: 0

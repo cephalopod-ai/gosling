@@ -73,6 +73,7 @@ pub mod openai_def;
 #[cfg(feature = "aws-providers")]
 pub mod sagemaker_tgi;
 pub mod snowflake;
+pub mod tagteam;
 pub mod testprovider;
 pub mod tetrate;
 pub mod toolshim;
