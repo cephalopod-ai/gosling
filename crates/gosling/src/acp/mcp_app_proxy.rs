@@ -1,5 +1,5 @@
 use axum::{
-    extract::{ConnectInfo, Query, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Query, State},
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 const GUEST_HTML_TTL_SECS: u64 = 300;
 const GUEST_HTML_MAX_ENTRIES: usize = 64;
+const GUEST_HTML_MAX_BYTES: usize = 16 * 1024 * 1024;
 const MCP_APP_PROXY_HTML: &str = include_str!("templates/mcp_app_proxy.html");
 
 type GuestHtmlStore = Arc<RwLock<HashMap<String, GuestHtmlEntry>>>;
@@ -384,7 +385,10 @@ pub(crate) fn routes(secret_key: String) -> Router {
 
     Router::new()
         .route("/mcp-app-proxy", get(mcp_app_proxy))
-        .route("/mcp-app-guest", post(store_guest_html))
+        .route(
+            "/mcp-app-guest",
+            post(store_guest_html).layer(DefaultBodyLimit::max(GUEST_HTML_MAX_BYTES)),
+        )
         .with_state(state)
 }
 

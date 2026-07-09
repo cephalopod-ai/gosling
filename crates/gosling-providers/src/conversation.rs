@@ -243,6 +243,7 @@ fn fix_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
         fix_empty_tool_results,
         fix_tool_calling,
         merge_consecutive_messages,
+        dedupe_signed_thinking,
         fix_lead_trail,
         populate_if_empty,
     ]
@@ -496,6 +497,50 @@ pub fn merge_consecutive_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<
     }
 
     (merged_messages, issues)
+}
+
+fn is_signed_thinking(content: &MessageContent) -> bool {
+    match content {
+        MessageContent::Thinking(thinking) => !thinking.signature.is_empty(),
+        MessageContent::RedactedThinking(_) => true,
+        _ => false,
+    }
+}
+
+fn dedupe_signed_thinking(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
+    let mut issues = Vec::new();
+    let mut seen: Vec<MessageContent> = Vec::new();
+
+    let fixed_messages = messages
+        .into_iter()
+        .map(|mut message| {
+            if message.role != Role::Assistant {
+                return message;
+            }
+
+            let original_len = message.content.len();
+            let mut deduped = Vec::with_capacity(original_len);
+            for content in &message.content {
+                let signed = is_signed_thinking(content);
+                if signed && seen.contains(content) {
+                    continue;
+                }
+                if signed {
+                    seen.push(content.clone());
+                }
+                deduped.push(content.clone());
+            }
+
+            if deduped.len() != original_len {
+                issues.push("Removed duplicate signed thinking block".to_string());
+                message.content = deduped;
+            }
+
+            message
+        })
+        .collect();
+
+    (fixed_messages, issues)
 }
 
 fn has_tool_response(message: &Message) -> bool {
@@ -1298,6 +1343,57 @@ mod tests {
 
         assert_eq!(fixed_messages[5].as_concat_text(), "Non-vis C");
         assert!(!fixed_messages[5].metadata.agent_visible);
+    }
+
+    #[test]
+    fn test_dedupes_duplicate_signed_thinking_around_tool_call() {
+        use crate::conversation::message::MessageContent;
+        use rmcp::model::Content;
+
+        let messages = vec![
+            Message::user().with_text("Do the thing"),
+            Message::assistant().with_thinking("Let me think about this", "sig-1"),
+            Message::assistant()
+                .with_thinking("Let me think about this", "sig-1")
+                .with_tool_request(
+                    "tool_1",
+                    Ok(CallToolRequestParams::new("do_thing").with_arguments(object!({"x": 1}))),
+                ),
+            Message::user().with_tool_response(
+                "tool_1",
+                Ok(rmcp::model::CallToolResult::success(vec![Content::text(
+                    "done",
+                )])),
+            ),
+            Message::user().with_text("Now continue"),
+        ];
+
+        let (fixed, issues) = fix_conversation(Conversation::new_unvalidated(messages));
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue == "Removed duplicate signed thinking block"),
+            "expected duplicate signed thinking to be removed, got: {issues:?}"
+        );
+
+        let assistant = fixed
+            .messages()
+            .iter()
+            .find(|message| {
+                message.role == Role::Assistant
+                    && message.content.iter().any(|content| {
+                        matches!(content, MessageContent::ToolRequest(request) if request.id == "tool_1")
+                    })
+            })
+            .expect("assistant tool request message should exist");
+
+        let thinking_blocks = assistant
+            .content
+            .iter()
+            .filter(|content| matches!(content, MessageContent::Thinking(_)))
+            .count();
+        assert_eq!(thinking_blocks, 1);
     }
 
     #[test]

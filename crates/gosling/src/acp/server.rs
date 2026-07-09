@@ -2922,7 +2922,11 @@ impl GoslingAcpAgent {
                 .get_gosling_model()
                 .internal_err_ctx("Failed to resolve default model from config")?
         } else if is_changing_provider {
-            ACP_CURRENT_MODEL.to_string()
+            crate::providers::get_from_registry(&resolved_provider_name)
+                .await
+                .ok()
+                .map(|entry| entry.metadata().default_model.clone())
+                .unwrap_or(ACP_CURRENT_MODEL.to_string())
         } else {
             current_model
         };
