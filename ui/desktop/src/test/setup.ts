@@ -38,6 +38,7 @@ global.console = {
 // Mock window.navigator.clipboard for copy functionality tests
 Object.assign(navigator, {
   clipboard: {
+    write: vi.fn(() => Promise.resolve()),
     writeText: vi.fn(() => Promise.resolve()),
   },
 });
@@ -92,5 +93,7 @@ Object.defineProperty(window, 'electron', {
     getIsFullScreen: vi.fn(() => Promise.resolve(false)),
     on: vi.fn(),
     off: vi.fn(),
+    writeClipboardText: vi.fn(() => Promise.resolve()),
+    writeClipboardHtml: vi.fn(() => Promise.resolve()),
   },
 });

@@ -1,4 +1,4 @@
-import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
+import Electron, { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron';
 import {
   desktopCommandChannels,
   rendererEventChannels,
@@ -169,6 +169,8 @@ type ElectronAPI = {
   addRecentDir: (dir: string) => Promise<boolean>;
   listRecentDirs: () => Promise<string[]>;
   listGitWorktreeDirs: (dir: string) => Promise<string[]>;
+  writeClipboardText: (text: string) => Promise<void>;
+  writeClipboardHtml: (html: string, text: string) => Promise<void>;
 };
 
 type AppConfigAPI = {
@@ -345,6 +347,12 @@ const electronAPI: ElectronAPI = {
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
   listRecentDirs: () => ipcRenderer.invoke('list-recent-dirs'),
   listGitWorktreeDirs: (dir: string) => ipcRenderer.invoke('list-git-worktree-dirs', dir),
+  writeClipboardText: async (text: string): Promise<void> => {
+    clipboard.writeText(text);
+  },
+  writeClipboardHtml: async (html: string, text: string): Promise<void> => {
+    clipboard.write({ html, text });
+  },
 };
 
 function getAppLocale(): unknown {

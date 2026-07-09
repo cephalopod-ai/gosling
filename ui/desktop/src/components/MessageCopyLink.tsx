@@ -1,5 +1,3 @@
-/* global ClipboardItem */
-
 import React, { useState } from 'react';
 import { Copy } from './icons';
 import { defineMessages, useIntl } from '../i18n';
@@ -20,49 +18,83 @@ interface MessageCopyLinkProps {
   contentRef: React.RefObject<HTMLDivElement | null>;
 }
 
+function getHtmlContent(contentRef: React.RefObject<HTMLDivElement | null>): string | null {
+  if (!contentRef.current) {
+    return null;
+  }
+
+  const container = document.createElement('div');
+  container.innerHTML = contentRef.current.innerHTML;
+  container.querySelectorAll('button').forEach((button) => button.remove());
+
+  const html = container.innerHTML.trim();
+  return html.length > 0 ? html : null;
+}
+
+async function writeTextToClipboard(text: string): Promise<void> {
+  if (window.electron?.writeClipboardText) {
+    await window.electron.writeClipboardText(text);
+    return;
+  }
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  throw new Error('Clipboard text API unavailable');
+}
+
+async function writeHtmlToClipboard(html: string, text: string): Promise<void> {
+  if (window.electron?.writeClipboardHtml) {
+    try {
+      await window.electron.writeClipboardHtml(html, text);
+      return;
+    } catch {
+      await writeTextToClipboard(text);
+      return;
+    }
+  }
+
+  if (
+    typeof ClipboardItem !== 'undefined' &&
+    navigator.clipboard?.write &&
+    typeof Blob !== 'undefined'
+  ) {
+    const clipboardData = new ClipboardItem({
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+      'text/html': new Blob([html], { type: 'text/html' }),
+    });
+    await navigator.clipboard.write([clipboardData]);
+    return;
+  }
+
+  await writeTextToClipboard(text);
+}
+
 export default function MessageCopyLink({ text, contentRef }: MessageCopyLinkProps) {
   const intl = useIntl();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
     try {
-      if (contentRef?.current) {
-        // Create a temporary container to handle HTML content
-        const container = document.createElement('div');
-        container.innerHTML = contentRef.current.innerHTML;
-
-        // Clean up any copy buttons from the content
-        const copyButtons = container.querySelectorAll('button');
-        copyButtons.forEach((button) => button.remove());
-
-        // Create the clipboard data
-        const clipboardData = new ClipboardItem({
-          'text/plain': new Blob([text], { type: 'text/plain' }),
-          'text/html': new Blob([container.innerHTML], { type: 'text/html' }),
-        });
-
-        await navigator.clipboard.write([clipboardData]);
+      const html = getHtmlContent(contentRef);
+      if (html) {
+        await writeHtmlToClipboard(html, text);
       } else {
-        await navigator.clipboard.writeText(text);
+        await writeTextToClipboard(text);
       }
 
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000); // Reset after 2 seconds
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy text: ', err);
-      // Fallback to plain text if HTML copy fails
-      try {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (fallbackErr) {
-        console.error('Failed to copy text (fallback): ', fallbackErr);
-      }
     }
   };
 
   return (
     <button
+      type="button"
       onClick={handleCopy}
       className="flex font-mono items-center gap-1 text-xs text-text-secondary hover:cursor-pointer hover:text-text-primary transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0"
     >
