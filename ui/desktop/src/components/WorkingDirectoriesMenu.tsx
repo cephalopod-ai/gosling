@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Folder, FolderPlus, Plus, ShieldAlert, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { defineMessages, useIntl } from '../i18n';
@@ -89,7 +89,10 @@ export default function WorkingDirectoriesMenu({
   const refreshVersionRef = useRef(0);
 
   const workingDir = session?.working_dir;
-  const additionalWorkingDirs = session?.additional_working_dirs ?? [];
+  const additionalWorkingDirs = useMemo(
+    () => session?.additional_working_dirs ?? [],
+    [session?.additional_working_dirs]
+  );
 
   const refreshRecentDirs = useCallback(async () => {
     const version = ++refreshVersionRef.current;
