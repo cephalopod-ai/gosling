@@ -32,8 +32,10 @@ pub const CODEX_KNOWN_MODELS: &[&str] = &[
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-5.4",
     "gpt-5.4-mini",
-    "gpt-5.3-codex-spark",
+    "gpt-5.2",
 ];
 pub const CODEX_DOC_URL: &str = "https://developers.openai.com/codex/cli";
 
@@ -1039,14 +1041,8 @@ mod tests {
             "gpt-5.6-terra",
             "max"
         ));
-        assert!(CodexProvider::supports_reasoning_effort(
-            "gpt-5.3-codex-spark",
-            "xhigh"
-        ));
-        assert!(!CodexProvider::supports_reasoning_effort(
-            "gpt-5.3-codex-spark",
-            "max"
-        ));
+        assert!(CodexProvider::supports_reasoning_effort("gpt-5.5", "xhigh"));
+        assert!(!CodexProvider::supports_reasoning_effort("gpt-5.5", "max"));
     }
 
     #[test]
@@ -1057,8 +1053,10 @@ mod tests {
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
+                "gpt-5.5",
+                "gpt-5.4",
                 "gpt-5.4-mini",
-                "gpt-5.3-codex-spark",
+                "gpt-5.2",
             ]
         );
     }
@@ -1075,11 +1073,13 @@ mod tests {
         assert_eq!(
             contexts,
             vec![
-                ("gpt-5.6-sol", 1_050_000),
-                ("gpt-5.6-terra", 1_050_000),
-                ("gpt-5.6-luna", 1_050_000),
-                ("gpt-5.4-mini", 400_000),
-                ("gpt-5.3-codex-spark", 128_000),
+                ("gpt-5.6-sol", 372_000),
+                ("gpt-5.6-terra", 372_000),
+                ("gpt-5.6-luna", 372_000),
+                ("gpt-5.5", 272_000),
+                ("gpt-5.4", 272_000),
+                ("gpt-5.4-mini", 272_000),
+                ("gpt-5.2", 272_000),
             ]
         );
     }
@@ -1302,7 +1302,7 @@ mod tests {
             Some("max".to_string())
         );
         assert_eq!(
-            CodexProvider::map_thinking_effort("gpt-5.3-codex-spark", Some(ThinkingEffort::Max)),
+            CodexProvider::map_thinking_effort("gpt-5.5", Some(ThinkingEffort::Max)),
             Some("xhigh".to_string())
         );
         assert_eq!(

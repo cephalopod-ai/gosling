@@ -2,7 +2,7 @@ use crate::config::paths::Paths;
 use crate::conversation::message::{Message, MessageContent};
 use crate::providers::api_client::{AuthProvider, RequestBuilderDecorator};
 use crate::providers::base::{
-    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata,
     DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
 use crate::providers::openai_compatible::handle_status;
@@ -47,6 +47,7 @@ const HTML_AUTO_CLOSE_TIMEOUT_MS: u64 = 2000;
 
 const CHATGPT_CODEX_PROVIDER_NAME: &str = "chatgpt_codex";
 pub const CHATGPT_CODEX_DEFAULT_MODEL: &str = "gpt-5.6-sol";
+const CODEX_RESPONSES_LITE_HEADER: &str = "x-openai-internal-codex-responses-lite";
 
 #[derive(Debug)]
 pub struct ChatGptCodexModelAttrs {
@@ -68,14 +69,34 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
         reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
     ChatGptCodexModelAttrs {
+        name: "gpt-5.5",
+        reasoning_levels: &["low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-5.4",
+        reasoning_levels: &["low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
         name: "gpt-5.4-mini",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
     ChatGptCodexModelAttrs {
-        name: "gpt-5.3-codex-spark",
+        name: "gpt-5.2",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
 ];
+
+fn uses_responses_lite(model_name: &str) -> bool {
+    matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna")
+}
+
+pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
+    match model_name {
+        "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" => Some(372_000),
+        "gpt-5.5" | "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.2" => Some(272_000),
+        _ => None,
+    }
+}
 
 const CHATGPT_CODEX_DOC_URL: &str = "https://openai.com/chatgpt";
 
@@ -926,7 +947,11 @@ impl ChatGptCodexProvider {
         })
     }
 
-    async fn post_streaming(&self, payload: &Value) -> Result<reqwest::Response, ProviderError> {
+    async fn post_streaming(
+        &self,
+        model_name: &str,
+        payload: &Value,
+    ) -> Result<reqwest::Response, ProviderError> {
         let token_data = self
             .auth_provider
             .get_valid_token()
@@ -948,7 +973,7 @@ impl ChatGptCodexProvider {
             ))
             .build()
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-        let request = client
+        let mut request = client
             .post(format!("{}/responses", CODEX_API_ENDPOINT))
             .header(
                 "Authorization",
@@ -957,6 +982,10 @@ impl ChatGptCodexProvider {
             .header("Content-Type", "application/json")
             .headers(headers)
             .json(payload);
+
+        if uses_responses_lite(model_name) {
+            request = request.header(CODEX_RESPONSES_LITE_HEADER, "true");
+        }
 
         let response = (self.request_builder)(request)
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?
@@ -970,12 +999,25 @@ impl ChatGptCodexProvider {
 
 impl gosling_providers::base::ProviderDescriptor for ChatGptCodexProvider {
     fn metadata() -> ProviderMetadata {
-        ProviderMetadata::new(
+        let models = CHATGPT_CODEX_KNOWN_MODELS
+            .iter()
+            .map(|model| {
+                let mut info = ModelInfo::new(
+                    model.name,
+                    context_limit_for_model(model.name)
+                        .expect("every ChatGPT Codex model has a context limit"),
+                );
+                info.reasoning = true;
+                info
+            })
+            .collect();
+
+        ProviderMetadata::with_models(
             CHATGPT_CODEX_PROVIDER_NAME,
             "ChatGPT Codex",
             "Use your ChatGPT Plus/Pro subscription for GPT-5 Codex models via OAuth",
             CHATGPT_CODEX_DEFAULT_MODEL,
-            known_model_names(),
+            models,
             CHATGPT_CODEX_DOC_URL,
             vec![ConfigKey::new_oauth(
                 "CHATGPT_CODEX_TOKEN",
@@ -1005,6 +1047,11 @@ impl Provider for ChatGptCodexProvider {
         &self.name
     }
 
+    async fn get_context_limit(&self, model_config: &ModelConfig) -> Result<usize, ProviderError> {
+        Ok(context_limit_for_model(&model_config.model_name)
+            .unwrap_or_else(|| model_config.context_limit()))
+    }
+
     async fn stream(
         &self,
         model_config: &ModelConfig,
@@ -1019,7 +1066,8 @@ impl Provider for ChatGptCodexProvider {
         let response = self
             .with_retry(|| async {
                 let payload_clone = payload.clone();
-                self.post_streaming(&payload_clone).await
+                self.post_streaming(&model_config.model_name, &payload_clone)
+                    .await
             })
             .await?;
 
@@ -1429,13 +1477,25 @@ mod tests {
         "gpt-5.6-sol supports max reasoning"
     )]
     #[test_case(
-        "gpt-5.3-codex-spark",
+        "gpt-5.5",
         &["low", "medium", "high", "xhigh"];
-        "codex spark keeps xhigh as its ceiling"
+        "gpt-5.5 keeps xhigh as its ceiling"
     )]
     #[test_case("unknown-model", &["medium", "high"]; "unknown model gets default reasoning levels")]
     fn test_reasoning_levels_for_model(model: &str, expected: &[&str]) {
         assert_eq!(reasoning_levels_for_model(model), expected);
+    }
+
+    #[test_case("gpt-5.6-luna", true, Some(372_000); "gpt 5.6 luna")]
+    #[test_case("gpt-5.4-mini", false, Some(272_000); "gpt 5.4 mini")]
+    #[test_case("unknown-model", false, None; "unknown model")]
+    fn test_model_transport_and_context_limits(
+        model: &str,
+        expected_lite: bool,
+        expected_context_limit: Option<usize>,
+    ) {
+        assert_eq!(uses_responses_lite(model), expected_lite);
+        assert_eq!(context_limit_for_model(model), expected_context_limit);
     }
 
     #[test]
