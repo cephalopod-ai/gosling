@@ -34,6 +34,7 @@ export type SessionType =
 export type Session = {
   accumulated_cost?: number | null;
   accumulated_usage?: Usage;
+  additional_working_dirs?: string[];
   archived_at?: string | null;
   conversation?: Message[] | null;
   created_at: string;
@@ -47,6 +48,7 @@ export type Session = {
   name: string;
   project_id?: string | null;
   provider_name?: string | null;
+  restrict_tools_to_working_dirs?: boolean;
   session_type?: SessionType;
   updated_at: string;
   usage?: Usage;

@@ -9,7 +9,7 @@ use crate::{
     prompt_template,
     utils::sanitize_unicode_tags,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const MAX_EXTENSIONS: usize = 5;
 const MAX_TOOLS: usize = 50;
@@ -84,11 +84,26 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         self
     }
 
-    pub fn with_hints(mut self, working_dir: &Path) -> Self {
+    pub fn with_hints(mut self, working_dir: &Path, additional_working_dirs: &[PathBuf]) -> Self {
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(working_dir);
 
-        let hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
+        let mut hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
+
+        for extra_dir in additional_working_dirs {
+            let extra_ignore_patterns = build_gitignore(extra_dir);
+            let extra_hints = load_hint_files(extra_dir, &hints_filenames, &extra_ignore_patterns);
+            if !extra_hints.is_empty() {
+                if !hints.is_empty() {
+                    hints.push_str("\n\n");
+                }
+                hints.push_str(&format!(
+                    "### Additional Working Directory: {}\n{}",
+                    extra_dir.display(),
+                    extra_hints
+                ));
+            }
+        }
 
         if !hints.is_empty() {
             self.hints = Some(hints);
@@ -240,6 +255,27 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
+
+    #[test]
+    fn test_with_hints_includes_additional_working_dirs() {
+        use crate::hints::load_hints::GOSLING_HINTS_FILENAME;
+
+        let primary = tempfile::tempdir().unwrap();
+        std::fs::write(primary.path().join(GOSLING_HINTS_FILENAME), "Primary hints").unwrap();
+
+        let extra = tempfile::tempdir().unwrap();
+        std::fs::write(extra.path().join(GOSLING_HINTS_FILENAME), "Extra dir hints").unwrap();
+
+        let manager = PromptManager::new();
+        let system_prompt = manager
+            .builder()
+            .with_hints(primary.path(), &[extra.path().to_path_buf()])
+            .build();
+
+        assert!(system_prompt.contains("Primary hints"));
+        assert!(system_prompt.contains("Extra dir hints"));
+        assert!(system_prompt.contains("Additional Working Directory"));
+    }
 
     #[test]
     fn test_build_system_prompt_sanitizes_override() {

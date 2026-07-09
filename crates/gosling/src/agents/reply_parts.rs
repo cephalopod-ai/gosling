@@ -149,6 +149,16 @@ impl Agent {
         session_id: &str,
         working_dir: &std::path::Path,
     ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
+        self.prepare_tools_and_prompt_with_additional_dirs(session_id, working_dir, &[])
+            .await
+    }
+
+    pub async fn prepare_tools_and_prompt_with_additional_dirs(
+        &self,
+        session_id: &str,
+        working_dir: &std::path::Path,
+        additional_working_dirs: &[std::path::PathBuf],
+    ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
         let mut tools = self.list_tools(session_id, None).await;
 
         #[cfg(feature = "code-mode")]
@@ -232,7 +242,7 @@ impl Agent {
             .with_frontend_instructions(self.frontend_instructions.lock().await.clone())
             .with_extension_and_tool_counts(extension_count, tool_count)
             .with_code_execution_mode(code_execution_active)
-            .with_hints(working_dir)
+            .with_hints(working_dir, additional_working_dirs)
             .with_gosling_mode(gosling_mode)
             .build();
 

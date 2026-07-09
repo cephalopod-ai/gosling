@@ -145,7 +145,11 @@ pub trait McpClientTrait: Send + Sync {
         None
     }
 
-    async fn update_working_dir(&self, _new_dir: PathBuf) -> Result<(), Error> {
+    async fn update_working_dirs(
+        &self,
+        _primary: PathBuf,
+        _additional: Vec<PathBuf>,
+    ) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -181,6 +185,7 @@ pub struct GoslingClient {
     client_name: String,
     capabilities: GoslingMcpClientCapabilities,
     working_dir: Arc<tokio::sync::RwLock<PathBuf>>,
+    additional_working_dirs: Arc<tokio::sync::RwLock<Vec<PathBuf>>>,
 }
 
 impl GoslingClient {
@@ -199,11 +204,16 @@ impl GoslingClient {
             client_name,
             capabilities,
             working_dir: Arc::new(tokio::sync::RwLock::new(working_dir)),
+            additional_working_dirs: Arc::new(tokio::sync::RwLock::new(Vec::new())),
         }
     }
 
     pub fn shared_working_dir(&self) -> Arc<tokio::sync::RwLock<PathBuf>> {
         self.working_dir.clone()
+    }
+
+    pub fn shared_additional_working_dirs(&self) -> Arc<tokio::sync::RwLock<Vec<PathBuf>>> {
+        self.additional_working_dirs.clone()
     }
 
     async fn set_session_id(&self, session_id: &str) {
@@ -325,11 +335,19 @@ impl GoslingClient {
     }
 }
 
-fn working_dir_roots(dir: &std::path::Path) -> ListRootsResult {
+fn dir_root(dir: &std::path::Path, name: &str) -> Root {
     let uri = url::Url::from_file_path(dir)
         .map(|u| u.to_string())
         .unwrap_or_else(|()| format!("file://{}", dir.display()));
-    ListRootsResult::new(vec![Root::new(uri).with_name("working_directory")])
+    Root::new(uri).with_name(name)
+}
+
+fn working_dir_roots(primary: &std::path::Path, additional: &[PathBuf]) -> ListRootsResult {
+    let mut roots = vec![dir_root(primary, "working_directory")];
+    for (i, dir) in additional.iter().enumerate() {
+        roots.push(dir_root(dir, &format!("working_directory_{}", i + 2)));
+    }
+    ListRootsResult::new(roots)
 }
 
 impl ClientHandler for GoslingClient {
@@ -337,7 +355,9 @@ impl ClientHandler for GoslingClient {
         &self,
         _context: RequestContext<RoleClient>,
     ) -> Result<ListRootsResult, ErrorData> {
-        Ok(working_dir_roots(&self.working_dir.read().await))
+        let primary = self.working_dir.read().await;
+        let additional = self.additional_working_dirs.read().await;
+        Ok(working_dir_roots(&primary, &additional))
     }
 
     // Both notification handlers drop subscribers whose receiver is gone: a
@@ -623,10 +643,15 @@ impl McpClient {
         self.docker_container.as_deref()
     }
 
-    async fn do_update_working_dir(&self, new_dir: PathBuf) -> Result<(), Error> {
+    async fn do_update_working_dirs(
+        &self,
+        primary: PathBuf,
+        additional: Vec<PathBuf>,
+    ) -> Result<(), Error> {
         let client = self.client.lock().await;
-        let shared = client.service().shared_working_dir();
-        *shared.write().await = new_dir;
+        let service = client.service();
+        *service.shared_working_dir().write().await = primary;
+        *service.shared_additional_working_dirs().write().await = additional;
         client.peer().notify_roots_list_changed().await?;
         Ok(())
     }
@@ -874,8 +899,12 @@ impl McpClientTrait for McpClient {
         rx
     }
 
-    async fn update_working_dir(&self, new_dir: PathBuf) -> Result<(), Error> {
-        self.do_update_working_dir(new_dir).await
+    async fn update_working_dirs(
+        &self,
+        primary: PathBuf,
+        additional: Vec<PathBuf>,
+    ) -> Result<(), Error> {
+        self.do_update_working_dirs(primary, additional).await
     }
 }
 
@@ -1443,9 +1472,26 @@ mod tests {
     #[test]
     fn test_working_dir_roots_returns_current_dir_as_root() {
         let dir = PathBuf::from("/tmp/test-project");
-        let result = working_dir_roots(&dir);
+        let result = working_dir_roots(&dir, &[]);
         assert_eq!(result.roots.len(), 1);
         assert_eq!(result.roots[0].uri, "file:///tmp/test-project");
         assert_eq!(result.roots[0].name.as_deref(), Some("working_directory"));
+    }
+
+    #[test]
+    fn test_working_dir_roots_includes_additional_dirs() {
+        let dir = PathBuf::from("/tmp/test-project");
+        let additional = vec![
+            PathBuf::from("/tmp/other-project"),
+            PathBuf::from("/tmp/third-project"),
+        ];
+        let result = working_dir_roots(&dir, &additional);
+        assert_eq!(result.roots.len(), 3);
+        assert_eq!(result.roots[0].uri, "file:///tmp/test-project");
+        assert_eq!(result.roots[0].name.as_deref(), Some("working_directory"));
+        assert_eq!(result.roots[1].uri, "file:///tmp/other-project");
+        assert_eq!(result.roots[1].name.as_deref(), Some("working_directory_2"));
+        assert_eq!(result.roots[2].uri, "file:///tmp/third-project");
+        assert_eq!(result.roots[2].name.as_deref(), Some("working_directory_3"));
     }
 }

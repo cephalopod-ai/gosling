@@ -73,6 +73,30 @@ impl GoslingAcpAgent {
         self.on_update_working_dir(req).await
     }
 
+    #[custom_method(AddSessionWorkingDirRequest)]
+    async fn dispatch_add_session_working_dir(
+        &self,
+        req: AddSessionWorkingDirRequest,
+    ) -> Result<SessionWorkingDirsResponse, agent_client_protocol::Error> {
+        self.on_add_session_working_dir(req).await
+    }
+
+    #[custom_method(RemoveSessionWorkingDirRequest)]
+    async fn dispatch_remove_session_working_dir(
+        &self,
+        req: RemoveSessionWorkingDirRequest,
+    ) -> Result<SessionWorkingDirsResponse, agent_client_protocol::Error> {
+        self.on_remove_session_working_dir(req).await
+    }
+
+    #[custom_method(SetSessionWorkingDirRestrictionRequest)]
+    async fn dispatch_set_session_working_dir_restriction(
+        &self,
+        req: SetSessionWorkingDirRestrictionRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_set_session_working_dir_restriction(req).await
+    }
+
     #[custom_method(SetSessionSystemPromptRequest)]
     async fn dispatch_set_session_system_prompt(
         &self,

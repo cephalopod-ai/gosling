@@ -28,6 +28,7 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Gosling } from './icons';
 import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
+import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -342,7 +343,8 @@ export default function BaseChat({
 
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Gosling watermark - top right */}
-          <div className="absolute top-[14px] right-4 z-[60] flex flex-row items-center gap-1">
+          <div className="absolute top-[14px] right-4 z-[60] flex flex-row items-center gap-2">
+            <WorkingDirectoriesMenu session={session} onSessionChange={updateSession} />
             <a
               href="https://gosling-docs.ai"
               target="_blank"

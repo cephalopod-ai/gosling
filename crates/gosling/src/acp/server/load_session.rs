@@ -227,7 +227,7 @@ impl GoslingAcpAgent {
 
         agent
             .extension_manager
-            .update_working_dir(&session.working_dir)
+            .update_working_dirs(&session.working_dir, &session.additional_working_dirs)
             .await;
 
         let (mode_state, config_options) =

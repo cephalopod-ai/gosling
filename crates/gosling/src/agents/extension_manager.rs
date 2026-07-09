@@ -1176,6 +1176,11 @@ impl ExtensionManager {
                 dependencies,
                 ..
             } => {
+                // Check for malicious packages before launching the process
+                if let Some(deps) = dependencies.as_deref() {
+                    extension_malware_check::deny_if_malicious_pypi_dependencies(deps).await?;
+                }
+
                 let dir = tempdir()?;
                 let file_path = dir.path().join(format!("{}.py", name));
                 temp_dir = Some(dir);
@@ -1276,10 +1281,18 @@ impl ExtensionManager {
         Ok(())
     }
 
-    pub async fn update_working_dir(&self, new_dir: &std::path::Path) {
+    pub async fn update_working_dirs(
+        &self,
+        primary: &std::path::Path,
+        additional: &[std::path::PathBuf],
+    ) {
         let extensions = self.extensions.lock().await;
         for (name, ext) in extensions.iter() {
-            if let Err(e) = ext.client.update_working_dir(new_dir.to_path_buf()).await {
+            if let Err(e) = ext
+                .client
+                .update_working_dirs(primary.to_path_buf(), additional.to_vec())
+                .await
+            {
                 tracing::warn!(extension = %name, error = %e, "failed to update roots");
             }
         }

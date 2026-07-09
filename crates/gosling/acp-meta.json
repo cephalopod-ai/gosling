@@ -36,6 +36,21 @@
       "responseType": "EmptyResponse"
     },
     {
+      "method": "_gosling/unstable/session/working-dirs/add",
+      "requestType": "AddSessionWorkingDirRequest_unstable",
+      "responseType": "SessionWorkingDirsResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/working-dirs/remove",
+      "requestType": "RemoveSessionWorkingDirRequest_unstable",
+      "responseType": "SessionWorkingDirsResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/working-dirs/restrict",
+      "requestType": "SetSessionWorkingDirRestrictionRequest_unstable",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_gosling/unstable/session/system-prompt/set",
       "requestType": "SetSessionSystemPromptRequest_unstable",
       "responseType": "EmptyResponse"

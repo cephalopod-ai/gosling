@@ -22,7 +22,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 16;
+pub const CURRENT_SCHEMA_VERSION: i32 = 18;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -62,6 +62,15 @@ pub struct Session {
     pub id: String,
     #[schema(value_type = String)]
     pub working_dir: PathBuf,
+    /// Extra directories the agent has full tool access to, beyond `working_dir`.
+    #[serde(default)]
+    #[schema(value_type = Vec<String>)]
+    pub additional_working_dirs: Vec<PathBuf>,
+    /// Opt-in, off by default. When true, tool calls that touch a path outside
+    /// every working directory require approval with a message explaining why,
+    /// instead of following the session's normal approval mode.
+    #[serde(default)]
+    pub restrict_tools_to_working_dirs: bool,
     #[serde(alias = "description")]
     pub name: String,
     #[serde(default)]
@@ -214,6 +223,8 @@ pub struct SessionUpdateBuilder<'a> {
     only_if_not_user_named: bool,
     session_type: Option<SessionType>,
     working_dir: Option<PathBuf>,
+    additional_working_dirs: Option<Vec<PathBuf>>,
+    restrict_tools_to_working_dirs: Option<bool>,
     extension_data: Option<ExtensionData>,
     usage: Option<Usage>,
     accumulated_usage: Option<Usage>,
@@ -243,6 +254,8 @@ impl<'a> SessionUpdateBuilder<'a> {
             only_if_not_user_named: false,
             session_type: None,
             working_dir: None,
+            additional_working_dirs: None,
+            restrict_tools_to_working_dirs: None,
             extension_data: None,
             usage: None,
             accumulated_usage: None,
@@ -285,6 +298,16 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn working_dir(mut self, working_dir: PathBuf) -> Self {
         self.working_dir = Some(working_dir);
+        self
+    }
+
+    pub fn additional_working_dirs(mut self, additional_working_dirs: Vec<PathBuf>) -> Self {
+        self.additional_working_dirs = Some(additional_working_dirs);
+        self
+    }
+
+    pub fn restrict_tools_to_working_dirs(mut self, restrict: bool) -> Self {
+        self.restrict_tools_to_working_dirs = Some(restrict);
         self
     }
 
@@ -770,6 +793,8 @@ impl Default for Session {
         Self {
             id: String::new(),
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            additional_working_dirs: Vec::new(),
+            restrict_tools_to_working_dirs: false,
             name: String::new(),
             user_set_name: false,
             session_type: SessionType::default(),
@@ -828,9 +853,21 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             .flatten()
             .and_then(message_timestamp_to_datetime);
 
+        let additional_working_dirs = row
+            .try_get::<String, _>("additional_working_dirs_json")
+            .ok()
+            .and_then(|json| serde_json::from_str::<Vec<PathBuf>>(&json).ok())
+            .unwrap_or_default();
+
+        let restrict_tools_to_working_dirs = row
+            .try_get("restrict_tools_to_working_dirs")
+            .unwrap_or(false);
+
         Ok(Session {
             id: row.try_get("id")?,
             working_dir: PathBuf::from(row.try_get::<String, _>("working_dir")?),
+            additional_working_dirs,
+            restrict_tools_to_working_dirs,
             name,
             user_set_name,
             session_type,
@@ -1002,6 +1039,8 @@ impl SessionStorage {
                 user_set_name BOOLEAN DEFAULT FALSE,
                 session_type TEXT NOT NULL DEFAULT 'user',
                 working_dir TEXT NOT NULL,
+                additional_working_dirs_json TEXT NOT NULL DEFAULT '[]',
+                restrict_tools_to_working_dirs BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 extension_data TEXT DEFAULT '{}',
@@ -1595,6 +1634,36 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
+            17 => {
+                let has_additional_working_dirs = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'additional_working_dirs_json'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_additional_working_dirs {
+                    sqlx::query(
+                        "ALTER TABLE sessions ADD COLUMN additional_working_dirs_json TEXT NOT NULL DEFAULT '[]'",
+                    )
+                    .execute(&mut **tx)
+                    .await?;
+                }
+            }
+            18 => {
+                let has_restrict_flag = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'restrict_tools_to_working_dirs'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_restrict_flag {
+                    sqlx::query(
+                        "ALTER TABLE sessions ADD COLUMN restrict_tools_to_working_dirs BOOLEAN NOT NULL DEFAULT FALSE",
+                    )
+                    .execute(&mut **tx)
+                    .await?;
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1652,7 +1721,7 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut session = sqlx::query_as::<_, Session>(
             r#"
-        SELECT id, working_dir, name, description, user_set_name, session_type, created_at, updated_at, extension_data,
+        SELECT id, working_dir, additional_working_dirs_json, restrict_tools_to_working_dirs, name, description, user_set_name, session_type, created_at, updated_at, extension_data,
                total_tokens, input_tokens, output_tokens,
                cache_read_tokens, cache_write_tokens,
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
@@ -1717,6 +1786,14 @@ impl SessionStorage {
         add_update!(builder.user_set_name, "user_set_name");
         add_update!(builder.session_type, "session_type");
         add_update!(builder.working_dir, "working_dir");
+        add_update!(
+            builder.additional_working_dirs,
+            "additional_working_dirs_json"
+        );
+        add_update!(
+            builder.restrict_tools_to_working_dirs,
+            "restrict_tools_to_working_dirs"
+        );
         add_update!(builder.extension_data, "extension_data");
         add_update!(builder.usage, "total_tokens");
         add_update!(builder.usage, "input_tokens");
@@ -1760,6 +1837,12 @@ impl SessionStorage {
         }
         if let Some(wd) = builder.working_dir {
             q = q.bind(wd.to_string_lossy().to_string());
+        }
+        if let Some(additional_working_dirs) = builder.additional_working_dirs {
+            q = q.bind(serde_json::to_string(&additional_working_dirs)?);
+        }
+        if let Some(restrict) = builder.restrict_tools_to_working_dirs {
+            q = q.bind(restrict);
         }
         if let Some(ed) = builder.extension_data {
             q = q.bind(serde_json::to_string(&ed)?);
@@ -2427,7 +2510,7 @@ impl SessionStorage {
 
         let sql = format!(
             r#"
-            SELECT s.id, s.working_dir, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
+            SELECT s.id, s.working_dir, s.additional_working_dirs_json, s.restrict_tools_to_working_dirs, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
                    s.total_tokens, s.input_tokens, s.output_tokens,
                    s.cache_read_tokens, s.cache_write_tokens,
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
@@ -2650,6 +2733,10 @@ impl SessionStorage {
             .accumulated_usage(import.accumulated_usage)
             .accumulated_cost(import.accumulated_cost);
 
+        if !import.additional_working_dirs.is_empty() {
+            builder = builder.additional_working_dirs(import.additional_working_dirs.clone());
+        }
+
         if import.user_set_name {
             builder = builder.user_provided_name(import.name.clone());
         }
@@ -2684,6 +2771,10 @@ impl SessionStorage {
         let mut builder = session_manager
             .update(&new_session.id)
             .extension_data(original_session.extension_data);
+
+        if !original_session.additional_working_dirs.is_empty() {
+            builder = builder.additional_working_dirs(original_session.additional_working_dirs);
+        }
 
         if let Some(project_id) = original_session.project_id {
             builder = builder.project_id(Some(project_id));
@@ -4264,6 +4355,44 @@ mod tests {
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.gosling_mode, mode);
+    }
+
+    #[tokio::test]
+    async fn test_additional_working_dirs_default_empty_and_updates() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "test".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        assert!(session.additional_working_dirs.is_empty());
+
+        let extra_dirs = vec![
+            PathBuf::from("/tmp/extra-one"),
+            PathBuf::from("/tmp/extra-two"),
+        ];
+        sm.update(&session.id)
+            .additional_working_dirs(extra_dirs.clone())
+            .apply()
+            .await
+            .unwrap();
+
+        let reloaded = sm.get_session(&session.id, false).await.unwrap();
+        assert_eq!(reloaded.additional_working_dirs, extra_dirs);
+
+        sm.update(&session.id)
+            .additional_working_dirs(Vec::new())
+            .apply()
+            .await
+            .unwrap();
+        let reloaded = sm.get_session(&session.id, false).await.unwrap();
+        assert!(reloaded.additional_working_dirs.is_empty());
     }
 
     #[tokio::test]

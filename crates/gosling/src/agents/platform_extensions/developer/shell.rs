@@ -262,6 +262,8 @@ pub(crate) fn resolve_login_shell_path() -> Option<String> {
         }
         _ => {
             let _ = child.kill();
+            // Reap the killed process so it doesn't linger as a zombie.
+            let _ = child.wait();
             None
         }
     }

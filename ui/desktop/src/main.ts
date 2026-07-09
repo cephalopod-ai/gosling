@@ -2420,30 +2420,37 @@ async function appMain() {
   registerUpdateIpcHandlers();
 
   // Handle microphone permission requests
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    console.log('Permission requested:', permission);
-    callback(permission === 'media');
-  });
+  session
+    .fromPartition(MAIN_WINDOW_SESSION_PARTITION)
+    .setPermissionRequestHandler((_webContents, permission, callback) => {
+      console.log('Permission requested:', permission);
+      callback(permission === 'media');
+    });
 
   // Add CSP headers to all sessions, recomputed on every response so external
   // backend settings take effect without restarting the app.
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const currentSettings = getSettings();
-    const webContentsId = (details as { webContentsId?: number }).webContentsId;
-    let localAcpUrl: string | null = null;
-    try {
-      localAcpUrl =
-        typeof webContentsId === 'number' ? goslingServeLeases.getAcpUrl(webContentsId) : null;
-    } catch {
-      localAcpUrl = null;
-    }
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': buildCSP(getExternalBackendForCsp(currentSettings), localAcpUrl),
-      },
+  session
+    .fromPartition(MAIN_WINDOW_SESSION_PARTITION)
+    .webRequest.onHeadersReceived((details, callback) => {
+      const currentSettings = getSettings();
+      const webContentsId = (details as { webContentsId?: number }).webContentsId;
+      let localAcpUrl: string | null = null;
+      try {
+        localAcpUrl =
+          typeof webContentsId === 'number' ? goslingServeLeases.getAcpUrl(webContentsId) : null;
+      } catch {
+        localAcpUrl = null;
+      }
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': buildCSP(
+            getExternalBackendForCsp(currentSettings),
+            localAcpUrl
+          ),
+        },
+      });
     });
-  });
 
   // Migrate old settings format if needed (one-time migration)
   const settings = getSettings();
@@ -2457,10 +2464,12 @@ async function appMain() {
   // Register global shortcuts based on settings
   registerGlobalShortcuts();
 
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    details.requestHeaders['Origin'] = 'http://localhost:5173';
-    callback({ cancel: false, requestHeaders: details.requestHeaders });
-  });
+  session
+    .fromPartition(MAIN_WINDOW_SESSION_PARTITION)
+    .webRequest.onBeforeSendHeaders((details, callback) => {
+      details.requestHeaders['Origin'] = 'http://localhost:5173';
+      callback({ cancel: false, requestHeaders: details.requestHeaders });
+    });
 
   if (settings.showMenuBarIcon) {
     createTray();
@@ -2964,7 +2973,8 @@ async function appMain() {
 
   ipcMain.handle('open-directory-in-explorer', async (_event, path: string) => {
     try {
-      return !!(await shell.openPath(path));
+      const errorMessage = await shell.openPath(path);
+      return errorMessage === '';
     } catch (error) {
       console.error('Error opening directory in explorer:', error);
       return false;
