@@ -1793,24 +1793,24 @@ export default function ChatInput({
 
         {/* Left: working directory (leaf folder name only) */}
         {!isBottomBarNarrow && (
-          <>
-            <DirSwitcher
-              className=""
-              sessionId={sessionId ?? undefined}
-              workingDir={currentWorkingDir}
-              onWorkingDirChange={async (newDir) => {
-                await onWorkingDirChange?.(newDir);
-                setWorkingDirOverride(newDir);
-              }}
-            />
-            {session && onSessionChange && (
-              <WorkingDirectoriesMenu
-                session={session}
-                onSessionChange={onSessionChange}
-                className="text-text-primary/70 hover:text-text-primary"
-              />
-            )}
-          </>
+          <DirSwitcher
+            className=""
+            sessionId={sessionId ?? undefined}
+            workingDir={currentWorkingDir}
+            onWorkingDirChange={async (newDir) => {
+              await onWorkingDirChange?.(newDir);
+              setWorkingDirOverride(newDir);
+            }}
+          />
+        )}
+
+        {session && onSessionChange && (
+          <WorkingDirectoriesMenu
+            session={session}
+            onSessionChange={onSessionChange}
+            compact={isBottomBarNarrow}
+            className="text-text-primary/70 hover:text-text-primary"
+          />
         )}
 
         {/* Spacer */}

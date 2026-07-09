@@ -28,6 +28,10 @@ const i18n = defineMessages({
     id: 'workingDirectoriesMenu.directoriesShort',
     defaultMessage: 'Dirs',
   },
+  addDirectoryShort: {
+    id: 'workingDirectoriesMenu.addDirectoryShort',
+    defaultMessage: 'Add Dir',
+  },
   primary: {
     id: 'workingDirectoriesMenu.primary',
     defaultMessage: 'Primary',
@@ -79,12 +83,14 @@ interface WorkingDirectoriesMenuProps {
   session?: Session;
   onSessionChange: (updater: (session: Session) => Session) => void;
   className?: string;
+  compact?: boolean;
 }
 
 export default function WorkingDirectoriesMenu({
   session,
   onSessionChange,
   className,
+  compact = false,
 }: WorkingDirectoriesMenuProps) {
   const intl = useIntl();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -187,6 +193,11 @@ export default function WorkingDirectoriesMenu({
     (dir) => dir && dir !== workingDir && !additionalWorkingDirs.includes(dir)
   );
 
+  const triggerLabel =
+    additionalWorkingDirs.length === 0
+      ? intl.formatMessage(i18n.addDirectoryShort)
+      : intl.formatMessage(i18n.directoriesShort);
+
   return (
     <TooltipProvider>
       <Tooltip>
@@ -197,7 +208,7 @@ export default function WorkingDirectoriesMenu({
                 className={`no-drag flex items-center gap-1 text-xs transition-colors ${className ?? 'text-text-secondary hover:text-text-primary'}`}
               >
                 <FolderPlus size={14} />
-                <span>{intl.formatMessage(i18n.directoriesShort)}</span>
+                {!compact && <span>{triggerLabel}</span>}
                 <span className="tabular-nums text-[11px] text-text-secondary">
                   {additionalWorkingDirs.length + 1}
                 </span>

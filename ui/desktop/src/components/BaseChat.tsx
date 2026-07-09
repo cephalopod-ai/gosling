@@ -191,6 +191,7 @@ export default function BaseChat({
 
   // Track if this is the initial render for session resuming
   const initialRenderRef = useRef(true);
+  const initialSessionScrollRef = useRef<string | null>(null);
 
   const requestScrollToBottom = useCallback((delayMs = 0) => {
     window.setTimeout(() => {
@@ -200,7 +201,23 @@ export default function BaseChat({
 
   useEffect(() => {
     initialRenderRef.current = true;
+    initialSessionScrollRef.current = null;
   }, [sessionId]);
+
+  useEffect(() => {
+    if (
+      !sessionId ||
+      messages.length === 0 ||
+      chatState === ChatState.LoadingConversation ||
+      initialSessionScrollRef.current === sessionId
+    ) {
+      return;
+    }
+
+    initialSessionScrollRef.current = sessionId;
+    requestScrollToBottom();
+    requestScrollToBottom(150);
+  }, [sessionId, messages.length, chatState, requestScrollToBottom]);
 
   // Auto-scroll when messages are loaded (for session resuming)
   const handleRenderingComplete = React.useCallback(() => {
@@ -345,7 +362,7 @@ export default function BaseChat({
           {/* Gosling watermark - top right */}
           <div className="absolute top-[14px] right-4 z-[60] flex flex-row items-center gap-2">
             <a
-              href="https://gosling-docs.ai"
+              href="https://github.com/repo-makeover/gosling"
               target="_blank"
               rel="noopener noreferrer"
               className="no-drag flex flex-row items-center gap-1 hover:opacity-80 transition-opacity"
@@ -387,6 +404,7 @@ export default function BaseChat({
                     </div>
                   ) : null}
                   <ProgressiveMessageList
+                    key={sessionId}
                     messages={messages}
                     chat={{ sessionId }}
                     toolCallNotifications={toolCallNotifications}

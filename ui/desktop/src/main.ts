@@ -29,6 +29,7 @@ import { checkBackendStatus } from './backendStatus';
 import { startGoslingServe } from './goslingServe';
 import { GoslingServeLeaseRegistry, type GoslingServeLease } from './goslingServeLeaseRegistry';
 import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
+import { getOverrideOriginForRequest } from './requestOrigin';
 import { acpWebSocketUrlFromHttpBase, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde } from './utils/pathUtils';
 import log from './utils/logger';
@@ -2476,7 +2477,13 @@ async function appMain() {
   session
     .fromPartition(MAIN_WINDOW_SESSION_PARTITION)
     .webRequest.onBeforeSendHeaders((details, callback) => {
-      details.requestHeaders['Origin'] = 'http://localhost:5173';
+      const overrideOrigin = getOverrideOriginForRequest(
+        details.url,
+        MAIN_WINDOW_VITE_DEV_SERVER_URL
+      );
+      if (overrideOrigin) {
+        details.requestHeaders.Origin = overrideOrigin;
+      }
       callback({ cancel: false, requestHeaders: details.requestHeaders });
     });
 
