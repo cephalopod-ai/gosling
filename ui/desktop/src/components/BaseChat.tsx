@@ -28,6 +28,7 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Gosling } from './icons';
 import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
+import WorkingDirectoriesSummary from './WorkingDirectoriesSummary';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -361,19 +362,22 @@ export default function BaseChat({
 
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Gosling watermark - top right */}
-          <div className="absolute top-[14px] right-4 z-[60] flex flex-row items-center gap-2">
-            <a
-              href="https://github.com/repo-makeover/gosling"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="no-drag flex flex-row items-center gap-1 hover:opacity-80 transition-opacity"
-            >
-              <Gosling className="size-5 gosling-icon-animation" />
-              <span className="text-sm leading-none text-text-secondary -translate-y-px">
-                gosling
-              </span>
-            </a>
-            <EnvironmentBadge className="translate-y-px" />
+          <div className="absolute top-[14px] right-4 z-[60] flex flex-col items-end gap-2">
+            <div className="flex flex-row items-center gap-2">
+              <a
+                href="https://github.com/repo-makeover/gosling"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="no-drag flex flex-row items-center gap-1 hover:opacity-80 transition-opacity"
+              >
+                <Gosling className="size-5 gosling-icon-animation" />
+                <span className="text-sm leading-none text-text-secondary -translate-y-px">
+                  gosling
+                </span>
+              </a>
+              <EnvironmentBadge className="translate-y-px" />
+            </div>
+            <WorkingDirectoriesSummary session={session} onSessionChange={updateSession} />
           </div>
 
           <SessionActionsHeader session={session} onSessionChange={updateSession} />
@@ -478,8 +482,6 @@ export default function BaseChat({
             workingDir={session?.working_dir}
             onWorkingDirChange={handleWorkingDirChange}
             latestInference={latestInference}
-            session={session}
-            onSessionChange={updateSession}
             {...customChatInputProps}
           />
         </ChatInputCard>

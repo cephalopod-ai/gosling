@@ -27,7 +27,6 @@ import { DroppedFile, useFileDrop } from '../hooks/useFileDrop';
 import { MessageQueue, QueuedMessage } from './MessageQueue';
 import { detectInterruption } from '../utils/interruptionDetector';
 import type { Message } from '../types/message';
-import type { Session } from '../types/session';
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { getPredefinedModelsFromEnv } from './settings/models/predefinedModelsUtils';
 import { trackFileAttached, trackVoiceDictation } from '../utils/analytics';
@@ -39,7 +38,6 @@ import { defineMessages, useIntl } from '../i18n';
 import TurndownService from 'turndown';
 import type { NextChatExtensionDraft } from '../utils/nextChatExtensions';
 import type { ManagedSecretProfile } from '../utils/settings';
-import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
@@ -230,8 +228,6 @@ interface ChatInputProps {
   latestInference?: Message['metadata']['inference'] | null;
   nextChatExtensionDraft?: NextChatExtensionDraft;
   onNextChatExtensionDraftChange?: (draft: NextChatExtensionDraft) => void;
-  session?: Session;
-  onSessionChange?: (updater: (session: Session) => Session) => void;
 }
 
 export default function ChatInput({
@@ -264,8 +260,6 @@ export default function ChatInput({
   latestInference,
   nextChatExtensionDraft,
   onNextChatExtensionDraftChange,
-  session,
-  onSessionChange,
 }: ChatInputProps) {
   const [_value, setValue] = useState(initialValue);
   const [displayValue, setDisplayValue] = useState(initialValue); // For immediate visual feedback
@@ -1801,15 +1795,6 @@ export default function ChatInput({
               await onWorkingDirChange?.(newDir);
               setWorkingDirOverride(newDir);
             }}
-          />
-        )}
-
-        {session && onSessionChange && (
-          <WorkingDirectoriesMenu
-            session={session}
-            onSessionChange={onSessionChange}
-            compact={isBottomBarNarrow}
-            className="text-text-primary/70 hover:text-text-primary"
           />
         )}
 
