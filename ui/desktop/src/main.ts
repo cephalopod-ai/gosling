@@ -52,6 +52,7 @@ import { UPDATES_ENABLED } from './updates';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { isProtocolSafe, WEB_PROTOCOLS } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
+import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -666,7 +667,7 @@ function sendOpenSharedSession(window: BrowserWindow, url: string): void {
     return;
   }
   recordSessionDeepLinkSend(url);
-  window.webContents.send('open-shared-session', url);
+  window.webContents.send(rendererEventChannels.openSharedSession, url);
 }
 
 function deliverExtensionOrSessionDeepLink(
@@ -680,7 +681,7 @@ function deliverExtensionOrSessionDeepLink(
   }
 
   if (parsedUrl.hostname === 'extension') {
-    targetWindow.webContents.send('add-extension', url);
+    targetWindow.webContents.send(rendererEventChannels.addExtension, url);
   } else if (parsedUrl.hostname === 'sessions') {
     sendOpenSharedSession(targetWindow, url);
   }
@@ -748,7 +749,7 @@ async function handleProtocolUrl(url: string, parsedUrl: URL) {
 
 async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWindow) {
   if (parsedUrl.hostname === 'extension') {
-    window.webContents.send('add-extension', url);
+    window.webContents.send(rendererEventChannels.addExtension, url);
   } else if (parsedUrl.hostname === 'sessions') {
     sendOpenSharedSession(window, url);
   }
@@ -1487,14 +1488,17 @@ const createChat = async (
 
   mainWindow.on('app-command', (e, cmd) => {
     if (cmd === 'browser-backward') {
-      mainWindow.webContents.send('mouse-back-button-clicked');
+      mainWindow.webContents.send(rendererEventChannels.mouseBackButtonClicked);
       e.preventDefault();
     }
   });
 
   const broadcastFullScreenState = () => {
     if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('fullscreen-change', mainWindow.isFullScreen());
+      mainWindow.webContents.send(
+        rendererEventChannels.fullscreenChange,
+        mainWindow.isFullScreen()
+      );
     }
   };
   mainWindow.on('enter-full-screen', broadcastFullScreenState);
@@ -1506,7 +1510,7 @@ const createChat = async (
   mainWindow.webContents.on('mouse-up' as any, function (_event: any, mouseButton: number) {
     // MouseButton 3 is the back button.
     if (mouseButton === 3) {
-      mainWindow.webContents.send('mouse-back-button-clicked');
+      mainWindow.webContents.send(rendererEventChannels.mouseBackButtonClicked);
     }
   });
 
@@ -1802,7 +1806,10 @@ const handleFatalError = (error: Error) => {
   windows.forEach((win) => {
     try {
       if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-        win.webContents.send('fatal-error', error.message || 'An unexpected error occurred');
+        win.webContents.send(
+          rendererEventChannels.fatalError,
+          error.message || 'An unexpected error occurred'
+        );
       }
     } catch (sendError) {
       console.error('Failed to notify window of fatal error:', sendError);
@@ -1820,7 +1827,7 @@ process.on('unhandledRejection', (error) => {
   handleFatalError(error instanceof Error ? error : new Error(String(error)));
 });
 
-ipcMain.on('react-ready', (event) => {
+ipcMain.on(desktopCommandChannels.reactReady, (event) => {
   log.info('React ready event received');
 
   // Get the window that sent the react-ready event
@@ -1836,7 +1843,9 @@ ipcMain.on('react-ready', (event) => {
     const initialMessage = pendingInitialMessages.get(windowId)!;
     const noAutoSubmit = pendingInitialMessageNoAutoSubmit.has(windowId);
     log.info('Sending pending initial message to window:', initialMessage);
-    window.webContents.send('set-initial-message', initialMessage, { noAutoSubmit });
+    window.webContents.send(rendererEventChannels.setInitialMessage, initialMessage, {
+      noAutoSubmit,
+    });
     pendingInitialMessages.delete(windowId);
     pendingInitialMessageNoAutoSubmit.delete(windowId);
   }
@@ -1848,7 +1857,7 @@ ipcMain.on('react-ready', (event) => {
     try {
       const parsedUrl = new URL(deepLinkUrl);
       if (parsedUrl.hostname === 'extension') {
-        window.webContents.send('add-extension', deepLinkUrl);
+        window.webContents.send(rendererEventChannels.addExtension, deepLinkUrl);
       } else if (parsedUrl.hostname === 'sessions') {
         sendOpenSharedSession(window, deepLinkUrl);
       }
@@ -1858,7 +1867,7 @@ ipcMain.on('react-ready', (event) => {
   }
 });
 
-ipcMain.handle('open-external', async (_event, url: string) => {
+ipcMain.handle(desktopCommandChannels.openExternal, async (_event, url: string) => {
   await openExternalIfSafe(url);
 });
 
@@ -2368,7 +2377,7 @@ const focusWindow = () => {
     windows.forEach((win) => {
       win.show();
     });
-    windows[windows.length - 1].webContents.send('focus-input');
+    windows[windows.length - 1].webContents.send(rendererEventChannels.focusInput);
   } else {
     createNewWindow(app);
   }
@@ -2530,7 +2539,9 @@ async function appMain() {
           accelerator: shortcuts.settings,
           click() {
             const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) focusedWindow.webContents.send('set-view', 'settings');
+            if (focusedWindow) {
+              focusedWindow.webContents.send(rendererEventChannels.setView, 'settings');
+            }
           },
         })
       );
@@ -2548,7 +2559,9 @@ async function appMain() {
         accelerator: shortcuts.find || undefined,
         click() {
           const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow) focusedWindow.webContents.send('find-command');
+          if (focusedWindow) {
+            focusedWindow.webContents.send(rendererEventChannels.findCommand);
+          }
         },
       },
       {
@@ -2556,7 +2569,9 @@ async function appMain() {
         accelerator: shortcuts.findNext || undefined,
         click() {
           const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow) focusedWindow.webContents.send('find-next');
+          if (focusedWindow) {
+            focusedWindow.webContents.send(rendererEventChannels.findNext);
+          }
         },
       },
       {
@@ -2564,7 +2579,9 @@ async function appMain() {
         accelerator: shortcuts.findPrevious || undefined,
         click() {
           const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow) focusedWindow.webContents.send('find-previous');
+          if (focusedWindow) {
+            focusedWindow.webContents.send(rendererEventChannels.findPrevious);
+          }
         },
       },
       {
@@ -2572,7 +2589,9 @@ async function appMain() {
         accelerator: process.platform === 'darwin' ? 'Command+E' : undefined,
         click() {
           const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow) focusedWindow.webContents.send('use-selection-find');
+          if (focusedWindow) {
+            focusedWindow.webContents.send(rendererEventChannels.useSelectionFind);
+          }
         },
         visible: process.platform === 'darwin', // Only show on Mac
       },
@@ -2601,7 +2620,9 @@ async function appMain() {
           accelerator: shortcuts.newChat,
           click() {
             const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) focusedWindow.webContents.send('set-view', '');
+            if (focusedWindow) {
+              focusedWindow.webContents.send(rendererEventChannels.newChat);
+            }
           },
         })
       );
@@ -2614,7 +2635,7 @@ async function appMain() {
           label: menuT('New Chat Window'),
           accelerator: shortcuts.newChatWindow,
           click() {
-            ipcMain.emit('create-chat-window');
+            ipcMain.emit(desktopCommandChannels.createChatWindow);
           },
         })
       );
@@ -2724,7 +2745,7 @@ async function appMain() {
           click() {
             const focusedWindow = BrowserWindow.getFocusedWindow();
             if (focusedWindow) {
-              focusedWindow.webContents.send('toggle-navigation');
+              focusedWindow.webContents.send(rendererEventChannels.toggleNavigation);
             }
           },
         })
@@ -2795,7 +2816,7 @@ async function appMain() {
     }
   });
 
-  ipcMain.on('create-chat-window', (event, options = {}) => {
+  ipcMain.on(desktopCommandChannels.createChatWindow, (event, options = {}) => {
     const { query, dir, resumeSessionId, viewType } = options;
 
     let resolvedDir = dir;
@@ -2819,7 +2840,7 @@ async function appMain() {
         const targetWindow = existingWindows[0];
         targetWindow.show();
         targetWindow.focus();
-        targetWindow.webContents.send('set-initial-message', query);
+        targetWindow.webContents.send(rendererEventChannels.setInitialMessage, query);
         return;
       }
     }
@@ -2832,7 +2853,7 @@ async function appMain() {
     });
   });
 
-  ipcMain.on('close-window', (event) => {
+  ipcMain.on(desktopCommandChannels.closeWindow, (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (window && !window.isDestroyed()) {
       window.close();
@@ -2911,13 +2932,13 @@ async function appMain() {
     }
   });
 
-  ipcMain.on('broadcast-theme-change', (event, themeData) => {
+  ipcMain.on(desktopCommandChannels.broadcastThemeChange, (event, themeData) => {
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
     const allWindows = BrowserWindow.getAllWindows();
 
     allWindows.forEach((window) => {
       if (window.id !== senderWindow?.id) {
-        window.webContents.send('theme-changed', themeData);
+        window.webContents.send(rendererEventChannels.themeChanged, themeData);
       }
     });
   });
@@ -2963,11 +2984,11 @@ async function appMain() {
   });
 
   // Handler for getting app version
-  ipcMain.on('get-app-version', (event) => {
+  ipcMain.on(desktopCommandChannels.getAppVersion, (event) => {
     event.returnValue = app.getVersion();
   });
 
-  ipcMain.on('get-app-locale', (event) => {
+  ipcMain.on(desktopCommandChannels.getAppLocale, (event) => {
     event.returnValue = getConfiguredGoslingLocale();
   });
 

@@ -31,7 +31,7 @@ use gosling::conversation::message::{
     ToolResponse,
 };
 
-use crate::routes::reply::MessageEvent;
+use crate::routes::reply_service::MessageEvent;
 use utoipa::openapi::schema::{
     AdditionalProperties, AnyOfBuilder, ArrayBuilder, ObjectBuilder, OneOfBuilder, Schema,
     SchemaFormat, SchemaType,

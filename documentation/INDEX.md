@@ -5,6 +5,7 @@ This file is the durable map for the repository's documentation surface.
 ## authority and governance
 
 - [repository instructions](../AGENTS.md)
+- [architecture registry](../.architecture/README.md)
 - [documentation style guide](./AGENTS.md)
 - [root overview](../README.md)
 - [docs-site workflow](./README.md)

@@ -1,0 +1,56 @@
+version: 1
+
+owners:
+  core_maintainers:
+    github:
+      - "@e3742526"
+
+components:
+  - id: server.reply_transport
+    owners: [core_maintainers]
+    paths:
+      - crates/gosling-server/src/routes/reply.rs
+      - crates/gosling-server/src/routes/session_events.rs
+    responsibilities:
+      - expose HTTP reply endpoints
+      - translate between transport framing and shared reply events
+    allowed_dependencies:
+      - server.reply_service
+      - server.session_event_bus
+      - server.route_utilities
+    forbidden_dependencies:
+      - server.reply_transport
+    notes:
+      - sibling route modules must not import helpers, state machines, or event types from each other
+
+  - id: server.reply_service
+    owners: [core_maintainers]
+    paths:
+      - crates/gosling-server/src/routes/reply_service.rs
+      - crates/gosling-server/src/routes/history_override.rs
+    responsibilities:
+      - own reply lifecycle orchestration
+      - own override rollback policy
+      - normalize agent events into transport-neutral reply events
+      - emit reply-path telemetry hooks
+
+  - id: desktop.ipc_contract
+    owners: [core_maintainers]
+    paths:
+      - ui/desktop/src/ipc
+      - ui/desktop/src/preload.ts
+      - ui/desktop/src/main.ts
+    responsibilities:
+      - define channel names and payload types shared by preload and main
+      - keep renderer-facing privileged API surface minimal
+    notes:
+      - preload must not expose dead or unhandled privileged methods
+
+  - id: compatibility.goose_catalog_adapter
+    owners: [core_maintainers]
+    paths:
+      - documentation/GOOSE_COMPATIBILITY.md
+      - documentation/scripts/goose-compat.js
+    responsibilities:
+      - preserve deterministic Goose catalog fallback behavior
+      - keep provenance and normalization explicit

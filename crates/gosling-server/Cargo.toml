@@ -74,6 +74,7 @@ rustls = { workspace = true, optional = true }
 uuid = { workspace = true }
 axum-server = { version = "0.8", default-features = false }
 lru.workspace = true
+async-trait.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.56", default-features = false }

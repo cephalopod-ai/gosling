@@ -1,0 +1,38 @@
+version: 1
+
+invariants:
+  - id: ARC-001
+    title: Route adapters stay thin
+    status: active
+    scope:
+      - crates/gosling-server/src/routes
+    rule: route modules may own transport parsing and framing, but shared reply workflow belongs in a service-layer owner
+    checks:
+      - sibling route modules do not import business-flow helpers from each other
+
+  - id: ARC-002
+    title: Reply lifecycle has one owner
+    status: active
+    scope:
+      - crates/gosling-server/src/routes/reply_service.rs
+    rule: override handling, rollback policy, reply stream iteration, event normalization, and reply-path telemetry are implemented once and reused by every reply transport
+
+  - id: ARC-003
+    title: Electron privilege boundary is contract-backed
+    status: active
+    scope:
+      - ui/desktop/src/main.ts
+      - ui/desktop/src/preload.ts
+      - ui/desktop/src/ipc
+    rule: privileged renderer-to-main channels must be declared in a shared contract and preload may expose only handled methods
+    checks:
+      - no orphaned preload method without a matching main-process handler
+      - main-to-renderer event channels are declared in the shared contract
+
+  - id: ARC-004
+    title: Goose compatibility remains an adapter, not a leak
+    status: active
+    scope:
+      - documentation/GOOSE_COMPATIBILITY.md
+      - documentation/scripts/goose-compat.js
+    rule: upstream Goose catalogs may be consumed only through explicit normalization and provenance-preserving adapter logic

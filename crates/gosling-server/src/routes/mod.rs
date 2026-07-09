@@ -7,6 +7,7 @@ pub(crate) mod history_override;
 pub mod mcp_app_proxy;
 pub mod prompts;
 pub mod reply;
+pub(crate) mod reply_service;
 pub mod session;
 pub mod session_events;
 pub mod status;

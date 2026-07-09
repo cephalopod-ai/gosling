@@ -50,7 +50,7 @@ pub(crate) async fn apply_conversation_override(
         override_conversation,
         ConversationOverrideRollback {
             restored_conversation,
-            original_usage: session.usage.clone(),
+            original_usage: session.usage,
         },
     ))
 }

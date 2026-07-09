@@ -1,10 +1,11 @@
 use crate::routes::errors::ErrorResponse;
-use crate::routes::history_override::{
-    apply_conversation_override, is_early_provider_failure_message, rollback_conversation_override,
+use crate::routes::reply_service::{
+    is_elicitation_response, log_session_start, run_reply_task, MessageEvent, ReplyEventSink,
+    ReplyTaskConfig,
 };
-use crate::routes::reply::{get_token_state, track_tool_telemetry, MessageEvent};
 use crate::session_event_bus::RequestGuard;
 use crate::state::AppState;
+use async_trait::async_trait;
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
     http::{self, HeaderMap},
@@ -13,8 +14,7 @@ use axum::{
     Json, Router,
 };
 use bytes::Bytes;
-use futures::{stream::StreamExt, Stream};
-use gosling::agents::{AgentEvent, SessionConfig};
+use futures::Stream;
 use gosling::conversation::message::Message;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,7 +25,6 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
 
 // ── Request / Response types ────────────────────────────────────────────
@@ -114,6 +113,19 @@ fn serialize_session_event(seq: u64, request_id: Option<&str>, event: &MessageEv
 
     let json_str = serde_json::to_string(&event_json).unwrap_or_default();
     format_sse_event(seq, &json_str)
+}
+
+struct EventBusReplySink {
+    bus: Arc<crate::session_event_bus::SessionEventBus>,
+    request_id: String,
+}
+
+#[async_trait]
+impl ReplyEventSink for EventBusReplySink {
+    async fn publish(&mut self, event: MessageEvent) -> bool {
+        self.bus.publish(Some(self.request_id.clone()), event).await;
+        true
+    }
 }
 
 // ── GET /sessions/{id}/events ───────────────────────────────────────────
@@ -294,32 +306,12 @@ pub async fn session_reply(
         .map_err(|_| ErrorResponse::not_found(format!("Session {} not found", session_id)))?;
 
     let session_start = std::time::Instant::now();
-
-    tracing::info!(
-        monotonic_counter.gosling.session_starts = 1,
-        session_type = "app",
-        interface = "ui",
-        "Session started"
-    );
+    log_session_start();
 
     let user_message = request.user_message;
     let override_conversation = request.override_conversation;
 
-    // An elicitation response unblocks an in-flight tool call that is already
-    // streaming on another request_id — don't register a new active request or
-    // open a new SSE stream; route it to the agent's short-circuit path.
-    let is_elicitation_response = user_message.content.iter().any(|c| {
-        matches!(
-            c,
-            gosling::conversation::message::MessageContent::ActionRequired(ar)
-                if matches!(
-                    ar.data,
-                    gosling::conversation::message::ActionRequiredData::ElicitationResponse { .. }
-                )
-        )
-    });
-
-    if is_elicitation_response {
+    if is_elicitation_response(&user_message) {
         let agent = state.get_agent_for_route(session_id.clone()).await?;
         let session_config = gosling::agents::types::SessionConfig {
             id: session_id.clone(),
@@ -351,285 +343,21 @@ pub async fn session_reply(
 
     drop(tokio::spawn(async move {
         let mut _guard = RequestGuard::new(task_bus.clone(), task_request_id.clone());
-
-        let publish = |rid: Option<String>, event: MessageEvent| {
-            let bus = task_bus.clone();
-            async move {
-                bus.publish(rid, event).await;
-            }
+        let mut sink = EventBusReplySink {
+            bus: task_bus.clone(),
+            request_id: task_request_id.clone(),
         };
-
-        let agent = match task_state.get_agent(task_session_id.clone()).await {
-            Ok(agent) => agent,
-            Err(e) => {
-                tracing::error!("Failed to get session agent: {}", e);
-                publish(
-                    Some(task_request_id.clone()),
-                    MessageEvent::Error {
-                        error: format!("Failed to get session agent: {}", e),
-                    },
-                )
-                .await;
-                return;
-            }
-        };
-
-        let session = match task_state
-            .session_manager()
-            .get_session(&task_session_id, true)
-            .await
-        {
-            Ok(metadata) => metadata,
-            Err(e) => {
-                tracing::error!("Failed to read session for {}: {}", task_session_id, e);
-                publish(
-                    Some(task_request_id.clone()),
-                    MessageEvent::Error {
-                        error: format!("Failed to read session: {}", e),
-                    },
-                )
-                .await;
-                return;
-            }
-        };
-
-        let session_config = SessionConfig {
-            id: task_session_id.clone(),
-            max_turns: None,
-            compacted_context: false,
-            tail_limit: None,
-        };
-
-        let mut rollback_state = None;
-        let mut all_messages = session.conversation.clone().unwrap_or_default();
-        if let Some(history) = override_conversation {
-            if let Some((override_conversation, rollback)) = apply_conversation_override(
-                task_state.session_manager(),
-                &session,
-                &user_message,
-                history,
-            )
-            .await
-            {
-                all_messages = override_conversation;
-                rollback_state = Some(rollback);
-            }
-        }
-        all_messages.push(user_message.clone());
-
-        let mut stream = match agent
-            .reply(
-                user_message.clone(),
-                session_config,
-                Some(task_cancel.clone()),
-            )
-            .await
-        {
-            Ok(stream) => stream,
-            Err(e) => {
-                if let Some(rollback) = rollback_state.take() {
-                    rollback_conversation_override(
-                        task_state.session_manager(),
-                        &task_session_id,
-                        rollback,
-                    )
-                    .await;
-                }
-                tracing::error!("Failed to start reply stream: {:?}", e);
-                publish(
-                    Some(task_request_id.clone()),
-                    MessageEvent::Error {
-                        error: e.to_string(),
-                    },
-                )
-                .await;
-                return;
-            }
-        };
-
-        let mut reply_progressed = false;
-        loop {
-            tokio::select! {
-                _ = task_cancel.cancelled() => {
-                    if !reply_progressed {
-                        if let Some(rollback) = rollback_state.take() {
-                            rollback_conversation_override(
-                                task_state.session_manager(),
-                                &task_session_id,
-                                rollback,
-                            )
-                            .await;
-                        }
-                    }
-                    tracing::info!("Agent task cancelled for request {}", task_request_id);
-                    break;
-                }
-                response = timeout(Duration::from_millis(500), stream.next()) => {
-                    match response {
-                        Ok(Some(Ok(AgentEvent::Message(message)))) => {
-                            let rollback_for_message = !reply_progressed
-                                && rollback_state.is_some()
-                                && is_early_provider_failure_message(&message);
-                            if rollback_for_message {
-                                if let Some(rollback) = rollback_state.take() {
-                                    rollback_conversation_override(
-                                        task_state.session_manager(),
-                                        &task_session_id,
-                                        rollback,
-                                    )
-                                    .await;
-                                }
-                            } else {
-                                reply_progressed = true;
-                            }
-                            for content in &message.content {
-                                track_tool_telemetry(content, all_messages.messages());
-                            }
-                            all_messages.push(message.clone());
-                            let token_state = get_token_state(
-                                task_state.session_manager(),
-                                &task_session_id,
-                            )
-                            .await;
-                            publish(
-                                Some(task_request_id.clone()),
-                                MessageEvent::Message {
-                                    message,
-                                    token_state,
-                                },
-                            )
-                            .await;
-                        }
-                        Ok(Some(Ok(AgentEvent::Usage(_)))) => {}
-                        Ok(Some(Ok(AgentEvent::HistoryReplaced(new_messages)))) => {
-                            reply_progressed = true;
-                            all_messages = new_messages.clone();
-                            publish(
-                                Some(task_request_id.clone()),
-                                MessageEvent::UpdateConversation {
-                                    conversation: new_messages,
-                                },
-                            )
-                            .await;
-                        }
-                        Ok(Some(Ok(AgentEvent::McpNotification((notification_request_id, n))))) => {
-                            reply_progressed = true;
-                            publish(
-                                Some(task_request_id.clone()),
-                                MessageEvent::Notification {
-                                    request_id: notification_request_id,
-                                    message: n,
-                                },
-                            )
-                            .await;
-                        }
-                        Ok(Some(Err(e))) => {
-                            if !reply_progressed {
-                                if let Some(rollback) = rollback_state.take() {
-                                    rollback_conversation_override(
-                                        task_state.session_manager(),
-                                        &task_session_id,
-                                        rollback,
-                                    )
-                                    .await;
-                                }
-                            }
-                            tracing::error!("Error processing message: {}", e);
-                            publish(
-                                Some(task_request_id.clone()),
-                                MessageEvent::Error {
-                                    error: e.to_string(),
-                                },
-                            )
-                            .await;
-                            break;
-                        }
-                        Ok(None) => {
-                            if !reply_progressed {
-                                if let Some(rollback) = rollback_state.take() {
-                                    rollback_conversation_override(
-                                        task_state.session_manager(),
-                                        &task_session_id,
-                                        rollback,
-                                    )
-                                    .await;
-                                }
-                            }
-                            break;
-                        }
-                        Err(_) => {
-                            // Timeout — check if the bus still has subscribers
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Telemetry
-        let session_duration = session_start.elapsed();
-
-        if let Ok(session) = task_state
-            .session_manager()
-            .get_session(&task_session_id, true)
-            .await
-        {
-            let total_tokens = session.usage.total_tokens.unwrap_or(0);
-            tracing::info!(
-                monotonic_counter.gosling.session_completions = 1,
-                session_type = "app",
-                interface = "ui",
-                exit_type = "normal",
-                duration_ms = session_duration.as_millis() as u64,
-                total_tokens = total_tokens,
-                message_count = session.message_count,
-                "Session completed"
-            );
-
-            tracing::info!(
-                monotonic_counter.gosling.session_duration_ms = session_duration.as_millis() as u64,
-                session_type = "app",
-                interface = "ui",
-                "Session duration"
-            );
-
-            if total_tokens > 0 {
-                tracing::info!(
-                    monotonic_counter.gosling.session_tokens = total_tokens,
-                    session_type = "app",
-                    interface = "ui",
-                    "Session tokens"
-                );
-            }
-        } else {
-            tracing::info!(
-                monotonic_counter.gosling.session_completions = 1,
-                session_type = "app",
-                interface = "ui",
-                exit_type = "normal",
-                duration_ms = session_duration.as_millis() as u64,
-                total_tokens = 0u64,
-                message_count = all_messages.len(),
-                "Session completed"
-            );
-
-            tracing::info!(
-                monotonic_counter.gosling.session_duration_ms = session_duration.as_millis() as u64,
-                session_type = "app",
-                interface = "ui",
-                "Session duration"
-            );
-        }
-
-        let final_token_state =
-            get_token_state(task_state.session_manager(), &task_session_id).await;
-
-        publish(
-            Some(task_request_id.clone()),
-            MessageEvent::Finish {
-                reason: "stop".to_string(),
-                token_state: final_token_state,
+        run_reply_task(
+            ReplyTaskConfig {
+                state: task_state,
+                session_id: task_session_id,
+                user_message,
+                override_conversation,
+                cancel_token: task_cancel,
+                session_start,
+                heartbeat_interval: None,
             },
+            &mut sink,
         )
         .await;
 

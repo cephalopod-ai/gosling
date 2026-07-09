@@ -1,4 +1,14 @@
 import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
+import {
+  desktopCommandChannels,
+  rendererEventChannels,
+} from './ipc/channels';
+import type {
+  RendererEventCallback,
+  RendererEventChannel,
+  ThemeChangePayload,
+  UpdaterEvent,
+} from './ipc/channels';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings } from './utils/settings';
 
@@ -86,11 +96,6 @@ interface McpAppProxyCsp {
 
 const config = JSON.parse(process.argv.find((arg) => arg.startsWith('{')) || '{}');
 
-interface UpdaterEvent {
-  event: string;
-  data?: unknown;
-}
-
 export interface CreateChatWindowOptions {
   query?: string;
   dir?: string;
@@ -105,7 +110,6 @@ type ElectronAPI = {
   arch: string;
   reactReady: () => void;
   getConfig: () => Record<string, unknown>;
-  hideWindow: () => void;
   directoryChooser: () => Promise<Electron.OpenDialogReturnValue>;
   createChatWindow: (options?: CreateChatWindowOptions) => void;
   logInfo: (txt: string) => void;
@@ -121,7 +125,6 @@ type ElectronAPI = {
     contents: string;
     error?: string;
   } | null>;
-  getBinaryPath: (binaryName: string) => Promise<string>;
   readFile: (directory: string) => Promise<FileResponse>;
   writeFile: (directory: string, content: string) => Promise<boolean>;
   deleteFile: (filePath: string) => Promise<boolean>;
@@ -147,21 +150,9 @@ type ElectronAPI = {
   getIsFullScreen: () => Promise<boolean>;
   onMouseBackButtonClicked: (callback: () => void) => void;
   offMouseBackButtonClicked: (callback: () => void) => void;
-  on: (
-    channel: string,
-    callback: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
-  ) => void;
-  off: (
-    channel: string,
-    callback: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
-  ) => void;
-  emit: (channel: string, ...args: unknown[]) => void;
-  broadcastThemeChange: (themeData: {
-    mode: string;
-    useSystemTheme: boolean;
-    theme: string;
-    tokensUpdated?: boolean;
-  }) => void;
+  on: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => void;
+  off: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => void;
+  broadcastThemeChange: (themeData: ThemeChangePayload) => void;
   openExternal: (url: string) => Promise<void>;
   // Update-related functions
   getVersion: () => string;
@@ -185,10 +176,12 @@ type AppConfigAPI = {
   getAll: () => Record<string, unknown>;
 };
 
+const mouseBackButtonListeners = new WeakMap<() => void, () => void>();
+
 const electronAPI: ElectronAPI = {
   platform: process.platform,
   arch: process.arch,
-  reactReady: () => ipcRenderer.send('react-ready'),
+  reactReady: () => ipcRenderer.send(desktopCommandChannels.reactReady),
   getConfig: () => {
     if (!config || Object.keys(config).length === 0) {
       console.warn(
@@ -197,10 +190,9 @@ const electronAPI: ElectronAPI = {
     }
     return config;
   },
-  hideWindow: () => ipcRenderer.send('hide-window'),
   directoryChooser: () => ipcRenderer.invoke('directory-chooser'),
   createChatWindow: (options?: CreateChatWindowOptions) =>
-    ipcRenderer.send('create-chat-window', options || {}),
+    ipcRenderer.send(desktopCommandChannels.createChatWindow, options || {}),
   logInfo: (txt: string) => ipcRenderer.send('logInfo', txt),
   showNotification: (data: NotificationData) => ipcRenderer.send('notify', data),
   showMessageBox: (options: MessageBoxOptions) => ipcRenderer.invoke('show-message-box', options),
@@ -212,7 +204,6 @@ const electronAPI: ElectronAPI = {
   selectFileOrDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke('select-file-or-directory', defaultPath),
   selectImportSessionFile: () => ipcRenderer.invoke('select-import-session-file'),
-  getBinaryPath: (binaryName: string) => ipcRenderer.invoke('get-binary-path', binaryName),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
   writeFile: (filePath: string, content: string) =>
     ipcRenderer.invoke('write-file', filePath, content),
@@ -296,42 +287,31 @@ const electronAPI: ElectronAPI = {
   isAnyWindowFocused: () => ipcRenderer.invoke('is-any-window-focused'),
   getIsFullScreen: () => ipcRenderer.invoke('get-is-fullscreen'),
   onMouseBackButtonClicked: (callback: () => void) => {
-    // Wrapper that ignores the event parameter.
-    const wrappedCallback = (_event: Electron.IpcRendererEvent) => callback();
-    ipcRenderer.on('mouse-back-button-clicked', wrappedCallback);
-    return wrappedCallback;
+    const wrappedCallback = () => callback();
+    mouseBackButtonListeners.set(callback, wrappedCallback);
+    ipcRenderer.on(rendererEventChannels.mouseBackButtonClicked, wrappedCallback);
   },
   offMouseBackButtonClicked: (callback: () => void) => {
-    ipcRenderer.removeListener('mouse-back-button-clicked', callback);
+    const wrappedCallback = mouseBackButtonListeners.get(callback);
+    if (wrappedCallback) {
+      ipcRenderer.removeListener(rendererEventChannels.mouseBackButtonClicked, wrappedCallback);
+      mouseBackButtonListeners.delete(callback);
+    }
   },
-  on: (
-    channel: string,
-    callback: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
-  ) => {
+  on: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => {
     ipcRenderer.on(channel, callback);
   },
-  off: (
-    channel: string,
-    callback: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
-  ) => {
+  off: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => {
     ipcRenderer.off(channel, callback);
   },
-  emit: (channel: string, ...args: unknown[]) => {
-    ipcRenderer.emit(channel, ...args);
-  },
-  broadcastThemeChange: (themeData: {
-    mode: string;
-    useSystemTheme: boolean;
-    theme: string;
-    tokensUpdated?: boolean;
-  }) => {
-    ipcRenderer.send('broadcast-theme-change', themeData);
+  broadcastThemeChange: (themeData: ThemeChangePayload) => {
+    ipcRenderer.send(desktopCommandChannels.broadcastThemeChange, themeData);
   },
   openExternal: (url: string): Promise<void> => {
-    return ipcRenderer.invoke('open-external', url);
+    return ipcRenderer.invoke(desktopCommandChannels.openExternal, url);
   },
   getVersion: (): string => {
-    return config.GOSLING_VERSION || ipcRenderer.sendSync('get-app-version') || '';
+    return config.GOSLING_VERSION || ipcRenderer.sendSync(desktopCommandChannels.getAppVersion) || '';
   },
   checkForUpdates: (): Promise<{ updateInfo: unknown; error: string | null }> => {
     return ipcRenderer.invoke('check-for-updates');
@@ -347,8 +327,8 @@ const electronAPI: ElectronAPI = {
   },
   onUpdaterEvent: (callback: (event: UpdaterEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: UpdaterEvent) => callback(data);
-    ipcRenderer.on('updater-event', handler);
-    return () => ipcRenderer.removeListener('updater-event', handler);
+    ipcRenderer.on(rendererEventChannels.updaterEvent, handler);
+    return () => ipcRenderer.removeListener(rendererEventChannels.updaterEvent, handler);
   },
   getUpdateState: (): Promise<{ updateAvailable: boolean; latestVersion?: string } | null> => {
     return ipcRenderer.invoke('get-update-state');
@@ -359,7 +339,7 @@ const electronAPI: ElectronAPI = {
   getAutoDownloadDisabled: (): Promise<boolean> => {
     return ipcRenderer.invoke('get-auto-download-disabled');
   },
-  closeWindow: () => ipcRenderer.send('close-window'),
+  closeWindow: () => ipcRenderer.send(desktopCommandChannels.closeWindow),
   openDirectoryInExplorer: (directoryPath: string) =>
     ipcRenderer.invoke('open-directory-in-explorer', directoryPath),
   addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir),
@@ -369,7 +349,7 @@ const electronAPI: ElectronAPI = {
 
 function getAppLocale(): unknown {
   try {
-    return ipcRenderer.sendSync('get-app-locale') ?? config.GOSLING_LOCALE;
+    return ipcRenderer.sendSync(desktopCommandChannels.getAppLocale) ?? config.GOSLING_LOCALE;
   } catch {
     return config.GOSLING_LOCALE;
   }

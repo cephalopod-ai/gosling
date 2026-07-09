@@ -14,6 +14,8 @@ import {
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import log from './logger';
+import { desktopCommandChannels, rendererEventChannels } from '../ipc/channels';
+import type { UpdaterEvent } from '../ipc/channels';
 import { githubUpdater } from './githubUpdater';
 import { loadRecentDirs } from './recentDirs';
 import { errorMessage } from './conversionUtils';
@@ -687,15 +689,10 @@ export function setupAutoUpdater(tray?: Tray) {
   });
 }
 
-interface UpdaterEvent {
-  event: string;
-  data?: unknown;
-}
-
 function sendStatusToWindow(event: string, data?: unknown) {
   const windows = BrowserWindow.getAllWindows();
   windows.forEach((win) => {
-    win.webContents.send('updater-event', { event, data } as UpdaterEvent);
+    win.webContents.send(rendererEventChannels.updaterEvent, { event, data } as UpdaterEvent);
   });
 }
 
@@ -796,7 +793,7 @@ function openUpdateSettings() {
     mainWindow.show();
     mainWindow.focus();
     // Send message to open settings and scroll to update section
-    mainWindow.webContents.send('set-view', 'settings', 'update');
+    mainWindow.webContents.send(rendererEventChannels.setView, 'settings', 'update');
   }
 }
 
@@ -826,7 +823,7 @@ export function updateTrayMenu(hasUpdate: boolean) {
           const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
 
           // Emit event to create new window (handled in main.ts)
-          ipcMain.emit('create-chat-window', {}, undefined, openDir);
+          ipcMain.emit(desktopCommandChannels.createChatWindow, {}, undefined, openDir);
           return;
         }
 
