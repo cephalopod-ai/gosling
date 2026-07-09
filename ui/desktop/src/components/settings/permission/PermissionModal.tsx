@@ -48,6 +48,18 @@ const i18n = defineMessages({
     id: 'permissionModal.noToolsAvailable',
     defaultMessage: 'No tools available for this extension.',
   },
+  allTools: {
+    id: 'permissionModal.allTools',
+    defaultMessage: 'All tools in this extension',
+  },
+  allToolsDescription: {
+    id: 'permissionModal.allToolsDescription',
+    defaultMessage: 'Apply one permission to every tool shown below.',
+  },
+  mixedPermissions: {
+    id: 'permissionModal.mixedPermissions',
+    defaultMessage: 'Mixed permissions',
+  },
   close: {
     id: 'permissionModal.close',
     defaultMessage: 'Close',
@@ -85,7 +97,9 @@ export default function PermissionModal({ extensionName, onClose }: PermissionMo
   const sessionId = chatContext?.chat.sessionId || '';
 
   const [tools, setTools] = useState<ToolListItem[]>([]);
-  const [updatedPermissions, setUpdatedPermissions] = useState<Record<string, string>>({});
+  const [updatedPermissions, setUpdatedPermissions] = useState<Record<string, ToolPermissionLevel>>(
+    {}
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -95,6 +109,29 @@ export default function PermissionModal({ extensionName, onClose }: PermissionMo
         updatedPermissions[toolName] !== tools.find((tool) => tool.name === toolName)?.permission
     );
   }, [updatedPermissions, tools]);
+
+  const bulkPermissionLabel = useMemo(() => {
+    if (tools.length === 0) {
+      return intl.formatMessage(i18n.askBefore);
+    }
+
+    const toolPermission = (tool: ToolListItem): ToolPermissionLevel =>
+      (updatedPermissions[tool.name] || tool.permission || 'ask_before') as ToolPermissionLevel;
+
+    const firstPermission = toolPermission(tools[0]);
+    const hasMixedPermissions = tools.some(
+      (tool) => toolPermission(tool) !== firstPermission
+    );
+
+    if (hasMixedPermissions) {
+      return intl.formatMessage(i18n.mixedPermissions);
+    }
+
+    return (
+      permissionOptions.find((option) => option.value === firstPermission)?.label ||
+      intl.formatMessage(i18n.askBefore)
+    );
+  }, [intl, permissionOptions, tools, updatedPermissions]);
 
   useEffect(() => {
     const fetchTools = async () => {
@@ -130,6 +167,16 @@ export default function PermissionModal({ extensionName, onClose }: PermissionMo
       ...prev,
       [toolName]: newPermission,
     }));
+  };
+
+  const handleBulkSettingChange = (newPermission: ToolPermissionLevel) => {
+    setUpdatedPermissions((prev) => {
+      const next = { ...prev };
+      for (const tool of tools) {
+        next[tool.name] = newPermission;
+      }
+      return next;
+    });
   };
 
   const handleClose = () => {
@@ -214,6 +261,34 @@ export default function PermissionModal({ extensionName, onClose }: PermissionMo
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="flex items-center justify-between grid grid-cols-12 rounded-lg border border-border-primary p-3">
+                <div className="flex flex-col col-span-8">
+                  <label className="block text-sm font-medium text-text-primary">
+                    {intl.formatMessage(i18n.allTools)}
+                  </label>
+                  <p className="text-sm text-text-secondary mb-2">
+                    {intl.formatMessage(i18n.allToolsDescription)}
+                  </p>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="col-span-4">
+                    <Button className="w-full" variant="secondary" size="lg">
+                      {bulkPermissionLabel}
+                      <ChevronDownIcon className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {permissionOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option.value}
+                        onSelect={() => handleBulkSettingChange(option.value)}
+                      >
+                        {option.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
               {tools.map((tool) => (
                 <div
                   key={tool.name}

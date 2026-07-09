@@ -24,11 +24,21 @@ use utoipa::ToSchema;
 pub enum GoslingMode {
     #[strum(message = "Automatically approve tool calls")]
     Auto,
+    #[strum(message = "Ask only for sensitive tool calls")]
     #[default]
+    SmartApprove,
     #[strum(message = "Ask before every tool call")]
     Approve,
-    #[strum(message = "Ask only for sensitive tool calls")]
-    SmartApprove,
     #[strum(message = "Chat only, no tool calls")]
     Chat,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GoslingMode;
+
+    #[test]
+    fn default_mode_is_smart_approve() {
+        assert_eq!(GoslingMode::default(), GoslingMode::SmartApprove);
+    }
 }

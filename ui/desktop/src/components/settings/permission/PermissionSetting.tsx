@@ -15,7 +15,7 @@ const i18n = defineMessages({
   permissionRulesDescription: {
     id: 'permissionSetting.permissionRulesDescription',
     defaultMessage:
-      'Hidden instructions that will be passed to the provider to help direct and add context to your responses.',
+      'Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset.',
   },
   extensionRules: {
     id: 'permissionSetting.extensionRules',
