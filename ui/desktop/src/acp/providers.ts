@@ -64,8 +64,38 @@ export async function acpListProviderDetails(): Promise<ProviderDetails[]> {
 
 export async function acpListProviderModels(providerId: string) {
   const client = await getAcpClient();
-  const { entries } = await client.gosling.providersList_unstable({ providerIds: [providerId] });
-  return entries.find((e) => e.providerId === providerId)?.models ?? [];
+  const [supportedModelsResult, providerDetailsResult] = await Promise.allSettled([
+    client.gosling.providersSupportedModelsList_unstable({ providerId }),
+    client.gosling.providersList_unstable({ providerIds: [providerId] }),
+  ]);
+
+  const providerDetails =
+    providerDetailsResult.status === 'fulfilled'
+      ? providerDetailsResult.value.entries.find((entry) => entry.providerId === providerId)
+      : null;
+  const inventoryModels = providerDetails?.models ?? [];
+  const inventoryById = new Map(
+    inventoryModels.map((model) => [
+      model.id,
+      {
+        contextLimit: model.contextLimit ?? undefined,
+        reasoning: model.reasoning ?? undefined,
+      },
+    ])
+  );
+
+  if (supportedModelsResult.status === 'fulfilled') {
+    return supportedModelsResult.value.models.map((id) => ({
+      id,
+      ...inventoryById.get(id),
+    }));
+  }
+
+  if (inventoryModels.length > 0) {
+    return inventoryModels;
+  }
+
+  throw supportedModelsResult.reason;
 }
 
 export async function acpListProviderCatalogEntries(
