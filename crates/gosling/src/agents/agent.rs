@@ -39,6 +39,7 @@ use crate::hints::SubdirectoryHintTracker;
 use crate::mcp_utils::ToolResult;
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
+use crate::permission::working_dir_scope_inspector::WorkingDirScopeInspector;
 use crate::permission::PermissionConfirmation;
 use crate::providers::base::{PermissionRouting, Provider};
 use crate::security::adversary_inspector::AdversaryInspector;
@@ -638,8 +639,13 @@ impl Agent {
         tool_inspection_manager.add_inspector(Box::new(PermissionInspector::new(
             permission_manager,
             provider,
-            session_manager,
+            session_manager.clone(),
         )));
+
+        // Opt-in, off by default: flags out-of-scope paths when a session has
+        // "restrict tools to working directories" turned on.
+        tool_inspection_manager
+            .add_inspector(Box::new(WorkingDirScopeInspector::new(session_manager)));
 
         // Add repetition inspector (lower priority - basic repetition checking)
         tool_inspection_manager.add_inspector(Box::new(RepetitionInspector::new(None)));
@@ -666,6 +672,7 @@ impl Agent {
         session_id: &str,
         unfixed_conversation: Conversation,
         working_dir: &std::path::Path,
+        additional_working_dirs: &[std::path::PathBuf],
     ) -> Result<ReplyContext> {
         let unfixed_messages = unfixed_conversation.messages().clone();
         let (conversation, issues) = fix_conversation(unfixed_conversation.clone());
@@ -681,7 +688,11 @@ impl Agent {
         }
 
         let (tools, toolshim_tools, system_prompt, model_config) = self
-            .prepare_tools_and_prompt(session_id, working_dir)
+            .prepare_tools_and_prompt_with_additional_dirs(
+                session_id,
+                working_dir,
+                additional_working_dirs,
+            )
             .await?;
 
         let gosling_mode = *self.current_gosling_mode.lock().await;
@@ -1935,7 +1946,12 @@ impl Agent {
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let context = self
-            .prepare_reply_context(&session.id, conversation, session.working_dir.as_path())
+            .prepare_reply_context(
+                &session.id,
+                conversation,
+                session.working_dir.as_path(),
+                &session.additional_working_dirs,
+            )
             .await?;
         let ReplyContext {
             mut conversation,
@@ -2661,8 +2677,13 @@ impl Agent {
                 can_drain_pending_steers = true;
 
                 if tools_updated {
-                    (tools, toolshim_tools, system_prompt, _) =
-                        self.prepare_tools_and_prompt(&session_config.id, &session.working_dir).await?;
+                    (tools, toolshim_tools, system_prompt, _) = self
+                        .prepare_tools_and_prompt_with_additional_dirs(
+                            &session_config.id,
+                            &session.working_dir,
+                            &session.additional_working_dirs,
+                        )
+                        .await?;
                 }
 
                 {

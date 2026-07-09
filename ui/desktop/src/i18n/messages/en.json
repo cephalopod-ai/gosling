@@ -2879,8 +2879,14 @@
   "toolApprovalButtons.alwaysAllow": {
     "defaultMessage": "Always Allow"
   },
+  "toolApprovalButtons.alwaysAllowExtension": {
+    "defaultMessage": "Always Allow all {extensionName} tools"
+  },
   "toolApprovalButtons.alwaysAllowed": {
     "defaultMessage": "Always allowed"
+  },
+  "toolApprovalButtons.alwaysAllowedExtension": {
+    "defaultMessage": "Always allowed ({extensionName} tools)"
   },
   "toolApprovalButtons.cancelled": {
     "defaultMessage": "Cancelled"
@@ -2893,6 +2899,9 @@
   },
   "toolApprovalButtons.deny": {
     "defaultMessage": "Deny"
+  },
+  "toolApprovalButtons.failedToAllowExtension": {
+    "defaultMessage": "Failed to update permissions for this extension"
   },
   "toolApprovalButtons.staleApprovalRequest": {
     "defaultMessage": "This approval request is no longer active."
@@ -3049,5 +3058,41 @@
   },
   "userMessage.forkSessionTitle": {
     "defaultMessage": "Create a new session with the edited message"
+  },
+  "workingDirectoriesMenu.addDirectory": {
+    "defaultMessage": "Add directory…"
+  },
+  "workingDirectoriesMenu.alreadyAdded": {
+    "defaultMessage": "That directory is already added"
+  },
+  "workingDirectoriesMenu.failedToAdd": {
+    "defaultMessage": "Failed to add working directory"
+  },
+  "workingDirectoriesMenu.failedToRemove": {
+    "defaultMessage": "Failed to remove working directory"
+  },
+  "workingDirectoriesMenu.failedToUpdateRestriction": {
+    "defaultMessage": "Failed to update working directory restriction"
+  },
+  "workingDirectoriesMenu.fullAccessHint": {
+    "defaultMessage": "Gosling has full read/write/run access inside every directory listed here."
+  },
+  "workingDirectoriesMenu.primary": {
+    "defaultMessage": "Primary"
+  },
+  "workingDirectoriesMenu.recentDirectories": {
+    "defaultMessage": "Recent directories"
+  },
+  "workingDirectoriesMenu.removeDirectory": {
+    "defaultMessage": "Remove directory"
+  },
+  "workingDirectoriesMenu.restrictToggleDescription": {
+    "defaultMessage": "Off by default. When on, actions outside the directories above need your approval, with an explanation of what and why."
+  },
+  "workingDirectoriesMenu.restrictToggleLabel": {
+    "defaultMessage": "Restrict tools to working directories"
+  },
+  "workingDirectoriesMenu.workingDirectories": {
+    "defaultMessage": "Working Directories"
   }
 }

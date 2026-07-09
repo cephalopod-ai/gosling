@@ -42,6 +42,10 @@ struct SessionMeta<'a> {
     model_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_message_snippet: Option<&'a str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    additional_working_dirs: Vec<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    restrict_tools_to_working_dirs: bool,
 }
 
 impl<'a> From<&'a Session> for SessionMeta<'a> {
@@ -60,6 +64,12 @@ impl<'a> From<&'a Session> for SessionMeta<'a> {
                 .as_ref()
                 .map(|mc| mc.model_name.as_str()),
             last_message_snippet: session.last_message_snippet.as_deref(),
+            additional_working_dirs: session
+                .additional_working_dirs
+                .iter()
+                .map(|dir| dir.to_string_lossy().to_string())
+                .collect(),
+            restrict_tools_to_working_dirs: session.restrict_tools_to_working_dirs,
         }
     }
 }

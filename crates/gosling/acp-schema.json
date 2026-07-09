@@ -667,6 +667,80 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/working-dir/update"
     },
+    "AddSessionWorkingDirRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "workingDir": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "workingDir"
+      ],
+      "description": "Add an extra working directory to a session. The agent gets the same full\ntool access to it as the primary working directory.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/working-dirs/add"
+    },
+    "SessionWorkingDirsResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "workingDir": {
+          "type": "string"
+        },
+        "additionalWorkingDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "workingDir",
+        "additionalWorkingDirs"
+      ],
+      "description": "The full set of directories a session has tool access to: the primary\n`working_dir` plus every directory added via add/remove.",
+      "x-side": "agent"
+    },
+    "RemoveSessionWorkingDirRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "workingDir": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "workingDir"
+      ],
+      "description": "Remove a previously added extra working directory from a session. The\nprimary `working_dir` cannot be removed this way — use the working-dir\nupdate method to change it instead.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/working-dirs/remove"
+    },
+    "SetSessionWorkingDirRestrictionRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "restrict": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessionId",
+        "restrict"
+      ],
+      "description": "Turn the opt-in \"restrict tool access to working directories\" mode on or\noff for a session. Off by default: tool calls behave exactly as before.\nWhen on, a tool call touching a path outside every configured working\ndirectory requires explicit approval, with a message explaining why.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/working-dirs/restrict"
+    },
     "SetSessionSystemPromptRequest_unstable": {
       "type": "object",
       "properties": {
@@ -4763,6 +4837,33 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/AddSessionWorkingDirRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/working-dirs/add",
+                  "title": "AddSessionWorkingDirRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/RemoveSessionWorkingDirRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/working-dirs/remove",
+                  "title": "RemoveSessionWorkingDirRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/SetSessionWorkingDirRestrictionRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/working-dirs/restrict",
+                  "title": "SetSessionWorkingDirRestrictionRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/SetSessionSystemPromptRequest_unstable"
                     }
                   ],
@@ -5450,6 +5551,14 @@
                         }
                       ],
                       "title": "ReadResourceResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/SessionWorkingDirsResponse_unstable"
+                        }
+                      ],
+                      "title": "SessionWorkingDirsResponse_unstable"
                     },
                     {
                       "allOf": [

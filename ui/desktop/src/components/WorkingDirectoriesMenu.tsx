@@ -1,0 +1,278 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Folder, FolderPlus, Plus, ShieldAlert, X } from 'lucide-react';
+import { toast } from 'react-toastify';
+import { defineMessages, useIntl } from '../i18n';
+import {
+  acpAddSessionWorkingDir,
+  acpRemoveSessionWorkingDir,
+  acpSetWorkingDirRestriction,
+} from '../acp/sessions';
+import type { Session } from '../types/session';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { Switch } from './ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/Tooltip';
+
+const i18n = defineMessages({
+  workingDirectories: {
+    id: 'workingDirectoriesMenu.workingDirectories',
+    defaultMessage: 'Working Directories',
+  },
+  primary: {
+    id: 'workingDirectoriesMenu.primary',
+    defaultMessage: 'Primary',
+  },
+  addDirectory: {
+    id: 'workingDirectoriesMenu.addDirectory',
+    defaultMessage: 'Add directory…',
+  },
+  removeDirectory: {
+    id: 'workingDirectoriesMenu.removeDirectory',
+    defaultMessage: 'Remove directory',
+  },
+  recentDirectories: {
+    id: 'workingDirectoriesMenu.recentDirectories',
+    defaultMessage: 'Recent directories',
+  },
+  failedToAdd: {
+    id: 'workingDirectoriesMenu.failedToAdd',
+    defaultMessage: 'Failed to add working directory',
+  },
+  failedToRemove: {
+    id: 'workingDirectoriesMenu.failedToRemove',
+    defaultMessage: 'Failed to remove working directory',
+  },
+  alreadyAdded: {
+    id: 'workingDirectoriesMenu.alreadyAdded',
+    defaultMessage: 'That directory is already added',
+  },
+  fullAccessHint: {
+    id: 'workingDirectoriesMenu.fullAccessHint',
+    defaultMessage: 'Gosling has full read/write/run access inside every directory listed here.',
+  },
+  restrictToggleLabel: {
+    id: 'workingDirectoriesMenu.restrictToggleLabel',
+    defaultMessage: 'Restrict tools to working directories',
+  },
+  restrictToggleDescription: {
+    id: 'workingDirectoriesMenu.restrictToggleDescription',
+    defaultMessage:
+      'Off by default. When on, actions outside the directories above need your approval, with an explanation of what and why.',
+  },
+  failedToUpdateRestriction: {
+    id: 'workingDirectoriesMenu.failedToUpdateRestriction',
+    defaultMessage: 'Failed to update working directory restriction',
+  },
+});
+
+interface WorkingDirectoriesMenuProps {
+  session?: Session;
+  onSessionChange: (updater: (session: Session) => Session) => void;
+  className?: string;
+}
+
+export default function WorkingDirectoriesMenu({
+  session,
+  onSessionChange,
+  className,
+}: WorkingDirectoriesMenuProps) {
+  const intl = useIntl();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [recentDirs, setRecentDirs] = useState<string[]>([]);
+  const refreshVersionRef = useRef(0);
+
+  const workingDir = session?.working_dir;
+  const additionalWorkingDirs = session?.additional_working_dirs ?? [];
+
+  const refreshRecentDirs = useCallback(async () => {
+    const version = ++refreshVersionRef.current;
+    const recent = await window.electron.listRecentDirs().catch(() => []);
+    if (version !== refreshVersionRef.current) return;
+    setRecentDirs(recent);
+  }, []);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    void refreshRecentDirs();
+  }, [isMenuOpen, refreshRecentDirs]);
+
+  const addDirectory = useCallback(
+    async (dir: string) => {
+      if (!session) return;
+      if (dir === workingDir || additionalWorkingDirs.includes(dir)) {
+        toast.info(intl.formatMessage(i18n.alreadyAdded));
+        return;
+      }
+
+      setIsAdding(true);
+      try {
+        const result = await acpAddSessionWorkingDir(session.id, dir);
+        window.electron.addRecentDir(dir);
+        onSessionChange((current) => ({
+          ...current,
+          additional_working_dirs: result.additionalWorkingDirs,
+        }));
+      } catch (error) {
+        console.error('[WorkingDirectoriesMenu] Failed to add working directory:', error);
+        toast.error(intl.formatMessage(i18n.failedToAdd));
+      } finally {
+        setIsAdding(false);
+      }
+    },
+    [session, workingDir, additionalWorkingDirs, onSessionChange, intl]
+  );
+
+  const removeDirectory = useCallback(
+    async (dir: string) => {
+      if (!session) return;
+
+      try {
+        const result = await acpRemoveSessionWorkingDir(session.id, dir);
+        onSessionChange((current) => ({
+          ...current,
+          additional_working_dirs: result.additionalWorkingDirs,
+        }));
+      } catch (error) {
+        console.error('[WorkingDirectoriesMenu] Failed to remove working directory:', error);
+        toast.error(intl.formatMessage(i18n.failedToRemove));
+      }
+    },
+    [session, onSessionChange, intl]
+  );
+
+  const handleChooseDirectory = useCallback(async () => {
+    const result = await window.electron.directoryChooser();
+    if (result.canceled || result.filePaths.length === 0) return;
+    await addDirectory(result.filePaths[0]);
+  }, [addDirectory]);
+
+  const toggleRestriction = useCallback(
+    async (restrict: boolean) => {
+      if (!session) return;
+      const previous = session.restrict_tools_to_working_dirs ?? false;
+      onSessionChange((current) => ({ ...current, restrict_tools_to_working_dirs: restrict }));
+      try {
+        await acpSetWorkingDirRestriction(session.id, restrict);
+      } catch (error) {
+        console.error('[WorkingDirectoriesMenu] Failed to update restriction:', error);
+        toast.error(intl.formatMessage(i18n.failedToUpdateRestriction));
+        onSessionChange((current) => ({
+          ...current,
+          restrict_tools_to_working_dirs: previous,
+        }));
+      }
+    },
+    [session, onSessionChange, intl]
+  );
+
+  if (!session || !workingDir) {
+    return null;
+  }
+
+  const filteredRecentDirs = recentDirs.filter(
+    (dir) => dir && dir !== workingDir && !additionalWorkingDirs.includes(dir)
+  );
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={`no-drag flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary transition-colors ${className ?? ''}`}
+              >
+                <Folder size={14} />
+                {additionalWorkingDirs.length > 0 && (
+                  <span className="tabular-nums">{additionalWorkingDirs.length + 1}</span>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <DropdownMenuContent className="w-80" side="bottom" align="end">
+            <DropdownMenuLabel>{intl.formatMessage(i18n.workingDirectories)}</DropdownMenuLabel>
+            <DropdownMenuItem disabled>
+              <Folder className="mr-2 h-4 w-4" />
+              <span className="truncate flex-1">{workingDir}</span>
+              <span className="ml-2 text-[10px] uppercase text-text-secondary">
+                {intl.formatMessage(i18n.primary)}
+              </span>
+            </DropdownMenuItem>
+
+            {additionalWorkingDirs.map((dir) => (
+              <DropdownMenuItem key={dir} onSelect={(event) => event.preventDefault()}>
+                <Folder className="mr-2 h-4 w-4" />
+                <span className="truncate flex-1" title={dir}>
+                  {dir}
+                </span>
+                <button
+                  type="button"
+                  aria-label={intl.formatMessage(i18n.removeDirectory)}
+                  className="ml-2 rounded p-0.5 hover:bg-background-secondary"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void removeDirectory(dir);
+                  }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuItem>
+            ))}
+
+            {filteredRecentDirs.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>{intl.formatMessage(i18n.recentDirectories)}</DropdownMenuLabel>
+                {filteredRecentDirs.slice(0, 5).map((dir) => (
+                  <DropdownMenuItem key={dir} onSelect={() => void addDirectory(dir)}>
+                    <Folder className="mr-2 h-4 w-4" />
+                    <span className="truncate">{dir}</span>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={isAdding} onSelect={() => void handleChooseDirectory()}>
+              <Plus className="mr-2 h-4 w-4" />
+              <span>{intl.formatMessage(i18n.addDirectory)}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1.5 text-[11px] leading-snug text-text-secondary flex gap-1.5">
+              <FolderPlus className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>{intl.formatMessage(i18n.fullAccessHint)}</span>
+            </div>
+            <DropdownMenuSeparator />
+            <div
+              className="px-2 py-1.5 flex items-start gap-2"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-0.5 text-text-secondary" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs">{intl.formatMessage(i18n.restrictToggleLabel)}</span>
+                  <Switch
+                    checked={session.restrict_tools_to_working_dirs ?? false}
+                    onCheckedChange={(checked) => void toggleRestriction(checked)}
+                  />
+                </div>
+                <p className="text-[11px] leading-snug text-text-secondary mt-0.5">
+                  {intl.formatMessage(i18n.restrictToggleDescription)}
+                </p>
+              </div>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <TooltipContent side="bottom">{intl.formatMessage(i18n.workingDirectories)}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}

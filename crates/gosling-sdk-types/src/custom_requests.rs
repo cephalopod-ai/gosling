@@ -122,6 +122,57 @@ pub struct UpdateWorkingDirRequest {
     pub working_dir: String,
 }
 
+/// The full set of directories a session has tool access to: the primary
+/// `working_dir` plus every directory added via add/remove.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionWorkingDirsResponse {
+    pub working_dir: String,
+    pub additional_working_dirs: Vec<String>,
+}
+
+/// Add an extra working directory to a session. The agent gets the same full
+/// tool access to it as the primary working directory.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/working-dirs/add",
+    response = SessionWorkingDirsResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AddSessionWorkingDirRequest {
+    pub session_id: String,
+    pub working_dir: String,
+}
+
+/// Remove a previously added extra working directory from a session. The
+/// primary `working_dir` cannot be removed this way — use the working-dir
+/// update method to change it instead.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/working-dirs/remove",
+    response = SessionWorkingDirsResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveSessionWorkingDirRequest {
+    pub session_id: String,
+    pub working_dir: String,
+}
+
+/// Turn the opt-in "restrict tool access to working directories" mode on or
+/// off for a session. Off by default: tool calls behave exactly as before.
+/// When on, a tool call touching a path outside every configured working
+/// directory requires explicit approval, with a message explaining why.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/working-dirs/restrict",
+    response = EmptyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSessionWorkingDirRestrictionRequest {
+    pub session_id: String,
+    pub restrict: bool,
+}
+
 /// How a session system prompt update should be applied.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

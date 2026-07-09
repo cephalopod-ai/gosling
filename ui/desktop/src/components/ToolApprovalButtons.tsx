@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import type { Permission } from '../types/permissions';
 import { resolveAcpPermissionRequest } from '../acp/permissionRequests';
+import { listTools, setToolPermissions } from '../acp/permissions';
 import { defineMessages, useIntl } from '../i18n';
 
 const i18n = defineMessages({
@@ -12,6 +13,10 @@ const i18n = defineMessages({
   alwaysAllow: {
     id: 'toolApprovalButtons.alwaysAllow',
     defaultMessage: 'Always Allow',
+  },
+  alwaysAllowExtension: {
+    id: 'toolApprovalButtons.alwaysAllowExtension',
+    defaultMessage: 'Always Allow all {extensionName} tools',
   },
   deny: {
     id: 'toolApprovalButtons.deny',
@@ -24,6 +29,10 @@ const i18n = defineMessages({
   alwaysAllowed: {
     id: 'toolApprovalButtons.alwaysAllowed',
     defaultMessage: 'Always allowed',
+  },
+  alwaysAllowedExtension: {
+    id: 'toolApprovalButtons.alwaysAllowedExtension',
+    defaultMessage: 'Always allowed ({extensionName} tools)',
   },
   denied: {
     id: 'toolApprovalButtons.denied',
@@ -41,7 +50,16 @@ const i18n = defineMessages({
     id: 'toolApprovalButtons.staleApprovalRequest',
     defaultMessage: 'This approval request is no longer active.',
   },
+  failedToAllowExtension: {
+    id: 'toolApprovalButtons.failedToAllowExtension',
+    defaultMessage: 'Failed to update permissions for this extension',
+  },
 });
+
+function extensionNameFromToolName(toolName: string): string | undefined {
+  const [extensionName, ...rest] = toolName.split('__');
+  return rest.length > 0 && extensionName ? extensionName : undefined;
+}
 
 const globalApprovalState = new Map<
   string,
@@ -85,6 +103,10 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
   const [decision, setDecision] = useState<Permission | null>(storedState?.decision ?? null);
   const [isClicked, setIsClicked] = useState(storedState?.isClicked ?? initialIsClicked ?? false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [isAllowingExtension, setIsAllowingExtension] = useState(false);
+  const [bulkAllowedExtension, setBulkAllowedExtension] = useState<string | null>(null);
+
+  const extensionName = extensionNameFromToolName(toolName);
 
   const setResolvedDecision = (action: Permission) => {
     setDecision(action);
@@ -117,10 +139,43 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
     }
   };
 
+  const handleAlwaysAllowExtension = async () => {
+    if (!extensionName) {
+      await handleAction('always_allow');
+      return;
+    }
+
+    setIsAllowingExtension(true);
+    try {
+      const tools = await listTools(sessionId, extensionName);
+      const toolPermissions = (tools.length > 0 ? tools.map((t) => t.name) : [toolName]).map(
+        (name) => ({ toolName: name, permission: 'always_allow' as const })
+      );
+      await setToolPermissions(toolPermissions);
+
+      if (resolveAcpPermissionRequest(sessionId, id, 'always_allow')) {
+        setBulkAllowedExtension(extensionName);
+        setResolvedDecision('always_allow');
+      } else {
+        setApprovalError(intl.formatMessage(i18n.staleApprovalRequest));
+      }
+    } catch (err) {
+      console.error('Error allowing extension tools:', err);
+      setApprovalError(intl.formatMessage(i18n.failedToAllowExtension));
+    } finally {
+      setIsAllowingExtension(false);
+    }
+  };
+
   if (isClicked && decision) {
     const statusMessages: Record<Permission, string> = {
       allow_once: intl.formatMessage(i18n.allowedOnce),
-      always_allow: intl.formatMessage(i18n.alwaysAllowed),
+      always_allow:
+        bulkAllowedExtension && decision === 'always_allow'
+          ? intl.formatMessage(i18n.alwaysAllowedExtension, {
+              extensionName: bulkAllowedExtension,
+            })
+          : intl.formatMessage(i18n.alwaysAllowed),
       always_deny: intl.formatMessage(i18n.denied),
       deny_once: intl.formatMessage(i18n.deniedOnce),
       cancel: intl.formatMessage(i18n.cancelled),
@@ -149,6 +204,16 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
             onClick={() => handleAction('always_allow')}
           >
             {intl.formatMessage(i18n.alwaysAllow)}
+          </Button>
+        )}
+        {!prompt && extensionName && (
+          <Button
+            className="rounded-full"
+            variant="secondary"
+            disabled={isAllowingExtension}
+            onClick={() => void handleAlwaysAllowExtension()}
+          >
+            {intl.formatMessage(i18n.alwaysAllowExtension, { extensionName })}
           </Button>
         )}
         <Button className="rounded-full" variant="outline" onClick={() => handleAction('deny_once')}>

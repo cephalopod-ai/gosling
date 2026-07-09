@@ -311,6 +311,45 @@ export const zUpdateWorkingDirRequest_unstable = z.object({
 });
 
 /**
+ * Add an extra working directory to a session. The agent gets the same full
+ * tool access to it as the primary working directory.
+ */
+export const zAddSessionWorkingDirRequest_unstable = z.object({
+    sessionId: z.string(),
+    workingDir: z.string()
+});
+
+/**
+ * The full set of directories a session has tool access to: the primary
+ * `working_dir` plus every directory added via add/remove.
+ */
+export const zSessionWorkingDirsResponse_unstable = z.object({
+    workingDir: z.string(),
+    additionalWorkingDirs: z.array(z.string())
+});
+
+/**
+ * Remove a previously added extra working directory from a session. The
+ * primary `working_dir` cannot be removed this way — use the working-dir
+ * update method to change it instead.
+ */
+export const zRemoveSessionWorkingDirRequest_unstable = z.object({
+    sessionId: z.string(),
+    workingDir: z.string()
+});
+
+/**
+ * Turn the opt-in "restrict tool access to working directories" mode on or
+ * off for a session. Off by default: tool calls behave exactly as before.
+ * When on, a tool call touching a path outside every configured working
+ * directory requires explicit approval, with a message explaining why.
+ */
+export const zSetSessionWorkingDirRestrictionRequest_unstable = z.object({
+    sessionId: z.string(),
+    restrict: z.boolean()
+});
+
+/**
  * How a session system prompt update should be applied.
  */
 export const zSessionSystemPromptMode = z.union([
@@ -1994,6 +2033,9 @@ export const zExtRequest = z.object({
             zGoslingToolCallRequest_unstable,
             zReadResourceRequest_unstable,
             zUpdateWorkingDirRequest_unstable,
+            zAddSessionWorkingDirRequest_unstable,
+            zRemoveSessionWorkingDirRequest_unstable,
+            zSetSessionWorkingDirRestrictionRequest_unstable,
             zSetSessionSystemPromptRequest_unstable,
             zSteerSessionRequest_unstable,
             zDiagnosticsGetRequest_unstable,
@@ -2081,6 +2123,7 @@ export const zExtResponse = z.union([
                 zSetToolPermissionsResponse_unstable,
                 zGoslingToolCallResponse_unstable,
                 zReadResourceResponse_unstable,
+                zSessionWorkingDirsResponse_unstable,
                 zSteerSessionResponse_unstable,
                 zDiagnosticsGetResponse_unstable,
                 zListPromptsResponse_unstable,

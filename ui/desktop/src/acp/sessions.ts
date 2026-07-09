@@ -23,6 +23,8 @@ interface GoslingSessionInfoMeta {
   sessionType?: Session['session_type'];
   userSetName?: boolean;
   lastMessageSnippet?: string;
+  additionalWorkingDirs?: string[];
+  restrictToolsToWorkingDirs?: boolean;
 }
 
 export const COMPACTED_SESSION_TAIL_LIMIT = 50;
@@ -108,6 +110,8 @@ export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta =
     id: String(s.sessionId),
     name: s.title ?? DEFAULT_CHAT_TITLE,
     working_dir: loadMeta.workingDir ?? s.cwd,
+    additional_working_dirs: meta.additionalWorkingDirs ?? [],
+    restrict_tools_to_working_dirs: meta.restrictToolsToWorkingDirs ?? false,
     created_at: createdAt,
     updated_at: updatedAt,
     last_message_at: meta.lastMessageAt,
@@ -356,6 +360,46 @@ export async function acpUnarchiveSession(sessionId: string): Promise<void> {
 export async function acpUpdateWorkingDir(sessionId: string, workingDir: string): Promise<void> {
   const client = await getAcpClient();
   await client.gosling.sessionWorkingDirUpdate_unstable({ sessionId, workingDir });
+}
+
+export interface SessionWorkingDirs {
+  workingDir: string;
+  additionalWorkingDirs: string[];
+}
+
+export async function acpAddSessionWorkingDir(
+  sessionId: string,
+  workingDir: string
+): Promise<SessionWorkingDirs> {
+  const client = await getAcpClient();
+  const response = await client.gosling.sessionWorkingDirsAdd_unstable({ sessionId, workingDir });
+  return {
+    workingDir: response.workingDir,
+    additionalWorkingDirs: response.additionalWorkingDirs,
+  };
+}
+
+export async function acpRemoveSessionWorkingDir(
+  sessionId: string,
+  workingDir: string
+): Promise<SessionWorkingDirs> {
+  const client = await getAcpClient();
+  const response = await client.gosling.sessionWorkingDirsRemove_unstable({
+    sessionId,
+    workingDir,
+  });
+  return {
+    workingDir: response.workingDir,
+    additionalWorkingDirs: response.additionalWorkingDirs,
+  };
+}
+
+export async function acpSetWorkingDirRestriction(
+  sessionId: string,
+  restrict: boolean
+): Promise<void> {
+  const client = await getAcpClient();
+  await client.gosling.sessionWorkingDirsRestrict_unstable({ sessionId, restrict });
 }
 
 export async function acpTruncateSessionConversation(

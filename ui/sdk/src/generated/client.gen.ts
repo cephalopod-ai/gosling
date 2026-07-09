@@ -11,6 +11,7 @@ import type { Client } from "@agentclientprotocol/sdk";
 import type {
   AddConfigExtensionRequest_unstable,
   AddSessionExtensionRequest_unstable,
+  AddSessionWorkingDirRequest_unstable,
   ArchiveSessionRequest_unstable,
   CanonicalModelInfoRequest_unstable,
   CanonicalModelInfoResponse_unstable,
@@ -116,13 +117,16 @@ import type {
   RefreshProviderInventoryResponse_unstable,
   RemoveConfigExtensionRequest_unstable,
   RemoveSessionExtensionRequest_unstable,
+  RemoveSessionWorkingDirRequest_unstable,
   RenameSessionRequest_unstable,
   ResetPromptRequest_unstable,
   SavePromptRequest_unstable,
   SearchSessionMessagesRequest_unstable,
   SearchSessionMessagesResponse_unstable,
+  SessionWorkingDirsResponse_unstable,
   SetConfigExtensionEnabledRequest_unstable,
   SetSessionSystemPromptRequest_unstable,
+  SetSessionWorkingDirRestrictionRequest_unstable,
   SetToolPermissionsRequest_unstable,
   SetToolPermissionsResponse_unstable,
   ShareSessionNostrRequest_unstable,
@@ -183,6 +187,7 @@ import {
   zReadResourceResponse_unstable,
   zRefreshProviderInventoryResponse_unstable,
   zSearchSessionMessagesResponse_unstable,
+  zSessionWorkingDirsResponse_unstable,
   zSetToolPermissionsResponse_unstable,
   zShareSessionNostrResponse_unstable,
   zSteerSessionResponse_unstable,
@@ -261,6 +266,39 @@ export class GoslingExtClient {
   ): Promise<void> {
     await this.conn.extMethod(
       "_gosling/unstable/session/working-dir/update",
+      params,
+    );
+  }
+
+  async sessionWorkingDirsAdd_unstable(
+    params: AddSessionWorkingDirRequest_unstable,
+  ): Promise<SessionWorkingDirsResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/working-dirs/add",
+      params,
+    );
+    return zSessionWorkingDirsResponse_unstable.parse(
+      raw,
+    ) as SessionWorkingDirsResponse_unstable;
+  }
+
+  async sessionWorkingDirsRemove_unstable(
+    params: RemoveSessionWorkingDirRequest_unstable,
+  ): Promise<SessionWorkingDirsResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/working-dirs/remove",
+      params,
+    );
+    return zSessionWorkingDirsResponse_unstable.parse(
+      raw,
+    ) as SessionWorkingDirsResponse_unstable;
+  }
+
+  async sessionWorkingDirsRestrict_unstable(
+    params: SetSessionWorkingDirRestrictionRequest_unstable,
+  ): Promise<void> {
+    await this.conn.extMethod(
+      "_gosling/unstable/session/working-dirs/restrict",
       params,
     );
   }
