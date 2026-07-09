@@ -159,7 +159,7 @@ impl Agent {
         working_dir: &std::path::Path,
         additional_working_dirs: &[std::path::PathBuf],
     ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
-        let mut tools = self.list_tools(session_id, None).await;
+        let mut tools = self.list_tools(session_id, None).await?;
 
         #[cfg(feature = "code-mode")]
         let code_execution_active = self.extension_manager.is_code_execution_runtime_enabled()

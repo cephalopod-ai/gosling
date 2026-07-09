@@ -22,6 +22,7 @@ pub struct ScanResult {
     pub confidence: f32,
     pub explanation: String,
     pub scanned: bool,
+    pub degraded: bool,
 }
 
 struct DetailedScanResult {
@@ -29,12 +30,15 @@ struct DetailedScanResult {
     pattern_matches: Vec<PatternMatch>,
     ml_confidence: Option<f32>,
     used_pattern_detection: bool,
+    degraded_reasons: Vec<String>,
 }
 
 pub struct PromptInjectionScanner {
     pattern_matcher: PatternMatcher,
     command_classifier: Option<ClassificationClient>,
     prompt_classifier: Option<ClassificationClient>,
+    command_classifier_enabled: bool,
+    prompt_classifier_enabled: bool,
 }
 
 impl PromptInjectionScanner {
@@ -43,32 +47,64 @@ impl PromptInjectionScanner {
             pattern_matcher: PatternMatcher::new(),
             command_classifier: None,
             prompt_classifier: None,
+            command_classifier_enabled: false,
+            prompt_classifier_enabled: false,
         }
     }
 
     pub fn with_ml_detection() -> Result<Self> {
-        let command_classifier = Self::create_classifier(ClassifierType::Command).ok();
-        let prompt_classifier = Self::create_classifier(ClassifierType::Prompt).ok();
+        let command_classifier_enabled = Self::classifier_enabled(ClassifierType::Command);
+        let prompt_classifier_enabled = Self::classifier_enabled(ClassifierType::Prompt);
+        let mut init_errors = Vec::new();
+
+        let command_classifier = if command_classifier_enabled {
+            match Self::create_classifier(ClassifierType::Command) {
+                Ok(classifier) => Some(classifier),
+                Err(error) => {
+                    init_errors.push(format!("COMMAND classifier unavailable: {error}"));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let prompt_classifier = if prompt_classifier_enabled {
+            match Self::create_classifier(ClassifierType::Prompt) {
+                Ok(classifier) => Some(classifier),
+                Err(error) => {
+                    init_errors.push(format!("PROMPT classifier unavailable: {error}"));
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         if command_classifier.is_none() && prompt_classifier.is_none() {
-            anyhow::bail!("ML detection enabled but no classifiers could be initialized");
+            if init_errors.is_empty() {
+                anyhow::bail!("ML detection enabled but no classifiers could be initialized");
+            }
+            anyhow::bail!(init_errors.join(" | "));
+        }
+
+        for error in &init_errors {
+            tracing::warn!("{error}");
         }
 
         Ok(Self {
             pattern_matcher: PatternMatcher::new(),
             command_classifier,
             prompt_classifier,
+            command_classifier_enabled,
+            prompt_classifier_enabled,
         })
     }
 
-    fn create_classifier(classifier_type: ClassifierType) -> Result<ClassificationClient> {
+    fn classifier_enabled(classifier_type: ClassifierType) -> bool {
         let config = Config::global();
-        let prefix = match classifier_type {
-            ClassifierType::Command => "COMMAND",
-            ClassifierType::Prompt => "PROMPT",
-        };
 
-        let enabled = match classifier_type {
+        match classifier_type {
             ClassifierType::Command => {
                 crate::security::get_override("SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE")
                     .unwrap_or_else(|| {
@@ -80,11 +116,17 @@ impl PromptInjectionScanner {
             ClassifierType::Prompt => config
                 .get_param::<bool>("SECURITY_PROMPT_CLASSIFIER_ENABLED")
                 .unwrap_or(false),
+        }
+    }
+
+    fn create_classifier(classifier_type: ClassifierType) -> Result<ClassificationClient> {
+        let config = Config::global();
+        let prefix = match classifier_type {
+            ClassifierType::Command => "COMMAND",
+            ClassifierType::Prompt => "PROMPT",
         };
 
-        if !enabled {
-            anyhow::bail!("{} classifier not enabled", prefix);
-        }
+        debug_assert!(Self::classifier_enabled(classifier_type));
 
         let model_name = config
             .get_param::<String>(&format!("SECURITY_{}_CLASSIFIER_MODEL", prefix))
@@ -139,6 +181,7 @@ impl PromptInjectionScanner {
                 confidence: 0.0,
                 explanation: "Tool call skipped: no inspectable arguments".to_string(),
                 scanned: false,
+                degraded: false,
             });
         }
 
@@ -158,6 +201,12 @@ impl PromptInjectionScanner {
         let tool_result = tool_result?;
         let context_result = context_result?;
         let threshold = self.get_threshold_from_config();
+        let degraded_reasons = tool_result
+            .degraded_reasons
+            .iter()
+            .chain(context_result.degraded_reasons.iter())
+            .cloned()
+            .collect::<Vec<_>>();
 
         tracing::info!(
             "Classifier Results - Command: {:.3}, Prompt: {:.3}, Threshold: {:.3}",
@@ -179,6 +228,7 @@ impl PromptInjectionScanner {
             scanner.used_command_ml = tool_result.ml_confidence.is_some(),
             scanner.used_prompt_ml = context_result.ml_confidence.is_some(),
             scanner.used_pattern_detection = tool_result.used_pattern_detection,
+            scanner.degraded = !degraded_reasons.is_empty(),
             "prompt injection scan: analysis complete"
         );
 
@@ -187,6 +237,7 @@ impl PromptInjectionScanner {
             pattern_matches: tool_result.pattern_matches,
             ml_confidence: tool_result.ml_confidence,
             used_pattern_detection: tool_result.used_pattern_detection,
+            degraded_reasons,
         };
 
         Ok(ScanResult {
@@ -194,22 +245,34 @@ impl PromptInjectionScanner {
             confidence: final_confidence,
             explanation: self.build_explanation(&final_result, threshold, &tool_content),
             scanned: true,
+            degraded: !final_result.degraded_reasons.is_empty(),
         })
     }
 
     async fn analyze_text(&self, text: &str) -> Result<DetailedScanResult> {
+        let mut degraded_reasons = Vec::new();
+
         if let Some(classifier) = self.command_classifier.as_ref() {
-            if let Some(ml_confidence) = self
+            match self
                 .scan_with_classifier(text, classifier, ClassifierType::Command)
                 .await
             {
-                return Ok(DetailedScanResult {
-                    confidence: ml_confidence,
-                    pattern_matches: Vec::new(),
-                    ml_confidence: Some(ml_confidence),
-                    used_pattern_detection: false,
-                });
+                Ok(ml_confidence) => {
+                    return Ok(DetailedScanResult {
+                        confidence: ml_confidence,
+                        pattern_matches: Vec::new(),
+                        ml_confidence: Some(ml_confidence),
+                        used_pattern_detection: false,
+                        degraded_reasons,
+                    });
+                }
+                Err(error) => degraded_reasons.push(error),
             }
+        } else if self.command_classifier_enabled {
+            degraded_reasons.push(
+                "ML command classifier unavailable; falling back to pattern-based command scanning."
+                    .to_string(),
+            );
         }
 
         let (pattern_confidence, pattern_matches) = self.pattern_based_scanning(text);
@@ -218,18 +281,27 @@ impl PromptInjectionScanner {
             pattern_matches,
             ml_confidence: None,
             used_pattern_detection: true,
+            degraded_reasons,
         })
     }
 
     async fn scan_conversation(&self, messages: &[Message]) -> Result<DetailedScanResult> {
         let user_messages = self.extract_user_messages(messages, USER_SCAN_LIMIT);
+        let mut degraded_reasons = Vec::new();
 
         let Some(classifier) = self.prompt_classifier.as_ref() else {
+            if self.prompt_classifier_enabled {
+                degraded_reasons.push(
+                    "ML prompt classifier unavailable; conversation prompt scan could not run."
+                        .to_string(),
+                );
+            }
             return Ok(DetailedScanResult {
                 confidence: 0.0,
                 pattern_matches: Vec::new(),
                 ml_confidence: None,
                 used_pattern_detection: false,
+                degraded_reasons,
             });
         };
 
@@ -239,25 +311,37 @@ impl PromptInjectionScanner {
                 pattern_matches: Vec::new(),
                 ml_confidence: None,
                 used_pattern_detection: false,
+                degraded_reasons,
             });
         }
 
-        let max_confidence = stream::iter(user_messages)
+        let (max_confidence, mut runtime_degraded_reasons) = stream::iter(user_messages)
             .map(|msg| async move {
                 self.scan_with_classifier(&msg, classifier, ClassifierType::Prompt)
                     .await
             })
             .buffer_unordered(ML_SCAN_CONCURRENCY)
-            .fold(0.0_f32, |acc, result| async move {
-                result.unwrap_or(0.0).max(acc)
-            })
+            .fold(
+                (0.0_f32, Vec::new()),
+                |(acc, mut errors), result| async move {
+                    match result {
+                        Ok(confidence) => (confidence.max(acc), errors),
+                        Err(error) => {
+                            errors.push(error);
+                            (acc, errors)
+                        }
+                    }
+                },
+            )
             .await;
+        degraded_reasons.append(&mut runtime_degraded_reasons);
 
         Ok(DetailedScanResult {
             confidence: max_confidence,
             pattern_matches: Vec::new(),
             ml_confidence: Some(max_confidence),
             used_pattern_detection: false,
+            degraded_reasons,
         })
     }
 
@@ -289,17 +373,20 @@ impl PromptInjectionScanner {
         text: &str,
         classifier: &ClassificationClient,
         classifier_type: ClassifierType,
-    ) -> Option<f32> {
+    ) -> Result<f32, String> {
         let type_name = match classifier_type {
             ClassifierType::Command => "command injection",
             ClassifierType::Prompt => "prompt injection",
         };
 
         match classifier.classify(text).await {
-            Ok(conf) => Some(conf),
+            Ok(conf) => Ok(conf),
             Err(e) => {
                 tracing::warn!("{} classifier scan failed: {:#}", type_name, e);
-                None
+                Err(format!(
+                    "{} classifier scan failed; approval required as a safety fallback.",
+                    type_name
+                ))
             }
         }
     }
@@ -320,6 +407,13 @@ impl PromptInjectionScanner {
         threshold: f32,
         tool_content: &str,
     ) -> String {
+        if !result.degraded_reasons.is_empty() {
+            return format!(
+                "Security scan degraded: {}",
+                result.degraded_reasons.join(" ")
+            );
+        }
+
         if result.confidence < threshold {
             return "No security threats detected".to_string();
         }

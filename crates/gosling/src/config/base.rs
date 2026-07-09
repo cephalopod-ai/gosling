@@ -1812,17 +1812,18 @@ mod tests {
         let config_file = NamedTempFile::new().unwrap();
         let secrets_file = NamedTempFile::new().unwrap();
         let config = Config::new_with_file_secrets(config_file.path(), secrets_file.path())?;
+        let original = "invalid: yaml: content: [unclosed";
 
-        std::fs::write(config_file.path(), "invalid: yaml: content: [unclosed")?;
+        std::fs::write(config_file.path(), original)?;
 
         // Reads skip corrupt files gracefully
         let values = config.all_values()?;
         assert!(values.is_empty() || !values.contains_key("key1"));
 
-        // A write starts fresh (corrupt content is discarded)
-        config.set_param("recovery_key", "value")?;
-        let reloaded = config.all_values()?;
-        assert!(reloaded.contains_key("recovery_key"));
+        // A write refuses to overwrite corrupt content.
+        let err = config.set_param("recovery_key", "value").unwrap_err();
+        assert!(matches!(err, ConfigError::DeserializeError(_)));
+        assert_eq!(std::fs::read_to_string(config_file.path())?, original);
 
         Ok(())
     }
@@ -2197,7 +2198,7 @@ mod tests {
     fn set_param_refuses_to_overwrite_corrupt_config() {
         let config_file = NamedTempFile::new().unwrap();
         let secrets_file = NamedTempFile::new().unwrap();
-        let original = "valid: before\n  invalid";
+        let original = "invalid: yaml: content: [unclosed";
         std::fs::write(config_file.path(), original).unwrap();
         let config =
             Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();

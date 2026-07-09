@@ -1414,19 +1414,23 @@ impl Agent {
         Ok(())
     }
 
-    pub async fn list_tools(&self, session_id: &str, extension_name: Option<String>) -> Vec<Tool> {
+    pub async fn list_tools(
+        &self,
+        session_id: &str,
+        extension_name: Option<String>,
+    ) -> Result<Vec<Tool>> {
         let mut prefixed_tools = self
             .extension_manager
             .get_prefixed_tools(session_id, extension_name.clone())
             .await
-            .unwrap_or_default();
+            .map_err(|error| anyhow!("Failed to list extension tools: {error}"))?;
 
         prefixed_tools.extend(
             self.frontend_tools_for_extension(extension_name.as_deref())
                 .await,
         );
 
-        prefixed_tools
+        Ok(prefixed_tools)
     }
 
     pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {

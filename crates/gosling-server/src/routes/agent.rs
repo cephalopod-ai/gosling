@@ -367,9 +367,14 @@ async fn get_tools(
     let gosling_mode = agent.gosling_mode().await;
     let permission_manager = agent.config.permission_manager.clone();
 
-    let mut tools: Vec<ToolInfo> = agent
+    let listed_tools = agent
         .list_tools(&session_id, query.extension_name)
         .await
+        .map_err(|e| {
+            error!("Failed to list tools for session {session_id}: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let mut tools: Vec<ToolInfo> = listed_tools
         .into_iter()
         .map(|tool| {
             let permission = permission_manager

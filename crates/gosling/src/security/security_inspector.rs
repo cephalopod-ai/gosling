@@ -24,12 +24,18 @@ impl SecurityInspector {
         security_result: &SecurityResult,
         tool_request_id: String,
     ) -> InspectionResult {
-        let action = if security_result.is_malicious && security_result.should_ask_user {
+        let action = if security_result.should_ask_user {
             InspectionAction::RequireApproval(Some(format!(
-                "🔒 Security Alert\n\n\
+                "{}\n\n\
                 {}\n\n\
                 Finding ID: {}",
-                security_result.explanation, security_result.finding_id
+                if security_result.is_malicious {
+                    "🔒 Security Alert"
+                } else {
+                    "🔍 Security Review Required"
+                },
+                security_result.explanation,
+                security_result.finding_id
             )))
         } else {
             InspectionAction::Allow

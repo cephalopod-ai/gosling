@@ -509,6 +509,10 @@ mod tests {
 
     #[test]
     fn test_token_cache() -> Result<()> {
+        let temp_root = tempfile::tempdir()?;
+        let temp_root = temp_root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(temp_root.as_str()))]);
+
         let cache = TokenCache::new(
             "https://example.com",
             "test-client",

@@ -680,7 +680,7 @@ mod tests {
         #[tokio::test]
         async fn test_extension_manager_tools_available() {
             let (agent, session_id) = setup_agent_with_extension_manager().await;
-            let tools = agent.list_tools(&session_id, None).await;
+            let tools = agent.list_tools(&session_id, None).await.unwrap();
 
             // Note: Tool names are prefixed with the normalized extension name "extensionmanager"
             // not the display name "Extension Manager"
@@ -2096,14 +2096,15 @@ mod tests {
                 .await
                 .unwrap();
 
-            let listed_tools = agent.list_tools(&session.id, None).await;
+            let listed_tools = agent.list_tools(&session.id, None).await.unwrap();
             assert!(listed_tools
                 .iter()
                 .any(|tool| tool.name == "frontend__echo"));
 
             let filtered_tools = agent
                 .list_tools(&session.id, Some("frontend-e2e".to_string()))
-                .await;
+                .await
+                .unwrap();
             assert_eq!(filtered_tools.len(), 1);
             assert_eq!(filtered_tools[0].name, "frontend__echo");
 
@@ -2127,7 +2128,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            let listed_tools = agent.list_tools(&session.id, None).await;
+            let listed_tools = agent.list_tools(&session.id, None).await.unwrap();
             assert!(!listed_tools
                 .iter()
                 .any(|tool| tool.name == "frontend__echo"));
@@ -2201,7 +2202,7 @@ mod tests {
                 "failed to load frontend extensions: {load_results:?}",
             );
 
-            let listed_tools = agent.list_tools(&session.id, None).await;
+            let listed_tools = agent.list_tools(&session.id, None).await.unwrap();
             for tool_name in expected_tools {
                 assert!(
                     listed_tools.iter().any(|tool| tool.name == tool_name),

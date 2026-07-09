@@ -80,7 +80,7 @@ async fn test_adversary_enabled_default_tools() {
         vec![MessageContent::text("build the project")],
     )];
 
-    // shell is reviewed by default — no provider means fail-open (Allow)
+    // shell is reviewed by default and the test provider allows it
     let results = inspector
         .inspect(
             "test-session",

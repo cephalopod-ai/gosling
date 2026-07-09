@@ -69,7 +69,8 @@ struct AdversaryConfig {
 ///
 /// If the `tools:` line is omitted, only `shell` is reviewed by default.
 /// If the file is absent, this inspector is disabled.
-/// If the review fails, the inspector fails open (allows the tool call).
+/// If the review fails, the inspector requires user approval rather than
+/// silently allowing the tool call.
 pub struct AdversaryInspector {
     provider: SharedProvider,
     session_manager: Arc<crate::session::SessionManager>,
@@ -472,17 +473,20 @@ impl ToolInspector for AdversaryInspector {
                 Err(e) => {
                     tracing::warn!(
                         security.event_type = "adversary_detection",
-                        security.action = "ALLOW",
+                        security.action = "REVIEW",
                         security.confidence = 0.0_f32,
-                        security.explanation = %format!("error (fail-open): {}", e),
+                        security.explanation = %format!("error (approval fallback): {}", e),
                         tool.name = %tool_call_name,
                         tool.request_id = %request.id,
-                        "adversary review: error (fail-open)"
+                        "adversary review: error (approval fallback)"
                     );
                     results.push(InspectionResult {
                         tool_request_id: request.id.clone(),
-                        action: InspectionAction::Allow,
-                        reason: format!("Adversary error (fail-open): {}", e),
+                        action: InspectionAction::RequireApproval(Some(format!(
+                            "Adversary review failed; approval required as a safety fallback.\n\n{}",
+                            e
+                        ))),
+                        reason: format!("Adversary error (approval fallback): {}", e),
                         confidence: 0.0,
                         inspector_name: self.name().to_string(),
                         finding_id: None,

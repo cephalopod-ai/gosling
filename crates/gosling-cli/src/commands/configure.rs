@@ -1682,9 +1682,10 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
         .await?;
 
     let permission_manager = PermissionManager::instance();
-    let selected_tools = agent
+    let listed_tools = agent
         .list_tools(&session.id, Some(selected_extension_name.clone()))
-        .await
+        .await?;
+    let selected_tools = listed_tools
         .into_iter()
         .map(|tool| {
             ToolInfo::new(

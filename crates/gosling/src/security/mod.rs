@@ -154,11 +154,40 @@ impl SecurityManager {
 
                 let config_threshold = scanner.get_threshold_from_config();
                 let sanitized_explanation = analysis_result.explanation.replace('\n', " | ");
+                let finding_id = format!("SEC-{}", Uuid::new_v4().simple());
+
+                if analysis_result.degraded {
+                    let tool_call_json =
+                        serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());
+
+                    tracing::warn!(
+                        monotonic_counter.gosling.prompt_injection_finding = 1,
+                        security.event_type = "prompt_injection_scan",
+                        security.action = "REVIEW",
+                        security.confidence = analysis_result.confidence,
+                        security.threshold = config_threshold,
+                        security.above_threshold = false,
+                        security.threat_type = "scanner_degraded",
+                        security.finding_id = %finding_id,
+                        security.explanation = %sanitized_explanation,
+                        tool.name = %tool_call.name,
+                        tool.request_id = %tool_request.id,
+                        tool.call_json = %tool_call_json,
+                        "prompt injection scan degraded; approval required"
+                    );
+                    results.push(SecurityResult {
+                        is_malicious: analysis_result.is_malicious,
+                        confidence: analysis_result.confidence,
+                        explanation: analysis_result.explanation,
+                        should_ask_user: true,
+                        finding_id,
+                        tool_request_id: tool_request.id.clone(),
+                    });
+                    continue;
+                }
 
                 if analysis_result.is_malicious {
                     let above_threshold = analysis_result.confidence > config_threshold;
-                    let finding_id = format!("SEC-{}", Uuid::new_v4().simple());
-
                     let tool_call_json =
                         serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());
 

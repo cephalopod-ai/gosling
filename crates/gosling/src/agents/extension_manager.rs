@@ -1486,7 +1486,7 @@ impl ExtensionManager {
                     Ok(t) => t,
                     Err(e) => {
                         warn!(extension = %ext_name, error = %e, "Failed to list tools");
-                        return (name, vec![]);
+                        return Err((name, e.to_string()));
                     }
                 };
 
@@ -1529,20 +1529,34 @@ impl ExtensionManager {
                         Ok(t) => t,
                         Err(e) => {
                             warn!(extension = %ext_name, error = %e, "Failed to list tools (pagination)");
-                            break;
+                            return Err((name, e.to_string()));
                         }
                     };
                 }
 
-                (name, tools)
+                Ok((name, tools))
             }
         });
 
         let results = future::join_all(client_futures).await;
+        let errors = results
+            .iter()
+            .filter_map(|result| result.as_ref().err().cloned())
+            .collect::<Vec<_>>();
+        if !errors.is_empty() {
+            let detail = errors
+                .into_iter()
+                .map(|(name, error)| format!("{name}: {error}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(ExtensionError::SetupError(format!(
+                "Failed to enumerate extension tools: {detail}"
+            )));
+        }
 
         let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut tools = Vec::new();
-        for (ext_name, client_tools) in results {
+        for (ext_name, client_tools) in results.into_iter().flatten() {
             for tool in client_tools {
                 let tool_name = tool.name.to_string();
                 if seen_names.contains(&tool_name) {
@@ -2221,6 +2235,8 @@ mod tests {
 
     struct MockClient {}
 
+    struct FailingListToolsClient;
+
     #[async_trait::async_trait]
     impl McpClientTrait for MockClient {
         fn get_info(&self) -> Option<&InitializeResult> {
@@ -2289,6 +2305,73 @@ mod tests {
                 }
                 _ => Err(Error::TransportClosed),
             }
+        }
+
+        async fn list_prompts(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListPromptsResult, Error> {
+            Err(Error::TransportClosed)
+        }
+
+        async fn get_prompt(
+            &self,
+            _session_id: &str,
+            _name: &str,
+            _arguments: Value,
+            _cancellation_token: CancellationToken,
+        ) -> Result<GetPromptResult, Error> {
+            Err(Error::TransportClosed)
+        }
+
+        async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
+            mpsc::channel(1).1
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for FailingListToolsClient {
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+
+        async fn list_resources(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListResourcesResult, Error> {
+            Err(Error::TransportClosed)
+        }
+
+        async fn read_resource(
+            &self,
+            _session_id: &str,
+            _uri: &str,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ReadResourceResult, Error> {
+            Err(Error::TransportClosed)
+        }
+
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            Err(Error::TransportClosed)
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<JsonObject>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            Err(Error::TransportClosed)
         }
 
         async fn list_prompts(
@@ -2490,6 +2573,30 @@ mod tests {
             .iter()
             .any(|name| name == "test_extension__hidden_tool"));
         assert!(tool_names.len() == 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_prefixed_tools_fails_visible_when_extension_tool_listing_fails() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+
+        extension_manager
+            .add_mock_extension("healthy".to_string(), Arc::new(MockClient {}))
+            .await;
+        extension_manager
+            .add_mock_extension("broken".to_string(), Arc::new(FailingListToolsClient))
+            .await;
+
+        let error = extension_manager
+            .get_prefixed_tools("test-session-id", None)
+            .await
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Failed to enumerate extension tools"));
+        assert!(error.to_string().contains("broken"));
     }
 
     #[tokio::test]

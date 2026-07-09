@@ -18,6 +18,7 @@ impl GoslingAcpAgent {
         let mut tools: Vec<ToolListItem> = agent
             .list_tools(session_id, req.extension_name)
             .await
+            .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?
             .into_iter()
             .map(|tool| {
                 let permission = permission_manager
@@ -63,7 +64,10 @@ impl GoslingAcpAgent {
     ) -> Result<GoslingToolCallResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id).await?;
-        let tools = agent.list_tools(session_id, None).await;
+        let tools = agent
+            .list_tools(session_id, None)
+            .await
+            .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 
         let Some(tool) = tools.iter().find(|t| *t.name == req.name) else {
             return Err(agent_client_protocol::Error::invalid_params().data("tool not found"));

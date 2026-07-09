@@ -1317,13 +1317,21 @@ mod tests {
 
     #[test]
     fn test_create_request_enabled_thinking_with_budget() -> anyhow::Result<()> {
-        let mut model_config = ModelConfig::new("databricks-claude-3-7-sonnet");
+        let mut model_config = ModelConfig::new("claude-3-7-sonnet-20250219");
         model_config.max_tokens = Some(4096);
+        model_config.reasoning = Some(true);
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("high"));
         model_config.request_params = Some(params);
 
-        let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
+        let request = create_request_for_provider(
+            "anthropic",
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+        )?;
 
         assert_eq!(request["thinking"]["type"], "enabled");
         assert_eq!(request["thinking"]["budget_tokens"], 16000);
@@ -1342,13 +1350,21 @@ mod tests {
             ("high", 16000),
             ("max", 32000),
         ] {
-            let mut model_config = ModelConfig::new("databricks-claude-3-7-sonnet");
+            let mut model_config = ModelConfig::new("claude-3-7-sonnet-20250219");
             model_config.max_tokens = Some(4096);
+            model_config.reasoning = Some(true);
             let mut params = std::collections::HashMap::new();
             params.insert("thinking_effort".to_string(), serde_json::json!(effort));
             model_config.request_params = Some(params);
 
-            let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
+            let request = create_request_for_provider(
+                "anthropic",
+                &model_config,
+                "system",
+                &[],
+                &[],
+                &ImageFormat::OpenAi,
+            )?;
 
             assert_eq!(request["thinking"]["type"], "enabled");
             assert_eq!(request["thinking"]["budget_tokens"], expected_budget);

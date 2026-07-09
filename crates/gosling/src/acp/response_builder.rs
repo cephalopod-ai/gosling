@@ -481,44 +481,33 @@ mod tests {
         build_model_state("unused", &inventory)
     }
 
-    #[test_case(
-        GoslingMode::Auto
-        => Ok(SessionModeState::new(
-            SessionModeId::new("auto"),
+    #[test_case(GoslingMode::Auto, "auto"; "auto mode")]
+    #[test_case(GoslingMode::Approve, "approve"; "approve mode")]
+    fn test_build_mode_state(current_mode: GoslingMode, expected_current_mode: &str) {
+        let mode_state = build_mode_state(current_mode).unwrap();
+
+        assert_eq!(mode_state.current_mode_id.0.as_ref(), expected_current_mode);
+        assert_eq!(
+            mode_state
+                .available_modes
+                .iter()
+                .map(|mode| mode.id.0.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["auto", "smart_approve", "approve", "chat"]
+        );
+        assert_eq!(
+            mode_state
+                .available_modes
+                .iter()
+                .map(|mode| mode.description.as_deref())
+                .collect::<Vec<_>>(),
             vec![
-                SessionMode::new(SessionModeId::new("auto"), "auto")
-                    .description("Automatically approve tool calls"),
-                SessionMode::new(SessionModeId::new("approve"), "approve")
-                    .description("Ask before every tool call"),
-                SessionMode::new(SessionModeId::new("smart_approve"), "smart_approve")
-                    .description("Ask only for sensitive tool calls"),
-                SessionMode::new(SessionModeId::new("chat"), "chat")
-                    .description("Chat only, no tool calls"),
-            ],
-        ))
-        ; "auto mode"
-    )]
-    #[test_case(
-        GoslingMode::Approve
-        => Ok(SessionModeState::new(
-            SessionModeId::new("approve"),
-            vec![
-                SessionMode::new(SessionModeId::new("auto"), "auto")
-                    .description("Automatically approve tool calls"),
-                SessionMode::new(SessionModeId::new("approve"), "approve")
-                    .description("Ask before every tool call"),
-                SessionMode::new(SessionModeId::new("smart_approve"), "smart_approve")
-                    .description("Ask only for sensitive tool calls"),
-                SessionMode::new(SessionModeId::new("chat"), "chat")
-                    .description("Chat only, no tool calls"),
-            ],
-        ))
-        ; "approve mode"
-    )]
-    fn test_build_mode_state(
-        current_mode: GoslingMode,
-    ) -> Result<SessionModeState, agent_client_protocol::Error> {
-        build_mode_state(current_mode)
+                Some("Automatically approve tool calls"),
+                Some("Ask only for sensitive tool calls"),
+                Some("Ask before every tool call"),
+                Some("Chat only, no tool calls"),
+            ]
+        );
     }
 
     #[test]
@@ -570,70 +559,20 @@ mod tests {
             SessionConfigSelectOption::new("anthropic", "anthropic"),
             SessionConfigSelectOption::new("openai", "openai"),
         ],
-        model_selection("gpt-4", &["gpt-4", "gpt-3.5"])
-        => vec![
-            SessionConfigOption::select(
-                "provider", "Provider", "openai",
-                vec![
-                    SessionConfigSelectOption::new("anthropic", "anthropic"),
-                    SessionConfigSelectOption::new("openai", "openai"),
-                ],
-            ),
-            SessionConfigOption::select(
-                "mode", "Mode", "auto",
-                vec![
-                    SessionConfigSelectOption::new("auto", "auto").description("Automatically approve tool calls"),
-                    SessionConfigSelectOption::new("approve", "approve").description("Ask before every tool call"),
-                    SessionConfigSelectOption::new("smart_approve", "smart_approve").description("Ask only for sensitive tool calls"),
-                    SessionConfigSelectOption::new("chat", "chat").description("Chat only, no tool calls"),
-                ],
-            ).category(SessionConfigOptionCategory::Mode),
-            SessionConfigOption::select(
-                "model", "Model", "gpt-4",
-                vec![
-                    SessionConfigSelectOption::new("gpt-4", "gpt-4"),
-                    SessionConfigSelectOption::new("gpt-3.5", "gpt-3.5"),
-                ],
-            ).category(SessionConfigOptionCategory::Model),
-            SessionConfigOption::select(
-                "thinking_effort", "Thinking effort", "off",
-                vec![SessionConfigSelectOption::new("off", "off")],
-            )
-            .description("Controls reasoning effort for models that support extended thinking.")
-            .category(SessionConfigOptionCategory::ThoughtLevel),
-        ]
+        model_selection("gpt-4", &["gpt-4", "gpt-3.5"]),
+        "auto",
+        vec!["anthropic", "openai"],
+        vec!["gpt-4", "gpt-3.5"]
         ; "auto mode with multiple models"
     )]
     #[test_case(
         build_mode_state(GoslingMode::Approve).unwrap(),
         "openai",
         vec![SessionConfigSelectOption::new("openai", "openai")],
-        model_selection("only-model", &["only-model"])
-        => vec![
-            SessionConfigOption::select(
-                "provider", "Provider", "openai",
-                vec![SessionConfigSelectOption::new("openai", "openai")],
-            ),
-            SessionConfigOption::select(
-                "mode", "Mode", "approve",
-                vec![
-                    SessionConfigSelectOption::new("auto", "auto").description("Automatically approve tool calls"),
-                    SessionConfigSelectOption::new("approve", "approve").description("Ask before every tool call"),
-                    SessionConfigSelectOption::new("smart_approve", "smart_approve").description("Ask only for sensitive tool calls"),
-                    SessionConfigSelectOption::new("chat", "chat").description("Chat only, no tool calls"),
-                ],
-            ).category(SessionConfigOptionCategory::Mode),
-            SessionConfigOption::select(
-                "model", "Model", "only-model",
-                vec![SessionConfigSelectOption::new("only-model", "only-model")],
-            ).category(SessionConfigOptionCategory::Model),
-            SessionConfigOption::select(
-                "thinking_effort", "Thinking effort", "off",
-                vec![SessionConfigSelectOption::new("off", "off")],
-            )
-            .description("Controls reasoning effort for models that support extended thinking.")
-            .category(SessionConfigOptionCategory::ThoughtLevel),
-        ]
+        model_selection("only-model", &["only-model"]),
+        "approve",
+        vec!["openai"],
+        vec!["only-model"]
         ; "approve mode with single model"
     )]
     fn test_build_config_options(
@@ -641,19 +580,82 @@ mod tests {
         provider_name: &'static str,
         provider_options: Vec<SessionConfigSelectOption>,
         model_state: ModelSelection,
-    ) -> Vec<SessionConfigOption> {
+        expected_mode: &str,
+        expected_provider_values: Vec<&str>,
+        expected_model_values: Vec<&str>,
+    ) {
         let model_config = ModelConfig::new(model_state.current_model_id.as_str())
             .with_merged_request_params(std::collections::HashMap::from([(
                 "thinking_effort".to_string(),
                 serde_json::json!("off"),
             )]));
-        build_config_options(
+
+        let options = build_config_options(
             &mode_state,
             &model_state,
             &model_config,
             provider_name,
             provider_options,
-        )
+        );
+
+        assert_eq!(
+            options
+                .iter()
+                .map(|option| option.id.0.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["provider", "mode", "model", "thinking_effort"]
+        );
+
+        let provider = match &options[0].kind {
+            SessionConfigKind::Select(select) => select,
+            _ => panic!("provider should be a select option"),
+        };
+        assert_eq!(provider.current_value.0.as_ref(), provider_name);
+        assert_eq!(
+            select_option_values(&provider.options),
+            expected_provider_values
+        );
+
+        let mode = match &options[1].kind {
+            SessionConfigKind::Select(select) => select,
+            _ => panic!("mode should be a select option"),
+        };
+        assert_eq!(mode.current_value.0.as_ref(), expected_mode);
+        assert_eq!(
+            select_option_values(&mode.options),
+            vec!["auto", "smart_approve", "approve", "chat"]
+        );
+
+        let model = match &options[2].kind {
+            SessionConfigKind::Select(select) => select,
+            _ => panic!("model should be a select option"),
+        };
+        assert_eq!(model.current_value.0.as_ref(), model_state.current_model_id);
+        assert_eq!(select_option_values(&model.options), expected_model_values);
+
+        let thinking_effort = match &options[3].kind {
+            SessionConfigKind::Select(select) => select,
+            _ => panic!("thinking_effort should be a select option"),
+        };
+        assert_eq!(thinking_effort.current_value.0.as_ref(), "off");
+        assert_eq!(select_option_values(&thinking_effort.options), vec!["off"]);
+    }
+
+    fn select_option_values(
+        options: &agent_client_protocol::schema::v1::SessionConfigSelectOptions,
+    ) -> Vec<&str> {
+        match options {
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(options) => {
+                options
+                    .iter()
+                    .map(|option| option.value.0.as_ref())
+                    .collect()
+            }
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Grouped(_) => {
+                panic!("expected ungrouped select options")
+            }
+            _ => panic!("unexpected select option shape"),
+        }
     }
 
     #[test]
