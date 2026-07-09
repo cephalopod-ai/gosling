@@ -84,6 +84,7 @@ interface WorkingDirectoriesMenuProps {
   onSessionChange: (updater: (session: Session) => Session) => void;
   className?: string;
   compact?: boolean;
+  showCount?: boolean;
 }
 
 export default function WorkingDirectoriesMenu({
@@ -91,6 +92,7 @@ export default function WorkingDirectoriesMenu({
   onSessionChange,
   className,
   compact = false,
+  showCount = true,
 }: WorkingDirectoriesMenuProps) {
   const intl = useIntl();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -205,13 +207,16 @@ export default function WorkingDirectoriesMenu({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <button
+                type="button"
                 className={`no-drag flex items-center gap-1 text-xs transition-colors ${className ?? 'text-text-secondary hover:text-text-primary'}`}
               >
                 <FolderPlus size={14} />
                 {!compact && <span>{triggerLabel}</span>}
-                <span className="tabular-nums text-[11px] text-text-secondary">
-                  {additionalWorkingDirs.length + 1}
-                </span>
+                {showCount && (
+                  <span className="tabular-nums text-[11px] text-text-secondary">
+                    {additionalWorkingDirs.length + 1}
+                  </span>
+                )}
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
