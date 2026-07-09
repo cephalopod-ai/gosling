@@ -1,7 +1,29 @@
-import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Folder } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, Folder, X } from 'lucide-react';
+import { toast } from 'react-toastify';
 import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
+import { defineMessages, useIntl } from '../i18n';
+import { acpRemoveSessionWorkingDir } from '../acp/sessions';
 import type { Session } from '../types/session';
+
+const i18n = defineMessages({
+  collapse: {
+    id: 'workingDirectoriesSummary.collapse',
+    defaultMessage: 'Collapse working directories',
+  },
+  expand: {
+    id: 'workingDirectoriesSummary.expand',
+    defaultMessage: 'Expand working directories',
+  },
+  removeDirectory: {
+    id: 'workingDirectoriesSummary.removeDirectory',
+    defaultMessage: 'Remove working directory',
+  },
+  failedToRemove: {
+    id: 'workingDirectoriesSummary.failedToRemove',
+    defaultMessage: 'Failed to remove working directory',
+  },
+});
 
 interface WorkingDirectoriesSummaryProps {
   session?: Session;
@@ -18,6 +40,7 @@ export default function WorkingDirectoriesSummary({
   session,
   onSessionChange,
 }: WorkingDirectoriesSummaryProps) {
+  const intl = useIntl();
   const [isExpanded, setIsExpanded] = useState(true);
 
   const directories = useMemo(() => {
@@ -34,6 +57,26 @@ export default function WorkingDirectoriesSummary({
     ];
   }, [session?.working_dir, session?.additional_working_dirs]);
 
+  const removeDirectory = useCallback(
+    async (dir: string) => {
+      if (!session) {
+        return;
+      }
+
+      try {
+        const result = await acpRemoveSessionWorkingDir(session.id, dir);
+        onSessionChange((current) => ({
+          ...current,
+          additional_working_dirs: result.additionalWorkingDirs,
+        }));
+      } catch (error) {
+        console.error('[WorkingDirectoriesSummary] Failed to remove working directory:', error);
+        toast.error(intl.formatMessage(i18n.failedToRemove));
+      }
+    },
+    [session, onSessionChange, intl]
+  );
+
   if (directories.length === 0) {
     return null;
   }
@@ -44,7 +87,9 @@ export default function WorkingDirectoriesSummary({
         <button
           type="button"
           aria-expanded={isExpanded}
-          aria-label={isExpanded ? 'Collapse working directories' : 'Expand working directories'}
+          aria-label={
+            isExpanded ? intl.formatMessage(i18n.collapse) : intl.formatMessage(i18n.expand)
+          }
           className="no-drag inline-flex items-center gap-1 rounded-full border border-border-primary bg-background-secondary px-2 py-1 text-xs text-text-primary transition-colors hover:bg-background-tertiary"
           onClick={() => setIsExpanded((current) => !current)}
         >
@@ -85,6 +130,16 @@ export default function WorkingDirectoriesSummary({
                 </div>
                 <div className="truncate text-[11px] text-text-secondary">{path}</div>
               </div>
+              {kind === 'additional' ? (
+                <button
+                  type="button"
+                  aria-label={intl.formatMessage(i18n.removeDirectory)}
+                  className="no-drag mt-0.5 rounded p-1 text-text-secondary transition-colors hover:bg-background-secondary hover:text-text-primary"
+                  onClick={() => void removeDirectory(path)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
