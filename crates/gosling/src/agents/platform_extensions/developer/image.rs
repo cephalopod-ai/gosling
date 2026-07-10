@@ -179,6 +179,13 @@ async fn load_image_bytes(source: &str, working_dir: Option<&Path>) -> Result<Ve
 }
 
 async fn load_url_bytes(url: url::Url) -> Result<Vec<u8>, String> {
+    // The URL is model/tool-supplied, so guard against SSRF: resolve the host and
+    // refuse private/loopback/link-local targets (e.g. cloud metadata at
+    // 169.254.169.254) before connecting. The redirect policy below also rejects
+    // redirects to private IP literals. A residual DNS-rebinding / hostname-redirect
+    // gap remains and would need connection-time IP pinning to fully close.
+    ensure_url_target_is_public(&url).await?;
+
     let client = reqwest::Client::builder()
         .user_agent(concat!(
             "gosling/",
@@ -186,10 +193,19 @@ async fn load_url_bytes(url: url::Url) -> Result<Vec<u8>, String> {
             " (+https://github.com/repo-makeover/gosling)"
         ))
         .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                attempt.error("too many redirects")
+            } else if redirect_target_is_private(attempt.url()) {
+                attempt.error("refusing to follow redirect to a non-public address")
+            } else {
+                attempt.follow()
+            }
+        }))
         .build()
         .map_err(|error| format!("failed to create HTTP client: {error}"))?;
 
-    let response = client
+    let mut response = client
         .get(url)
         .send()
         .await
@@ -197,16 +213,92 @@ async fn load_url_bytes(url: url::Url) -> Result<Vec<u8>, String> {
         .error_for_status()
         .map_err(|error| format!("failed to download image: {error}"))?;
 
+    // Enforce the size cap even when Content-Length is absent (chunked/streamed
+    // responses) by counting bytes as they arrive rather than buffering first.
     if let Some(len) = response.content_length() {
         ensure_image_size(len)?;
     }
 
-    let bytes = response
-        .bytes()
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|error| format!("failed to read image response: {error}"))?;
+        .map_err(|error| format!("failed to read image response: {error}"))?
+    {
+        ensure_image_size(bytes.len() as u64 + chunk.len() as u64)?;
+        bytes.extend_from_slice(&chunk);
+    }
 
-    Ok(bytes.to_vec())
+    Ok(bytes)
+}
+
+/// Resolve `url`'s host and reject it if any resolved address is non-public
+/// (loopback/private/link-local/etc.), to prevent SSRF to internal services.
+async fn ensure_url_target_is_public(url: &url::Url) -> Result<(), String> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return if is_disallowed_ip(ip) {
+            Err(format!("refusing to fetch from non-public address {ip}"))
+        } else {
+            Ok(())
+        };
+    }
+    let port = url.port_or_known_default().unwrap_or(443);
+    let mut resolved = false;
+    for addr in tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|e| format!("failed to resolve host '{host}': {e}"))?
+    {
+        resolved = true;
+        if is_disallowed_ip(addr.ip()) {
+            return Err(format!(
+                "refusing to fetch from non-public address {} (host '{host}')",
+                addr.ip()
+            ));
+        }
+    }
+    if !resolved {
+        return Err(format!("host '{host}' did not resolve"));
+    }
+    Ok(())
+}
+
+/// Synchronous best-effort check used inside the redirect policy: true if the
+/// redirect target's host is a private/loopback/link-local IP literal. Hostname
+/// redirects are not re-resolved here (no async in the policy).
+fn redirect_target_is_private(url: &url::Url) -> bool {
+    url.host_str()
+        .and_then(|h| h.parse::<std::net::IpAddr>().ok())
+        .map(is_disallowed_ip)
+        .unwrap_or(false)
+}
+
+fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => is_disallowed_v4(v4),
+        std::net::IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_disallowed_v4(v4);
+            }
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00 // unique-local fc00::/7
+                || (v6.segments()[0] & 0xffc0) == 0xfe80 // link-local fe80::/10
+        }
+    }
+}
+
+fn is_disallowed_v4(v4: std::net::Ipv4Addr) -> bool {
+    v4.is_loopback()
+        || v4.is_private()
+        || v4.is_link_local()
+        || v4.is_unspecified()
+        || v4.is_broadcast()
+        || v4.is_documentation()
+        || v4.octets()[0] == 0
+        || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64) // CGNAT 100.64.0.0/10
 }
 
 fn load_file_bytes(path: PathBuf) -> Result<Vec<u8>, String> {

@@ -670,6 +670,13 @@ impl ComputerControllerServer {
         let url = &params.url;
         let save_as = params.save_as;
 
+        // SSRF guard: the URL is model/tool-supplied, so refuse http(s) targets that
+        // resolve to non-public addresses (loopback/private/link-local, e.g. cloud
+        // metadata at 169.254.169.254) before connecting.
+        ensure_public_http_url(url)
+            .await
+            .map_err(|msg| ErrorData::new(ErrorCode::INVALID_PARAMS, msg, None))?;
+
         // Fetch the content
         let response = self
             .http_client
@@ -1745,5 +1752,122 @@ impl ServerHandler for ComputerControllerServer {
 
         // Clone the resource to return
         Ok(ReadResourceResult::new(vec![resource.clone()]))
+    }
+}
+
+/// SSRF guard for model/tool-supplied fetch URLs: require an http(s) scheme and
+/// reject any host that resolves to a non-public address. This is a pre-flight
+/// check; a residual DNS-rebinding / redirect gap remains and would need
+/// connection-time IP pinning to fully close.
+async fn ensure_public_http_url(raw: &str) -> Result<(), String> {
+    let url = Url::parse(raw).map_err(|e| format!("invalid URL: {e}"))?;
+    match url.scheme() {
+        "http" | "https" => {}
+        other => return Err(format!("unsupported URL scheme '{other}'")),
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return if is_disallowed_ip(ip) {
+            Err(format!("refusing to fetch from non-public address {ip}"))
+        } else {
+            Ok(())
+        };
+    }
+    let port = url.port_or_known_default().unwrap_or(443);
+    let host_owned = host.to_string();
+    let addrs = tokio::task::spawn_blocking(move || {
+        use std::net::ToSocketAddrs;
+        (host_owned.as_str(), port)
+            .to_socket_addrs()
+            .map(|iter| iter.collect::<Vec<std::net::SocketAddr>>())
+    })
+    .await
+    .map_err(|e| format!("DNS resolver task failed: {e}"))?
+    .map_err(|e| format!("failed to resolve host '{host}': {e}"))?;
+    let mut resolved = false;
+    for addr in addrs {
+        resolved = true;
+        if is_disallowed_ip(addr.ip()) {
+            return Err(format!(
+                "refusing to fetch from non-public address {} (host '{host}')",
+                addr.ip()
+            ));
+        }
+    }
+    if !resolved {
+        return Err(format!("host '{host}' did not resolve"));
+    }
+    Ok(())
+}
+
+fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => is_disallowed_v4(v4),
+        std::net::IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_disallowed_v4(v4);
+            }
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00 // unique-local fc00::/7
+                || (v6.segments()[0] & 0xffc0) == 0xfe80 // link-local fe80::/10
+        }
+    }
+}
+
+fn is_disallowed_v4(v4: std::net::Ipv4Addr) -> bool {
+    v4.is_loopback()
+        || v4.is_private()
+        || v4.is_link_local()
+        || v4.is_unspecified()
+        || v4.is_broadcast()
+        || v4.is_documentation()
+        || v4.octets()[0] == 0
+        || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64) // CGNAT 100.64.0.0/10
+}
+
+#[cfg(test)]
+mod ssrf_tests {
+    use super::{ensure_public_http_url, is_disallowed_ip};
+
+    #[test]
+    fn blocks_metadata_and_private_and_loopback() {
+        for ip in [
+            "169.254.169.254",
+            "127.0.0.1",
+            "10.0.0.5",
+            "192.168.1.1",
+            "0.0.0.0",
+            "100.64.1.1",
+            "::1",
+            "fd00::1",
+            "fe80::1",
+        ] {
+            assert!(
+                is_disallowed_ip(ip.parse().unwrap()),
+                "{ip} should be disallowed"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_public() {
+        for ip in ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"] {
+            assert!(
+                !is_disallowed_ip(ip.parse().unwrap()),
+                "{ip} should be allowed"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_non_http_and_metadata_literal() {
+        assert!(ensure_public_http_url("ftp://example.com").await.is_err());
+        assert!(ensure_public_http_url("http://169.254.169.254/")
+            .await
+            .is_err());
+        assert!(ensure_public_http_url("not a url").await.is_err());
     }
 }
