@@ -55,7 +55,6 @@ webbrowser = { workspace = true }
 indicatif = { version = "0.18", default-features = false }
 tokio-util = { workspace = true, features = ["compat", "rt"] }
 anstream = { version = "1", default-features = false, features = ["auto"] }
-open = { version = "5", default-features = false }
 url = { workspace = true }
 clap_complete = { version = "4", default-features = false }
 comfy-table = { version = "7", default-features = false }

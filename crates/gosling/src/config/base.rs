@@ -62,6 +62,28 @@ pub(crate) fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<
     std::fs::rename(&temp_path, path)
 }
 
+/// Atomically write `content` to `path` via a temp file + fsync + rename, so a
+/// crash mid-write cannot truncate or corrupt the destination: a reader always
+/// observes either the old complete file or the new complete file. Use for any
+/// durable file whose truncation would lose or corrupt state (permission map,
+/// memory store, edited source files). For files that may hold secrets use
+/// `write_secrets_file`, which additionally applies 0600 permissions.
+pub(crate) fn write_file_atomic(path: &Path, content: &str) -> std::io::Result<()> {
+    let temp_path = path.with_extension("tmp");
+
+    {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&temp_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+    }
+
+    std::fs::rename(&temp_path, path)
+}
+
 #[cfg(feature = "system-keyring")]
 const KEYRING_SERVICE: &str = "gosling";
 #[cfg(feature = "system-keyring")]

@@ -87,11 +87,15 @@ interface PermissionModalProps {
 export default function PermissionModal({ extensionName, onClose }: PermissionModalProps) {
   const intl = useIntl();
 
-  const permissionOptions = [
-    { value: 'always_allow', label: intl.formatMessage(i18n.alwaysAllow) },
-    { value: 'ask_before', label: intl.formatMessage(i18n.askBefore) },
-    { value: 'never_allow', label: intl.formatMessage(i18n.neverAllow) },
-  ] as { value: ToolPermissionLevel; label: string }[];
+  const permissionOptions = useMemo(
+    () =>
+      [
+        { value: 'always_allow', label: intl.formatMessage(i18n.alwaysAllow) },
+        { value: 'ask_before', label: intl.formatMessage(i18n.askBefore) },
+        { value: 'never_allow', label: intl.formatMessage(i18n.neverAllow) },
+      ] as { value: ToolPermissionLevel; label: string }[],
+    [intl]
+  );
 
   const chatContext = useChatContext();
   const sessionId = chatContext?.chat.sessionId || '';

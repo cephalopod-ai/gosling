@@ -45,10 +45,15 @@ crates/
 ├── gosling-acp-macros   # ACP proc macros
 ├── gosling-cli          # CLI entry
 ├── gosling-mcp          # MCP extensions
+├── gosling-providers    # model/provider adapters
+├── gosling-sdk          # Rust SDK
+├── gosling-sdk-types    # shared ACP/SDK types
+├── gosling-server       # ACP/HTTP server host
 ├── gosling-test         # test utilities
 └── gosling-test-support # test helpers
 
 ui/desktop/            # Electron app
+ui/text/               # Ink terminal UI
 ```
 
 ## Development Loop

@@ -106,7 +106,9 @@ const lightColorTokens: ColorTokens = {
 
   // Text
   '--color-text-primary': '#3f434b',
-  '--color-text-secondary': '#878787',
+  // Darkened from #878787 (3.6:1 on the #ffffff surface, below WCAG AA) so
+  // secondary/hint/placeholder text meets the 4.5:1 normal-text minimum.
+  '--color-text-secondary': '#6e6e6e',
   '--color-text-tertiary': '#a7b0b9',
   '--color-text-inverse': '#ffffff',
   '--color-text-ghost': '#878787',
@@ -162,7 +164,9 @@ const darkColorTokens: ColorTokens = {
 
   // Text
   '--color-text-primary': '#ffffff',
-  '--color-text-secondary': '#878787',
+  // Lightened from #878787 (4.27:1 on the dark surface, below WCAG AA) so
+  // secondary/hint/placeholder text meets the 4.5:1 normal-text minimum.
+  '--color-text-secondary': '#9a9a9a',
   '--color-text-tertiary': '#606c7a',
   '--color-text-inverse': '#000000',
   '--color-text-ghost': '#878787',

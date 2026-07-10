@@ -20,6 +20,22 @@ use std::{
 
 const WORKING_DIR_HEADER: &str = "agent-working-dir";
 
+/// Atomically write `content` to `path` (temp file + fsync + rename) so an
+/// interrupted rewrite cannot truncate the memory store and lose entries.
+fn write_file_atomic(path: &std::path::Path, content: &str) -> io::Result<()> {
+    let temp_path = path.with_extension("tmp");
+    {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&temp_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+    }
+    fs::rename(&temp_path, path)
+}
+
 fn extract_working_dir_from_meta(meta: &Meta) -> Option<PathBuf> {
     meta.0
         .get(WORKING_DIR_HEADER)
@@ -311,7 +327,7 @@ impl MemoryServer {
             .map(|s| s.to_string())
             .collect();
 
-        fs::write(memory_file_path, new_content.join("\n\n"))?;
+        write_file_atomic(&memory_file_path, &new_content.join("\n\n"))?;
 
         Ok(())
     }

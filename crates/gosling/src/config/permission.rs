@@ -107,7 +107,10 @@ impl PermissionManager {
         let snapshot = self.read_map().clone();
         let result = serde_yaml::to_string(&snapshot)
             .map_err(|e| e.to_string())
-            .and_then(|yaml| fs::write(&self.config_path, yaml).map_err(|e| e.to_string()));
+            .and_then(|yaml| {
+                crate::config::base::write_file_atomic(&self.config_path, &yaml)
+                    .map_err(|e| e.to_string())
+            });
         if let Err(e) = result {
             tracing::error!(
                 "Failed to persist permission config to {:?}: {e}",

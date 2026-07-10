@@ -136,7 +136,12 @@ async function checkTokenBucket(jti, env) {
 
 let jwksCache = null;
 let jwksCacheTime = 0;
-const JWKS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+// Short TTL: this cache gates authentication, so a revoked/rotated signing key
+// that the issuer has already dropped from its JWKS must stop being accepted
+// quickly rather than lingering for an hour.
+const JWKS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+// Clock-skew leniency applied to time-based JWT claims (exp/nbf).
+const CLOCK_SKEW_SECONDS = 60;
 
 async function fetchJwks(issuer) {
   const now = Date.now();
@@ -190,8 +195,12 @@ async function verifyOidcToken(token, env) {
     const header = decodeJwtPart(headerB64);
     const payload = decodeJwtPart(payloadB64);
 
-    if (!payload.exp || payload.exp < Date.now() / 1000) {
+    const nowSeconds = Date.now() / 1000;
+    if (!payload.exp || payload.exp < nowSeconds) {
       return { valid: false, reason: "Token expired" };
+    }
+    if (payload.nbf && payload.nbf > nowSeconds + CLOCK_SKEW_SECONDS) {
+      return { valid: false, reason: "Token not yet valid" };
     }
     if (env.MAX_TOKEN_AGE_SECONDS && payload.iat) {
       const age = Math.floor(Date.now() / 1000) - payload.iat;
@@ -243,13 +252,30 @@ async function verifyOidcToken(token, env) {
       }
     }
 
-    const sigResult = await verifySignature(
+    let sigResult = await verifySignature(
       header,
       jwk,
       headerB64,
       payloadB64,
       sigB64,
     );
+    // The signing key may have been rotated under the same kid since the JWKS
+    // was cached. On a verify failure against a cached key, force one refresh
+    // and retry so rotation doesn't cause a spurious reject.
+    if (!sigResult.valid && jwksCache !== null) {
+      jwksCache = null;
+      const refreshed = await fetchJwks(env.OIDC_ISSUER);
+      const freshJwk = refreshed.keys.find((k) => k.kid === header.kid);
+      if (freshJwk) {
+        sigResult = await verifySignature(
+          header,
+          freshJwk,
+          headerB64,
+          payloadB64,
+          sigB64,
+        );
+      }
+    }
     if (!sigResult.valid) return sigResult;
 
     const jti = payload.jti || `${payload.iss}:${payload.iat}:${payload.sub}`;

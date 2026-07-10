@@ -84,7 +84,7 @@ impl EditTools {
 
         let is_new = !path.exists();
 
-        match fs::write(path, &params.content) {
+        match crate::config::base::write_file_atomic(&path, &params.content) {
             Ok(()) => {
                 let line_count = params.content.lines().count();
                 let action = if is_new { "Created" } else { "Wrote" };
@@ -130,7 +130,7 @@ impl EditTools {
                 return CallToolResult::error(vec![Content::text(msg).with_priority(0.0)]);
             }
         };
-        match fs::write(&path, &new_content) {
+        match crate::config::base::write_file_atomic(&path, &new_content) {
             Ok(()) => {
                 let old_lines = params.before.lines().count();
                 let new_lines = params.after.lines().count();
