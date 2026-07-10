@@ -734,17 +734,23 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
     async (session: SessionListItem, event: React.MouseEvent) => {
       event.stopPropagation();
 
-      const json = await acpExportSession(session.id);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${session.name}.json`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
-      toast.success(intl.formatMessage(i18n.exportSuccess));
+      try {
+        const json = await acpExportSession(session.id);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `${session.name}.json`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+        toast.success(intl.formatMessage(i18n.exportSuccess));
+      } catch (exportError) {
+        // Bind success to the export actually resolving; on failure surface an
+        // error toast instead of leaving the async handler to reject silently.
+        toast.error(`Failed to export session: ${errorMessage(exportError, 'Unknown error')}`);
+      }
     },
     [intl]
   );
