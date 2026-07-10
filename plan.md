@@ -1341,7 +1341,7 @@ The alerts will remain open in GitHub until these source changes are pushed and 
 
 Read-only GitHub Actions API inspection returned `404` for `patch-release.yaml`, and that workflow is absent from the repository's registered Actions workflow list even though the file exists on `main` and passes `actionlint`. The original `gh workflow run patch-release.yaml` command therefore appears unable to dispatch in the current remote state.
 
-This predates Phase 2 and is not caused by permission scoping. Phase 2 preserves the target and command, records the problem, and does not broaden into workflow registration or release-process repair. Investigate it as a separate functional automation issue before relying on automatic patch-release dispatch.
+This predates Phase 2 and is not caused by permission scoping. Phase 2 preserved the target and command at the time. On 2026-07-10, the repository owner explicitly retired `patch-release.yaml` together with its only dispatcher, `close-release-pr-on-tag.yaml`; the unregistered target is therefore no longer an operational dependency.
 
 ## 28. Phase 3 detailed plan: container digest pinning
 
@@ -1600,6 +1600,19 @@ The runbook must include:
 
 No source-code patch can close these alerts. Their disposition remains separate until GitHub reports the desired administrative state.
 
+### 30.1 Stage 1 solo-maintainer bridge execution
+
+Status: complete on 2026-07-10.
+
+- Repository ruleset `18782969`, `Protect default branch`, is active for `~DEFAULT_BRANCH` with no bypass actors.
+- `main` is protected against deletion and non-fast-forward updates and requires changes through pull requests.
+- Pull requests require resolved review threads but zero approving reviews, preserving solo-maintainer operation.
+- Strict required checks are `Check Rust Code Format`, `Lint Rust Code`, and `Check MSRV`, each bound to GitHub Actions integration `15368`.
+- Merge, squash, and rebase remain enabled; Actions workflow permissions and unrelated repository settings were unchanged.
+- The disabled-first creation, active update, and effective-rule readback all passed. A rejected `PATCH` attempt was rolled back to zero rulesets before the documented `PUT` update was used.
+
+Stage 2 remains optional and requires an independent reviewer before increasing the approval count. Scorecard alerts `#1` and `#61` remain scanner/history follow-up rather than reasons to weaken the solo-maintainer bridge.
+
 ## 31. Traceability matrix
 
 | Requirement | Alert(s) | Source files or settings | Planned implementation | Verification evidence | Status |
@@ -1617,8 +1630,8 @@ No source-code patch can close these alerts. Their disposition remains separate 
 | SEC-REQ-011 | container alerts | Dependabot and plan | weekly reviewed digest update path | parsed Dependabot Docker-directory contract | Complete in source |
 | SEC-REQ-012 | #65 | manifest/lock/import graph | complete dependency map | advisory-to-artifact report | Planned Phase 4 |
 | SEC-REQ-013 | #65 | determined after mapping | minimal dependency response | targeted compatibility/security checks | Blocked on mapping by design |
-| SEC-REQ-014 | branch/review alerts | GitHub settings | administrator runbook | settings preview | Planned Phase 5 |
-| SEC-REQ-015 | branch/review alerts | GitHub settings | approval-gated mutation/readback | API/UI readback | Requires future authorization |
+| SEC-REQ-014 | branch/review alerts | GitHub settings | administrator runbook | settings preview | Stage 1 complete |
+| SEC-REQ-015 | branch/review alerts | GitHub settings | approval-gated mutation/readback | API/UI readback | Stage 1 complete; Stage 2 optional |
 
 ## 32. Risk register
 
@@ -1637,12 +1650,12 @@ No source-code patch can close these alerts. Their disposition remains separate 
 | static guard overfits formatting | Medium | Low | deliberate guard mutation review | assert security semantics and exact pins, not line numbers | Low |
 | adjacent Hermit stable download remains mutable | High | High | scan/source review | track as separate finding; do not hide it | Open residual risk |
 | workflow permission issues remain after Phase 1 | High | High | existing alerts | Phase 2 source remediation and regression guard | Fixed in source; remote rescan pending |
-| `patch-release.yaml` is absent from the registered Actions workflow API | Existing | High | read-only `gh workflow view` returns 404 | investigate workflow registration separately; do not mask with permission changes | Open functional automation issue |
+| `patch-release.yaml` is absent from the registered Actions workflow API | Existing | High | read-only `gh workflow view` returns 404 | retire the unused target and its dispatcher | Resolved by workflow deletion |
 | pinned images stop receiving silent upstream security refreshes | Certain | High if unmanaged | weekly digest drift PRs | Dependabot monitors all four Dockerfile directories | Review and merge digest updates promptly |
 | private GHCR test image digest becomes unavailable or is deleted | Low | Medium | test-finder pull failure | commit tag plus digest; fail closed and update from successful publish log | Hosted job validation pending |
 | Dockerfile runtime compatibility is not locally built | Certain | Medium | hosted multi-platform build | registry platform validation and syntax/contract checks; no local build by scope | Accepted for this turn |
 | non-container PinnedDependencies alerts remain | Certain | Medium–High | live code-scanning alerts | keep separate from base-image patch; schedule after required #65 mapping/order decision | Open and explicit |
-| GitHub branch settings remain weak | Depends on current settings | High | settings inventory | Phase 5 runbook and explicit admin approval | Open until authorized |
+| GitHub branch settings remain weak | Low after Stage 1 | High | effective-rules API readback | active no-bypass default-branch ruleset | Stage 1 complete; independent review remains optional |
 | no local Gosling build leaves runtime compatibility unproven | Certain | Medium | stated validation boundary | run targeted CI later; user explicitly prohibited local build/restart | Accepted for this turn |
 
 ## 33. Phase 1 validation evidence log
@@ -1795,17 +1808,86 @@ Requirements affected: SEC-REQ-010 and SEC-REQ-011.
 Validation impact: add both references to the deterministic guard, use the successful GHCR publication log as private-image evidence, and retain weekly Dependabot coverage for real Dockerfiles.
 Rollback: replace either with a different verified tag/digest pair; never restore an unpinned tag.
 
-## 35. Continuation handoff for the next session
+### PCR-009 — Make Auto authoritative for permission prompts
 
-If work resumes after Phase 3, the next model should:
+Date: 2026-07-10
+Trigger: repeated provider-managed `Write` permission cards despite the session being configured as Auto.
+Decision: Auto approves normal and app-dispatched tool requests without running permission/security inspectors, auto-confirms provider-managed tool permission requests before they reach clients, and supplies the Claude Code subprocess permission flags from the session mode rather than the global default.
+Rationale: the public Auto contract is automatic approval. A session-level Auto choice must not be downgraded by a global SmartApprove default or by provider-specific permission routing.
+Preserved boundary: explicit pre-tool policy hooks still run and may deny a call; Approve, SmartApprove, and Chat retain their existing behavior.
+Validation impact: require focused tests for approve-all classification, provider permission-message filtering, and Claude Code mode flags.
+Rollback: revert the three Auto decision points together to avoid inconsistent behavior between native tools, app calls, and provider-managed tools.
+
+### PCR-010 — Retire unused write-capable workflows
+
+Date: 2026-07-10
+Trigger: repository-owner direction to remove the unregistered patch-release path, Ask AI Bot publication, and tag-triggered patch dispatcher instead of retaining their write permissions.
+Decision: delete `.github/workflows/patch-release.yaml`, `.github/workflows/publish-ask-ai-bot.yml`, and `.github/workflows/close-release-pr-on-tag.yaml`, then remove the deleted close-release workflow from the Phase 2 regression contract.
+Rationale: deletion is the narrowest complete boundary when the automation is outside the owner's normal workflow; it removes the write-capable execution paths instead of disguising them with scanner suppression.
+Behavior change: automatic patch-release creation, tag-triggered release-PR closure/patch dispatch, and Ask AI Bot image publication are intentionally retired.
+Validation impact: require repository-wide reference checks, workflow YAML parsing for survivors, and the adjusted Phase 2 permission contract.
+Rollback: restore a workflow only with an explicit current use case and a new least-privilege design; do not restore the three files merely to close a historical compatibility gap.
+
+### PCR-011 — Exclude inherited CI/review skills
+
+Date: 2026-07-10
+Trigger: repository-owner direction to remove Goose-inherited CI skills outside the normal Gosling workflow.
+Decision: exclude `code-review` and `testing-strategy` from generated and live Goose fallback manifests while preserving the rest of the compatibility catalog and provenance normalization.
+Rationale: a shared deterministic exclusion at generation and runtime prevents the live fallback from silently restoring removed entries.
+Validation impact: extend converter tests, regenerate the ignored local manifest, and verify both excluded IDs are absent while unrelated skills remain.
+Rollback: remove an ID from the shared exclusion set if it becomes part of the supported workflow.
+
+### PCR-012 — Activate the Stage 1 solo-maintainer bridge
+
+Date: 2026-07-10
+Trigger: explicit repository-owner approval after the Phase 5 runbook and settings preview.
+Decision: activate repository ruleset `18782969` with no bypass actors, zero required approvals, resolved-thread enforcement, deletion and force-push protection, and three stable strict checks.
+Rationale: this closes direct-push integrity gaps without locking a single maintainer out of the repository.
+Validation impact: disabled-first readback, active readback, effective-rule inspection, protected-branch status, green check identities, and preserved repository behavior.
+Rollback: disable and delete the ruleset through the repository rulesets API if activation becomes unusable.
+
+## 35. Auto/workflow/skills cleanup validation evidence
+
+Affected paths:
+
+- Auto permission routing: `crates/gosling/src/agents/agent.rs`, `crates/gosling/src/permission/permission_judge.rs`, and `crates/gosling/src/providers/claude_code.rs`.
+- Retired automation: `.github/workflows/patch-release.yaml`, `.github/workflows/publish-ask-ai-bot.yml`, and `.github/workflows/close-release-pr-on-tag.yaml`.
+- Goose skill compatibility: `documentation/scripts/goose-compat.js`, `documentation/scripts/generate-skills-manifest.js`, `documentation/src/utils/goose-compat.ts`, and `documentation/src/utils/skills.ts`.
+
+Observed verification:
+
+- `cargo fmt` and `cargo fmt --check`: passed; no Gosling build or runtime restart was performed.
+- `git diff --check`: passed.
+- `ruby -c .github/scripts/verify-phase2-permissions.rb`: passed.
+- `.github/scripts/verify-phase2-permissions.rb`: passed after deleting the retired workflow contract.
+- `.github/scripts/verify-phase1-integrity.sh`: passed.
+- `.github/scripts/verify-phase3-container-digests.rb`: passed.
+- `node --check` for the three changed documentation scripts: passed.
+- `node --test documentation/scripts/goose-compat.test.js`: six tests passed, including the new exclusion test.
+- `node documentation/scripts/goose-compat.js --self-test`: passed.
+- `actionlint` over all surviving workflow YAML: passed with no findings.
+- The regenerated ignored local skill manifest contains five entries, excludes `code-review` and `testing-strategy`, and retains `frontend-design` as a legitimate control.
+- Repository-wide active `.github` references contain no patch-release dispatch or Ask AI Bot publish workflow self-reference.
+- Focused Rust regression tests were added for approve-all classification, permission-message filtering, and session-mode Claude flags. They were not executed because the standing repository instruction requires explicit authorization before Cargo tests/builds.
+
+Security closure:
+
+- Auto no longer routes normal, app-dispatched, or provider-managed tool calls through an interactive permission request.
+- Non-Auto permission behavior remains unchanged, and explicit pre-tool policy hooks remain enforceable in Auto.
+- The three write-capable workflow execution paths no longer exist in source; future scanner runs may retain their historical alerts until SARIF is refreshed.
+- Excluded Goose skills cannot reappear through either build-time generation or live fallback normalization.
+
+## 36. Continuation handoff for the next session
+
+If work resumes after the Stage 1 governance and Auto/workflow cleanup, the next model should:
 
 1. Read repository `AGENTS.md` and this entire `plan.md`.
 2. Inspect `git status --short` and preserve all changes.
-3. Treat Phases 1–3 as implemented locally and inspect their diffs before starting a later phase.
+3. Treat security Phases 1–3 and governance Stage 1 as complete; preserve the current Auto/workflow/skill cleanup diff until it is reviewed and delivered.
 4. Do not run a Gosling build, test suite, Desktop process, or restart unless the user expands authorization.
-5. Do not modify GitHub settings or alert states.
+5. Do not modify further GitHub settings or alert states without a new explicit authorization.
 6. Re-run the Phase 1, Phase 2, and Phase 3 regression guards after any overlapping edit.
 7. Update the evidence log with actual exit status and relevant output.
 8. Record any strategy change in Section 34 before expanding scope.
 
-The next planned security phase is Phase 4: investigate alert `#65` and produce the dependency-to-lockfile-to-artifact mapping before changing any dependency. Keep the unregistered `patch-release.yaml` investigation and remaining non-container PinnedDependencies alerts explicit and separate.
+The next planned security phase is Phase 4: investigate alert `#65` and produce the dependency-to-lockfile-to-artifact mapping before changing any dependency. The three retired workflows are no longer follow-up items. Keep remaining non-container PinnedDependencies alerts and optional Stage 2 independent-review governance explicit and separate.

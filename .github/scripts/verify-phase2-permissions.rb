@@ -11,8 +11,7 @@ EXPECTED_WORKFLOW_PERMISSIONS = {
   "bundle-desktop-linux.yml" => {"contents" => "read"},
   "bundle-desktop-windows.yml" => {"contents" => "read"},
   "publish-npm.yml" => {"contents" => "read"},
-  "canary.yml" => {"contents" => "read"},
-  "close-release-pr-on-tag.yaml" => {"contents" => "read"}
+  "canary.yml" => {"contents" => "read"}
 }.freeze
 
 EXPECTED_JOB_PERMISSIONS = {
@@ -44,10 +43,6 @@ EXPECTED_JOB_PERMISSIONS = {
     "bundle-desktop-linux" => {"contents" => "read"},
     "bundle-desktop-windows" => {"contents" => "read"},
     "release" => {"attestations" => "write", "contents" => "write", "id-token" => "write"}
-  },
-  "close-release-pr-on-tag.yaml" => {
-    "close-release-pr" => {"pull-requests" => "write"},
-    "trigger-patch-release" => {"actions" => "write"}
   }
 }.freeze
 
@@ -109,33 +104,6 @@ issueops = load_workflow("pr-comment-build-cli.yml")
 issueops_build_permissions = normalized_permissions(issueops.fetch("jobs").fetch("build-cli").fetch("permissions"))
 unless issueops_build_permissions == {"contents" => "read"}
   fail_contract("pr-comment-build-cli.yml must pass only contents: read to build-cli.yml")
-end
-
-close_release = load_workflow("close-release-pr-on-tag.yaml")
-close_job = close_release.fetch("jobs").fetch("close-release-pr")
-dispatch_job = close_release.fetch("jobs").fetch("trigger-patch-release")
-
-if close_job.fetch("steps").any? { |step| step["uses"]&.start_with?("actions/checkout@") }
-  fail_contract("close-release-pr-on-tag.yaml must not checkout repository code in the PR-write job")
-end
-
-unless close_job.dig("outputs", "branch") == "${{ steps.version.outputs.branch }}"
-  fail_contract("close-release-pr-on-tag.yaml must pass the validated release branch as a job output")
-end
-
-unless dispatch_job["needs"] == "close-release-pr"
-  fail_contract("trigger-patch-release must depend on successful close-release-pr completion")
-end
-
-close_step = close_job.fetch("steps").find { |step| step["name"] == "Find and close matching PR" }
-dispatch_step = dispatch_job.fetch("steps").find { |step| step["name"] == "Trigger patch release" }
-
-unless close_step&.dig("env", "GH_REPO") == "${{ github.repository }}"
-  fail_contract("the PR-write job must set GH_REPO after removing checkout")
-end
-
-unless dispatch_step&.dig("env", "GH_REPO") == "${{ github.repository }}"
-  fail_contract("the Actions-write job must set GH_REPO after removing checkout")
 end
 
 puts "Phase 2 permission contracts passed."

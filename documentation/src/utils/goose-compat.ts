@@ -6,6 +6,10 @@ export const GOOSE_SKILLS_MANIFEST_URL =
   "https://goose-docs.ai/skills-manifest.json";
 export const GOOSE_COMPATIBILITY_NOTE =
   "Imported from Goose's AAIF-maintained catalog and normalized for gosling compatibility.";
+export const GOOSE_EXCLUDED_SKILL_IDS = new Set([
+  "code-review",
+  "testing-strategy",
+]);
 
 function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
@@ -148,6 +152,10 @@ export function normalizeGooseSkill(skill: any): Skill {
     sourceCatalogUrl: GOOSE_SKILLS_MANIFEST_URL,
     compatibilityNote: GOOSE_COMPATIBILITY_NOTE,
   };
+}
+
+export function isSupportedGooseSkill(skill: any): boolean {
+  return !GOOSE_EXCLUDED_SKILL_IDS.has(asString(skill?.id));
 }
 
 export function normalizeGoslingSkill(skill: any): Skill {
