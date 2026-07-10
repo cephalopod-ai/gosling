@@ -1,0 +1,1354 @@
+# Gosling Continuity and Security Remediation Master Plan
+
+Status: Active; Session Handoff proposed; Security Phase 1 implemented and targeted checks complete  
+Scope: Gosling core, session persistence, providers, ACP server, Desktop, build and test automation, dependency integrity, and repository governance  
+Primary outcomes: Switching providers or models preserves enough verified session state to continue safely without asking the replacement model to rediscover prior work, and Gosling's delivery paths do not execute mutable remote installers or unpinned provider packages.
+
+## 1. Goals
+
+- Make Gosling's persisted session ledger the source of truth for cross-provider continuity.
+- Create a versioned, bounded, redacted `SessionHandoffSnapshot` before a provider or model transition.
+- Support Gosling-managed, provider-managed, ACP, hybrid, and native-resume providers through an explicit capability contract.
+- Replace the current provider/model/thinking-effort sequence with one atomic transition.
+- Preserve the old provider and persisted configuration until the target is ready.
+- Recover from provider failures by offering a checkpoint-backed continuation on another provider.
+- Show users what continuity level a target provider can provide before switching.
+- Keep durable project knowledge separate from transient session handoff state.
+
+## 2. Non-goals
+
+- Do not treat `AGENTS.md`, `CLAUDE.md`, or another repository file as the canonical session checkpoint.
+- Do not silently write transient session state into the working repository.
+- Do not require the outgoing provider to be healthy or available.
+- Do not replay an unbounded raw transcript into a new provider.
+- Do not resume active tool execution automatically on another provider.
+- Do not transfer credential values, authorization headers, secrets, or unredacted sensitive tool output.
+- Do not guarantee bit-for-bit reproduction of provider-private reasoning or proprietary provider session state.
+
+## 3. Current seams to replace or generalize
+
+- `Agent::update_provider` currently replaces the in-memory provider and then persists provider/model metadata without a transition record or rollback boundary.
+- Desktop currently applies provider, model, and thinking effort as separate ACP configuration operations.
+- `Provider::manages_own_context()` is too coarse to describe resume, import, model-switch, and handoff behavior.
+- ACP providers have a useful one-time handoff mechanism, but it serializes all visible prior history without a dedicated handoff budget.
+- `claude-code` starts a provider-owned context and sends only the latest user message.
+- Session summaries and summary facts already provide useful rollup inputs, but generation is optional and a summary may be absent, stale, or incomplete.
+- Project memory files contain durable facts and instructions, not a reliable current-task checkpoint.
+
+## 4. Design principles
+
+1. **Ledger first:** a snapshot must be constructible from persisted Gosling state even after the outgoing provider fails.
+2. **Evidence over invention:** unknown state remains unknown; the snapshot must not infer completed work or successful commands without ledger evidence.
+3. **Bounded by construction:** every section has a byte/token budget and source coverage metadata.
+4. **Redacted before persistence:** the canonical stored snapshot is safe to deliver; delivery adapters do not receive an unredacted version.
+5. **One transition owner:** one core service coordinates preparation, target activation, commit, and rollback.
+6. **Capabilities drive behavior:** provider names and suffixes must not determine continuity behavior.
+7. **No duplicated side effects:** prior tool activity is context, never an instruction to repeat a command or approval.
+8. **Observable transitions:** users can inspect snapshot coverage, continuity class, activation state, and failures.
+
+## 5. Core data model
+
+### 5.1 `SessionHandoffSnapshot`
+
+Add a versioned Rust type with a stable serialized representation. Version 1 should include:
+
+```text
+SessionHandoffSnapshotV1
+  snapshot_id
+  schema_version
+  session_id
+  generation
+  trigger
+  created_at
+  source
+    provider_id
+    requested_model
+    resolved_model
+  target
+    provider_id
+    requested_model
+    resolved_model
+  coverage
+    first_row_id
+    covered_through_row_id
+    covered_message_count
+    source_hash
+    summary_status
+    recent_tail_message_count
+    estimated_tokens
+    truncations
+  current_objective
+  latest_user_intent
+  completed_work[]
+  decisions[]
+  files_touched[]
+  workspace_state[]
+  commands_and_checks[]
+  active_or_interrupted_operations[]
+  current_errors[]
+  attempted_mitigations[]
+  pending_approvals[]
+  unresolved_questions[]
+  next_actions[]
+  recent_conversation_tail[]
+  redaction_report
+  enrichment
+    source
+    status
+    model
+```
+
+Every structured item should retain provenance where possible:
+
+- message row or message ID
+- tool request/response ID
+- timestamp
+- confidence or evidence class: `observed`, `summarized`, or `unknown`
+
+Do not store chain-of-thought or provider-private reasoning.
+
+### 5.2 Snapshot triggers
+
+Use an enum rather than free-form strings:
+
+- `UserRequestedSwitch`
+- `ProviderFailure`
+- `ModelChangeRequiresRecreation`
+- `ThinkingEffortChangeRequiresRecreation`
+- `SessionResume`
+- `SessionFork`
+- `ManualCheckpoint`
+
+### 5.3 Persistence
+
+Add a dedicated `session_handoff_snapshots` table rather than overloading the one-row `session_summaries` table. Reuse session summaries and facts as snapshot inputs.
+
+Proposed columns:
+
+```sql
+snapshot_id TEXT PRIMARY KEY
+session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE
+generation INTEGER NOT NULL
+schema_version INTEGER NOT NULL
+trigger TEXT NOT NULL
+status TEXT NOT NULL
+from_provider TEXT
+from_model TEXT
+to_provider TEXT NOT NULL
+to_model TEXT NOT NULL
+covered_through_row_id INTEGER NOT NULL
+source_hash TEXT NOT NULL
+estimated_tokens INTEGER NOT NULL
+snapshot_json TEXT NOT NULL
+failure TEXT
+created_at TIMESTAMP NOT NULL
+activated_at TIMESTAMP
+superseded_at TIMESTAMP
+UNIQUE(session_id, generation)
+```
+
+Snapshot statuses:
+
+- `prepared`
+- `activating`
+- `active`
+- `failed`
+- `rolled_back`
+- `superseded`
+
+Add indexes for `session_id`, `status`, and newest generation. Introduce the table through the existing SQLite schema-version migration mechanism and cover fresh-database plus upgrade paths.
+
+### 5.4 Retention
+
+- Retain the active snapshot and a small configurable number of prior transition generations per session.
+- Delete snapshots when their session is deleted.
+- Preserve failed transition metadata long enough to diagnose switching failures.
+- Do not export snapshots by default unless a session export explicitly opts into internal handoff metadata.
+
+## 6. Deterministic snapshot construction
+
+Create a core `SessionHandoffBuilder` that depends on persisted session APIs, not on a provider instance.
+
+### 6.1 Inputs
+
+- persisted session messages and metadata
+- current session summary and summary facts when present and current
+- bounded recent message tail
+- normalized built-in tool request/response records
+- Agent runtime state for active turns, tools, approvals, cancellation, and errors
+- current provider/model and requested target provider/model
+- working directory and additional working-directory metadata
+
+### 6.2 Extraction rules
+
+- Derive the latest user intent from the newest visible textual user message.
+- Prefer explicit goal/task state for the current objective; otherwise use the current summary plus recent user turns.
+- Record completed work only from successful tool responses, committed ledger events, or a summary item with provenance.
+- Record commands and checks with command text, outcome, exit status, and bounded output summary. Never imply that an interrupted command succeeded.
+- Derive files touched from structured edit/write tool calls and verified tool responses. Distinguish `read`, `created`, `modified`, and `deleted`.
+- Record current errors and attempted mitigations as separate entries.
+- Record active tool calls and approvals as interrupted or pending; never mark them resumable without an explicit provider/tool capability.
+- Use summary facts for decisions, constraints, and preferences only when their source coverage falls within the session.
+- Preserve unresolved fields as empty/unknown rather than calling a model to fill them.
+
+### 6.3 Optional outgoing-model enrichment
+
+- Enrichment may improve objective, decisions, and next-action phrasing.
+- It runs only after the deterministic snapshot exists.
+- It has a short timeout and cannot delay failure recovery beyond a configurable limit.
+- Failure, cancellation, authentication errors, and transport errors retain the deterministic snapshot unchanged.
+- Enrichment output must conform to a schema, cite ledger evidence, pass redaction again, and never replace observed fields with unsupported claims.
+- Record whether enrichment was skipped, failed, or accepted.
+
+### 6.4 Budget
+
+Start with a configurable total handoff budget:
+
+- maximum: the smaller of 16,000 tokens or 10% of the target context window
+- structured checkpoint target: up to 4,000 tokens
+- recent tail: remaining budget after structured content and delivery framing
+- tool output: summarized and capped per item
+- always preserve the latest user intent, unresolved approvals, current errors, and next actions before adding older tail messages
+
+Record all omitted sections and counts in `coverage.truncations`.
+
+### 6.5 Source hash
+
+- Canonically serialize the covered message row IDs, content hashes, relevant summary revision, structured runtime events, and target configuration.
+- Compute a BLAKE3 hash.
+- Use the hash for staleness detection, idempotent preparation, and auditability.
+- Never use a hash match as proof that an external provider imported the snapshot.
+
+## 7. Redaction and data safety
+
+Apply redaction before `snapshot_json` is persisted.
+
+- Replace known credential values with typed references such as credential-profile ID or provider name.
+- Remove authorization headers, cookies, bearer tokens, API keys, private keys, and environment secret values.
+- Apply bounded pattern-based redaction as a second layer.
+- Exclude raw binary/image data; retain safe attachment metadata and references.
+- Truncate large file contents, command output, diffs, and tool results.
+- Mark every redaction and truncation in `redaction_report` without storing the removed value.
+- Treat tool output as untrusted quoted context in delivery prompts.
+- Make handoff messages explicitly state that historical tool calls and outputs must not be repeated without current user intent and permission.
+
+Add security tests for secrets in tool arguments, tool responses, environment maps, URLs, HTTP headers, patches, and provider error bodies.
+
+## 8. Provider capability contract
+
+Replace `manages_own_context()` with structured capabilities.
+
+```text
+ContextOwnership
+  Gosling
+  Provider
+  Hybrid
+
+ProviderCapabilities
+  context_ownership
+  native_resume
+  history_import
+  in_place_model_change
+  session_fork
+  bootstrap_handoff
+  bootstrap_acknowledgement
+```
+
+Use explicit enums for support level where behavior is not binary:
+
+- `Unsupported`
+- `Supported`
+- `Required`
+
+Provider implementations must declare capabilities. The default should describe a Gosling-managed API provider safely, not infer behavior from provider naming.
+
+Compatibility rollout:
+
+- temporarily retain `manages_own_context()` as a derived compatibility method
+- migrate call sites to the capability object
+- remove the boolean after all built-in and custom provider adapters are covered
+
+Expose capabilities through provider inventory/config APIs so Desktop can predict continuity before switching.
+
+## 9. Delivery strategies
+
+Introduce a core `HandoffDeliveryPlan` selected from target capabilities.
+
+### 9.1 Gosling-managed API provider
+
+- Persist and activate the snapshot before the next provider call.
+- Inject the structured snapshot as an internal, agent-visible context block followed by the bounded recent tail and current user request.
+- Do not add the handoff as a synthetic user-authored message in the visible conversation.
+- Mark delivery acknowledged when Gosling has constructed the target input successfully.
+
+### 9.2 ACP or provider-managed agent
+
+- Replace the ACP provider's unbounded raw-history memo with the core snapshot envelope.
+- Send exactly one bootstrap handoff message before the current user request.
+- Require the bootstrap response to acknowledge objective, current state, and next action without starting tools or repeating previous work.
+- Store the target provider session ID and acknowledgement metadata with the snapshot generation.
+- Add the same adapter to `claude-code` while retaining it only for compatibility; recommend `claude-acp` in product copy.
+
+### 9.3 Native resume/import provider
+
+- Initialize or import the provider session through its native API.
+- Verify acknowledgement or returned provider session identity.
+- Retain the redacted Gosling snapshot as fallback and audit evidence.
+- If native import fails and bootstrap handoff is supported, fall back to bootstrap delivery before failing the transition.
+
+### 9.4 New-context-only provider
+
+- Do not claim continuity.
+- Require explicit user confirmation in Desktop.
+- Start a new provider context while retaining the old session and snapshot for later recovery.
+
+## 10. Atomic provider transition
+
+Create one `ProviderTransitionCoordinator` in core. All CLI, server, ACP, and Desktop switching paths must use it.
+
+### 10.1 Request
+
+Replace sequential provider/model/thinking-effort updates with one request:
+
+```text
+ProviderTransitionRequest
+  session_id
+  target_provider
+  target_model
+  target_thinking_effort
+  target_context_limit
+  request_params
+  expected_current_generation
+  active_operation_policy
+```
+
+### 10.2 State machine
+
+1. Acquire a per-session transition lock and reject stale generations.
+2. Inspect active turns, tools, approvals, and pending user steers.
+3. By default, refuse to switch during an active tool or approval. Offer cancellation first and record interrupted state after cancellation completes.
+4. Build, redact, validate, and persist the snapshot as `prepared`.
+5. Create the target provider without replacing the old `Arc<dyn Provider>`.
+6. Apply target model, thinking effort, mode, extensions, and working directories to the candidate provider.
+7. Perform the target-specific readiness/import/bootstrap step and persist `activating`.
+8. In one database transaction, update provider/model/thinking effort and mark the snapshot `active`.
+9. Swap the in-memory provider only after the database commit succeeds.
+10. Retain the old provider until commit and activation events are published.
+11. On pre-commit failure, mark the snapshot `failed`, discard the candidate, and leave the old provider/config untouched.
+12. If the in-memory swap or notification fails after commit, run compensating rollback using the recorded previous configuration and mark `rolled_back`.
+
+Never expose a session whose database metadata names one provider while the Agent holds another without an explicit transition/rollback status.
+
+### 10.3 Post-activation first response
+
+- The target's first visible response must briefly state its understood objective, current state, and next action.
+- It must ask for clarification if required fields are unknown or contradictory.
+- It must not resume an interrupted tool operation automatically.
+- Record acknowledgement against the snapshot generation.
+
+## 11. Error-driven recovery
+
+Classify provider errors that can offer checkpoint continuation, including transport, authentication, rate limit, unsupported model, server, and context failures.
+
+On eligible failure:
+
+- persist the failed provider error in the session ledger
+- prepare or refresh a deterministic snapshot without calling the failed provider
+- publish a recovery capability event to clients
+- allow the user to select a target provider/model
+- invoke the same atomic transition coordinator
+- preserve the failed provider as the rollback target when practical
+
+The action label is:
+
+> Continue with another model using session checkpoint
+
+## 12. Desktop product behavior
+
+### 12.1 Model picker
+
+For every target provider/model, display one continuity class:
+
+- **Seamless resume**: native resume/import with acknowledgement
+- **Summarized handoff**: bounded Gosling snapshot delivered through bootstrap or context injection
+- **New context only**: no supported delivery path
+
+The classification must come from server capabilities and the current session state, not from a Desktop-maintained provider-name list.
+
+### 12.2 Switch confirmation
+
+Show:
+
+- source and target provider/model
+- continuity class
+- snapshot coverage through message/row and approximate token size
+- whether the session summary is current, stale, or absent
+- active tools, pending approvals, or interrupted commands
+- redaction/truncation counts
+- whether native resume, bootstrap, or context injection will be used
+
+Require explicit confirmation for `New context only` and for cancellation of active work.
+
+### 12.3 Transition UI
+
+- Use a single transition request rather than provider/model/effort calls.
+- Show `Preparing checkpoint`, `Initializing target`, `Delivering handoff`, and `Activated` states.
+- Disable duplicate switch submissions while a transition lock is held.
+- On failure, show that the previous provider remains active or that rollback completed.
+- Offer `View checkpoint`, `Retry target`, and `Return to previous provider` where supported.
+
+### 12.4 Error card
+
+For eligible provider errors, add the checkpoint continuation action alongside retry. The action opens a target picker filtered or annotated by continuity capability.
+
+## 13. Project memory separation
+
+- Keep session snapshots exclusively in Gosling state storage by default.
+- Treat `AGENTS.md` and `CLAUDE.md` as optional user-controlled projections of curated project knowledge.
+- Do not append session objectives, errors, commands, or transient next actions to repository instruction files.
+- Gate any automatic durable-file projection behind explicit configuration and show the target path before enabling it.
+- Keep `memories.jsonl` retrieval independent from handoff correctness.
+- Document that memory recall enriches a session but does not establish checkpoint coverage or delivery acknowledgement.
+
+## 14. Implementation phases
+
+### Phase 1: Snapshot foundation
+
+- Add snapshot types, schema versioning, SQLite migration, storage APIs, retention, and source hashing.
+- Build the deterministic snapshot extractor and redaction pipeline.
+- Reuse current session summaries/facts as optional inputs.
+- Add unit and migration tests.
+
+Exit criteria:
+
+- A snapshot can be produced after a simulated provider transport failure with no provider call.
+- Persisted snapshots are bounded, redacted, versioned, and coverage-addressable.
+
+### Phase 2: Provider capabilities
+
+- Add `ContextOwnership` and `ProviderCapabilities`.
+- Implement capabilities for all built-in providers and custom/declarative defaults.
+- Migrate context-manager, compaction, CLI, and ACP decisions away from direct boolean checks.
+- Expose capabilities to clients.
+
+Exit criteria:
+
+- Every registered provider produces a deterministic continuity classification.
+- No switch behavior depends on provider-name suffixes.
+
+### Phase 3: Atomic transitions
+
+- Add the transition request, coordinator, per-session lock, candidate-provider lifecycle, database transaction, and rollback record.
+- Route server and ACP provider/model/effort updates through the coordinator.
+- Preserve the previous provider until activation succeeds.
+
+Exit criteria:
+
+- Failure injection at each transition stage leaves provider metadata and in-memory provider consistent.
+- Duplicate or stale switch requests cannot create multiple active generations.
+
+### Phase 4: Delivery adapters
+
+- Move ACP handoff construction into core and enforce the snapshot budget.
+- Add bootstrap delivery to `claude-code`.
+- Add Gosling-managed injection and native resume/import hooks.
+- Add acknowledgement recording and first-response confirmation behavior.
+
+Exit criteria:
+
+- Native-to-native, native-to-ACP, ACP-to-native, and provider-managed transitions preserve the checkpoint without raw-history replay.
+
+### Phase 5: Desktop continuity UX
+
+- Replace sequential provider/model/effort operations.
+- Add continuity badges, confirmation details, progress states, checkpoint inspection, and rollback messaging.
+- Add the provider-error continuation action.
+
+Exit criteria:
+
+- Users can predict continuity before switching and can see whether activation or rollback succeeded.
+
+### Phase 6: Memory policy and documentation
+
+- Separate durable project-memory projections from session handoff documentation and settings.
+- Document retention, privacy, redaction, provider capability semantics, and the immediate ACP workaround.
+- Deprecate `claude-code` in switching recommendations while retaining compatibility.
+
+### Phase 7: Rollout
+
+- Introduce the snapshot builder in telemetry/shadow mode first.
+- Compare predicted snapshot coverage with current ACP handoff behavior.
+- Enable bounded ACP delivery, then atomic transitions, then Desktop recovery UX.
+- Keep a feature flag for rollback during the first release cycle.
+
+## 15. Test and evaluation matrix
+
+### 15.1 Storage and migration
+
+- fresh database creates snapshot tables and indexes
+- upgrade from the previous schema preserves sessions and summaries
+- cascade delete and retention behavior
+- unknown future schema versions fail safely
+- corrupted snapshot JSON is isolated and reported
+
+### 15.2 Snapshot construction
+
+- no summary, current summary, stale summary, and failed summary
+- short and multi-million-token sessions
+- errors immediately after a user message and after partial assistant output
+- completed, failed, cancelled, and still-running commands
+- file edits, deletions, binary attachments, and large tool output
+- pending permission requests and queued user steers
+- deterministic output and stable source hash
+
+### 15.3 Redaction
+
+- credentials in tool arguments, output, URLs, headers, environment maps, diffs, and errors
+- known secret values and token-like unknown values
+- no raw image/binary payloads
+- delivery and persisted JSON contain identical redacted content
+
+### 15.4 Provider transitions
+
+- API to API
+- API to ACP
+- ACP to API
+- ACP to ACP
+- API/ACP to `claude-code`
+- same-provider in-place model change
+- same-provider recreation when in-place switching is unsupported
+- native resume success and native resume fallback to bootstrap
+- new-context-only confirmation
+
+### 15.5 Failure injection
+
+- snapshot persistence failure
+- target provider creation/authentication failure
+- mode/model/thinking-effort configuration failure
+- bootstrap send failure and acknowledgement timeout
+- database commit failure
+- in-memory swap or notification failure
+- cancellation during preparation and activation
+- target failure on the first post-activation turn
+
+For every failure, assert that the old provider remains usable or rollback is explicit and complete.
+
+### 15.6 Behavioral safety
+
+- prior tool calls are not executed twice
+- interrupted commands are not reported as completed
+- approvals do not transfer as approvals for a new provider
+- the latest user request appears exactly once
+- target acknowledgement precedes new tool work
+- snapshot content cannot override system policy or current permission mode
+
+### 15.7 Desktop
+
+- continuity classification rendering
+- checkpoint preview and truncation/redaction counts
+- active-operation warning and confirmation
+- transition progress and duplicate-submit prevention
+- provider-error continuation flow
+- rollback and retry states
+
+## 16. Primary implementation touchpoints
+
+Core and persistence:
+
+- `crates/gosling/src/session/session_manager.rs`
+- new `crates/gosling/src/session/handoff.rs`
+- `crates/gosling/src/agents/agent.rs`
+- new `crates/gosling/src/agents/provider_transition.rs`
+- `crates/gosling/src/context_mgmt/`
+
+Provider contract and adapters:
+
+- `crates/gosling-providers/src/base.rs`
+- `crates/gosling/src/acp/provider.rs`
+- `crates/gosling/src/providers/claude_code.rs`
+- other providers currently overriding `manages_own_context()`
+
+Server and ACP surface:
+
+- `crates/gosling/src/acp/server.rs`
+- `crates/gosling/src/acp/server/manage_sessions.rs`
+- `crates/gosling-server/src/routes/agent.rs`
+- `crates/gosling-server/src/routes/errors.rs`
+
+Desktop:
+
+- `ui/desktop/src/acp/providers.ts`
+- `ui/desktop/src/components/ModelAndProviderContext.tsx`
+- `ui/desktop/src/components/settings/models/subcomponents/SwitchModelModal.tsx`
+- `ui/desktop/src/components/BaseChat.tsx`
+- session/provider types and ACP SDK definitions
+
+## 17. Acceptance criteria
+
+- Switching from a failed provider does not require a successful outgoing-model call.
+- The target receives a bounded, redacted checkpoint with objective, latest intent, observed work, errors, unresolved state, next actions, and recent tail.
+- The same current user request is never delivered twice.
+- No previous tool operation is silently resumed or repeated.
+- Provider, model, and thinking effort change through one transition request and one committed generation.
+- A failed activation leaves the old provider and stored configuration active, or performs a recorded complete rollback.
+- Desktop accurately labels continuity before the switch and reports checkpoint coverage afterward.
+- ACP no longer sends an unbounded prior transcript.
+- `claude-code` receives the same core bootstrap envelope as ACP provider-managed agents.
+- Repository memory files are not modified by session switching.
+- Cross-provider, failure, compaction, cancellation, tool, approval, migration, and redaction tests pass.
+
+## 18. Risks and decisions to confirm during implementation
+
+- Whether bootstrap acknowledgement should consume a separate model call or be combined with the first user turn.
+- The target-context percentage and absolute handoff token cap after evaluation on 128K, 200K, and 1M models.
+- Whether snapshot storage needs application-level encryption in addition to existing local session protections.
+- Which native providers can genuinely import history rather than merely resume their own prior session ID.
+- How long rollback providers and provider subprocesses should remain alive after activation.
+- Whether active read-only tools may finish during snapshot preparation or all active operations must block switching.
+- How custom providers declare capabilities safely without claiming unsupported continuity.
+
+Default choices for the first implementation should favor bounded bootstrap delivery, explicit unknown state, blocked switching during active operations, and rollback safety over maximum automation.
+
+## 19. Immediate operational workaround
+
+Until this design ships:
+
+- Prefer `claude-acp` over deprecated `claude-code` when continuing an existing Gosling session.
+- Treat the current ACP raw-history handoff as best-effort; very long sessions may still be costly or exceed useful context.
+- Avoid switching while a tool call or approval is active.
+- After switching, ask the target to restate the objective, current state, and next action before it performs new work.
+
+# Part II: Security Scan Remediation Program
+
+## 20. Plan authority and planning profile
+
+This section incorporates the prior Session Handoff plan rather than replacing it. The continuity feature remains Part I and the security-remediation program is Part II. The two workstreams share the same evidence, change-control, and continuation practices, but they have independent implementation gates.
+
+The planning structure follows the existing-repository, or "Giles," profile from:
+
+- `/Users/eric/Work/vscode/agent-skills/030_plan/plan-prototype-build/SKILL.md`
+- `references/evidence-and-traceability.md`
+- `references/continuation-and-handoff.md`
+- `references/target-repo-standard.md`
+- `references/design-for-change.md`
+- `references/testing-standard.md`
+- `templates/gated_execution_plan.md`
+- `templates/traceability_matrix.md`
+- `templates/risk_register.md`
+- `templates/plan_change_record.md`
+
+The repository's current structure, commands, and conventions are authoritative. This plan does not create a second project structure, alternate build system, parallel dependency manifest, or separate issue database.
+
+The normal prototype-plan source-file guideline is 800 lines. The user explicitly approved a longer `plan.md`, so this master plan intentionally keeps the related continuity and security work in one durable handoff artifact.
+
+## 21. Security objective
+
+Reduce the repository's highest-risk supply-chain and workflow-integrity exposures first, while preserving Gosling behavior and avoiding disruptive local operations.
+
+The implementation order is fixed unless a plan-change record is added:
+
+1. P0 integrity issues: alerts `#53`, `#58`, `#54`, and `#57`.
+2. CI permission reductions: alerts `#29`, `#4`, `#6`, `#26`, `#9`, and `#14`.
+3. Container digest pinning.
+4. Dependency mapping investigation for alert `#65` before any dependency change.
+5. Branch-protection and review findings as a separate GitHub-administration workstream.
+
+## 22. Security scope boundaries
+
+### 22.1 In scope for Phase 1
+
+- Replace the JBang network-to-shell installer with an immutable release download and checksum verification.
+- Replace the manylinux rustup network-to-shell installer with an immutable archived `rustup-init` binary and architecture-specific checksum verification.
+- Replace unpinned, global provider CLI installation in smoke tests with exact, lockfile-managed workspace development dependencies.
+- Replace the docs workflow's mutable remote Gosling installer with a CLI built from the already checked-out source and locked Rust dependency graph.
+- Add a static regression check covering all four P0 contracts.
+- Run syntax, manifest, lockfile, and static security checks only.
+
+### 22.2 Explicitly out of scope for Phase 1
+
+- Building Gosling locally.
+- Running `cargo build`, `cargo test`, `cargo clippy`, Electron packaging, or Desktop tests.
+- Starting, stopping, rebuilding, restarting, signaling, or otherwise interacting with a running Gosling process.
+- Changing repository, organization, branch-protection, review, ruleset, token, secret, variable, or environment settings on GitHub.
+- Closing, dismissing, or modifying GitHub code-scanning alerts.
+- Changing workflow permissions; those belong to Phase 2.
+- Performing the broader container-digest program; that belongs to Phase 3.
+- Changing dependencies in response to alert `#65`; Phase 4 begins with dependency mapping only.
+- Fixing adjacent findings that are not required to preserve a Phase 1 invariant.
+- Committing, pushing, opening a pull request, or publishing artifacts.
+
+## 23. Security requirements
+
+### 23.1 Phase 1 P0 integrity requirements
+
+#### SEC-REQ-001 — JBang installer integrity (`#53`)
+
+The Desktop JBang shim must not execute a script obtained from `sh.jbang.dev` or any other mutable network endpoint.
+
+Acceptance criteria:
+
+- The JBang release version is exact.
+- The release URL contains the exact Git tag and archive name.
+- The archive is verified against a repository-pinned SHA-256 digest before extraction.
+- Checksum mismatch aborts installation.
+- The downloaded archive is not executed as shell code.
+- JBang remains available to the wrapper without modifying the user's shell profile.
+- Existing registry selection, trust configuration, `--fresh`, `--quiet`, and argument forwarding behavior remain unchanged.
+
+#### SEC-REQ-002 — Provider package integrity (`#58`)
+
+Provider smoke tests must not globally install floating npm packages immediately before running tests with credentials.
+
+Acceptance criteria:
+
+- Claude Code, Claude ACP, and Codex ACP packages are exact-version development dependencies of `ui/desktop`.
+- The exact packages resolve through `ui/pnpm-lock.yaml` with registry integrity metadata.
+- The workflow uses the existing frozen-lockfile install.
+- The workflow contains no `npm install -g` provider step.
+- Provider executable names remain `claude`, `claude-agent-acp`, and `codex-acp` on the `pnpm run` PATH.
+- Deprecated `@zed-industries` packages are not newly introduced.
+
+#### SEC-REQ-003 — rustup bootstrap integrity (`#54`)
+
+The manylinux build must not pipe the mutable rustup bootstrap script into a shell.
+
+Acceptance criteria:
+
+- The rustup version is exact.
+- The archived rustup URL contains the exact version and target triple.
+- Each supported manylinux architecture selects an explicit SHA-256 digest.
+- Unknown architectures fail closed.
+- The downloaded binary is verified before it is made executable or run.
+- The repository's `rust-toolchain.toml` remains the Rust toolchain-channel authority.
+- The manylinux build behavior after rustup installation remains unchanged.
+
+#### SEC-REQ-004 — docs CLI provenance (`#57`)
+
+The documentation workflow must not install Gosling by piping a mutable release script into a shell.
+
+Acceptance criteria:
+
+- The workflow builds `gosling-cli` from the exact checked-out source.
+- Cargo uses the committed lockfile.
+- The resulting binary is copied into the existing local binary directory.
+- The existing PATH publication and `gosling --version` smoke check remain.
+- No release-tag alias, mutable installer, or network-delivered shell script is used.
+
+#### SEC-REQ-005 — P0 regression guard
+
+The repository must contain and pass a narrow static check that fails if any of the four prohibited patterns or required immutable pins regress.
+
+Acceptance criteria:
+
+- The check is deterministic and network-free.
+- The check does not build or launch Gosling.
+- Each P0 alert has at least one positive invariant and one forbidden-pattern assertion.
+- Failure output names the violated contract.
+
+### 23.2 Phase 2 CI-permission requirements
+
+#### SEC-REQ-006 — Inventory permissions (`#29`, `#4`, `#6`, `#26`, `#9`, `#14`)
+
+For each affected workflow, record triggers, jobs, steps, GitHub API mutations, artifact operations, fork behavior, and current workflow/job permissions before editing.
+
+#### SEC-REQ-007 — Least-privilege separation
+
+Read/test jobs should receive read-only permissions. Write permissions should exist only on the smallest job that performs a verified write and should be guarded by the narrowest applicable event and repository conditions.
+
+#### SEC-REQ-008 — Untrusted input isolation
+
+Workflows with elevated permissions or secrets must not execute untrusted pull-request code. Any intentional split between analysis and privileged mutation must pass only bounded, validated artifacts across the trust boundary.
+
+#### SEC-REQ-009 — Independent permission delivery
+
+Permission fixes must be reviewed and validated separately from P0 installer-integrity changes so that permission semantics and supply-chain semantics can be evaluated independently.
+
+### 23.3 Phase 3 container requirements
+
+#### SEC-REQ-010 — Digest-pinned containers
+
+Every in-scope workflow container and Docker base image identified by the scan must use an immutable digest while retaining a human-readable tag where supported.
+
+#### SEC-REQ-011 — Digest provenance and update method
+
+Each digest must be resolved for the correct registry, platform, and manifest type. The plan must document how maintainers refresh digests without reverting to floating tags.
+
+### 23.4 Phase 4 dependency-mapping requirements
+
+#### SEC-REQ-012 — Alert `#65` reachability map
+
+Before changing a dependency, map the scanner advisory to the manifest entry, lockfile package, direct or transitive parent, enabled feature or runtime import, shipping artifact, and reachable code path.
+
+#### SEC-REQ-013 — Minimal dependency response
+
+Only after the mapping is complete may a dependency update, feature change, package override, removal, or documented no-change disposition be proposed. The smallest behavior-preserving response is preferred.
+
+### 23.5 Phase 5 GitHub-governance requirements
+
+#### SEC-REQ-014 — Settings-only recommendations
+
+Branch-protection and review alerts must be handled as an explicit administrator runbook. Code changes must not pretend to satisfy repository-settings findings.
+
+#### SEC-REQ-015 — Approval and readback
+
+Any future GitHub settings change requires explicit user authorization, an exact preview, the least-privilege administrator operation, and a readback confirming the resulting rules.
+
+## 24. Phase 1 threat and invariant model
+
+### 24.1 Protected assets
+
+- CI secrets supplied to provider integration tests.
+- Release signing and artifact provenance.
+- Developer workstations that invoke the JBang shim.
+- GitHub-hosted runner tokens and repository write capability.
+- The integrity of generated CLI reference documentation.
+- The contents of the repository and built Gosling binaries.
+
+### 24.2 Trust boundaries
+
+- GitHub and npm release infrastructure are distribution systems, not authorities to execute the latest content without verification.
+- Repository-reviewed source and committed lockfiles are trusted inputs for the current revision.
+- Checksums committed in reviewed source establish the expected immutable artifact identity.
+- CI secrets cross into provider processes only after installation has been resolved from the reviewed lockfile.
+- The checked-out repository is the provenance boundary for the docs CLI.
+
+### 24.3 Vulnerable path: alert `#53`
+
+Source: mutable `https://sh.jbang.dev` response.  
+Transform: `curl -Ls` streams bytes.  
+Sink: `bash -s - app setup` executes those bytes on a developer machine.  
+Consequence: endpoint, DNS, TLS termination, hosting, or release-promotion compromise can become arbitrary code execution.
+
+Security invariant: network content may be unpacked only after identity verification against the reviewed digest; it may not be interpreted as shell.
+
+Preserved behavior: a compatible JBang command is present for the wrapper, uses Java 17, respects Gosling's config root, and receives the original arguments.
+
+### 24.4 Vulnerable path: alert `#58`
+
+Source: floating npm package metadata for three provider packages.  
+Transform: global npm resolution downloads current package versions and lifecycle content.  
+Sink: package installation and subsequent provider execution in a job with numerous API credentials.  
+Consequence: a compromised or unexpectedly changed latest release can execute with provider secrets.
+
+Security invariant: provider executables used by credential-bearing tests are exact packages selected by the reviewed manifest and verified lockfile.
+
+Preserved behavior: smoke tests can resolve all three provider binary names from the Desktop workspace.
+
+### 24.5 Vulnerable path: alert `#54`
+
+Source: mutable `https://sh.rustup.rs` response.  
+Transform: `curl` streams bytes.  
+Sink: shell executes the installer inside the release build container.  
+Consequence: bootstrap compromise can alter binaries or exfiltrate the job's accessible state.
+
+Security invariant: a target-specific archived rustup executable is run only after its digest matches the reviewed value.
+
+Preserved behavior: rustup installs the channel from `rust-toolchain.toml` and the target selected by the workflow matrix.
+
+### 24.6 Vulnerable path: alert `#57`
+
+Source: mutable `stable/download_cli.sh` release alias.  
+Transform: `curl` streams the script.  
+Sink: shell runs it in a workflow with write permissions and an Anthropic credential later used by the job.  
+Consequence: compromised release content can execute in a privileged automation context.
+
+Security invariant: the CLI used for documentation generation is built from the reviewed checkout and committed dependency lock.
+
+Preserved behavior: a `gosling` executable is placed in `/home/runner/.local/bin`, added to later-step PATH, and version-checked before use.
+
+## 25. Phase 1 implementation contracts
+
+### 25.1 Alert `#53` patch contract
+
+File: `ui/desktop/src/bin/jbang`
+
+Planned change:
+
+1. Declare `JBANG_VERSION=0.139.3`.
+2. Declare the SHA-256 digest for the official `jbang-0.139.3.zip` release asset.
+3. Install under a versioned Gosling-managed directory inside `mcp-hermit`.
+4. Download from the exact `v0.139.3` GitHub release URL with curl failure handling.
+5. Verify with `sha256sum` or macOS `shasum -a 256`.
+6. Extract with the already-installed Java 17 `jar` command.
+7. Validate the expected `jbang-0.139.3/bin/jbang` path before activation.
+8. Put the versioned JBang `bin` directory on PATH for the wrapper process.
+9. Leave registry, trust, and final invocation behavior unchanged.
+
+Rollback unit: revert only the JBang installation block and its constants. Existing Gosling-managed JBang directories can be ignored or removed after rollback; no user shell file is changed.
+
+### 25.2 Alert `#58` patch contract
+
+Files:
+
+- `.github/workflows/pr-smoke-test.yml`
+- `ui/package.json`
+- `ui/pnpm-lock.yaml`
+
+Planned change:
+
+1. Add exact development dependencies:
+   - `@anthropic-ai/claude-code@2.1.206`
+   - `@agentclientprotocol/claude-agent-acp@0.58.1`
+   - `@agentclientprotocol/codex-acp@1.1.2`
+2. Keep CI-only provider tools at the existing `ui` workspace root rather than merging their dependency graph into the Desktop application's direct dependencies.
+3. Add exact `@modelcontextprotocol/sdk@1.29.0` and `zod@4.4.3` workspace-root development dependencies to satisfy the current Claude Agent SDK peer contract.
+4. Scope the pnpm override `@agentclientprotocol/claude-agent-acp>zod` to `4.4.3` so pnpm does not select Desktop's compatible-but-too-old Zod 3 instance for the provider tool.
+5. Generate lockfile entries with pnpm so integrity metadata is retained.
+6. Remove the global, floating npm installation step.
+7. Continue using `pnpm install --frozen-lockfile` and the existing `pnpm run` test command. Pnpm exposes workspace-root binaries to workspace scripts.
+
+Compatibility note: the replacement ACP packages retain the executable names expected by Gosling. The prior `@zed-industries` packages are deprecated in favor of the `@agentclientprotocol` namespace.
+
+Rollback unit: restore the removed workflow step and remove the five exact workspace-root dev dependencies, the scoped Zod override, and their lockfile entries. This rollback is mechanically possible but would reintroduce the finding and should be used only to diagnose compatibility in an isolated, credential-free job.
+
+### 25.3 Alert `#54` patch contract
+
+File: `.github/workflows/build-cli.yml`
+
+Planned change:
+
+1. Pin rustup to `1.29.0`.
+2. Select one of these official archive digests:
+   - `x86_64-unknown-linux-gnu`: `4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10`
+   - `aarch64-unknown-linux-gnu`: `9732d6c5e2a098d3521fca8145d826ae0aaa067ef2385ead08e6feac88fa5792`
+3. Fail on any unsupported architecture.
+4. Download the exact archive binary to a temporary path.
+5. Verify it with `sha256sum -c` before `chmod` and execution.
+6. Preserve `--default-toolchain none`, `--profile minimal`, and `--no-modify-path`.
+7. Continue installing Rust channel `1.92` from `rust-toolchain.toml`.
+
+Rollback unit: revert the manylinux bootstrap block only. Container digest pins and host-runner Hermit behavior are independent.
+
+### 25.4 Alert `#57` patch contract
+
+File: `.github/workflows/docs-update-cli-ref.yml`
+
+Planned change:
+
+1. Use the already-configured Rust toolchain.
+2. Replace the mutable `stable` compiler selector with repository channel `1.92` while retaining the commit-pinned setup action.
+3. Run `cargo build --locked -p gosling-cli --bin gosling` from the repository checkout.
+4. Install `target/debug/gosling` into `/home/runner/.local/bin/gosling` with executable mode.
+5. Publish the same directory through `GITHUB_PATH`.
+6. Retain `gosling --version` as a local smoke check.
+
+Tradeoff: the docs workflow spends additional runner time compiling, but its CLI now corresponds exactly to the checked-out revision and does not depend on a mutable or missing `stable` release alias.
+
+Rollback unit: revert the single workflow step. No release assets or repository settings are changed.
+
+### 25.5 Regression-check contract
+
+File: `.github/scripts/verify-phase1-integrity.sh`
+
+The script will:
+
+- reject `sh.jbang.dev` in the JBang shim;
+- require the exact JBang version, digest, and tagged URL;
+- reject provider `npm install -g` in the smoke workflow;
+- require exact current provider dependencies in `package.json`;
+- require lockfile resolution of all three packages;
+- reject `sh.rustup.rs` in the CLI build workflow;
+- require the rustup version, both architecture digests, and archived URL form;
+- reject the remote `stable/download_cli.sh` installer in the docs workflow;
+- require locked local CLI compilation and local installation.
+
+## 26. Gated execution plan
+
+### Gate 0 — Preserve and constrain
+
+Status: complete.
+
+Evidence required:
+
+- Read repository `AGENTS.md`.
+- Record the user's non-build, non-restart, and non-settings constraints.
+- Inspect `git status` and preserve unrelated changes.
+- Confirm no commit or push authority was requested.
+
+Exit criteria:
+
+- Only the existing untracked `plan.md` was present before Phase 1 edits.
+- No running process is queried, signaled, or changed.
+
+### Gate 1 — Revalidate findings and sources
+
+Status: complete.
+
+Evidence required:
+
+- Inspect the four exact source-to-sink paths.
+- Resolve immutable release identities from primary upstream sources.
+- Verify replacement package names and executable compatibility.
+- Confirm the docs workflow already has a Rust setup and repository checkout.
+
+Exit criteria:
+
+- Each alert has a documented vulnerable path, protected invariant, preserved behavior, and narrow strategy.
+
+### Gate 2 — Plan and review patch contracts
+
+Status: complete.
+
+Evidence required:
+
+- Stable requirement IDs.
+- File-level patch contracts.
+- Traceability and risk entries.
+- Explicit rollback units.
+- Check commands selected before edits.
+
+Exit criteria:
+
+- Phase 1 changes can be evaluated without inferring intent from the patch.
+
+### Gate 3 — Implement Phase 1
+
+Status: complete.
+
+Ordered work:
+
+1. Add the security regression guard so contracts are executable.
+2. Patch JBang installation.
+3. Patch manylinux rustup bootstrap.
+4. Patch docs CLI installation.
+5. Add provider dependencies through pnpm and remove global installation.
+6. Inspect the generated lockfile diff for unrelated churn.
+
+Exit criteria:
+
+- Only planned files changed.
+- No mutable network response is piped to a shell in the four alert paths.
+- Dependency changes are exact and lockfile-backed.
+
+### Gate 4 — Targeted verification
+
+Status: complete within the user-authorized non-build boundary.
+
+Required checks:
+
+1. `bash -n ui/desktop/src/bin/jbang`
+2. `bash -n .github/scripts/verify-phase1-integrity.sh`
+3. `.github/scripts/verify-phase1-integrity.sh`
+4. Parse both changed workflow YAML files and the smoke workflow with a local YAML parser.
+5. Parse `ui/package.json` as JSON.
+6. Validate the pnpm lockfile under frozen-lockfile, lockfile-only mode if supported.
+7. Run `shellcheck` on changed shell scripts if available.
+8. Run `git diff --check`.
+9. Search the four fixed paths for prohibited remote-to-shell and global-install patterns.
+10. Inspect `git diff --stat`, `git diff --name-only`, and the complete diff.
+
+Prohibited checks:
+
+- No Gosling build.
+- No Rust, JavaScript, integration, or end-to-end test suite.
+- No Desktop launch.
+- No workflow dispatch.
+
+Exit criteria:
+
+- Every required available check passes.
+- Any unavailable check is recorded with a reason and compensating evidence.
+- Each fixed alert has a regression assertion.
+
+### Gate 5 — Hostile review and handoff
+
+Status: complete.
+
+Review questions:
+
+- Can mutable content still reach an interpreter before verification?
+- Can a checksum branch be bypassed by an unsupported platform?
+- Did package pinning accidentally retain global resolution elsewhere in the same job?
+- Does the workspace PATH still expose the expected provider binary names?
+- Does the docs workflow build the same checked-out revision it later analyzes?
+- Did any edit expand permissions, expose secrets, or modify runtime behavior beyond the finding?
+- Did generated lockfile churn exceed the three requested packages and required peer resolutions?
+
+Exit criteria:
+
+- Findings have an honest `fixed`, `no_change`, or `blocked` disposition.
+- Residual adjacent risks are named without being silently expanded into Phase 1.
+- `plan.md` records actual commands, evidence, remaining work, and the next safe action.
+
+## 27. Phase 2 detailed plan: CI permission reductions
+
+Phase 2 is intentionally a separate implementation unit.
+
+### 27.1 Inventory each alert
+
+For alerts `#29`, `#4`, `#6`, `#26`, `#9`, and `#14`:
+
+1. Re-open the alert and record the exact workflow and line.
+2. Enumerate all triggers, including `pull_request`, `pull_request_target`, `workflow_run`, `workflow_call`, schedules, manual dispatch, pushes, and releases.
+3. Record top-level and job-level permissions.
+4. Record every GitHub API, `gh`, release, issue, pull-request, contents, checks, actions, package, deployment, OIDC, or security-event operation.
+5. Classify every checkout as trusted or untrusted.
+6. Record whether secrets are available at the point untrusted code could run.
+7. Propose the smallest permission set per job.
+8. Separate mutation into a guarded job when a read/test job does not need write access.
+
+### 27.2 Permission design rules
+
+- Default to `contents: read` or `permissions: {}` at workflow scope.
+- Add job permissions individually.
+- Do not grant `pull-requests: write` to code-execution jobs.
+- Do not grant `contents: write` to jobs that only upload workflow artifacts.
+- Treat `id-token: write` as a separate high-risk capability.
+- Ensure forked pull requests cannot route attacker-controlled content into a privileged interpreter.
+- Pin any new action by full commit SHA.
+- Do not change GitHub settings during code delivery.
+
+### 27.3 Phase 2 validation
+
+- YAML parse every changed workflow.
+- Run a static permission-contract script or actionlint if available.
+- Map every requested permission to a specific step.
+- Confirm untrusted checkouts occur only after privileges have been reduced.
+- Review event expressions for fork and actor confusion.
+- Use dry-run or read-only GitHub inspection only unless separately authorized.
+
+## 28. Phase 3 detailed plan: container digest pinning
+
+### 28.1 Inventory
+
+1. Search workflow `container`, service containers, Dockerfiles, Compose files, release scripts, and documentation examples used by automation.
+2. Separate runtime images from test-only and documentation images.
+3. Record tag, registry, platform set, current digest, upstream release cadence, and owning workflow.
+4. Exclude values already pinned by digest after verifying digest format.
+
+### 28.2 Resolution
+
+1. Resolve the registry manifest for each image.
+2. For multi-platform images, pin the manifest-list digest where the consumer selects platforms.
+3. For architecture-specific jobs, verify the selected digest includes the expected architecture.
+4. Retain the readable tag as `image:tag@sha256:digest` where syntax permits.
+5. Record the source command and resolution date in plan evidence, not noisy source comments unless maintainers need the update instruction there.
+
+### 28.3 Maintenance
+
+- Prefer Dependabot or Renovate digest updates if already supported by repository policy.
+- Never replace one floating tag with another floating tag.
+- Review upstream changelogs before accepting digest refreshes.
+- Validate container entrypoint and available tools after each update in CI, not by restarting local Gosling.
+
+## 29. Phase 4 detailed plan: alert `#65` dependency mapping
+
+No dependency changes are authorized until these questions are answered:
+
+1. Which ecosystem and package does the scanner identify?
+2. Which manifest declares it, if any?
+3. Which lockfile entry is affected?
+4. Is it direct, transitive, optional, development-only, build-only, or runtime?
+5. Which parent dependency introduces it?
+6. Which features, imports, binaries, bundles, or target platforms make it reachable?
+7. Is vulnerable behavior invoked with attacker-controlled input?
+8. Does the affected package ship in CLI, Desktop, MCP, SDK, container, or CI-only artifacts?
+9. Is a fixed version compatible with current Rust, Node, Electron, ACP, and platform constraints?
+10. Would an override produce duplicate versions or violate the upstream package's tested range?
+
+Required output before implementation:
+
+- an advisory-to-lockfile mapping;
+- a dependency path for every affected resolved version;
+- reachability and artifact exposure classification;
+- fixed-version options and compatibility risks;
+- a recommended `update`, `override`, `feature-disable`, `remove`, or `no_change` disposition;
+- targeted regression checks for the affected behavior.
+
+## 30. Phase 5 detailed plan: branch protection and review settings
+
+This workstream produces a runbook before any settings mutation.
+
+The runbook must include:
+
+- repository and default branch;
+- current rulesets and legacy branch-protection state;
+- required pull-request approvals;
+- stale-review dismissal behavior;
+- code-owner review requirement;
+- required conversation resolution;
+- administrator bypass policy;
+- force-push and deletion policy;
+- required status checks and strictness;
+- expected impact on release automation, Dependabot, bots, and emergency maintenance;
+- exact proposed settings changes;
+- rollback settings;
+- explicit owner approval;
+- post-change API or UI readback.
+
+No source-code patch can close these alerts. Their disposition remains separate until GitHub reports the desired administrative state.
+
+## 31. Traceability matrix
+
+| Requirement | Alert(s) | Source files or settings | Planned implementation | Verification evidence | Status |
+|---|---:|---|---|---|---|
+| SEC-REQ-001 | #53 | `ui/desktop/src/bin/jbang` | Exact JBang archive plus SHA-256 verification | shell syntax, live digest/layout check, regression guard | Complete; hosted wrapper exercise pending |
+| SEC-REQ-002 | #58 | smoke workflow, UI workspace manifest, pnpm lock | Exact isolated workspace tool dependencies; remove global install | JSON parse, peer-resolution check, frozen lock validation, lock diff, regression guard | Complete; hosted provider smoke pending |
+| SEC-REQ-003 | #54 | build CLI workflow | Archived rustup-init plus architecture digests | YAML/embedded-shell parse, official digest readback, regression guard | Complete; hosted manylinux build pending |
+| SEC-REQ-004 | #57 | docs workflow | Locked local CLI build and install | YAML/embedded-shell parse, command assertions, regression guard | Complete; hosted docs workflow pending |
+| SEC-REQ-005 | #53/#58/#54/#57 | `.github/scripts/verify-phase1-integrity.sh` | Network-free invariant assertions | executable mode, script syntax, successful execution | Complete |
+| SEC-REQ-006 | #29/#4/#6/#26/#9/#14 | affected workflows | Permission and event inventory | source-to-permission table | Planned Phase 2 |
+| SEC-REQ-007 | same | affected workflows | least-privilege job permissions | permission-to-step map | Planned Phase 2 |
+| SEC-REQ-008 | same | affected workflows | untrusted code isolation | trust-boundary review | Planned Phase 2 |
+| SEC-REQ-009 | same | delivery history | separate Phase 2 patch | isolated diff and validation | Planned Phase 2 |
+| SEC-REQ-010 | container alerts | workflows and Dockerfiles | tag plus immutable digest | registry manifest evidence | Planned Phase 3 |
+| SEC-REQ-011 | container alerts | update config/docs | documented digest update path | update rehearsal | Planned Phase 3 |
+| SEC-REQ-012 | #65 | manifest/lock/import graph | complete dependency map | advisory-to-artifact report | Planned Phase 4 |
+| SEC-REQ-013 | #65 | determined after mapping | minimal dependency response | targeted compatibility/security checks | Blocked on mapping by design |
+| SEC-REQ-014 | branch/review alerts | GitHub settings | administrator runbook | settings preview | Planned Phase 5 |
+| SEC-REQ-015 | branch/review alerts | GitHub settings | approval-gated mutation/readback | API/UI readback | Requires future authorization |
+
+## 32. Risk register
+
+| Risk | Likelihood | Impact | Detection | Mitigation | Residual disposition |
+|---|---|---|---|---|---|
+| JBang archive layout differs from documented layout | Low | Medium | expected launcher path check | fail before activation; preserve prior install | Digest and expected path verified live; wrapper exercise remains |
+| JBang checksum is copied incorrectly | Low | High | static pin review; actual download check | use official release asset digest; fail closed | Live archive verification passed |
+| macOS lacks GNU `sha256sum` | High | Medium | platform review | support `shasum -a 256` fallback | Low |
+| manylinux architecture expression selects unexpected target | Low | High | explicit case branch | fail unsupported architecture | Low |
+| official rustup archive is unavailable transiently | Low | Medium | curl failure | fail build; do not fall back to mutable installer | Accept availability failure over integrity bypass |
+| exact provider releases have behavior incompatibility | Medium | Medium | provider smoke workflow | retain expected binaries; isolate exact package change | CI runtime verification remains required |
+| package manager generates unrelated lockfile churn | Medium | Medium | hostile lock diff review | use repo pnpm; revert unrelated churn only | Low after review |
+| package lifecycle scripts execute during install | Medium | High | lock/package review and CI behavior | exact lockfile narrows identity; future hardening may restrict scripts | Residual; not fully eliminated by #58 fix |
+| local docs CLI build increases CI duration | High | Low | workflow duration | rely on Rust cache; optimize later only with measured evidence | Accept |
+| docs workflow source build differs from historical release comparison intent | Low | Medium | inspect downstream use | current workflow comment permits HEAD and builds are expected | Review in hosted CI |
+| static guard overfits formatting | Medium | Low | deliberate guard mutation review | assert security semantics and exact pins, not line numbers | Low |
+| adjacent Hermit stable download remains mutable | High | High | scan/source review | track as separate finding; do not hide it | Open residual risk |
+| workflow permission issues remain after Phase 1 | High | High | existing alerts | Phase 2 scheduled separately | Open until Phase 2 |
+| GitHub branch settings remain weak | Depends on current settings | High | settings inventory | Phase 5 runbook and explicit admin approval | Open until authorized |
+| no local Gosling build leaves runtime compatibility unproven | Certain | Medium | stated validation boundary | run targeted CI later; user explicitly prohibited local build/restart | Accepted for this turn |
+
+## 33. Phase 1 validation evidence log
+
+This section is updated with observed results, not intentions.
+
+### 33.1 Pre-change evidence
+
+- `git status --short`: only `?? plan.md` before implementation.
+- Alert `#53`: confirmed `curl -Ls https://sh.jbang.dev | bash -s - app setup` in the JBang shim.
+- Alert `#58`: confirmed global unpinned install of three provider packages in the credential-bearing smoke-test job.
+- Alert `#54`: confirmed `curl ... https://sh.rustup.rs | sh` in the manylinux release-build path.
+- Alert `#57`: confirmed `stable/download_cli.sh` streamed into bash in the docs workflow.
+- `rust-toolchain.toml`: channel `1.92`.
+- Local ShellCheck availability: unavailable at Gate 1; use `bash -n` plus the security contract script.
+- Local Ruby availability: `/opt/homebrew/bin/ruby`; usable for YAML syntax parsing.
+
+### 33.2 Immutable source evidence
+
+- JBang release: `v0.139.3`, generic archive `jbang-0.139.3.zip`, SHA-256 `6ff8d2f387583a8b1b1eb7839826a5e0a227c7cf1550e3bd85e0beb4838ca3ef`.
+- rustup stable archive version: `1.29.0`.
+- rustup x86_64 GNU archive SHA-256: `4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10`.
+- rustup aarch64 GNU archive SHA-256: `9732d6c5e2a098d3521fca8145d826ae0aaa067ef2385ead08e6feac88fa5792`.
+- Claude Code package: `2.1.206`, executable `claude`.
+- Claude ACP package: `@agentclientprotocol/claude-agent-acp@0.58.1`, executable `claude-agent-acp`.
+- Codex ACP package: `@agentclientprotocol/codex-acp@1.1.2`, executable `codex-acp`.
+
+### 33.3 Post-change command log
+
+- `bash -n ui/desktop/src/bin/jbang`: passed.
+- `bash -n .github/scripts/verify-phase1-integrity.sh`: passed.
+- `.github/scripts/verify-phase1-integrity.sh`: passed all four P0 contracts.
+- Ruby YAML parsing for `build-cli.yml`, `docs-update-cli-ref.yml`, and `pr-smoke-test.yml`: passed.
+- Extracted `Build CLI (manylinux container)` run block with GitHub expressions replaced for parsing, then `bash -n`: passed.
+- Extracted `Install gosling CLI` run block, then `bash -n`: passed.
+- Node JSON parse of `ui/package.json`: passed.
+- `pnpm install --lockfile-only --ignore-scripts` after peer isolation: passed without peer warnings; only expected cross-platform workspace notices and existing deprecated-subdependency notices remained.
+- `pnpm --dir ui/desktop install --frozen-lockfile --lockfile-only --ignore-scripts`: passed with pnpm `10.30.3`.
+- Desktop pnpm execution PATH inspection: confirmed `/Users/eric/Work/vscode/forked/gosling/ui/node_modules/.bin` is present.
+- Official npm metadata readback: exact package versions, executable names, and the three lockfile integrity hashes matched.
+- Live JBang archive download and `shasum -a 256 -c -`: passed for `jbang-0.139.3.zip`.
+- Live `unzip -Z1` archive inspection: found exact path `jbang-0.139.3/bin/jbang`.
+- The first optional JBang layout attempt used `jar tf` and could not run because the repository Hermit environment did not have a Java runtime active. This did not exercise the wrapper, which installs OpenJDK 17 before extraction. The network artifact was redownloaded, reverified, and inspected successfully with `unzip` as a non-executing compensating check.
+- Official rustup `.sha256` readback: both x86_64 and aarch64 digests matched the workflow constants.
+- `git diff --check`: passed.
+- Prohibited-pattern search across all four patched alert paths: no `sh.jbang.dev`, `sh.rustup.rs`, provider `npm install -g`, or stable `download_cli.sh` installer remained.
+- Workflow permission addition check: no permission changes were introduced.
+- Hostile lockfile review: changes consist of the five exact UI workspace-root tool/peer dependencies, their platform/transitive packages, one scoped Zod override, and three lines removed as pnpm normalized obsolete peer snapshots.
+- ShellCheck was not available locally. Bash syntax checks, embedded-workflow shell parsing, the regression script, live checksum checks, and hostile diff review are the compensating evidence.
+
+No Gosling build, Rust test, JavaScript test, provider integration test, Desktop launch, process restart, workflow dispatch, GitHub alert mutation, or GitHub settings change was performed.
+
+### 33.4 Finding dispositions
+
+- Alert `#53`: `fixed` in source. The vulnerable network-to-shell path is removed; a pinned JBang archive is verified before extraction. Live digest and layout checks passed. Full wrapper execution remains for hosted or separately authorized runtime validation.
+- Alert `#58`: `fixed` in source. Floating global installs are removed; exact current packages and necessary peer providers are isolated at the existing UI workspace root and integrity-locked. Hosted credential-bearing smoke tests remain pending.
+- Alert `#54`: `fixed` in source. The rustup shell bootstrap is replaced by architecture-specific, verified `rustup-init` archives with an unsupported-target failure branch. Hosted manylinux execution remains pending.
+- Alert `#57`: `fixed` in source. The remote mutable CLI installer is replaced by a locked source build from the checked-out revision using Rust `1.92`. Hosted docs-workflow execution remains pending.
+- SEC-REQ-005: `fixed`; the executable network-free regression guard passes.
+
+### 33.5 Hostile review outcome
+
+- No downloaded bytes reach bash or another interpreter in the four remediated paths.
+- JBang and rustup identity checks occur before extraction or execution.
+- Rustup target selection is explicit and fails closed for unknown targets.
+- Provider tools do not use global or floating resolution and do not alter Desktop's Zod 3/MCP SDK 1.27 application graph.
+- The docs CLI is built from the checkout and committed Cargo lockfile, with a compiler channel matching `rust-toolchain.toml`.
+- No permission, secret, trigger, GitHub setting, or running-process behavior changed.
+- The remaining risks in Section 32 are not silently represented as closed.
+
+## 34. Plan-change record
+
+### PCR-001 — Merge security remediation into continuity plan
+
+Date: 2026-07-10  
+Trigger: user requested that the security plan incorporate and refactor the last session's plan.  
+Decision: retain the Session Handoff plan as Part I and add the security program as Part II in the same `plan.md`.  
+Rationale: one durable handoff file preserves intent across model switches while keeping the workstreams explicitly gated.  
+Requirements affected: all; no acceptance criterion removed.  
+Validation impact: adds independent security gates without changing continuity validation.  
+Rollback: split Part II into a later document only if repository maintainers request it.
+
+### PCR-002 — Permit master plan beyond 800 lines
+
+Date: 2026-07-10  
+Trigger: user explicitly stated that the plan may exceed 800 lines.  
+Decision: prioritize a complete, self-contained plan over the prototype skill's normal source-size guideline.  
+Rationale: the plan is a handoff and governance artifact, not production source; splitting it would weaken discoverability for this task.  
+Requirements affected: none.  
+Validation impact: confirm headings and traceability remain navigable.  
+Rollback: split by workstream with a top-level index if the file becomes operationally difficult to review.
+
+### PCR-003 — Build docs CLI from source
+
+Date: 2026-07-10  
+Trigger: alert `#57` and discovery that the referenced mutable `stable` release is not a reliable immutable CLI identity.  
+Decision: use the checked-out revision and committed Cargo lockfile instead of introducing another binary-download checksum table.  
+Rationale: the workflow generates docs for repository versions and already configures Rust; source provenance is clearer and avoids a mutable release alias.  
+Requirements affected: SEC-REQ-004.  
+Validation impact: hosted CI must later confirm build duration and downstream command compatibility.  
+Rollback: revert the workflow step; do not restore the mutable installer except for isolated diagnosis.
+
+### PCR-004 — Migrate deprecated ACP npm namespaces
+
+Date: 2026-07-10  
+Trigger: alert `#58` research showed the existing `@zed-industries` ACP packages are deprecated and point to `@agentclientprotocol` replacements.  
+Decision: lock current replacement packages rather than pinning already-deprecated package identities.  
+Rationale: replacement packages preserve executable names and align smoke tests with current ACP distribution.  
+Requirements affected: SEC-REQ-002.  
+Validation impact: provider smoke CI must confirm protocol compatibility.  
+Rollback: exact older package pins can be tested in an isolated credential-free job if compatibility fails; do not restore floating globals.
+
+### PCR-005 — Isolate provider tools at the UI workspace root
+
+Date: 2026-07-10  
+Trigger: the first lockfile-only resolution placed Claude ACP beside Desktop's Zod 3 and MCP SDK 1.27 dependencies, producing peer-contract warnings for Claude Agent SDK.  
+Decision: declare the provider executables in the existing `ui` workspace root, add exact MCP SDK 1.29 and Zod 4 peer providers there, and scope a Zod 4 override only to Claude ACP.  
+Rationale: smoke-test tools remain available to workspace scripts without forcing a Zod or MCP SDK upgrade into the Desktop application dependency graph.  
+Requirements affected: SEC-REQ-002 and SEC-REQ-005.  
+Validation impact: require a warning-free provider peer resolution, frozen-lockfile validation, and hosted smoke-test confirmation that workspace-root binaries are on the script PATH.  
+Rollback: remove the five root tool dependencies and scoped override, regenerate the lockfile, and test any alternative only in a credential-free job before restoring provider credentials.
+
+## 35. Continuation handoff for the next session
+
+If work stops during Phase 1, the next model should:
+
+1. Read repository `AGENTS.md` and this entire `plan.md`.
+2. Inspect `git status --short` and preserve all changes.
+3. Resume at the first incomplete gate in Section 26.
+4. Do not run a Gosling build, test suite, Desktop process, or restart unless the user expands authorization.
+5. Do not modify GitHub settings or alert states.
+6. Run only the targeted commands listed in Gate 4.
+7. Update the evidence log with actual exit status and relevant output.
+8. Record any strategy change in Section 34 before expanding scope.
+
+The next safe work after Phase 1 is not an automatic code edit. It is the Phase 2 permission inventory for alerts `#29`, `#4`, `#6`, `#26`, `#9`, and `#14`, delivered as its own reviewable change.

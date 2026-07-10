@@ -65,7 +65,7 @@ jobs:
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
-          toolchain: stable
+          toolchain: '1.92'
       
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -80,10 +80,10 @@ jobs:
       - name: Install gosling CLI
         run: |
           mkdir -p /home/runner/.local/bin
-          curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh \
-            | CONFIGURE=false GOSLING_BIN_DIR=/home/runner/.local/bin bash
+          cargo build --locked -p gosling-cli --bin gosling
+          install -m 0755 target/debug/gosling /home/runner/.local/bin/gosling
           echo "/home/runner/.local/bin" >> $GITHUB_PATH
-          gosling --version
+          /home/runner/.local/bin/gosling --version
       
       - name: Configure gosling for CI
         env:

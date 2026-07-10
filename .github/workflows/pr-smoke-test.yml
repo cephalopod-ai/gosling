@@ -103,9 +103,6 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install agentic providers
-        run: npm install -g @anthropic-ai/claude-code @zed-industries/claude-agent-acp @zed-industries/codex-acp
-
       - name: Install Node.js Dependencies
         run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile
         working-directory: ui/desktop

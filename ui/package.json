@@ -12,10 +12,16 @@
     "release": "changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.1"
+    "@agentclientprotocol/claude-agent-acp": "0.58.1",
+    "@agentclientprotocol/codex-acp": "1.1.2",
+    "@anthropic-ai/claude-code": "2.1.206",
+    "@changesets/cli": "^2.27.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "4.4.3"
   },
   "pnpm": {
     "overrides": {
+      "@agentclientprotocol/claude-agent-acp>zod": "4.4.3",
       "react": "^19.2.4",
       "react-dom": "^19.2.4"
     },

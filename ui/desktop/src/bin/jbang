@@ -15,6 +15,22 @@ log() {
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $MESSAGE" | tee -a "$LOG_FILE"
 }
 
+verify_sha256() {
+    local EXPECTED_SHA256="$1"
+    local FILE_PATH="$2"
+    local ACTUAL_SHA256
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s  %s\n' "$EXPECTED_SHA256" "$FILE_PATH" | sha256sum -c - >/dev/null
+    elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL_SHA256=$(shasum -a 256 "$FILE_PATH" | awk '{print $1}')
+        [ "$ACTUAL_SHA256" = "$EXPECTED_SHA256" ]
+    else
+        log "Neither sha256sum nor shasum is available; refusing to install jbang."
+        return 1
+    fi
+}
+
 # Trap errors and log them before exiting
 trap 'log "An error occurred. Exiting with status $?."' ERR
 
@@ -124,12 +140,52 @@ fi
 log "Installing OpenJDK with hermit."
 hermit install openjdk@17 >> "$LOG_FILE"
 
-# Download and install jbang if not present
-if [ ! -f "${MCP_HERMIT_DIR}/bin/jbang" ]; then
-    log "Downloading and installing jbang."
-    curl -Ls https://sh.jbang.dev | bash -s - app setup
-    cp ~/.jbang/bin/jbang "${MCP_HERMIT_DIR}/bin/"
+# Download and install the verified jbang release if not present
+JBANG_VERSION="0.139.3"
+JBANG_SHA256="6ff8d2f387583a8b1b1eb7839826a5e0a227c7cf1550e3bd85e0beb4838ca3ef"
+JBANG_HOME="${MCP_HERMIT_DIR}/lib/jbang-${JBANG_VERSION}"
+JBANG_BIN="${JBANG_HOME}/bin/jbang"
+
+if [ ! -x "${JBANG_BIN}" ]; then
+    log "Downloading jbang ${JBANG_VERSION}."
+    JBANG_TMP_DIR=$(mktemp -d "${MCP_HERMIT_DIR}/.jbang-install.XXXXXX")
+    JBANG_ARCHIVE="${JBANG_TMP_DIR}/jbang-${JBANG_VERSION}.zip"
+    JBANG_EXTRACTED_DIR="${JBANG_TMP_DIR}/jbang-${JBANG_VERSION}"
+
+    if ! curl --fail --location --silent --show-error \
+        --output "${JBANG_ARCHIVE}" \
+        "https://github.com/jbangdev/jbang/releases/download/v${JBANG_VERSION}/jbang-${JBANG_VERSION}.zip"; then
+        rm -rf "${JBANG_TMP_DIR}"
+        log "Failed to download jbang ${JBANG_VERSION}."
+        exit 1
+    fi
+
+    if ! verify_sha256 "${JBANG_SHA256}" "${JBANG_ARCHIVE}"; then
+        rm -rf "${JBANG_TMP_DIR}"
+        log "Checksum verification failed for jbang ${JBANG_VERSION}."
+        exit 1
+    fi
+
+    if ! (cd "${JBANG_TMP_DIR}" && jar -xf "${JBANG_ARCHIVE}"); then
+        rm -rf "${JBANG_TMP_DIR}"
+        log "Failed to extract jbang ${JBANG_VERSION}."
+        exit 1
+    fi
+
+    if [ ! -f "${JBANG_EXTRACTED_DIR}/bin/jbang" ]; then
+        rm -rf "${JBANG_TMP_DIR}"
+        log "The verified jbang archive did not contain the expected launcher."
+        exit 1
+    fi
+
+    chmod +x "${JBANG_EXTRACTED_DIR}/bin/jbang"
+    mkdir -p "${MCP_HERMIT_DIR}/lib"
+    rm -rf "${JBANG_HOME}"
+    mv "${JBANG_EXTRACTED_DIR}" "${JBANG_HOME}"
+    rm -rf "${JBANG_TMP_DIR}"
 fi
+
+export PATH="${JBANG_HOME}/bin:${PATH}"
 
 # Verify installations
 log "Verifying installation locations:"
