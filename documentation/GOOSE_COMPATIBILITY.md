@@ -10,6 +10,7 @@ Compatibility is handled by a deterministic normalization step:
 - Skills discovery prefers `/skills-manifest.json`, then falls back to `https://goose-docs.ai/skills-manifest.json`.
 - Goose install schemes and commands are rewritten to gosling equivalents.
 - Source links and provenance are preserved with `sourceCatalog`, `sourceCatalogUrl`, and `compatibilityNote`.
+- CI/review-policy skills that are not part of Gosling's supported workflow (`code-review` and `testing-strategy`) are excluded from generated and live-fallback skill catalogs.
 
 For offline or build-time onboarding, use:
 

@@ -4,6 +4,7 @@ const {
   normalizeMcpServer,
   normalizeServersCatalog,
   normalizeSkillsManifest,
+  isSupportedGooseSkill,
   convertGooseText,
   convertGooseCommand,
 } = require("./goose-compat");
@@ -63,6 +64,24 @@ describe("goose compatibility conversion", () => {
     assert.strictEqual(manifest.skills[0].author, "gosling via goose");
     assert.strictEqual(manifest.skills[0].isCommunity, false);
     assert.strictEqual(manifest.skills[0].sourceCatalog, "goose");
+  });
+
+  test("excludes inherited CI and review-policy skills", () => {
+    const manifest = normalizeSkillsManifest({
+      skills: [
+        { id: "api-setup" },
+        { id: "code-review" },
+        { id: "testing-strategy" },
+      ],
+    });
+
+    assert.deepStrictEqual(
+      manifest.skills.map((skill) => skill.id),
+      ["api-setup"],
+    );
+    assert.strictEqual(isSupportedGooseSkill({ id: "code-review" }), false);
+    assert.strictEqual(isSupportedGooseSkill({ id: "testing-strategy" }), false);
+    assert.strictEqual(isSupportedGooseSkill({ id: "frontend-design" }), true);
   });
 
   test("rewrites Goose branding regardless of source casing", () => {

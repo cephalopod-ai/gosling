@@ -190,3 +190,35 @@ pub struct PermissionCheckResult {
     pub needs_approval: Vec<ToolRequest>,
     pub denied: Vec<ToolRequest>,
 }
+
+impl PermissionCheckResult {
+    pub fn approve_all(tool_requests: &[ToolRequest]) -> Self {
+        Self {
+            approved: tool_requests.to_vec(),
+            needs_approval: Vec::new(),
+            denied: Vec::new(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmcp::model::CallToolRequestParams;
+
+    #[test]
+    fn approve_all_never_requests_or_denies_approval() {
+        let requests = vec![ToolRequest {
+            id: "request-1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__write_file")),
+            metadata: None,
+            tool_meta: None,
+        }];
+
+        let result = PermissionCheckResult::approve_all(&requests);
+
+        assert_eq!(result.approved, requests);
+        assert!(result.needs_approval.is_empty());
+        assert!(result.denied.is_empty());
+    }
+}

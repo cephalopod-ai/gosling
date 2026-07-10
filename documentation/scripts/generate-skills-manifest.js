@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const matter = require('gray-matter');
+const { isSupportedGooseSkill } = require('./goose-compat');
 
 // Configuration
 const AGENT_SKILLS_REPO = 'https://github.com/block/Agent-Skills.git';
@@ -322,7 +323,7 @@ function generateManifest() {
     cloneAgentSkillsRepo();
     
     // Process official skills from the cloned repo
-    const officialSkills = processOfficialSkills();
+    const officialSkills = processOfficialSkills().filter(isSupportedGooseSkill);
     
     // Process external skills from local JSON file
     const externalSkills = processExternalSkills();

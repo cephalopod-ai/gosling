@@ -40,10 +40,11 @@ use crate::conversation::message::{
 use crate::conversation::{debug_conversation_fix, fix_conversation, Conversation};
 use crate::hints::SubdirectoryHintTracker;
 use crate::mcp_utils::ToolResult;
+use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
 use crate::permission::working_dir_scope_inspector::WorkingDirScopeInspector;
-use crate::permission::PermissionConfirmation;
+use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::{PermissionRouting, Provider};
 use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
@@ -86,6 +87,22 @@ fn categorize_tool(tool_name: &str) -> ToolCategory {
         "write" | "edit" | "patch" | "write_file" | "edit_file" => ToolCategory::Write,
         _ => ToolCategory::Other,
     }
+}
+
+fn take_tool_confirmation_requests(message: &mut Message) -> Vec<String> {
+    let mut request_ids = Vec::new();
+    message.content.retain(|content| {
+        let MessageContent::ActionRequired(action_required) = content else {
+            return true;
+        };
+        let ActionRequiredData::ToolConfirmation { id, .. } = &action_required.data else {
+            return true;
+        };
+
+        request_ids.push(id.clone());
+        false
+    });
+    request_ids
 }
 
 fn extract_string_arg(input: &Value, keys: &[&str]) -> Option<String> {
@@ -995,22 +1012,28 @@ impl Agent {
         };
         let requests = vec![request];
         let gosling_mode = self.gosling_mode().await;
-        let inspection_results = self
-            .tool_inspection_manager
-            .inspect_tools(session_id, &requests, &[], gosling_mode)
-            .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+        let permission_result = if gosling_mode == GoslingMode::Auto {
+            PermissionCheckResult::approve_all(&requests)
+        } else {
+            let inspection_results = self
+                .tool_inspection_manager
+                .inspect_tools(session_id, &requests, &[], gosling_mode)
+                .await
+                .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
 
-        let permission_result = self
-            .tool_inspection_manager
-            .process_inspection_results_with_permission_inspector(&requests, &inspection_results)
-            .ok_or_else(|| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    "Tool permission inspector is unavailable".to_string(),
-                    None,
+            self.tool_inspection_manager
+                .process_inspection_results_with_permission_inspector(
+                    &requests,
+                    &inspection_results,
                 )
-            })?;
+                .ok_or_else(|| {
+                    ErrorData::new(
+                        ErrorCode::INTERNAL_ERROR,
+                        "Tool permission inspector is unavailable".to_string(),
+                        None,
+                    )
+                })?
+        };
 
         if let Some(denied) = permission_result.denied.first() {
             let tool_name = denied
@@ -2233,16 +2256,43 @@ impl Agent {
                                     )
                                     .await;
 
-                                let filtered_response = if let Some(inference) = inference.as_ref() {
+                                let mut filtered_response = if let Some(inference) = inference.as_ref() {
                                     filtered_response.with_inference(inference.clone())
                                 } else {
                                     filtered_response
                                 };
-                                let response = if let Some(inference) = inference.as_ref() {
+                                let mut response = if let Some(inference) = inference.as_ref() {
                                     response.with_inference(inference.clone())
                                 } else {
                                     response
                                 };
+
+                                if gosling_mode == GoslingMode::Auto {
+                                    let mut permission_request_ids =
+                                        take_tool_confirmation_requests(&mut response);
+                                    for request_id in
+                                        take_tool_confirmation_requests(&mut filtered_response)
+                                    {
+                                        if !permission_request_ids.contains(&request_id) {
+                                            permission_request_ids.push(request_id);
+                                        }
+                                    }
+
+                                    for request_id in permission_request_ids {
+                                        self.handle_confirmation(
+                                            request_id,
+                                            PermissionConfirmation {
+                                                principal_type: PrincipalType::Tool,
+                                                permission: Permission::AllowOnce,
+                                            },
+                                        )
+                                        .await;
+                                    }
+
+                                    if filtered_response.content.is_empty() {
+                                        continue;
+                                    }
+                                }
 
                                 surfaced_thinking_in_turn |= filtered_response.content.iter().any(
                                     |content| {
@@ -2304,30 +2354,44 @@ impl Agent {
                                         }
                                     }
                                 } else {
-                                    // Run all tool inspectors
-                                    let inspection_results = self.tool_inspection_manager
-                                        .inspect_tools(
-                                            &session_config.id,
-                                            &remaining_requests,
-                                            conversation.messages(),
-                                            gosling_mode,
-                                        )
-                                        .await?;
+                                    let (inspection_results, permission_check_result) =
+                                        if gosling_mode == GoslingMode::Auto {
+                                            (
+                                                Vec::new(),
+                                                PermissionCheckResult::approve_all(
+                                                    &remaining_requests,
+                                                ),
+                                            )
+                                        } else {
+                                            let inspection_results = self
+                                                .tool_inspection_manager
+                                                .inspect_tools(
+                                                    &session_config.id,
+                                                    &remaining_requests,
+                                                    conversation.messages(),
+                                                    gosling_mode,
+                                                )
+                                                .await?;
 
-                                    let permission_check_result = self.tool_inspection_manager
-                                        .process_inspection_results_with_permission_inspector(
-                                            &remaining_requests,
-                                            &inspection_results,
-                                        )
-                                        .unwrap_or_else(|| {
-                                            let mut result = PermissionCheckResult {
-                                                approved: vec![],
-                                                needs_approval: vec![],
-                                                denied: vec![],
-                                            };
-                                            result.needs_approval.extend(remaining_requests.iter().cloned());
-                                            result
-                                        });
+                                            let permission_check_result = self
+                                                .tool_inspection_manager
+                                                .process_inspection_results_with_permission_inspector(
+                                                    &remaining_requests,
+                                                    &inspection_results,
+                                                )
+                                                .unwrap_or_else(|| {
+                                                    let mut result = PermissionCheckResult {
+                                                        approved: vec![],
+                                                        needs_approval: vec![],
+                                                        denied: vec![],
+                                                    };
+                                                    result.needs_approval.extend(
+                                                        remaining_requests.iter().cloned(),
+                                                    );
+                                                    result
+                                                });
+                                            (inspection_results, permission_check_result)
+                                        };
 
                                     // Track extension requests
                                     let mut enable_extension_request_ids = vec![];
@@ -4213,5 +4277,26 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         assert!(extract_string_arg(&input, &["path"]).is_none());
         let input = serde_json::json!({ "path": "" });
         assert!(extract_string_arg(&input, &["path"]).is_none());
+    }
+
+    #[test]
+    fn auto_permission_filter_removes_tool_confirmation_and_keeps_other_content() {
+        let mut message = Message::assistant()
+            .with_text("working")
+            .with_action_required(
+                "permission-1",
+                "Write".to_string(),
+                serde_json::Map::new(),
+                None,
+            );
+
+        let request_ids = take_tool_confirmation_requests(&mut message);
+
+        assert_eq!(request_ids, vec!["permission-1"]);
+        assert_eq!(message.as_concat_text(), "working");
+        assert!(message
+            .content
+            .iter()
+            .all(|content| !matches!(content, MessageContent::ActionRequired(_))));
     }
 }

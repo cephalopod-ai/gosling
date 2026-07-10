@@ -389,20 +389,17 @@ impl ClaudeCodeProvider {
     }
 
     /// Returns true when the control protocol is enabled.
-    fn apply_permission_flags(cmd: &mut Command) -> Result<bool, ProviderError> {
-        let config = Config::global();
-        let gosling_mode = config.get_gosling_mode().unwrap_or_default();
-
+    fn apply_permission_flags(cmd: &mut Command, gosling_mode: GoslingMode) -> bool {
         match gosling_mode {
             GoslingMode::Auto => {
                 cmd.arg("--dangerously-skip-permissions");
-                Ok(false)
+                false
             }
             GoslingMode::SmartApprove | GoslingMode::Approve => {
                 cmd.arg("--permission-prompt-tool").arg("stdio");
-                Ok(true)
+                true
             }
-            GoslingMode::Chat => Ok(false),
+            GoslingMode::Chat => false,
         }
     }
 
@@ -424,7 +421,9 @@ impl ClaudeCodeProvider {
             .arg("--model")
             .arg(&model.model_name);
 
-        let control_protocol_enabled = Self::apply_permission_flags(&mut cmd)?;
+        let gosling_mode = (*self.initial_mode.lock().await)
+            .unwrap_or_else(|| Config::global().get_gosling_mode().unwrap_or_default());
+        let control_protocol_enabled = Self::apply_permission_flags(&mut cmd, gosling_mode);
 
         let mut child = cmd.spawn().map_err(|e| {
             ProviderError::RequestFailed(format!(
@@ -1043,6 +1042,43 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
     use test_case::test_case;
+
+    #[test_case(
+        GoslingMode::Auto,
+        false,
+        vec!["--dangerously-skip-permissions"];
+        "auto_skips_permission_protocol"
+    )]
+    #[test_case(
+        GoslingMode::SmartApprove,
+        true,
+        vec!["--permission-prompt-tool", "stdio"];
+        "smart_approve_uses_permission_protocol"
+    )]
+    #[test_case(
+        GoslingMode::Approve,
+        true,
+        vec!["--permission-prompt-tool", "stdio"];
+        "approve_uses_permission_protocol"
+    )]
+    #[test_case(GoslingMode::Chat, false, vec![]; "chat_has_no_permission_flags")]
+    fn permission_flags_follow_session_mode(
+        mode: GoslingMode,
+        expected_control_protocol: bool,
+        expected_args: Vec<&str>,
+    ) {
+        let mut command = Command::new("claude");
+
+        let control_protocol = ClaudeCodeProvider::apply_permission_flags(&mut command, mode);
+        let args = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(control_protocol, expected_control_protocol);
+        assert_eq!(args, expected_args);
+    }
 
     #[test_case(
         json!({"input_tokens": 100, "output_tokens": 50}),
