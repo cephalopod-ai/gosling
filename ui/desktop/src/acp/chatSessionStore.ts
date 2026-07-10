@@ -16,6 +16,7 @@ import type { AcpElicitationRequest } from './elicitationRequests';
 
 export interface AcpChatSessionSnapshot {
   session: Session | undefined;
+  connectionGeneration: number | null;
   messages: Message[];
   historyCursor: string | null;
   historyHasMore: boolean;
@@ -25,9 +26,16 @@ export interface AcpChatSessionSnapshot {
   notifications: NotificationEvent[];
   chatState: ChatState;
   sessionLoadError: string | undefined;
+  promptError: AcpPromptError | undefined;
+  interruptedPrompt: boolean;
   activePromptAttemptId: string | null;
   activeRunId: string | null;
   pendingCancelPromptAttemptId: string | null;
+}
+
+export interface AcpPromptError {
+  message: string;
+  connectionLost: boolean;
 }
 
 type SnapshotListener = (snapshot: AcpChatSessionSnapshot) => void;
@@ -73,7 +81,11 @@ export interface AcpChatSessionActions {
 
   setSessionMetadata(sessionId: string, session: Session | undefined): AcpChatSessionSnapshot;
   startSessionLoad(sessionId: string): AcpChatSessionSnapshot;
-  finishSessionLoad(sessionId: string, session: Session): AcpChatSessionSnapshot;
+  finishSessionLoad(
+    sessionId: string,
+    session: Session,
+    connectionGeneration: number
+  ): AcpChatSessionSnapshot;
   failSessionLoad(sessionId: string, sessionLoadError: string): AcpChatSessionSnapshot;
   setSessionLoadError(
     sessionId: string,
@@ -117,7 +129,11 @@ export interface AcpChatSessionActions {
     promptAttemptId: string
   ): AcpChatSessionSnapshot | undefined;
   waitForPromptCancellation(sessionId: string, promptAttemptId: string): Promise<void>;
-  finishPromptAttemptIfCurrent(sessionId: string, promptAttemptId: string, error?: string): boolean;
+  finishPromptAttemptIfCurrent(
+    sessionId: string,
+    promptAttemptId: string,
+    error?: AcpPromptError
+  ): boolean;
   clearActivePromptAttempt(sessionId: string): AcpChatSessionSnapshot | undefined;
   isCurrentPromptAttempt(sessionId: string, promptAttemptId: string): boolean;
 }
@@ -171,6 +187,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
 
     const entry: StoreEntry = {
       session: undefined,
+      connectionGeneration: null,
       messages: [],
       historyCursor: null,
       historyHasMore: false,
@@ -180,6 +197,8 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       notifications: [],
       chatState: ChatState.Idle,
       sessionLoadError: undefined,
+      promptError: undefined,
+      interruptedPrompt: false,
       activePromptAttemptId: null,
       activeRunId: null,
       pendingCancelPromptAttemptId: null,
@@ -212,15 +231,23 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
   const startSessionLoad: AcpChatSessionActions['startSessionLoad'] = (sessionId) => {
     const entry = getOrCreateEntry(sessionId);
     resetReplayState(entry);
+    entry.connectionGeneration = null;
     entry.sessionLoadError = undefined;
+    entry.promptError = undefined;
     entry.chatState = ChatState.LoadingConversation;
     return notify(sessionId, entry);
   };
 
-  const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (sessionId, session) => {
+  const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (
+    sessionId,
+    session,
+    connectionGeneration
+  ) => {
     const entry = getOrCreateEntry(sessionId);
     entry.session = session;
+    entry.connectionGeneration = connectionGeneration;
     entry.sessionLoadError = undefined;
+    entry.promptError = undefined;
     entry.chatState = entry.activePromptAttemptId ? ChatState.Streaming : ChatState.Idle;
     return notify(sessionId, entry);
   };
@@ -230,6 +257,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     sessionLoadError
   ) => {
     const entry = getOrCreateEntry(sessionId);
+    entry.connectionGeneration = null;
     entry.sessionLoadError = sessionLoadError;
     entry.chatState = ChatState.Idle;
     return notify(sessionId, entry);
@@ -243,10 +271,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     return notify(sessionId, entry);
   };
 
-  const setHistoryPageState: AcpChatSessionActions['setHistoryPageState'] = (
-    sessionId,
-    state
-  ) => {
+  const setHistoryPageState: AcpChatSessionActions['setHistoryPageState'] = (sessionId, state) => {
     const entry = getOrCreateEntry(sessionId);
     if ('cursor' in state) {
       entry.historyCursor = state.cursor ?? null;
@@ -357,6 +382,8 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     entry.pendingUserInputRequestIds.clear();
     entry.chatState = ChatState.Streaming;
     entry.sessionLoadError = undefined;
+    entry.promptError = undefined;
+    entry.interruptedPrompt = false;
     entry.notifications = [];
     return notify(sessionId, entry);
   };
@@ -457,7 +484,11 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     entry.pendingUserInputRequestIds.clear();
     discardPendingLocalSteerMessages(entry);
     entry.chatState = ChatState.Idle;
-    entry.sessionLoadError = error;
+    entry.promptError = error;
+    if (error?.connectionLost) {
+      entry.connectionGeneration = null;
+      entry.interruptedPrompt = true;
+    }
     notify(sessionId, entry);
     return true;
   };
@@ -784,6 +815,7 @@ function confirmedLocalSteerTextByMessageId(entry: StoreEntry): Map<string, stri
 function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
   return {
     session: entry.session,
+    connectionGeneration: entry.connectionGeneration,
     messages: entry.messages,
     historyCursor: entry.historyCursor,
     historyHasMore: entry.historyHasMore,
@@ -793,6 +825,8 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     notifications: [...entry.notifications],
     chatState: entry.chatState,
     sessionLoadError: entry.sessionLoadError,
+    promptError: entry.promptError,
+    interruptedPrompt: entry.interruptedPrompt,
     activePromptAttemptId: entry.activePromptAttemptId,
     activeRunId: entry.activeRunId,
     pendingCancelPromptAttemptId: entry.pendingCancelPromptAttemptId,

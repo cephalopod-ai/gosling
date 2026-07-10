@@ -45,6 +45,7 @@ function sessionWithName(name: string): Session {
 function snapshotWithName(name: string): AcpChatSessionSnapshot {
   return {
     session: sessionWithName(name),
+    connectionGeneration: 1,
     messages: [],
     historyCursor: null,
     historyHasMore: false,
@@ -61,6 +62,8 @@ function snapshotWithName(name: string): AcpChatSessionSnapshot {
     notifications: [],
     chatState: ChatState.Idle,
     sessionLoadError: undefined,
+    promptError: undefined,
+    interruptedPrompt: false,
     activePromptAttemptId: null,
     activeRunId: null,
     pendingCancelPromptAttemptId: null,
@@ -70,6 +73,7 @@ function snapshotWithName(name: string): AcpChatSessionSnapshot {
 function snapshotWithoutSession(): AcpChatSessionSnapshot {
   return {
     session: undefined,
+    connectionGeneration: null,
     messages: [],
     historyCursor: null,
     historyHasMore: false,
@@ -86,6 +90,8 @@ function snapshotWithoutSession(): AcpChatSessionSnapshot {
     notifications: [],
     chatState: ChatState.Idle,
     sessionLoadError: undefined,
+    promptError: undefined,
+    interruptedPrompt: false,
     activePromptAttemptId: null,
     activeRunId: null,
     pendingCancelPromptAttemptId: null,

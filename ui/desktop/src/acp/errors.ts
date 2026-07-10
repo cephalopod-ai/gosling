@@ -19,6 +19,13 @@ export function parseAcpCreditsExhaustedError(error: unknown): AcpCreditsExhaust
   };
 }
 
+export function isAcpConnectionClosedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : asErrorMessage(error);
+  return /ACP connection closed|ACP WebSocket connection failed|WebSocket.*(?:closed|reset|failed)|Not connected/i.test(
+    message
+  );
+}
+
 interface AcpJsonRpcError {
   message: string;
   data: Record<string, unknown>;
@@ -42,4 +49,14 @@ function asAcpJsonRpcError(error: unknown): AcpJsonRpcError | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function asErrorMessage(error: unknown): string {
+  if (isRecord(error)) {
+    const candidate = isRecord(error.error) ? error.error : error;
+    if (typeof candidate.message === 'string') {
+      return candidate.message;
+    }
+  }
+  return String(error);
 }

@@ -65,6 +65,8 @@ export function useChatSession({
   const session = acpSnapshot?.session;
   const chatState = acpSnapshot?.chatState ?? ChatState.LoadingConversation;
   const sessionLoadError = acpSnapshot?.sessionLoadError;
+  const promptError = acpSnapshot?.promptError;
+  const interruptedPrompt = acpSnapshot?.interruptedPrompt ?? false;
   const tokenState = acpSnapshot?.tokenState ?? initialTokenState;
   const queueProcessingBlocked = acpSnapshot?.pendingCancelPromptAttemptId != null;
 
@@ -153,6 +155,11 @@ export function useChatSession({
   const handleSubmit = useCallback(
     async (input: UserInput) => {
       const { msg: userMessage, images } = input;
+      const sessionReady = await acpChatSessionController.loadSession(sessionId);
+      if (!sessionReady) {
+        return;
+      }
+
       const currentSnapshot = getCurrentSnapshot();
 
       if (
@@ -196,6 +203,16 @@ export function useChatSession({
       await submitToAcpSession(sessionId, newMessage);
     },
     [getCurrentSnapshot, sessionId, submitToAcpSession]
+  );
+
+  const retrySessionLoad = useCallback(
+    () => acpChatSessionController.loadSession(sessionId, { force: true, onSessionLoaded }),
+    [onSessionLoaded, sessionId]
+  );
+
+  const resumeInterruptedPrompt = useCallback(
+    () => handleSubmit({ msg: '', images: [] }),
+    [handleSubmit]
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -309,6 +326,9 @@ export function useChatSession({
   const onMessageUpdate = useCallback(
     async (messageId: string, newContent: string, editType: 'fork' | 'edit' = 'fork') => {
       try {
+        if (!(await acpChatSessionController.loadSession(sessionId))) {
+          return;
+        }
         await acpChatSessionController.updateMessage(sessionId, messageId, newContent, editType, {
           getCurrentSnapshot,
           onFinish,
@@ -349,6 +369,10 @@ export function useChatSession({
 
   return {
     sessionLoadError,
+    promptError,
+    interruptedPrompt,
+    retrySessionLoad,
+    resumeInterruptedPrompt,
     messages,
     historyHasMore,
     historyLoading,

@@ -5,20 +5,21 @@ import { ChatState } from '../types/chatState';
 import type { Session } from '../types/session';
 import { errorMessage } from '../utils/conversionUtils';
 import { showExtensionLoadResults } from '../utils/extensionErrorUtils';
-import {
-  createUserMessage,
-  getPendingToolConfirmationIds,
-  type Message,
-} from '../types/message';
+import { createUserMessage, getPendingToolConfirmationIds, type Message } from '../types/message';
 import {
   acpChatSessionActions,
   acpChatSessionStore,
   type AcpChatSessionSnapshot,
 } from './chatSessionStore';
 import { cancelAcpElicitationRequestsForSession } from './elicitationRequests';
-import { parseAcpCreditsExhaustedError, type AcpCreditsExhaustedError } from './errors';
+import {
+  isAcpConnectionClosedError,
+  parseAcpCreditsExhaustedError,
+  type AcpCreditsExhaustedError,
+} from './errors';
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
 import { acpCancelPrompt, acpPromptSession } from './prompt';
+import { getAcpConnectionGeneration } from './acpConnection';
 import {
   acpForkSession,
   acpLoadSession,
@@ -30,6 +31,7 @@ import {
 
 export interface AcpLoadSessionOptions {
   onSessionLoaded?: () => void;
+  force?: boolean;
 }
 
 export interface AcpSnapshotOptions {
@@ -42,7 +44,7 @@ export interface AcpSubmitMessageOptions extends AcpSnapshotOptions {
 
 export interface AcpChatSessionController {
   createSession(cwd: string, goslingExtensions: GoslingExtension[]): Promise<Session>;
-  loadSession(sessionId: string, options?: AcpLoadSessionOptions): Promise<void>;
+  loadSession(sessionId: string, options?: AcpLoadSessionOptions): Promise<boolean>;
   submitMessage(
     sessionId: string,
     userMessage: Message,
@@ -102,24 +104,37 @@ async function forkSessionWithEditedMessage(
 async function createSession(cwd: string, goslingExtensions: GoslingExtension[]): Promise<Session> {
   const { sessionId, sessionInfo, meta } = await acpNewSession(cwd, goslingExtensions);
   const session = sessionInfoToSession(sessionInfo, meta);
+  const connectionGeneration = getAcpConnectionGeneration();
+  if (connectionGeneration === null) {
+    throw new Error('ACP connection closed while creating the session');
+  }
 
   showExtensionLoadResults(meta.extensionResults);
   window.dispatchEvent(
     new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
   );
-  acpChatSessionActions.finishSessionLoad(sessionId, session);
+  acpChatSessionActions.finishSessionLoad(sessionId, session, connectionGeneration);
 
   return session;
 }
 
-async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {}): Promise<void> {
+async function loadSession(
+  sessionId: string,
+  options: AcpLoadSessionOptions = {}
+): Promise<boolean> {
   const cached = acpChatSessionStore.getSnapshot(sessionId);
-  if (cached?.session) {
+  const connectionGeneration = getAcpConnectionGeneration();
+  if (
+    !options.force &&
+    cached?.session &&
+    connectionGeneration !== null &&
+    cached.connectionGeneration === connectionGeneration
+  ) {
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
     options.onSessionLoaded?.();
-    return;
+    return true;
   }
 
   if (!isAcpSessionLoadInFlight(sessionId)) {
@@ -128,12 +143,20 @@ async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {
 
   try {
     const { sessionInfo, meta } = await acpLoadSession(sessionId);
+    const loadedConnectionGeneration = getAcpConnectionGeneration();
+    if (loadedConnectionGeneration === null) {
+      throw new Error('ACP connection closed while loading the session');
+    }
 
     showExtensionLoadResults(meta.extensionResults);
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
-    acpChatSessionActions.finishSessionLoad(sessionId, sessionInfoToSession(sessionInfo, meta));
+    acpChatSessionActions.finishSessionLoad(
+      sessionId,
+      sessionInfoToSession(sessionInfo, meta),
+      loadedConnectionGeneration
+    );
     if (meta.historyLoad?.mode === 'compacted') {
       acpChatSessionActions.setHistoryPageState(sessionId, {
         cursor: meta.historyLoad.nextBeforeCursor ?? null,
@@ -143,9 +166,11 @@ async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {
       });
     }
     options.onSessionLoaded?.();
+    return true;
   } catch (error) {
     console.error('Failed to load ACP session:', error);
     acpChatSessionActions.failSessionLoad(sessionId, errorMessage(error));
+    return false;
   }
 }
 
@@ -163,6 +188,7 @@ async function submitMessage(
 
   const promptAttemptId = uuidv7();
   acpChatSessionActions.startPromptAttempt(sessionId, promptAttemptId);
+  await window.electron.setWakelockActive(sessionId, true).catch(() => false);
 
   try {
     await acpPromptSession(sessionId, userMessage);
@@ -194,12 +220,17 @@ async function submitMessage(
       return;
     }
 
-    const submitError = 'Submit error: ' + errorMessage(error);
+    const submitError = {
+      message: 'Submit error: ' + errorMessage(error),
+      connectionLost: isAcpConnectionClosedError(error),
+    };
     if (
       acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId, submitError)
     ) {
-      void options.onFinish(submitError);
+      void options.onFinish(submitError.message);
     }
+  } finally {
+    await window.electron.setWakelockActive(sessionId, false).catch(() => false);
   }
 }
 

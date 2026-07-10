@@ -16,12 +16,14 @@ import { requestAcpPermission } from './permissionRequests';
 type InitializedAcpClient = {
   client: GoslingClient;
   initializeResponse: InitializeResponse;
+  generation: number;
 };
 
 const ACP_INITIALIZE_TIMEOUT_MS = 10_000;
 
 let clientPromise: Promise<InitializedAcpClient> | null = null;
 let resolvedClient: InitializedAcpClient | null = null;
+let nextConnectionGeneration = 1;
 
 function createClientCallbacks(): () => GoslingClientCallbacks {
   return () => ({
@@ -33,15 +35,14 @@ function createClientCallbacks(): () => GoslingClientCallbacks {
 }
 
 function monitorConnection(client: GoslingClient): void {
-  client.closed
-    .then(() => {
+  const clearClient = () => {
+    if (resolvedClient?.client === client) {
       resolvedClient = null;
       clientPromise = null;
-    })
-    .catch(() => {
-      resolvedClient = null;
-      clientPromise = null;
-    });
+    }
+  };
+
+  client.closed.then(clearClient).catch(clearClient);
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -93,8 +94,12 @@ async function initializeConnection(): Promise<InitializedAcpClient> {
       `ACP initialize timed out after ${ACP_INITIALIZE_TIMEOUT_MS}ms`
     );
 
-    monitorConnection(client);
-    return { client, initializeResponse };
+    const clientState = {
+      client,
+      initializeResponse,
+      generation: nextConnectionGeneration++,
+    };
+    return clientState;
   } catch (error) {
     stream.close();
     throw error;
@@ -117,6 +122,10 @@ export function isAcpClientReady(): boolean {
   return resolvedClient !== null;
 }
 
+export function getAcpConnectionGeneration(): number | null {
+  return resolvedClient?.generation ?? null;
+}
+
 async function getInitializedAcpClient(): Promise<InitializedAcpClient> {
   if (resolvedClient) {
     return resolvedClient;
@@ -126,6 +135,7 @@ async function getInitializedAcpClient(): Promise<InitializedAcpClient> {
     clientPromise = initializeConnection()
       .then((clientState) => {
         resolvedClient = clientState;
+        monitorConnection(clientState.client);
         return clientState;
       })
       .catch((error) => {

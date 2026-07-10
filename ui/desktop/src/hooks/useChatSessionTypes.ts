@@ -2,6 +2,7 @@ import type { ChatState } from '../types/chatState';
 import type { TokenState } from '../types/chat';
 import type { Message, NotificationEvent, UserInput } from '../types/message';
 import type { Session } from '../types/session';
+import type { AcpPromptError } from '../acp/chatSessionStore';
 
 export interface UseChatSessionParams {
   sessionId: string;
@@ -25,6 +26,10 @@ export interface UseChatSessionResult {
   ) => Promise<boolean>;
   stopStreaming: () => void;
   sessionLoadError?: string;
+  promptError?: AcpPromptError;
+  interruptedPrompt: boolean;
+  retrySessionLoad: () => Promise<boolean>;
+  resumeInterruptedPrompt: () => Promise<void>;
   tokenState: TokenState;
   notifications: Map<string, NotificationEvent[]>;
   pauseQueueOnStop: boolean;

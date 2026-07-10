@@ -80,11 +80,35 @@
   "backButton.back": {
     "defaultMessage": "Back"
   },
+  "baseChat.connectionInterrupted": {
+    "defaultMessage": "Connection interrupted"
+  },
+  "baseChat.connectionInterruptedBody": {
+    "defaultMessage": "The connection closed while the task was running. Work completed before the interruption was saved."
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Failed to Load Session"
   },
   "baseChat.goHome": {
     "defaultMessage": "Go home"
+  },
+  "baseChat.reconnect": {
+    "defaultMessage": "Reconnect"
+  },
+  "baseChat.resumeTask": {
+    "defaultMessage": "Resume task"
+  },
+  "baseChat.retry": {
+    "defaultMessage": "Retry"
+  },
+  "baseChat.taskFailed": {
+    "defaultMessage": "Task failed"
+  },
+  "baseChat.taskInterrupted": {
+    "defaultMessage": "Task interrupted"
+  },
+  "baseChat.taskInterruptedBody": {
+    "defaultMessage": "Review the saved messages before explicitly resuming the task."
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Extension Updated"

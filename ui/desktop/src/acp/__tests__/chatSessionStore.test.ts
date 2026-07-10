@@ -192,10 +192,12 @@ describe('acpChatSessionStore', () => {
 
     const snapshot = acpChatSessionActions.finishSessionLoad(
       currentSessionId,
-      session(currentSessionId)
+      session(currentSessionId),
+      1
     );
 
     expect(snapshot.session?.id).toBe(currentSessionId);
+    expect(snapshot.connectionGeneration).toBe(1);
     expect(snapshot.messages).toEqual([initialMessage]);
     expect(snapshot.chatState).toBe(ChatState.Idle);
     expect(snapshot.sessionLoadError).toBeUndefined();
@@ -249,11 +251,10 @@ describe('acpChatSessionStore', () => {
     acpChatSessionActions.startPromptAttempt(currentSessionId, 'attempt-b');
 
     expect(
-      acpChatSessionActions.finishPromptAttemptIfCurrent(
-        currentSessionId,
-        'attempt-a',
-        'late error'
-      )
+      acpChatSessionActions.finishPromptAttemptIfCurrent(currentSessionId, 'attempt-a', {
+        message: 'late error',
+        connectionLost: false,
+      })
     ).toBe(false);
 
     expect(acpChatSessionStore.getSnapshot(currentSessionId)).toMatchObject({
@@ -278,7 +279,8 @@ describe('acpChatSessionStore', () => {
 
     const snapshot = acpChatSessionActions.finishSessionLoad(
       currentSessionId,
-      session(currentSessionId)
+      session(currentSessionId),
+      1
     );
 
     expect(snapshot.activePromptAttemptId).toBe('attempt-1');
@@ -466,6 +468,44 @@ describe('acpChatSessionStore', () => {
       true
     );
     expect(acpChatSessionStore.getSnapshot(currentSessionId)?.activeRunId).toBeNull();
+  });
+
+  it('keeps connection failures separate from session load failures', () => {
+    const currentSessionId = sessionId('session-1');
+
+    acpChatSessionActions.finishSessionLoad(currentSessionId, session(currentSessionId), 1);
+    acpChatSessionActions.startPromptAttempt(currentSessionId, 'attempt-1');
+    acpChatSessionActions.finishPromptAttemptIfCurrent(currentSessionId, 'attempt-1', {
+      message: 'Submit error: ACP connection closed',
+      connectionLost: true,
+    });
+
+    const interrupted = acpChatSessionStore.getSnapshot(currentSessionId);
+    expect(interrupted).toMatchObject({
+      connectionGeneration: null,
+      sessionLoadError: undefined,
+      promptError: {
+        message: 'Submit error: ACP connection closed',
+        connectionLost: true,
+      },
+      interruptedPrompt: true,
+    });
+
+    const reloading = acpChatSessionActions.startSessionLoad(currentSessionId);
+    expect(reloading.promptError).toBeUndefined();
+    expect(reloading.interruptedPrompt).toBe(true);
+
+    const reloaded = acpChatSessionActions.finishSessionLoad(
+      currentSessionId,
+      session(currentSessionId),
+      2
+    );
+    expect(reloaded).toMatchObject({
+      connectionGeneration: 2,
+      interruptedPrompt: true,
+      sessionLoadError: undefined,
+      promptError: undefined,
+    });
   });
 
   it('clears active run ids before replaying a session load', () => {

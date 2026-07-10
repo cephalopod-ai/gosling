@@ -1034,6 +1034,46 @@ const windowMap = new Map<number, BrowserWindow>();
 const goslingServeLeases = new GoslingServeLeaseRegistry(log);
 
 const windowPowerSaveBlockers = new Map<number, number>(); // windowId -> blockerId
+const activeWakelockSessionsByWindow = new Map<number, Set<string>>();
+
+function syncWindowPowerSaveBlocker(windowId: number): void {
+  const activeSessions = activeWakelockSessionsByWindow.get(windowId);
+  const shouldBlockSleep = getSettings().enableWakelock && (activeSessions?.size ?? 0) > 0;
+  const blockerId = windowPowerSaveBlockers.get(windowId);
+
+  if (shouldBlockSleep && blockerId === undefined) {
+    try {
+      windowPowerSaveBlockers.set(windowId, powerSaveBlocker.start('prevent-app-suspension'));
+    } catch (error) {
+      log.error('Failed to start task power save blocker', { windowId, error });
+    }
+    return;
+  }
+
+  if (!shouldBlockSleep && blockerId !== undefined) {
+    try {
+      powerSaveBlocker.stop(blockerId);
+    } catch (error) {
+      log.error('Failed to stop task power save blocker', { windowId, blockerId, error });
+    }
+    windowPowerSaveBlockers.delete(windowId);
+  }
+}
+
+function clearWindowWakelock(windowId: number): void {
+  activeWakelockSessionsByWindow.delete(windowId);
+  syncWindowPowerSaveBlocker(windowId);
+}
+
+function clearAllWakelocks(): void {
+  for (const windowId of new Set([
+    ...activeWakelockSessionsByWindow.keys(),
+    ...windowPowerSaveBlockers.keys(),
+  ])) {
+    clearWindowWakelock(windowId);
+  }
+}
+
 // Track pending initial messages per window
 const pendingInitialMessages = new Map<number, string>(); // windowId -> initialMessage
 const pendingInitialMessageNoAutoSubmit = new Set<number>(); // windowIds whose initialMessage should NOT auto-submit
@@ -1527,21 +1567,7 @@ const createChat = async (
     pendingDeepLinks.delete(windowId);
     reactReadyWindows.delete(windowId);
 
-    if (windowPowerSaveBlockers.has(windowId)) {
-      const blockerId = windowPowerSaveBlockers.get(windowId)!;
-      try {
-        powerSaveBlocker.stop(blockerId);
-        console.log(
-          `[Main] Stopped power save blocker ${blockerId} for closing window ${windowId}`
-        );
-      } catch (error) {
-        console.error(
-          `[Main] Failed to stop power save blocker ${blockerId} for window ${windowId}:`,
-          error
-        );
-      }
-      windowPowerSaveBlockers.delete(windowId);
-    }
+    clearWindowWakelock(windowId);
   });
   return mainWindow;
 };
@@ -2115,22 +2141,8 @@ ipcMain.handle('set-wakelock', async (_event, enable: boolean) => {
     s.enableWakelock = enable;
   });
 
-  // Stop all existing power save blockers when disabling the setting
-  if (!enable) {
-    for (const [windowId, blockerId] of windowPowerSaveBlockers.entries()) {
-      try {
-        powerSaveBlocker.stop(blockerId);
-        console.log(
-          `[Main] Stopped power save blocker ${blockerId} for window ${windowId} due to wakelock setting disabled`
-        );
-      } catch (error) {
-        console.error(
-          `[Main] Failed to stop power save blocker ${blockerId} for window ${windowId}:`,
-          error
-        );
-      }
-    }
-    windowPowerSaveBlockers.clear();
+  for (const windowId of activeWakelockSessionsByWindow.keys()) {
+    syncWindowPowerSaveBlocker(windowId);
   }
 
   return true;
@@ -2144,6 +2156,26 @@ ipcMain.handle('get-wakelock-state', () => {
     console.error('Error getting wakelock state:', error);
     return false;
   }
+});
+
+ipcMain.handle('set-wakelock-active', (event, sessionId: string, active: boolean): boolean => {
+  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+  if (!windowId || !sessionId.trim()) {
+    return false;
+  }
+
+  const activeSessions = activeWakelockSessionsByWindow.get(windowId) ?? new Set<string>();
+  if (active) {
+    activeSessions.add(sessionId);
+    activeWakelockSessionsByWindow.set(windowId, activeSessions);
+  } else {
+    activeSessions.delete(sessionId);
+    if (activeSessions.size === 0) {
+      activeWakelockSessionsByWindow.delete(windowId);
+    }
+  }
+  syncWindowPowerSaveBlocker(windowId);
+  return true;
 });
 
 ipcMain.handle('set-spellcheck', async (_event, enable: boolean) => {
@@ -3074,20 +3106,7 @@ async function runShutdownCleanup(): Promise<void> {
     log.error('Failed to clean up recorded gosling serve processes during quit:', error);
   }
 
-  for (const [windowId, blockerId] of windowPowerSaveBlockers.entries()) {
-    try {
-      powerSaveBlocker.stop(blockerId);
-      console.log(
-        `[Main] Stopped power save blocker ${blockerId} for window ${windowId} during app quit`
-      );
-    } catch (error) {
-      console.error(
-        `[Main] Failed to stop power save blocker ${blockerId} for window ${windowId}:`,
-        error
-      );
-    }
-  }
-  windowPowerSaveBlockers.clear();
+  clearAllWakelocks();
 
   globalShortcut.unregisterAll();
 }

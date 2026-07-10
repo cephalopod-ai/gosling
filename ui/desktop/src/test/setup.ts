@@ -88,6 +88,7 @@ Object.defineProperty(window, 'electron', {
       mockSettings[key] = value;
       return Promise.resolve();
     }),
+    setWakelockActive: vi.fn(() => Promise.resolve(true)),
     reloadApp: vi.fn(),
     showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })),
     getIsFullScreen: vi.fn(() => Promise.resolve(false)),

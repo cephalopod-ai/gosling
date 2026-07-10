@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAcpCreditsExhaustedError } from '../errors';
+import { isAcpConnectionClosedError, parseAcpCreditsExhaustedError } from '../errors';
 
 describe('parseAcpCreditsExhaustedError', () => {
   it('parses structured ACP credits exhausted errors', () => {
@@ -44,5 +44,17 @@ describe('parseAcpCreditsExhaustedError', () => {
         },
       })
     ).toBeNull();
+  });
+});
+
+describe('isAcpConnectionClosedError', () => {
+  it('recognizes SDK and WebSocket connection failures', () => {
+    expect(isAcpConnectionClosedError(new Error('ACP connection closed'))).toBe(true);
+    expect(isAcpConnectionClosedError(new Error('ACP WebSocket connection failed'))).toBe(true);
+    expect(isAcpConnectionClosedError({ message: 'WebSocket connection reset' })).toBe(true);
+  });
+
+  it('does not classify provider failures as connection loss', () => {
+    expect(isAcpConnectionClosedError(new Error('Provider rate limit exceeded'))).toBe(false);
   });
 });

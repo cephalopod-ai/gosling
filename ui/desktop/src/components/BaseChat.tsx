@@ -39,6 +39,39 @@ const i18n = defineMessages({
     id: 'baseChat.goHome',
     defaultMessage: 'Go home',
   },
+  retry: {
+    id: 'baseChat.retry',
+    defaultMessage: 'Retry',
+  },
+  connectionInterrupted: {
+    id: 'baseChat.connectionInterrupted',
+    defaultMessage: 'Connection interrupted',
+  },
+  connectionInterruptedBody: {
+    id: 'baseChat.connectionInterruptedBody',
+    defaultMessage:
+      'The connection closed while the task was running. Work completed before the interruption was saved.',
+  },
+  reconnect: {
+    id: 'baseChat.reconnect',
+    defaultMessage: 'Reconnect',
+  },
+  taskInterrupted: {
+    id: 'baseChat.taskInterrupted',
+    defaultMessage: 'Task interrupted',
+  },
+  taskInterruptedBody: {
+    id: 'baseChat.taskInterruptedBody',
+    defaultMessage: 'Review the saved messages before explicitly resuming the task.',
+  },
+  resumeTask: {
+    id: 'baseChat.resumeTask',
+    defaultMessage: 'Resume task',
+  },
+  taskFailed: {
+    id: 'baseChat.taskFailed',
+    defaultMessage: 'Task failed',
+  },
 });
 
 interface BaseChatProps {
@@ -93,6 +126,10 @@ export default function BaseChat({
     submitElicitationResponse,
     stopStreaming,
     sessionLoadError,
+    promptError,
+    interruptedPrompt,
+    retrySessionLoad,
+    resumeInterruptedPrompt,
     tokenState,
     notifications: toolCallNotifications,
     pauseQueueOnStop,
@@ -139,7 +176,7 @@ export default function BaseChat({
       chatState === ChatState.Compacting
     ) {
       streamState = 'streaming';
-    } else if (sessionLoadError) {
+    } else if (sessionLoadError || promptError) {
       streamState = 'error';
     }
 
@@ -152,7 +189,7 @@ export default function BaseChat({
         },
       })
     );
-  }, [sessionId, chatState, messages.length, sessionLoadError]);
+  }, [sessionId, chatState, messages.length, promptError, sessionLoadError]);
 
   // Generate command history from user messages (most recent first)
   const commandHistory = useMemo(() => {
@@ -194,11 +231,14 @@ export default function BaseChat({
   const initialRenderRef = useRef(true);
   const initialSessionScrollRef = useRef<string | null>(null);
 
-  const requestScrollToBottom = useCallback((delayMs = 0, behavior: 'auto' | 'smooth' = 'smooth') => {
-    window.setTimeout(() => {
-      scrollRef.current?.scrollToBottom?.(behavior);
-    }, delayMs);
-  }, []);
+  const requestScrollToBottom = useCallback(
+    (delayMs = 0, behavior: 'auto' | 'smooth' = 'smooth') => {
+      window.setTimeout(() => {
+        scrollRef.current?.scrollToBottom?.(behavior);
+      }, delayMs);
+    },
+    []
+  );
 
   useEffect(() => {
     initialRenderRef.current = true;
@@ -334,14 +374,24 @@ export default function BaseChat({
                   </h3>
                   <p className="text-sm">{sessionLoadError}</p>
                 </div>
-                <button
-                  onClick={() => {
-                    setView('chat');
-                  }}
-                  className="px-4 py-2 text-center cursor-pointer text-text-primary border border-border-primary hover:bg-background-secondary rounded-lg transition-all duration-150"
-                >
-                  {intl.formatMessage(i18n.goHome)}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void retrySessionLoad()}
+                    className="px-4 py-2 text-center cursor-pointer text-text-primary border border-border-primary hover:bg-background-secondary rounded-lg transition-all duration-150"
+                  >
+                    {intl.formatMessage(i18n.retry)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setView('chat');
+                    }}
+                    className="px-4 py-2 text-center cursor-pointer text-text-primary border border-border-primary hover:bg-background-secondary rounded-lg transition-all duration-150"
+                  >
+                    {intl.formatMessage(i18n.goHome)}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -440,6 +490,47 @@ export default function BaseChat({
             </div>
           )}
         </div>
+
+        {(promptError || interruptedPrompt) && (
+          <div
+            role="alert"
+            className="mx-4 mb-2 flex items-center justify-between gap-4 rounded-lg border border-border-warning bg-background-warning/20 px-4 py-3 text-text-primary"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">
+                {intl.formatMessage(
+                  promptError?.connectionLost
+                    ? i18n.connectionInterrupted
+                    : promptError
+                      ? i18n.taskFailed
+                      : i18n.taskInterrupted
+                )}
+              </p>
+              <p className="mt-1 text-xs text-text-secondary">
+                {promptError?.connectionLost
+                  ? intl.formatMessage(i18n.connectionInterruptedBody)
+                  : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
+              </p>
+            </div>
+            {promptError?.connectionLost ? (
+              <button
+                type="button"
+                onClick={() => void retrySessionLoad()}
+                className="shrink-0 rounded-md border border-border-primary px-3 py-1.5 text-sm hover:bg-background-secondary"
+              >
+                {intl.formatMessage(i18n.reconnect)}
+              </button>
+            ) : interruptedPrompt && !promptError && chatState === ChatState.Idle ? (
+              <button
+                type="button"
+                onClick={() => void resumeInterruptedPrompt()}
+                className="shrink-0 rounded-md border border-border-primary px-3 py-1.5 text-sm hover:bg-background-secondary"
+              >
+                {intl.formatMessage(i18n.resumeTask)}
+              </button>
+            ) : null}
+          </div>
+        )}
 
         <ChatInputCard
           className={cn(

@@ -1,8 +1,5 @@
 import Electron, { contextBridge, ipcRenderer, webUtils } from 'electron';
-import {
-  desktopCommandChannels,
-  rendererEventChannels,
-} from './ipc/channels';
+import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
 import type {
   RendererEventCallback,
   RendererEventChannel,
@@ -143,6 +140,7 @@ type ElectronAPI = {
   getMcpAppProxyUrl: (csp?: McpAppProxyCsp | null) => Promise<string | null>;
   setWakelock: (enable: boolean) => Promise<boolean>;
   getWakelockState: () => Promise<boolean>;
+  setWakelockActive: (sessionId: string, active: boolean) => Promise<boolean>;
   setSpellcheck: (enable: boolean) => Promise<boolean>;
   getSpellcheckState: () => Promise<boolean>;
   openNotificationsSettings: () => Promise<boolean>;
@@ -283,6 +281,8 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('get-mcp-app-proxy-url', csp),
   setWakelock: (enable: boolean) => ipcRenderer.invoke('set-wakelock', enable),
   getWakelockState: () => ipcRenderer.invoke('get-wakelock-state'),
+  setWakelockActive: (sessionId: string, active: boolean) =>
+    ipcRenderer.invoke('set-wakelock-active', sessionId, active),
   setSpellcheck: (enable: boolean) => ipcRenderer.invoke('set-spellcheck', enable),
   getSpellcheckState: () => ipcRenderer.invoke('get-spellcheck-state'),
   openNotificationsSettings: () => ipcRenderer.invoke('open-notifications-settings'),
@@ -313,7 +313,9 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke(desktopCommandChannels.openExternal, url);
   },
   getVersion: (): string => {
-    return config.GOSLING_VERSION || ipcRenderer.sendSync(desktopCommandChannels.getAppVersion) || '';
+    return (
+      config.GOSLING_VERSION || ipcRenderer.sendSync(desktopCommandChannels.getAppVersion) || ''
+    );
   },
   checkForUpdates: (): Promise<{ updateInfo: unknown; error: string | null }> => {
     return ipcRenderer.invoke('check-for-updates');

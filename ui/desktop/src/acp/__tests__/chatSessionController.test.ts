@@ -9,6 +9,7 @@ import {
   type AcpChatSessionSnapshot,
 } from '../chatSessionStore';
 import { acpCancelPrompt, acpPromptSession } from '../prompt';
+import { getAcpConnectionGeneration } from '../acpConnection';
 import {
   acpLoadSession,
   acpTruncateSessionConversation,
@@ -57,6 +58,10 @@ vi.mock('../prompt', () => ({
   acpPromptSession: vi.fn(),
 }));
 
+vi.mock('../acpConnection', () => ({
+  getAcpConnectionGeneration: vi.fn(),
+}));
+
 const SESSION_ID = 'session-1';
 
 function userMessage(): Message & { id: string } {
@@ -98,6 +103,7 @@ function mockLoadResult() {
 function snapshotWithActivePrompt(activePromptAttemptId: string | null): AcpChatSessionSnapshot {
   return {
     session: undefined,
+    connectionGeneration: activePromptAttemptId ? 1 : null,
     messages: [],
     historyCursor: null,
     historyHasMore: false,
@@ -114,6 +120,8 @@ function snapshotWithActivePrompt(activePromptAttemptId: string | null): AcpChat
     notifications: [],
     chatState: activePromptAttemptId ? ChatState.Streaming : ChatState.Idle,
     sessionLoadError: undefined,
+    promptError: undefined,
+    interruptedPrompt: false,
     activePromptAttemptId,
     activeRunId: activePromptAttemptId ? 'run-1' : null,
     pendingCancelPromptAttemptId: null,
@@ -142,6 +150,7 @@ describe('acpChatSessionController.loadSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(undefined);
+    vi.mocked(getAcpConnectionGeneration).mockReturnValue(1);
     vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
     vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
   });
@@ -155,7 +164,8 @@ describe('acpChatSessionController.loadSession', () => {
     expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      1
     );
   });
 
@@ -168,7 +178,41 @@ describe('acpChatSessionController.loadSession', () => {
     expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      1
+    );
+  });
+
+  it('reuses cached session state on the current ACP connection', async () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+      connectionGeneration: 1,
+    });
+
+    const loaded = await acpChatSessionController.loadSession(SESSION_ID);
+
+    expect(loaded).toBe(true);
+    expect(acpLoadSession).not.toHaveBeenCalled();
+    expect(acpChatSessionActions.startSessionLoad).not.toHaveBeenCalled();
+  });
+
+  it('reloads cached session state after the ACP connection changes', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+      connectionGeneration: 1,
+    });
+    vi.mocked(getAcpConnectionGeneration).mockReturnValue(2);
+
+    await acpChatSessionController.loadSession(SESSION_ID);
+
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
+      SESSION_ID,
+      loadedSession(),
+      2
     );
   });
 });
@@ -220,6 +264,28 @@ describe('acpChatSessionController.submitMessage', () => {
     );
     expect(acpChatSessionActions.finishPromptAttemptIfCurrent).not.toHaveBeenCalled();
     expect(onFinish).not.toHaveBeenCalled();
+  });
+
+  it('marks a closed ACP connection as an interrupted prompt', async () => {
+    vi.mocked(acpPromptSession).mockRejectedValue(new Error('ACP connection closed'));
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(acpChatSessionActions.finishPromptAttemptIfCurrent).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.any(String),
+      {
+        message: 'Submit error: ACP connection closed',
+        connectionLost: true,
+      }
+    );
+    expect(window.electron.setWakelockActive).toHaveBeenNthCalledWith(1, SESSION_ID, true);
+    expect(window.electron.setWakelockActive).toHaveBeenNthCalledWith(2, SESSION_ID, false);
+    expect(onFinish).toHaveBeenCalledWith('Submit error: ACP connection closed');
   });
 
   it('rejects while a cancellation barrier is pending', async () => {
@@ -356,7 +422,10 @@ describe('acpChatSessionController.updateMessage', () => {
     resolvePromptCancellation!();
     await updatePromise;
 
-    expect(acpTruncateSessionConversation).toHaveBeenCalledWith(SESSION_ID, existingMessage.created);
+    expect(acpTruncateSessionConversation).toHaveBeenCalledWith(
+      SESSION_ID,
+      existingMessage.created
+    );
     expect(acpPromptSession).toHaveBeenCalled();
     expect(acpChatSessionActions.clearPromptCancellation).not.toHaveBeenCalledWith(
       SESSION_ID,
