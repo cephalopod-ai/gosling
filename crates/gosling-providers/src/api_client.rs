@@ -220,7 +220,15 @@ impl fmt::Debug for AuthMethod {
 impl ApiResponse {
     pub async fn from_response(response: Response) -> Result<Self> {
         let status = response.status();
-        let payload = response.json().await.ok();
+        let bytes = response.bytes().await?;
+        // Distinguish an empty body (payload = None) from a non-empty body that
+        // fails to parse (a real error), instead of collapsing both to None and
+        // hiding a malformed provider response behind a success status.
+        let payload = if bytes.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_slice(&bytes)?)
+        };
         Ok(Self { status, payload })
     }
 }

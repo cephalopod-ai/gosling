@@ -222,7 +222,10 @@ impl GoogleErrorCode {
             429 => Some(Self::TooManyRequests),
             500 => Some(Self::InternalServerError),
             503 => Some(Self::ServiceUnavailable),
-            _ => Some(Self::InternalServerError),
+            // Unmapped codes return None so callers can distinguish a known
+            // status from an unrecognized one, rather than silently coercing
+            // every unknown code (incl. unmapped 4xx) into a 500.
+            _ => None,
         }
     }
 }
