@@ -1,6 +1,6 @@
 # Gosling Continuity and Security Remediation Master Plan
 
-Status: Active; Session Handoff proposed; Security Phase 1 implemented and targeted checks complete  
+Status: Active; Session Handoff proposed; Security Phases 1–2 implemented and targeted checks complete
 Scope: Gosling core, session persistence, providers, ACP server, Desktop, build and test automation, dependency integrity, and repository governance  
 Primary outcomes: Switching providers or models preserves enough verified session state to continue safely without asking the replacement model to rediscover prior work, and Gosling's delivery paths do not execute mutable remote installers or unpinned provider packages.
 
@@ -1107,6 +1107,242 @@ For alerts `#29`, `#4`, `#6`, `#26`, `#9`, and `#14`:
 - Review event expressions for fork and actor confusion.
 - Use dry-run or read-only GitHub inspection only unless separately authorized.
 
+### 27.4 Phase 2 revalidation evidence
+
+Read-only GitHub code-scanning API inspection on 2026-07-10 confirmed all six findings remain open on `main` at commit `9f661a661a2b3451dfca87a5953890f3da6677c1`:
+
+| Alert | Workflow | Scanner evidence | Current exposure |
+|---:|---|---|---|
+| #29 | `release.yml` | top-level `contents: write` | build and packaging jobs inherit release, OIDC, attestation, and PR write capabilities they do not need |
+| #4 | `build-cli.yml` | no top-level permission defined | reusable build permissions depend on caller/repository defaults |
+| #6 | `bundle-desktop-linux.yml` | no top-level permission defined | checkout/build/package job permissions depend on caller/repository defaults |
+| #26 | `publish-npm.yml` | top-level `contents: write` | build jobs inherit contents/PR/OIDC writes needed by neither the build nor package assembly |
+| #9 | `canary.yml` | top-level `contents: write` | prepare and build jobs inherit release and attestation capabilities |
+| #14 | `close-release-pr-on-tag.yaml` | top-level `contents: write` | PR lookup/closure and workflow dispatch share contents, PR, and Actions writes for the whole job |
+
+GitHub's current reusable-workflow contract allows the caller to pass `jobs.<job_id>.permissions`, and the called workflow may only retain or downgrade those permissions. Therefore, hardening `build-cli.yml` also requires a `contents: read` permission on the `build-cli` call in `pr-comment-build-cli.yml`; otherwise the existing IssueOps caller may be unable to check out the selected PR commit.
+
+### 27.5 Phase 2 patch contract
+
+#### Alert #29 — release orchestration
+
+Vulnerable path: release-wide write token → build/repository checkout and packaging jobs → arbitrary action or repository build step can access release-class capabilities before the release job.
+
+Security invariant: only the final release job may write repository contents or attestations; only Windows signing and final attestation may request OIDC; build and artifact jobs receive read-only repository access.
+
+Preserved behavior:
+
+- release branches and `v1.*` tags still trigger the workflow;
+- every reusable build/bundle job still receives the permissions it needs;
+- tagged releases still create/update versioned and stable releases;
+- provenance attestation and optional macOS update-manifest upload remain enabled.
+
+Patch:
+
+- set workflow permission to `contents: read`;
+- set `contents: read` explicitly on CLI build, install-script, and Linux bundle call jobs;
+- retain OIDC only on the Windows signing call; macOS signing uses environment-protected Apple credentials and does not access GitHub OIDC;
+- remove unused `actions: read` from the Windows caller because same-run artifact operations use the Actions runtime and no GitHub Actions API call appears in the workflow;
+- change `bundle-desktop-windows.yml` from workflow-wide OIDC to `contents: read`, then grant `id-token: write` only to `sign-desktop-windows` so caller-provided OIDC cannot reach repository build steps;
+- retain `contents: write`, `id-token: write`, and `attestations: write` only on the release job;
+- remove unused workflow-wide `pull-requests: write` and `actions: read` grants.
+
+Rollback boundary: restore only `release.yml` permissions. No trigger, secret, action version, artifact name, or release command changes.
+
+#### Alert #4 — reusable CLI build
+
+Vulnerable path: absent workflow permission contract → caller/repository defaults → every matrix build receives permissions unrelated to checkout and artifact creation.
+
+Security invariant: the reusable CLI build receives only `contents: read`.
+
+Preserved behavior:
+
+- all matrix targets still check out, build, package, cache, and upload artifacts;
+- caller-selected `ref` and version inputs remain unchanged;
+- IssueOps PR builds retain checkout access to the selected commit.
+
+Patch:
+
+- set `contents: read` at the reusable workflow level;
+- set `contents: read` on each in-scope call job;
+- add `contents: read` to the IssueOps `build-cli` call as the required compatibility adjustment.
+
+Rollback boundary: remove the reusable-workflow permission block and the caller permission entries together.
+
+#### Alert #6 — reusable Linux Desktop bundle
+
+Vulnerable path: absent workflow permission contract → caller/repository defaults → checkout and build steps may receive caller release permissions.
+
+Security invariant: Linux Desktop build/package steps receive only `contents: read`.
+
+Preserved behavior: manual and reusable invocations still check out the selected branch/ref, build all Linux formats, use caches, and upload workflow artifacts.
+
+Patch: set workflow-level `contents: read` and pass `contents: read` from release/canary call jobs.
+
+Rollback boundary: remove the called-workflow permission block and the two caller entries together.
+
+#### Alert #26 — npm publishing
+
+Vulnerable path: workflow-wide contents/PR/OIDC writes → source checkout, dependency installation, package build, and artifact assembly → build-time code can access publish-class permissions.
+
+Security invariant: build jobs have only repository read access; only the environment-gated publish job can mint an OIDC token.
+
+Preserved behavior:
+
+- CLI artifacts are still built and assembled into platform packages;
+- SDK compatibility checks and package artifact upload remain;
+- npm trusted publishing and provenance remain enabled;
+- the production publishing environment remains the approval/secret boundary.
+
+Patch:
+
+- set workflow-level `contents: read`;
+- pass `contents: read` to the reusable CLI build;
+- retain read-only access for the build job;
+- grant the publish job only `contents: read` and `id-token: write`;
+- remove unused `contents: write` and `pull-requests: write`.
+
+Rollback boundary: restore only `publish-npm.yml` permissions. Package content, commands, and environment remain unchanged.
+
+#### Alert #9 — canary orchestration
+
+Vulnerable path: workflow-wide release/OIDC/attestation writes → version preparation and build/bundle jobs → build-time code can access canary release capabilities.
+
+Security invariant: preparation and unsigned build jobs have only repository read access; only the final release job can write releases, attestations, or OIDC tokens.
+
+Preserved behavior:
+
+- pushes to `main` still compute the canary version;
+- all platform artifacts are still built and uploaded;
+- unsigned canary bundles remain unsigned;
+- the final job still attests artifacts and updates the canary release.
+
+Patch:
+
+- set workflow-level `contents: read`;
+- pass `contents: read` to CLI, Linux, macOS, Intel macOS, and Windows build calls;
+- remove OIDC from the always-unsigned macOS call jobs;
+- retain `contents: write`, `id-token: write`, and `attestations: write` only on the release job.
+
+Rollback boundary: restore only `canary.yml` permissions. Version, build, signing input, artifact, and release semantics remain unchanged.
+
+#### Alert #14 — close release PR and dispatch patch workflow
+
+Vulnerable path: one job has Actions, contents, and PR write permissions → checkout plus shell and GitHub CLI steps → either mutation capability is available to every step.
+
+Security invariant: PR closure receives only `pull-requests: write`; workflow dispatch receives only `actions: write`; repository contents remain read-only at workflow scope.
+
+Preserved behavior:
+
+- semantic version tags still identify the matching `release/<version>` branch;
+- an open matching PR is closed with the same comment when found;
+- the patch release workflow is dispatched after successful PR handling, including when no PR is open;
+- a failure in PR handling still prevents dispatch, matching current step ordering.
+
+Patch:
+
+- set workflow-level `contents: read`;
+- remove the unnecessary checkout;
+- give the PR job only `pull-requests: write` and export the branch as a job output;
+- create a dependent dispatch job with only `actions: write`;
+- set `GH_REPO` explicitly because the jobs no longer rely on checkout for repository discovery.
+
+Rollback boundary: recombine the two jobs, restore checkout, and restore the original permission block as one unit.
+
+### 27.6 Phase 2 regression contract
+
+Add `.github/scripts/verify-phase2-permissions.rb` to parse the workflow YAML and enforce:
+
+- every alert workflow has an explicit read-only top-level permission contract;
+- no workflow-wide write permission remains in those six workflows;
+- every job-level write grant is on the allowlist established above;
+- build/reusable-call jobs explicitly receive `contents: read` where caller compatibility requires it;
+- `publish-npm` grants OIDC only to `publish`;
+- release/canary grant contents and attestation writes only to `release`;
+- close-release PR and Actions writes exist on separate jobs;
+- the IssueOps CLI caller passes `contents: read` and no write permission to the reusable build.
+
+The script must fail if a removed top-level write is restored, if a job gains an unapproved write, or if a required reusable-workflow read permission is removed.
+
+### 27.7 Phase 2 execution status
+
+Status: complete in source; remote alert closure awaits push and GitHub rescanning.
+
+Files changed:
+
+- `.github/workflows/release.yml`
+- `.github/workflows/build-cli.yml`
+- `.github/workflows/bundle-desktop-linux.yml`
+- `.github/workflows/bundle-desktop-windows.yml`
+- `.github/workflows/publish-npm.yml`
+- `.github/workflows/canary.yml`
+- `.github/workflows/close-release-pr-on-tag.yaml`
+- `.github/workflows/pr-comment-build-cli.yml`
+- `.github/scripts/verify-phase2-permissions.rb`
+- `plan.md`
+
+Permission result:
+
+- All six alert workflows now have explicit workflow-level `contents: read` and no workflow-level write permission.
+- Release and canary content/attestation writes exist only on their final release jobs.
+- npm OIDC exists only on the environment-gated publish job.
+- Windows OIDC exists only on `sign-desktop-windows`; repository build code receives `contents: read` only.
+- macOS release/canary calls receive no unused OIDC permission.
+- PR closure and patch-workflow dispatch have separate job tokens.
+- The CLI IssueOps caller explicitly passes `contents: read` to the hardened reusable build.
+
+### 27.8 Phase 2 validation evidence
+
+Applicability and buildability:
+
+- Read-only `gh api` calls confirmed alerts `#29`, `#4`, `#6`, `#26`, `#9`, and `#14` were open and mapped to the expected files before editing.
+- Ruby parsed all eight changed workflow/caller YAML files successfully.
+- `ruby -c .github/scripts/verify-phase2-permissions.rb`: passed.
+- `actionlint v1.7.12` on all eight changed workflow/caller files: passed with no findings.
+- The three run blocks in `close-release-pr-on-tag.yaml`, extracted from parsed YAML and passed to `bash -n`: passed.
+
+Security closure:
+
+- `.github/scripts/verify-phase2-permissions.rb`: passed the complete workflow/job allowlist.
+- The checker confirmed no workflow-wide write in any alert workflow.
+- The checker confirmed every job-level write is one of the exact approved release, attestation, OIDC, PR, or Actions mutations.
+- A temporary negative mutation changed `release.yml` back to workflow-wide `contents: write`; the checker failed with the expected contract error.
+- Caller search confirmed every current `build-cli.yml` caller passes `contents: read`.
+- Caller/called-workflow tracing confirmed caller-provided Windows OIDC is downgraded away from build/package jobs and retained only by the signing job.
+
+Preserved behavior:
+
+- Workflow triggers, conditions, inputs, artifacts, actions, secrets, environments, build commands, and release commands did not change, except for the intentional two-job split in `close-release-pr-on-tag.yaml`.
+- The close-release branch value is now an explicit job output and the dispatch job has the same success dependency as the original later step.
+- From a directory without a checkout, `GH_REPO=repo-makeover/gosling gh pr list ...` succeeded, proving PR repository discovery no longer depends on Git state.
+- From a directory without a checkout, `GH_REPO=repo-makeover/gosling gh workflow view release.yml --yaml` succeeded, proving registered workflow lookup honors `GH_REPO`.
+- `git diff --check`: passed.
+
+Skipped by explicit scope:
+
+- No Gosling build or test suite.
+- No Desktop launch, rebuild, or restart.
+- No workflow dispatch or hosted release/publish execution.
+- No GitHub settings or branch-protection mutation.
+- No code-scanning alert dismissal or state mutation.
+
+### 27.9 Phase 2 finding dispositions
+
+- Alert `#29`: `fixed` in source. `release.yml` is read-only by default; final release and Windows signing retain narrowly scoped writes/OIDC.
+- Alert `#4`: `fixed` in source. `build-cli.yml` declares `contents: read`, and all current callers preserve checkout access without broader permissions.
+- Alert `#6`: `fixed` in source. `bundle-desktop-linux.yml` and its callers are read-only.
+- Alert `#26`: `fixed` in source. npm build jobs are read-only; only the production publish job receives OIDC.
+- Alert `#9`: `fixed` in source. canary preparation and builds are read-only; only the release job can write or attest.
+- Alert `#14`: `fixed` in source. contents are no longer writable, and PR/Actions writes are isolated into separate jobs.
+
+The alerts will remain open in GitHub until these source changes are pushed and the Scorecard code-scanning workflow evaluates them.
+
+### 27.10 Residual operational finding
+
+Read-only GitHub Actions API inspection returned `404` for `patch-release.yaml`, and that workflow is absent from the repository's registered Actions workflow list even though the file exists on `main` and passes `actionlint`. The original `gh workflow run patch-release.yaml` command therefore appears unable to dispatch in the current remote state.
+
+This predates Phase 2 and is not caused by permission scoping. Phase 2 preserves the target and command, records the problem, and does not broaden into workflow registration or release-process repair. Investigate it as a separate functional automation issue before relying on automatic patch-release dispatch.
+
 ## 28. Phase 3 detailed plan: container digest pinning
 
 ### 28.1 Inventory
@@ -1187,10 +1423,10 @@ No source-code patch can close these alerts. Their disposition remains separate 
 | SEC-REQ-003 | #54 | build CLI workflow | Archived rustup-init plus architecture digests | YAML/embedded-shell parse, official digest readback, regression guard | Complete; hosted manylinux build pending |
 | SEC-REQ-004 | #57 | docs workflow | Locked local CLI build and install | YAML/embedded-shell parse, command assertions, regression guard | Complete; hosted docs workflow pending |
 | SEC-REQ-005 | #53/#58/#54/#57 | `.github/scripts/verify-phase1-integrity.sh` | Network-free invariant assertions | executable mode, script syntax, successful execution | Complete |
-| SEC-REQ-006 | #29/#4/#6/#26/#9/#14 | affected workflows | Permission and event inventory | source-to-permission table | Planned Phase 2 |
-| SEC-REQ-007 | same | affected workflows | least-privilege job permissions | permission-to-step map | Planned Phase 2 |
-| SEC-REQ-008 | same | affected workflows | untrusted code isolation | trust-boundary review | Planned Phase 2 |
-| SEC-REQ-009 | same | delivery history | separate Phase 2 patch | isolated diff and validation | Planned Phase 2 |
+| SEC-REQ-006 | #29/#4/#6/#26/#9/#14 | affected workflows | Permission and event inventory | source-to-permission table and read-only alert API evidence | Complete |
+| SEC-REQ-007 | same | affected workflows | least-privilege job permissions | executable permission allowlist and actionlint | Complete in source |
+| SEC-REQ-008 | same | affected workflows | untrusted code isolation | caller/called workflow and OIDC boundary review | Complete in source |
+| SEC-REQ-009 | same | delivery history | separate Phase 2 patch | isolated diff, negative mutation, and validation log | Complete |
 | SEC-REQ-010 | container alerts | workflows and Dockerfiles | tag plus immutable digest | registry manifest evidence | Planned Phase 3 |
 | SEC-REQ-011 | container alerts | update config/docs | documented digest update path | update rehearsal | Planned Phase 3 |
 | SEC-REQ-012 | #65 | manifest/lock/import graph | complete dependency map | advisory-to-artifact report | Planned Phase 4 |
@@ -1214,7 +1450,8 @@ No source-code patch can close these alerts. Their disposition remains separate 
 | docs workflow source build differs from historical release comparison intent | Low | Medium | inspect downstream use | current workflow comment permits HEAD and builds are expected | Review in hosted CI |
 | static guard overfits formatting | Medium | Low | deliberate guard mutation review | assert security semantics and exact pins, not line numbers | Low |
 | adjacent Hermit stable download remains mutable | High | High | scan/source review | track as separate finding; do not hide it | Open residual risk |
-| workflow permission issues remain after Phase 1 | High | High | existing alerts | Phase 2 scheduled separately | Open until Phase 2 |
+| workflow permission issues remain after Phase 1 | High | High | existing alerts | Phase 2 source remediation and regression guard | Fixed in source; remote rescan pending |
+| `patch-release.yaml` is absent from the registered Actions workflow API | Existing | High | read-only `gh workflow view` returns 404 | investigate workflow registration separately; do not mask with permission changes | Open functional automation issue |
 | GitHub branch settings remain weak | Depends on current settings | High | settings inventory | Phase 5 runbook and explicit admin approval | Open until authorized |
 | no local Gosling build leaves runtime compatibility unproven | Certain | Medium | stated validation boundary | run targeted CI later; user explicitly prohibited local build/restart | Accepted for this turn |
 
@@ -1338,17 +1575,37 @@ Requirements affected: SEC-REQ-002 and SEC-REQ-005.
 Validation impact: require a warning-free provider peer resolution, frozen-lockfile validation, and hosted smoke-test confirmation that workspace-root binaries are on the script PATH.  
 Rollback: remove the five root tool dependencies and scoped override, regenerate the lockfile, and test any alternative only in a credential-free job before restoring provider credentials.
 
+### PCR-006 — Scope reusable-workflow permissions through callers and called jobs
+
+Date: 2026-07-10
+Trigger: Phase 2 caller tracing showed that a reusable workflow can only downgrade the token passed by its caller, and Windows OIDC was requested at called-workflow scope.
+Decision: harden both sides of each boundary: callers pass only required permissions, called build workflows declare read-only defaults, and Windows OIDC is granted only to the signing job.
+Rationale: changing only the six scanner anchors would leave compatibility gaps or allow a broad caller token to remain available to repository build steps.
+Requirements affected: SEC-REQ-006, SEC-REQ-007, SEC-REQ-008, and SEC-REQ-009.
+Validation impact: include `pr-comment-build-cli.yml` and `bundle-desktop-windows.yml` in the permission contract, caller graph review, YAML parsing, and actionlint.
+Rollback: revert caller and called-workflow permission changes together so reusable-workflow token negotiation remains internally consistent.
+
+### PCR-007 — Record unregistered patch-release workflow without expanding scope
+
+Date: 2026-07-10
+Trigger: the read-only no-checkout behavior check found that GitHub returns `404` for `patch-release.yaml` and does not list it as a registered Actions workflow.
+Decision: preserve the existing dispatch target and record the pre-existing operational problem instead of changing release behavior during a permission remediation.
+Rationale: alert `#14` concerns token scope; workflow registration is a separate release-automation defect with different validation and change risk.
+Requirements affected: SEC-REQ-007 and SEC-REQ-009 behavior-preservation evidence.
+Validation impact: mark actual patch dispatch as unavailable, retain actionlint and structural dependency evidence, and require separate investigation before release automation relies on it.
+Rollback: none; this record changes no behavior.
+
 ## 35. Continuation handoff for the next session
 
-If work stops during Phase 1, the next model should:
+If work resumes after Phase 2, the next model should:
 
 1. Read repository `AGENTS.md` and this entire `plan.md`.
 2. Inspect `git status --short` and preserve all changes.
-3. Resume at the first incomplete gate in Section 26.
+3. Treat Phases 1 and 2 as implemented locally and inspect their diffs before starting a later phase.
 4. Do not run a Gosling build, test suite, Desktop process, or restart unless the user expands authorization.
 5. Do not modify GitHub settings or alert states.
-6. Run only the targeted commands listed in Gate 4.
+6. Re-run the Phase 1 and Phase 2 regression guards after any overlapping edit.
 7. Update the evidence log with actual exit status and relevant output.
 8. Record any strategy change in Section 34 before expanding scope.
 
-The next safe work after Phase 1 is not an automatic code edit. It is the Phase 2 permission inventory for alerts `#29`, `#4`, `#6`, `#26`, `#9`, and `#14`, delivered as its own reviewable change.
+The next planned security phase is Phase 3 container digest pinning. Keep the unregistered `patch-release.yaml` investigation as a separate functional automation issue rather than folding it into container work.

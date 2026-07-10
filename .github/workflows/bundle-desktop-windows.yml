@@ -35,16 +35,15 @@ on:
         type: string
         default: 'standard'
 
-# Permissions required for OIDC authentication with Azure Trusted Signing
 permissions:
-  id-token: write   # Required to fetch the OIDC token for Azure federated credentials
-  contents: read    # Required by actions/checkout
-  actions: read     # May be needed for some workflows
+  contents: read
 
 jobs:
   build-desktop-windows:
     name: Build Desktop (Windows)
     runs-on: ${{ inputs.windows_variant == 'cuda' && 'windows-2022' || 'windows-latest' }}
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -212,6 +211,8 @@ jobs:
     if: inputs.signing
     runs-on: windows-latest
     environment: ${{ inputs.signing && 'signing' || null }}
+    permissions:
+      id-token: write
 
     steps:
       - name: Download unsigned distribution
@@ -272,6 +273,8 @@ jobs:
     needs: build-desktop-windows
     if: ${{ !inputs.signing }}
     runs-on: windows-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Download unsigned distribution
