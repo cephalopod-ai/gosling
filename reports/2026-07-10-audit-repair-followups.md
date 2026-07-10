@@ -2,13 +2,64 @@
 
 **Date:** 2026-07-10
 **Companion to:** `reports/2026-07-10-audit-skills-pack-report.md`
-**Branch:** `claude/audit-skills-report-abcnsz` (PR #19)
+**Status:** merged to `main` as PR #19; reconciled at `6ab24704ea2b0698700ac1af88bd2cf0a74a0850`
 
 This backlog holds the findings the `repair-defect-campaign` deliberately **did not
 patch in-line**, because they are architectural rewrites, deliberate design tradeoffs,
 or maintainer/security-posture decisions. Each should be triaged on its own — several
 warrant a dedicated PR. (This file is the content for a follow-up GitHub issue; the
-issue itself is pending GitHub-app re-authorization.)
+repository has GitHub Issues disabled, so this file is the canonical ledger.)
+
+---
+
+## Confirmed open work not deliberately deferred — reconciliation 2026-07-10
+
+**Confirmation basis:** current `main` at `6ab24704`, current source, and the
+GitHub Actions runs for that SHA. GitHub Issues are disabled for
+`repo-makeover/gosling`, so this document is the canonical open-work ledger.
+"Open" below means either a present source TODO with a concrete next action or a
+current CI failure with an evidenced root cause. The routed security and
+architecture work in sections A–G remains deliberately deferred and is not
+duplicated in this section.
+
+### Confirmed defects
+
+| ID | Priority | Confirmed state | Next action |
+| --- | --- | --- | --- |
+| CI-001 | P0 | `CI` run `29119632291` fails three Rust tests: ChatGPT Codex reasoning maps to `high` while the test expects `xhigh`; known Codex context limits disagree with their test values; and Google final-status handling returns `200` where the test expects `500`. | Establish the intended provider contracts and update the implementation or assertions together; keep all three tests passing. |
+| CI-002 | P0 | ACP schema generation cannot compile because `posthog::sanitize_value` is private and unused; the schema job uses `-D warnings`. | Remove the unreachable sanitizer or call it from a reachable telemetry path, then regenerate and check the ACP schema. |
+| CI-003 | P1 | Desktop lint fails because `ui/desktop/src/i18n/messages/en.json` is stale. | Run `pnpm i18n:extract`, review the generated messages, and commit them. |
+| CI-004 | P1 | Compaction tests make unauthenticated Anthropic requests (`401: x-api-key header is required`) even though the workflow passes `ANTHROPIC_API_KEY`. | Restore/configure the repository secret or make the workflow skip live tests when it is absent. |
+| CI-005 | P1 | Normal-mode provider smoke test fails for `claude-code`: its CLI process exits before ACP initialization, so the expected file content is never returned. | Provision a compatible Claude Code CLI in CI or make this provider test prerequisite-aware. |
+| CI-006 | P1 | Multi-architecture Docker publishing runs out of builder disk while compiling the arm64 release image (`No space left on device`). | Reduce build footprint or split/provision the multi-arch build before re-enabling release publishing. |
+| CI-007 | P1 | Scheduled skills-marketplace rebuild builds successfully but fails at `configure-pages`: the repository has no Pages site configured. | Enable Pages with the Actions source or disable/guard the deployment workflows. |
+| DEF-001 | P2 | Diagnostics viewer exposes Search (`Ctrl/Cmd+F`) but only toggles an overlay; it never searches content. | Implement content search or remove/hide the incomplete action. |
+| DEF-002 | P1 | `GoslingAcpAgent::new` accepts `data_dir`, but global `Paths::in_state_dir` consumers (including request logs) ignore it. This defeats per-agent data-root isolation. | Thread the configured data root through global-path consumers and extend isolated ACP tests. |
+| DEF-003 | P2 | ACP provider `load_session` is unimplemented; four behavior tests are ignored for that reason. | Implement ACP session loading and unignore the coverage. |
+
+### Confirmed source TODOs and maintenance work
+
+| ID | Scope | Confirmed state | Next action |
+| --- | --- | --- | --- |
+| TODO-001 | Tests | `OpenAiFixture` only models Chat Completions, leaving Responses-routed models without end-to-end coverage. | Add a Responses API fixture and move the affected ACP tests to it. |
+| TODO-002 | Desktop configuration | Extension timeout and `nameToKey` are duplicated in TypeScript and Rust, so they can drift. | Share the contract or add cross-language contract tests. |
+| TODO-003 | Provider data | Recommended models come only from the bundled canonical registry, and disabled context-limit probing leaves freshness to static data. | Decide and implement a bounded refresh/probe strategy, with an offline fallback. |
+| TODO-004 | Vertex AI | MaaS requests always use Google format even though publisher-specific formats are unknown. | Add publisher-to-format selection and compatibility tests. |
+| TODO-005 | Observability | The temporary OTLP temporality helper is still present although its upstream prerequisite, OpenTelemetry Rust PR #3351, merged on 2026-02-17. | Verify the supported dependency release, remove the workaround if no longer needed, and test metrics export. |
+| TODO-006 | Desktop permission UI | The UI injects a synthetic `platform` extension instead of representing it as a real extension. | Model it at the extension boundary or make the distinction explicit in the UI contract. |
+| TODO-007 | ACP migration | `goslingd` retains a desktop ACP bridge until `gosling serve` provides equivalent initialization and platform identity. | Complete the direct-launch migration, verify desktop ACP behavior, then remove the bridge. |
+| TODO-008 | Orchestration | Subagents cannot select a fast versus standard model tier. | Add and validate the optional `model_tier` parameter. |
+| TODO-009 | Desktop cleanup | `DEFAULT_CHAT_TITLE` is marked as obsolete in `ChatContext`. | Confirm callers no longer require it and remove or retain it without the stale TODO. |
+| TODO-010 | Database tooling | The rollback helper cannot generate inverses for unsupported migration statements and emits a manual TODO before returning failure. | Expand supported reversible SQL or require explicit rollback SQL in migrations. |
+
+### Deliberately deferred, not counted above
+
+Sections A–G and the deferred findings in
+`reports/2026-07-09-defect-audit-and-repair.md` retain their deliberate-deferment
+status. The cargo-deny failure is included there as section F: current CI now
+reports `quick-xml 0.39.4` advisories `RUSTSEC-2026-0194` and
+`RUSTSEC-2026-0195` through `bat -> plist`. It remains a maintainer dependency
+decision, not a newly reclassified active item.
 
 ---
 
