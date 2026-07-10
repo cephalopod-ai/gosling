@@ -26,6 +26,16 @@ updates:
           - "minor"
           - "patch"
 
+  # Keep pinned Docker base-image digests current through reviewable PRs.
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/.devcontainer"
+      - "/documentation/docs/docker"
+      - "/services/ask-ai-bot"
+    schedule:
+      interval: "weekly"
+
   # GitHub Actions used by workflows in .github/workflows.
   - package-ecosystem: "github-actions"
     directory: "/"

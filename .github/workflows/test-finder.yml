@@ -20,7 +20,7 @@ jobs:
   find-untested-code:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/repo-makeover/gosling:latest
+      image: ghcr.io/repo-makeover/gosling:sha-9f661a6@sha256:45c178cd40aceac2d3ea70bb99e0bcfaab584cdd758f7844dac9b0057f8e158c
       options: --user root
       env:
         GOSLING_PROVIDER: ${{ vars.GOSLING_PROVIDER || 'openai' }}

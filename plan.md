@@ -1,6 +1,6 @@
 # Gosling Continuity and Security Remediation Master Plan
 
-Status: Active; Session Handoff proposed; Security Phases 1–2 implemented and targeted checks complete
+Status: Active; Session Handoff proposed; Security Phases 1–3 implemented and targeted checks complete
 Scope: Gosling core, session persistence, providers, ACP server, Desktop, build and test automation, dependency integrity, and repository governance  
 Primary outcomes: Switching providers or models preserves enough verified session state to continue safely without asking the replacement model to rediscover prior work, and Gosling's delivery paths do not execute mutable remote installers or unpinned provider packages.
 
@@ -1367,6 +1367,192 @@ This predates Phase 2 and is not caused by permission scoping. Phase 2 preserves
 - Review upstream changelogs before accepting digest refreshes.
 - Validate container entrypoint and available tools after each update in CI, not by restarting local Gosling.
 
+### 28.4 Phase 3 revalidation and scope
+
+Read-only GitHub code-scanning API inspection on 2026-07-10 mapped the live container-image findings to:
+
+| Alert | File | Current reference | Role |
+|---:|---|---|---|
+| #40 | `.devcontainer/Dockerfile` | `mcr.microsoft.com/devcontainers/rust:1` | developer environment |
+| #41 | `Dockerfile` | `rust:1.82-bookworm` | Gosling CLI/container builder |
+| #42 | `documentation/docs/docker/Dockerfile` | `rust:bullseye` | documented full-environment builder |
+| #43 | `documentation/docs/docker/Dockerfile` | `ubuntu:22.04` | documented full-environment runtime |
+| #44 | `services/ask-ai-bot/Dockerfile` | `oven/bun:1` | Ask AI Bot common base |
+| #45 | `services/ask-ai-bot/Dockerfile` | internal `base` stage | dependency stage derived from mutable base |
+| #46 | `services/ask-ai-bot/Dockerfile` | internal `base` stage | build stage derived from mutable base |
+| #47 | `services/ask-ai-bot/Dockerfile` | internal `base` stage | production stage derived from mutable base |
+
+The same inventory found two executable same-boundary references not reported by the scanner:
+
+- `.github/workflows/test-finder.yml` executes `ghcr.io/repo-makeover/gosling:latest` as the entire credential-bearing job container.
+- `ui/scripts/publish.sh` generates a temporary Dockerfile with `rust:1.92-bookworm` to build published Linux npm binaries.
+
+These are included because leaving mutable images in executable automation would preserve the same source-to-execution path that Phase 3 is intended to close.
+
+Already pinned and unchanged:
+
+- root runtime `debian:bookworm-slim@sha256:b1a741...`;
+- x86_64 and aarch64 manylinux workflow containers in `build-cli.yml`.
+
+Inventory-only and out of implementation scope:
+
+- illustrative image references in Markdown/tutorial content that are not consumed by automation;
+- generated documentation build output;
+- third-party source/cache contents under `.hermit`, `node_modules`, or `target`;
+- `.devcontainer/devcontainer.json` feature reference, which is an OCI Dev Container Feature rather than a Docker base/job image and requires a separate compatibility/update contract;
+- the mutable Dockerfile frontend syntax directive, which is not one of the current container-image findings.
+
+### 28.5 Phase 3 immutable source evidence
+
+Digests were resolved from the registries with `crane v0.21.7`. Each public digest was read back by digest and confirmed to be an OCI multi-platform index containing both `linux/amd64` and `linux/arm64`:
+
+| Image tag | Manifest-list digest |
+|---|---|
+| `mcr.microsoft.com/devcontainers/rust:1` | `sha256:1707e2a8007968925f110c0961811200e9bb10e0ec055e2734857c59189a8b13` |
+| `rust:1.82-bookworm` | `sha256:d9c3c6f1264a547d84560e06ffd79ed7a799ce0bff0980b26cf10d29af888377` |
+| `rust:bullseye` | `sha256:9a11136145d74a2c7b2a74a36163fe9a58f392ef7eba15c2cb5b10e3ef13f361` |
+| `ubuntu:22.04` | `sha256:0e0a0fc6d18feda9db1590da249ac93e8d5abfea8f4c3c0c849ce512b5ef8982` |
+| `oven/bun:1` | `sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4` |
+| `rust:1.92-bookworm` | `sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2` |
+
+The GHCR package is not anonymously readable and the current CLI credential lacks `read:packages`. Its immutable index digest was therefore taken from the latest completed successful `publish-docker.yml` build log:
+
+- source commit/tag: `9f661a661a2b3451dfca87a5953890f3da6677c1` / `sha-9f661a6`;
+- published `linux/amd64,linux/arm64` manifest list: `sha256:45c178cd40aceac2d3ea70bb99e0bcfaab584cdd758f7844dac9b0057f8e158c`;
+- the build log records the same digest for `main`, `latest`, and `sha-9f661a6`.
+
+Newer Docker publication runs for the Phase 1 and Phase 2 commits were still in progress during resolution. The test-finder pin intentionally selects the last successfully published immutable image rather than racing a mutable `latest` tag.
+
+### 28.6 Phase 3 patch contract
+
+Vulnerable path: mutable tag → registry-selected manifest at pull/build time → image entrypoint or build-stage commands execute with developer, CI, publishing, or provider credentials.
+
+Security invariant: every in-scope executable container image resolves to a reviewed SHA-256 manifest-list digest before any image layer or command is used.
+
+Preserved behavior:
+
+- readable image tags remain beside digests for maintainability;
+- all selected manifests retain amd64 and arm64 support;
+- Rust, Debian/Ubuntu, Bun, and Dev Container tag families remain unchanged;
+- root and documentation Dockerfile stage names and copy paths remain unchanged;
+- Ask AI Bot dependency, build, and production stages retain `/app` as `WORKDIR` and the same copy/build/runtime commands;
+- test-finder retains the same Gosling container family, root user, environment, secrets, and job steps;
+- npm publishing retains Rust 1.92 Bookworm and the same target-platform build behavior.
+
+Patch strategy:
+
+1. Add `@sha256:<manifest-list>` after each external tag.
+2. Replace Ask AI Bot's shared internal `FROM base` chain with three direct uses of the same pinned Bun image, repeating `WORKDIR /app` in each stage. This is required because the live scanner reports every `FROM base` occurrence and internal stage aliases cannot carry a registry digest.
+3. Pin test-finder to the successful `sha-9f661a6` image tag and its published index digest.
+4. Pin the generated npm-builder Dockerfile to the Rust 1.92 digest.
+5. Add one weekly Dependabot Docker entry covering the four real Dockerfile directories so digest refreshes arrive as reviewable source changes rather than silent tag movement.
+6. Do not change package installation, build commands, users, entrypoints, triggers, permissions, or credentials.
+
+Rollback units:
+
+- Each Dockerfile's digest changes can be reverted independently.
+- Ask AI Bot's three direct stages must be reverted together with restoration of the shared base stage.
+- The test-finder image can be rolled back independently to another known-good tag/digest pair; do not restore an unpinned `latest` reference.
+- The generated npm builder can be rolled back independently to another verified Rust 1.92 manifest digest.
+
+### 28.7 Phase 3 regression contract
+
+Add `.github/scripts/verify-phase3-container-digests.rb` to enforce:
+
+- exact expected tag/digest pairs for every in-scope Dockerfile `FROM`;
+- no in-scope `FROM` uses an internal alias or lacks `@sha256:`;
+- exact stage counts and names for the multi-stage Dockerfiles;
+- the Ask AI Bot's three stages all use the same Bun digest and each declares `/app` as its work directory;
+- the test-finder job container uses the exact immutable GHCR reference;
+- the generated npm Dockerfile uses the exact Rust 1.92 reference;
+- every digest contains exactly 64 lowercase hexadecimal characters;
+- previously pinned root Debian and manylinux references remain present.
+- Dependabot monitors `/`, `/.devcontainer`, `/documentation/docs/docker`, and `/services/ask-ai-bot` weekly for Docker updates.
+
+The regression checker must reject a temporary mutation that removes any digest while accepting the legitimate multi-stage and multi-platform references.
+
+### 28.8 Phase 3 execution status
+
+Status: complete in source; remote alert closure awaits push and GitHub rescanning.
+
+Files changed:
+
+- `.devcontainer/Dockerfile`
+- `Dockerfile`
+- `documentation/docs/docker/Dockerfile`
+- `services/ask-ai-bot/Dockerfile`
+- `.github/workflows/test-finder.yml`
+- `ui/scripts/publish.sh`
+- `.github/dependabot.yml`
+- `.github/scripts/verify-phase3-container-digests.rb`
+- `plan.md`
+
+Implementation result:
+
+- All Dockerfile base images reported by alerts `#40–#47` now use exact manifest-list digests.
+- Ask AI Bot has three direct pinned Bun stages with unchanged stage names, work directories, copy graph, commands, and runtime entrypoint.
+- The test-finder job no longer executes mutable `latest`; it uses the last successfully published commit-tagged Gosling image and digest.
+- The generated npm builder no longer resolves a mutable Rust 1.92 image.
+- Existing root Debian and manylinux pins remain unchanged.
+- Weekly Dependabot Docker monitoring covers every real Dockerfile directory.
+
+### 28.9 Phase 3 validation evidence
+
+Applicability and source resolution:
+
+- Read-only code-scanning API inspection confirmed alerts `#40–#47` and their exact source lines.
+- `crane v0.21.7 digest` readback matched all six public tag/digest pairs after editing.
+- `crane manifest <tag>@<digest>` confirmed all six public references are OCI image indexes containing both `linux/amd64` and `linux/arm64`.
+- Read-only log inspection of successful run `29090938028` confirmed GHCR commit tag `sha-9f661a6` was pushed as manifest list `sha256:45c178...`.
+
+Syntax and contract checks:
+
+- `ruby -c .github/scripts/verify-phase3-container-digests.rb`: passed.
+- `.github/scripts/verify-phase3-container-digests.rb`: passed.
+- Ruby YAML parsing for `.github/dependabot.yml` and `.github/workflows/test-finder.yml`: passed.
+- `actionlint v1.7.12 .github/workflows/test-finder.yml`: passed.
+- `bash -n ui/scripts/publish.sh`: passed.
+- `git diff --check`: passed.
+
+Security closure and bypass review:
+
+- The regression guard found no in-scope unpinned `FROM`, internal stage alias, malformed digest, or mutable test-finder image.
+- A temporary negative mutation removed the root Rust builder digest; the checker rejected it with the expected `FROM references` error.
+- The Ask AI Bot stage graph was compared before and after: only base selection and explicit inherited `WORKDIR` declarations changed.
+- Public tag digests were resolved a second time after editing and still matched the committed values.
+- GHCR was not guessed from a mutable tag: the committed digest is tied to a successful multi-platform publication log and commit tag.
+
+Skipped by explicit scope:
+
+- No Gosling or container image build.
+- No image layer pull or container execution.
+- No Desktop launch, rebuild, or restart.
+- No workflow dispatch, GitHub settings change, alert mutation, commit, or push.
+- Hosted multi-platform Docker builds remain the final runtime compatibility evidence after delivery.
+
+### 28.10 Phase 3 finding dispositions
+
+- Alert `#40`: `fixed` in source; the Dev Container Rust base is digest-pinned.
+- Alert `#41`: `fixed` in source; the root Rust builder is digest-pinned while the existing Debian runtime pin is preserved.
+- Alerts `#42` and `#43`: `fixed` in source; both documentation Dockerfile stages are digest-pinned.
+- Alerts `#44`, `#45`, `#46`, and `#47`: `fixed` in source; every Ask AI Bot `FROM` is now a direct pinned Bun reference.
+- Unalerted `test-finder.yml` mutable job image: `fixed` in source.
+- Unalerted generated npm-builder base: `fixed` in source.
+- SEC-REQ-010 and SEC-REQ-011: complete in source with deterministic enforcement and a reviewable weekly update path.
+
+GitHub alerts remain open until the changes are pushed and the Scorecard code-scanning workflow evaluates them.
+
+### 28.11 Phase 3 residual findings
+
+The following remain intentionally outside this container-image phase:
+
+- PinnedDependencies `downloadThenRun` alerts `#48–#52`.
+- PinnedDependencies npm-command alerts `#55`, `#56`, and `#59`.
+- The Dev Container Feature tag in `.devcontainer/devcontainer.json`.
+- Docker image references in copy/paste documentation examples.
+- The Dockerfile frontend syntax tag.
+- Alert `#65` dependency mapping, which is the next planned phase and must precede dependency changes.
+
 ## 29. Phase 4 detailed plan: alert `#65` dependency mapping
 
 No dependency changes are authorized until these questions are answered:
@@ -1427,8 +1613,8 @@ No source-code patch can close these alerts. Their disposition remains separate 
 | SEC-REQ-007 | same | affected workflows | least-privilege job permissions | executable permission allowlist and actionlint | Complete in source |
 | SEC-REQ-008 | same | affected workflows | untrusted code isolation | caller/called workflow and OIDC boundary review | Complete in source |
 | SEC-REQ-009 | same | delivery history | separate Phase 2 patch | isolated diff, negative mutation, and validation log | Complete |
-| SEC-REQ-010 | container alerts | workflows and Dockerfiles | tag plus immutable digest | registry manifest evidence | Planned Phase 3 |
-| SEC-REQ-011 | container alerts | update config/docs | documented digest update path | update rehearsal | Planned Phase 3 |
+| SEC-REQ-010 | #40–#47 plus same-boundary executable references | workflows and Dockerfiles | tag plus immutable manifest-list digest | registry/log evidence, static guard, negative mutation | Complete in source |
+| SEC-REQ-011 | container alerts | Dependabot and plan | weekly reviewed digest update path | parsed Dependabot Docker-directory contract | Complete in source |
 | SEC-REQ-012 | #65 | manifest/lock/import graph | complete dependency map | advisory-to-artifact report | Planned Phase 4 |
 | SEC-REQ-013 | #65 | determined after mapping | minimal dependency response | targeted compatibility/security checks | Blocked on mapping by design |
 | SEC-REQ-014 | branch/review alerts | GitHub settings | administrator runbook | settings preview | Planned Phase 5 |
@@ -1452,6 +1638,10 @@ No source-code patch can close these alerts. Their disposition remains separate 
 | adjacent Hermit stable download remains mutable | High | High | scan/source review | track as separate finding; do not hide it | Open residual risk |
 | workflow permission issues remain after Phase 1 | High | High | existing alerts | Phase 2 source remediation and regression guard | Fixed in source; remote rescan pending |
 | `patch-release.yaml` is absent from the registered Actions workflow API | Existing | High | read-only `gh workflow view` returns 404 | investigate workflow registration separately; do not mask with permission changes | Open functional automation issue |
+| pinned images stop receiving silent upstream security refreshes | Certain | High if unmanaged | weekly digest drift PRs | Dependabot monitors all four Dockerfile directories | Review and merge digest updates promptly |
+| private GHCR test image digest becomes unavailable or is deleted | Low | Medium | test-finder pull failure | commit tag plus digest; fail closed and update from successful publish log | Hosted job validation pending |
+| Dockerfile runtime compatibility is not locally built | Certain | Medium | hosted multi-platform build | registry platform validation and syntax/contract checks; no local build by scope | Accepted for this turn |
+| non-container PinnedDependencies alerts remain | Certain | Medium–High | live code-scanning alerts | keep separate from base-image patch; schedule after required #65 mapping/order decision | Open and explicit |
 | GitHub branch settings remain weak | Depends on current settings | High | settings inventory | Phase 5 runbook and explicit admin approval | Open until authorized |
 | no local Gosling build leaves runtime compatibility unproven | Certain | Medium | stated validation boundary | run targeted CI later; user explicitly prohibited local build/restart | Accepted for this turn |
 
@@ -1595,17 +1785,27 @@ Requirements affected: SEC-REQ-007 and SEC-REQ-009 behavior-preservation evidenc
 Validation impact: mark actual patch dispatch as unavailable, retain actionlint and structural dependency evidence, and require separate investigation before release automation relies on it.
 Rollback: none; this record changes no behavior.
 
+### PCR-008 — Include executable container references missed by Scorecard
+
+Date: 2026-07-10
+Trigger: the Phase 3 inventory found a mutable credential-bearing workflow image and a generated release-builder Dockerfile outside alerts `#40–#47`.
+Decision: pin `test-finder.yml` and the npm publish script's generated Rust builder alongside the reported Dockerfiles, while leaving documentation-only examples and non-image OCI features out of scope.
+Rationale: both included references cross the same mutable-tag-to-code-execution boundary; omitting them would leave the Phase 3 security invariant false in active automation.
+Requirements affected: SEC-REQ-010 and SEC-REQ-011.
+Validation impact: add both references to the deterministic guard, use the successful GHCR publication log as private-image evidence, and retain weekly Dependabot coverage for real Dockerfiles.
+Rollback: replace either with a different verified tag/digest pair; never restore an unpinned tag.
+
 ## 35. Continuation handoff for the next session
 
-If work resumes after Phase 2, the next model should:
+If work resumes after Phase 3, the next model should:
 
 1. Read repository `AGENTS.md` and this entire `plan.md`.
 2. Inspect `git status --short` and preserve all changes.
-3. Treat Phases 1 and 2 as implemented locally and inspect their diffs before starting a later phase.
+3. Treat Phases 1–3 as implemented locally and inspect their diffs before starting a later phase.
 4. Do not run a Gosling build, test suite, Desktop process, or restart unless the user expands authorization.
 5. Do not modify GitHub settings or alert states.
-6. Re-run the Phase 1 and Phase 2 regression guards after any overlapping edit.
+6. Re-run the Phase 1, Phase 2, and Phase 3 regression guards after any overlapping edit.
 7. Update the evidence log with actual exit status and relevant output.
 8. Record any strategy change in Section 34 before expanding scope.
 
-The next planned security phase is Phase 3 container digest pinning. Keep the unregistered `patch-release.yaml` investigation as a separate functional automation issue rather than folding it into container work.
+The next planned security phase is Phase 4: investigate alert `#65` and produce the dependency-to-lockfile-to-artifact mapping before changing any dependency. Keep the unregistered `patch-release.yaml` investigation and remaining non-container PinnedDependencies alerts explicit and separate.

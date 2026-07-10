@@ -113,7 +113,7 @@ build_linux_docker() {
 
   # Write a minimal Dockerfile into the context
   cat > "${ctx}/Dockerfile.npm-build" <<'DEOF'
-FROM rust:1.92-bookworm
+FROM rust:1.92-bookworm@sha256:e90e846de4124376164ddfbaab4b0774c7bdeef5e738866295e5a90a34a307a2
 RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
       build-essential cmake pkg-config libssl-dev libdbus-1-dev \
