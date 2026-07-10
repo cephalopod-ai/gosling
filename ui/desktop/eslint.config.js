@@ -113,6 +113,8 @@ module.exports = [
         Blob: 'readonly',
         FormData: 'readonly',
         crypto: 'readonly',
+        ClipboardItem: 'readonly',
+        NodeJS: 'readonly',
       },
     },
     plugins: {

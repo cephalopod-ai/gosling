@@ -74,25 +74,4 @@ mod tests {
         )
         .await
     }
-
-    // #[tokio::test]
-    // async fn test_context_length_exceeded_error() -> Result<()> {
-    //     run_scenario(
-    //         "context_length_exceeded",
-    //         Box::new(|provider| {
-    //             let model_config = resolve_global_model_config();
-    //             let context_length = model_config.context_limit.unwrap_or(300_000);
-    //             // "hello " is only one token in most models, since the hello and space often
-    //             // occur together in the training data.
-    //             let large_message = "hello ".repeat(context_length + 100);
-    //             Message::user().with_text(&large_message)
-    //         }),
-    //         Some(&["OpenAI"]),
-    //         |result| {
-    //             assert_eq!(result.messages.len(), 2, "One message after compaction");
-    //             Ok(())
-    //         },
-    //     )
-    //     .await
-    // }
 }
