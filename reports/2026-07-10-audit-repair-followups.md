@@ -71,6 +71,33 @@ decision (matches the existing accepted-risk `RUSTSEC-2023-0071` rsa ignore). Ma
 call. Also RSP-201 (widen cargo-deny to bans/licenses/sources) and RSP-202 (tighten
 Dependabot minor auto-merge) live here.
 
+## G. Desktop & server security/signals — sandbox-unverifiable (bounded, deferred)
+Attempted under "server + desktop, static-only"; the safe subset landed in stage 7
+(contrast A11Y-GOS-001, export error handling WFG-GOS-002). The rest are deferred
+because they can't be built/linted or run in this sandbox and carry real risk:
+- **SEC-N-001 `open-in-chrome` cmd.exe injection** (`ui/desktop/src/main.ts`): Windows
+  path `spawn('cmd.exe', ['/c','start','','chrome', url])` splits URLs on cmd
+  metacharacters (`&|^%`) — a correctness bug for legit multi-param URLs *and* an
+  injection vector. A correct fix needs either a Chrome-locator + `execFile` or a switch
+  to `shell.openExternal` (default browser, a product decision), and can't be tested on
+  Windows here.
+- **SEC-ACP-003 ACP `?token=` query auth** (`crates/gosling/src/acp/transport/auth.rs`):
+  the desktop client authenticates via `ws://…/acp?token=…`, so the query path can't be
+  removed without first moving clients to header auth (or restricting query-token to WS
+  upgrades) — a coordinated change.
+- **LLM-EXF-001 markdown-image exfiltration** (`MarkdownContent.tsx`/`csp.ts`): blocking
+  external `<img>` in model output closes the exfil channel but stops legitimate image
+  rendering — a CSP/UX product decision.
+- **SEC-N-002 will-navigate guard, A11Y-GOS-002/003/004** (BaseModal semantics, form
+  aria-required/role=alert, unlabeled header controls): additive and low-risk, but land in
+  the desktop lint gate which is currently red for an undiagnosable reason (GitHub app
+  de-authorized, no local node toolchain) — deferred until the lint gate can be run.
+- **Server signals** (`gosling-server`): honest `/status` (FSR-SRV-001), threading the real
+  loop-exit reason into `exit_type`/`Finish.reason` (FSR-SRV-002), and error-cause
+  propagation instead of bare 500/404 (FSR-SRV-003). The crate can't link locally
+  (proxy-blocked v8-goose download), so unverified Rust here risks an uncatchable compile
+  error that would add CI red — deferred to a session that can build it.
+
 ---
 
 ## Pre-existing CI failures (NOT from this campaign; maintainer action)
