@@ -4024,7 +4024,6 @@ dependencies = [
  "dirs",
  "dotenvy",
  "dtor",
- "encoding_rs",
  "env-lock",
  "etcetera 0.11.0",
  "fs-err 3.3.0",
@@ -4066,7 +4065,6 @@ dependencies = [
  "pctx_code_mode",
  "pem",
  "process-wrap",
- "pulldown-cmark",
  "rand 0.10.1",
  "rayon",
  "rcgen",
@@ -4160,7 +4158,6 @@ dependencies = [
  "gosling-mcp",
  "gosling-providers",
  "indicatif",
- "open",
  "rand 0.10.1",
  "regex",
  "reqwest 0.13.4",
@@ -4287,7 +4284,6 @@ dependencies = [
  "axum-server",
  "base64 0.22.1",
  "bytes",
- "chrono",
  "clap",
  "config",
  "futures",
@@ -5084,15 +5080,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
 
 [[package]]
-name = "is-docker"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "928bae27f42bc99b60d9ac7334e3a21d10ad8f1835a4e12ec3ec0464765ed1b3"
-dependencies = [
- "once_cell",
-]
-
-[[package]]
 name = "is-macro"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5102,16 +5089,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "is-wsl"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "173609498df190136aa7dea1a91db051746d339e18476eed5ca40521f02d7aa5"
-dependencies = [
- "is-docker",
- "once_cell",
 ]
 
 [[package]]
@@ -6110,17 +6087,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
-name = "open"
-version = "5.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fbaa89d2ddc8473c78a3adf69eea8cffa28c483b8e02a971ef31527cd0fc92c"
-dependencies = [
- "is-wsl",
- "libc",
- "pathdiff",
-]
-
-[[package]]
 name = "openssl"
 version = "0.10.80"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7062,17 +7028,6 @@ checksum = "6f42ea446cab60335f76979ec15e12619a2165b5ae2c12166bef27d283a9fadf"
 dependencies = [
  "idna",
  "psl-types",
-]
-
-[[package]]
-name = "pulldown-cmark"
-version = "0.13.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
-dependencies = [
- "bitflags 2.11.1",
- "memchr",
- "unicase",
 ]
 
 [[package]]
