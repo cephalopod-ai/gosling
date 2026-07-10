@@ -8,6 +8,7 @@ import siteConfig from "@generated/docusaurus.config";
 import {
   GOOSE_SKILLS_MANIFEST_URL,
   dedupeAndSortById,
+  isSupportedGooseSkill,
   normalizeGooseSkill,
   normalizeGoslingSkill,
 } from "./goose-compat";
@@ -90,10 +91,12 @@ async function fetchSkillsManifest(): Promise<Skill[]> {
     {
       url: `${baseUrl}skills-manifest.json`,
       normalize: normalizeGoslingSkill,
+      include: (_skill: unknown) => true,
     },
     {
       url: GOOSE_SKILLS_MANIFEST_URL,
       normalize: normalizeGooseSkill,
+      include: isSupportedGooseSkill,
     },
   ];
 
@@ -112,7 +115,9 @@ async function fetchSkillsManifest(): Promise<Skill[]> {
       const data = await response.json();
       if (!Array.isArray(data.skills) || data.skills.length === 0) continue;
 
-      const normalized: Skill[] = dedupeAndSortById(data.skills.map(manifest.normalize));
+      const normalized: Skill[] = dedupeAndSortById(
+        data.skills.filter(manifest.include).map(manifest.normalize),
+      );
       if (normalized.length === 0) continue;
 
       return normalized;

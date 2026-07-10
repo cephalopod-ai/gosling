@@ -5,6 +5,7 @@ const GOOSE_SERVERS_URL = "https://goose-docs.ai/servers.json";
 const GOOSE_SKILLS_MANIFEST_URL = "https://goose-docs.ai/skills-manifest.json";
 const GOOSE_COMPATIBILITY_NOTE =
   "Imported from Goose's AAIF-maintained catalog and normalized for gosling compatibility.";
+const GOOSE_EXCLUDED_SKILL_IDS = new Set(["code-review", "testing-strategy"]);
 
 function asString(value, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -118,6 +119,10 @@ function normalizeSkill(skill) {
   );
 }
 
+function isSupportedGooseSkill(skill) {
+  return !GOOSE_EXCLUDED_SKILL_IDS.has(asString(skill?.id));
+}
+
 function compareByIdThenName(a, b) {
   return `${a.id || ""}\0${a.name || ""}`.localeCompare(`${b.id || ""}\0${b.name || ""}`);
 }
@@ -140,7 +145,9 @@ function normalizeServersCatalog(raw) {
 }
 
 function normalizeSkillsManifest(raw) {
-  const skills = dedupeById(asArray(raw?.skills).map(normalizeSkill));
+  const skills = dedupeById(
+    asArray(raw?.skills).filter(isSupportedGooseSkill).map(normalizeSkill),
+  );
   return {
     skills,
     count: skills.length,
@@ -199,6 +206,8 @@ function runSelfTest() {
         repoUrl: "https://github.com/block/Agent-Skills",
         installCommand: "npx skills add https://github.com/block/Agent-Skills --skill demo",
       },
+      { id: "code-review" },
+      { id: "testing-strategy" },
     ],
   });
   assert.strictEqual(manifest.skills.length, 1);
@@ -236,6 +245,7 @@ if (require.main === module) {
 
 module.exports = {
   GOOSE_COMPATIBILITY_NOTE,
+  GOOSE_EXCLUDED_SKILL_IDS,
   GOOSE_SERVERS_URL,
   GOOSE_SKILLS_MANIFEST_URL,
   convertGooseCommand,
@@ -244,5 +254,6 @@ module.exports = {
   normalizeServersCatalog,
   normalizeSkill,
   normalizeSkillsManifest,
+  isSupportedGooseSkill,
   stableStringify,
 };
