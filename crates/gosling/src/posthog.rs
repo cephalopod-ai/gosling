@@ -529,21 +529,6 @@ fn sanitize_string(s: &str) -> String {
     result
 }
 
-fn sanitize_value(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::String(s) => serde_json::Value::String(sanitize_string(&s)),
-        serde_json::Value::Array(arr) => {
-            serde_json::Value::Array(arr.into_iter().map(sanitize_value).collect())
-        }
-        serde_json::Value::Object(obj) => serde_json::Value::Object(
-            obj.into_iter()
-                .map(|(k, v)| (k, sanitize_value(v)))
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
 // ============================================================================
 // Generic Event API (for frontend)
 // ============================================================================
