@@ -64,3 +64,26 @@ Status: completed.
   GPT-5.3-Codex receives the expanded effort/context contract; unmapped Google
   payload codes no longer fabricate a 500 response.
 - Change review: scoped to CI-001 and this session log only.
+
+### Stage 3 — CI-003: synchronize desktop message catalogs
+
+Status: completed.
+
+- Change: regenerated the English source catalog, removed obsolete keys from all
+  translated catalogs, and added each new source key as an English fallback while
+  preserving existing translations. Added `pnpm i18n:sync` so future catalog
+  updates apply that exact, reviewable reconciliation.
+- Discovery: after the source-catalog drift was corrected, strict validation exposed
+  the previously masked locale drift: each of the 15 translated catalogs lacked 78
+  source keys and retained 27 removed keys.
+- Validation:
+  - `pnpm run i18n:check` — passed for all 15 translated catalogs (1,032 source
+    messages).
+  - `pnpm run lint:check` — passed (TypeScript, ESLint, and i18n checks).
+  - `pnpm exec prettier --check package.json scripts/i18n-sync-locales.js src/i18n/messages/*.json` — passed.
+  - `git diff --check` — passed.
+- Adversarial review: the synchronizer only retains keys in the current English
+  catalog, preserves each existing translation verbatim, and gives new messages the
+  English source text; placeholder validation covers all retained and added entries.
+- Change review: scoped to generated catalogs and their explicit maintenance command;
+  no runtime message-loading behavior changed.

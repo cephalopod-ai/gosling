@@ -1505,18 +1505,6 @@
   "onboardingSuccess.getStarted": {
     "defaultMessage": "Loslegen"
   },
-  "onboardingSuccess.learnMore": {
-    "defaultMessage": "Mehr erfahren"
-  },
-  "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "Anonyme Nutzungsdaten helfen, gosling zu verbessern. Wir erfassen niemals Ihre Konversationen, Ihren Code oder Ihre persönlichen Daten."
-  },
-  "onboardingSuccess.privacyTitle": {
-    "defaultMessage": "Datenschutz"
-  },
-  "onboardingSuccess.shareUsageData": {
-    "defaultMessage": "Anonyme Nutzungsdaten teilen"
-  },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Immer zulassen"
   },
@@ -1567,36 +1555,6 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Versteckte Anweisungen, die an den Anbieter übergeben werden, um Ihre Antworten zu steuern und mit Kontext anzureichern."
-  },
-  "privacyInfoModal.collectErrors": {
-    "defaultMessage": "Fehlertypen (z. B. \"rate_limit\", \"auth\" – keine Details)"
-  },
-  "privacyInfoModal.collectExtensions": {
-    "defaultMessage": "Erweiterungen und Anzahl der Tool-Nutzungen (nur Namen)"
-  },
-  "privacyInfoModal.collectOs": {
-    "defaultMessage": "Betriebssystem, Version und Architektur"
-  },
-  "privacyInfoModal.collectProvider": {
-    "defaultMessage": "Verwendeter Anbieter und verwendetes Modell"
-  },
-  "privacyInfoModal.collectSession": {
-    "defaultMessage": "Sitzungsmetriken (Dauer, Anzahl der Interaktionen, Token-Nutzung)"
-  },
-  "privacyInfoModal.collectVersion": {
-    "defaultMessage": "gosling-Version und Installationsmethode"
-  },
-  "privacyInfoModal.description": {
-    "defaultMessage": "Anonyme Nutzungsdaten helfen uns zu verstehen, wie gosling genutzt wird, und Verbesserungsbereiche zu identifizieren."
-  },
-  "privacyInfoModal.neverCollect": {
-    "defaultMessage": "Wir erfassen niemals Ihre Konversationen, Ihren Code, Tool-Argumente, Fehlermeldungen oder persönliche Daten. Sie können diese Einstellung jederzeit in den Einstellungen ändern."
-  },
-  "privacyInfoModal.title": {
-    "defaultMessage": "Datenschutzdetails"
-  },
-  "privacyInfoModal.whatWeCollect": {
-    "defaultMessage": "Was wir erfassen:"
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Nachrichten werden geladen... ({renderedCount}/{totalCount})"
@@ -2570,45 +2528,6 @@
   "switchModelModal.useOtherProvider": {
     "defaultMessage": "Anderen Anbieter verwenden"
   },
-  "telemetryConsentPrompt.description": {
-    "defaultMessage": "Möchten Sie anonyme Nutzungsdaten teilen, um gosling zu verbessern? Wir erfassen niemals Ihre Unterhaltungen, Ihren Code oder Ihre persönlichen Daten."
-  },
-  "telemetryConsentPrompt.heading": {
-    "defaultMessage": "Helfen Sie, gosling zu verbessern"
-  },
-  "telemetryConsentPrompt.learnMore": {
-    "defaultMessage": "Mehr erfahren"
-  },
-  "telemetryConsentPrompt.optIn": {
-    "defaultMessage": "Ja, anonyme Nutzungsdaten teilen"
-  },
-  "telemetryConsentPrompt.optOut": {
-    "defaultMessage": "Nein danke"
-  },
-  "telemetrySettings.configErrorTitle": {
-    "defaultMessage": "Konfigurationsfehler"
-  },
-  "telemetrySettings.description": {
-    "defaultMessage": "Steuern Sie, wie Ihre Daten verwendet werden"
-  },
-  "telemetrySettings.learnMore": {
-    "defaultMessage": "Mehr erfahren"
-  },
-  "telemetrySettings.loadError": {
-    "defaultMessage": "Telemetrie-Einstellungen konnten nicht geladen werden."
-  },
-  "telemetrySettings.title": {
-    "defaultMessage": "Datenschutz"
-  },
-  "telemetrySettings.toggleDescription": {
-    "defaultMessage": "Helfen Sie, gosling zu verbessern, indem Sie anonyme Nutzungsstatistiken teilen."
-  },
-  "telemetrySettings.toggleLabel": {
-    "defaultMessage": "Anonyme Nutzungsdaten"
-  },
-  "telemetrySettings.updateError": {
-    "defaultMessage": "Telemetrie-Einstellungen konnten nicht aktualisiert werden."
-  },
   "themeSelector.dark": {
     "defaultMessage": "Dunkel"
   },
@@ -2941,5 +2860,239 @@
   },
   "settings.archive.title": {
     "defaultMessage": "Archive folder"
+  },
+  "baseChat.connectionInterrupted": {
+    "defaultMessage": "Connection interrupted"
+  },
+  "baseChat.connectionInterruptedBody": {
+    "defaultMessage": "The connection closed while the task was running. Work completed before the interruption was saved."
+  },
+  "baseChat.reconnect": {
+    "defaultMessage": "Reconnect"
+  },
+  "baseChat.resumeTask": {
+    "defaultMessage": "Resume task"
+  },
+  "baseChat.retry": {
+    "defaultMessage": "Retry"
+  },
+  "baseChat.taskFailed": {
+    "defaultMessage": "Task failed"
+  },
+  "baseChat.taskInterrupted": {
+    "defaultMessage": "Task interrupted"
+  },
+  "baseChat.taskInterruptedBody": {
+    "defaultMessage": "Review the saved messages before explicitly resuming the task."
+  },
+  "chatInput.addCredential": {
+    "defaultMessage": "Add credential profile"
+  },
+  "chatInput.credentials": {
+    "defaultMessage": "Credentials"
+  },
+  "chatInput.credentialsEmpty": {
+    "defaultMessage": "No saved credential profiles yet. Add them in Settings -> Auth."
+  },
+  "chatSettings.summarizerDescription": {
+    "defaultMessage": "Use a local LLM to summarize older context and extract durable facts to memory. Falls back to deterministic truncation whenever the endpoint is unavailable."
+  },
+  "chatSettings.summarizerTitle": {
+    "defaultMessage": "Context Summarizer"
+  },
+  "codeExecutionRuntime.description": {
+    "defaultMessage": "Allow or block Code Mode runtime loading for new Gosling processes."
+  },
+  "codeExecutionRuntime.disabledDescription": {
+    "defaultMessage": "Block Code Mode runtime loading."
+  },
+  "codeExecutionRuntime.disabledLabel": {
+    "defaultMessage": "Disabled"
+  },
+  "codeExecutionRuntime.enabledDescription": {
+    "defaultMessage": "Allow Code Mode when the extension is enabled."
+  },
+  "codeExecutionRuntime.enabledLabel": {
+    "defaultMessage": "Enabled"
+  },
+  "codeExecutionRuntime.restartRequired": {
+    "defaultMessage": "Restart Gosling for this change to take effect."
+  },
+  "codeExecutionRuntime.restartRequiredExternalBackend": {
+    "defaultMessage": "Restart the external backend process for this change to take effect."
+  },
+  "codeExecutionRuntime.title": {
+    "defaultMessage": "Code execution runtime"
+  },
+  "managedSecrets.addProfile": {
+    "defaultMessage": "Add profile"
+  },
+  "managedSecrets.addVariable": {
+    "defaultMessage": "Add variable"
+  },
+  "managedSecrets.customName": {
+    "defaultMessage": "Custom Project"
+  },
+  "managedSecrets.customNote": {
+    "defaultMessage": ""
+  },
+  "managedSecrets.customTemplate": {
+    "defaultMessage": "Custom profile"
+  },
+  "managedSecrets.deleteProfile": {
+    "defaultMessage": "Delete profile"
+  },
+  "managedSecrets.description": {
+    "defaultMessage": "Store repo-style secrets locally for websites and projects you manage. These values stay on this device in gosling settings and are not synced."
+  },
+  "managedSecrets.empty": {
+    "defaultMessage": "No local secret profiles yet. Add a custom profile or start from a VPS or Supabase template."
+  },
+  "managedSecrets.failedToLoad": {
+    "defaultMessage": "Failed to load local secret profiles"
+  },
+  "managedSecrets.failedToSave": {
+    "defaultMessage": "Failed to save local secret profiles: {error}"
+  },
+  "managedSecrets.loading": {
+    "defaultMessage": "Loading local secret profiles..."
+  },
+  "managedSecrets.note": {
+    "defaultMessage": "Note from user"
+  },
+  "managedSecrets.profileName": {
+    "defaultMessage": "Profile name"
+  },
+  "managedSecrets.profileSaved": {
+    "defaultMessage": "Local secret profiles saved"
+  },
+  "managedSecrets.profiles": {
+    "defaultMessage": "Profiles"
+  },
+  "managedSecrets.save": {
+    "defaultMessage": "Save"
+  },
+  "managedSecrets.saved": {
+    "defaultMessage": "Saved"
+  },
+  "managedSecrets.saving": {
+    "defaultMessage": "Saving changes..."
+  },
+  "managedSecrets.supabaseName": {
+    "defaultMessage": "Supabase Project"
+  },
+  "managedSecrets.supabaseNote": {
+    "defaultMessage": "Project configuration and admin credentials for managing this Supabase project."
+  },
+  "managedSecrets.supabaseTemplate": {
+    "defaultMessage": "Supabase project"
+  },
+  "managedSecrets.title": {
+    "defaultMessage": "Local Secret Profiles"
+  },
+  "managedSecrets.unsaved": {
+    "defaultMessage": "Unsaved changes"
+  },
+  "managedSecrets.useFor": {
+    "defaultMessage": "Use for"
+  },
+  "managedSecrets.useForAuthentication": {
+    "defaultMessage": "Authentication"
+  },
+  "managedSecrets.useForBoth": {
+    "defaultMessage": "Authentication + config"
+  },
+  "managedSecrets.useForConfig": {
+    "defaultMessage": "Project config"
+  },
+  "managedSecrets.variableName": {
+    "defaultMessage": "Variable name"
+  },
+  "managedSecrets.variableValue": {
+    "defaultMessage": "Secret value"
+  },
+  "managedSecrets.vpsName": {
+    "defaultMessage": "VPS Server"
+  },
+  "managedSecrets.vpsNote": {
+    "defaultMessage": "This is the password and login to manage the VPS server."
+  },
+  "managedSecrets.vpsTemplate": {
+    "defaultMessage": "VPS server"
+  },
+  "managedSecrets.website": {
+    "defaultMessage": "Website or service"
+  },
+  "permissionModal.allTools": {
+    "defaultMessage": "All tools in this extension"
+  },
+  "permissionModal.allToolsDescription": {
+    "defaultMessage": "Apply one permission to every tool shown below."
+  },
+  "permissionModal.mixedPermissions": {
+    "defaultMessage": "Mixed permissions"
+  },
+  "toolApprovalButtons.alwaysAllowExtension": {
+    "defaultMessage": "Always Allow all {extensionName} tools"
+  },
+  "toolApprovalButtons.alwaysAllowedExtension": {
+    "defaultMessage": "Always allowed ({extensionName} tools)"
+  },
+  "toolApprovalButtons.failedToAllowExtension": {
+    "defaultMessage": "Failed to update permissions for this extension"
+  },
+  "workingDirectoriesMenu.addDirectory": {
+    "defaultMessage": "Add directory…"
+  },
+  "workingDirectoriesMenu.addDirectoryShort": {
+    "defaultMessage": "Add Dir"
+  },
+  "workingDirectoriesMenu.alreadyAdded": {
+    "defaultMessage": "That directory is already added"
+  },
+  "workingDirectoriesMenu.directoriesShort": {
+    "defaultMessage": "Dirs"
+  },
+  "workingDirectoriesMenu.failedToAdd": {
+    "defaultMessage": "Failed to add working directory"
+  },
+  "workingDirectoriesMenu.failedToRemove": {
+    "defaultMessage": "Failed to remove working directory"
+  },
+  "workingDirectoriesMenu.failedToUpdateRestriction": {
+    "defaultMessage": "Failed to update working directory restriction"
+  },
+  "workingDirectoriesMenu.fullAccessHint": {
+    "defaultMessage": "Gosling has full read/write/run access inside every directory listed here."
+  },
+  "workingDirectoriesMenu.primary": {
+    "defaultMessage": "Primary"
+  },
+  "workingDirectoriesMenu.recentDirectories": {
+    "defaultMessage": "Recent directories"
+  },
+  "workingDirectoriesMenu.removeDirectory": {
+    "defaultMessage": "Remove directory"
+  },
+  "workingDirectoriesMenu.restrictToggleDescription": {
+    "defaultMessage": "Off by default. When on, actions outside the directories above need your approval, with an explanation of what and why."
+  },
+  "workingDirectoriesMenu.restrictToggleLabel": {
+    "defaultMessage": "Restrict tools to working directories"
+  },
+  "workingDirectoriesMenu.workingDirectories": {
+    "defaultMessage": "Working Directories"
+  },
+  "workingDirectoriesSummary.collapse": {
+    "defaultMessage": "Collapse working directories"
+  },
+  "workingDirectoriesSummary.expand": {
+    "defaultMessage": "Expand working directories"
+  },
+  "workingDirectoriesSummary.failedToRemove": {
+    "defaultMessage": "Failed to remove working directory"
+  },
+  "workingDirectoriesSummary.removeDirectory": {
+    "defaultMessage": "Remove working directory"
   }
 }

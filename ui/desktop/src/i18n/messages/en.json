@@ -215,6 +215,36 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Response Styles"
   },
+  "chatSettings.summarizerDescription": {
+    "defaultMessage": "Use a local LLM to summarize older context and extract durable facts to memory. Falls back to deterministic truncation whenever the endpoint is unavailable."
+  },
+  "chatSettings.summarizerTitle": {
+    "defaultMessage": "Context Summarizer"
+  },
+  "codeExecutionRuntime.description": {
+    "defaultMessage": "Allow or block Code Mode runtime loading for new Gosling processes."
+  },
+  "codeExecutionRuntime.disabledDescription": {
+    "defaultMessage": "Block Code Mode runtime loading."
+  },
+  "codeExecutionRuntime.disabledLabel": {
+    "defaultMessage": "Disabled"
+  },
+  "codeExecutionRuntime.enabledDescription": {
+    "defaultMessage": "Allow Code Mode when the extension is enabled."
+  },
+  "codeExecutionRuntime.enabledLabel": {
+    "defaultMessage": "Enabled"
+  },
+  "codeExecutionRuntime.restartRequired": {
+    "defaultMessage": "Restart Gosling for this change to take effect."
+  },
+  "codeExecutionRuntime.restartRequiredExternalBackend": {
+    "defaultMessage": "Restart the external backend process for this change to take effect."
+  },
+  "codeExecutionRuntime.title": {
+    "defaultMessage": "Code execution runtime"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Configuration Reset"
   },
@@ -1691,17 +1721,11 @@
   "onboardingSuccess.getStarted": {
     "defaultMessage": "Get Started"
   },
-  "onboardingSuccess.learnMore": {
-    "defaultMessage": "Learn more"
+  "permissionModal.allTools": {
+    "defaultMessage": "All tools in this extension"
   },
-  "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "Anonymous usage data helps improve gosling. We never collect your conversations, code, or personal data."
-  },
-  "onboardingSuccess.privacyTitle": {
-    "defaultMessage": "Privacy"
-  },
-  "onboardingSuccess.shareUsageData": {
-    "defaultMessage": "Share anonymous usage data"
+  "permissionModal.allToolsDescription": {
+    "defaultMessage": "Apply one permission to every tool shown below."
   },
   "permissionModal.alwaysAllow": {
     "defaultMessage": "Always allow"
@@ -1720,6 +1744,9 @@
   },
   "permissionModal.failedToLoadToolsDescription": {
     "defaultMessage": "Could not load tools for this extension. The extension may not be loaded in the current session."
+  },
+  "permissionModal.mixedPermissions": {
+    "defaultMessage": "Mixed permissions"
   },
   "permissionModal.neverAllow": {
     "defaultMessage": "Never allow"
@@ -1752,37 +1779,7 @@
     "defaultMessage": "Permission Rules"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "Hidden instructions that will be passed to the provider to help direct and add context to your responses."
-  },
-  "privacyInfoModal.collectErrors": {
-    "defaultMessage": "Error types (e.g., \"rate_limit\", \"auth\" - no details)"
-  },
-  "privacyInfoModal.collectExtensions": {
-    "defaultMessage": "Extensions and tool usage counts (names only)"
-  },
-  "privacyInfoModal.collectOs": {
-    "defaultMessage": "Operating system, version, and architecture"
-  },
-  "privacyInfoModal.collectProvider": {
-    "defaultMessage": "Provider and model used"
-  },
-  "privacyInfoModal.collectSession": {
-    "defaultMessage": "Session metrics (duration, interaction count, token usage)"
-  },
-  "privacyInfoModal.collectVersion": {
-    "defaultMessage": "gosling version and install method"
-  },
-  "privacyInfoModal.description": {
-    "defaultMessage": "Anonymous usage data helps us understand how gosling is used and identify areas for improvement."
-  },
-  "privacyInfoModal.neverCollect": {
-    "defaultMessage": "We never collect your conversations, code, tool arguments, error messages, or any personal data. You can change this setting anytime in Settings."
-  },
-  "privacyInfoModal.title": {
-    "defaultMessage": "Privacy details"
-  },
-  "privacyInfoModal.whatWeCollect": {
-    "defaultMessage": "What we collect:"
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Loading messages... ({renderedCount}/{totalCount})"
@@ -2843,45 +2840,6 @@
   "switchModelModal.useOtherProvider": {
     "defaultMessage": "Use other provider"
   },
-  "telemetryConsentPrompt.description": {
-    "defaultMessage": "Would you like to share anonymous usage data to help improve gosling? We never collect your conversations, code, or personal data."
-  },
-  "telemetryConsentPrompt.heading": {
-    "defaultMessage": "Help improve gosling"
-  },
-  "telemetryConsentPrompt.learnMore": {
-    "defaultMessage": "Learn more"
-  },
-  "telemetryConsentPrompt.optIn": {
-    "defaultMessage": "Yes, share anonymous usage data"
-  },
-  "telemetryConsentPrompt.optOut": {
-    "defaultMessage": "No thanks"
-  },
-  "telemetrySettings.configErrorTitle": {
-    "defaultMessage": "Configuration Error"
-  },
-  "telemetrySettings.description": {
-    "defaultMessage": "Control how your data is used"
-  },
-  "telemetrySettings.learnMore": {
-    "defaultMessage": "Learn more"
-  },
-  "telemetrySettings.loadError": {
-    "defaultMessage": "Failed to load telemetry settings."
-  },
-  "telemetrySettings.title": {
-    "defaultMessage": "Privacy"
-  },
-  "telemetrySettings.toggleDescription": {
-    "defaultMessage": "Help improve gosling by sharing anonymous usage statistics."
-  },
-  "telemetrySettings.toggleLabel": {
-    "defaultMessage": "Anonymous usage data"
-  },
-  "telemetrySettings.updateError": {
-    "defaultMessage": "Failed to update telemetry settings."
-  },
   "themeSelector.dark": {
     "defaultMessage": "Dark"
   },
@@ -3086,8 +3044,14 @@
   "workingDirectoriesMenu.addDirectory": {
     "defaultMessage": "Add directory…"
   },
+  "workingDirectoriesMenu.addDirectoryShort": {
+    "defaultMessage": "Add Dir"
+  },
   "workingDirectoriesMenu.alreadyAdded": {
     "defaultMessage": "That directory is already added"
+  },
+  "workingDirectoriesMenu.directoriesShort": {
+    "defaultMessage": "Dirs"
   },
   "workingDirectoriesMenu.failedToAdd": {
     "defaultMessage": "Failed to add working directory"
@@ -3118,5 +3082,17 @@
   },
   "workingDirectoriesMenu.workingDirectories": {
     "defaultMessage": "Working Directories"
+  },
+  "workingDirectoriesSummary.collapse": {
+    "defaultMessage": "Collapse working directories"
+  },
+  "workingDirectoriesSummary.expand": {
+    "defaultMessage": "Expand working directories"
+  },
+  "workingDirectoriesSummary.failedToRemove": {
+    "defaultMessage": "Failed to remove working directory"
+  },
+  "workingDirectoriesSummary.removeDirectory": {
+    "defaultMessage": "Remove working directory"
   }
 }
