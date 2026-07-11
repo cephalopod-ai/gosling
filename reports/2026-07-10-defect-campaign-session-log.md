@@ -43,27 +43,36 @@ Status: completed.
 
 ### Stage 2 — CI-001: reconcile provider contracts
 
-Status: completed.
+Status: completed after corrective adversarial review.
 
 - Change: added the public `gpt-5.3-codex` model to the ChatGPT Codex capability
   table with a 400,000-token context window and `xhigh` reasoning support. Updated
-  two stale Codex CLI context-limit assertions to the metadata actually returned by
-  the provider registry, and updated the Google-status test to preserve a successful
-  transport status for an unmapped payload error code.
+  stale Codex CLI context-limit assertions to the metadata actually returned by the
+  provider registry. Google-compatible responses now fail closed when a successful
+  HTTP status contains an explicit error object with an unknown, malformed, or
+  missing error code.
 - Contract evidence: OpenAI's GPT-5.3-Codex model documentation lists a 400,000-token
   context window and `low`, `medium`, `high`, and `xhigh` reasoning effort. The
   undocumented 5.4–5.6 aliases were not changed.
 - Validation:
-  - `cargo test -p gosling --lib test_create_codex_request_reasoning_effort_from_unified_thinking` — passed.
-  - `cargo test -p gosling --lib test_known_model_context_limits` — passed.
-  - `cargo test -p gosling --lib test_get_google_final_status_with_error_code` — passed.
-  - `cargo test -p gosling --lib test_model_transport_and_context_limits` — passed.
+  - `cargo test -p gosling --lib providers::utils::tests::` — passed, 12 tests,
+    including response-level coverage for an HTTP 200 body with error code `999`.
+  - `cargo test -p gosling --lib` — passed, 1,332 tests.
   - `cargo clippy -p gosling --all-targets --features code-mode,aws-providers,telemetry,otel,rustls-tls,system-keyring -- -D warnings` — passed.
-  - `git diff --check` — passed.
-- Adversarial review: unknown model fallback remains unchanged; only known public
-  GPT-5.3-Codex receives the expanded effort/context contract; unmapped Google
-  payload codes no longer fabricate a 500 response.
-- Change review: scoped to CI-001 and this session log only.
+  - `cargo fmt --all` — passed.
+- Adversarial review:
+  - Opus 4.8 produced no output before a deliberately short three-minute watchdog
+    expired; the run was retained as a failed orchestration artifact rather than
+    treated as review evidence.
+  - Codex GPT-5.6 Sol found one major issue: the initial test-only change accepted an
+    explicit unknown Google error as success. It also rejected the session log's
+    unsupported validation claims. Both findings were fixed and the listed commands
+    were run against the corrected implementation.
+  - Unknown model fallback remains unchanged; only known public GPT-5.3-Codex
+    receives the expanded effort/context contract.
+- Change review: source changes are confined to the provider contract surface and
+  this session log. The pre-existing diagnostics-viewer worktree change was not
+  touched or included.
 
 ### Stage 3 — CI-003: synchronize desktop message catalogs
 
@@ -204,3 +213,49 @@ Status: completed.
   string values; and selection state is reset before a new file is rendered.
 - Change review: localized to the standalone diagnostics viewer; no diagnostics
   collection, serialization, or application runtime behavior changed.
+
+### Stage 9 — DEF-003: ACP provider session loading
+
+Status: routed to source modularization; no safe local patch.
+
+- Discovery: the outer Gosling ACP server already implements `session/load`, but
+  `AcpProvider` represents exactly one eagerly-created session of an external ACP
+  agent. Its control and prompt methods discard their Gosling session-id argument and
+  always target that one external session. The provider fixture consequently creates
+  synthetic Gosling ids and returns `load_session not implemented`; the four affected
+  common tests remain correctly ignored.
+- Decision: implementing the fixture alone would falsely claim support while a loaded
+  Gosling session still creates a new external ACP session. A correct repair must
+  persist the external ACP session identifier with the Gosling session, explicitly
+  choose native `session/new` versus `session/load` on provider activation, route
+  mode/model/MCP state to the selected native session, and define close/reconnect
+  ownership. That crosses the 2,190-line `acp/provider.rs`, ACP session persistence,
+  and activation lifecycle. It is routed to `repair-source-modularization`.
+- Change review: no source behavior was changed; the ignored tests remain an accurate
+  statement of unsupported behavior rather than a passing fixture-only simulation.
+
+## Gate 9 — campaign closeout before PR
+
+Status: ready for protected-branch PR; two routed ACP defects and three external
+verification/settings actions remain open.
+
+- Final validation:
+  - `cargo fmt --all -- --check` — passed.
+  - `cargo clippy -p gosling --all-targets --features code-mode,aws-providers,telemetry,otel,rustls-tls,system-keyring -- -D warnings` — passed.
+  - `cargo test -p gosling --lib` — passed, 1,332 tests.
+  - `cargo test -p gosling --test acp_provider_test` — passed, 12 tests; the four
+    `load_session` tests remain ignored for the routed DEF-003 work.
+  - `uv run --with textual>=0.87.0 --with pyperclip python -m py_compile scripts/diagnostics-viewer.py` — passed.
+  - `documentation: npm test`, `npm run build`, and `scripts/verify-build.sh` — passed
+    (15 tests; generated documentation map verified).
+  - `git diff --check` — passed.
+- Environment limitation: the final `ui/desktop` lint recheck could not start because
+  the available pnpm is 10.6.4 while the project requires pnpm 10.30.0 or newer. The
+  stage-3 i18n and lint validations passed before this environment drift; no desktop
+  files changed afterward.
+- External gates: add `ANTHROPIC_API_KEY` to exercise live compaction; optionally
+  enable authenticated Claude Code smoke coverage; manually run the two-architecture
+  Docker publishing workflow; and enable Pages plus `ENABLE_GITHUB_PAGES=true` only
+  if Pages deployment is desired.
+- Worktree note: `crates/gosling/src/providers/utils.rs` contains an unrelated,
+  unstaged concurrent edit. It was not staged, committed, or modified by this campaign.

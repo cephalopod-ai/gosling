@@ -26,16 +26,16 @@ duplicated in this section.
 
 | ID | Priority | Confirmed state | Next action |
 | --- | --- | --- | --- |
-| CI-001 | P0 | `CI` run `29119632291` fails three Rust tests: ChatGPT Codex reasoning maps to `high` while the test expects `xhigh`; known Codex context limits disagree with their test values; and Google final-status handling returns `200` where the test expects `500`. | Establish the intended provider contracts and update the implementation or assertions together; keep all three tests passing. |
-| CI-002 | P0 | ACP schema generation cannot compile because `posthog::sanitize_value` is private and unused; the schema job uses `-D warnings`. | Remove the unreachable sanitizer or call it from a reachable telemetry path, then regenerate and check the ACP schema. |
-| CI-003 | P1 | Desktop lint fails because `ui/desktop/src/i18n/messages/en.json` is stale. | Run `pnpm i18n:extract`, review the generated messages, and commit them. |
-| CI-004 | P1 | Compaction tests make unauthenticated Anthropic requests (`401: x-api-key header is required`) even though the workflow passes `ANTHROPIC_API_KEY`. | Restore/configure the repository secret or make the workflow skip live tests when it is absent. |
-| CI-005 | P1 | Normal-mode provider smoke test fails for `claude-code`: its CLI process exits before ACP initialization, so the expected file content is never returned. | Provision a compatible Claude Code CLI in CI or make this provider test prerequisite-aware. |
-| CI-006 | P1 | Multi-architecture Docker publishing runs out of builder disk while compiling the arm64 release image (`No space left on device`). | Reduce build footprint or split/provision the multi-arch build before re-enabling release publishing. |
-| CI-007 | P1 | Scheduled skills-marketplace rebuild builds successfully but fails at `configure-pages`: the repository has no Pages site configured. | Enable Pages with the Actions source or disable/guard the deployment workflows. |
-| DEF-001 | P2 | Diagnostics viewer exposes Search (`Ctrl/Cmd+F`) but only toggles an overlay; it never searches content. | Implement content search or remove/hide the incomplete action. |
-| DEF-002 | P1 | `GoslingAcpAgent::new` accepts `data_dir`, but global `Paths::in_state_dir` consumers (including request logs) ignore it. This defeats per-agent data-root isolation. | Thread the configured data root through global-path consumers and extend isolated ACP tests. |
-| DEF-003 | P2 | ACP provider `load_session` is unimplemented; four behavior tests are ignored for that reason. | Implement ACP session loading and unignore the coverage. |
+| CI-001 | P0 | Resolved in `95d3c5ecc`: public GPT-5.3-Codex reasoning/context contracts and provider test expectations were reconciled; focused tests and the full `gosling` library suite passed. | Rerun required GitHub checks after the campaign PR is opened. |
+| CI-002 | P0 | Resolved in `58f3c6afd`: removed the unreachable sanitizer that made schema generation fail under `-D warnings`; the generator and strict clippy passed. | Rerun the required GitHub schema check on the campaign PR. |
+| CI-003 | P1 | Resolved in `8157ef494`: source and all 15 locale catalogs are synchronized; strict i18n and desktop lint checks passed. | None beyond normal PR checks. |
+| CI-004 | P1 | Repaired in `db883f9d9`: absent Anthropic credentials now produce an explicit prerequisite skip and local preflight failure instead of false live-test failures. | A maintainer must add `ANTHROPIC_API_KEY` to exercise live compaction. |
+| CI-005 | P1 | Repaired in `db883f9d9`: Claude Code smoke coverage is explicitly opt-in and requires a usable authenticated CLI. | A maintainer may set `RUN_CLAUDE_CODE_SMOKE=true` on a suitable runner. |
+| CI-006 | P1 | Repaired in `dc00488a5`: Docker release compilation uses a lower-disk Thin-LTO profile and final-image-only Buildx cache export. | Manually dispatch or merge the workflow to verify two-architecture publishing on a hosted runner. |
+| CI-007 | P1 | Repaired in `9b69f52a5`: both Pages workflows make deployment an explicit, visible opt-in. | To publish, enable Pages with Actions and set `ENABLE_GITHUB_PAGES=true`; otherwise no further action is needed. |
+| DEF-001 | P2 | Resolved in `66996bdbb`: diagnostics search now matches/highlights text, navigates JSON-tree matches, and clears state correctly. | None beyond normal PR checks. |
+| DEF-002 | P1 | Open and routed: ACP data-root isolation still depends on process-global configuration, paths, and request logging. A local patch would race across agents. | Use `repair-source-modularization` to inject per-agent configuration/state and request-log dependencies, then add concurrent multi-root tests. |
+| DEF-003 | P2 | Open and routed: external ACP providers own one eagerly-created native session and cannot restore the native session associated with a loaded Gosling session. | Use `repair-source-modularization` to persist/map native session ids and make provider activation select native `session/load`; then unignore the four behavior tests. |
 
 ### Confirmed source TODOs and maintenance work
 

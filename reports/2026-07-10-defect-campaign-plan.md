@@ -1,7 +1,8 @@
 # Defect-repair campaign plan — 2026-07-10
 
-**Status:** plan only — no product, workflow, dependency, or repository-settings
-changes are authorized by this document.
+**Status:** execution record updated 2026-07-10. Stages 1–6 and 8 are repaired on
+the campaign branch; stages 7 and 9 are routed to source modularization. Remaining
+repository-setting and hosted-workflow verification actions are recorded in the ledger.
 
 **Skill:** `020_repair/repair-defect-campaign`.
 **Findings source:**
