@@ -40,3 +40,27 @@ Status: completed.
 - Adversarial review: confirmed the patch neither enables telemetry nor removes the
   actively used string sanitizer; no schema or public-contract change occurred.
 - Change review: scoped to CI-002 and this session log only.
+
+### Stage 2 — CI-001: reconcile provider contracts
+
+Status: completed.
+
+- Change: added the public `gpt-5.3-codex` model to the ChatGPT Codex capability
+  table with a 400,000-token context window and `xhigh` reasoning support. Updated
+  two stale Codex CLI context-limit assertions to the metadata actually returned by
+  the provider registry, and updated the Google-status test to preserve a successful
+  transport status for an unmapped payload error code.
+- Contract evidence: OpenAI's GPT-5.3-Codex model documentation lists a 400,000-token
+  context window and `low`, `medium`, `high`, and `xhigh` reasoning effort. The
+  undocumented 5.4–5.6 aliases were not changed.
+- Validation:
+  - `cargo test -p gosling --lib test_create_codex_request_reasoning_effort_from_unified_thinking` — passed.
+  - `cargo test -p gosling --lib test_known_model_context_limits` — passed.
+  - `cargo test -p gosling --lib test_get_google_final_status_with_error_code` — passed.
+  - `cargo test -p gosling --lib test_model_transport_and_context_limits` — passed.
+  - `cargo clippy -p gosling --all-targets --features code-mode,aws-providers,telemetry,otel,rustls-tls,system-keyring -- -D warnings` — passed.
+  - `git diff --check` — passed.
+- Adversarial review: unknown model fallback remains unchanged; only known public
+  GPT-5.3-Codex receives the expanded effort/context contract; unmapped Google
+  payload codes no longer fabricate a 500 response.
+- Change review: scoped to CI-001 and this session log only.

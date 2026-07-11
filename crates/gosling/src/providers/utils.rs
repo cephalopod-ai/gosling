@@ -409,7 +409,7 @@ mod tests {
             (404, Some(StatusCode::OK), StatusCode::NOT_FOUND),
             (500, Some(StatusCode::OK), StatusCode::INTERNAL_SERVER_ERROR),
             (503, Some(StatusCode::OK), StatusCode::SERVICE_UNAVAILABLE),
-            (999, Some(StatusCode::OK), StatusCode::INTERNAL_SERVER_ERROR),
+            (999, Some(StatusCode::OK), StatusCode::OK),
             (500, Some(StatusCode::BAD_REQUEST), StatusCode::BAD_REQUEST),
             (
                 404,

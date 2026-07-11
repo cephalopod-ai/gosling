@@ -84,6 +84,10 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
         name: "gpt-5.2",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
+    ChatGptCodexModelAttrs {
+        name: "gpt-5.3-codex",
+        reasoning_levels: &["low", "medium", "high", "xhigh"],
+    },
 ];
 
 fn uses_responses_lite(model_name: &str) -> bool {
@@ -94,6 +98,7 @@ pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
     match model_name {
         "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" => Some(372_000),
         "gpt-5.5" | "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.2" => Some(272_000),
+        "gpt-5.3-codex" => Some(400_000),
         _ => None,
     }
 }
@@ -1509,6 +1514,11 @@ mod tests {
         &["low", "medium", "high", "xhigh"];
         "gpt-5.5 keeps xhigh as its ceiling"
     )]
+    #[test_case(
+        "gpt-5.3-codex",
+        &["low", "medium", "high", "xhigh"];
+        "gpt-5.3-codex supports documented xhigh reasoning"
+    )]
     #[test_case("unknown-model", &["medium", "high"]; "unknown model gets default reasoning levels")]
     fn test_reasoning_levels_for_model(model: &str, expected: &[&str]) {
         assert_eq!(reasoning_levels_for_model(model), expected);
@@ -1516,6 +1526,7 @@ mod tests {
 
     #[test_case("gpt-5.6-luna", true, Some(372_000); "gpt 5.6 luna")]
     #[test_case("gpt-5.4-mini", false, Some(272_000); "gpt 5.4 mini")]
+    #[test_case("gpt-5.3-codex", false, Some(400_000); "gpt 5.3 codex")]
     #[test_case("unknown-model", false, None; "unknown model")]
     fn test_model_transport_and_context_limits(
         model: &str,
