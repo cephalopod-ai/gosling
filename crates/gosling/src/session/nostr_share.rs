@@ -245,7 +245,7 @@ pub fn build_deeplink(nevent: &str, decryption_key: &str) -> String {
 }
 
 pub fn is_session_share_deeplink(input: &str) -> bool {
-    input.trim_start().starts_with("gosling://sessions/nostr")
+    super::is_session_share_deeplink(input)
 }
 
 pub fn parse_deeplink(deeplink: &str) -> Result<ParsedShareLink> {

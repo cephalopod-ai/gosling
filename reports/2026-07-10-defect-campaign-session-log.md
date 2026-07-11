@@ -463,3 +463,47 @@ Status: local validation complete; protected-branch PR and hosted rerun pending.
   keyring daemon, so the hosted path remains covered rather than disabled.
 - Stage 7 per-agent global-state isolation and Stage 9 native ACP session loading remain
   routed to source modularization. This post-merge work does not change those decisions.
+
+## Canary bootstrap follow-up - 2026-07-11
+
+Status: repair committed as `633e7dfb4`; protected-branch PR and hosted rerun pending.
+
+- PR #23 merged as `d8282d687` after every PR check passed. Local `main` was
+  fast-forwarded to the merge, the remote repair branch was deleted, and only `main`
+  remained locally and remotely with no auxiliary worktrees.
+- The merge-triggered Canary proved the reusable-workflow permission repair: unlike the
+  prior `startup_failure`, its Windows, macOS, Linux, and CLI jobs all started. It then
+  exposed a separate manylinux bootstrap defect introduced by independently landed
+  commit `2db5ae1d47`.
+- Both GNU CLI jobs downloaded and checksum-verified rustup 1.29.0, then failed with
+  `unknown proxy name: 'tmp'`. The workflow had saved `rustup-init` to an arbitrary
+  `mktemp` filename, but rustup dispatches by its executable basename. The repair uses
+  a temporary directory with a `rustup-init` child path and retains cleanup on success
+  and failure.
+- The changed workflow parses as YAML, the phase-2 permission verifier passes, and
+  `git diff --check` passes. Codex GPT-5.6 Terra adversarial review found no issues and
+  specifically confirmed both cleanup paths:
+  `/private/tmp/tagteam-gosling-rustup-bootstrap-review/.../2026-07-11T054955.300435000Z`.
+- The widened independent-commit audit also found that the phase-3 container verifier
+  from `223e5d0302` used Ruby 2.7's `Array#filter_map` despite the repository declaring
+  no newer Ruby runtime. It crashed under the macOS system Ruby 2.6 before checking any
+  contract. Replacing it with behavior-equivalent `each_with_object` made all phase 1,
+  phase 2, and phase 3 verifiers pass locally. GPT-5.6 Sol supervisor review passed with
+  no findings:
+  `/private/tmp/tagteam-gosling-ruby26-integrity-review/.../2026-07-11T055656.210901000Z`.
+- The same Canary run exposed a latent feature-boundary defect in both musl CLI jobs:
+  `portable-default` intentionally excludes Nostr, but session import referenced the
+  feature-gated `nostr_share` module before entering its `#[cfg]` branch. Deeplink
+  classification now lives on the always-built session surface, while the Nostr module
+  keeps its existing public helper as a delegate. The exact portable CLI check and
+  clippy configuration pass, as do focused no-Nostr and Nostr-enabled tests and
+  Nostr-enabled all-target clippy. Relay-mode GPT-5.6 Sol review passed with no findings:
+  `/private/tmp/tagteam-gosling-portable-nostr-review/.../2026-07-11T060832.941655000Z`.
+- Docker publishing had no concurrency boundary even though each multi-architecture run
+  normally lasts three to four and a half hours and writes mutable `main`/`latest` tags.
+  Multiple `main` pushes therefore built concurrently, allowing an older run to finish
+  after a newer commit and become the last registry writer. Per-workflow, per-ref
+  cancellation now supersedes stale builds without coupling distinct release tags.
+  Workflow YAML parsing and the phase-2 verifier pass; GPT-5.6 Terra adversarial review
+  passed with no findings:
+  `/private/tmp/tagteam-gosling-docker-concurrency-review/.../2026-07-11T061852.157699000Z`.

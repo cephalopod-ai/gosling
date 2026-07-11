@@ -9,6 +9,11 @@ pub mod nostr_share;
 pub mod session_manager;
 mod session_naming;
 
+/// Returns whether an input is a Gosling Nostr session-share deeplink.
+pub fn is_session_share_deeplink(input: &str) -> bool {
+    input.trim_start().starts_with("gosling://sessions/nostr")
+}
+
 pub use diagnostics::{
     config_path, generate_diagnostics, get_system_info, latest_llm_log_path,
     latest_server_log_path, read_capped, read_tail, DiagnosticsConfig, DiagnosticsError,
@@ -21,3 +26,18 @@ pub use session_manager::{
     SessionSummaryFact, SessionSummaryStatus, SessionType, SessionUpdateBuilder,
     DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::is_session_share_deeplink;
+
+    #[test]
+    fn detects_session_share_deeplinks_without_transport_features() {
+        assert!(is_session_share_deeplink(
+            "gosling://sessions/nostr?nevent=abc&key=def"
+        ));
+        assert!(!is_session_share_deeplink(
+            "goose://sessions/nostr?nevent=abc&key=def"
+        ));
+    }
+}
