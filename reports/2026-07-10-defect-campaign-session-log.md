@@ -143,3 +143,26 @@ Status: completed with hosted-workflow verification pending.
   must build and publish both architectures to verify the runner capacity in practice.
 - Change review: limited to the release build profile and cache policy; application
   behavior and image contents are otherwise unchanged.
+
+### Stage 6 — CI-007: align Pages workflows with repository configuration
+
+Status: completed with repository-settings action pending.
+
+- Change: both Pages workflows now make deployment an explicit opt-in through the
+  `ENABLE_GITHUB_PAGES=true` Actions variable. With the variable absent, each
+  workflow records a visible disabled-deployment notice rather than building and
+  failing at `configure-pages`. Documentation records the matching activation steps.
+- Evidence: the repository Pages API returns 404, and both the scheduled marketplace
+  workflow and documentation deployment workflow repeatedly fail at the Pages
+  configuration stage.
+- Validation:
+  - YAML parse of both workflow files — passed.
+  - `npm test`, `npm run build`, and `documentation/scripts/verify-build.sh` — passed.
+  - `git diff --check` — passed.
+- Adversarial review: the two workflows share the same opt-in condition; when enabled,
+  their build, upload, concurrency, permissions, and deployment steps are unchanged.
+  The disabled path is an explicit successful status rather than a fabricated deploy.
+- External gate: a maintainer must enable GitHub Pages with GitHub Actions as its
+  source and set `ENABLE_GITHUB_PAGES=true` to activate deployments.
+- Change review: limited to Pages gating and maintainer documentation; documentation
+  content and artifact generation are unchanged.

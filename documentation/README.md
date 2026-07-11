@@ -43,4 +43,10 @@ $ GIT_USER=<Your GitHub username> npm run deploy
 ```
 
 If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+
+The repository workflows deploy through GitHub Actions rather than the `gh-pages`
+branch. Maintainers must enable Pages with GitHub Actions as the source and set the
+repository Actions variable `ENABLE_GITHUB_PAGES` to `true`. Until both are set, the
+workflows finish with a visible disabled-deployment notice instead of attempting a
+deployment that GitHub Pages rejects.
 <!-- trigger deployment -->

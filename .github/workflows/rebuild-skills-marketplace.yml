@@ -21,9 +21,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  pages-disabled:
+    runs-on: ubuntu-latest
+    if: github.repository == 'repo-makeover/gosling' && vars.ENABLE_GITHUB_PAGES != 'true'
+    steps:
+      - name: Report disabled deployment
+        run: |
+          echo "::notice title=GitHub Pages deployment disabled::Enable Pages with GitHub Actions as its source, then set ENABLE_GITHUB_PAGES=true to enable this workflow."
+
   rebuild-docs:
     runs-on: ubuntu-latest
-    if: github.repository == 'repo-makeover/gosling'
+    if: github.repository == 'repo-makeover/gosling' && vars.ENABLE_GITHUB_PAGES == 'true'
     permissions:
       contents: read
       pages: write
