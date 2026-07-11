@@ -175,15 +175,16 @@ jobs:
               exit 1
               ;;
           esac
-          RUSTUP_INIT=$(mktemp)
-          trap 'rm -f "$RUSTUP_INIT"' EXIT
+          RUSTUP_DIR=$(mktemp -d)
+          RUSTUP_INIT="$RUSTUP_DIR/rustup-init"
+          trap 'rm -rf "$RUSTUP_DIR"' EXIT
           curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
             --output "$RUSTUP_INIT" \
             "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${TARGET}/rustup-init"
           printf '%s  %s\n' "$RUSTUP_SHA256" "$RUSTUP_INIT" | sha256sum -c -
           chmod +x "$RUSTUP_INIT"
           "$RUSTUP_INIT" -y --default-toolchain none --profile minimal --no-modify-path
-          rm -f "$RUSTUP_INIT"
+          rm -rf "$RUSTUP_DIR"
           trap - EXIT
           export PATH="$HOME/.cargo/bin:$PATH"
           RUST_CHANNEL=$(grep '^channel' rust-toolchain.toml | cut -d'"' -f2)
