@@ -87,3 +87,36 @@ Status: completed.
   English source text; placeholder validation covers all retained and added entries.
 - Change review: scoped to generated catalogs and their explicit maintenance command;
   no runtime message-loading behavior changed.
+
+### Stage 4 — CI-004 and CI-005: gate live-provider prerequisites
+
+Status: completed with external verification pending.
+
+- Change: added a visible Actions prerequisite job. It enables compaction tests only
+  when `ANTHROPIC_API_KEY` is configured and otherwise emits an explicit notice with
+  the remediation. The compaction script now fails immediately, before running any
+  scenario, when the key is absent. Claude Code smoke tests now require the explicit
+  `RUN_CLAUDE_CODE_SMOKE=true` repository variable; this avoids treating an arbitrary
+  `claude` executable as a configured, authenticated provider.
+- Evidence: the failed `main` run exposed an empty `ANTHROPIC_API_KEY`; all three
+  compaction scenarios consequently returned 401, while the hosted runner's Claude
+  executable exited before provider initialization. No secret value was inspected or
+  emitted.
+- Validation:
+  - `bash -n scripts/test_compaction.sh` — passed.
+  - YAML parse of `.github/workflows/pr-smoke-test.yml` — passed.
+  - `pnpm run typecheck` — passed.
+  - provider integration test with every external provider explicitly skipped — passed
+    (32 expected skips; verifies discovery/registration without live calls).
+  - compaction-script missing-key preflight — exited with the expected clear error.
+  - `pnpm exec prettier --check tests/integration/test_providers_lib.ts` and
+    `git diff --check` — passed.
+- Adversarial review: the workflow sends only booleans to job outputs, never secret
+  values; configured compaction and explicitly enabled Claude Code smoke tests still
+  fail on real regressions. The no-key path is visibly skipped rather than falsely
+  reported as a compaction pass.
+- External gate: a maintainer must add a valid `ANTHROPIC_API_KEY` repository secret
+  to exercise compaction. Enabling `RUN_CLAUDE_CODE_SMOKE=true` additionally requires
+  a runner with an authenticated Claude CLI.
+- Change review: limited to live-test prerequisite discovery and reporting; provider
+  runtime code and test assertions are unchanged.

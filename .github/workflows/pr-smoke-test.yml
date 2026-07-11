@@ -47,6 +47,32 @@ jobs:
             code:
               - '!documentation/**'
 
+  live-provider-prerequisites:
+    name: Live Provider Prerequisites
+    runs-on: ubuntu-latest
+    needs: check-fork
+    outputs:
+      compaction: ${{ steps.report.outputs.compaction }}
+    steps:
+      - id: report
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RUN_CLAUDE_CODE_SMOKE: ${{ vars.RUN_CLAUDE_CODE_SMOKE || 'false' }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "compaction=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Live compaction enabled::ANTHROPIC_API_KEY is configured."
+          else
+            echo "compaction=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Live compaction skipped::Set the ANTHROPIC_API_KEY repository secret to run compaction smoke tests."
+          fi
+
+          if [ "$RUN_CLAUDE_CODE_SMOKE" = "true" ]; then
+            echo "::notice title=Claude Code smoke enabled::The job will require a working, authenticated Claude CLI."
+          else
+            echo "::notice title=Claude Code smoke skipped::Set RUN_CLAUDE_CODE_SMOKE=true only on runners provisioned with an authenticated Claude CLI."
+          fi
+
   build-binary:
     name: Build Binary
     runs-on: ubuntu-latest
@@ -82,7 +108,7 @@ jobs:
   smoke-tests:
     name: Smoke Tests
     runs-on: ubuntu-latest
-    needs: build-binary
+    needs: [build-binary, live-provider-prerequisites]
     steps:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -123,6 +149,7 @@ jobs:
           GOSLING_DISABLE_KEYRING: 1
           SKIP_BUILD: 1
           SKIP_PROVIDERS: ${{ vars.SKIP_PROVIDERS || '' }}
+          RUN_CLAUDE_CODE_SMOKE: ${{ vars.RUN_CLAUDE_CODE_SMOKE || 'false' }}
         run: |
           mkdir -p $HOME/.local/share/gosling/sessions
           mkdir -p $HOME/.config/gosling
@@ -199,7 +226,8 @@ jobs:
   compaction-tests:
     name: Compaction Tests
     runs-on: ubuntu-latest
-    needs: build-binary
+    needs: [build-binary, live-provider-prerequisites]
+    if: needs.live-provider-prerequisites.outputs.compaction == 'true'
     steps:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0

@@ -12,6 +12,11 @@ if [ -f .env ]; then
   export $(grep -v '^#' .env | xargs)
 fi
 
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "ANTHROPIC_API_KEY is required for compaction smoke tests."
+  exit 2
+fi
+
 if [ -z "$SKIP_BUILD" ]; then
   echo "Building gosling..."
   cargo build --bin gosling

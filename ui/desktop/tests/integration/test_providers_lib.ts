@@ -36,6 +36,10 @@ function hasEnv(name: string): boolean {
   return !!process.env[name];
 }
 
+function isClaudeCodeSmokeEnabled(): boolean {
+  return process.env.RUN_CLAUDE_CODE_SMOKE === 'true';
+}
+
 function hasCmd(name: string): boolean {
   try {
     execSync(`command -v ${name}`, { stdio: 'ignore' });
@@ -156,7 +160,7 @@ function getProviders(): ProviderConfig[] {
       provider: 'claude-code',
       models: ['default'],
       agentic: true,
-      available: () => hasCmd('claude'),
+      available: () => isClaudeCodeSmokeEnabled() && hasCmd('claude'),
     },
     {
       provider: 'cursor-agent',
