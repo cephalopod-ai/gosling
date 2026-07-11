@@ -39,11 +39,11 @@ def fail_contract(message)
 end
 
 def dockerfile_from(path)
-  File.readlines(path, chomp: true).filter_map do |line|
+  File.readlines(path, chomp: true).each_with_object([]) do |line, references|
     match = line.match(/^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?\s*$/i)
     next unless match
 
-    [match[1], match[2]&.downcase]
+    references << [match[1], match[2]&.downcase]
   end
 end
 

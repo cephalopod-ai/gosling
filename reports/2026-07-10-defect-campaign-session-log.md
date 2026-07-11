@@ -484,3 +484,10 @@ Status: repair committed as `633e7dfb4`; protected-branch PR and hosted rerun pe
   `git diff --check` passes. Codex GPT-5.6 Terra adversarial review found no issues and
   specifically confirmed both cleanup paths:
   `/private/tmp/tagteam-gosling-rustup-bootstrap-review/.../2026-07-11T054955.300435000Z`.
+- The widened independent-commit audit also found that the phase-3 container verifier
+  from `223e5d0302` used Ruby 2.7's `Array#filter_map` despite the repository declaring
+  no newer Ruby runtime. It crashed under the macOS system Ruby 2.6 before checking any
+  contract. Replacing it with behavior-equivalent `each_with_object` made all phase 1,
+  phase 2, and phase 3 verifiers pass locally. GPT-5.6 Sol supervisor review passed with
+  no findings:
+  `/private/tmp/tagteam-gosling-ruby26-integrity-review/.../2026-07-11T055656.210901000Z`.
