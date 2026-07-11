@@ -70,6 +70,10 @@ fn get_google_final_status(status: StatusCode, payload: Option<&Value>) -> Statu
                         return google_error.to_status_code();
                     }
                 }
+
+                // An explicit error body must never enter the success parser, even
+                // when a proxy returns an invalid or missing Google status code.
+                return StatusCode::INTERNAL_SERVER_ERROR;
             }
         }
     }
@@ -318,6 +322,8 @@ impl Drop for FileLogHandle {
 mod tests {
     use super::*;
     use serde_json::json;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn unescape_json_values_with_object() {
@@ -409,7 +415,7 @@ mod tests {
             (404, Some(StatusCode::OK), StatusCode::NOT_FOUND),
             (500, Some(StatusCode::OK), StatusCode::INTERNAL_SERVER_ERROR),
             (503, Some(StatusCode::OK), StatusCode::SERVICE_UNAVAILABLE),
-            (999, Some(StatusCode::OK), StatusCode::OK),
+            (999, Some(StatusCode::OK), StatusCode::INTERNAL_SERVER_ERROR),
             (500, Some(StatusCode::BAD_REQUEST), StatusCode::BAD_REQUEST),
             (
                 404,
@@ -433,6 +439,34 @@ mod tests {
             let result = get_google_final_status(status.unwrap_or(StatusCode::OK), Some(&payload));
             assert_eq!(result, expected_status);
         }
+    }
+
+    #[test]
+    fn test_get_google_final_status_rejects_malformed_error_codes() {
+        for payload in [
+            json!({"error": {"code": "500", "message": "Error message"}}),
+            json!({"error": {"message": "Error message"}}),
+        ] {
+            assert_eq!(
+                get_google_final_status(StatusCode::OK, Some(&payload)),
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_google_response_rejects_unknown_error_code() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "error": {"code": 999, "message": "upstream failure"}
+            })))
+            .mount(&server)
+            .await;
+
+        let response = reqwest::get(server.uri()).await.unwrap();
+        let error = handle_response_google_compat(response).await.unwrap_err();
+        assert!(matches!(error, ProviderError::ServerError(_)));
     }
 
     #[test]
