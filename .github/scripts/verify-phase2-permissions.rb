@@ -41,7 +41,7 @@ EXPECTED_JOB_PERMISSIONS = {
     "bundle-desktop" => {"contents" => "read"},
     "bundle-desktop-intel" => {"contents" => "read"},
     "bundle-desktop-linux" => {"contents" => "read"},
-    "bundle-desktop-windows" => {"contents" => "read"},
+    "bundle-desktop-windows" => {"contents" => "read", "id-token" => "write"},
     "release" => {"attestations" => "write", "contents" => "write", "id-token" => "write"}
   }
 }.freeze
