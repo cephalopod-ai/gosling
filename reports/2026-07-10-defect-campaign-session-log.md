@@ -391,3 +391,75 @@ Status: implemented in commit `760e801c4`; hosted rerun pending.
   - MCP script syntax and missing-key preflight passed; workflow YAML parsed.
   - Codex GPT-5.6 Sol adversarial review passed with no findings;
     `/tmp/tagteam-gosling-pr22-ci-fix-state/.../2026-07-11T034929.879693000Z`.
+
+## Post-merge hardening - 2026-07-11
+
+Status: local validation complete; protected-branch PR and hosted rerun pending.
+
+### Hosted `main` audit and independently landed changes
+
+- PR #22 merged as `bac79d107`. Its `main` push passed Live Provider Tests,
+  Scorecard, Unused Dependencies, and release-PR creation. CI failed six
+  `gosling-providers` expectations because the generated Anthropic catalog had stale
+  contracts. Canary failed before creating jobs because its reusable Windows workflow
+  requested `id-token: write` while the caller supplied only `contents: read`.
+- The Canary regression came from independently landed commit `9d6fee12f`. GitHub's
+  reusable-workflow permission contract permits permissions to be maintained or reduced
+  through a call chain, not elevated by the called workflow. The repair grants OIDC only
+  at Windows signing callers and jobs; macOS workflows do not receive OIDC because they
+  have no OIDC consumer. The phase-2 verifier now enforces that split.
+- Independently landed commits `876526817`, `251cebf7e`, and `300d11db3` were re-read
+  and their focused tests passed (12 provider-utils tests and 16 desktop tests).
+  `239faeb45` and `41903261a` are report-only. No additional source defect was found in
+  that late batch.
+- The `bac79d107` Docker publish run remained in progress during this audit; it is an
+  external hosted gate rather than local validation evidence.
+
+### Anthropic canonical-model contracts
+
+- Added one curated-contract application point shared by registry loading and catalog
+  generation. It corrects Sonnet 4.5 to a 200k context, marks Sonnet 5 adaptive
+  thinking, and preserves the official 1M contexts for current Opus, Sonnet, and Fable
+  models.
+- Retired Claude 3.5, Claude 3.7, and Sonnet 4 identifiers remain resolvable through a
+  non-enumerated compatibility map. They cannot enter active listings,
+  recommendations, or generated JSON, including when a live provider inventory returns
+  only retired models.
+- Tagteam found and drove fixes for two defects: compatibility-only live inventory
+  leaking into recommendations, and future regenerated retired models remaining active
+  beside compatibility entries. Final supervisor review passed with no findings:
+  `/private/tmp/tagteam-gosling-postmerge-hardening-state-v3/.../2026-07-11T044311.698784000Z`.
+
+### Provider mode propagation
+
+- The full workspace run exposed a repeatable Codex MCP image cancellation. The Codex
+  rollout showed that `get_code` succeeded but `get_image` was rejected before fixture
+  execution because the newly installed provider had never received the agent's `Auto`
+  mode and fell back to `SmartApprove`.
+- `Agent::update_provider` now propagates the active mode before installing a provider;
+  persisted-session restoration installs with the persisted mode directly. This
+  centralizes the invariant for CLI model changes, ACP/session restoration,
+  orchestrator-created agents, subagents, doctor/configure flows, and default-provider
+  fallback. A focused regression records and verifies the mode delivered at install.
+- The focused live Codex provider test now passes model listing, basic response, text
+  MCP tool use, and image MCP tool use with Codex CLI 0.144.1.
+- Final adversarial review with Codex GPT-5.6 Terra passed with no findings:
+  `/private/tmp/tagteam-gosling-postmerge-mode-audit/.../2026-07-11T050331.860385000Z`.
+
+### Final validation
+
+- `GOSLING_DISABLE_KEYRING=1 cargo test -- --skip scenario_tests::scenarios::tests`
+  passed the complete workspace suite, including 1,459 Gosling core tests, 414
+  provider-library tests, all integration/doc tests, and live `codex` and
+  `claude-code` provider tests. Other live providers skipped because their credentials
+  were absent.
+- `GOSLING_DISABLE_KEYRING=1 cargo test --jobs 1
+  scenario_tests::scenarios::tests` passed all three scenarios.
+- `GOSLING_DISABLE_KEYRING=1 cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo fmt --all -- --check`, `git diff --check`, the phase-2 permissions verifier,
+  and YAML parsing for all changed workflows passed.
+- Local full-feature tests use `GOSLING_DISABLE_KEYRING=1` because an unattended macOS
+  Keychain read can wait for UI indefinitely. Hosted Linux CI starts and unlocks its
+  keyring daemon, so the hosted path remains covered rather than disabled.
+- Stage 7 per-agent global-state isolation and Stage 9 native ACP session loading remain
+  routed to source modularization. This post-merge work does not change those decisions.
