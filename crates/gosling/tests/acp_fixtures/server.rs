@@ -1,6 +1,6 @@
 use super::{
-    map_permission_response, spawn_acp_server_in_process, Connection, ModelStateFixture,
-    PermissionDecision, Session, SessionData, TestConnectionConfig, TestOutput,
+    map_permission_response, spawn_acp_server_in_process, AcpTestServerSettings, Connection,
+    ModelStateFixture, PermissionDecision, Session, SessionData, TestConnectionConfig, TestOutput,
 };
 use agent_client_protocol::schema::v1::{
     ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
@@ -129,9 +129,11 @@ impl Connection for AcpServerConnection {
             data_root.as_path(),
             config.gosling_mode,
             config.provider_factory,
-            &config.current_model,
-            config.code_execution_runtime,
-            config.disable_session_naming,
+            AcpTestServerSettings {
+                current_model: &config.current_model,
+                code_execution_runtime: config.code_execution_runtime,
+                disable_session_naming: config.disable_session_naming,
+            },
         )
         .await;
 

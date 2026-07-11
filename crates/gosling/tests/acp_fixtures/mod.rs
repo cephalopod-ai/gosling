@@ -170,15 +170,20 @@ pub async fn serve_agent_in_process(
 }
 
 #[allow(dead_code)]
+pub struct AcpTestServerSettings<'a> {
+    pub current_model: &'a str,
+    pub code_execution_runtime: CodeExecutionRuntime,
+    pub disable_session_naming: bool,
+}
+
+#[allow(dead_code)]
 pub async fn spawn_acp_server_in_process(
     openai_base_url: &str,
     builtins: &[String],
     data_root: &std::path::Path,
     gosling_mode: GoslingMode,
     provider_factory: Option<AcpProviderFactory>,
-    current_model: &str,
-    code_execution_runtime: CodeExecutionRuntime,
-    disable_session_naming: bool,
+    settings: AcpTestServerSettings<'_>,
 ) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
     fs::create_dir_all(data_root).unwrap();
     // TODO: Paths::in_state_dir is global, ignoring per-test data_root
@@ -188,8 +193,10 @@ pub async fn spawn_acp_server_in_process(
         fs::write(
             &config_path,
             format!(
-                "GOSLING_MODEL: {current_model}\nGOSLING_PROVIDER: openai\nGOSLING_MODE: {}\nGOSLING_CODE_EXECUTION_RUNTIME: {code_execution_runtime}\n",
+                "GOSLING_MODEL: {}\nGOSLING_PROVIDER: openai\nGOSLING_MODE: {}\nGOSLING_CODE_EXECUTION_RUNTIME: {}\n",
+                settings.current_model,
                 gosling_mode,
+                settings.code_execution_runtime,
             ),
         )
         .unwrap();
@@ -217,7 +224,7 @@ pub async fn spawn_acp_server_in_process(
         builtins: builtins.to_vec(),
         data_dir: data_root.to_path_buf(),
         config_dir: data_root.to_path_buf(),
-        disable_session_naming,
+        disable_session_naming: settings.disable_session_naming,
         gosling_platform: GoslingPlatform::GoslingCli,
         additional_source_roots: Vec::new(),
     })

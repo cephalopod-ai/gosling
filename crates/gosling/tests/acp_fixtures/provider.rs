@@ -1,6 +1,6 @@
 use super::{
-    spawn_acp_server_in_process, Connection, ModelStateFixture, OpenAiFixture, PermissionDecision,
-    Session, SessionData, TestConnectionConfig, TestOutput,
+    spawn_acp_server_in_process, AcpTestServerSettings, Connection, ModelStateFixture,
+    OpenAiFixture, PermissionDecision, Session, SessionData, TestConnectionConfig, TestOutput,
 };
 use agent_client_protocol::schema::v1::{
     ListSessionsResponse, McpServer, SessionUpdate, ToolCallStatus,
@@ -161,9 +161,11 @@ impl Connection for AcpProviderConnection {
             data_root.as_path(),
             gosling_mode,
             config.provider_factory,
-            &current_model,
-            config.code_execution_runtime,
-            config.disable_session_naming,
+            AcpTestServerSettings {
+                current_model: &current_model,
+                code_execution_runtime: config.code_execution_runtime,
+                disable_session_naming: config.disable_session_naming,
+            },
         )
         .await;
 
