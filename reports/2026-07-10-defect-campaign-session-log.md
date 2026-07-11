@@ -499,3 +499,11 @@ Status: repair committed as `633e7dfb4`; protected-branch PR and hosted rerun pe
   clippy configuration pass, as do focused no-Nostr and Nostr-enabled tests and
   Nostr-enabled all-target clippy. Relay-mode GPT-5.6 Sol review passed with no findings:
   `/private/tmp/tagteam-gosling-portable-nostr-review/.../2026-07-11T060832.941655000Z`.
+- Docker publishing had no concurrency boundary even though each multi-architecture run
+  normally lasts three to four and a half hours and writes mutable `main`/`latest` tags.
+  Multiple `main` pushes therefore built concurrently, allowing an older run to finish
+  after a newer commit and become the last registry writer. Per-workflow, per-ref
+  cancellation now supersedes stale builds without coupling distinct release tags.
+  Workflow YAML parsing and the phase-2 verifier pass; GPT-5.6 Terra adversarial review
+  passed with no findings:
+  `/private/tmp/tagteam-gosling-docker-concurrency-review/.../2026-07-11T061852.157699000Z`.
