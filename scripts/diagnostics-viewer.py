@@ -12,6 +12,7 @@ Scans for diagnostics JSON reports and legacy zip files, displays their sessions
 an interactive viewer for examining session data, logs, and other files.
 """
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -37,30 +38,29 @@ def truncate_string(s: str, max_len: int = 100, edge_len: int = 35) -> str:
     return f"{s[:edge_len]}[{omitted} more]{s[-edge_len:]}"
 
 
-def find_matches(text: str, query: str) -> list[int]:
+def find_matches(text: str, query: str) -> list[tuple[int, int]]:
     if not query:
         return []
 
-    matches = []
-    start = 0
-    normalized_text = text.lower()
-    normalized_query = query.lower()
-    while (match := normalized_text.find(normalized_query, start)) != -1:
-        matches.append(match)
-        start = match + len(normalized_query)
-    return matches
+    return [match.span() for match in re.finditer(re.escape(query), text, re.IGNORECASE)]
 
 
-def highlight_matches(text: str, matches: list[int], query: str, selected: int) -> Text:
+def highlight_matches(text: str, matches: list[tuple[int, int]], selected: int) -> Text:
     highlighted = Text(text)
-    for index, start in enumerate(matches):
+    for index, (start, end) in enumerate(matches):
         style = "black on yellow" if index == selected else "bold yellow"
-        highlighted.stylize(style, start, start + len(query))
+        highlighted.stylize(style, start, end)
     return highlighted
 
 
 class JsonTreeView(Tree):
     """A tree widget for displaying collapsible JSON."""
+
+    MAX_RENDER_DEPTH = 10
+    MAX_INITIAL_NODES = 2_000
+    MAX_TOTAL_NODES = MAX_INITIAL_NODES + 1
+    MAX_SEARCH_RESULTS = 100
+    MAX_SEARCH_VISITS = 100_000
 
     BINDINGS = [
         Binding("ctrl+o", "toggle_all", "Toggle All", show=True),
@@ -71,15 +71,20 @@ class JsonTreeView(Tree):
         self.json_data = None
         self.show_root = False
         self.all_expanded = False
+        self.nodes_by_path = {}
+        self.rendered_node_count = 0
+        self.search_proxy = None
 
     def load_json(self, data: Any, label: str = "JSON"):
         """Load JSON data into the tree."""
         self.json_data = data
         self.clear()
         self.root.label = label
+        self.nodes_by_path = {(): self.root}
+        self.rendered_node_count = 0
+        self.search_proxy = None
         self._build_tree(self.root, data)
-        # Expand all nodes by default
-        self.root.expand_all()
+        self.root.expand()
 
     def action_toggle_all(self):
         """Toggle expansion of all nodes."""
@@ -106,63 +111,166 @@ class JsonTreeView(Tree):
             # Prevent default tree expansion behavior
             event.stop()
 
-    def _build_tree(self, node, data, max_depth=10, current_depth=0):
-        """Recursively build the tree from JSON data."""
-        if current_depth > max_depth:
-            node.add_leaf("[dim]...[/dim]")
+    def _add_value_node(self, parent, key, value, path, parent_is_list, expand=False):
+        label = Text(str(key), style="yellow" if parent_is_list else "cyan")
+        label.append(": ")
+        if isinstance(value, (dict, list)) and value:
+            suffix = "{...}" if isinstance(value, dict) else "[...]"
+            label.append(suffix)
+            child = parent.add(label, expand=expand)
+            child.data = {
+                "key": key,
+                "value": value,
+                "type": type(value).__name__,
+                "path": path,
+            }
+        elif isinstance(value, str):
+            truncated = truncate_string(value)
+            label.append(f'"{truncated}"', style="green")
+            if truncated != value:
+                child = parent.add(label, expand=False)
+                child.data = {
+                    "key": key,
+                    "value": value,
+                    "type": "str",
+                    "path": path,
+                    "truncated": True,
+                }
+                child.allow_expand = False
+            else:
+                child = parent.add_leaf(label)
+        elif isinstance(value, bool):
+            label.append(str(value).lower(), style="magenta")
+            child = parent.add_leaf(label)
+        elif isinstance(value, (int, float)):
+            label.append(str(value), style="yellow")
+            child = parent.add_leaf(label)
+        elif value is None:
+            label.append("null", style="dim")
+            child = parent.add_leaf(label)
+        else:
+            label.append(str(value))
+            child = parent.add_leaf(label)
+
+        self.nodes_by_path[path] = child
+        self.rendered_node_count += 1
+        return child
+
+    def _build_tree(self, node, data, current_depth=0, path=()):
+        """Build a bounded initial tree; deep search paths are revealed on demand."""
+        if not isinstance(data, (dict, list)):
             return
 
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if isinstance(value, (dict, list)) and value:
-                    # Expand first level by default
-                    child = node.add(f"[cyan]{key}[/cyan]: {{...}}" if isinstance(value, dict) else f"[cyan]{key}[/cyan]: [...]", expand=(current_depth == 0))
-                    child.data = {"key": key, "value": value, "type": type(value).__name__, "expandable": False}
-                    self._build_tree(child, value, max_depth, current_depth + 1)
-                elif isinstance(value, str):
-                    truncated = truncate_string(value)
-                    if truncated != value:
-                        # Make truncated strings expandable
-                        child = node.add(f"[cyan]{key}[/cyan]: [green]\"{truncated}\"[/green]", expand=False)
-                        child.data = {"key": key, "value": value, "type": "str", "truncated": True, "expandable": True}
-                        child.allow_expand = False  # Don't show expand icon initially
-                    else:
-                        node.add_leaf(f"[cyan]{key}[/cyan]: [green]\"{value}\"[/green]")
-                elif isinstance(value, bool):
-                    # Check bool before int/float since bool is a subclass of int
-                    node.add_leaf(f"[cyan]{key}[/cyan]: [magenta]{str(value).lower()}[/magenta]")
-                elif isinstance(value, (int, float)):
-                    node.add_leaf(f"[cyan]{key}[/cyan]: [yellow]{value}[/yellow]")
-                elif value is None:
-                    node.add_leaf(f"[cyan]{key}[/cyan]: [dim]null[/dim]")
-                else:
-                    node.add_leaf(f"[cyan]{key}[/cyan]: {value}")
+        items = data.items() if isinstance(data, dict) else enumerate(data)
+        for key, value in items:
+            if self.rendered_node_count >= self.MAX_INITIAL_NODES:
+                return
+            if self.rendered_node_count == self.MAX_INITIAL_NODES - 1:
+                node.add_leaf("[dim]... additional entries omitted[/dim]")
+                self.rendered_node_count += 1
+                return
 
-        elif isinstance(data, list):
-            for i, item in enumerate(data):
-                if isinstance(item, (dict, list)) and item:
-                    # Expand first level by default
-                    child = node.add(f"[yellow]{i}[/yellow]: {{...}}" if isinstance(item, dict) else f"[yellow]{i}[/yellow]: [...]", expand=(current_depth == 0))
-                    child.data = {"key": i, "value": item, "type": type(item).__name__, "expandable": False}
-                    self._build_tree(child, item, max_depth, current_depth + 1)
-                elif isinstance(item, str):
-                    truncated = truncate_string(item)
-                    if truncated != item:
-                        # Make truncated strings expandable
-                        child = node.add(f"[yellow]{i}[/yellow]: [green]\"{truncated}\"[/green]", expand=False)
-                        child.data = {"key": i, "value": item, "type": "str", "truncated": True, "expandable": True}
-                        child.allow_expand = False  # Don't show expand icon initially
-                    else:
-                        node.add_leaf(f"[yellow]{i}[/yellow]: [green]\"{item}\"[/green]")
-                elif isinstance(item, bool):
-                    # Check bool before int/float since bool is a subclass of int
-                    node.add_leaf(f"[yellow]{i}[/yellow]: [magenta]{str(item).lower()}[/magenta]")
-                elif isinstance(item, (int, float)):
-                    node.add_leaf(f"[yellow]{i}[/yellow]: [yellow]{item}[/yellow]")
-                elif item is None:
-                    node.add_leaf(f"[yellow]{i}[/yellow]: [dim]null[/dim]")
-                else:
-                    node.add_leaf(f"[yellow]{i}[/yellow]: {item}")
+            child_path = path + (key,)
+            child = self._add_value_node(
+                node,
+                key,
+                value,
+                child_path,
+                isinstance(data, list),
+                expand=(current_depth == 0),
+            )
+            if not isinstance(value, (dict, list)) or not value:
+                continue
+            if current_depth >= self.MAX_RENDER_DEPTH:
+                if self.rendered_node_count < self.MAX_INITIAL_NODES:
+                    child.add_leaf("[dim]... deeper entries omitted[/dim]")
+                    self.rendered_node_count += 1
+                continue
+            self._build_tree(child, value, current_depth + 1, child_path)
+
+    @staticmethod
+    def _iter_items(data):
+        return iter(data.items()) if isinstance(data, dict) else iter(enumerate(data))
+
+    @staticmethod
+    def _search_value_text(value):
+        return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+    def find_json_matches(self, query: str):
+        """Search JSON iteratively without materializing the full tree."""
+        if not query or not isinstance(self.json_data, (dict, list)):
+            return [], None
+
+        matches = []
+        visits = 0
+        stack = [((), self._iter_items(self.json_data))]
+        while stack:
+            parent_path, items = stack[-1]
+            try:
+                key, value = next(items)
+            except StopIteration:
+                stack.pop()
+                continue
+
+            if visits >= self.MAX_SEARCH_VISITS:
+                return matches, "visits"
+            visits += 1
+            path = parent_path + (key,)
+            is_container = isinstance(value, (dict, list)) and bool(value)
+            value_text = "" if is_container else self._search_value_text(value)
+            if find_matches(str(key), query) or find_matches(value_text, query):
+                matches.append((path, value))
+                if len(matches) > self.MAX_SEARCH_RESULTS:
+                    return matches[: self.MAX_SEARCH_RESULTS], "results"
+            if is_container:
+                stack.append((path, self._iter_items(value)))
+
+        return matches, None
+
+    def reveal_match(self, path, matched_value):
+        """Select a rendered node or reuse one labeled proxy for an omitted match."""
+        existing = self.nodes_by_path.get(path)
+        if existing is not None:
+            return existing
+
+        display_path = truncate_string(
+            " / ".join(str(part) for part in path),
+            max_len=160,
+            edge_len=60,
+        )
+        if isinstance(matched_value, dict):
+            preview = "{...}"
+        elif isinstance(matched_value, list):
+            preview = "[...]"
+        else:
+            preview = truncate_string(
+                self._search_value_text(matched_value), max_len=120, edge_len=45
+            )
+        label = Text("Search match", style="bold yellow")
+        label.append(f" {display_path}: {preview}")
+
+        if self.search_proxy is None:
+            self.search_proxy = self.root.add_leaf(label)
+            self.rendered_node_count += 1
+        else:
+            self.search_proxy.set_label(label)
+        self.search_proxy.data = {
+            "key": path[-1] if path else "match",
+            "path": path,
+            "value": matched_value,
+            "search_proxy": True,
+            "truncated": (
+                isinstance(matched_value, str)
+                and truncate_string(matched_value) != matched_value
+            ),
+        }
+        return self.search_proxy
+
+    def clear_search_proxy(self):
+        if self.search_proxy is not None:
+            self.search_proxy.remove()
+            self.search_proxy = None
+            self.rendered_node_count -= 1
 
 
 class TextViewerModal(ModalScreen):
@@ -181,9 +289,9 @@ class TextViewerModal(ModalScreen):
     def compose(self) -> ComposeResult:
         """Compose the modal content."""
         with Vertical(id="modal-container"):
-            yield Static(f"[bold]{self.title}[/bold]", id="modal-title")
+            yield Static(Text(self.title, style="bold"), id="modal-title")
             with VerticalScroll(id="modal-scroll"):
-                yield Static(self.text, id="modal-text")
+                yield Static(Text(self.text), id="modal-text")
             yield Static("[dim]Press C to copy, Escape/Q/Enter to close[/dim]", id="modal-footer")
 
     def action_dismiss(self):
@@ -249,9 +357,15 @@ class SearchOverlay(Container):
     def action_close(self):
         self.post_message(self.Close())
 
-    def set_results(self, selected: int, total: int):
+    def set_results(self, selected: int, total: int, limit=None):
         results = self.query_one("#search-results", Static)
-        results.update(f"{selected + 1}/{total}" if total else "No matches")
+        if limit == "results":
+            label = f"{selected + 1}/{total}+"
+        elif limit == "visits":
+            label = f"{selected + 1}/{total} (partial)" if total else "No matches before search limit"
+        else:
+            label = f"{selected + 1}/{total}" if total else "No matches"
+        results.update(label)
 
 
 class DiagnosticsSession:
@@ -438,6 +552,7 @@ class FileViewer(Vertical):
         self.search_text = ""
         self.search_matches = []
         self.search_nodes = []
+        self.search_limit = None
         self.search_index = 0
         self.search_text_widget = None
         self.search_scroll = None
@@ -489,14 +604,14 @@ class FileViewer(Vertical):
         if len(lines) > 0:
             try:
                 request_data = json.loads(lines[0])
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, RecursionError):
                 # Skip malformed request line; diagnostics may be truncated or corrupted
                 pass
 
         for i in range(1, len(lines)):
             try:
                 responses.append(json.loads(lines[i]))
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, RecursionError):
                 # Skip individual malformed response lines; show only valid JSON entries
                 pass
 
@@ -508,15 +623,14 @@ class FileViewer(Vertical):
             tree = JsonTreeView(f"{filename} - request")
             tree.load_json(request_data, f"{filename} - request")
             content_area.mount(tree)
-            self.search_text = json.dumps(request_data, indent=2)
+            self.search_text = ""
         elif part == "responses" and responses:
             tree = JsonTreeView(f"{filename} - responses")
             if len(responses) == 1:
                 tree.load_json(responses[0], f"{filename} - response")
-                self.search_text = json.dumps(responses[0], indent=2)
             else:
                 tree.load_json(responses, f"{filename} - responses")
-                self.search_text = json.dumps(responses, indent=2)
+            self.search_text = ""
             content_area.mount(tree)
         else:
             content_area.mount(Static("[red]No data available for this part[/red]"))
@@ -532,8 +646,8 @@ class FileViewer(Vertical):
         try:
             data = json.loads(content)
             tree.load_json(data, filename)
-            self.search_text = json.dumps(data, indent=2)
-        except json.JSONDecodeError as e:
+            self.search_text = ""
+        except (json.JSONDecodeError, RecursionError) as e:
             tree.root.add_leaf(f"[red]Error parsing JSON: {e}[/red]")
             self.search_text = content
 
@@ -584,25 +698,44 @@ class FileViewer(Vertical):
     def on_search_overlay_close(self, event: SearchOverlay.Close):
         self._close_search()
 
-    def _clear_search(self):
+    def _clear_search_results(self):
         self.search_matches = []
         self.search_nodes = []
+        self.search_limit = None
         self.search_index = 0
+
+    def _restore_plain_text(self):
+        if self.search_text_widget is not None:
+            self.search_text_widget.update(Text(self.search_text))
+
+    def _clear_tree_search_proxy(self):
+        try:
+            self.query_one(JsonTreeView).clear_search_proxy()
+        except Exception:
+            pass
+
+    def _clear_search_content(self):
+        self._clear_search_results()
         self.search_text_widget = None
         self.search_scroll = None
 
     def _reset_search_for_content(self):
+        self._restore_plain_text()
+        self._clear_tree_search_proxy()
         overlay = self.query_one(SearchOverlay)
         overlay.display = False
         overlay.query_one("#search-input", Input).value = ""
-        self._clear_search()
+        self._clear_search_content()
         overlay.set_results(0, 0)
 
     def _close_search(self):
+        self._restore_plain_text()
+        self._clear_tree_search_proxy()
         overlay = self.query_one(SearchOverlay)
         overlay.display = False
         overlay.query_one("#search-input", Input).value = ""
-        self._clear_search()
+        self._clear_search_results()
+        overlay.set_results(0, 0)
         self.focus_content()
 
     def _search(self, query: str):
@@ -611,6 +744,7 @@ class FileViewer(Vertical):
         self.search_index = 0
 
         if not query:
+            self._clear_tree_search_proxy()
             if self.search_text_widget is not None:
                 self.search_text_widget.update(Text(self.search_text))
             self.query_one(SearchOverlay).set_results(0, 0)
@@ -627,20 +761,9 @@ class FileViewer(Vertical):
             self.query_one(SearchOverlay).set_results(0, 0)
             return
 
-        self.search_nodes = self._matching_tree_nodes(tree.root, query)
+        tree.clear_search_proxy()
+        self.search_nodes, self.search_limit = tree.find_json_matches(query)
         self._show_tree_match(tree)
-
-    def _matching_tree_nodes(self, node, query: str):
-        matches = []
-        label = node.label.plain if isinstance(node.label, Text) else str(node.label)
-        value = ""
-        if isinstance(node.data, dict) and node.data.get("truncated"):
-            value = str(node.data["value"])
-        if query.lower() in label.lower() or query.lower() in value.lower():
-            matches.append(node)
-        for child in node.children:
-            matches.extend(self._matching_tree_nodes(child, query))
-        return matches
 
     def _move_search(self, direction: int):
         if self.search_matches:
@@ -657,22 +780,25 @@ class FileViewer(Vertical):
             return
 
         self.search_text_widget.update(
-            highlight_matches(self.search_text, self.search_matches, query, self.search_index)
+            highlight_matches(self.search_text, self.search_matches, self.search_index)
         )
-        line = self.search_text[: self.search_matches[self.search_index]].count("\n")
+        match_start, _ = self.search_matches[self.search_index]
+        line = self.search_text[:match_start].count("\n")
         self.search_scroll.scroll_to(y=line, animate=False)
 
     def _show_tree_match(self, tree: JsonTreeView):
         overlay = self.query_one(SearchOverlay)
-        overlay.set_results(self.search_index, len(self.search_nodes))
+        overlay.set_results(self.search_index, len(self.search_nodes), self.search_limit)
         if not self.search_nodes:
             return
 
-        node = self.search_nodes[self.search_index]
+        path, matched_value = self.search_nodes[self.search_index]
+        node = tree.reveal_match(path, matched_value)
         parent = node.parent
         while parent is not None:
             parent.expand()
             parent = parent.parent
+        tree.move_cursor(node)
         tree.select_node(node)
         tree.scroll_to_node(node, animate=False)
 
