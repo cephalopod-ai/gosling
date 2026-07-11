@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional, Any
 
 import pyperclip
+from rich.text import Text
 
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static, Tree, ListView, ListItem, Label, Input
@@ -34,6 +35,28 @@ def truncate_string(s: str, max_len: int = 100, edge_len: int = 35) -> str:
 
     omitted = len(s) - (2 * edge_len)
     return f"{s[:edge_len]}[{omitted} more]{s[-edge_len:]}"
+
+
+def find_matches(text: str, query: str) -> list[int]:
+    if not query:
+        return []
+
+    matches = []
+    start = 0
+    normalized_text = text.lower()
+    normalized_query = query.lower()
+    while (match := normalized_text.find(normalized_query, start)) != -1:
+        matches.append(match)
+        start = match + len(normalized_query)
+    return matches
+
+
+def highlight_matches(text: str, matches: list[int], query: str, selected: int) -> Text:
+    highlighted = Text(text)
+    for index, start in enumerate(matches):
+        style = "black on yellow" if index == selected else "bold yellow"
+        highlighted.stylize(style, start, start + len(query))
+    return highlighted
 
 
 class JsonTreeView(Tree):
@@ -176,6 +199,26 @@ class TextViewerModal(ModalScreen):
 class SearchOverlay(Container):
     """Search overlay widget."""
 
+    BINDINGS = [
+        Binding("enter", "next_match", "Next", show=True),
+        Binding("shift+enter", "previous_match", "Previous", show=True),
+        Binding("escape", "close", "Close", show=True),
+    ]
+
+    class QueryChanged(Message):
+        def __init__(self, query: str):
+            super().__init__()
+            self.query = query
+
+    class NextMatch(Message):
+        pass
+
+    class PreviousMatch(Message):
+        pass
+
+    class Close(Message):
+        pass
+
     def __init__(self):
         super().__init__()
         self.display = False
@@ -185,6 +228,30 @@ class SearchOverlay(Container):
             yield Static("Search: ", id="search-label")
             yield Input(placeholder="Type to search...", id="search-input")
             yield Static("", id="search-results")
+
+    def on_input_changed(self, event: Input.Changed):
+        self.post_message(self.QueryChanged(event.value))
+
+    def on_input_submitted(self, event: Input.Submitted):
+        self.post_message(self.NextMatch())
+
+    def on_key(self, event):
+        if event.key == "shift+enter":
+            self.post_message(self.PreviousMatch())
+            event.stop()
+
+    def action_next_match(self):
+        self.post_message(self.NextMatch())
+
+    def action_previous_match(self):
+        self.post_message(self.PreviousMatch())
+
+    def action_close(self):
+        self.post_message(self.Close())
+
+    def set_results(self, selected: int, total: int):
+        results = self.query_one("#search-results", Static)
+        results.update(f"{selected + 1}/{total}" if total else "No matches")
 
 
 class DiagnosticsSession:
@@ -368,6 +435,12 @@ class FileViewer(Vertical):
         self.current_session = None
         self.current_filename = None
         self.current_part = None
+        self.search_text = ""
+        self.search_matches = []
+        self.search_nodes = []
+        self.search_index = 0
+        self.search_text_widget = None
+        self.search_scroll = None
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -387,6 +460,7 @@ class FileViewer(Vertical):
         self.current_session = session
         self.current_filename = filename
         self.current_part = part
+        self._reset_search_for_content()
 
         content = session.read_file(filename)
         if content is None:
@@ -434,15 +508,19 @@ class FileViewer(Vertical):
             tree = JsonTreeView(f"{filename} - request")
             tree.load_json(request_data, f"{filename} - request")
             content_area.mount(tree)
+            self.search_text = json.dumps(request_data, indent=2)
         elif part == "responses" and responses:
             tree = JsonTreeView(f"{filename} - responses")
             if len(responses) == 1:
                 tree.load_json(responses[0], f"{filename} - response")
+                self.search_text = json.dumps(responses[0], indent=2)
             else:
                 tree.load_json(responses, f"{filename} - responses")
+                self.search_text = json.dumps(responses, indent=2)
             content_area.mount(tree)
         else:
             content_area.mount(Static("[red]No data available for this part[/red]"))
+            self.search_text = ""
 
     def _show_json(self, filename: str, content: str):
         """Show JSON file with collapsible tree."""
@@ -454,8 +532,10 @@ class FileViewer(Vertical):
         try:
             data = json.loads(content)
             tree.load_json(data, filename)
+            self.search_text = json.dumps(data, indent=2)
         except json.JSONDecodeError as e:
             tree.root.add_leaf(f"[red]Error parsing JSON: {e}[/red]")
+            self.search_text = content
 
         content_area.mount(tree)
 
@@ -468,7 +548,10 @@ class FileViewer(Vertical):
         # Create and mount the scroll container with the content
         scroll = VerticalScroll()
         content_area.mount(scroll)
-        scroll.mount(Static(content))
+        self.search_text = content
+        self.search_scroll = scroll
+        self.search_text_widget = Static(Text(content))
+        scroll.mount(self.search_text_widget)
 
     def focus_content(self):
         """Focus the content area."""
@@ -481,15 +564,117 @@ class FileViewer(Vertical):
             pass
 
     def action_search(self):
-        """Show search overlay.
-
-        TODO: Implement actual search functionality - currently just shows UI.
-        """
         overlay = self.query_one(SearchOverlay)
-        overlay.display = not overlay.display
         if overlay.display:
-            search_input = overlay.query_one("#search-input", Input)
-            search_input.focus()
+            self._close_search()
+            return
+
+        overlay.display = True
+        overlay.query_one("#search-input", Input).focus()
+
+    def on_search_overlay_query_changed(self, event: SearchOverlay.QueryChanged):
+        self._search(event.query)
+
+    def on_search_overlay_next_match(self, event: SearchOverlay.NextMatch):
+        self._move_search(1)
+
+    def on_search_overlay_previous_match(self, event: SearchOverlay.PreviousMatch):
+        self._move_search(-1)
+
+    def on_search_overlay_close(self, event: SearchOverlay.Close):
+        self._close_search()
+
+    def _clear_search(self):
+        self.search_matches = []
+        self.search_nodes = []
+        self.search_index = 0
+        self.search_text_widget = None
+        self.search_scroll = None
+
+    def _reset_search_for_content(self):
+        overlay = self.query_one(SearchOverlay)
+        overlay.display = False
+        overlay.query_one("#search-input", Input).value = ""
+        self._clear_search()
+        overlay.set_results(0, 0)
+
+    def _close_search(self):
+        overlay = self.query_one(SearchOverlay)
+        overlay.display = False
+        overlay.query_one("#search-input", Input).value = ""
+        self._clear_search()
+        self.focus_content()
+
+    def _search(self, query: str):
+        self.search_matches = []
+        self.search_nodes = []
+        self.search_index = 0
+
+        if not query:
+            if self.search_text_widget is not None:
+                self.search_text_widget.update(Text(self.search_text))
+            self.query_one(SearchOverlay).set_results(0, 0)
+            return
+
+        if self.search_text_widget is not None:
+            self.search_matches = find_matches(self.search_text, query)
+            self._show_text_match(query)
+            return
+
+        try:
+            tree = self.query_one(JsonTreeView)
+        except Exception:
+            self.query_one(SearchOverlay).set_results(0, 0)
+            return
+
+        self.search_nodes = self._matching_tree_nodes(tree.root, query)
+        self._show_tree_match(tree)
+
+    def _matching_tree_nodes(self, node, query: str):
+        matches = []
+        label = node.label.plain if isinstance(node.label, Text) else str(node.label)
+        value = ""
+        if isinstance(node.data, dict) and node.data.get("truncated"):
+            value = str(node.data["value"])
+        if query.lower() in label.lower() or query.lower() in value.lower():
+            matches.append(node)
+        for child in node.children:
+            matches.extend(self._matching_tree_nodes(child, query))
+        return matches
+
+    def _move_search(self, direction: int):
+        if self.search_matches:
+            self.search_index = (self.search_index + direction) % len(self.search_matches)
+            self._show_text_match(self.query_one("#search-input", Input).value)
+        elif self.search_nodes:
+            self.search_index = (self.search_index + direction) % len(self.search_nodes)
+            self._show_tree_match(self.query_one(JsonTreeView))
+
+    def _show_text_match(self, query: str):
+        overlay = self.query_one(SearchOverlay)
+        overlay.set_results(self.search_index, len(self.search_matches))
+        if not self.search_matches:
+            return
+
+        self.search_text_widget.update(
+            highlight_matches(self.search_text, self.search_matches, query, self.search_index)
+        )
+        line = self.search_text[: self.search_matches[self.search_index]].count("\n")
+        self.search_scroll.scroll_to(y=line, animate=False)
+
+    def _show_tree_match(self, tree: JsonTreeView):
+        overlay = self.query_one(SearchOverlay)
+        overlay.set_results(self.search_index, len(self.search_nodes))
+        if not self.search_nodes:
+            return
+
+        node = self.search_nodes[self.search_index]
+        parent = node.parent
+        while parent is not None:
+            parent.expand()
+            parent = parent.parent
+        tree.select_node(node)
+        tree.scroll_to_node(node, animate=False)
 
     class ContentReady(Message):
         """Message sent when content is ready to be focused."""

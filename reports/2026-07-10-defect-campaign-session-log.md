@@ -166,3 +166,41 @@ Status: completed with repository-settings action pending.
   source and set `ENABLE_GITHUB_PAGES=true` to activate deployments.
 - Change review: limited to Pages gating and maintainer documentation; documentation
   content and artifact generation are unchanged.
+
+### Stage 7 — DEF-002: ACP data-root isolation
+
+Status: routed to source modularization; no safe local patch.
+
+- Discovery: ACP session storage and permission state honor the injected roots, but
+  request logging is installed as a process-wide `OnceLock`, and ACP startup, provider
+  creation, and extension discovery still consume process-global `Config` and `Paths`
+  state. The current fixtures serialize tests by mutating `GOSLING_PATH_ROOT`, which
+  cannot provide concurrent per-agent isolation.
+- Decision: do not mutate a process-global path while an ACP agent is active or add a
+  partial request-log override that leaves configuration and provider state leaking.
+  A correct repair needs an explicit per-agent configuration/state-root dependency and
+  a request-log routing seam across `acp/server.rs`, provider creation, and related
+  global consumers. This exceeds the campaign's permitted local edit in a 4,005-line
+  module and is routed to `repair-source-modularization`.
+- Change review: no source behavior was changed; this preserves current CLI/desktop
+  defaults and avoids introducing cross-agent races.
+
+### Stage 8 — DEF-001: implement diagnostics viewer search
+
+Status: completed.
+
+- Change: implemented case-insensitive search of the current diagnostics file. Text
+  results are highlighted and scrolled into view; JSON results expand, select, and
+  scroll to matching tree nodes. Enter and Shift+Enter navigate next/previous matches;
+  closing search or changing files clears search state.
+- Validation:
+  - `uv run --with textual>=0.87.0 --with pyperclip python -m py_compile scripts/diagnostics-viewer.py` — passed.
+  - scripted Textual smoke tests — passed for text highlighting/navigation, JSON-tree
+    selection/navigation, file-change reset, Unicode matching, and previous-match
+    navigation.
+  - `git diff --check` — passed.
+- Adversarial review: empty and no-match queries report their state without changing
+  content; malformed JSON remains renderable; tree searches include full truncated
+  string values; and selection state is reset before a new file is rendered.
+- Change review: localized to the standalone diagnostics viewer; no diagnostics
+  collection, serialization, or application runtime behavior changed.
