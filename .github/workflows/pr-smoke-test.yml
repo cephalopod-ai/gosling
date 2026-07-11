@@ -53,6 +53,7 @@ jobs:
     needs: check-fork
     outputs:
       compaction: ${{ steps.report.outputs.compaction }}
+      mcp: ${{ steps.report.outputs.mcp }}
     steps:
       - id: report
         env:
@@ -61,10 +62,14 @@ jobs:
         run: |
           if [ -n "$ANTHROPIC_API_KEY" ]; then
             echo "compaction=true" >> "$GITHUB_OUTPUT"
+            echo "mcp=true" >> "$GITHUB_OUTPUT"
             echo "::notice title=Live compaction enabled::ANTHROPIC_API_KEY is configured."
+            echo "::notice title=Live MCP enabled::ANTHROPIC_API_KEY is configured."
           else
             echo "compaction=false" >> "$GITHUB_OUTPUT"
+            echo "mcp=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Live compaction skipped::Set the ANTHROPIC_API_KEY repository secret to run compaction smoke tests."
+            echo "::notice title=Live MCP skipped::Set the ANTHROPIC_API_KEY repository secret to run MCP smoke tests."
           fi
 
           if [ "$RUN_CLAUDE_CODE_SMOKE" = "true" ]; then
@@ -165,6 +170,7 @@ jobs:
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
 
       - name: Run MCP Tests
+        if: needs.live-provider-prerequisites.outputs.mcp == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

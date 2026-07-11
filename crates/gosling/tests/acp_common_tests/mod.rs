@@ -15,7 +15,7 @@ use fixtures::{
 use fs_err as fs;
 use gosling::acp::server::AcpProviderFactory;
 use gosling::config::base::CONFIG_YAML_NAME;
-use gosling::config::GoslingMode;
+use gosling::config::{CodeExecutionRuntime, GoslingMode};
 use gosling_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
@@ -1190,6 +1190,7 @@ pub async fn run_prompt_codemode<C: Connection>() {
     let config = TestConnectionConfig {
         builtins: vec!["code_execution".to_string(), "developer".to_string()],
         mcp_servers: vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url))],
+        code_execution_runtime: CodeExecutionRuntime::Enabled,
         ..Default::default()
     };
 
@@ -1200,7 +1201,7 @@ pub async fn run_prompt_codemode<C: Connection>() {
     expected_session_id.set(&session.session_id().0);
 
     let output = session
-        .prompt(prompt, PermissionDecision::Cancel)
+        .prompt(prompt, PermissionDecision::AllowOnce)
         .await
         .unwrap();
     if matches!(output.tool_status, Some(ToolCallStatus::Failed)) || output.text.contains("error") {

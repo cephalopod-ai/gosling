@@ -130,6 +130,7 @@ impl Connection for AcpServerConnection {
             config.gosling_mode,
             config.provider_factory,
             &config.current_model,
+            config.code_execution_runtime,
             config.disable_session_naming,
         )
         .await;

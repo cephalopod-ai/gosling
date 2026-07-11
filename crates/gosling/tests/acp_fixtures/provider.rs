@@ -162,6 +162,7 @@ impl Connection for AcpProviderConnection {
             gosling_mode,
             config.provider_factory,
             &current_model,
+            config.code_execution_runtime,
             config.disable_session_naming,
         )
         .await;

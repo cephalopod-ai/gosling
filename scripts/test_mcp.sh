@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+TEST_PROVIDER=${GOSLING_PROVIDER:-anthropic}
+TEST_MODEL=${GOSLING_MODEL:-claude-haiku-4-5-20251001}
+MCP_SAMPLING_TOOL="trigger-sampling-request"
+
+if [ "$TEST_PROVIDER" = "anthropic" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "ANTHROPIC_API_KEY is required for MCP smoke tests when GOSLING_PROVIDER=anthropic."
+  exit 2
+fi
+
 if [ -z "$SKIP_BUILD" ]; then
   echo "Building gosling..."
   cargo build --bin gosling
@@ -12,10 +21,6 @@ fi
 
 SCRIPT_DIR=$(pwd)
 GOSLING_BIN="$SCRIPT_DIR/target/debug/gosling"
-
-TEST_PROVIDER=${GOSLING_PROVIDER:-anthropic}
-TEST_MODEL=${GOSLING_MODEL:-claude-haiku-4-5-20251001}
-MCP_SAMPLING_TOOL="trigger-sampling-request"
 
 RESULTS=()
 

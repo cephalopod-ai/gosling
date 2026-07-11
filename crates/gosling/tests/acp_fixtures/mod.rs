@@ -15,7 +15,7 @@ pub use gosling::acp::{map_permission_response, PermissionDecision};
 use gosling::agents::GoslingPlatform;
 use gosling::builtin_extension::register_builtin_extensions;
 use gosling::config::paths::Paths;
-use gosling::config::{GoslingMode, PermissionManager};
+use gosling::config::{CodeExecutionRuntime, GoslingMode, PermissionManager};
 use gosling::providers::api_client::{ApiClient, AuthMethod as ApiAuthMethod};
 use gosling::providers::base::Provider;
 use gosling::providers::openai::OpenAiProvider;
@@ -177,6 +177,7 @@ pub async fn spawn_acp_server_in_process(
     gosling_mode: GoslingMode,
     provider_factory: Option<AcpProviderFactory>,
     current_model: &str,
+    code_execution_runtime: CodeExecutionRuntime,
     disable_session_naming: bool,
 ) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
     fs::create_dir_all(data_root).unwrap();
@@ -187,8 +188,8 @@ pub async fn spawn_acp_server_in_process(
         fs::write(
             &config_path,
             format!(
-                "GOSLING_MODEL: {current_model}\nGOSLING_PROVIDER: openai\nGOSLING_MODE: {}\n",
-                gosling_mode
+                "GOSLING_MODEL: {current_model}\nGOSLING_PROVIDER: openai\nGOSLING_MODE: {}\nGOSLING_CODE_EXECUTION_RUNTIME: {code_execution_runtime}\n",
+                gosling_mode,
             ),
         )
         .unwrap();
@@ -538,6 +539,7 @@ pub struct TestConnectionConfig {
     pub terminal: Option<Arc<TerminalFixture>>,
     // The model the server-side provider starts with. Defaults to TEST_MODEL.
     pub current_model: String,
+    pub code_execution_runtime: CodeExecutionRuntime,
     pub disable_session_naming: bool,
 }
 
@@ -554,6 +556,7 @@ impl Default for TestConnectionConfig {
             write_text_file: None,
             terminal: None,
             current_model: TEST_MODEL.to_string(),
+            code_execution_runtime: CodeExecutionRuntime::Disabled,
             disable_session_naming: true,
         }
     }
