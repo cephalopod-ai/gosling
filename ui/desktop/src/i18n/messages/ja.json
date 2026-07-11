@@ -1554,7 +1554,7 @@
     "defaultMessage": "権限ルール"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "レスポンスの方向づけやコンテキスト追加のためにプロバイダーへ渡される非表示の指示です。"
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "メッセージを読み込み中...（{renderedCount}/{totalCount}）"

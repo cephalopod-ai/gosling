@@ -6,6 +6,12 @@
 const fs = require('fs');
 const path = require('path');
 const { TYPE, parse } = require('@formatjs/icu-messageformat-parser');
+const {
+  parseJsonWithoutDuplicateKeys,
+  sourceHashesFor,
+  validateMessageCatalog,
+  validateSourceHashes,
+} = require('./i18n-sync-locales');
 
 const requestedLocales = process.argv.slice(2);
 
@@ -17,9 +23,10 @@ if (requestedLocales.includes('en')) {
 const projectDir = path.join(__dirname, '..');
 const messagesDir = path.join(projectDir, 'src', 'i18n', 'messages');
 const enPath = path.join(messagesDir, 'en.json');
+const sourceHashesPath = path.join(__dirname, 'i18n-source-hashes.json');
 
 function readJson(file) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  return parseJsonWithoutDuplicateKeys(fs.readFileSync(file, 'utf8'), file);
 }
 
 function collectArguments(elements, args) {
@@ -74,6 +81,7 @@ function validateLocale(locale, en, enKeys) {
   }
 
   const translated = readJson(localePath);
+  validateMessageCatalog(translated, localePath);
   const localeKeys = Object.keys(translated).sort();
   const missing = enKeys.filter((key) => !Object.prototype.hasOwnProperty.call(translated, key));
   const extra = localeKeys.filter((key) => !Object.prototype.hasOwnProperty.call(en, key));
@@ -119,7 +127,23 @@ function printIssues(result) {
 }
 
 const en = readJson(enPath);
+validateMessageCatalog(en, enPath);
 const enKeys = Object.keys(en).sort();
+const recordedSourceHashes = readJson(sourceHashesPath);
+validateSourceHashes(recordedSourceHashes, sourceHashesPath);
+const currentSourceHashes = sourceHashesFor(en);
+const staleSourceHashKeys = [...new Set([...Object.keys(recordedSourceHashes), ...enKeys])]
+  .filter((key) => recordedSourceHashes[key] !== currentSourceHashes[key])
+  .sort();
+
+if (staleSourceHashKeys.length) {
+  console.error(
+    'Source messages changed without locale synchronization. Run pnpm i18n:sync. Changed keys:',
+    staleSourceHashKeys.slice(0, 50)
+  );
+  process.exit(1);
+}
+
 const locales = requestedLocales.length ? requestedLocales : listLocales();
 
 if (!locales.length) {

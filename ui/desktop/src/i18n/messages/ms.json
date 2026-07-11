@@ -1554,7 +1554,7 @@
     "defaultMessage": "Peraturan Kebenaran"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "Arahan tersembunyi yang akan dihantar kepada penyedia untuk membantu mengarah dan menambah konteks pada respons anda."
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Memuatkan mesej... ({renderedCount}/{totalCount})"

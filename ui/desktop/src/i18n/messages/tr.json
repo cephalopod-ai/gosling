@@ -1554,7 +1554,7 @@
     "defaultMessage": "İzin Kuralları"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "Yanıtlarınızı yönlendirmeye ve bağlam eklemeye yardımcı olmak için sağlayıcıya iletilecek gizli talimatlar."
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Mesajlar yükleniyor... ({renderedCount}/{totalCount})"

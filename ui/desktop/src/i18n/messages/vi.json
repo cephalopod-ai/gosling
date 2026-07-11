@@ -1554,7 +1554,7 @@
     "defaultMessage": "Quy tắc quyền"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "Các hướng dẫn ẩn sẽ được chuyển đến nhà cung cấp để giúp định hướng và bổ sung ngữ cảnh cho các phản hồi của bạn."
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Đang tải tin nhắn... ({renderedCount}/{totalCount})"

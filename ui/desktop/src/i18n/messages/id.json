@@ -1554,7 +1554,7 @@
     "defaultMessage": "Aturan Izin"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "Instruksi tersembunyi yang akan diteruskan ke penyedia untuk membantu mengarahkan dan menambahkan konteks ke respons Anda."
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Memuat pesan... ({renderedCount}/{totalCount})"

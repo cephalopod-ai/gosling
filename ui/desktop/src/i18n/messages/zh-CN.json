@@ -1554,7 +1554,7 @@
     "defaultMessage": "权限规则"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "传给提供商的隐藏指令，用于引导并为回复补充上下文。"
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "正在加载消息…（{renderedCount}/{totalCount}）"

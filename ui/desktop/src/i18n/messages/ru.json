@@ -1554,7 +1554,7 @@
     "defaultMessage": "Правила разрешений"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "Скрытые инструкции, которые будут переданы провайдеру, чтобы направлять ответы и добавлять к ним контекст."
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "Загрузка сообщений... ({renderedCount}/{totalCount})"

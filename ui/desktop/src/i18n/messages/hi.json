@@ -1554,7 +1554,7 @@
     "defaultMessage": "अनुमति नियम"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "छिपे हुए निर्देश जो आपकी प्रतिक्रियाओं को निर्देशित करने और संदर्भ जोड़ने में सहायता के लिए प्रदाता को भेजे जाएंगे।"
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "संदेश लोड हो रहे हैं... ({renderedCount}/{totalCount})"

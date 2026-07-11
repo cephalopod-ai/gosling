@@ -1554,7 +1554,7 @@
     "defaultMessage": "權限規則"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "將傳遞給提供者的隱藏指示，用於引導並為您的回應補充背景資訊。"
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "正在載入訊息... ({renderedCount}/{totalCount})"

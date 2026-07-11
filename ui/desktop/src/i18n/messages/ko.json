@@ -1554,7 +1554,7 @@
     "defaultMessage": "권한 규칙"
   },
   "permissionSetting.permissionRulesDescription": {
-    "defaultMessage": "응답에 컨텍스트를 추가하고 지시하는 데 도움이 되도록 제공업체에게 전달되는 숨겨진 지침입니다."
+    "defaultMessage": "Configure how Gosling handles extension tool permissions, including broad allow or deny rules for an entire toolset."
   },
   "progressiveMessageList.loadingMessages": {
     "defaultMessage": "메시지 로드 중... ({renderedCount}/{totalCount})"
