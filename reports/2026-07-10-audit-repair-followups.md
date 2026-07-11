@@ -28,7 +28,7 @@ duplicated in this section.
 | --- | --- | --- | --- |
 | CI-001 | P0 | Resolved in `95d3c5ecc`: public GPT-5.3-Codex reasoning/context contracts and provider test expectations were reconciled; focused tests and the full `gosling` library suite passed. | Rerun required GitHub checks after the campaign PR is opened. |
 | CI-002 | P0 | Resolved in `58f3c6afd`: removed the unreachable sanitizer that made schema generation fail under `-D warnings`; the generator and strict clippy passed. | Rerun the required GitHub schema check on the campaign PR. |
-| CI-003 | P1 | Resolved in `8157ef494`: source and all 15 locale catalogs are synchronized; strict i18n and desktop lint checks passed. | None beyond normal PR checks. |
+| CI-003 | P1 | Resolved in `8157ef494`: source and all 15 locale catalogs are synchronized; strict i18n and desktop lint checks passed. PR CI later exposed a stale code-runtime default assertion, corrected in `251cebf7e`; the product keeps its safe disabled default. | None beyond normal PR checks. |
 | CI-004 | P1 | Repaired in `db883f9d9`: absent Anthropic credentials now produce an explicit prerequisite skip and local preflight failure instead of false live-test failures. | A maintainer must add `ANTHROPIC_API_KEY` to exercise live compaction. |
 | CI-005 | P1 | Repaired in `db883f9d9`: Claude Code smoke coverage is explicitly opt-in and requires a usable authenticated CLI. | A maintainer may set `RUN_CLAUDE_CODE_SMOKE=true` on a suitable runner. |
 | CI-006 | P1 | Repaired in `dc00488a5`: Docker release compilation uses a lower-disk Thin-LTO profile and final-image-only Buildx cache export. | Manually dispatch or merge the workflow to verify two-architecture publishing on a hosted runner. |
