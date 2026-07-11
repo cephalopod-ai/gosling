@@ -1743,6 +1743,10 @@ mod tests {
             thinking_type(&cfg_with_effort("claude-opus-4-8", "high")),
             ThinkingType::Adaptive
         );
+        assert_eq!(
+            thinking_type(&cfg_with_effort("claude-sonnet-5", "high")),
+            ThinkingType::Adaptive
+        );
         // Adaptive model with off → disabled
         assert_eq!(
             thinking_type(&cfg_with_effort("claude-opus-4-6", "off")),

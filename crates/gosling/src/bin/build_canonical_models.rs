@@ -11,8 +11,8 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use gosling::providers::create_with_named_model;
 use gosling_providers::canonical::{
-    canonical_name, CanonicalModel, CanonicalModelRegistry, Limit, Modalities, Modality,
-    ModelMapping, Pricing, ThinkingMode,
+    apply_curated_model_contracts, canonical_name, CanonicalModel, CanonicalModelRegistry, Limit,
+    Modalities, Modality, ModelMapping, Pricing, ThinkingMode,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -361,6 +361,7 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-opus-4.7" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
+        "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
         _ => None,
     }
 }
@@ -593,6 +594,8 @@ async fn build_canonical_models() -> Result<()> {
             total_models += 1;
         }
     }
+
+    apply_curated_model_contracts(&mut registry);
 
     let output_path = data_file_path("canonical_models.json");
     registry.to_file(&output_path)?;

@@ -665,6 +665,12 @@ mod tests {
             let config = ModelConfig::new("claude-fable-5").with_canonical_limits("anthropic");
             assert_eq!(config.context_limit(), 1_000_000);
 
+            let config = ModelConfig::new("claude-sonnet-5").with_canonical_limits("anthropic");
+            assert_eq!(config.context_limit(), 1_000_000);
+
+            let config = ModelConfig::new("claude-sonnet-4-6").with_canonical_limits("anthropic");
+            assert_eq!(config.context_limit(), 1_000_000);
+
             let config = ModelConfig::new("claude-sonnet-4-5").with_canonical_limits("anthropic");
             assert_eq!(config.context_limit(), 200_000);
         }
