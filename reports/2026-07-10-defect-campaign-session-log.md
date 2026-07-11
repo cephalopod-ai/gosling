@@ -295,3 +295,99 @@ Status: completed after full local desktop-suite validation.
   change.
 - Change: the request assertion now covers the compacted-load metadata, preserving
   regression coverage for the bounded resume contract.
+
+## Corrective continuation — 2026-07-11
+
+This section supersedes the earlier Stage 3 and Stage 8 validation/review summaries.
+The original summaries were based on incomplete checks and did not record defects found
+when the landed commits were re-reviewed. Work continued from `main` and is delivered
+through protected-branch PR #22.
+
+### Stage 3 corrective audit — locale synchronization
+
+Status: completed in commits `1149d33f1` and `65a5cd1b9`.
+
+- The landed locale commit retained stale translations for the changed
+  `permissionSetting.permissionRulesDescription` source message and its synchronizer
+  could overwrite concurrent translator edits or leave partial catalog updates.
+- The corrected synchronizer fingerprints source messages, requires explicit
+  acknowledgement for changed or removed messages, rejects malformed and duplicate-key
+  JSON before mutation, and uses a durable claim/journal/rollback protocol with
+  process locking and startup recovery. Recovery checks original and output digests so
+  it cannot displace a newer destination edit.
+- Validation:
+  - 21 synchronization, concurrency, stale-descriptor, rollback, termination, and
+    recovery tests passed.
+  - `pnpm --dir ui/desktop run lint:check` passed with the pinned Hermit pnpm/Node
+    toolchain.
+  - All 15 translated catalogs validated against 1,032 source messages.
+- Reviews:
+  - production core: Codex GPT-5.6 Sol, pass with no findings;
+    `/tmp/tagteam-gosling-stage3-core-state-v5/.../2026-07-11T024658.446249000Z`.
+  - test harness: Agy Gemini 3.5 Flash (Medium), pass with no findings;
+    `/tmp/tagteam-gosling-stage3-tests-state/.../2026-07-11T025223.802186000Z`.
+
+### Stage 8 corrective audit — diagnostics viewer search
+
+Status: completed in commit `2629cdd91`.
+
+- Re-review found incorrect Unicode offsets, stale widget state after closing/reopening
+  search, and a depth-limited JSON search. Subsequent reviews also found unbounded eager
+  rendering, accumulating reveal nodes, silent search truncation, incorrect JSON `null`
+  matching, Rich-markup injection, and loss of full-value inspection for omitted long
+  strings.
+- The corrected viewer bounds initial rendering, searches parsed JSON iteratively,
+  reports capped/partial results, reuses one labeled proxy for omitted matches, renders
+  diagnostic content as literal `Text`, and preserves the full-string modal contract.
+- Validation: 11 mounted Textual tests, `ruff check`, Python compilation, and
+  `git diff --check` passed.
+- Final review: Codex GPT-5.6 Sol, pass with no findings;
+  `/tmp/tagteam-gosling-stage8-final-state-v7/.../2026-07-11T032243.053773000Z`.
+
+### Externally landed commit audit
+
+Status: completed for the late commits that landed outside this continuation.
+
+- `876526817` (provider-utils helpers): inspected the fail-closed Google error-body
+  behavior and retry clamp; all 12 focused provider-utils Rust tests passed.
+- `251cebf7e` and `300d11db3` (desktop CI assertions): inspected the runtime default,
+  explicit profile-save flow, and compacted ACP load metadata. The three focused Vitest
+  files passed with 16 tests.
+- Earlier campaign commits for schema generation, provider contracts, live-provider
+  prerequisites, Docker capacity, and Pages gating were separately reviewed against
+  their focused regressions; no additional landed-code defect remained in those stages.
+
+### Stage 7 and Stage 9 routing revalidation
+
+Status: both routing decisions independently confirmed; no source edits made.
+
+- Stage 7 used supervisor-worker and automatically transitioned to relay when both roles
+  requested broader context. The Agy worker hit the five-minute watchdog and was
+  replaced by `gpt-5.6-terra`; the no-edit result passed `acp_server_test` (46 active
+  tests) and supervisor review. A correct fix still requires an immutable per-agent
+  runtime context and scoped request logger across global configuration/path consumers.
+  Artifact: `/tmp/tagteam-gosling-stage7-revalidation/.../2026-07-11T032715.882260000Z`.
+- Stage 9 used relay with local Gemma reconnaissance, `gpt-5.6-terra` coding, and
+  `gpt-5.6-sol` supervision. It confirmed that native ACP identity is not persisted and
+  activation always creates a new native session; fixture-only loading would be false
+  support. The four load-session tests remain explicitly ignored and were not counted
+  as validation. Artifact:
+  `/tmp/tagteam-gosling-stage9-revalidation/.../2026-07-11T035058.602143000Z`.
+
+### PR #22 CI correction
+
+Status: implemented in commit `760e801c4`; hosted rerun pending.
+
+- GitHub's first PR #22 run exposed two baseline failures: the MCP smoke script invoked
+  its default Anthropic model without `ANTHROPIC_API_KEY`, and the ACP code-mode fixture
+  relied on the runtime's obsolete enabled-by-default behavior.
+- The workflow now visibly skips only the Anthropic-backed MCP step when its credential
+  is absent, while the script fails immediately with a clear prerequisite error if run
+  directly. Code-mode fixtures now declare the runtime state explicitly and grant the
+  successful discovery flow one-time permission.
+- Validation:
+  - ACP provider code-mode suite: 13 active tests passed, 9 intentional ignores.
+  - ACP server code-mode suite: 47 active tests passed, 1 intentional ignore.
+  - MCP script syntax and missing-key preflight passed; workflow YAML parsed.
+  - Codex GPT-5.6 Sol adversarial review passed with no findings;
+    `/tmp/tagteam-gosling-pr22-ci-fix-state/.../2026-07-11T034929.879693000Z`.
