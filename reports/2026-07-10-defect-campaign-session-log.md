@@ -491,3 +491,11 @@ Status: repair committed as `633e7dfb4`; protected-branch PR and hosted rerun pe
   phase 2, and phase 3 verifiers pass locally. GPT-5.6 Sol supervisor review passed with
   no findings:
   `/private/tmp/tagteam-gosling-ruby26-integrity-review/.../2026-07-11T055656.210901000Z`.
+- The same Canary run exposed a latent feature-boundary defect in both musl CLI jobs:
+  `portable-default` intentionally excludes Nostr, but session import referenced the
+  feature-gated `nostr_share` module before entering its `#[cfg]` branch. Deeplink
+  classification now lives on the always-built session surface, while the Nostr module
+  keeps its existing public helper as a delegate. The exact portable CLI check and
+  clippy configuration pass, as do focused no-Nostr and Nostr-enabled tests and
+  Nostr-enabled all-target clippy. Relay-mode GPT-5.6 Sol review passed with no findings:
+  `/private/tmp/tagteam-gosling-portable-nostr-review/.../2026-07-11T060832.941655000Z`.
