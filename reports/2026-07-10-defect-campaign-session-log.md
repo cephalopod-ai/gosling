@@ -259,3 +259,17 @@ verification/settings actions remain open.
   if Pages deployment is desired.
 - Worktree note: `crates/gosling/src/providers/utils.rs` contains an unrelated,
   unstaged concurrent edit. It was not staged, committed, or modified by this campaign.
+
+### Post-PR CI correction — desktop runtime default assertion
+
+Status: completed after PR check inspection.
+
+- Evidence: PR #21's `Test and Lint Electron Desktop App` job failed because
+  `CodeExecutionRuntimeSection.test.tsx` asserted that a missing
+  `GOSLING_CODE_EXECUTION_RUNTIME` value selected `Enabled`, whereas the component
+  intentionally maps an absent or invalid value to `Disabled`.
+- Change: corrected the test name and selected-button expectation. Product runtime
+  behavior remains unchanged and retains the safe disabled default.
+- Validation: the hosted CI failure directly identifies the prior assertion. The
+  focused local recheck uses the project's required pnpm version when available;
+  the currently installed pnpm remains too old (10.6.4 versus >=10.30.0).

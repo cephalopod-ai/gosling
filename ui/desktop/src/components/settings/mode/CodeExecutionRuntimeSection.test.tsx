@@ -18,7 +18,7 @@ describe('CodeExecutionRuntimeSection', () => {
     upsert.mockResolvedValue(undefined);
   });
 
-  it('defaults to enabled when the setting is absent', () => {
+  it('defaults to disabled when the setting is absent', () => {
     mockedUseConfig.mockReturnValue({
       config: {},
       providersList: [],
@@ -37,8 +37,8 @@ describe('CodeExecutionRuntimeSection', () => {
     render(<CodeExecutionRuntimeSection />, { wrapper: IntlTestWrapper });
 
     expect(screen.getByText('Code execution runtime')).toBeInTheDocument();
-    expect(screen.getByText('Enabled')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Enabled/ })).toHaveAttribute(
+    expect(screen.getByText('Disabled')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Disabled/ })).toHaveAttribute(
       'aria-pressed',
       'true'
     );
@@ -92,9 +92,7 @@ describe('CodeExecutionRuntimeSection', () => {
     await waitFor(() => {
       expect(upsert).toHaveBeenCalledWith('GOSLING_CODE_EXECUTION_RUNTIME', 'disabled', false);
     });
-    expect(
-      screen.getByText('Restart Gosling for this change to take effect.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Restart Gosling for this change to take effect.')).toBeInTheDocument();
   });
 
   it('tells the user to restart the external backend when one is configured', async () => {
@@ -129,7 +127,9 @@ describe('CodeExecutionRuntimeSection', () => {
     await user.click(screen.getByRole('button', { name: /Disabled/ }));
 
     expect(
-      await screen.findByText('Restart the external backend process for this change to take effect.')
+      await screen.findByText(
+        'Restart the external backend process for this change to take effect.'
+      )
     ).toBeInTheDocument();
   });
 });
