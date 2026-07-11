@@ -120,3 +120,26 @@ Status: completed with external verification pending.
   a runner with an authenticated Claude CLI.
 - Change review: limited to live-test prerequisite discovery and reporting; provider
   runtime code and test assertions are unchanged.
+
+### Stage 5 — CI-006: reduce Docker multi-architecture build pressure
+
+Status: completed with hosted-workflow verification pending.
+
+- Change: the Docker-only release profile now uses Thin LTO and normal parallel
+  codegen units instead of fat LTO with one unit. The image remains optimized and
+  stripped. The Buildx cache is scoped to this image and exports only final-image
+  layers (`mode=min`) rather than every large intermediate build layer.
+- Evidence: the failed arm64 build exhausted runner storage while writing fat-LTO
+  `.rcgu.bc` files under `/build/target/release/deps`; a prior run on the same hosted
+  runner image completed the two-platform image and provenance attestation.
+- Validation:
+  - YAML parse of `.github/workflows/publish-docker.yml` — passed.
+  - `git diff --check` — passed.
+- Adversarial review: both `linux/amd64` and `linux/arm64`, registry push, metadata
+  tags, and provenance attestation remain unchanged. The changed cache mode cannot
+  cache builder-only layers; it therefore avoids retaining an unusable multi-gigabyte
+  intermediate cache.
+- External verification: a protected-branch or manually dispatched GitHub workflow
+  must build and publish both architectures to verify the runner capacity in practice.
+- Change review: limited to the release build profile and cache policy; application
+  behavior and image contents are otherwise unchanged.
