@@ -21,6 +21,8 @@ static BUNDLED_REGISTRY: Lazy<Result<CanonicalModelRegistry>> = Lazy::new(|| {
         }
     }
 
+    super::apply_curated_model_contracts(&mut registry);
+
     Ok(registry)
 });
 
@@ -28,12 +30,15 @@ static BUNDLED_REGISTRY: Lazy<Result<CanonicalModelRegistry>> = Lazy::new(|| {
 pub struct CanonicalModelRegistry {
     // Key: (provider, model) tuple
     models: HashMap<(String, String), CanonicalModel>,
+    // Retired models remain resolvable without returning to model pickers.
+    compatibility_models: HashMap<(String, String), CanonicalModel>,
 }
 
 impl CanonicalModelRegistry {
     pub fn new() -> Self {
         Self {
             models: HashMap::new(),
+            compatibility_models: HashMap::new(),
         }
     }
 
@@ -66,8 +71,9 @@ impl CanonicalModelRegistry {
         let mut models: Vec<&CanonicalModel> = self.models.values().collect();
         models.sort_by(|a, b| a.id.cmp(&b.id));
 
-        let json = serde_json::to_string_pretty(&models)
+        let mut json = serde_json::to_string_pretty(&models)
             .context("Failed to serialize canonical models")?;
+        json.push('\n');
 
         std::fs::write(path.as_ref(), json).context("Failed to write canonical models file")?;
 
@@ -80,7 +86,30 @@ impl CanonicalModelRegistry {
     }
 
     pub fn get(&self, provider: &str, model: &str) -> Option<&CanonicalModel> {
+        let key = (provider.to_string(), model.to_string());
+        self.models
+            .get(&key)
+            .or_else(|| self.compatibility_models.get(&key))
+    }
+
+    pub fn get_active(&self, provider: &str, model: &str) -> Option<&CanonicalModel> {
         self.models.get(&(provider.to_string(), model.to_string()))
+    }
+
+    pub(super) fn get_mut(&mut self, provider: &str, model: &str) -> Option<&mut CanonicalModel> {
+        self.models
+            .get_mut(&(provider.to_string(), model.to_string()))
+    }
+
+    pub(super) fn register_compatibility(
+        &mut self,
+        provider: &str,
+        model: &str,
+        canonical_model: CanonicalModel,
+    ) {
+        let key = (provider.to_string(), model.to_string());
+        self.models.remove(&key);
+        self.compatibility_models.insert(key, canonical_model);
     }
 
     pub fn get_all_models_for_provider(&self, provider: &str) -> Vec<CanonicalModel> {
@@ -103,5 +132,18 @@ impl CanonicalModelRegistry {
 impl Default for CanonicalModelRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serialized_registry_ends_with_newline() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        CanonicalModelRegistry::new().to_file(file.path()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(file.path()).unwrap(), "[]\n");
     }
 }

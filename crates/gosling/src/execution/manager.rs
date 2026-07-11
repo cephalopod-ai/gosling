@@ -238,10 +238,6 @@ impl AgentManager {
                 agent
                     .update_provider(Arc::clone(provider), model_config, session_id)
                     .await?;
-                provider
-                    .update_mode(session_id, mode)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Failed to propagate mode to provider: {}", e))?;
             }
         }
 

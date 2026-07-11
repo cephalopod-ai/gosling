@@ -111,6 +111,7 @@ jobs:
     uses: ./.github/workflows/bundle-desktop-windows.yml
     permissions:
       contents: read
+      id-token: write
     with:
       version: ${{ needs.prepare-version.outputs.version }}
       signing: false

@@ -1,12 +1,14 @@
 pub mod catalog;
 mod model;
 mod name_builder;
+mod overrides;
 mod registry;
 
 pub use model::{CanonicalModel, Limit, Modalities, Modality, Pricing, ThinkingMode};
 pub use name_builder::{
     canonical_name, map_provider_name, map_to_canonical_model, strip_version_suffix,
 };
+pub use overrides::apply_curated_model_contracts;
 pub use registry::CanonicalModelRegistry;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

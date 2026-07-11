@@ -14,11 +14,10 @@ on:
         required: true
         type: string
 
-# permissions needed for reacting to IssueOps commands on PRs and AWS OIDC authentication
+# Permissions needed for reacting to IssueOps commands on PRs.
 permissions:
   pull-requests: write
   checks: read
-  id-token: write   # Required for AWS OIDC authentication in called workflow
   contents: read    # Required by actions/checkout in called workflow
   actions: read     # May be needed for some workflows
 
@@ -116,6 +115,9 @@ jobs:
     needs: [trigger-on-command]
     if: ${{ needs.trigger-on-command.outputs.continue == 'true' }}
     uses: ./.github/workflows/bundle-desktop-windows.yml
+    permissions:
+      contents: read
+      id-token: write
     with:
       signing: false
       ref: ${{ needs.trigger-on-command.outputs.head_sha }}

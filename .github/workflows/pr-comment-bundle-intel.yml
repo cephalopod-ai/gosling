@@ -114,7 +114,6 @@ jobs:
     if: ${{ needs.trigger-on-command.outputs.continue == 'true' }}
     uses: ./.github/workflows/bundle-desktop-intel.yml
     permissions:
-      id-token: write
       contents: read
     with:
       signing: false

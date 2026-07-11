@@ -441,12 +441,18 @@ fn sort_recommended_candidates(mut models: Vec<(String, Option<String>, bool)>) 
     models.into_iter().map(|(name, _, _)| name).collect()
 }
 
+struct RecommendedFilterResult {
+    models: Vec<String>,
+    excluded_compatibility: bool,
+}
+
 fn filter_recommended_models(
     provider_name: &str,
     all_models: &[String],
     toolshim: bool,
     registry: &CanonicalModelRegistry,
-) -> Vec<String> {
+) -> RecommendedFilterResult {
+    let mut excluded_compatibility = false;
     let models = all_models
         .iter()
         .filter_map(|model| {
@@ -458,7 +464,10 @@ fn filter_recommended_models(
             };
 
             let (provider, model_name) = canonical_id.split_once('/')?;
-            let canonical_model = registry.get(provider, model_name)?;
+            let Some(canonical_model) = registry.get_active(provider, model_name) else {
+                excluded_compatibility = true;
+                return None;
+            };
 
             if !canonical_model
                 .modalities
@@ -476,7 +485,10 @@ fn filter_recommended_models(
         })
         .collect();
 
-    sort_recommended_candidates(models)
+    RecommendedFilterResult {
+        models: sort_recommended_candidates(models),
+        excluded_compatibility,
+    }
 }
 
 /// Collect all chunks from a MessageStream into a single Message and ProviderUsage
@@ -644,13 +656,12 @@ pub trait Provider: Send + Sync {
 
         let provider_name = self.canonical_provider_id();
 
-        let inventory_models =
-            filter_recommended_models(provider_name, &all_models, toolshim, registry);
+        let inventory = filter_recommended_models(provider_name, &all_models, toolshim, registry);
 
-        if inventory_models.is_empty() {
+        if inventory.models.is_empty() && !inventory.excluded_compatibility {
             Ok(all_models)
         } else {
-            Ok(inventory_models)
+            Ok(inventory.models)
         }
     }
 
@@ -884,11 +895,42 @@ mod tests {
             "gpt-5.5".to_string(),
         ];
 
-        let recommended = filter_recommended_models("openai", &models, false, registry);
+        let recommended = filter_recommended_models("openai", &models, false, registry).models;
 
         assert_eq!(recommended.first().map(String::as_str), Some("gpt-5.5"));
         assert!(recommended.contains(&"gpt-4o".to_string()));
         assert!(!recommended.contains(&"text-embedding-3-large".to_string()));
+    }
+
+    #[test]
+    fn recommended_filter_excludes_retired_live_models() {
+        let registry = CanonicalModelRegistry::bundled().unwrap();
+        let models = vec![
+            "claude-3-5-sonnet-20241022".to_string(),
+            "claude-3-7-sonnet".to_string(),
+            "claude-sonnet-4".to_string(),
+        ];
+
+        let result = filter_recommended_models("anthropic", &models, false, registry);
+
+        assert!(result.models.is_empty());
+        assert!(result.excluded_compatibility);
+    }
+
+    #[test]
+    fn recommended_filter_keeps_active_model_with_retired_inventory() {
+        let registry = CanonicalModelRegistry::bundled().unwrap();
+        let models = vec![
+            "claude-3-5-sonnet-20241022".to_string(),
+            "claude-sonnet-5".to_string(),
+            "claude-3-7-sonnet".to_string(),
+            "claude-sonnet-4".to_string(),
+        ];
+
+        let result = filter_recommended_models("anthropic", &models, false, registry);
+
+        assert_eq!(result.models, vec!["claude-sonnet-5"]);
+        assert!(result.excluded_compatibility);
     }
 
     #[test]

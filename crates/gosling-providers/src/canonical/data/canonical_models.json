@@ -15826,7 +15826,7 @@
       "cache_write": 3.75
     },
     "limit": {
-      "context": 1000000,
+      "context": 200000,
       "output": 64000
     }
   },
@@ -15870,6 +15870,7 @@
     "family": "claude-sonnet",
     "attachment": true,
     "reasoning": true,
+    "thinking_mode": "adaptive",
     "tool_call": true,
     "temperature": false,
     "knowledge": "2026-01-31",
