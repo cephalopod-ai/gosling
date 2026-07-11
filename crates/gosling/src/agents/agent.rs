@@ -2956,6 +2956,18 @@ impl Agent {
         model_config: gosling_providers::model::ModelConfig,
         session_id: &str,
     ) -> Result<()> {
+        let mode = self.gosling_mode().await;
+        self.update_provider_with_mode(provider, model_config, session_id, mode)
+            .await
+    }
+
+    async fn update_provider_with_mode(
+        &self,
+        provider: Arc<dyn Provider>,
+        model_config: gosling_providers::model::ModelConfig,
+        session_id: &str,
+        mode: GoslingMode,
+    ) -> Result<()> {
         let provider_name = provider.get_name().to_string();
 
         // Normalize against the provider entry so custom/declarative providers
@@ -2968,6 +2980,11 @@ impl Agent {
                 .unwrap_or(model_config),
             Err(_) => model_config,
         };
+
+        provider
+            .update_mode(session_id, mode)
+            .await
+            .map_err(|e| anyhow::anyhow!("Provider rejected mode update: {e}"))?;
 
         let mut current_provider = self.provider.lock().await;
         *current_provider = Some(provider);
@@ -3159,17 +3176,13 @@ impl Agent {
                 (fallback_provider, fallback_model_config, true)
             };
 
-        self.update_provider(provider, active_model_config, &session.id)
-            .await?;
-        // Propagate session mode to the new provider. Clone the Arc out and
-        // drop the guard before awaiting - see update_gosling_mode for why.
-        let provider = self.provider.lock().await.clone();
-        if let Some(provider) = provider {
-            provider
-                .update_mode(&session.id, session.gosling_mode)
-                .await
-                .map_err(|e| anyhow!("Failed to propagate mode to provider: {}", e))?;
-        }
+        self.update_provider_with_mode(
+            provider,
+            active_model_config,
+            &session.id,
+            session.gosling_mode,
+        )
+        .await?;
         *self.current_gosling_mode.lock().await = session.gosling_mode;
         Ok(provider_changed)
     }
@@ -3680,6 +3693,40 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         call_count: AtomicUsize,
     }
 
+    #[derive(Default)]
+    struct ModeRecordingProvider {
+        updates: tokio::sync::Mutex<Vec<(String, GoslingMode)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for ModeRecordingProvider {
+        async fn stream(
+            &self,
+            _model_config: &gosling_providers::model::ModelConfig,
+            _system_prompt: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            unimplemented!()
+        }
+
+        fn get_name(&self) -> &str {
+            "mode-recording"
+        }
+
+        async fn update_mode(
+            &self,
+            session_id: &str,
+            mode: GoslingMode,
+        ) -> Result<(), ProviderError> {
+            self.updates
+                .lock()
+                .await
+                .push((session_id.to_string(), mode));
+            Ok(())
+        }
+    }
+
     #[async_trait::async_trait]
     impl crate::providers::base::Provider for RefusingProvider {
         async fn stream(
@@ -3701,6 +3748,43 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         fn get_name(&self) -> &str {
             "refusing"
         }
+    }
+
+    #[tokio::test]
+    async fn update_provider_propagates_active_mode() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let permission_manager = Arc::new(PermissionManager::new(temp_dir.path().to_path_buf()));
+        let agent = Agent::with_config(AgentConfig::new(
+            session_manager.clone(),
+            permission_manager,
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        ));
+        let session = session_manager
+            .create_session(
+                PathBuf::default(),
+                "mode-propagation".to_string(),
+                SessionType::Hidden,
+                GoslingMode::Auto,
+            )
+            .await?;
+        let provider = Arc::new(ModeRecordingProvider::default());
+
+        agent
+            .update_provider(
+                provider.clone(),
+                gosling_providers::model::ModelConfig::new("mock-model"),
+                &session.id,
+            )
+            .await?;
+
+        assert_eq!(
+            provider.updates.lock().await.as_slice(),
+            &[(session.id, GoslingMode::Auto)]
+        );
+        Ok(())
     }
 
     #[tokio::test]
