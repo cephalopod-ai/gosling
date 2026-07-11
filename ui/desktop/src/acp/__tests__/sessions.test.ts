@@ -69,6 +69,12 @@ describe('ACP sessions', () => {
       sessionId: 'session-1',
       cwd: '/tmp',
       mcpServers: [],
+      _meta: {
+        gosling: {
+          loadMode: 'compacted',
+          tailLimit: 50,
+        },
+      },
     });
     expect(client.gosling.sessionInfo_unstable).toHaveBeenCalledTimes(2);
     expect(result.sessionInfo).toBe(loadedSessionInfo);

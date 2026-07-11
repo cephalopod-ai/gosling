@@ -273,3 +273,25 @@ Status: completed after PR check inspection.
 - Validation: the hosted CI failure directly identifies the prior assertion. The
   focused local recheck uses the project's required pnpm version when available;
   the currently installed pnpm remains too old (10.6.4 versus >=10.30.0).
+
+### Post-PR CI correction — managed-secret profile persistence tests
+
+Status: completed after PR check inspection.
+
+- Evidence: after the runtime assertion was corrected, PR #21's desktop suite exposed
+  two auth-settings tests that expected profile creation to persist immediately. The
+  component intentionally keeps profile edits local until its explicit `Save` action.
+- Change: the VPS and Supabase profile tests now click `Save` before asserting the
+  settings write. This verifies the real user flow without changing persistence
+  behavior.
+
+### Post-PR CI correction — compacted ACP session-load assertion
+
+Status: completed after full local desktop-suite validation.
+
+- Evidence: the complete desktop suite showed that `sessions.test.ts` still expected
+  a bare ACP `session/load` request. Production has intentionally included
+  `gosling.loadMode=compacted` and `tailLimit=50` since the compacted-resume paging
+  change.
+- Change: the request assertion now covers the compacted-load metadata, preserving
+  regression coverage for the bounded resume contract.

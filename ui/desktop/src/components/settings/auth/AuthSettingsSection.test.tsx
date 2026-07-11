@@ -152,6 +152,8 @@ describe('AuthSettingsSection', () => {
       screen.getByDisplayValue('This is the password and login to manage the VPS server.')
     ).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
     await waitFor(() => {
       expect(mockedSetSetting).toHaveBeenCalledWith(
         'managedSecretProfiles',
@@ -187,6 +189,8 @@ describe('AuthSettingsSection', () => {
     expect(screen.getByDisplayValue('SUPABASE_SERVICE_ROLE_KEY')).toBeInTheDocument();
     expect(screen.getByDisplayValue('SUPABASE_DB_PASSWORD')).toBeInTheDocument();
     expect(screen.getByText('Authentication + config')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
       expect(mockedSetSetting).toHaveBeenCalledWith(
