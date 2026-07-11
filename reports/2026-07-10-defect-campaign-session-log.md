@@ -463,3 +463,24 @@ Status: local validation complete; protected-branch PR and hosted rerun pending.
   keyring daemon, so the hosted path remains covered rather than disabled.
 - Stage 7 per-agent global-state isolation and Stage 9 native ACP session loading remain
   routed to source modularization. This post-merge work does not change those decisions.
+
+## Canary bootstrap follow-up - 2026-07-11
+
+Status: repair committed as `633e7dfb4`; protected-branch PR and hosted rerun pending.
+
+- PR #23 merged as `d8282d687` after every PR check passed. Local `main` was
+  fast-forwarded to the merge, the remote repair branch was deleted, and only `main`
+  remained locally and remotely with no auxiliary worktrees.
+- The merge-triggered Canary proved the reusable-workflow permission repair: unlike the
+  prior `startup_failure`, its Windows, macOS, Linux, and CLI jobs all started. It then
+  exposed a separate manylinux bootstrap defect introduced by independently landed
+  commit `2db5ae1d47`.
+- Both GNU CLI jobs downloaded and checksum-verified rustup 1.29.0, then failed with
+  `unknown proxy name: 'tmp'`. The workflow had saved `rustup-init` to an arbitrary
+  `mktemp` filename, but rustup dispatches by its executable basename. The repair uses
+  a temporary directory with a `rustup-init` child path and retains cleanup on success
+  and failure.
+- The changed workflow parses as YAML, the phase-2 permission verifier passes, and
+  `git diff --check` passes. Codex GPT-5.6 Terra adversarial review found no issues and
+  specifically confirmed both cleanup paths:
+  `/private/tmp/tagteam-gosling-rustup-bootstrap-review/.../2026-07-11T054955.300435000Z`.
