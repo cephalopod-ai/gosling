@@ -357,7 +357,8 @@ mod tests {
                 ApprovalRequest::for_start(&spec, idempotency_key).map_err(request_error)?;
             self.consume_approval(&approval, &expected)?;
 
-            let run_id = format!("run-{}", &expected.action_digest[..24]);
+            let digest_prefix: String = expected.action_digest.chars().take(24).collect();
+            let run_id = format!("run-{digest_prefix}");
             let handle = RunHandle {
                 schema_version: TAGTEAM_CONTRACT_VERSION,
                 run_id: run_id.clone(),
