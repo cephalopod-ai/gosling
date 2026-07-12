@@ -34,6 +34,7 @@ struct SessionMeta<'a> {
     archived_at: Option<chrono::DateTime<chrono::Utc>>,
     user_set_name: bool,
     session_type: String,
+    gosling_mode: GoslingMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     project_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,6 +58,7 @@ impl<'a> From<&'a Session> for SessionMeta<'a> {
             archived_at: session.archived_at,
             user_set_name: session.user_set_name,
             session_type: session.session_type.to_string(),
+            gosling_mode: session.gosling_mode,
             project_id: session.project_id.as_deref(),
             provider_id: session.provider_name.as_deref(),
             model_id: session

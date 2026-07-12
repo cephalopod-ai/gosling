@@ -10,6 +10,7 @@ import { ChatState } from '../types/chatState';
 import debounce from 'lodash/debounce';
 import { LocalMessageStorage } from '../utils/localMessageStorage';
 import { DirSwitcher } from './bottom_menu/DirSwitcher';
+import { ModeSwitcher } from './bottom_menu/ModeSwitcher';
 import ModelsBottomBar from './settings/models/bottom_bar/ModelsBottomBar';
 import { BottomMenuExtensionSelection } from './bottom_menu/BottomMenuExtensionSelection';
 import { cn } from '../utils';
@@ -27,6 +28,7 @@ import { DroppedFile, useFileDrop } from '../hooks/useFileDrop';
 import { MessageQueue, QueuedMessage } from './MessageQueue';
 import { detectInterruption } from '../utils/interruptionDetector';
 import type { Message } from '../types/message';
+import type { GoslingMode } from '../types/session';
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { getPredefinedModelsFromEnv } from './settings/models/predefinedModelsUtils';
 import { trackFileAttached, trackVoiceDictation } from '../utils/analytics';
@@ -225,6 +227,8 @@ interface ChatInputProps {
   sessionProvider?: string | null;
   sessionLoaded?: boolean;
   workingDir?: string | null;
+  goslingMode?: GoslingMode;
+  onGoslingModeChange?: (newMode: GoslingMode) => Promise<void> | void;
   latestInference?: Message['metadata']['inference'] | null;
   nextChatExtensionDraft?: NextChatExtensionDraft;
   onNextChatExtensionDraftChange?: (draft: NextChatExtensionDraft) => void;
@@ -257,6 +261,8 @@ export default function ChatInput({
   sessionProvider,
   sessionLoaded,
   workingDir,
+  goslingMode,
+  onGoslingModeChange,
   latestInference,
   nextChatExtensionDraft,
   onNextChatExtensionDraftChange,
@@ -1795,6 +1801,16 @@ export default function ChatInput({
               await onWorkingDirChange?.(newDir);
               setWorkingDirOverride(newDir);
             }}
+          />
+        )}
+
+        {/* Left: session mode (autonomous / manual / smart / chat) */}
+        {!isBottomBarNarrow && (
+          <ModeSwitcher
+            sessionId={sessionId ?? undefined}
+            mode={goslingMode}
+            disabled={isLoading}
+            onModeChange={onGoslingModeChange}
           />
         )}
 

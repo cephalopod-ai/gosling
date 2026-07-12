@@ -3094,5 +3094,11 @@
   },
   "workingDirectoriesSummary.removeDirectory": {
     "defaultMessage": "Remove working directory"
+  },
+  "modeSwitcher.failedToUpdateMode": {
+    "defaultMessage": "Failed to update session mode"
+  },
+  "modeSwitcher.sessionMode": {
+    "defaultMessage": "Mode for this session"
   }
 }
