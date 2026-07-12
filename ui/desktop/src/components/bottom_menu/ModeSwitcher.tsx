@@ -34,10 +34,16 @@ const MODE_ICONS: Record<GoslingMode, React.ComponentType<{ className?: string }
 interface ModeSwitcherProps {
   sessionId: string | undefined;
   mode: GoslingMode | undefined;
+  disabled?: boolean;
   onModeChange?: (newMode: GoslingMode) => Promise<void> | void;
 }
 
-export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ sessionId, mode, onModeChange }) => {
+export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({
+  sessionId,
+  mode,
+  disabled = false,
+  onModeChange,
+}) => {
   const intl = useIntl();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -51,7 +57,7 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ sessionId, mode, onM
 
   const handleSelectMode = async (newMode: GoslingMode) => {
     setIsMenuOpen(false);
-    if (newMode === mode || isUpdating) {
+    if (newMode === mode || disabled || isUpdating) {
       return;
     }
 
@@ -73,8 +79,8 @@ export const ModeSwitcher: React.FC<ModeSwitcherProps> = ({ sessionId, mode, onM
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <button
-                className={`z-[100] ${isUpdating ? 'opacity-50' : 'hover:cursor-pointer hover:text-text-primary'} text-text-primary/70 text-xs flex items-center transition-colors pl-1 [&>svg]:size-4`}
-                disabled={isUpdating}
+                className={`z-[100] ${disabled || isUpdating ? 'opacity-50' : 'hover:cursor-pointer hover:text-text-primary'} text-text-primary/70 text-xs flex items-center transition-colors pl-1 [&>svg]:size-4`}
+                disabled={disabled || isUpdating}
               >
                 <CurrentIcon className="mr-1" />
                 <div className="max-w-[120px] truncate">

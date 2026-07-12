@@ -1809,6 +1809,7 @@ export default function ChatInput({
           <ModeSwitcher
             sessionId={sessionId ?? undefined}
             mode={goslingMode}
+            disabled={isLoading}
             onModeChange={onGoslingModeChange}
           />
         )}
