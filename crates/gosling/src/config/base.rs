@@ -1249,6 +1249,7 @@ config_value!(CODEX_SKIP_GIT_CHECK, String, "false");
 config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
 
 config_value!(GOSLING_SEARCH_PATHS, Vec<String>);
+config_value!(GOSLING_SKILL_CATALOGS, Vec<String>);
 config_value!(GOSLING_MODE, GoslingMode);
 config_value!(GOSLING_CODE_EXECUTION_RUNTIME, CodeExecutionRuntime);
 // GOSLING_PROVIDER and GOSLING_MODEL are handled by crate::config::providers

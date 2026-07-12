@@ -85,6 +85,10 @@ GOSLING_SEARCH_PATHS:
   - "~/custom/tools"
   - "/opt/homebrew/bin"
 
+# External skill catalogs remain in their owning repositories
+GOSLING_SKILL_CATALOGS:
+  - "/path/to/private-catalog/gosling-skill-catalog.json"
+
 # Security Configuration
 SECURITY_PROMPT_ENABLED: true
 

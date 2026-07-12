@@ -4,7 +4,9 @@
 
 mod arguments;
 mod builtin;
+pub mod catalog;
 pub mod client;
+pub mod search;
 
 pub use client::{SkillsClient, EXTENSION_NAME};
 
@@ -294,7 +296,13 @@ pub(crate) fn parse_skill_frontmatter(raw: &str) -> (String, String) {
 /// global (home-rooted) location. Order matches discovery precedence: project
 /// dirs first, then global dirs.
 pub fn all_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
-    let mut dirs: Vec<(PathBuf, bool)> = Vec::new();
+    let mut dirs = project_skill_dirs(working_dir);
+    dirs.extend(global_skill_dirs());
+    dirs
+}
+
+fn project_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
+    let mut dirs = Vec::new();
 
     if let Some(wd) = working_dir {
         dirs.push((wd.join(".agents").join("skills"), false));
@@ -302,23 +310,28 @@ pub fn all_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
         dirs.push((wd.join(".claude").join("skills"), false));
     }
 
+    dirs
+}
+
+fn global_skill_dirs() -> Vec<(PathBuf, bool)> {
+    let mut skill_dirs = Vec::new();
     let home = dirs::home_dir();
     if let Some(h) = home.as_ref() {
-        dirs.push((h.join(".agents").join("skills"), true));
+        skill_dirs.push((h.join(".agents").join("skills"), true));
     }
-    dirs.push((Paths::config_dir().join("skills"), true));
+    skill_dirs.push((Paths::config_dir().join("skills"), true));
     if let Some(h) = home.as_ref() {
-        dirs.push((h.join(".claude").join("skills"), true));
-        dirs.push((h.join(".config").join("agents").join("skills"), true));
+        skill_dirs.push((h.join(".claude").join("skills"), true));
+        skill_dirs.push((h.join(".config").join("agents").join("skills"), true));
     }
 
-    dirs.extend(
+    skill_dirs.extend(
         installed_plugin_skill_dirs()
             .into_iter()
             .map(|dir| (dir, true)),
     );
 
-    dirs
+    skill_dirs
 }
 
 fn parse_skill_content(content: &str, path: &Path, global: bool) -> Option<SourceEntry> {
@@ -422,36 +435,50 @@ fn scan_skills_from_dir(dir: &Path, global: bool, seen: &mut HashSet<String>) ->
         let Some(skill_dir) = skill_file.parent() else {
             continue;
         };
-        let content = match std::fs::read_to_string(&skill_file) {
-            Ok(c) => c,
-            Err(e) => {
-                warn!("Failed to read skill file {}: {}", skill_file.display(), e);
-                continue;
-            }
-        };
-
-        if let Some(mut source) = parse_skill_content(&content, skill_dir, global) {
+        if let Some(source) = load_skill_dir(skill_dir, global, true) {
             if !seen.contains(&source.name) {
-                let mut files = Vec::new();
-                let mut visited_support_dirs = HashSet::new();
-                walk_files_recursively(
-                    skill_dir,
-                    &mut visited_support_dirs,
-                    &mut |path| !should_skip_dir(path) && !path.join("SKILL.md").is_file(),
-                    &mut |path| {
-                        if path.file_name().and_then(|n| n.to_str()) != Some("SKILL.md") {
-                            files.push(path.to_string_lossy().into_owned());
-                        }
-                    },
-                );
-                source.supporting_files = files;
-
                 seen.insert(source.name.clone());
                 sources.push(source);
             }
         }
     }
     sources
+}
+
+pub(crate) fn load_skill_dir(
+    skill_dir: &Path,
+    global: bool,
+    writable: bool,
+) -> Option<SourceEntry> {
+    let skill_file = skill_dir.join("SKILL.md");
+    let content = match std::fs::read_to_string(&skill_file) {
+        Ok(content) => content,
+        Err(error) => {
+            warn!(
+                "Failed to read skill file {}: {}",
+                skill_file.display(),
+                error
+            );
+            return None;
+        }
+    };
+    let mut source = parse_skill_content(&content, skill_dir, global)?;
+    source.writable = writable;
+
+    let mut files = Vec::new();
+    let mut visited_support_dirs = HashSet::new();
+    walk_files_recursively(
+        skill_dir,
+        &mut visited_support_dirs,
+        &mut |path| !should_skip_dir(path) && !path.join("SKILL.md").is_file(),
+        &mut |path| {
+            if path.file_name().and_then(|name| name.to_str()) != Some("SKILL.md") {
+                files.push(path.to_string_lossy().into_owned());
+            }
+        },
+    );
+    source.supporting_files = files;
+    Some(source)
 }
 
 /// Discover skills from all configured filesystem locations and built-ins.
@@ -461,7 +488,19 @@ pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
     let mut sources: Vec<SourceEntry> = Vec::new();
     let mut seen = HashSet::new();
 
-    for (dir, is_global) in all_skill_dirs(working_dir) {
+    for (dir, is_global) in project_skill_dirs(working_dir) {
+        for source in scan_skills_from_dir(&dir, is_global, &mut seen) {
+            sources.push(source);
+        }
+    }
+
+    for source in catalog::load_configured_catalogs() {
+        if seen.insert(source.name.clone()) {
+            sources.push(source);
+        }
+    }
+
+    for (dir, is_global) in global_skill_dirs() {
         for source in scan_skills_from_dir(&dir, is_global, &mut seen) {
             sources.push(source);
         }
