@@ -259,10 +259,10 @@ fn unresolved_env_keys(
             let key = key.as_str();
             !direct_envs.contains_key(key)
                 && !supplied_secret_keys.contains(key)
-                && !Config::global()
+                && Config::global()
                     .get(key, true)
                     .ok()
-                    .is_some_and(|value| value.as_str().is_some())
+                    .is_none_or(|value| value.as_str().is_none())
         })
         .cloned()
         .collect::<Vec<_>>();
