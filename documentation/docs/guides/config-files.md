@@ -36,7 +36,7 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOSLING_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
 | `GOSLING_MAX_TOKENS` | Maximum number of tokens for each model response (truncates longer responses) | Positive integer | Model-specific | No |
 | `GOSLING_MODE` | [Tool execution behavior](/docs/guides/managing-tools/gosling-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
-| `GOSLING_CODE_EXECUTION_RUNTIME` | Allow or block [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new Gosling processes | "enabled", "disabled" | "enabled" | No |
+| `GOSLING_CODE_EXECUTION_RUNTIME` | Allow or block [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new gosling processes | "enabled", "disabled" | "enabled" | No |
 | `GOSLING_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
 | `GOSLING_PLANNER_PROVIDER` | Provider for [planning mode](/docs/guides/context-engineering/creating-plans) | Same as `GOSLING_PROVIDER` options | Falls back to `GOSLING_PROVIDER` | No |
 | `GOSLING_PLANNER_MODEL` | Model for planning mode | Model name | Falls back to `GOSLING_MODEL` | No |

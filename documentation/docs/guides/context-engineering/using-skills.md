@@ -6,7 +6,7 @@ sidebar_label: Agent Skills
 
 Skills are reusable sets of instructions and resources that teach gosling how to perform specific tasks. A skill can range from a simple checklist to a detailed workflow with domain expertise, and can include supporting files like scripts or templates. Example use cases include deployment procedures, code review checklists, and API integration guides.
 
-Skills are provided by Gosling's built-in Skills extension.
+Skills are provided by gosling's built-in Skills extension.
 
 When a session starts, gosling adds any skills that it discovers to its instructions. During the session, gosling automatically loads a skill when:
 - Your request clearly matches a skill's purpose
@@ -17,7 +17,7 @@ When a session starts, gosling adds any skills that it discovers to its instruct
 
 You can also ask gosling what skills are available, or use the CLI `/skills` command to list available skills and load one or more by name (e.g. `/skills code-review edge-case-finder`).
 
-For large catalogs, Gosling exposes `find_skills` and advertises the searchable
+For large catalogs, gosling exposes `find_skills` and advertises the searchable
 catalog instead of placing every skill description in the model prompt.
 
 :::info Claude Compatibility
@@ -40,7 +40,7 @@ Place a `SKILL.md` file inside a named subdirectory. For example, a global skill
 > but `agents/skills/` is the recommended standard.
 
 Private or independently versioned ecosystems can provide a compiled routing
-index without publishing their skills with Gosling. See
+index without publishing their skills with gosling. See
 [External Skill Catalogs](./external-skill-catalogs).
 
 ## Creating a Skill

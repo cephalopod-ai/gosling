@@ -61,6 +61,9 @@ impl SkillsClient {
         }
 
         let mut current = load_skill_dir(Path::new(&skill.path), skill.global, skill.writable)?;
+        if current.name != skill.name {
+            return None;
+        }
         current.description.clone_from(&skill.description);
         current.properties.extend(skill.properties.clone());
         Some(current)
@@ -439,6 +442,45 @@ mod tests {
         };
         assert!(text.contains("my-skill"));
         assert!(text.contains("Do the thing"));
+    }
+
+    #[tokio::test]
+    async fn catalog_entry_loads_content_and_validates_identity_on_demand() {
+        let temp_dir = TempDir::new().unwrap();
+        let skill_dir = temp_dir.path().join("catalog/plan-example");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: plan-example\ndescription: File description\n---\nPlan carefully.",
+        )
+        .unwrap();
+        fs::write(skill_dir.join("reference.md"), "Supporting details.").unwrap();
+        let client = SkillsClient::new(PlatformExtensionContext {
+            extension_manager: None,
+            session_manager: Arc::new(crate::session::SessionManager::instance()),
+            session: None,
+            use_login_shell_path: false,
+            code_execution_runtime: crate::config::CodeExecutionRuntime::Enabled,
+        })
+        .unwrap();
+        let mut entry = SourceEntry {
+            source_type: SourceType::Skill,
+            name: "plan-example".to_string(),
+            description: "Catalog description".to_string(),
+            path: skill_dir.to_string_lossy().into_owned(),
+            global: true,
+            writable: false,
+            ..Default::default()
+        };
+
+        let loaded = client.current_skill(&entry).unwrap();
+
+        assert_eq!(loaded.description, "Catalog description");
+        assert!(loaded.content.contains("Plan carefully."));
+        assert_eq!(loaded.supporting_files.len(), 1);
+
+        entry.name = "different-id".to_string();
+        assert!(client.current_skill(&entry).is_none());
     }
 
     #[tokio::test]

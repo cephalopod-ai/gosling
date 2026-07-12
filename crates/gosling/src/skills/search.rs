@@ -86,6 +86,17 @@ fn catalog_route_score(skill: &SourceEntry, query_tokens: &HashSet<String>) -> u
         .flatten()
         .filter_map(|route| {
             let route_match = route.get("match")?;
+            let has_positive_condition =
+                ["actions", "roles", "targets", "allKeywords", "anyKeywords"]
+                    .into_iter()
+                    .any(|field| !string_array(route_match, field).is_empty())
+                    || route_match
+                        .get("surface")
+                        .and_then(|value| value.as_str())
+                        .is_some();
+            if !has_positive_condition {
+                return None;
+            }
             let matches = ["actions", "roles", "targets", "allKeywords"]
                 .into_iter()
                 .all(|field| {
@@ -238,5 +249,22 @@ mod tests {
         let matches = search_skills(&skills, "plan registry skills", 5);
 
         assert_eq!(matches[0].skill.name, "special-route");
+    }
+
+    #[test]
+    fn negative_only_catalog_route_does_not_match() {
+        let mut routed = skill("negative-route", json!({}));
+        routed.properties.insert(
+            "catalog".to_string(),
+            json!({
+                "routes": [{
+                    "skillId": "negative-route",
+                    "match": { "notKeywords": ["audit"] },
+                    "priority": 100
+                }]
+            }),
+        );
+
+        assert_eq!(catalog_route_score(&routed, &tokens("plan registry")), 0);
     }
 }

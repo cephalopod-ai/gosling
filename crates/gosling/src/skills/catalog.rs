@@ -1,7 +1,6 @@
-use super::load_skill_dir;
 use crate::config::Config;
 use anyhow::{bail, Context, Result};
-use gosling_sdk_types::custom_requests::SourceEntry;
+use gosling_sdk_types::custom_requests::{SourceEntry, SourceType};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -136,21 +135,22 @@ pub fn load_catalog(path: &Path) -> Result<Vec<SourceEntry>> {
     let mut sources = Vec::new();
     for descriptor in catalog.skills.iter().filter(|skill| !skill.deprecated) {
         let skill_dir = resolve_skill_directory(&root, &descriptor.directory)?;
-        let mut source = load_skill_dir(&skill_dir, true, false).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Catalog skill '{}' does not contain a valid SKILL.md",
-                descriptor.id
-            )
-        })?;
-        if source.name != descriptor.id {
+        if !skill_dir.join("SKILL.md").is_file() {
             bail!(
-                "Catalog skill '{}' resolves to SKILL.md named '{}'",
-                descriptor.id,
-                source.name
+                "Catalog skill '{}' does not contain a SKILL.md",
+                descriptor.id
             );
         }
 
-        source.description.clone_from(&descriptor.summary);
+        let mut source = SourceEntry {
+            source_type: SourceType::Skill,
+            name: descriptor.id.clone(),
+            description: descriptor.summary.clone(),
+            path: skill_dir.to_string_lossy().into_owned(),
+            global: true,
+            writable: false,
+            ..Default::default()
+        };
         source.properties.insert(
             "routing".to_string(),
             serde_json::to_value(&descriptor.routing)?,
@@ -286,10 +286,9 @@ fn validate_catalog(catalog: &SkillCatalog) -> Result<()> {
             && route_match.targets.is_empty()
             && route_match.all_keywords.is_empty()
             && route_match.any_keywords.is_empty()
-            && route_match.not_keywords.is_empty()
         {
             bail!(
-                "Catalog route for '{}' must define at least one match condition",
+                "Catalog route for '{}' must define at least one positive match condition",
                 route.skill_id
             );
         }
@@ -424,6 +423,7 @@ mod tests {
             "---\nname: plan-example\ndescription: Legacy description\n---\nPlan carefully.",
         )
         .unwrap();
+        fs::write(skill_dir.join("reference.md"), "Supporting details.").unwrap();
         let catalog_path = temp_dir.path().join("catalog.json");
         fs::write(
             &catalog_path,
@@ -437,6 +437,8 @@ mod tests {
         assert_eq!(skills[0].name, "plan-example");
         assert_eq!(skills[0].description, "Plan a synthetic example");
         assert!(!skills[0].writable);
+        assert!(skills[0].content.is_empty());
+        assert!(skills[0].supporting_files.is_empty());
         assert_eq!(skills[0].properties["routing"]["surface"], "example");
     }
 
@@ -477,5 +479,24 @@ mod tests {
         assert!(error
             .to_string()
             .contains("duplicate routing.roles entries"));
+    }
+
+    #[test]
+    fn rejects_negative_only_route_without_schema_engine() {
+        let mut catalog = synthetic_catalog("skills/plan-example");
+        catalog.routes.push(CatalogRoute {
+            skill_id: "plan-example".to_string(),
+            route_match: CatalogRouteMatch {
+                not_keywords: vec!["audit".to_string()],
+                ..Default::default()
+            },
+            priority: 0,
+        });
+
+        let error = validate_catalog(&catalog).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("at least one positive match condition"));
     }
 }

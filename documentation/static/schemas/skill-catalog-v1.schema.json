@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gosling.dev/schemas/skill-catalog-v1.schema.json",
-  "title": "Gosling External Skill Catalog",
-  "description": "A compiled, consumer-owned catalog index loaded by Gosling without bundling the catalog or its skills into Gosling.",
+  "title": "gosling External Skill Catalog",
+  "description": "A compiled, consumer-owned catalog index loaded by gosling without bundling the catalog or its skills into gosling.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "catalogId", "skills"],
@@ -82,6 +82,41 @@
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
+      "anyOf": [
+        {
+          "required": ["actions"],
+          "properties": {
+            "actions": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "required": ["roles"],
+          "properties": {
+            "roles": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "required": ["surface"]
+        },
+        {
+          "required": ["targets"],
+          "properties": {
+            "targets": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "required": ["allKeywords"],
+          "properties": {
+            "allKeywords": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "required": ["anyKeywords"],
+          "properties": {
+            "anyKeywords": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        }
+      ],
       "properties": {
         "actions": { "$ref": "#/$defs/stringArray" },
         "roles": { "$ref": "#/$defs/stringArray" },
