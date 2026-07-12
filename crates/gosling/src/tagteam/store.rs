@@ -1,4 +1,6 @@
-use super::contracts::{TagteamLaunchSpecV1, MAX_IDENTIFIER_BYTES, TAGTEAM_CONTRACT_VERSION};
+use super::contracts::{
+    hex_digest, TagteamLaunchSpecV1, MAX_IDENTIFIER_BYTES, TAGTEAM_CONTRACT_VERSION,
+};
 use super::reducer::{
     validate_snapshot, ReduceOutcome, ReducerError, RunClass, TagteamEventReducer,
     TagteamObservation, TagteamRunSnapshot,
@@ -41,8 +43,8 @@ impl TagteamRunBinding {
         digest.update(self.launch_nonce.as_bytes());
         digest.update([0]);
         digest.update(self.action_digest.as_bytes());
-        let digest = digest.finalize();
-        format!("gosling-tagteam-v1-{digest:x}")
+        let digest = hex_digest(digest.finalize());
+        format!("gosling-tagteam-v1-{digest}")
     }
 }
 

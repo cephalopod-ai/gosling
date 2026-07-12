@@ -1009,7 +1009,7 @@ fn digest_serialized(
     Ok(hex_digest(hasher.finalize()))
 }
 
-fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
+pub(crate) fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let bytes = bytes.as_ref();
     let mut encoded = String::with_capacity(bytes.len() * 2);

@@ -1,5 +1,6 @@
 use super::contracts::{
-    AllowedPath, Completeness, ContractError, MAX_IDENTIFIER_BYTES, TAGTEAM_CONTRACT_VERSION,
+    hex_digest, AllowedPath, Completeness, ContractError, MAX_IDENTIFIER_BYTES,
+    TAGTEAM_CONTRACT_VERSION,
 };
 use chrono::{DateTime, Duration, Utc};
 use schemars::JsonSchema;
@@ -307,7 +308,7 @@ fn observation_digest(observation: &TagteamObservation) -> Result<String, Reduce
     let mut digest = Sha256::new();
     digest.update(b"gosling.tagteam.observation.v1\0");
     digest.update(serialized);
-    Ok(format!("{:x}", digest.finalize()))
+    Ok(hex_digest(digest.finalize()))
 }
 
 pub(crate) fn validate_snapshot(snapshot: &TagteamRunSnapshot) -> Result<(), ContractError> {

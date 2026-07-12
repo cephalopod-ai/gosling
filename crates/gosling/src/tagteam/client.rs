@@ -206,8 +206,8 @@ pub(crate) mod conformance {
 #[cfg(test)]
 mod tests {
     use super::super::contracts::{
-        ApprovalAction, ApprovalRequest, Completeness, PageItemContract, RecoveryPolicy,
-        RepositoryIdentity, RoleTarget, TeamSpec, TestPresetRef, TimeBudget,
+        AllowedPath, ApprovalAction, ApprovalRequest, Completeness, PageItemContract,
+        RecoveryPolicy, RepositoryIdentity, RoleTarget, TeamSpec, TestPresetRef, TimeBudget,
     };
     use super::super::reducer::{RunClass, TagteamRunSnapshot};
     use super::*;
