@@ -1574,6 +1574,12 @@
   "modeSelectionItem.smartLabel": {
     "defaultMessage": "Smart"
   },
+  "modeSwitcher.failedToUpdateMode": {
+    "defaultMessage": "Failed to update session mode"
+  },
+  "modeSwitcher.sessionMode": {
+    "defaultMessage": "Mode for this session"
+  },
   "modelAndProviderContext.modelChangeFailed": {
     "defaultMessage": "{provider}/{model} failed"
   },

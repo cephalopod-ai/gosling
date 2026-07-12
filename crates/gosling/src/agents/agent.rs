@@ -1012,28 +1012,22 @@ impl Agent {
         };
         let requests = vec![request];
         let gosling_mode = self.gosling_mode().await;
-        let permission_result = if gosling_mode == GoslingMode::Auto {
-            PermissionCheckResult::approve_all(&requests)
-        } else {
-            let inspection_results = self
-                .tool_inspection_manager
-                .inspect_tools(session_id, &requests, &[], gosling_mode)
-                .await
-                .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+        let inspection_results = self
+            .tool_inspection_manager
+            .inspect_tools(session_id, &requests, &[], gosling_mode)
+            .await
+            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
 
-            self.tool_inspection_manager
-                .process_inspection_results_with_permission_inspector(
-                    &requests,
-                    &inspection_results,
+        let permission_result = self
+            .tool_inspection_manager
+            .process_inspection_results_with_permission_inspector(&requests, &inspection_results)
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    "Tool permission inspector is unavailable".to_string(),
+                    None,
                 )
-                .ok_or_else(|| {
-                    ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        "Tool permission inspector is unavailable".to_string(),
-                        None,
-                    )
-                })?
-        };
+            })?;
 
         if let Some(denied) = permission_result.denied.first() {
             let tool_name = denied
@@ -2354,44 +2348,33 @@ impl Agent {
                                         }
                                     }
                                 } else {
-                                    let (inspection_results, permission_check_result) =
-                                        if gosling_mode == GoslingMode::Auto {
-                                            (
-                                                Vec::new(),
-                                                PermissionCheckResult::approve_all(
-                                                    &remaining_requests,
-                                                ),
-                                            )
-                                        } else {
-                                            let inspection_results = self
-                                                .tool_inspection_manager
-                                                .inspect_tools(
-                                                    &session_config.id,
-                                                    &remaining_requests,
-                                                    conversation.messages(),
-                                                    gosling_mode,
-                                                )
-                                                .await?;
+                                    let inspection_results = self
+                                        .tool_inspection_manager
+                                        .inspect_tools(
+                                            &session_config.id,
+                                            &remaining_requests,
+                                            conversation.messages(),
+                                            gosling_mode,
+                                        )
+                                        .await?;
 
-                                            let permission_check_result = self
-                                                .tool_inspection_manager
-                                                .process_inspection_results_with_permission_inspector(
-                                                    &remaining_requests,
-                                                    &inspection_results,
-                                                )
-                                                .unwrap_or_else(|| {
-                                                    let mut result = PermissionCheckResult {
-                                                        approved: vec![],
-                                                        needs_approval: vec![],
-                                                        denied: vec![],
-                                                    };
-                                                    result.needs_approval.extend(
-                                                        remaining_requests.iter().cloned(),
-                                                    );
-                                                    result
-                                                });
-                                            (inspection_results, permission_check_result)
-                                        };
+                                    let permission_check_result = self
+                                        .tool_inspection_manager
+                                        .process_inspection_results_with_permission_inspector(
+                                            &remaining_requests,
+                                            &inspection_results,
+                                        )
+                                        .unwrap_or_else(|| {
+                                            let mut result = PermissionCheckResult {
+                                                approved: vec![],
+                                                needs_approval: vec![],
+                                                denied: vec![],
+                                            };
+                                            result
+                                                .needs_approval
+                                                .extend(remaining_requests.iter().cloned());
+                                            result
+                                        });
 
                                     // Track extension requests
                                     let mut enable_extension_request_ids = vec![];
@@ -4310,6 +4293,76 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             inspector_names.contains(&"adversary"),
             "Tool inspection manager should contain adversary inspector"
         );
+
+        Ok(())
+    }
+
+    struct DenyAutoToolInspector;
+
+    #[async_trait::async_trait]
+    impl crate::tool_inspection::ToolInspector for DenyAutoToolInspector {
+        fn name(&self) -> &'static str {
+            "deny_auto_tool"
+        }
+
+        async fn inspect(
+            &self,
+            _session_id: &str,
+            tool_requests: &[ToolRequest],
+            _messages: &[Message],
+            _gosling_mode: GoslingMode,
+        ) -> Result<Vec<crate::tool_inspection::InspectionResult>> {
+            Ok(tool_requests
+                .iter()
+                .map(|request| crate::tool_inspection::InspectionResult {
+                    tool_request_id: request.id.clone(),
+                    action: crate::tool_inspection::InspectionAction::Deny,
+                    reason: "test denial".to_string(),
+                    confidence: 1.0,
+                    inspector_name: self.name().to_string(),
+                    finding_id: None,
+                })
+                .collect())
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_app_tool_call_runs_inspectors_in_auto_mode() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let permission_manager = Arc::new(PermissionManager::new(temp_dir.path().to_path_buf()));
+        let provider = Arc::new(Mutex::new(None));
+        let mut agent = Agent::with_config(AgentConfig::new(
+            session_manager.clone(),
+            permission_manager.clone(),
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        ));
+        let mut inspection_manager = ToolInspectionManager::new();
+        inspection_manager.add_inspector(Box::new(PermissionInspector::new(
+            permission_manager,
+            provider,
+            session_manager,
+        )));
+        inspection_manager.add_inspector(Box::new(DenyAutoToolInspector));
+        agent.tool_inspection_manager = inspection_manager;
+
+        let result = agent
+            .dispatch_app_tool_call(
+                "session",
+                CallToolRequestParams::new("test_tool"),
+                CancellationToken::new(),
+            )
+            .await;
+        let Err(error) = result else {
+            panic!("Auto mode bypassed the denying inspector");
+        };
+        assert_eq!(error.code, ErrorCode::INVALID_REQUEST);
 
         Ok(())
     }

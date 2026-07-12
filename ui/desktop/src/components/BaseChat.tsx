@@ -16,7 +16,8 @@ import { useIsMobile } from '../hooks/use-mobile';
 import { useNavigationContextSafe } from './Layout/NavigationContext';
 import { cn } from '../utils';
 import { useChatSession } from '../hooks/useChatSession';
-import { acpUpdateWorkingDir } from '../acp/sessions';
+import { acpSetSessionMode, acpUpdateWorkingDir } from '../acp/sessions';
+import type { GoslingMode } from '../types/session';
 import { useNavigation } from '../hooks/useNavigation';
 import {
   getThinkingMessage,
@@ -147,6 +148,17 @@ export default function BaseChat({
       }
       await acpUpdateWorkingDir(session.id, newDir);
       updateSession((currentSession) => ({ ...currentSession, working_dir: newDir }));
+    },
+    [session, updateSession]
+  );
+
+  const handleGoslingModeChange = useCallback(
+    async (newMode: GoslingMode) => {
+      if (!session) {
+        throw new Error('Cannot update session mode before ACP session is loaded');
+      }
+      await acpSetSessionMode(session.id, newMode);
+      updateSession((currentSession) => ({ ...currentSession, gosling_mode: newMode }));
     },
     [session, updateSession]
   );
@@ -572,6 +584,8 @@ export default function BaseChat({
             sessionLoaded={sessionLoaded}
             workingDir={session?.working_dir}
             onWorkingDirChange={handleWorkingDirChange}
+            goslingMode={session?.gosling_mode}
+            onGoslingModeChange={handleGoslingModeChange}
             latestInference={latestInference}
             {...customChatInputProps}
           />

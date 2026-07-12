@@ -10,7 +10,7 @@ import { getAcpClient } from './acpConnection';
 import { DEFAULT_CHAT_TITLE } from '../contexts/ChatContext';
 import type { ExtensionLoadResult } from '../types/extensions';
 import type { Message } from '../types/message';
-import type { Session } from '../types/session';
+import type { GoslingMode, Session } from '../types/session';
 
 interface GoslingSessionInfoMeta {
   messageCount?: number;
@@ -25,6 +25,7 @@ interface GoslingSessionInfoMeta {
   lastMessageSnippet?: string;
   additionalWorkingDirs?: string[];
   restrictToolsToWorkingDirs?: boolean;
+  goslingMode?: GoslingMode;
 }
 
 export const COMPACTED_SESSION_TAIL_LIMIT = 50;
@@ -124,6 +125,7 @@ export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta =
     session_type: meta.sessionType,
     user_set_name: meta.userSetName,
     last_message_snippet: meta.lastMessageSnippet,
+    gosling_mode: meta.goslingMode,
   };
 }
 
@@ -360,6 +362,11 @@ export async function acpUnarchiveSession(sessionId: string): Promise<void> {
 export async function acpUpdateWorkingDir(sessionId: string, workingDir: string): Promise<void> {
   const client = await getAcpClient();
   await client.gosling.sessionWorkingDirUpdate_unstable({ sessionId, workingDir });
+}
+
+export async function acpSetSessionMode(sessionId: string, mode: GoslingMode): Promise<void> {
+  const client = await getAcpClient();
+  await client.setSessionMode({ sessionId, modeId: mode });
 }
 
 export interface SessionWorkingDirs {

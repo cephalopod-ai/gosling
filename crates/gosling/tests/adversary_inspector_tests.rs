@@ -80,7 +80,7 @@ async fn test_adversary_enabled_default_tools() {
         vec![MessageContent::text("build the project")],
     )];
 
-    // shell is reviewed by default and the test provider allows it
+    // shell is reviewed by default and missing reviewer infrastructure fails closed
     let results = inspector
         .inspect(
             "test-session",
@@ -98,7 +98,7 @@ async fn test_adversary_enabled_default_tools() {
     assert_eq!(results.len(), 1);
     assert!(matches!(
         results[0].action,
-        gosling::tool_inspection::InspectionAction::Allow
+        gosling::tool_inspection::InspectionAction::RequireApproval(_)
     ));
 
     // write is NOT reviewed by default — skipped entirely

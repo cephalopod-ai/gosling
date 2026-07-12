@@ -89,6 +89,10 @@ pub async fn run_list_sessions<C: Connection>() {
         "sessionType".to_string(),
         serde_json::Value::String("acp".to_string()),
     );
+    expected_meta.insert(
+        "goslingMode".to_string(),
+        serde_json::Value::String("smart_approve".to_string()),
+    );
     assert_eq!(
         response,
         ListSessionsResponse::new(vec![SessionInfo::new(

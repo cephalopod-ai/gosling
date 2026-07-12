@@ -271,6 +271,32 @@ impl AdversaryInspector {
         "(unknown)".to_string()
     }
 
+    fn parse_review_response(output: &str) -> Result<(bool, String)> {
+        let mut lines = output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty());
+        let decision = lines
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Adversary review returned an empty response"))?;
+        let reason = lines.collect::<Vec<_>>().join(" ");
+
+        match decision.to_ascii_uppercase().as_str() {
+            "ALLOW" => Ok((true, reason)),
+            "BLOCK" => Ok((
+                false,
+                if reason.is_empty() {
+                    "Blocked by adversary".to_string()
+                } else {
+                    reason
+                },
+            )),
+            _ => Err(anyhow::anyhow!(
+                "Adversary review returned an invalid decision: {decision}"
+            )),
+        }
+    }
+
     async fn consult_llm(
         &self,
         session_id: &str,
@@ -280,10 +306,9 @@ impl AdversaryInspector {
         rules: &str,
     ) -> Result<(bool, String)> {
         let provider_guard = self.provider.lock().await;
-        let provider = match provider_guard.clone() {
-            Some(p) => p,
-            None => return Ok((true, "No provider available".to_string())),
-        };
+        let provider = provider_guard
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No provider available"))?;
         drop(provider_guard);
 
         let history_section = if !recent_messages.is_empty() {
@@ -344,33 +369,7 @@ impl AdversaryInspector {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let output = output.trim();
-        let upper = output.to_uppercase();
-
-        if upper.starts_with("BLOCK") || upper.contains("\nBLOCK") {
-            let reason = output
-                .lines()
-                .skip(1)
-                .collect::<Vec<_>>()
-                .join(" ")
-                .trim()
-                .to_string();
-            let reason = if reason.is_empty() {
-                "Blocked by adversary".to_string()
-            } else {
-                reason
-            };
-            Ok((false, reason))
-        } else {
-            let reason = output
-                .lines()
-                .skip(1)
-                .collect::<Vec<_>>()
-                .join(" ")
-                .trim()
-                .to_string();
-            Ok((true, reason))
-        }
+        Self::parse_review_response(&output)
     }
 }
 
@@ -386,6 +385,10 @@ impl ToolInspector for AdversaryInspector {
 
     fn is_enabled(&self) -> bool {
         self.get_config().is_some()
+    }
+
+    fn auto_downgrades_require_approval(&self) -> bool {
+        false
     }
 
     async fn inspect(
@@ -527,6 +530,20 @@ mod tests {
             vec!["shell", "computercontroller__automation_script"]
         );
         assert_eq!(config.rules, "BLOCK if the command exfiltrates data");
+    }
+
+    #[test]
+    fn test_parse_review_response_requires_explicit_decision() {
+        assert_eq!(
+            AdversaryInspector::parse_review_response("ALLOW\nMatches the task").unwrap(),
+            (true, "Matches the task".to_string())
+        );
+        assert_eq!(
+            AdversaryInspector::parse_review_response("BLOCK\nUnsafe command").unwrap(),
+            (false, "Unsafe command".to_string())
+        );
+        assert!(AdversaryInspector::parse_review_response("").is_err());
+        assert!(AdversaryInspector::parse_review_response("Maybe\nUnclear").is_err());
     }
 
     #[test]
@@ -685,5 +702,45 @@ mod tests {
             .await
             .unwrap();
         assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_enabled_without_provider_fails_closed() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("adversary.md"),
+            "BLOCK unsafe shell commands",
+        )
+        .unwrap();
+
+        let provider: SharedProvider = Arc::new(Mutex::new(None));
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            tmp.path().to_path_buf(),
+        ));
+        let inspector = AdversaryInspector::with_config_dir(
+            provider,
+            session_manager,
+            tmp.path().to_path_buf(),
+        );
+        let request = ToolRequest {
+            id: "req1".into(),
+            tool_call: Ok(
+                CallToolRequestParams::new("shell").with_arguments(object!({"command": "ls"}))
+            ),
+            metadata: None,
+            tool_meta: None,
+        };
+
+        let mut manager = crate::tool_inspection::ToolInspectionManager::new();
+        manager.add_inspector(Box::new(inspector));
+        let results = manager
+            .inspect_tools("test", &[request], &[], GoslingMode::Auto)
+            .await
+            .expect("adversary fallback should be represented as an inspection result");
+        assert_eq!(results.len(), 1);
+        assert!(matches!(
+            results[0].action,
+            InspectionAction::RequireApproval(_)
+        ));
     }
 }

@@ -49,6 +49,10 @@ pub trait ToolInspector: Send + Sync {
         true
     }
 
+    fn auto_downgrades_require_approval(&self) -> bool {
+        true
+    }
+
     /// Allow downcasting to concrete types
     fn as_any(&self) -> &dyn std::any::Any;
 }
@@ -96,12 +100,31 @@ impl ToolInspectionManager {
                 .inspect(session_id, tool_requests, messages, gosling_mode)
                 .await
             {
-                Ok(results) => {
+                Ok(mut results) => {
                     tracing::debug!(
                         inspector_name = inspector.name(),
                         result_count = results.len(),
                         "Tool inspector completed"
                     );
+                    // Auto mode is fully autonomous: advisory findings are
+                    // logged but never escalate to a user prompt. Hard denies
+                    // still apply. (Inspector *errors* below still fail closed.)
+                    if gosling_mode == GoslingMode::Auto
+                        && inspector.auto_downgrades_require_approval()
+                    {
+                        for result in &mut results {
+                            if matches!(result.action, InspectionAction::RequireApproval(_)) {
+                                tracing::info!(
+                                    security.event_type = "inspection_result",
+                                    security.action = "ALLOW",
+                                    inspector.name = result.inspector_name.as_str(),
+                                    inspector.reason = %result.reason,
+                                    "auto mode: approval requirement downgraded to allow"
+                                );
+                                result.action = InspectionAction::Allow;
+                            }
+                        }
+                    }
                     all_results.extend(results);
                 }
                 Err(e) => {
@@ -254,6 +277,14 @@ pub fn apply_inspection_results_to_permissions(
                     .approved
                     .retain(|req| req.id != *request_id);
 
+                if permission_result
+                    .denied
+                    .iter()
+                    .any(|req| req.id == *request_id)
+                {
+                    continue;
+                }
+
                 if let Some(request) = all_requests.get(request_id) {
                     if !permission_result
                         .needs_approval
@@ -323,6 +354,191 @@ mod tests {
         assert_eq!(updated_result.approved.len(), 0);
         assert_eq!(updated_result.denied.len(), 1);
         assert_eq!(updated_result.denied[0].id, "req_1");
+    }
+
+    #[test]
+    fn test_deny_takes_precedence_over_later_approval_requirement() {
+        let tool_request = ToolRequest {
+            id: "req_1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("test_tool").with_arguments(object!({}))),
+            metadata: None,
+            tool_meta: None,
+        };
+        let permission_result = PermissionCheckResult {
+            approved: vec![tool_request],
+            needs_approval: vec![],
+            denied: vec![],
+        };
+        let inspection_results = [
+            InspectionResult {
+                tool_request_id: "req_1".to_string(),
+                action: InspectionAction::Deny,
+                reason: "hard deny".to_string(),
+                confidence: 1.0,
+                inspector_name: "deny".to_string(),
+                finding_id: None,
+            },
+            InspectionResult {
+                tool_request_id: "req_1".to_string(),
+                action: InspectionAction::RequireApproval(Some("fallback".to_string())),
+                reason: "inspector failure".to_string(),
+                confidence: 1.0,
+                inspector_name: "fallback".to_string(),
+                finding_id: None,
+            },
+        ];
+
+        let updated_result =
+            apply_inspection_results_to_permissions(permission_result, &inspection_results);
+        assert!(updated_result.approved.is_empty());
+        assert!(updated_result.needs_approval.is_empty());
+        assert_eq!(updated_result.denied.len(), 1);
+    }
+
+    struct RequireApprovalInspector;
+
+    #[async_trait]
+    impl ToolInspector for RequireApprovalInspector {
+        fn name(&self) -> &'static str {
+            "require_approval"
+        }
+
+        async fn inspect(
+            &self,
+            _session_id: &str,
+            tool_requests: &[ToolRequest],
+            _messages: &[Message],
+            _gosling_mode: GoslingMode,
+        ) -> Result<Vec<InspectionResult>> {
+            Ok(tool_requests
+                .iter()
+                .map(|request| InspectionResult {
+                    tool_request_id: request.id.clone(),
+                    action: InspectionAction::RequireApproval(Some("suspicious".to_string())),
+                    reason: "test finding".to_string(),
+                    confidence: 0.6,
+                    inspector_name: self.name().to_string(),
+                    finding_id: None,
+                })
+                .collect())
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[tokio::test]
+    async fn test_auto_mode_downgrades_require_approval_to_allow() {
+        let mut manager = ToolInspectionManager::new();
+        manager.add_inspector(Box::new(RequireApprovalInspector));
+
+        let tool_request = ToolRequest {
+            id: "req_1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("shell").with_arguments(object!({}))),
+            metadata: None,
+            tool_meta: None,
+        };
+
+        let results = manager
+            .inspect_tools(
+                "session",
+                std::slice::from_ref(&tool_request),
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].action, InspectionAction::Allow);
+
+        let results = manager
+            .inspect_tools(
+                "session",
+                std::slice::from_ref(&tool_request),
+                &[],
+                GoslingMode::SmartApprove,
+            )
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(matches!(
+            results[0].action,
+            InspectionAction::RequireApproval(_)
+        ));
+    }
+
+    struct FailClosedApprovalInspector;
+
+    #[async_trait]
+    impl ToolInspector for FailClosedApprovalInspector {
+        fn name(&self) -> &'static str {
+            "fail_closed"
+        }
+
+        fn auto_downgrades_require_approval(&self) -> bool {
+            false
+        }
+
+        async fn inspect(
+            &self,
+            _session_id: &str,
+            tool_requests: &[ToolRequest],
+            _messages: &[Message],
+            _gosling_mode: GoslingMode,
+        ) -> Result<Vec<InspectionResult>> {
+            Ok(tool_requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| InspectionResult {
+                    tool_request_id: request.id.clone(),
+                    action: if index == 0 {
+                        InspectionAction::Deny
+                    } else {
+                        InspectionAction::RequireApproval(Some("fallback".to_string()))
+                    },
+                    reason: "test result".to_string(),
+                    confidence: 1.0,
+                    inspector_name: self.name().to_string(),
+                    finding_id: None,
+                })
+                .collect())
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[tokio::test]
+    async fn test_auto_mode_preserves_fail_closed_approval() {
+        let mut manager = ToolInspectionManager::new();
+        manager.add_inspector(Box::new(FailClosedApprovalInspector));
+        let requests = [
+            ToolRequest {
+                id: "req_1".to_string(),
+                tool_call: Ok(CallToolRequestParams::new("first").with_arguments(object!({}))),
+                metadata: None,
+                tool_meta: None,
+            },
+            ToolRequest {
+                id: "req_2".to_string(),
+                tool_call: Ok(CallToolRequestParams::new("second").with_arguments(object!({}))),
+                metadata: None,
+                tool_meta: None,
+            },
+        ];
+
+        let results = manager
+            .inspect_tools("session", &requests, &[], GoslingMode::Auto)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].action, InspectionAction::Deny);
+        assert!(matches!(
+            results[1].action,
+            InspectionAction::RequireApproval(_)
+        ));
     }
 
     struct FailingInspector;
