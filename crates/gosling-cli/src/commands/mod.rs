@@ -1,6 +1,7 @@
 pub mod configure;
 pub mod doctor;
 pub mod info;
+pub mod mcp;
 pub mod plugin;
 pub mod project;
 pub mod review;

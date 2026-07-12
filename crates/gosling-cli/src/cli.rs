@@ -556,6 +556,70 @@ enum SkillsCommand {
 }
 
 #[derive(Subcommand)]
+enum McpSubcommand {
+    /// Run one of the MCP servers bundled with gosling
+    #[command(about = "Run one of the mcp servers bundled with gosling")]
+    Serve {
+        #[arg(value_parser = clap::value_parser!(McpCommand), value_name = "SERVER")]
+        server: McpCommand,
+    },
+
+    /// Add an MCP server to the gosling config as an extension
+    #[command(about = "Add an MCP server to the gosling config as an extension")]
+    Install {
+        /// Name for the extension
+        name: String,
+
+        /// Command that launches the MCP server, e.g. "npx -y @block/gdrive"
+        #[arg(
+            long,
+            required_unless_present = "from_goose",
+            conflicts_with = "from_goose"
+        )]
+        cmd: Option<String>,
+
+        /// Environment variable for the server process (repeatable)
+        #[arg(long = "env", value_name = "KEY=VALUE")]
+        envs: Vec<String>,
+
+        /// Environment variable stored in the secret store instead of config.yaml (repeatable)
+        #[arg(long = "secret", value_name = "KEY=VALUE")]
+        secrets: Vec<String>,
+
+        /// Startup timeout in seconds
+        #[arg(long, value_name = "SECS")]
+        timeout: Option<u64>,
+
+        /// Description shown in extension listings
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Working directory for the server process
+        #[arg(long, value_name = "DIR")]
+        cwd: Option<String>,
+
+        /// Import the extension entry from Goose's config.yaml
+        #[arg(long)]
+        from_goose: bool,
+
+        /// Goose config file to import from (defaults to Goose's standard location)
+        #[arg(long, value_name = "PATH", requires = "from_goose")]
+        goose_config: Option<PathBuf>,
+    },
+
+    /// Remove an extension from the gosling config
+    #[command(about = "Remove an extension from the gosling config")]
+    Remove {
+        /// Name of the extension to remove
+        name: String,
+    },
+
+    /// List extensions configured in the gosling config
+    #[command(about = "List extensions configured in the gosling config")]
+    List,
+}
+
+#[derive(Subcommand)]
 enum Command {
     /// Configure gosling settings
     #[command(about = "Configure gosling settings")]
@@ -574,11 +638,19 @@ enum Command {
     #[command(about = "Check that your Gosling setup is working")]
     Doctor {},
 
-    /// Manage system prompts and behaviors
-    #[command(about = "Run one of the mcp servers bundled with gosling")]
+    /// Run bundled MCP servers or manage MCP server extensions
+    #[command(
+        about = "Run bundled MCP servers or manage MCP server extensions",
+        args_conflicts_with_subcommands = true,
+        arg_required_else_help = true
+    )]
     Mcp {
-        #[arg(value_parser = clap::value_parser!(McpCommand))]
-        server: McpCommand,
+        #[command(subcommand)]
+        command: Option<McpSubcommand>,
+
+        /// Bundled MCP server to run (shorthand for `mcp serve`)
+        #[arg(value_parser = clap::value_parser!(McpCommand), value_name = "SERVER")]
+        server: Option<McpCommand>,
     },
 
     /// Run gosling as an ACP (Agent Client Protocol) agent
@@ -1060,6 +1132,37 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
         McpCommand::Tutorial => serve(TutorialServer::new()).await?,
     }
     Ok(())
+}
+
+async fn handle_mcp_subcommand(command: McpSubcommand) -> Result<()> {
+    use crate::commands::mcp;
+
+    match command {
+        McpSubcommand::Serve { server } => handle_mcp_command(server).await,
+        McpSubcommand::Install {
+            name,
+            cmd,
+            envs,
+            secrets,
+            timeout,
+            description,
+            cwd,
+            from_goose,
+            goose_config,
+        } => mcp::handle_install(mcp::InstallArgs {
+            name,
+            cmd,
+            envs,
+            secrets,
+            timeout,
+            description,
+            cwd,
+            from_goose,
+            goose_config,
+        }),
+        McpSubcommand::Remove { name } => mcp::handle_remove(&name),
+        McpSubcommand::List => mcp::handle_list(),
+    }
 }
 
 struct ServeCommandArgs {
@@ -1623,7 +1726,13 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Configure {}) => handle_configure().await,
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
         Some(Command::Info { verbose, check }) => handle_info(verbose, check).await,
-        Some(Command::Mcp { server }) => handle_mcp_command(server).await,
+        Some(Command::Mcp { command, server }) => match (command, server) {
+            (Some(command), _) => handle_mcp_subcommand(command).await,
+            (None, Some(server)) => handle_mcp_command(server).await,
+            (None, None) => {
+                anyhow::bail!("specify a bundled server or subcommand; see `gosling mcp --help`")
+            }
+        },
         Some(Command::Acp { builtins }) => gosling::acp::server::run(builtins).await,
         Some(Command::Serve {
             host,

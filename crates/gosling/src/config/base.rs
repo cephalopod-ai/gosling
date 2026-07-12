@@ -44,6 +44,9 @@ pub(crate) fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<
     // truncate+write leaves the secrets file empty/corrupt if the process dies
     // between the two steps, irreversibly losing every locally-stored API key and
     // OAuth token. This mirrors the atomic idiom already used by `save_values`.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
 
     {
