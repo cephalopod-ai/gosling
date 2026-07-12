@@ -22,7 +22,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 18;
+pub const CURRENT_SCHEMA_VERSION: i32 = 19;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -52,6 +52,27 @@ pub enum SessionType {
     Hidden,
     Terminal,
     Acp,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    PartialEq,
+    Eq,
+    Default,
+    strum::Display,
+    strum::EnumString,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SessionWorkflow {
+    #[default]
+    Standard,
+    Tagteam,
 }
 
 static SESSION_STORAGE: LazyLock<Arc<SessionStorage>> =
@@ -93,6 +114,8 @@ pub struct Session {
     pub model_config: Option<ModelConfig>,
     #[serde(default)]
     pub gosling_mode: GoslingMode,
+    #[serde(default)]
+    pub workflow_kind: SessionWorkflow,
     #[serde(default)]
     pub archived_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -232,6 +255,7 @@ pub struct SessionUpdateBuilder<'a> {
     provider_name: Option<Option<String>>,
     model_config: Option<Option<ModelConfig>>,
     gosling_mode: Option<GoslingMode>,
+    workflow_kind: Option<SessionWorkflow>,
     archived_at: Option<Option<DateTime<Utc>>>,
 
     project_id: Option<Option<String>>,
@@ -263,6 +287,7 @@ impl<'a> SessionUpdateBuilder<'a> {
             provider_name: None,
             model_config: None,
             gosling_mode: None,
+            workflow_kind: None,
             archived_at: None,
             project_id: None,
         }
@@ -348,6 +373,11 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn gosling_mode(mut self, mode: GoslingMode) -> Self {
         self.gosling_mode = Some(mode);
+        self
+    }
+
+    pub fn workflow_kind(mut self, workflow: SessionWorkflow) -> Self {
+        self.workflow_kind = Some(workflow);
         self
     }
 
@@ -810,6 +840,7 @@ impl Default for Session {
             provider_name: None,
             model_config: None,
             gosling_mode: GoslingMode::default(),
+            workflow_kind: SessionWorkflow::default(),
             archived_at: None,
             project_id: None,
             last_message_snippet: None,
@@ -905,6 +936,11 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .try_get::<String, _>("gosling_mode")
                 .ok()
                 .and_then(|s| s.parse().ok())
+                .unwrap_or_default(),
+            workflow_kind: row
+                .try_get::<String, _>("workflow_kind")
+                .ok()
+                .and_then(|value| value.parse().ok())
                 .unwrap_or_default(),
             archived_at: row.try_get("archived_at").ok(),
             project_id: row.try_get("project_id").ok().flatten(),
@@ -1061,6 +1097,7 @@ impl SessionStorage {
                 provider_name TEXT,
                 model_config_json TEXT,
                 gosling_mode TEXT NOT NULL DEFAULT 'auto',
+                workflow_kind TEXT NOT NULL DEFAULT 'standard',
                 archived_at TIMESTAMP,
                 project_id TEXT
             )
@@ -1107,6 +1144,35 @@ impl SessionStorage {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_type ON sessions(session_type)")
             .execute(&mut *tx)
             .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS tagteam_run_bindings (
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                launch_generation INTEGER NOT NULL,
+                schema_version INTEGER NOT NULL,
+                launch_spec_json TEXT NOT NULL,
+                action_digest TEXT NOT NULL,
+                producer_run_id TEXT,
+                run_dir TEXT,
+                state_root TEXT,
+                last_sequence INTEGER NOT NULL DEFAULT 0,
+                snapshot_json TEXT NOT NULL,
+                terminal_class TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (session_id, launch_generation),
+                UNIQUE (session_id, producer_run_id)
+            )
+            "#,
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_tagteam_bindings_session_updated ON tagteam_run_bindings(session_id, updated_at DESC)",
+        )
+        .execute(&mut *tx)
+        .await?;
 
         sqlx::query(
             r#"
@@ -1664,6 +1730,49 @@ impl SessionStorage {
                     .await?;
                 }
             }
+            19 => {
+                let has_workflow_kind = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'workflow_kind'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_workflow_kind {
+                    sqlx::query(
+                        "ALTER TABLE sessions ADD COLUMN workflow_kind TEXT NOT NULL DEFAULT 'standard'",
+                    )
+                    .execute(&mut **tx)
+                    .await?;
+                }
+                sqlx::query(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS tagteam_run_bindings (
+                        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                        launch_generation INTEGER NOT NULL,
+                        schema_version INTEGER NOT NULL,
+                        launch_spec_json TEXT NOT NULL,
+                        action_digest TEXT NOT NULL,
+                        producer_run_id TEXT,
+                        run_dir TEXT,
+                        state_root TEXT,
+                        last_sequence INTEGER NOT NULL DEFAULT 0,
+                        snapshot_json TEXT NOT NULL,
+                        terminal_class TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (session_id, launch_generation),
+                        UNIQUE (session_id, producer_run_id)
+                    )
+                    "#,
+                )
+                .execute(&mut **tx)
+                .await?;
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_tagteam_bindings_session_updated ON tagteam_run_bindings(session_id, updated_at DESC)",
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1727,7 +1836,7 @@ impl SessionStorage {
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
                accumulated_cache_read_tokens, accumulated_cache_write_tokens,
                accumulated_cost,
-               provider_name, model_config_json, gosling_mode,
+               provider_name, model_config_json, gosling_mode, workflow_kind,
                archived_at, project_id
         FROM sessions
         WHERE id = ?
@@ -1809,6 +1918,7 @@ impl SessionStorage {
         add_update!(builder.provider_name, "provider_name");
         add_update!(builder.model_config, "model_config_json");
         add_update!(builder.gosling_mode, "gosling_mode");
+        add_update!(builder.workflow_kind, "workflow_kind");
         add_update!(builder.archived_at, "archived_at");
 
         add_update!(builder.project_id, "project_id");
@@ -1877,6 +1987,9 @@ impl SessionStorage {
         }
         if let Some(gosling_mode) = builder.gosling_mode {
             q = q.bind(gosling_mode.to_string());
+        }
+        if let Some(workflow_kind) = builder.workflow_kind {
+            q = q.bind(workflow_kind.to_string());
         }
         if let Some(ref archived_at) = builder.archived_at {
             q = q.bind(archived_at.as_ref());
@@ -2516,7 +2629,7 @@ impl SessionStorage {
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
                    s.accumulated_cache_read_tokens, s.accumulated_cache_write_tokens,
                    s.accumulated_cost,
-                   s.provider_name, s.model_config_json, s.gosling_mode,
+                   s.provider_name, s.model_config_json, s.gosling_mode, s.workflow_kind,
                    s.archived_at, s.project_id,
                    COUNT(m.id) as message_count,
                    MAX({}) as last_message_timestamp,
@@ -2731,7 +2844,8 @@ impl SessionStorage {
             .extension_data(import.extension_data)
             .usage(import.usage)
             .accumulated_usage(import.accumulated_usage)
-            .accumulated_cost(import.accumulated_cost);
+            .accumulated_cost(import.accumulated_cost)
+            .workflow_kind(import.workflow_kind);
 
         if !import.additional_working_dirs.is_empty() {
             builder = builder.additional_working_dirs(import.additional_working_dirs.clone());
@@ -2786,6 +2900,7 @@ impl SessionStorage {
             builder = builder.model_config(model_config);
         }
         builder = builder.gosling_mode(original_session.gosling_mode);
+        builder = builder.workflow_kind(original_session.workflow_kind);
 
         builder.apply().await?;
 
@@ -4097,6 +4212,7 @@ mod tests {
         sm.update(&original.id)
             .usage(usage)
             .accumulated_usage(accumulated_usage)
+            .workflow_kind(SessionWorkflow::Tagteam)
             .apply()
             .await
             .unwrap();
@@ -4135,6 +4251,7 @@ mod tests {
         assert_eq!(imported.working_dir, PathBuf::from("/tmp/test"));
         assert_eq!(imported.usage, usage);
         assert_eq!(imported.accumulated_usage, accumulated_usage);
+        assert_eq!(imported.workflow_kind, SessionWorkflow::Tagteam);
         assert_eq!(imported.message_count, 2);
 
         let conversation = imported.conversation.unwrap();
@@ -4418,6 +4535,83 @@ mod tests {
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.gosling_mode, GoslingMode::Approve);
+    }
+
+    #[tokio::test]
+    async fn test_session_workflow_defaults_and_updates() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "test".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(session.workflow_kind, SessionWorkflow::Standard);
+
+        sm.update(&session.id)
+            .workflow_kind(SessionWorkflow::Tagteam)
+            .apply()
+            .await
+            .unwrap();
+        let reloaded = sm.get_session(&session.id, false).await.unwrap();
+        assert_eq!(reloaded.workflow_kind, SessionWorkflow::Tagteam);
+    }
+
+    #[tokio::test]
+    async fn test_tagteam_workflow_schema_migration() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query("DROP TABLE tagteam_run_bindings")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("ALTER TABLE sessions DROP COLUMN workflow_kind")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 18")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("legacy-workflow")
+        .bind("Legacy")
+        .bind("/tmp")
+        .bind("{}")
+        .bind("auto")
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        sm.storage().pool().await.unwrap();
+        let migrated = sm.get_session("legacy-workflow", false).await.unwrap();
+        assert_eq!(migrated.workflow_kind, SessionWorkflow::Standard);
+        let table_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tagteam_run_bindings')",
+        )
+        .fetch_one(sm.storage().pool().await.unwrap())
+        .await
+        .unwrap();
+        assert!(table_exists);
     }
 
     #[tokio::test]

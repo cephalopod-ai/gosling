@@ -23,7 +23,7 @@ pub use diagnostics::{
 pub use extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState, TodoState};
 pub use session_manager::{
     Session, SessionInsights, SessionManager, SessionNameUpdate, SessionSummary,
-    SessionSummaryFact, SessionSummaryStatus, SessionType, SessionUpdateBuilder,
+    SessionSummaryFact, SessionSummaryStatus, SessionType, SessionUpdateBuilder, SessionWorkflow,
     DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 

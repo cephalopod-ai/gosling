@@ -1,0 +1,98 @@
+# TODO
+
+## Tagteam workflow, MCP control plane, and Run Steward
+
+**Status:** Phase 1 foundation is implemented and locally validated, pending
+commit. Live MCP wiring, product UI activation, legacy-provider replacement,
+daemon integration, and fleet features remain deferred until their gates are
+met. The detailed staged plan is in
+[`reports/2026-07-12-tagteam-future-integration-plan.md`](../reports/2026-07-12-tagteam-future-integration-plan.md).
+
+Phase 1 is intentionally producer-independent while Tagteam remains in its
+debug-use loop. It now provides architecture contracts, internal types,
+additive persistence, deterministic event reduction, steward capability
+policy, test-only consumer fixtures, and a disabled feature gate. It adds no
+visible control with no live handler.
+
+Gosling should treat Tagteam as a session workflow, not as an LLM provider.
+The user selects a normal Gosling provider, model, and reasoning effort for the
+outer **Run Steward**, then separately selects the Tagteam mode and models for
+each implementation, review, supervision, or scout role. Execution authority
+belongs to a deterministic controller exposed by Tagteam's versioned MCP
+contract; the steward only monitors, explains, reports, and prepares recovery.
+
+### Deferred live implementation horizon
+
+- [ ] Add a `Standard` versus `Tagteam` session-workflow distinction without
+  overloading Gosling's existing tool-permission mode. Keep the selected Run
+  Steward provider/model in the normal session model configuration.
+- [ ] Replace the current hardcoded Tagteam-profile/provider path with a typed
+  Tagteam workflow client. Consume Tagteam's MCP schemas and reason codes; do
+  not copy its profile registry, model catalog, flag validation, or recovery
+  state machine into Gosling.
+- [ ] Persist a versioned launch specification and run binding containing the
+  Gosling session, repository identity, Tagteam run ID, run directory, state
+  root, sanitized normalized arguments, last event sequence, and last
+  trustworthy snapshot. Do not treat a persisted PID as execution authority.
+- [ ] Add a setup surface with four explicit groups: Workflow, Run Steward,
+  Tagteam Team, and Execution. Show role labels that change with supervisor,
+  relay, adversarial, and solo modes so users can always see which model edits,
+  reviews, supervises, or scouts.
+- [ ] Include repository root, explicit allowed paths, rounds, invocation and
+  watchdog timeouts, bounded test presets, and Assist recovery policy in the
+  execution setup. Do not accept model-authored shell or unrestricted flag
+  strings.
+- [ ] Restrict Tagteam workflow sessions to the dedicated Tagteam MCP tools.
+  Do not expose Developer, arbitrary shell/edit tools, subagent delegation,
+  extension management, or unrelated external MCP tools to the Run Steward.
+- [ ] Launch the validated Tagteam action from the user's Run action rather
+  than depending on the steward to select the correct tool. Feed the steward
+  normalized updates only when phase, role, diff, test, finding, fallback,
+  stall, approval need, or terminal state materially changes.
+- [ ] Render a persistent live run card in Desktop and the text UI: mode and
+  role assignments, current phase/round, elapsed and idle time, diff counts,
+  tests, findings, degraded/blocking reason, and artifact references. Keep raw
+  transcripts and repository content opt-in and bounded.
+- [ ] Implement Assist-only recovery first. The steward may inspect status,
+  plan, findings, diagnostics, and prepare-resume results. Resume and cancel
+  require an action-bound user approval; scope widening, finding deferral,
+  transfer, branch cleanup, and unsafe Tagteam flags remain unavailable.
+- [ ] Add deterministic fallback messages so monitoring still works if the Run
+  Steward is unavailable or returns invalid output. The steward is never on the
+  critical execution path.
+- [ ] Validate with fake-server contract fixtures and real scratch-repository
+  runs across all Tagteam modes. Include Ollama/low-capability, mid-tier, and
+  frontier stewards; restart/reconnect, duplicate-launch, malformed response,
+  cancellation, stalled run, blocking findings, test failure, and unsafe
+  resume cases must be covered.
+
+### Future vision
+
+- [ ] Connect Gosling to a durable Tagteam daemon for background execution,
+  reconnectable event streaming, safe cross-restart cancellation, and one
+  authoritative observer lease per run.
+- [ ] Add local-first steward escalation policies: deterministic templates,
+  then Ollama, then an optional explicitly configured cloud model for ambiguous
+  diagnosis. Preserve strict per-run cost, call, timeout, and contention
+  budgets.
+- [ ] Add saved team configurations and organization policies only after
+  Tagteam exposes machine-readable capability and profile provenance. Display
+  resolved roles and versions rather than trusting stale labels.
+- [ ] Add fleet monitoring for active, waiting, stalled, blocked, degraded, and
+  recoverable runs while keeping repository content, prompts, secrets, and
+  private reasoning local by default.
+- [ ] Generalize the workflow/controller boundary for other long-running
+  external orchestrators only after the Tagteam implementation demonstrates a
+  stable contract; do not create a generic arbitrary-process launcher.
+
+### Acceptance boundary
+
+- The same Tagteam launch specification produces the same normalized action
+  whether initiated from Desktop, text UI, CLI, or another MCP-capable host.
+- Gosling can restart, reconnect to persisted status, and avoid a duplicate run
+  without asking the steward to infer process state.
+- A local low-capability steward can accurately report deterministic facts and
+  request user help, while tests prove it cannot edit files, broaden scope,
+  approve recovery, or recursively invoke Tagteam.
+- The legacy Tagteam provider is not removed until workflow parity, migration
+  guidance, runtime playtests, and rollback behavior are verified.

@@ -69,3 +69,15 @@ components:
     responsibilities:
       - preserve deterministic Goose catalog fallback behavior
       - keep provenance and normalization explicit
+
+  - id: orchestration.tagteam_workflow
+    owners: [core_maintainers]
+    paths:
+      - crates/gosling/src/tagteam
+      - crates/gosling/src/session/session_manager.rs
+    responsibilities:
+      - own Gosling's normalized Tagteam workflow contracts and state projection
+      - persist workflow identity and Tagteam run bindings
+      - constrain the Run Steward to an explicit non-editing capability profile
+    notes:
+      - Tagteam transport adapters implement the workflow client port; transport DTOs do not become session or UI domain types

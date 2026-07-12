@@ -19,6 +19,7 @@ otel = [
     "dep:opentelemetry-stdout",
 ]
 code-mode = ["dep:pctx_code_mode"]
+tagteam-workflow = []
 aws-providers = [
     "dep:aws-config",
     "dep:aws-smithy-types",
