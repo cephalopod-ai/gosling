@@ -9,7 +9,7 @@ use gosling::config::declarative_providers::{
 };
 use gosling::config::extensions::{
     get_all_extension_names, get_all_extensions, get_enabled_extensions, get_extension_by_name,
-    name_to_key, remove_extension, set_extension, set_extension_enabled,
+    name_to_key, remove_extension_and_permissions, set_extension, set_extension_enabled,
 };
 use gosling::config::paths::Paths;
 use gosling::config::permission::PermissionLevel;
@@ -114,24 +114,24 @@ async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
                 );
             }
         }
-        "manual" => handle_manual_provider_setup(config).await,
+        "manual" => handle_manual_provider_setup(config).await?,
         _ => unreachable!(),
     }
     Ok(())
 }
 
-async fn handle_manual_provider_setup(config: &Config) {
+async fn handle_manual_provider_setup(config: &Config) -> anyhow::Result<()> {
     match configure_provider_dialog().await {
         Ok(true) => {
+            set_extension(ExtensionEntry {
+                enabled: true,
+                config: ExtensionConfig::default(),
+            })?;
             println!(
                 "\n  {}: Run '{}' again to adjust your config or add extensions",
                 style("Tip").green().italic(),
                 style("gosling configure").cyan()
             );
-            set_extension(ExtensionEntry {
-                enabled: true,
-                config: ExtensionConfig::default(),
-            });
         }
         Ok(false) => {
             let _ = config.clear();
@@ -146,6 +146,7 @@ async fn handle_manual_provider_setup(config: &Config) {
             print_manual_config_error(&e);
         }
     }
+    Ok(())
 }
 
 fn print_manual_config_error(e: &anyhow::Error) {
@@ -851,10 +852,10 @@ pub fn toggle_extensions_dialog() -> anyhow::Result<()> {
 
     // Update enabled status for each extension
     for name in extension_status.iter().map(|(name, _)| name) {
-        set_extension_enabled(
+        let _ = set_extension_enabled(
             &name_to_key(name),
             selected.iter().any(|s| s.as_str() == name),
-        );
+        )?;
     }
 
     let config = Config::global();
@@ -1028,7 +1029,7 @@ fn configure_builtin_extension() -> anyhow::Result<()> {
     set_extension(ExtensionEntry {
         enabled: true,
         config,
-    });
+    })?;
 
     cliclack::outro(format!("Enabled {} extension", style(extension).green()))?;
     Ok(())
@@ -1075,7 +1076,7 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
             bundled: None,
             available_tools: Vec::new(),
         },
-    });
+    })?;
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
     Ok(())
@@ -1119,7 +1120,7 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
             bundled: None,
             available_tools: Vec::new(),
         },
-    });
+    })?;
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
     Ok(())
@@ -1206,8 +1207,10 @@ pub fn remove_extension_dialog() -> anyhow::Result<()> {
         .interact()?;
 
     for name in selected {
-        remove_extension(&name_to_key(name));
-        PermissionManager::instance().remove_extension(&name_to_key(name));
+        let key = name_to_key(name);
+        if !remove_extension_and_permissions(&key)? {
+            anyhow::bail!("Extension '{key}' is no longer configured");
+        }
         cliclack::outro(format!("Removed {} extension", style(name).green()))?;
     }
 
@@ -1884,7 +1887,7 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                                 bundled: Some(true),
                                 available_tools: Vec::new(),
                             },
-                        });
+                        })?;
                         println!("✓ Developer extension enabled");
                     }
 
@@ -1956,7 +1959,7 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
                                 bundled: Some(true),
                                 available_tools: Vec::new(),
                             },
-                        });
+                        })?;
                         println!("✓ Developer extension enabled");
                     }
 

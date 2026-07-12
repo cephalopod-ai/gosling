@@ -635,7 +635,7 @@ mod tests {
                     available_tools: vec![],
                 },
             };
-            set_extension(todo_extension_entry);
+            set_extension(todo_extension_entry).unwrap();
 
             // Create agent with session_id from the start
             let temp_dir = tempfile::tempdir().unwrap();

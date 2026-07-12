@@ -363,7 +363,7 @@ pub async fn add_extension(
     gosling::config::set_extension(ExtensionEntry {
         enabled: extension_query.enabled,
         config: extension_query.config,
-    });
+    })?;
 
     if is_update {
         Ok(Json(format!("Updated extension {}", extension_query.name)))
@@ -383,7 +383,12 @@ pub async fn add_extension(
 )]
 pub async fn remove_extension(Path(name): Path<String>) -> Result<Json<String>, ErrorResponse> {
     let key = gosling::config::extensions::name_to_key(&name);
-    gosling::config::remove_extension(&key);
+    if !gosling::config::remove_extension_and_permissions(&key)? {
+        return Err(ErrorResponse::not_found(format!(
+            "Extension '{}' not found",
+            name
+        )));
+    }
     Ok(Json(format!("Removed extension {}", name)))
 }
 

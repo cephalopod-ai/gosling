@@ -39,6 +39,8 @@ pub mod slash_commands;
 pub mod source_roots;
 pub mod sources;
 pub mod subprocess;
+#[cfg(feature = "tagteam-workflow")]
+pub mod tagteam;
 pub mod token_counter;
 pub mod tool_inspection;
 pub mod tool_monitor;

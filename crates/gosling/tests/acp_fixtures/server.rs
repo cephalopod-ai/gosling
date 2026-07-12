@@ -458,7 +458,7 @@ impl Connection for AcpServerConnection {
 
     fn reset_permissions(&self) {
         // "" matches all extensions, clearing all stored permission decisions
-        self.permission_manager.remove_extension("");
+        self.permission_manager.remove_extension("").unwrap();
     }
 }
 

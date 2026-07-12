@@ -21,7 +21,8 @@ pub use experiments::ExperimentManager;
 pub use extensions::{
     get_all_extension_names, get_all_extensions, get_available_extensions, get_enabled_extensions,
     get_extension_by_name, get_warnings, is_extension_enabled, remove_extension,
-    resolve_extensions_for_new_session, set_extension, set_extension_enabled, ExtensionEntry,
+    remove_extension_and_permissions, resolve_extensions_for_new_session, set_extension,
+    set_extension_enabled, set_extension_with_secrets, ExtensionEntry,
 };
 pub use gosling_providers::gosling_mode::GoslingMode;
 pub use permission::PermissionManager;

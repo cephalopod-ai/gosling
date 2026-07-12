@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gosling.dev/schemas/skill-catalog-v1.schema.json",
+  "title": "gosling External Skill Catalog",
+  "description": "A compiled, consumer-owned catalog index loaded by gosling without bundling the catalog or its skills into gosling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "catalogId", "skills"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "catalogId": { "$ref": "#/$defs/slug" },
+    "skills": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/skill" }
+    },
+    "routes": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "#/$defs/route" }
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+    },
+    "nonEmptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "stringArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actions", "roles", "surface", "targets", "keywords"],
+      "properties": {
+        "actions": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "roles": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "surface": { "type": "string", "minLength": 1 },
+        "targets": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "keywords": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "aliases": { "$ref": "#/$defs/stringArray" },
+        "excludes": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "authority": { "type": "string", "minLength": 1 },
+        "requiresHumanApprovalFor": { "$ref": "#/$defs/stringArray" },
+        "criticRequired": { "type": "boolean", "default": false },
+        "overlaysAllowed": { "type": "boolean", "default": false }
+      }
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "directory", "routing"],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "version": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "directory": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A relative directory beneath the catalog index containing SKILL.md. Parent components and absolute paths are forbidden."
+        },
+        "routing": { "$ref": "#/$defs/routing" },
+        "execution": { "$ref": "#/$defs/execution" },
+        "deprecated": { "type": "boolean", "default": false },
+        "contentHash": { "type": "string", "minLength": 1 }
+      }
+    },
+    "routeMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "anyOf": [
+        {
+          "required": ["actions"],
+          "properties": {
+            "actions": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "required": ["roles"],
+          "properties": {
+            "roles": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "required": ["surface"]
+        },
+        {
+          "required": ["targets"],
+          "properties": {
+            "targets": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "required": ["allKeywords"],
+          "properties": {
+            "allKeywords": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "required": ["anyKeywords"],
+          "properties": {
+            "anyKeywords": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        }
+      ],
+      "properties": {
+        "actions": { "$ref": "#/$defs/stringArray" },
+        "roles": { "$ref": "#/$defs/stringArray" },
+        "surface": { "type": "string", "minLength": 1 },
+        "targets": { "$ref": "#/$defs/stringArray" },
+        "allKeywords": { "$ref": "#/$defs/stringArray" },
+        "anyKeywords": { "$ref": "#/$defs/stringArray" },
+        "notKeywords": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skillId", "match"],
+      "properties": {
+        "skillId": { "$ref": "#/$defs/slug" },
+        "match": { "$ref": "#/$defs/routeMatch" },
+        "priority": { "type": "integer", "default": 0 }
+      }
+    }
+  }
+}

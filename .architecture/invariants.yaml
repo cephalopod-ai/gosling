@@ -36,3 +36,25 @@ invariants:
       - documentation/GOOSE_COMPATIBILITY.md
       - documentation/scripts/goose-compat.js
     rule: upstream Goose catalogs may be consumed only through explicit normalization and provenance-preserving adapter logic
+
+  - id: ARC-005
+    title: Tagteam is a workflow, not a provider
+    status: active
+    scope:
+      - crates/gosling/src/tagteam
+      - crates/gosling/src/providers/tagteam.rs
+    rule: new Tagteam orchestration behavior belongs to the workflow service and client port; the existing provider remains compatibility-only
+
+  - id: ARC-006
+    title: Tagteam workflow has one lifecycle owner
+    status: active
+    scope:
+      - crates/gosling/src/tagteam
+    rule: launch validation, state reduction, recovery eligibility, and terminal precedence have one workflow owner independent of UI and transport
+
+  - id: ARC-007
+    title: Run Steward cannot inherit mutation authority
+    status: active
+    scope:
+      - crates/gosling/src/tagteam/policy.rs
+    rule: the Run Steward capability profile is an allowlist and cannot include arbitrary shell, file mutation, extension management, subagent delegation, scope widening, finding disposition, transfer, or recursive Tagteam invocation

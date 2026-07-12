@@ -44,6 +44,9 @@ pub(crate) fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<
     // truncate+write leaves the secrets file empty/corrupt if the process dies
     // between the two steps, irreversibly losing every locally-stored API key and
     // OAuth token. This mirrors the atomic idiom already used by `save_values`.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
 
     {
@@ -572,6 +575,26 @@ impl Config {
         self.write_path().to_string_lossy().to_string()
     }
 
+    pub(crate) fn lock_extension_transaction(&self) -> Result<std::fs::File, ConfigError> {
+        let target_path = self.config_write_target_path()?;
+        if let Some(parent) = target_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| ConfigError::DirectoryError(error.to_string()))?;
+        }
+        let lock_path = target_path.with_extension("extensions.lock");
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options.open(lock_path)?;
+        file.lock_exclusive()
+            .map_err(|error| ConfigError::LockError(error.to_string()))?;
+        Ok(file)
+    }
+
     /// Load only the writable config file for read-modify-write operations.
     /// Parse errors are returned instead of treating corrupt content as empty;
     /// otherwise a routine settings write can permanently replace the user's
@@ -1091,6 +1114,26 @@ impl Config {
         })
     }
 
+    /// Apply secret updates and deletions with one storage read and one storage write.
+    pub fn update_secret_values(
+        &self,
+        updates: &[(String, Value)],
+        deletions: &[String],
+    ) -> Result<(), ConfigError> {
+        if updates.is_empty() && deletions.is_empty() {
+            return Ok(());
+        }
+
+        self.mutate_secrets(|values| {
+            for key in deletions {
+                values.remove(key);
+            }
+            for (key, value) in updates {
+                values.insert(key.clone(), value.clone());
+            }
+        })
+    }
+
     /// Delete a secret from the system keyring.
     ///
     /// This will remove the specified key from the JSON object in the system keyring.
@@ -1249,6 +1292,7 @@ config_value!(CODEX_SKIP_GIT_CHECK, String, "false");
 config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
 
 config_value!(GOSLING_SEARCH_PATHS, Vec<String>);
+config_value!(GOSLING_SKILL_CATALOGS, Vec<String>);
 config_value!(GOSLING_MODE, GoslingMode);
 config_value!(GOSLING_CODE_EXECUTION_RUNTIME, CodeExecutionRuntime);
 // GOSLING_PROVIDER and GOSLING_MODEL are handled by crate::config::providers

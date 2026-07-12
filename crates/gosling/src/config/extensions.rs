@@ -1,9 +1,11 @@
-use super::base::Config;
+use super::base::{Config, ConfigError};
 use crate::agents::extension::PLATFORM_EXTENSIONS;
 use crate::agents::ExtensionConfig;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use serde_yaml::Mapping;
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
@@ -12,6 +14,13 @@ pub const DEFAULT_EXTENSION_TIMEOUT: u64 = 300;
 pub const DEFAULT_EXTENSION_DESCRIPTION: &str = "";
 pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
+static EXTENSION_MUTATION_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+fn lock_extension_mutations() -> MutexGuard<'static, ()> {
+    EXTENSION_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
 
 #[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
 pub struct ExtensionEntry {
@@ -93,7 +102,7 @@ enum ExtensionMutation {
     Noop,
 }
 
-fn with_raw_extensions_mapping<F>(config: &Config, mutate: F)
+fn with_raw_extensions_mapping<F>(config: &Config, mutate: F) -> Result<(), ConfigError>
 where
     F: FnOnce(&mut IndexMap<String, ExtensionEntry>) -> ExtensionMutation,
 {
@@ -119,10 +128,10 @@ where
         raw
     });
 
-    if let Some(e) = serialize_error {
-        warn!("Failed to serialize extensions config entry: {}", e);
-    } else if let Err(e) = result {
-        warn!("Failed to save extensions config: {}", e);
+    if let Some(error) = serialize_error {
+        Err(error.into())
+    } else {
+        result
     }
 }
 
@@ -147,29 +156,159 @@ fn get_extension_by_name_with_config(config: &Config, name: &str) -> Option<Exte
         .find(|config| config.name() == name || config.key() == key)
 }
 
-pub fn set_extension(entry: ExtensionEntry) {
-    set_extension_with_config(Config::global(), entry);
+pub fn set_extension(entry: ExtensionEntry) -> Result<(), ConfigError> {
+    let _guard = lock_extension_mutations();
+    let _file_guard = Config::global().lock_extension_transaction()?;
+    set_extension_with_config(Config::global(), entry)
 }
 
-fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
+pub fn set_extension_with_secrets(
+    entry: ExtensionEntry,
+    secret_updates: &[(String, Value)],
+) -> anyhow::Result<()> {
+    let _guard = lock_extension_mutations();
+    let _file_guard = Config::global().lock_extension_transaction()?;
+    set_extension_with_secrets_and_config(Config::global(), entry, secret_updates)
+}
+
+fn set_extension_with_secrets_and_config(
+    config: &Config,
+    entry: ExtensionEntry,
+    secret_updates: &[(String, Value)],
+) -> anyhow::Result<()> {
     let key = entry.config.key();
-    with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)));
+    let previous = get_extensions_map_with_config(config).shift_remove(&key);
+    let secret_snapshot = if secret_updates.is_empty() {
+        IndexMap::new()
+    } else {
+        let stored_secrets = config.all_secrets()?;
+        let snapshot = secret_updates
+            .iter()
+            .map(|(key, _)| (key.clone(), stored_secrets.get(key).cloned()))
+            .collect::<IndexMap<_, _>>();
+        config.set_secret_values(secret_updates)?;
+        snapshot
+    };
+    if let Err(config_error) = set_extension_with_config(config, entry.clone()) {
+        return match restore_secret_snapshot(config, &secret_snapshot) {
+            Ok(()) => Err(config_error.into()),
+            Err(rollback_error) => anyhow::bail!(
+                "failed to persist extension config: {config_error}; failed to restore secrets: {rollback_error}"
+            ),
+        };
+    }
+
+    let persisted = get_extensions_map_with_config(config)
+        .get(&key)
+        .is_some_and(|saved| saved.enabled == entry.enabled && saved.config == entry.config);
+    if persisted {
+        return Ok(());
+    }
+
+    let config_rollback = match previous {
+        Some(previous) => set_extension_with_config(config, previous),
+        None => remove_extension_with_config(config, &key).map(|_| ()),
+    };
+    let secret_rollback = restore_secret_snapshot(config, &secret_snapshot);
+    match (config_rollback, secret_rollback) {
+        (Ok(()), Ok(())) => anyhow::bail!("extension '{key}' could not be read back after persistence"),
+        (config_result, secret_result) => anyhow::bail!(
+            "extension '{key}' could not be read back after persistence; config rollback: {}; secret rollback: {}",
+            rollback_status(config_result),
+            rollback_status(secret_result)
+        ),
+    }
 }
 
-pub fn remove_extension(key: &str) {
-    remove_extension_with_config(Config::global(), key);
+fn restore_secret_snapshot(
+    config: &Config,
+    snapshot: &IndexMap<String, Option<Value>>,
+) -> Result<(), ConfigError> {
+    let mut updates = Vec::new();
+    let mut deletions = Vec::new();
+    for (key, value) in snapshot {
+        match value {
+            Some(value) => updates.push((key.clone(), value.clone())),
+            None => deletions.push(key.clone()),
+        }
+    }
+    config.update_secret_values(&updates, &deletions)
 }
 
-fn remove_extension_with_config(config: &Config, key: &str) {
-    with_raw_extensions_mapping(config, |_| ExtensionMutation::Remove(key.to_string()));
+fn rollback_status<E: std::fmt::Display>(result: Result<(), E>) -> String {
+    match result {
+        Ok(()) => "ok".to_string(),
+        Err(error) => error.to_string(),
+    }
+}
+
+fn set_extension_with_config(config: &Config, entry: ExtensionEntry) -> Result<(), ConfigError> {
+    let key = entry.config.key();
+    set_extension_at_key_with_config(config, key, entry)
+}
+
+fn set_extension_at_key_with_config(
+    config: &Config,
+    key: String,
+    entry: ExtensionEntry,
+) -> Result<(), ConfigError> {
+    with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)))
+}
+
+pub fn remove_extension(key: &str) -> Result<bool, ConfigError> {
+    let _guard = lock_extension_mutations();
+    let _file_guard = Config::global().lock_extension_transaction()?;
+    remove_extension_with_config(Config::global(), key)
+}
+
+fn remove_extension_with_config(config: &Config, key: &str) -> Result<bool, ConfigError> {
+    let mut removed = false;
+    with_raw_extensions_mapping(config, |extensions| {
+        removed = extensions.contains_key(key);
+        if removed {
+            ExtensionMutation::Remove(key.to_string())
+        } else {
+            ExtensionMutation::Noop
+        }
+    })?;
+    Ok(removed)
+}
+
+pub fn remove_extension_and_permissions(key: &str) -> anyhow::Result<bool> {
+    let _guard = lock_extension_mutations();
+    let _file_guard = Config::global().lock_extension_transaction()?;
+    let Some(previous) = get_extensions_map().shift_remove(key) else {
+        return Ok(false);
+    };
+
+    if !remove_extension_with_config(Config::global(), key)? {
+        return Ok(false);
+    }
+    if let Err(permission_error) =
+        crate::config::PermissionManager::instance().remove_extension(key)
+    {
+        return match set_extension_at_key_with_config(Config::global(), key.to_string(), previous) {
+            Ok(()) => Err(permission_error),
+            Err(config_error) => anyhow::bail!(
+                "failed to remove extension permissions: {permission_error}; failed to restore extension config: {config_error}"
+            ),
+        };
+    }
+    Ok(true)
 }
 
 /// Returns true when an existing extension was updated, false when the key was missing.
-pub fn set_extension_enabled(key: &str, enabled: bool) -> bool {
+pub fn set_extension_enabled(key: &str, enabled: bool) -> Result<bool, ConfigError> {
+    let _guard = lock_extension_mutations();
+    let _file_guard = Config::global().lock_extension_transaction()?;
     set_extension_enabled_with_config(Config::global(), key, enabled)
 }
 
-fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) -> bool {
+fn set_extension_enabled_with_config(
+    config: &Config,
+    key: &str,
+    enabled: bool,
+) -> Result<bool, ConfigError> {
     let mut updated = false;
     with_raw_extensions_mapping(config, |extensions| {
         let Some(entry) = extensions.get_mut(key) else {
@@ -179,9 +318,9 @@ fn set_extension_enabled_with_config(config: &Config, key: &str, enabled: bool) 
         entry.enabled = enabled;
         updated = true;
         ExtensionMutation::Upsert(key.to_string(), Box::new(entry.clone()))
-    });
+    })?;
 
-    updated
+    Ok(updated)
 }
 
 pub fn get_all_extensions() -> Vec<ExtensionEntry> {
@@ -326,7 +465,7 @@ mod tests {
     use super::*;
     use std::fmt;
     use std::sync::{Arc, Mutex};
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
     use tracing::{Event, Level, Subscriber};
     use tracing_subscriber::layer::SubscriberExt;
 
@@ -410,7 +549,7 @@ extensions:
         let before = read_extensions(&config);
         let second_before = before.get("second").unwrap().clone();
 
-        set_extension_enabled_with_config(&config, "first", false);
+        set_extension_enabled_with_config(&config, "first", false).unwrap();
 
         let extensions = read_extensions(&config);
         assert_eq!(
@@ -449,7 +588,7 @@ extensions:
         let before = read_extensions(&config);
         let broken_before = before.get("broken").unwrap().clone();
 
-        set_extension_enabled_with_config(&config, "valid", false);
+        set_extension_enabled_with_config(&config, "valid", false).unwrap();
 
         let extensions = read_extensions(&config);
         assert!(extensions.contains_key("valid"));
@@ -483,11 +622,61 @@ extensions:
         let before = read_extensions(&config);
         let broken_before = before.get("broken").unwrap().clone();
 
-        set_extension_with_config(&config, builtin_entry("new extension", true));
+        set_extension_with_config(&config, builtin_entry("new extension", true)).unwrap();
 
         let extensions = read_extensions(&config);
         assert_eq!(extensions.get("broken").unwrap(), &broken_before);
         assert!(extensions.contains_key("newextension"));
+    }
+
+    #[test]
+    fn test_set_extension_propagates_write_failure() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.yaml");
+        let secrets_path = temp_dir.path().join("secrets.yaml");
+        let config = Config::new_with_file_secrets(&config_path, &secrets_path).unwrap();
+        std::fs::create_dir(config_path.with_extension("tmp")).unwrap();
+
+        let error = set_extension_with_config(&config, builtin_entry("new extension", true))
+            .expect_err("config write must fail when the temporary path is a directory");
+
+        assert!(matches!(error, ConfigError::FileError(_)));
+        assert!(!config_path.exists());
+    }
+
+    #[test]
+    fn test_set_extension_with_secrets_restores_values_after_config_failure() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.yaml");
+        let secrets_path = temp_dir.path().join("secrets.yaml");
+        let config = Config::new_with_file_secrets(&config_path, &secrets_path).unwrap();
+        config.set_secret("TOKEN", &"old-value").unwrap();
+        std::fs::create_dir(config_path.with_extension("tmp")).unwrap();
+
+        let error = set_extension_with_secrets_and_config(
+            &config,
+            builtin_entry("new extension", true),
+            &[("TOKEN".to_string(), Value::String("new-value".to_string()))],
+        )
+        .expect_err("config failure must roll back the secret update");
+
+        assert!(error.to_string().contains("Failed to read config file"));
+        assert_eq!(config.get_secret::<String>("TOKEN").unwrap(), "old-value");
+        assert!(!config_path.exists());
+    }
+
+    #[test]
+    fn test_config_only_extension_does_not_read_secret_storage() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.yaml");
+        let secrets_path = temp_dir.path().join("secrets.yaml");
+        std::fs::create_dir(&secrets_path).unwrap();
+        let config = Config::new_with_file_secrets(&config_path, &secrets_path).unwrap();
+
+        set_extension_with_secrets_and_config(&config, builtin_entry("new extension", true), &[])
+            .unwrap();
+
+        assert!(read_extensions(&config).contains_key("newextension"));
     }
 
     #[test]
@@ -524,7 +713,7 @@ extensions:
         assert_ne!(key, saved.config.name());
 
         let (config, _config_file, _secrets_file) = test_config("");
-        set_extension_with_config(&config, saved);
+        set_extension_with_config(&config, saved).unwrap();
 
         let resolved = get_extension_by_name_with_config(&config, &key).unwrap();
 
@@ -563,11 +752,18 @@ extensions:
         let before = read_extensions(&config);
         let broken_before = before.get("broken").unwrap().clone();
 
-        remove_extension_with_config(&config, "valid");
+        assert!(remove_extension_with_config(&config, "valid").unwrap());
 
         let extensions = read_extensions(&config);
         assert!(!extensions.contains_key("valid"));
         assert_eq!(extensions.get("broken").unwrap(), &broken_before);
+    }
+
+    #[test]
+    fn test_remove_missing_extension_reports_no_change() {
+        let (config, _config_file, _secrets_file) = test_config("");
+
+        assert!(!remove_extension_with_config(&config, "missing").unwrap());
     }
 
     #[derive(Clone, Default)]
@@ -719,12 +915,12 @@ extensions:
     #[test]
     fn test_default_on_extension_disabled_by_user() {
         let (config, _config_file, _secrets_file) = test_config("");
-        set_extension_with_config(&config, builtin_entry("developer", false));
+        set_extension_with_config(&config, builtin_entry("developer", false)).unwrap();
 
         assert_eq!(configured_enabled_state(&config, "developer"), Some(false));
         assert!(is_builtin_disabled_by_user(&config, "developer"));
 
-        set_extension_enabled_with_config(&config, "developer", true);
+        set_extension_enabled_with_config(&config, "developer", true).unwrap();
         assert!(!is_builtin_disabled_by_user(&config, "developer"));
     }
 
@@ -743,7 +939,7 @@ extensions:
     #[test]
     fn test_unknown_builtin_disabled_when_explicitly_off() {
         let (config, _config_file, _secrets_file) = test_config("");
-        set_extension_with_config(&config, builtin_entry("some_custom_builtin", false));
+        set_extension_with_config(&config, builtin_entry("some_custom_builtin", false)).unwrap();
 
         assert!(is_builtin_disabled_by_user(&config, "some_custom_builtin"));
     }

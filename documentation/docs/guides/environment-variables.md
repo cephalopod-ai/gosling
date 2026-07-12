@@ -277,13 +277,14 @@ These variables control how gosling handles [tool execution](/docs/guides/managi
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
 | `GOSLING_MODE` | Controls how gosling handles tool execution | "auto", "approve", "chat", "smart_approve" | "smart_approve" |
-| `GOSLING_CODE_EXECUTION_RUNTIME` | Allows or blocks [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new Gosling processes. Changing it requires restart. | "enabled", "disabled" | "enabled" |
+| `GOSLING_CODE_EXECUTION_RUNTIME` | Allows or blocks [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new gosling processes. Changing it requires restart. | "enabled", "disabled" | "enabled" |
 | `GOSLING_TOOLSHIM` | Enables/disables tool call interpretation | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_TOOLSHIM_OLLAMA_MODEL` | Specifies the model for [tool call interpretation](/docs/experimental/ollama) | Model name (e.g. llama3.2, qwen2.5) | System default |
 | `GOSLING_CLI_MIN_PRIORITY` | Controls verbosity of [tool output](/docs/guides/managing-tools/adjust-tool-output) | Float between 0.0 and 1.0 | 0.0 |
 | `GOSLING_CLI_TOOL_PARAMS_TRUNCATION_MAX_LENGTH` | Maximum length for tool parameter values before truncation in CLI output (not in debug mode) | Integer | 40 |
 | `GOSLING_DEBUG` | Enables debug mode to show full tool parameters without truncation. Can also be toggled during a session using the `/r` [slash command](/docs/guides/gosling-cli-commands#slash-commands) | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_SEARCH_PATHS` | Prepends additional directories to PATH for extension commands | JSON array of paths (for example, `["/usr/local/bin", "~/custom/bin"]`) | System PATH only |
+| `GOSLING_SKILL_CATALOGS` | Loads compiled external skill catalogs without bundling them into gosling | JSON array of catalog index paths | `[]` |
 | `GOSLING_MAX_TOOL_RESPONSE_SIZE` | Maximum character count for a single tool response before it is written to a temporary file instead of being included inline in the conversation | Positive integer (e.g., 100000, 200000) | 200000 |
 | `GOSLING_SHELL` | Overrides the shell used for Developer extension shell commands | Shell executable path or name (for example, `/bin/zsh`, `pwsh`, `C:\cygwin64\bin\bash.exe`) | Unix: `/bin/bash` if present, otherwise `$SHELL`, otherwise `sh`. Windows: `cmd` |
 
@@ -300,6 +301,9 @@ export GOSLING_CLI_TOOL_PARAMS_MAX_LENGTH=100  # Show up to 100 characters for t
 
 # Add custom tool directories for extensions
 export GOSLING_SEARCH_PATHS='["/usr/local/bin", "~/custom/tools", "/opt/homebrew/bin"]'
+
+# Load a private catalog from outside the gosling repository
+export GOSLING_SKILL_CATALOGS='["/path/to/private-catalog/gosling-skill-catalog.json"]'
 
 # Lower the tool response size limit for smaller-context models
 export GOSLING_MAX_TOOL_RESPONSE_SIZE=100000
