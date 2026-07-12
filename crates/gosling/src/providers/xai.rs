@@ -6,6 +6,17 @@ use futures::future::BoxFuture;
 
 const XAI_PROVIDER_NAME: &str = "xai";
 pub const XAI_API_HOST: &str = "https://api.x.ai/v1";
+
+// SuperGrok subscription inference runs through the Grok-CLI chat proxy, not
+// api.x.ai. The OAuth token authenticates against api.x.ai but the proxy is the
+// only host that will actually run the subscription's models. See xai_oauth.rs.
+pub const SUPERGROK_API_HOST: &str = "https://cli-chat-proxy.grok.com/v1";
+
+// The proxy serves exactly these models to SuperGrok tokens (GET /v1/models).
+// grok-4.5 supports reasoning-effort (high/medium/low); Composer does not.
+pub const SUPERGROK_DEFAULT_MODEL: &str = "grok-4.5";
+pub const SUPERGROK_KNOWN_MODELS: &[&str] = &["grok-4.5", "grok-composer-2.5-fast"];
+
 pub const XAI_DEFAULT_MODEL: &str = "grok-code-fast-1";
 pub const XAI_KNOWN_MODELS: &[&str] = &[
     "grok-code-fast-1",
