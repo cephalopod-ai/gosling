@@ -71,12 +71,27 @@ const XAI_OAUTH_DOC_URL: &str = "https://x.ai/grok";
 const GROK_CLIENT_VERSION_HEADER: &str = "x-grok-client-version";
 const GROK_CLIENT_IDENTIFIER_HEADER: &str = "x-grok-client-identifier";
 const GROK_CLIENT_IDENTIFIER: &str = "grok-shell";
-// Fallback when the installed Grok CLI's version.json can't be read. Must be
-// >= the proxy's minimum (currently 0.1.202).
+// Fallback when the installed Grok CLI's version.json is missing or older than
+// the proxy's minimum. Must be >= GROK_CLIENT_VERSION_MIN.
 const GROK_CLIENT_VERSION_FALLBACK: &str = "0.2.93";
+// Proxy's minimum accepted client version; anything below still gets a 426, so
+// a stale installed version is treated as unusable.
+const GROK_CLIENT_VERSION_MIN: (u32, u32, u32) = (0, 1, 202);
+
+// Parses a dotted `major.minor.patch` version into a comparable tuple, ignoring
+// any pre-release/build suffix. Returns None if the numeric core is unparseable.
+fn parse_version(version: &str) -> Option<(u32, u32, u32)> {
+    let core = version.trim().split(['-', '+']).next().unwrap_or_default();
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    let patch = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
+}
 
 // Reads the installed Grok CLI's version so we advertise whatever the user has
-// on disk, falling back to a known-good pin when it isn't installed.
+// on disk, falling back to a known-good pin when it's missing, unparseable, or
+// older than the proxy minimum (a stale value would just earn another 426).
 fn grok_client_version() -> String {
     #[derive(Deserialize)]
     struct VersionFile {
@@ -87,6 +102,7 @@ fn grok_client_version() -> String {
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|contents| serde_json::from_str::<VersionFile>(&contents).ok())
         .map(|v| v.version)
+        .filter(|v| parse_version(v).is_some_and(|parsed| parsed >= GROK_CLIENT_VERSION_MIN))
         .unwrap_or_else(|| GROK_CLIENT_VERSION_FALLBACK.to_string())
 }
 
@@ -819,7 +835,16 @@ impl gosling_providers::base::ProviderDescriptor for XaiOAuthProvider {
             XAI_OAUTH_DOC_URL,
             vec![
                 ConfigKey::new_oauth("XAI_OAUTH_TOKEN", true, true, None, false),
-                ConfigKey::new("XAI_HOST", false, false, Some(SUPERGROK_API_HOST), false),
+                // Deliberately not XAI_HOST: that key is shared with the API-key
+                // `xai` provider, whose value (api.x.ai) would misroute OAuth
+                // requests to the wrong host.
+                ConfigKey::new(
+                    "XAI_OAUTH_HOST",
+                    false,
+                    false,
+                    Some(SUPERGROK_API_HOST),
+                    false,
+                ),
             ],
         )
     }
@@ -835,7 +860,7 @@ impl ProviderDef for XaiOAuthProvider {
         Box::pin(async move {
             let config = crate::config::Config::global();
             let host: String = config
-                .get_param("XAI_HOST")
+                .get_param("XAI_OAUTH_HOST")
                 .unwrap_or_else(|_| SUPERGROK_API_HOST.to_string());
 
             let auth_provider = Arc::new(XaiOAuthAuthProvider::new(XaiAuthState::instance()));
@@ -972,5 +997,26 @@ mod tests {
             .as_ref()
             .and_then(|p| p.get("reasoning_effort"))
             .is_none());
+    }
+
+    #[test]
+    fn parse_version_reads_core_and_ignores_suffix() {
+        assert_eq!(parse_version("0.2.93"), Some((0, 2, 93)));
+        assert_eq!(parse_version("1.0"), Some((1, 0, 0)));
+        assert_eq!(parse_version(" 0.1.202-beta.1 "), Some((0, 1, 202)));
+        assert_eq!(parse_version("2.3.4+build5"), Some((2, 3, 4)));
+        assert_eq!(parse_version("not-a-version"), None);
+        assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn version_min_boundary_is_ordered() {
+        // A version at or above the minimum is accepted; below is rejected.
+        assert!(parse_version("0.1.202").unwrap() >= GROK_CLIENT_VERSION_MIN);
+        assert!(parse_version("0.2.93").unwrap() >= GROK_CLIENT_VERSION_MIN);
+        assert!(parse_version("0.1.201").unwrap() < GROK_CLIENT_VERSION_MIN);
+        assert!(parse_version("0.0.999").unwrap() < GROK_CLIENT_VERSION_MIN);
+        // The fallback pin itself must satisfy the minimum.
+        assert!(parse_version(GROK_CLIENT_VERSION_FALLBACK).unwrap() >= GROK_CLIENT_VERSION_MIN);
     }
 }
