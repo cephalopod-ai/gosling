@@ -1,7 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod, AuthProvider};
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata};
 use super::openai_compatible::OpenAiCompatibleProvider;
-use super::xai::{XAI_API_HOST, XAI_DEFAULT_MODEL, XAI_KNOWN_MODELS};
+use super::xai::{SUPERGROK_API_HOST, SUPERGROK_DEFAULT_MODEL, SUPERGROK_MODELS};
 use crate::config::paths::Paths;
 use crate::conversation::message::Message;
 use anyhow::{anyhow, Result};
@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
+use gosling_providers::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -64,6 +65,94 @@ const DEVICE_CODE_DEFAULT_EXPIRES_SECS: u64 = 5 * 60;
 
 const XAI_OAUTH_PROVIDER_NAME: &str = "xai_oauth";
 const XAI_OAUTH_DOC_URL: &str = "https://x.ai/grok";
+
+// The chat proxy rejects requests without a recent client version, replying
+// HTTP 426 "Your Grok CLI version (none) is outdated". These headers clear that
+// gate; the identifier matches the value the Grok CLI itself sends.
+const GROK_CLIENT_VERSION_HEADER: &str = "x-grok-client-version";
+const GROK_CLIENT_IDENTIFIER_HEADER: &str = "x-grok-client-identifier";
+const GROK_CLIENT_IDENTIFIER: &str = "grok-shell";
+// Fallback when the installed Grok CLI's version.json is missing or older than
+// the proxy's minimum. Must be >= GROK_CLIENT_VERSION_MIN.
+const GROK_CLIENT_VERSION_FALLBACK: &str = "0.2.93";
+// Proxy's minimum accepted client version; anything below still gets a 426, so
+// a stale installed version is treated as unusable.
+const GROK_CLIENT_VERSION_MIN: (u32, u32, u32) = (0, 1, 202);
+
+// Parses a dotted `major.minor.patch` version into a comparable tuple, ignoring
+// any pre-release/build suffix. Returns None if the numeric core is unparseable.
+fn parse_version(version: &str) -> Option<(u32, u32, u32)> {
+    let core = version.trim().split(['-', '+']).next().unwrap_or_default();
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    let patch = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
+}
+
+// Reads the installed Grok CLI's version so we advertise whatever the user has
+// on disk, falling back to a known-good pin when it's missing, unparseable, or
+// older than the proxy minimum (a stale value would just earn another 426).
+fn grok_client_version() -> String {
+    #[derive(Deserialize)]
+    struct VersionFile {
+        version: String,
+    }
+    dirs::home_dir()
+        .map(|home| home.join(".grok/version.json"))
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|contents| serde_json::from_str::<VersionFile>(&contents).ok())
+        .map(|v| v.version)
+        .filter(|v| parse_version(v).is_some_and(|parsed| parsed >= GROK_CLIENT_VERSION_MIN))
+        .unwrap_or_else(|| GROK_CLIENT_VERSION_FALLBACK.to_string())
+}
+
+// SuperGrok's grok-4.5 accepts a reasoning-effort suffix (e.g. `grok-4.5-high`),
+// mirroring the Grok CLI's `/model <model> [effort]`. Returns the bare model id
+// plus the effort to send in `reasoning_effort`, if any.
+fn split_effort_suffix(model_name: &str) -> (String, Option<String>) {
+    for effort in ["high", "medium", "low"] {
+        if let Some(base) = model_name.strip_suffix(&format!("-{effort}")) {
+            return (base.to_string(), Some(effort.to_string()));
+        }
+    }
+    (model_name.to_string(), None)
+}
+
+// Maps a standard thinking-effort setting to the proxy's `reasoning_effort`.
+// The proxy only accepts low/medium/high, so Off carries no effort and Max
+// clamps to high.
+fn proxy_reasoning_effort(effort: ThinkingEffort) -> Option<&'static str> {
+    match effort {
+        ThinkingEffort::Off => None,
+        ThinkingEffort::Low => Some("low"),
+        ThinkingEffort::Medium => Some("medium"),
+        ThinkingEffort::High | ThinkingEffort::Max => Some("high"),
+    }
+}
+
+// Rewrites the model name to its bare id and sets `reasoning_effort` from either
+// an explicit `-high|medium|low` suffix or the standard `thinking_effort` set by
+// the UI/ACP/GOSLING_THINKING_EFFORT. Without this the OpenAI formatter drops
+// `thinking_effort` for this non-OpenAI model and the proxy never sees it.
+fn apply_reasoning_effort(model_config: &ModelConfig) -> ModelConfig {
+    let (base_model, suffix_effort) = split_effort_suffix(&model_config.model_name);
+    let effort = suffix_effort.or_else(|| {
+        model_config
+            .thinking_effort()
+            .and_then(proxy_reasoning_effort)
+            .map(str::to_string)
+    });
+    let mut config = model_config.clone();
+    config.model_name = base_model;
+    if let Some(effort) = effort {
+        config
+            .request_params
+            .get_or_insert_with(Default::default)
+            .insert("reasoning_effort".to_string(), serde_json::json!(effort));
+    }
+    config
+}
 
 #[derive(Debug)]
 struct XaiAuthState {
@@ -710,8 +799,9 @@ impl Provider for XaiOAuthProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let model_config = apply_reasoning_effort(model_config);
         self.inner
-            .stream(model_config, system, messages, tools)
+            .stream(&model_config, system, messages, tools)
             .await
     }
 
@@ -757,16 +847,35 @@ impl Provider for XaiOAuthProvider {
 
 impl gosling_providers::base::ProviderDescriptor for XaiOAuthProvider {
     fn metadata() -> ProviderMetadata {
-        ProviderMetadata::new(
+        // with_models (not new): these models have no canonical registry entry,
+        // so ModelInfo::reasoning must be set explicitly or grok-4.5's effort
+        // selector is hidden in the desktop switcher.
+        let models = SUPERGROK_MODELS
+            .iter()
+            .map(|m| ModelInfo {
+                reasoning: m.reasoning,
+                ..ModelInfo::new(m.name, m.context_limit)
+            })
+            .collect();
+        ProviderMetadata::with_models(
             XAI_OAUTH_PROVIDER_NAME,
             "xAI (SuperGrok Subscription)",
             "Use your xAI SuperGrok subscription via OAuth instead of an API key. Falls back to a device-code flow on headless / remote machines.",
-            XAI_DEFAULT_MODEL,
-            XAI_KNOWN_MODELS.to_vec(),
+            SUPERGROK_DEFAULT_MODEL,
+            models,
             XAI_OAUTH_DOC_URL,
             vec![
                 ConfigKey::new_oauth("XAI_OAUTH_TOKEN", true, true, None, false),
-                ConfigKey::new("XAI_HOST", false, false, Some(XAI_API_HOST), false),
+                // Deliberately not XAI_HOST: that key is shared with the API-key
+                // `xai` provider, whose value (api.x.ai) would misroute OAuth
+                // requests to the wrong host.
+                ConfigKey::new(
+                    "XAI_OAUTH_HOST",
+                    false,
+                    false,
+                    Some(SUPERGROK_API_HOST),
+                    false,
+                ),
             ],
         )
     }
@@ -782,8 +891,8 @@ impl ProviderDef for XaiOAuthProvider {
         Box::pin(async move {
             let config = crate::config::Config::global();
             let host: String = config
-                .get_param("XAI_HOST")
-                .unwrap_or_else(|_| XAI_API_HOST.to_string());
+                .get_param("XAI_OAUTH_HOST")
+                .unwrap_or_else(|_| SUPERGROK_API_HOST.to_string());
 
             let auth_provider = Arc::new(XaiOAuthAuthProvider::new(XaiAuthState::instance()));
             let auth_for_client = Arc::clone(&auth_provider);
@@ -792,6 +901,8 @@ impl ProviderDef for XaiOAuthProvider {
                 AuthMethod::Custom(Box::new(SharedAuthProvider(auth_for_client))),
                 tls_config,
             )?
+            .with_header(GROK_CLIENT_VERSION_HEADER, &grok_client_version())?
+            .with_header(GROK_CLIENT_IDENTIFIER_HEADER, GROK_CLIENT_IDENTIFIER)?
             .with_request_builder(crate::session_context::session_id_request_builder());
 
             let inner = OpenAiCompatibleProvider::new(
@@ -872,5 +983,134 @@ mod tests {
             s
         );
         assert!(s.ends_with("tokens.json"));
+    }
+
+    #[test]
+    fn split_effort_suffix_parses_supported_efforts() {
+        assert_eq!(
+            split_effort_suffix("grok-4.5-high"),
+            ("grok-4.5".to_string(), Some("high".to_string()))
+        );
+        assert_eq!(
+            split_effort_suffix("grok-4.5-low"),
+            ("grok-4.5".to_string(), Some("low".to_string()))
+        );
+        // No suffix and unrelated suffixes are left intact.
+        assert_eq!(
+            split_effort_suffix("grok-4.5"),
+            ("grok-4.5".to_string(), None)
+        );
+        assert_eq!(
+            split_effort_suffix("grok-composer-2.5-fast"),
+            ("grok-composer-2.5-fast".to_string(), None)
+        );
+    }
+
+    #[test]
+    fn apply_reasoning_effort_rewrites_model_and_sets_param() {
+        let config = apply_reasoning_effort(&ModelConfig::new("grok-4.5-medium"));
+        assert_eq!(config.model_name, "grok-4.5");
+        assert_eq!(
+            config
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("reasoning_effort")),
+            Some(&serde_json::json!("medium"))
+        );
+    }
+
+    #[test]
+    fn apply_reasoning_effort_omits_param_without_suffix_or_setting() {
+        let config = apply_reasoning_effort(&ModelConfig::new("grok-4.5"));
+        assert_eq!(config.model_name, "grok-4.5");
+        assert!(config
+            .request_params
+            .as_ref()
+            .and_then(|p| p.get("reasoning_effort"))
+            .is_none());
+    }
+
+    #[test]
+    fn apply_reasoning_effort_maps_standard_thinking_effort() {
+        // A standard thinking_effort setting (from UI/ACP) is translated even
+        // without a name suffix; Max clamps to the proxy's highest, "high".
+        let config = apply_reasoning_effort(
+            &ModelConfig::new("grok-4.5").with_thinking_effort(ThinkingEffort::Max),
+        );
+        assert_eq!(config.model_name, "grok-4.5");
+        assert_eq!(
+            config
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("reasoning_effort")),
+            Some(&serde_json::json!("high"))
+        );
+    }
+
+    #[test]
+    fn apply_reasoning_effort_suffix_beats_setting() {
+        let config = apply_reasoning_effort(
+            &ModelConfig::new("grok-4.5-low").with_thinking_effort(ThinkingEffort::High),
+        );
+        assert_eq!(config.model_name, "grok-4.5");
+        assert_eq!(
+            config
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("reasoning_effort")),
+            Some(&serde_json::json!("low"))
+        );
+    }
+
+    #[test]
+    fn proxy_reasoning_effort_maps_and_clamps() {
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::Off), None);
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::Low), Some("low"));
+        assert_eq!(
+            proxy_reasoning_effort(ThinkingEffort::Medium),
+            Some("medium")
+        );
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::High), Some("high"));
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::Max), Some("high"));
+    }
+
+    #[test]
+    fn metadata_marks_grok_4_5_reasoning_capable() {
+        let meta = <XaiOAuthProvider as gosling_providers::base::ProviderDescriptor>::metadata();
+        let grok = meta
+            .known_models
+            .iter()
+            .find(|m| m.name == "grok-4.5")
+            .expect("grok-4.5 present");
+        assert!(grok.reasoning, "grok-4.5 must be reasoning-capable");
+        assert_eq!(grok.context_limit, 500_000);
+
+        let composer = meta
+            .known_models
+            .iter()
+            .find(|m| m.name == "grok-composer-2.5-fast")
+            .expect("composer present");
+        assert!(!composer.reasoning);
+    }
+
+    #[test]
+    fn parse_version_reads_core_and_ignores_suffix() {
+        assert_eq!(parse_version("0.2.93"), Some((0, 2, 93)));
+        assert_eq!(parse_version("1.0"), Some((1, 0, 0)));
+        assert_eq!(parse_version(" 0.1.202-beta.1 "), Some((0, 1, 202)));
+        assert_eq!(parse_version("2.3.4+build5"), Some((2, 3, 4)));
+        assert_eq!(parse_version("not-a-version"), None);
+        assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn version_min_boundary_is_ordered() {
+        // A version at or above the minimum is accepted; below is rejected.
+        assert!(parse_version("0.1.202").unwrap() >= GROK_CLIENT_VERSION_MIN);
+        assert!(parse_version("0.2.93").unwrap() >= GROK_CLIENT_VERSION_MIN);
+        assert!(parse_version("0.1.201").unwrap() < GROK_CLIENT_VERSION_MIN);
+        assert!(parse_version("0.0.999").unwrap() < GROK_CLIENT_VERSION_MIN);
+        // The fallback pin itself must satisfy the minimum.
+        assert!(parse_version(GROK_CLIENT_VERSION_FALLBACK).unwrap() >= GROK_CLIENT_VERSION_MIN);
     }
 }
