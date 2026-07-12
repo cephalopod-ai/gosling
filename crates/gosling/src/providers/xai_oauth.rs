@@ -1,7 +1,7 @@
 use super::api_client::{ApiClient, AuthMethod, AuthProvider};
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata};
 use super::openai_compatible::OpenAiCompatibleProvider;
-use super::xai::{SUPERGROK_API_HOST, SUPERGROK_DEFAULT_MODEL, SUPERGROK_KNOWN_MODELS};
+use super::xai::{SUPERGROK_API_HOST, SUPERGROK_DEFAULT_MODEL, SUPERGROK_MODELS};
 use crate::config::paths::Paths;
 use crate::conversation::message::Message;
 use anyhow::{anyhow, Result};
@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
+use gosling_providers::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -118,10 +119,30 @@ fn split_effort_suffix(model_name: &str) -> (String, Option<String>) {
     (model_name.to_string(), None)
 }
 
-// Rewrites the model name to its bare id and, when an effort suffix was present,
-// carries the effort through as `reasoning_effort` so the proxy applies it.
+// Maps a standard thinking-effort setting to the proxy's `reasoning_effort`.
+// The proxy only accepts low/medium/high, so Off carries no effort and Max
+// clamps to high.
+fn proxy_reasoning_effort(effort: ThinkingEffort) -> Option<&'static str> {
+    match effort {
+        ThinkingEffort::Off => None,
+        ThinkingEffort::Low => Some("low"),
+        ThinkingEffort::Medium => Some("medium"),
+        ThinkingEffort::High | ThinkingEffort::Max => Some("high"),
+    }
+}
+
+// Rewrites the model name to its bare id and sets `reasoning_effort` from either
+// an explicit `-high|medium|low` suffix or the standard `thinking_effort` set by
+// the UI/ACP/GOSLING_THINKING_EFFORT. Without this the OpenAI formatter drops
+// `thinking_effort` for this non-OpenAI model and the proxy never sees it.
 fn apply_reasoning_effort(model_config: &ModelConfig) -> ModelConfig {
-    let (base_model, effort) = split_effort_suffix(&model_config.model_name);
+    let (base_model, suffix_effort) = split_effort_suffix(&model_config.model_name);
+    let effort = suffix_effort.or_else(|| {
+        model_config
+            .thinking_effort()
+            .and_then(proxy_reasoning_effort)
+            .map(str::to_string)
+    });
     let mut config = model_config.clone();
     config.model_name = base_model;
     if let Some(effort) = effort {
@@ -826,12 +847,22 @@ impl Provider for XaiOAuthProvider {
 
 impl gosling_providers::base::ProviderDescriptor for XaiOAuthProvider {
     fn metadata() -> ProviderMetadata {
-        ProviderMetadata::new(
+        // with_models (not new): these models have no canonical registry entry,
+        // so ModelInfo::reasoning must be set explicitly or grok-4.5's effort
+        // selector is hidden in the desktop switcher.
+        let models = SUPERGROK_MODELS
+            .iter()
+            .map(|m| ModelInfo {
+                reasoning: m.reasoning,
+                ..ModelInfo::new(m.name, m.context_limit)
+            })
+            .collect();
+        ProviderMetadata::with_models(
             XAI_OAUTH_PROVIDER_NAME,
             "xAI (SuperGrok Subscription)",
             "Use your xAI SuperGrok subscription via OAuth instead of an API key. Falls back to a device-code flow on headless / remote machines.",
             SUPERGROK_DEFAULT_MODEL,
-            SUPERGROK_KNOWN_MODELS.to_vec(),
+            models,
             XAI_OAUTH_DOC_URL,
             vec![
                 ConfigKey::new_oauth("XAI_OAUTH_TOKEN", true, true, None, false),
@@ -989,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_reasoning_effort_omits_param_without_suffix() {
+    fn apply_reasoning_effort_omits_param_without_suffix_or_setting() {
         let config = apply_reasoning_effort(&ModelConfig::new("grok-4.5"));
         assert_eq!(config.model_name, "grok-4.5");
         assert!(config
@@ -997,6 +1028,69 @@ mod tests {
             .as_ref()
             .and_then(|p| p.get("reasoning_effort"))
             .is_none());
+    }
+
+    #[test]
+    fn apply_reasoning_effort_maps_standard_thinking_effort() {
+        // A standard thinking_effort setting (from UI/ACP) is translated even
+        // without a name suffix; Max clamps to the proxy's highest, "high".
+        let config = apply_reasoning_effort(
+            &ModelConfig::new("grok-4.5").with_thinking_effort(ThinkingEffort::Max),
+        );
+        assert_eq!(config.model_name, "grok-4.5");
+        assert_eq!(
+            config
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("reasoning_effort")),
+            Some(&serde_json::json!("high"))
+        );
+    }
+
+    #[test]
+    fn apply_reasoning_effort_suffix_beats_setting() {
+        let config = apply_reasoning_effort(
+            &ModelConfig::new("grok-4.5-low").with_thinking_effort(ThinkingEffort::High),
+        );
+        assert_eq!(config.model_name, "grok-4.5");
+        assert_eq!(
+            config
+                .request_params
+                .as_ref()
+                .and_then(|p| p.get("reasoning_effort")),
+            Some(&serde_json::json!("low"))
+        );
+    }
+
+    #[test]
+    fn proxy_reasoning_effort_maps_and_clamps() {
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::Off), None);
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::Low), Some("low"));
+        assert_eq!(
+            proxy_reasoning_effort(ThinkingEffort::Medium),
+            Some("medium")
+        );
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::High), Some("high"));
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::Max), Some("high"));
+    }
+
+    #[test]
+    fn metadata_marks_grok_4_5_reasoning_capable() {
+        let meta = <XaiOAuthProvider as gosling_providers::base::ProviderDescriptor>::metadata();
+        let grok = meta
+            .known_models
+            .iter()
+            .find(|m| m.name == "grok-4.5")
+            .expect("grok-4.5 present");
+        assert!(grok.reasoning, "grok-4.5 must be reasoning-capable");
+        assert_eq!(grok.context_limit, 500_000);
+
+        let composer = meta
+            .known_models
+            .iter()
+            .find(|m| m.name == "grok-composer-2.5-fast")
+            .expect("composer present");
+        assert!(!composer.reasoning);
     }
 
     #[test]
