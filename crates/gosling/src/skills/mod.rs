@@ -481,6 +481,20 @@ pub(crate) fn load_skill_dir(
     Some(source)
 }
 
+pub(crate) fn hydrate_skill_entry(skill: &SourceEntry) -> Option<SourceEntry> {
+    if skill.source_type == SourceType::BuiltinSkill {
+        return Some(skill.clone());
+    }
+
+    let mut current = load_skill_dir(Path::new(&skill.path), skill.global, skill.writable)?;
+    if current.name != skill.name {
+        return None;
+    }
+    current.description.clone_from(&skill.description);
+    current.properties.extend(skill.properties.clone());
+    Some(current)
+}
+
 /// Discover skills from all configured filesystem locations and built-ins.
 /// Each returned entry has `global` set according to the directory it was
 /// found in (or `true` for built-ins).

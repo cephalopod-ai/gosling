@@ -255,24 +255,41 @@ impl PermissionManager {
         self.persist();
     }
 
-    /// Removes all entries where the principal name starts with the given extension name.
-    pub fn remove_extension(&self, extension_name: &str) {
-        {
-            let mut map = self.write_map();
-            for permission_config in map.values_mut() {
-                permission_config
-                    .always_allow
-                    .retain(|p| !p.starts_with(extension_name));
-                permission_config
-                    .ask_before
-                    .retain(|p| !p.starts_with(extension_name));
-                permission_config
-                    .never_allow
-                    .retain(|p| !p.starts_with(extension_name));
-            }
+    /// Removes all permission entries in an extension's tool namespace.
+    pub fn remove_extension(&self, extension_name: &str) -> anyhow::Result<()> {
+        let _persist_guard = self
+            .persist_lock
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut map = self.write_map();
+        let previous = map.clone();
+        let prefix = format!("{extension_name}__");
+        let belongs_to_extension = |principal: &String| {
+            extension_name.is_empty() || principal.starts_with(prefix.as_str())
+        };
+        for permission_config in map.values_mut() {
+            permission_config
+                .always_allow
+                .retain(|principal| !belongs_to_extension(principal));
+            permission_config
+                .ask_before
+                .retain(|principal| !belongs_to_extension(principal));
+            permission_config
+                .never_allow
+                .retain(|principal| !belongs_to_extension(principal));
         }
 
-        self.persist();
+        let result = serde_yaml::to_string(&*map)
+            .map_err(anyhow::Error::from)
+            .and_then(|yaml| {
+                crate::config::base::write_file_atomic(&self.config_path, &yaml)
+                    .map_err(anyhow::Error::from)
+            });
+        if let Err(error) = result {
+            *map = previous;
+            return Err(error);
+        }
+        Ok(())
     }
 }
 
@@ -378,9 +395,10 @@ mod tests {
         manager.update_user_permission("prefix__tool1", PermissionLevel::AlwaysAllow);
         manager.update_user_permission("nonprefix__tool2", PermissionLevel::AlwaysAllow);
         manager.update_user_permission("prefix__tool3", PermissionLevel::AskBefore);
+        manager.update_user_permission("prefix-extra__tool4", PermissionLevel::AlwaysAllow);
 
         // Remove entries starting with "prefix"
-        manager.remove_extension("prefix");
+        manager.remove_extension("prefix").unwrap();
 
         let map = manager.permission_map.read().unwrap();
         let config = map.get(USER_PERMISSION).unwrap();
@@ -393,6 +411,22 @@ mod tests {
         assert!(config
             .always_allow
             .contains(&"nonprefix__tool2".to_string()));
+        assert!(config
+            .always_allow
+            .contains(&"prefix-extra__tool4".to_string()));
+    }
+
+    #[test]
+    fn test_remove_extension_rolls_back_when_persistence_fails() {
+        let (manager, _temp_dir) = create_test_permission_manager();
+        manager.update_user_permission("prefix__tool1", PermissionLevel::AlwaysAllow);
+        fs::create_dir(manager.config_path.with_extension("tmp")).unwrap();
+
+        assert!(manager.remove_extension("prefix").is_err());
+        assert_eq!(
+            manager.get_user_permission("prefix__tool1"),
+            Some(PermissionLevel::AlwaysAllow)
+        );
     }
 
     #[test]

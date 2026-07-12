@@ -74,14 +74,14 @@ impl GoslingAcpAgent {
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let conversion = gosling_extension_to_config(req.extension)?;
 
-        Config::global()
-            .set_secret_values(&conversion.secret_updates)
-            .internal_err_ctx("Failed to save extension env secrets")?;
-
-        crate::config::extensions::set_extension(ExtensionEntry {
-            enabled: req.enabled,
-            config: conversion.config,
-        });
+        crate::config::extensions::set_extension_with_secrets(
+            ExtensionEntry {
+                enabled: req.enabled,
+                config: conversion.config,
+            },
+            &conversion.secret_updates,
+        )
+        .internal_err_ctx("Failed to save extension config and secrets")?;
         Ok(EmptyResponse {})
     }
 
@@ -89,7 +89,12 @@ impl GoslingAcpAgent {
         &self,
         req: RemoveConfigExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        crate::config::extensions::remove_extension(&req.config_key);
+        let removed = crate::config::extensions::remove_extension_and_permissions(&req.config_key)
+            .internal_err_ctx("Failed to remove extension config and permissions")?;
+        if !removed {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data(format!("Extension '{}' not found", req.config_key)));
+        }
         Ok(EmptyResponse {})
     }
 
@@ -98,7 +103,8 @@ impl GoslingAcpAgent {
         req: SetConfigExtensionEnabledRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let updated =
-            crate::config::extensions::set_extension_enabled(&req.config_key, req.enabled);
+            crate::config::extensions::set_extension_enabled(&req.config_key, req.enabled)
+                .internal_err_ctx("Failed to update extension config")?;
         if !updated {
             return Err(agent_client_protocol::Error::invalid_params()
                 .data(format!("Extension '{}' not found", req.config_key)));

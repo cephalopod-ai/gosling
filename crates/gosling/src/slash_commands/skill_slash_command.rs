@@ -52,11 +52,17 @@ pub fn resolve_command(
         return Ok(None);
     };
 
+    render_command(&skill, command, params_str).map(Some)
+}
+
+fn render_command(skill: &SourceEntry, command: &str, params_str: &str) -> Result<String, String> {
+    let skill = crate::skills::hydrate_skill_entry(skill)
+        .ok_or_else(|| format!("Skill /{} is no longer available", command))?;
     let args = (!params_str.is_empty()).then_some(params_str);
     let prompt = crate::skills::loaded_skill_context_with_args(&skill, args)
         .map_err(|e| format!("Skill /{}: {}", command, e))?;
 
-    Ok(Some(prompt))
+    Ok(prompt)
 }
 
 pub(super) fn commands_from_sources(sources: Vec<SourceEntry>) -> Vec<SlashCommandEntry> {
@@ -145,6 +151,33 @@ mod tests {
         assert_eq!(command.description, "Review changed code");
         assert_eq!(command.source, SlashCommandSource::Skill);
         assert_eq!(command.input_hint.as_deref(), Some("[task]"));
+    }
+
+    #[test]
+    fn catalog_skill_command_hydrates_content_on_demand() {
+        let tmp = TempDir::new().unwrap();
+        let skill_dir = tmp.path().join("catalog").join("plan-example");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: plan-example\ndescription: File description\n---\nPlan carefully.",
+        )
+        .unwrap();
+
+        let lightweight = SourceEntry {
+            source_type: SourceType::Skill,
+            name: "plan-example".to_string(),
+            description: "Catalog description".to_string(),
+            path: skill_dir.to_string_lossy().into_owned(),
+            global: true,
+            writable: false,
+            ..Default::default()
+        };
+
+        let prompt = render_command(&lightweight, "plan-example", "").unwrap();
+
+        assert!(prompt.contains("Catalog description"));
+        assert!(prompt.contains("Plan carefully."));
     }
 
     fn source_entry(source_type: SourceType, name: &str, description: &str) -> SourceEntry {

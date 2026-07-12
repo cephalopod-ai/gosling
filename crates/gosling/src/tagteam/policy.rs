@@ -26,7 +26,7 @@ pub enum StewardAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyDecision {
     AllowRead,
-    ReservedForApprovalBoundPhase,
+    RequireApproval,
     Deny,
 }
 
@@ -46,7 +46,7 @@ impl StewardCapabilityPolicy {
             | StewardAction::Diagnostics
             | StewardAction::PrepareResume => PolicyDecision::AllowRead,
             StewardAction::Start | StewardAction::Resume | StewardAction::Cancel => {
-                PolicyDecision::ReservedForApprovalBoundPhase
+                PolicyDecision::RequireApproval
             }
             StewardAction::Shell
             | StewardAction::FileMutation
@@ -68,6 +68,10 @@ impl StewardCapabilityPolicy {
             "tagteam_diagnostics",
             "tagteam_prepare_resume",
         ]
+    }
+
+    pub fn approval_bound_action_names(self) -> &'static [&'static str] {
+        &["tagteam_start", "tagteam_resume", "tagteam_cancel"]
     }
 }
 
@@ -125,10 +129,15 @@ mod tests {
             StewardAction::Resume,
             StewardAction::Cancel,
         ] {
-            assert_eq!(
-                policy.decide(action),
-                PolicyDecision::ReservedForApprovalBoundPhase
-            );
+            assert_eq!(policy.decide(action), PolicyDecision::RequireApproval);
         }
+        assert_eq!(
+            policy.approval_bound_action_names(),
+            ["tagteam_start", "tagteam_resume", "tagteam_cancel"]
+        );
+        assert!(policy
+            .exposed_tool_names()
+            .iter()
+            .all(|name| !policy.approval_bound_action_names().contains(name)));
     }
 }

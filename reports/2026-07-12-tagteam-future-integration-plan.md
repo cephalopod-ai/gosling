@@ -256,21 +256,25 @@ Phase 1 is complete only when:
 
 No real Tagteam run is required or permitted by this phase.
 
-### Local implementation result, 2026-07-12
+### Implementation status, 2026-07-12
 
 - Added the disabled `tagteam-workflow` Cargo feature, architecture ownership,
   versioned bounded domain contracts, a test-only client fixture, deterministic
   reducer/reporting, a restrictive steward policy, and additive SQLite
   persistence with generation and sequence compare-and-set behavior.
-- Existing sessions default to `standard`; export/import preserves workflow
-  kind, and the dormant binding table cascades with session deletion.
+- Existing sessions default to `standard`. Import and copy deliberately reset
+  sessions to `standard` so a Tagteam workflow cannot be detached from its
+  run ownership. Live bindings cascade with session deletion, while durable
+  launch and producer identities remain as replay-prevention tombstones.
 - No Desktop, text UI, CLI, slash command, production mock, external process,
   or live MCP adapter was added.
-- Local verification passed with architecture YAML parsing, `cargo fmt --all
-  -- --check`, default-feature Gosling library tests, feature-specific tests,
-  export/import and migration tests, and feature-enabled clippy with warnings
-  denied. The complete feature-enabled Gosling library suite passed 1,370
-  tests with zero failures.
+- CI now compiles, tests, and lints the dormant feature explicitly in addition
+  to the default workspace checks. This section records the intended
+  gate; current validation results belong in the pull request rather than a
+  durable design report.
+- Phase 2 must authenticate producer observations before calling the
+  crate-private persistence boundary and must use no-follow/openat-style file
+  access to close the remaining filesystem race between approval and execution.
 
 ## 7. Producer gate for Phase 2
 

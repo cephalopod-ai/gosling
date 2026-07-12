@@ -77,6 +77,7 @@ jobs:
           export CARGO_INCREMENTAL=0
           cargo test -- --skip scenario_tests::scenarios::tests
           cargo test --jobs 1 scenario_tests::scenarios::tests
+          cargo test -p gosling --features tagteam-workflow tagteam::
         working-directory: crates
         env:
           RUST_MIN_STACK: 8388608
@@ -139,7 +140,9 @@ jobs:
           key: msrv
 
       - name: Check with MSRV toolchain
-        run: cargo check --workspace --locked --all-targets
+        run: |
+          cargo check --workspace --locked --all-targets
+          cargo check -p gosling --locked --all-targets --features tagteam-workflow
         env:
           CARGO_INCREMENTAL: "0"
 
@@ -163,6 +166,7 @@ jobs:
           hermit uninstall rustup
           export CARGO_INCREMENTAL=0
           cargo clippy --workspace --all-targets --exclude v8 -- -D warnings
+          cargo clippy -p gosling --all-targets --features tagteam-workflow -- -D warnings
 
   schema-check:
     name: Check Generated Schemas are Up-to-Date

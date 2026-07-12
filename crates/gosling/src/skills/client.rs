@@ -1,5 +1,5 @@
 use super::search::search_skills;
-use super::{discover_skills, load_skill_dir, loaded_skill_context_with_args};
+use super::{discover_skills, hydrate_skill_entry, loaded_skill_context_with_args};
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
@@ -53,20 +53,6 @@ impl SkillsClient {
         let skills = discover_skills(Some(&self.working_dir));
         *self.skills.write().unwrap() = skills.clone();
         skills
-    }
-
-    fn current_skill(&self, skill: &SourceEntry) -> Option<SourceEntry> {
-        if skill.source_type == SourceType::BuiltinSkill {
-            return Some(skill.clone());
-        }
-
-        let mut current = load_skill_dir(Path::new(&skill.path), skill.global, skill.writable)?;
-        if current.name != skill.name {
-            return None;
-        }
-        current.description.clone_from(&skill.description);
-        current.properties.extend(skill.properties.clone());
-        Some(current)
     }
 }
 
@@ -238,7 +224,7 @@ impl McpClientTrait for SkillsClient {
         }
 
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
-            let Some(skill) = self.current_skill(skill) else {
+            let Some(skill) = hydrate_skill_entry(skill) else {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "Skill '{}' is no longer available. Refresh the skill catalog and try again.",
                     skill_name
@@ -259,7 +245,7 @@ impl McpClientTrait for SkillsClient {
                 s.name == parent_skill_name
                     && matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill)
             }) {
-                let Some(skill) = self.current_skill(skill) else {
+                let Some(skill) = hydrate_skill_entry(skill) else {
                     return Ok(CallToolResult::error(vec![Content::text(format!(
                         "Skill '{}' is no longer available. Refresh the skill catalog and try again.",
                         parent_skill_name
@@ -444,8 +430,8 @@ mod tests {
         assert!(text.contains("Do the thing"));
     }
 
-    #[tokio::test]
-    async fn catalog_entry_loads_content_and_validates_identity_on_demand() {
+    #[test]
+    fn catalog_entry_loads_content_and_validates_identity_on_demand() {
         let temp_dir = TempDir::new().unwrap();
         let skill_dir = temp_dir.path().join("catalog/plan-example");
         fs::create_dir_all(&skill_dir).unwrap();
@@ -455,14 +441,6 @@ mod tests {
         )
         .unwrap();
         fs::write(skill_dir.join("reference.md"), "Supporting details.").unwrap();
-        let client = SkillsClient::new(PlatformExtensionContext {
-            extension_manager: None,
-            session_manager: Arc::new(crate::session::SessionManager::instance()),
-            session: None,
-            use_login_shell_path: false,
-            code_execution_runtime: crate::config::CodeExecutionRuntime::Enabled,
-        })
-        .unwrap();
         let mut entry = SourceEntry {
             source_type: SourceType::Skill,
             name: "plan-example".to_string(),
@@ -473,14 +451,14 @@ mod tests {
             ..Default::default()
         };
 
-        let loaded = client.current_skill(&entry).unwrap();
+        let loaded = hydrate_skill_entry(&entry).unwrap();
 
         assert_eq!(loaded.description, "Catalog description");
         assert!(loaded.content.contains("Plan carefully."));
         assert_eq!(loaded.supporting_files.len(), 1);
 
         entry.name = "different-id".to_string();
-        assert!(client.current_skill(&entry).is_none());
+        assert!(hydrate_skill_entry(&entry).is_none());
     }
 
     #[tokio::test]

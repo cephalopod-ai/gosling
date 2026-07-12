@@ -473,12 +473,39 @@ Installed plugins are stored under `~/.agents/plugins/<plugin-name>/`. For more 
 ---
 
 #### mcp
-Run an enabled MCP server specified by `<name>` (e.g. `'Google Drive'`).
+Run a bundled MCP server or manage MCP server extensions.
 
 **Usage:**
 ```bash
-gosling mcp <name>
+# Run a bundled server. The legacy `gosling mcp <server>` form also works.
+gosling mcp serve <server>
+
+# Install a stdio MCP server.
+gosling mcp install my-server --cmd "npx -y @scope/server"
+
+# Store ordinary environment values in config.yaml and secrets separately.
+# After setting API_TOKEN in the environment:
+gosling mcp install my-server --cmd "server" --env MODE=local --secret API_TOKEN
+
+# Import an existing Goose extension configuration.
+gosling mcp install my-server --from-goose
+
+# Inspect or remove configured extensions.
+gosling mcp list
+gosling mcp remove my-server
 ```
+
+`--env KEY=VALUE` writes the value to `config.yaml`. For credentials, export the
+value and use the repeatable `--secret KEY` option; only the key name is written
+to the extension entry. `--secret KEY=VALUE` is also supported, but can expose
+the value through shell history or process listings.
+
+`--from-goose` imports extension configuration, but it does not copy values
+from Goose's keyring. If the imported entry references `env_keys` that are not
+already available in gosling's environment or secret store, the command lists
+the missing keys and exits without changing the configuration. Supply each
+value in the environment, pass `--secret KEY`, and retry. Use
+`--goose-config PATH` to import from a nonstandard Goose configuration file.
 
 ---
 

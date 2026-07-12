@@ -2,10 +2,11 @@ use anyhow::{bail, Context, Result};
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
 use gosling::agents::{extension::Envs, ExtensionConfig};
 use gosling::config::extensions::{
-    get_all_extension_names, get_all_extensions, name_to_key, remove_extension, set_extension,
+    get_all_extension_names, get_all_extensions, name_to_key, remove_extension_and_permissions,
+    set_extension_with_secrets,
 };
 use gosling::config::{Config, ExtensionEntry, DEFAULT_EXTENSION_TIMEOUT};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 pub struct InstallArgs {
@@ -22,7 +23,7 @@ pub struct InstallArgs {
 
 pub fn handle_install(args: InstallArgs) -> Result<()> {
     let env_pairs = parse_key_values(&args.envs, "--env")?;
-    let secret_pairs = parse_key_values(&args.secrets, "--secret")?;
+    let secret_pairs = parse_secret_values(&args.secrets)?;
 
     let mut entry = if args.from_goose {
         import_goose_entry(&args.name, args.goose_config.clone())?
@@ -54,12 +55,30 @@ pub fn handle_install(args: InstallArgs) -> Result<()> {
 
     entry.enabled = true;
     let secret_keys: Vec<String> = secret_pairs.iter().map(|(key, _)| key.clone()).collect();
+    let supplied_secret_keys = secret_keys.iter().cloned().collect::<HashSet<_>>();
     apply_overrides(&mut entry.config, &args, env_pairs, secret_keys)?;
-    store_secrets(&secret_pairs)?;
+    if args.from_goose {
+        let unresolved = unresolved_env_keys(&entry.config, &supplied_secret_keys);
+        if !unresolved.is_empty() {
+            bail!(
+                "Goose extension '{}' references secrets unavailable to gosling: {}. Goose keyring values are not copied; export each key and pass --secret KEY, or use --secret KEY=VALUE",
+                args.name,
+                unresolved.join(", ")
+            );
+        }
+    }
 
     let key = entry.config.key();
-    let existed = get_all_extension_names().contains(&key);
-    set_extension(entry);
+    let previous = get_all_extensions()
+        .into_iter()
+        .find(|existing| existing.config.key() == key);
+    let existed = previous.is_some();
+    let secret_updates = secret_pairs
+        .iter()
+        .map(|(key, value)| (key.clone(), serde_json::Value::String(value.clone())))
+        .collect::<Vec<_>>();
+    set_extension_with_secrets(entry, &secret_updates)
+        .context("failed to persist extension config and secrets")?;
     println!(
         "{} extension '{}' in {}",
         if existed { "Updated" } else { "Installed" },
@@ -74,7 +93,11 @@ pub fn handle_remove(name: &str) -> Result<()> {
     if !get_all_extension_names().contains(&key) {
         bail!("no extension '{}' in {}", key, Config::global().path());
     }
-    remove_extension(&key);
+    if !remove_extension_and_permissions(&key)
+        .context("failed to persist extension and permission removal")?
+    {
+        bail!("no extension '{}' in {}", key, Config::global().path());
+    }
     println!("Removed extension '{}'", key);
     Ok(())
 }
@@ -126,7 +149,25 @@ fn parse_key_values(pairs: &[String], flag: &str) -> Result<Vec<(String, String)
             pair.split_once('=')
                 .filter(|(key, _)| !key.is_empty())
                 .map(|(key, value)| (key.to_string(), value.to_string()))
-                .with_context(|| format!("{flag} requires KEY=VALUE, got '{pair}'"))
+                .with_context(|| format!("{flag} requires KEY=VALUE"))
+        })
+        .collect()
+}
+
+fn parse_secret_values(values: &[String]) -> Result<Vec<(String, String)>> {
+    values
+        .iter()
+        .map(|value| {
+            if let Some((key, secret)) = value.split_once('=').filter(|(key, _)| !key.is_empty()) {
+                return Ok((key.to_string(), secret.to_string()));
+            }
+            if value.is_empty() {
+                bail!("--secret requires KEY or KEY=VALUE");
+            }
+            let secret = std::env::var(value).with_context(|| {
+                format!("--secret {value} requires the {value} environment variable or KEY=VALUE")
+            })?;
+            Ok((value.clone(), secret))
         })
         .collect()
 }
@@ -202,17 +243,32 @@ fn merge_env_keys(env_keys: &mut Vec<String>, additions: Vec<String>) {
     }
 }
 
-fn store_secrets(secrets: &[(String, String)]) -> Result<()> {
-    if secrets.is_empty() {
-        return Ok(());
-    }
-    let updates: Vec<(String, serde_json::Value)> = secrets
+fn unresolved_env_keys(
+    config: &ExtensionConfig,
+    supplied_secret_keys: &HashSet<String>,
+) -> Vec<String> {
+    let (envs, env_keys) = match config {
+        ExtensionConfig::Stdio { envs, env_keys, .. }
+        | ExtensionConfig::StreamableHttp { envs, env_keys, .. } => (envs, env_keys),
+        _ => return Vec::new(),
+    };
+    let direct_envs = envs.get_env();
+    let mut unresolved = env_keys
         .iter()
-        .map(|(key, value)| (key.clone(), serde_json::Value::String(value.clone())))
-        .collect();
-    Config::global()
-        .set_secret_values(&updates)
-        .context("failed to store secrets")
+        .filter(|key| {
+            let key = key.as_str();
+            !direct_envs.contains_key(key)
+                && !supplied_secret_keys.contains(key)
+                && !Config::global()
+                    .get(key, true)
+                    .ok()
+                    .is_some_and(|value| value.as_str().is_some())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    unresolved.sort();
+    unresolved.dedup();
+    unresolved
 }
 
 fn goose_config_path() -> Result<PathBuf> {

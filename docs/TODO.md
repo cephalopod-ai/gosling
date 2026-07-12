@@ -2,10 +2,11 @@
 
 ## Tagteam workflow, MCP control plane, and Run Steward
 
-**Status:** Phase 1 foundation is implemented and locally validated, pending
-commit. Live MCP wiring, product UI activation, legacy-provider replacement,
-daemon integration, and fleet features remain deferred until their gates are
-met. The detailed staged plan is in
+**Status:** Phase 1 foundation is implemented behind a disabled feature. The
+required lint and MSRV jobs compile it explicitly, and the CI test job runs its
+feature-specific tests. Live MCP wiring, product UI
+activation, legacy-provider replacement, daemon integration, and fleet
+features remain deferred until their gates are met. The detailed staged plan is in
 [`reports/2026-07-12-tagteam-future-integration-plan.md`](../reports/2026-07-12-tagteam-future-integration-plan.md).
 
 Phase 1 is intentionally producer-independent while Tagteam remains in its

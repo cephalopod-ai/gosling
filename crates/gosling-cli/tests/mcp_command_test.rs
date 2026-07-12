@@ -8,6 +8,7 @@ fn gosling(root: &TempDir, args: &[&str]) -> Output {
         .args(args)
         .env("GOSLING_PATH_ROOT", root.path())
         .env("GOSLING_DISABLE_KEYRING", "1")
+        .env_remove("PR26_GOOSE_TOKEN")
         .output()
         .expect("failed to run gosling binary")
 }
@@ -122,6 +123,39 @@ fn install_stores_secrets_outside_config() {
 }
 
 #[test]
+fn install_config_failure_restores_secret_values() {
+    let root = TempDir::new().unwrap();
+    write_config(&root, "extensions: {}\n");
+    std::fs::write(
+        root.path().join("config").join("secrets.yaml"),
+        "ROLLBACK_TOKEN: old-value\n",
+    )
+    .unwrap();
+    std::fs::create_dir(root.path().join("config").join("config.tmp")).unwrap();
+
+    let output = gosling(
+        &root,
+        &[
+            "mcp",
+            "install",
+            "failed-server",
+            "--cmd",
+            "server",
+            "--secret",
+            "ROLLBACK_TOKEN=new-value",
+        ],
+    );
+
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("Installed extension"));
+    assert!(read_extensions(&root).get("failed-server").is_none());
+    let secrets = std::fs::read_to_string(root.path().join("config").join("secrets.yaml")).unwrap();
+    assert!(secrets.contains("ROLLBACK_TOKEN"));
+    assert!(secrets.contains("old-value"));
+    assert!(!secrets.contains("new-value"));
+}
+
+#[test]
 fn install_rejects_malformed_env() {
     let root = TempDir::new().unwrap();
     let output = gosling(
@@ -201,6 +235,104 @@ extensions:
 }
 
 #[test]
+fn install_from_goose_rejects_unresolved_env_keys() {
+    let root = TempDir::new().unwrap();
+    let goose_config = root.path().join("goose-config.yaml");
+    std::fs::write(
+        &goose_config,
+        r#"
+extensions:
+  protected:
+    enabled: true
+    type: stdio
+    name: protected
+    cmd: protected-server
+    args: []
+    env_keys:
+    - PR26_GOOSE_TOKEN
+    timeout: 300
+"#,
+    )
+    .unwrap();
+
+    let output = gosling(
+        &root,
+        &[
+            "mcp",
+            "install",
+            "protected",
+            "--from-goose",
+            "--goose-config",
+            goose_config.to_str().unwrap(),
+        ],
+    );
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("PR26_GOOSE_TOKEN"));
+    assert!(stderr.contains("--secret KEY=VALUE"));
+    let config_path = root.path().join("config").join("config.yaml");
+    if config_path.exists() {
+        assert!(!std::fs::read_to_string(config_path)
+            .unwrap()
+            .contains("protected"));
+    }
+}
+
+#[test]
+fn install_from_goose_accepts_explicit_secret_values() {
+    let root = TempDir::new().unwrap();
+    let goose_config = root.path().join("goose-config.yaml");
+    std::fs::write(
+        &goose_config,
+        r#"
+extensions:
+  protected:
+    enabled: true
+    type: stdio
+    name: protected
+    cmd: protected-server
+    args: []
+    env_keys:
+    - PR26_GOOSE_TOKEN
+    timeout: 300
+"#,
+    )
+    .unwrap();
+
+    let output = gosling(
+        &root,
+        &[
+            "mcp",
+            "install",
+            "protected",
+            "--from-goose",
+            "--goose-config",
+            goose_config.to_str().unwrap(),
+            "--secret",
+            "PR26_GOOSE_TOKEN=secret-value",
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let extensions = read_extensions(&root);
+    let entry = extensions.get("protected").unwrap();
+    assert_eq!(
+        entry.get("env_keys").unwrap().as_sequence().unwrap()[0].as_str(),
+        Some("PR26_GOOSE_TOKEN")
+    );
+    let config = std::fs::read_to_string(root.path().join("config").join("config.yaml")).unwrap();
+    assert!(!config.contains("secret-value"));
+    let secrets = std::fs::read_to_string(root.path().join("config").join("secrets.yaml")).unwrap();
+    assert!(secrets.contains("PR26_GOOSE_TOKEN"));
+    assert!(secrets.contains("secret-value"));
+}
+
+#[test]
 fn install_from_goose_rejects_missing_entry() {
     let root = TempDir::new().unwrap();
     let goose_config = root.path().join("goose-config.yaml");
@@ -249,6 +381,32 @@ extensions:
 
     let output = gosling(&root, &["mcp", "remove", "doomed"]);
     assert!(!output.status.success(), "second remove should fail");
+}
+
+#[test]
+fn remove_reports_config_persistence_failure() {
+    let root = TempDir::new().unwrap();
+    write_config(
+        &root,
+        r#"
+extensions:
+  retained:
+    enabled: true
+    type: stdio
+    name: retained
+    description: keep me
+    cmd: server
+    args: []
+    timeout: 300
+"#,
+    );
+    std::fs::create_dir(root.path().join("config").join("config.tmp")).unwrap();
+
+    let output = gosling(&root, &["mcp", "remove", "retained"]);
+
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("Removed extension"));
+    assert!(read_extensions(&root).get("retained").is_some());
 }
 
 #[test]

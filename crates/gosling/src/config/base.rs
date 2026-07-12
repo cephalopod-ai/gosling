@@ -575,6 +575,26 @@ impl Config {
         self.write_path().to_string_lossy().to_string()
     }
 
+    pub(crate) fn lock_extension_transaction(&self) -> Result<std::fs::File, ConfigError> {
+        let target_path = self.config_write_target_path()?;
+        if let Some(parent) = target_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| ConfigError::DirectoryError(error.to_string()))?;
+        }
+        let lock_path = target_path.with_extension("extensions.lock");
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options.open(lock_path)?;
+        file.lock_exclusive()
+            .map_err(|error| ConfigError::LockError(error.to_string()))?;
+        Ok(file)
+    }
+
     /// Load only the writable config file for read-modify-write operations.
     /// Parse errors are returned instead of treating corrupt content as empty;
     /// otherwise a routine settings write can permanently replace the user's
@@ -1088,6 +1108,26 @@ impl Config {
         }
 
         self.mutate_secrets(|values| {
+            for (key, value) in updates {
+                values.insert(key.clone(), value.clone());
+            }
+        })
+    }
+
+    /// Apply secret updates and deletions with one storage read and one storage write.
+    pub fn update_secret_values(
+        &self,
+        updates: &[(String, Value)],
+        deletions: &[String],
+    ) -> Result<(), ConfigError> {
+        if updates.is_empty() && deletions.is_empty() {
+            return Ok(());
+        }
+
+        self.mutate_secrets(|values| {
+            for key in deletions {
+                values.remove(key);
+            }
             for (key, value) in updates {
                 values.insert(key.clone(), value.clone());
             }

@@ -582,8 +582,8 @@ enum McpSubcommand {
         #[arg(long = "env", value_name = "KEY=VALUE")]
         envs: Vec<String>,
 
-        /// Environment variable stored in the secret store instead of config.yaml (repeatable)
-        #[arg(long = "secret", value_name = "KEY=VALUE")]
+        /// Secret from an environment variable or KEY=VALUE stored outside config.yaml (repeatable)
+        #[arg(long = "secret", value_name = "KEY[=VALUE]")]
         secrets: Vec<String>,
 
         /// Startup timeout in seconds
@@ -598,8 +598,11 @@ enum McpSubcommand {
         #[arg(long, value_name = "DIR")]
         cwd: Option<String>,
 
-        /// Import the extension entry from Goose's config.yaml
-        #[arg(long)]
+        /// Import extension configuration from Goose; keyring values are not copied
+        #[arg(
+            long,
+            long_help = "Import extension configuration from Goose's config.yaml. Goose keyring values are not copied; export referenced keys and pass --secret KEY, or provide --secret KEY=VALUE."
+        )]
         from_goose: bool,
 
         /// Goose config file to import from (defaults to Goose's standard location)
