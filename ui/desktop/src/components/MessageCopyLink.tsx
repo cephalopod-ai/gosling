@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Copy } from './icons';
 import { defineMessages, useIntl } from '../i18n';
+import { writeTextToClipboard } from '../utils/clipboard';
 
 const i18n = defineMessages({
   copied: {
@@ -29,20 +30,6 @@ function getHtmlContent(contentRef: React.RefObject<HTMLDivElement | null>): str
 
   const html = container.innerHTML.trim();
   return html.length > 0 ? html : null;
-}
-
-async function writeTextToClipboard(text: string): Promise<void> {
-  if (window.electron?.writeClipboardText) {
-    await window.electron.writeClipboardText(text);
-    return;
-  }
-
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  throw new Error('Clipboard text API unavailable');
 }
 
 async function writeHtmlToClipboard(html: string, text: string): Promise<void> {

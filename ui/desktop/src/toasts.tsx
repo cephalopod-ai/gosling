@@ -9,6 +9,7 @@ import {
   ExtensionLoadingStatus,
 } from './components/GroupedExtensionLoadingToast';
 import { getInitialWorkingDir } from './utils/workingDir';
+import { writeTextToClipboard } from './utils/clipboard';
 
 export interface ToastServiceOptions {
   silent?: boolean;
@@ -183,7 +184,7 @@ function ToastErrorContent({
   const handleCopyError = async () => {
     if (traceback) {
       try {
-        await navigator.clipboard.writeText(traceback);
+        await writeTextToClipboard(traceback);
       } catch (error) {
         console.error('Failed to copy error:', error);
       }
