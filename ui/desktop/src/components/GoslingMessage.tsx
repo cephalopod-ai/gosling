@@ -117,7 +117,7 @@ function GoslingMessage({
                     {timestamp}
                   </div>
                 )}
-                {message.content.every((content) => content.type === 'text') && !isStreaming && (
+                {displayText.trim() && !isStreaming && (
                   <div className="absolute left-0 pt-1">
                     <MessageCopyLink text={displayText} contentRef={contentRef} />
                   </div>

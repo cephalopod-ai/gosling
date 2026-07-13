@@ -27,6 +27,7 @@ const customOneDarkTheme = {
 };
 
 import { Check, Copy } from './icons';
+import { writeTextToClipboard } from '../utils/clipboard';
 import { wrapHTMLInCodeBlock } from '../utils/htmlSecurity';
 import { isProtocolSafe, getProtocol, BLOCKED_PROTOCOLS } from '../utils/urlSecurity';
 import { ConfirmationModal } from './ui/ConfirmationModal';
@@ -90,7 +91,7 @@ const CodeBlock = memo(function CodeBlock({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(children);
+      await writeTextToClipboard(children);
       setCopied(true);
 
       if (timeoutRef.current) {

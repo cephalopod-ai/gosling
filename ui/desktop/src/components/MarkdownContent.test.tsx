@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, type RenderOptions } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { fireEvent, render, type RenderOptions } from '@testing-library/react';
 import { screen, waitFor } from '@testing-library/dom';
 import MarkdownContent from './MarkdownContent';
 import { IntlTestWrapper } from '../i18n/test-utils';
@@ -171,6 +171,30 @@ console.log('Hello, World!');
         expect(screen.getByText(/to debug/)).toBeInTheDocument();
         expect(screen.getByText('console.log()')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Code Block Copy', () => {
+    beforeEach(() => {
+      vi.mocked(window.electron.writeClipboardText).mockClear();
+      vi.mocked(navigator.clipboard.writeText).mockClear();
+    });
+
+    it('copies code through the Electron clipboard bridge, not navigator.clipboard', async () => {
+      const code = "console.log('Hello, World!');";
+      const content = `\`\`\`javascript\n${code}\n\`\`\``;
+
+      renderWithIntl(<MarkdownContent content={content} />);
+
+      const copyButton = await screen.findByTitle('Copy code');
+      fireEvent.click(copyButton);
+
+      await waitFor(() => {
+        expect(window.electron.writeClipboardText).toHaveBeenCalledWith(
+          expect.stringContaining(code)
+        );
+      });
+      expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
     });
   });
 

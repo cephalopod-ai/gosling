@@ -25,6 +25,7 @@ import { ConfirmationModal } from '../ui/ConfirmationModal';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
 import { errorMessage } from '../../utils/conversionUtils';
+import { writeTextToClipboard } from '../../utils/clipboard';
 import { groupSessionsByDate, sessionActivityAt, type DateGroup } from '../../utils/dateUtils';
 import {
   acpDeleteSession,
@@ -1140,7 +1141,7 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
               className="absolute right-2 top-2"
               onClick={async () => {
                 try {
-                  await navigator.clipboard.writeText(shareLink);
+                  await writeTextToClipboard(shareLink);
                   toast.success(intl.formatMessage(i18n.copied));
                 } catch (copyError) {
                   toast.error(`Failed to copy: ${errorMessage(copyError, 'Unknown error')}`);
