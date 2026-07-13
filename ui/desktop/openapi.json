@@ -4772,6 +4772,9 @@
           "user_set_name": {
             "type": "boolean"
           },
+          "workflow_kind": {
+            "$ref": "#/components/schemas/SessionWorkflow"
+          },
           "working_dir": {
             "type": "string"
           }
