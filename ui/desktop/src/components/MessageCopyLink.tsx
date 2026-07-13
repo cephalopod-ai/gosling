@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Copy } from './icons';
 import { defineMessages, useIntl } from '../i18n';
-import { writeTextToClipboard } from '../utils/clipboard';
+import { writeRichTextToClipboard, writeTextToClipboard } from '../utils/clipboard';
 
 const i18n = defineMessages({
   copied: {
@@ -32,33 +32,6 @@ function getHtmlContent(contentRef: React.RefObject<HTMLDivElement | null>): str
   return html.length > 0 ? html : null;
 }
 
-async function writeHtmlToClipboard(html: string, text: string): Promise<void> {
-  if (window.electron?.writeClipboardHtml) {
-    try {
-      await window.electron.writeClipboardHtml(html, text);
-      return;
-    } catch {
-      await writeTextToClipboard(text);
-      return;
-    }
-  }
-
-  if (
-    typeof ClipboardItem !== 'undefined' &&
-    navigator.clipboard?.write &&
-    typeof Blob !== 'undefined'
-  ) {
-    const clipboardData = new ClipboardItem({
-      'text/plain': new Blob([text], { type: 'text/plain' }),
-      'text/html': new Blob([html], { type: 'text/html' }),
-    });
-    await navigator.clipboard.write([clipboardData]);
-    return;
-  }
-
-  await writeTextToClipboard(text);
-}
-
 export default function MessageCopyLink({ text, contentRef }: MessageCopyLinkProps) {
   const intl = useIntl();
   const [copied, setCopied] = useState(false);
@@ -67,7 +40,7 @@ export default function MessageCopyLink({ text, contentRef }: MessageCopyLinkPro
     try {
       const html = getHtmlContent(contentRef);
       if (html) {
-        await writeHtmlToClipboard(html, text);
+        await writeRichTextToClipboard(html, text);
       } else {
         await writeTextToClipboard(text);
       }

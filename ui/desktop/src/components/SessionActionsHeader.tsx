@@ -7,6 +7,7 @@ import { acpExportSession, acpForkSession, acpRenameSession } from '../acp/sessi
 import { getSessionDisplayName } from '../sessions';
 import type { Session } from '../types/session';
 import { errorMessage } from '../utils/conversionUtils';
+import { writeTextToClipboard } from '../utils/clipboard';
 import { cn } from '../utils';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
@@ -411,13 +412,13 @@ export default function SessionActionsHeader({
 
   const handleCopyJson = useCallback(async () => {
     if (!jsonText) return;
-    await navigator.clipboard.writeText(jsonText);
+    await writeTextToClipboard(jsonText);
     toast.success(intl.formatMessage(i18n.copiedJson));
   }, [intl, jsonText]);
 
   const handleCopyFullText = useCallback(async () => {
     if (!fullTextSelection) return;
-    await navigator.clipboard.writeText(fullTextSelection.value);
+    await writeTextToClipboard(fullTextSelection.value);
     toast.success(intl.formatMessage(i18n.copiedText));
   }, [fullTextSelection, intl]);
 
