@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { GroupedExtensionLoadingToast } from '../GroupedExtensionLoadingToast';
 import { IntlTestWrapper } from '../../i18n/test-utils';
@@ -81,5 +81,23 @@ describe('GroupedExtensionLoadingToast', () => {
     expect(screen.getByText('Loading 3 extensions...')).toBeInTheDocument();
     expect(screen.getByText('1 extension failed to load')).toBeInTheDocument();
     expect(screen.getByText('Show details')).toBeInTheDocument();
+  });
+
+  it('only confirms an error was copied after the clipboard write succeeds', async () => {
+    renderWithRouter(
+      <GroupedExtensionLoadingToast
+        extensions={[{ name: 'muninn', status: 'error', error: 'Missing MCP dependency' }]}
+        totalCount={1}
+        isComplete={true}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Show details'));
+    fireEvent.click(screen.getByText('Copy error'));
+
+    await waitFor(() => {
+      expect(window.electron.writeClipboardText).toHaveBeenCalledWith('Missing MCP dependency');
+    });
+    expect(screen.getByText('Copied!')).toBeInTheDocument();
   });
 });

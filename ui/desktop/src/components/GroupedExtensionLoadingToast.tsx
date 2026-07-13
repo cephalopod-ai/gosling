@@ -8,6 +8,7 @@ import { formatExtensionErrorMessage } from '../utils/extensionErrorUtils';
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { formatExtensionName } from './settings/extensions/subcomponents/ExtensionList';
 import { defineMessages, useIntl } from '../i18n';
+import { writeTextToClipboard } from '../utils/clipboard';
 
 const i18n = defineMessages({
   loadingExtensions: {
@@ -178,14 +179,20 @@ export function GroupedExtensionLoadingToast({
                             )}
                             <Button
                               size="sm"
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.stopPropagation();
-                                navigator.clipboard.writeText(ext.error!);
-                                setCopiedExtension(ext.name);
-                                setTimeout(() => setCopiedExtension(null), 2000);
+                                try {
+                                  await writeTextToClipboard(ext.error!);
+                                  setCopiedExtension(ext.name);
+                                  setTimeout(() => setCopiedExtension(null), 2000);
+                                } catch (error) {
+                                  console.error('Failed to copy extension error:', error);
+                                }
                               }}
                             >
-                              {copiedExtension === ext.name ? intl.formatMessage(i18n.copied) : intl.formatMessage(i18n.copyError)}
+                              {copiedExtension === ext.name
+                                ? intl.formatMessage(i18n.copied)
+                                : intl.formatMessage(i18n.copyError)}
                             </Button>
                           </div>
                         </div>
