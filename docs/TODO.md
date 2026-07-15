@@ -2,17 +2,23 @@
 
 ## Tagteam workflow, MCP control plane, and Run Steward
 
-**Status:** Phase 1 foundation is implemented behind a disabled feature. The
-required lint and MSRV jobs compile it explicitly, and the CI test job runs its
-feature-specific tests. Live MCP wiring, product UI
-activation, legacy-provider replacement, daemon integration, and fleet
-features remain deferred until their gates are met. The detailed staged plan is in
+**Status:** Phase 1 foundation and an isolated Phase 2 Unix-socket MCP adapter
+are implemented behind a disabled feature. The required lint and MSRV jobs
+compile it explicitly, and the CI test job runs its feature-specific tests.
+Product UI activation, workflow-service integration, legacy-provider
+replacement, durable lifecycle ownership, and fleet features remain deferred
+until their gates are met. The detailed staged plan is in
 [`reports/2026-07-12-tagteam-future-integration-plan.md`](../reports/2026-07-12-tagteam-future-integration-plan.md).
 
 Phase 1 is intentionally producer-independent while Tagteam remains in its
-debug-use loop. It now provides architecture contracts, internal types,
-additive persistence, deterministic event reduction, steward capability
-policy, test-only consumer fixtures, and a disabled feature gate. It adds no
+debug-use loop. It provides architecture contracts, internal types, additive
+persistence, deterministic event reduction, steward capability policy,
+test-only consumer fixtures, and a disabled feature gate. The Phase 2 adapter
+adds a strict `McpTagteamClient` for Tagteam's durable Unix-socket MCP daemon:
+it verifies protocol, producer schema/capabilities, and canonical repository
+identity; accepts structured content only; forwards producer-prepared approval
+records unchanged; and fails closed on malformed or ambiguous producer data. It
+does not spawn Tagteam, select models, duplicate its profile catalog, or add a
 visible control with no live handler.
 
 Gosling should treat Tagteam as a session workflow, not as an LLM provider.
@@ -24,13 +30,18 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
 
 ### Deferred live implementation horizon
 
+- [x] Add a typed Unix-socket MCP control client for Tagteam's published
+  control-plane contract. The feature-gated adapter covers validate,
+  prepare-start, start, status, plan, findings, prepare-resume, resume, cancel,
+  diagnostics, structured producer errors, and reconnecting a fresh client to
+  the same daemon fixture.
 - [ ] Add a `Standard` versus `Tagteam` session-workflow distinction without
   overloading Gosling's existing tool-permission mode. Keep the selected Run
   Steward provider/model in the normal session model configuration.
 - [ ] Replace the current hardcoded Tagteam-profile/provider path with a typed
-  Tagteam workflow client. Consume Tagteam's MCP schemas and reason codes; do
-  not copy its profile registry, model catalog, flag validation, or recovery
-  state machine into Gosling.
+  workflow service that consumes the typed MCP control client and reason codes.
+  Do not copy Tagteam's profile registry, model catalog, flag validation, or
+  recovery state machine into Gosling.
 - [ ] Persist a versioned launch specification and run binding containing the
   Gosling session, repository identity, Tagteam run ID, run directory, state
   root, sanitized normalized arguments, last event sequence, and last
@@ -61,11 +72,15 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
 - [ ] Add deterministic fallback messages so monitoring still works if the Run
   Steward is unavailable or returns invalid output. The steward is never on the
   critical execution path.
-- [ ] Validate with fake-server contract fixtures and real scratch-repository
-  runs across all Tagteam modes. Include Ollama/low-capability, mid-tier, and
-  frontier stewards; restart/reconnect, duplicate-launch, malformed response,
-  cancellation, stalled run, blocking findings, test failure, and unsafe
-  resume cases must be covered.
+- [ ] Validate the real Tagteam daemon with scratch-repository runs across all
+  Tagteam modes. The current socket fixture covers protocol/capability checks,
+  canonical-root matching, structured terminal errors, approval forwarding,
+  malformed producer data, and reconnect. Include Ollama/low-capability,
+  mid-tier, and frontier stewards; restart/reconnect, duplicate-launch,
+  cancellation, stalled run, blocking findings, test failure, and unsafe resume
+  cases before activation. The ignored `live_tagteam_socket_smoke_test` can
+  validate the read-only adapter boundary against a locally started daemon with
+  `TAGTEAM_MCP_SOCKET=<socket>`; it deliberately never launches a run.
 
 ### Future vision
 

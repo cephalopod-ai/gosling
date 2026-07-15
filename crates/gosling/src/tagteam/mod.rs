@@ -4,6 +4,7 @@
 
 mod client;
 mod contracts;
+mod mcp;
 mod policy;
 mod reducer;
 mod store;
@@ -13,6 +14,11 @@ pub use client::{
     MAX_SNAPSHOT_TEXT_BYTES,
 };
 pub use contracts::*;
+pub use mcp::{
+    ControlApproval, ControlDiagnostics, ControlFinding, ControlLaunchValidation, ControlPage,
+    ControlPlanItem, ControlRecoveryAssessment, ControlRunStatus, ControlStartPreparation,
+    McpTagteamClient, TagteamControlClient, TagteamControlError,
+};
 pub use policy::{PolicyDecision, StewardAction, StewardCapabilityPolicy};
 pub use reducer::{
     render_deterministic_status, DiffSummary, ReduceOutcome, ReducerError, RunClass,
