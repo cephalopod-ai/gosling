@@ -1,12 +1,14 @@
 # Gosling integration plan for future Tagteam
 
-**Status:** Phase 1 implemented and locally validated, pending commit; Phases
-2-4 gated and deferred.
+**Status:** Phase 1 implemented and locally validated; Phase 2 is in progress
+behind the disabled feature; Phases 3-4 remain gated and deferred.
 **Plan date:** 2026-07-12.
 **Target baseline:** Gosling branch `codex/external-skill-catalog` at
 `c896d778f`; clean except for the related untracked `docs/TODO.md` ledger.
 **Producer state:** Tagteam is actively changing through a debug-use and repair
-loop. Its future MCP contract is planned but is not yet a stable dependency.
+loop. Its versioned MCP control-plane contract is now consumed by an isolated
+Gosling Unix-socket adapter, but real-daemon compatibility remains a release
+gate rather than an assumed guarantee.
 **Authority:** Plan and Gosling Phase 1 only. This plan does not authorize
 changes in Tagteam or activation of incomplete Gosling UI.
 
@@ -110,6 +112,13 @@ diagnostics
 Every response carries a producer schema version, run identity where
 applicable, result completeness, and typed retryability. Unknown major versions
 fail closed; compatible minor additions are ignored unless marked required.
+
+The Phase 2 `TagteamControlClient` is intentionally separate from the Phase 1
+`TagteamClient` port. The earlier port carries a draft approval abstraction;
+the live producer requires a prepared action digest and approval record. A
+workflow service will converge those boundaries only after it can persist the
+producer's approval and run-binding semantics without translating or
+recomputing authority-bearing fields.
 
 ### 4.3 Normalized state
 
@@ -306,6 +315,31 @@ must then require explicit role targets and must not invent a profile catalog.
   approval-bound resume/cancel, disconnect, and reconnect.
 - Gate: contract parity, no duplicate launch, no orphan child owned by the
   current server, and no silent fallback to the legacy provider.
+
+#### Implementation status, 2026-07-14
+
+- Added the feature-gated `McpTagteamClient` Unix-socket adapter implementing
+  the producer-conformant `TagteamControlClient`. It initializes only against
+  MCP protocol `2025-11-25`, verifies the Tagteam server identity and required
+  v1 capabilities, then records the daemon's canonical repository identity.
+- The adapter exposes the published read, preparation, and lifecycle tools,
+  consumes structured content only, validates response bounds and exact
+  mode-role shapes, and forwards the producer-prepared approval record
+  unchanged. It does not start a subprocess, select a model, or fall back to
+  the legacy provider.
+- Socket fixtures cover validation, prepared approval forwarding, status,
+  structured terminal errors, malformed producer errors, invalid normalized
+  role shapes, and reconnecting a fresh client to the same daemon fixture.
+- An opt-in `live_tagteam_socket_smoke_test` connects the adapter to a real
+  local daemon named by `TAGTEAM_MCP_SOCKET`. It passed on 2026-07-14 against a
+  source-built Tagteam binary for initialization, capability verification, and
+  diagnostics only; it deliberately does not launch a model-backed run.
+- Still required before this phase can pass its gate: a real Tagteam daemon
+  scratch-repository playtest, workflow-service lifecycle/persistence wiring,
+  duplicate-launch and cancellation ownership checks, real restart recovery,
+  and deterministic reporting through the existing reducer. There is no
+  Desktop, text UI, CLI, slash command, or Run Steward activation in this
+  implementation.
 
 ### Phase 3 - first-class Gosling workflow and Run Steward
 
