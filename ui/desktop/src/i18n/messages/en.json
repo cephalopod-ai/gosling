@@ -2828,6 +2828,9 @@
   "switchModelModal.thinkingEffortOff": {
     "defaultMessage": "Off - No extended thinking"
   },
+  "switchModelModal.thinkingEffortUltra": {
+    "defaultMessage": "Ultra - Maximum reasoning with delegation"
+  },
   "switchModelModal.thinkingLevel": {
     "defaultMessage": "Thinking Level"
   },

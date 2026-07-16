@@ -611,7 +611,7 @@ pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
         ThinkingEffort::Low => 4000,
         ThinkingEffort::Medium => 10000,
         ThinkingEffort::High => 16000,
-        ThinkingEffort::Max => 32000,
+        ThinkingEffort::Max | ThinkingEffort::Ultra => 32000,
     }
 }
 

@@ -13,7 +13,7 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata};
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::paths::Paths;
 use crate::config::search_path::SearchPaths;
@@ -40,7 +40,8 @@ pub const CODEX_KNOWN_MODELS: &[&str] = &[
 pub const CODEX_DOC_URL: &str = "https://developers.openai.com/codex/cli";
 
 /// Valid reasoning effort levels for Codex
-pub const CODEX_REASONING_LEVELS: &[&str] = &["none", "low", "medium", "high", "xhigh", "max"];
+pub const CODEX_REASONING_LEVELS: &[&str] =
+    &["none", "low", "medium", "high", "xhigh", "max", "ultra"];
 
 /// Spawns the Codex CLI (`codex exec`) as a one-shot child process per turn.
 /// Text prompt is piped via stdin (`-`), images are passed as temporary files
@@ -69,7 +70,8 @@ impl CodexProvider {
                 "low" => Some(ThinkingEffort::Low),
                 "medium" => Some(ThinkingEffort::Medium),
                 "high" => Some(ThinkingEffort::High),
-                "xhigh" => Some(ThinkingEffort::Max),
+                "xhigh" | "max" => Some(ThinkingEffort::Max),
+                "ultra" => Some(ThinkingEffort::Ultra),
                 _ => None,
             })
     }
@@ -92,6 +94,16 @@ impl CodexProvider {
                 }
                 .to_string(),
             ),
+            ThinkingEffort::Ultra => Some(
+                if Self::supports_reasoning_effort(model_name, "ultra") {
+                    "ultra"
+                } else if Self::supports_reasoning_effort(model_name, "max") {
+                    "max"
+                } else {
+                    "xhigh"
+                }
+                .to_string(),
+            ),
         }
     }
 
@@ -100,8 +112,11 @@ impl CodexProvider {
             return false;
         }
 
-        reasoning_effort != "max"
-            || matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna")
+        match reasoning_effort {
+            "ultra" => matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra"),
+            "max" => matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"),
+            _ => true,
+        }
     }
 
     /// Apply permission flags based on GoslingMode
@@ -649,12 +664,25 @@ fn codex_mcp_config_overrides(extensions: &[ExtensionConfig]) -> Vec<String> {
 
 impl gosling_providers::base::ProviderDescriptor for CodexProvider {
     fn metadata() -> ProviderMetadata {
-        ProviderMetadata::new(
+        let models = CODEX_KNOWN_MODELS
+            .iter()
+            .map(|model| {
+                let mut info = ModelInfo::new(
+                    *model,
+                    super::chatgpt_codex::context_limit_for_model(model)
+                        .expect("every Codex model has a context limit"),
+                );
+                info.reasoning = true;
+                info
+            })
+            .collect();
+
+        ProviderMetadata::with_models(
             CODEX_PROVIDER_NAME,
             "OpenAI Codex CLI",
             "[Deprecated: use chatgpt_codex or codex-acp instead] Execute OpenAI models via Codex CLI tool. Requires codex CLI installed.",
             CODEX_DEFAULT_MODEL,
-            CODEX_KNOWN_MODELS.to_vec(),
+            models,
             CODEX_DOC_URL,
             vec![
                 ConfigKey::new("CODEX_COMMAND", true, false, Some("codex"), true),
@@ -702,6 +730,13 @@ impl ProviderDef for CodexProvider {
 impl Provider for CodexProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    async fn get_context_limit(&self, model_config: &ModelConfig) -> Result<usize, ProviderError> {
+        Ok(
+            super::chatgpt_codex::context_limit_for_model(&model_config.model_name)
+                .unwrap_or_else(|| model_config.context_limit()),
+        )
     }
 
     async fn stream(
@@ -1027,6 +1062,7 @@ mod tests {
         assert!(CODEX_REASONING_LEVELS.contains(&"high"));
         assert!(CODEX_REASONING_LEVELS.contains(&"xhigh"));
         assert!(CODEX_REASONING_LEVELS.contains(&"max"));
+        assert!(CODEX_REASONING_LEVELS.contains(&"ultra"));
         assert!(!CODEX_REASONING_LEVELS.contains(&"minimal"));
         assert!(!CODEX_REASONING_LEVELS.contains(&"invalid"));
     }
@@ -1040,6 +1076,14 @@ mod tests {
         assert!(CodexProvider::supports_reasoning_effort(
             "gpt-5.6-terra",
             "max"
+        ));
+        assert!(CodexProvider::supports_reasoning_effort(
+            "gpt-5.6-sol",
+            "ultra"
+        ));
+        assert!(!CodexProvider::supports_reasoning_effort(
+            "gpt-5.6-luna",
+            "ultra"
         ));
         assert!(CodexProvider::supports_reasoning_effort("gpt-5.5", "xhigh"));
         assert!(!CodexProvider::supports_reasoning_effort("gpt-5.5", "max"));
@@ -1073,13 +1117,13 @@ mod tests {
         assert_eq!(
             contexts,
             vec![
-                ("gpt-5.6-sol", 128_000),
-                ("gpt-5.6-terra", 128_000),
-                ("gpt-5.6-luna", 128_000),
-                ("gpt-5.5", 1_050_000),
-                ("gpt-5.4", 1_050_000),
-                ("gpt-5.4-mini", 400_000),
-                ("gpt-5.2", 400_000),
+                ("gpt-5.6-sol", 372_000),
+                ("gpt-5.6-terra", 372_000),
+                ("gpt-5.6-luna", 372_000),
+                ("gpt-5.5", 272_000),
+                ("gpt-5.4", 272_000),
+                ("gpt-5.4-mini", 272_000),
+                ("gpt-5.2", 272_000),
             ]
         );
     }
@@ -1304,6 +1348,14 @@ mod tests {
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.5", Some(ThinkingEffort::Max)),
             Some("xhigh".to_string())
+        );
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-5.6-sol", Some(ThinkingEffort::Ultra)),
+            Some("ultra".to_string())
+        );
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-5.6-luna", Some(ThinkingEffort::Ultra)),
+            Some("max".to_string())
         );
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.6-sol", None),

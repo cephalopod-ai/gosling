@@ -127,7 +127,7 @@ fn proxy_reasoning_effort(effort: ThinkingEffort) -> Option<&'static str> {
         ThinkingEffort::Off => None,
         ThinkingEffort::Low => Some("low"),
         ThinkingEffort::Medium => Some("medium"),
-        ThinkingEffort::High | ThinkingEffort::Max => Some("high"),
+        ThinkingEffort::High | ThinkingEffort::Max | ThinkingEffort::Ultra => Some("high"),
     }
 }
 

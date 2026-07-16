@@ -334,6 +334,7 @@ fn thinking_effort_values(model_config: &ModelConfig) -> &'static [ThinkingEffor
             ThinkingEffort::Medium,
             ThinkingEffort::High,
             ThinkingEffort::Max,
+            ThinkingEffort::Ultra,
         ]
     } else {
         &[ThinkingEffort::Off]
@@ -688,6 +689,10 @@ mod tests {
         };
 
         assert_eq!(select.current_value.0.as_ref(), "high");
+        assert_eq!(
+            select_option_values(&select.options),
+            vec!["off", "low", "medium", "high", "max", "ultra"]
+        );
     }
 
     #[test]

@@ -59,6 +59,10 @@ const i18n = defineMessages({
     id: 'switchModelModal.claudeEffortMax',
     defaultMessage: 'Max - No constraints on thinking depth',
   },
+  thinkingEffortUltra: {
+    id: 'switchModelModal.thinkingEffortUltra',
+    defaultMessage: 'Ultra - Maximum reasoning with delegation',
+  },
   selectModel: {
     id: 'switchModelModal.selectModel',
     defaultMessage: 'Please select a model',
@@ -253,6 +257,7 @@ export const SwitchModelModal = ({
     { value: 'medium', label: intl.formatMessage(i18n.claudeEffortMedium) },
     { value: 'high', label: intl.formatMessage(i18n.claudeEffortHigh) },
     { value: 'max', label: intl.formatMessage(i18n.claudeEffortMax) },
+    { value: 'ultra', label: intl.formatMessage(i18n.thinkingEffortUltra) },
   ];
 
   const {

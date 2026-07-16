@@ -1456,7 +1456,7 @@ pub fn create_request_with_options(
 /// Extract an explicit reasoning-effort suffix from a model name.
 ///
 /// Returns `(base_model_name, Some(effort))` when the user appended a
-/// recognised suffix like `-high` or `-xhigh`, e.g. `gpt-5.4-high` →
+/// recognised suffix like `-high` or `-ultra`, e.g. `gpt-5.4-high` →
 /// `("gpt-5.4", Some("high"))`.
 ///
 /// When no suffix is present the effort is `None` — callers should omit
@@ -1471,7 +1471,7 @@ pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
 
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
-        Regex::new(r"(?i)^(?P<base>.+)-(?P<effort>none|low|medium|high|xhigh)$").unwrap()
+        Regex::new(r"(?i)^(?P<base>.+)-(?P<effort>none|low|medium|high|xhigh|max|ultra)$").unwrap()
     });
 
     if let Some(captures) = re.captures(model_name) {
@@ -1512,6 +1512,7 @@ pub fn openai_reasoning_effort_for_thinking(
         ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
         ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
         ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
+        ThinkingEffort::Ultra => &["ultra", "max", "xhigh", "high", "medium", "low"],
     };
 
     preferred
@@ -1526,6 +1527,12 @@ fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [&'static st
     if normalized.contains("gpt-5") {
         if normalized.contains("-pro") || normalized.contains("/pro") {
             &["high"]
+        } else if normalized.contains("gpt-5.6") || normalized.contains("gpt-5-6") {
+            if normalized.contains("luna") {
+                &["low", "medium", "high", "xhigh", "max"]
+            } else {
+                &["low", "medium", "high", "xhigh", "max", "ultra"]
+            }
         } else if normalized.contains("gpt-5.4")
             || normalized.contains("gpt-5-4")
             || normalized.contains("gpt-5.5")
@@ -2485,6 +2492,19 @@ mod tests {
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
+    }
+
+    #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("ultra"); "sol supports ultra")]
+    #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("max"); "luna falls back to max")]
+    fn test_gpt56_ultra_uses_supported_level(
+        model: &str,
+        effort: ThinkingEffort,
+        expected: Option<&str>,
+    ) {
+        assert_eq!(
+            openai_reasoning_effort_for_thinking(model, effort).as_deref(),
+            expected
+        );
     }
 
     #[test]
@@ -3932,6 +3952,7 @@ data: [DONE]"#;
         for (model, expected_name, expected_effort) in [
             ("o3-none", "o3", Some("none")),
             ("o3-xhigh", "o3", Some("xhigh")),
+            ("gpt-5.6-sol-ultra", "gpt-5.6-sol", Some("ultra")),
             ("gpt-5-low", "gpt-5", Some("low")),
             ("gpt-5.4", "gpt-5.4", None),
             (

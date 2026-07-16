@@ -316,7 +316,8 @@ impl ModelConfig {
             "low" => ThinkingEffort::Low,
             "medium" => ThinkingEffort::Medium,
             "high" => ThinkingEffort::High,
-            "xhigh" => ThinkingEffort::Max,
+            "xhigh" | "max" => ThinkingEffort::Max,
+            "ultra" => ThinkingEffort::Ultra,
             _ => return,
         };
         self.model_name = parts[..parts.len() - 1].join("-");
@@ -532,6 +533,21 @@ mod tests {
         }
 
         #[test]
+        fn ultra_suffix_stripped_from_model_name() {
+            let _guard = env_lock::lock_env([
+                ("GOSLING_THINKING_EFFORT", Some("low")),
+                ("GOSLING_MAX_TOKENS", None::<&str>),
+                ("GOSLING_TEMPERATURE", None::<&str>),
+                ("GOSLING_CONTEXT_LIMIT", None::<&str>),
+                ("GOSLING_TOOLSHIM", None::<&str>),
+                ("GOSLING_TOOLSHIM_OLLAMA_MODEL", None::<&str>),
+            ]);
+            let config = ModelConfig::new("gpt-5.6-sol-ultra");
+            assert_eq!(config.model_name, "gpt-5.6-sol");
+            assert_eq!(config.thinking_effort(), Some(ThinkingEffort::Ultra));
+        }
+
+        #[test]
         fn effort_suffix_not_stripped_when_thinking_effort_set() {
             let _guard = env_lock::lock_env([
                 ("GOSLING_THINKING_EFFORT", None::<&str>),
@@ -592,6 +608,7 @@ mod tests {
             assert_eq!("med".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Medium));
             assert_eq!("max".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Max));
             assert_eq!("xhigh".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Max));
+            assert_eq!("ultra".parse::<ThinkingEffort>(), Ok(ThinkingEffort::Ultra));
             assert!("invalid".parse::<ThinkingEffort>().is_err());
         }
     }

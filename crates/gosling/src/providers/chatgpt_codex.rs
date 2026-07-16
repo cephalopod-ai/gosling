@@ -58,11 +58,11 @@ pub struct ChatGptCodexModelAttrs {
 pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     ChatGptCodexModelAttrs {
         name: "gpt-5.6-sol",
-        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max", "ultra"],
     },
     ChatGptCodexModelAttrs {
         name: "gpt-5.6-terra",
-        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max", "ultra"],
     },
     ChatGptCodexModelAttrs {
         name: "gpt-5.6-luna",
@@ -277,6 +277,7 @@ fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
                 ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
                 ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
                 ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
+                ThinkingEffort::Ultra => &["ultra", "max", "xhigh", "high", "medium", "low"],
             };
 
             preferred_levels
@@ -1154,6 +1155,7 @@ impl Provider for ChatGptCodexProvider {
 mod tests {
     use super::*;
     use crate::conversation::message::Message;
+    use gosling_providers::thinking::ThinkingEffort;
     use gosling_test_support::TEST_IMAGE_B64;
     #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
@@ -1506,8 +1508,13 @@ mod tests {
 
     #[test_case(
         "gpt-5.6-sol",
+        &["low", "medium", "high", "xhigh", "max", "ultra"];
+        "gpt-5.6-sol supports ultra reasoning"
+    )]
+    #[test_case(
+        "gpt-5.6-luna",
         &["low", "medium", "high", "xhigh", "max"];
-        "gpt-5.6-sol supports max reasoning"
+        "gpt-5.6-luna keeps max as its ceiling"
     )]
     #[test_case(
         "gpt-5.5",
@@ -1535,6 +1542,18 @@ mod tests {
     ) {
         assert_eq!(uses_responses_lite(model), expected_lite);
         assert_eq!(context_limit_for_model(model), expected_context_limit);
+    }
+
+    #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("ultra"); "sol supports ultra")]
+    #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("max"); "luna falls back to max")]
+    #[test_case("gpt-5.5", ThinkingEffort::Ultra, Some("xhigh"); "older models fall back to xhigh")]
+    fn test_reasoning_effort_for_config_uses_supported_ceiling(
+        model: &str,
+        effort: ThinkingEffort,
+        expected: Option<&str>,
+    ) {
+        let config = ModelConfig::new(model).with_thinking_effort(effort);
+        assert_eq!(reasoning_effort_for_config(&config).as_deref(), expected);
     }
 
     #[test]
