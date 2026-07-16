@@ -112,7 +112,7 @@ were downgraded or silently dropped.
 
 | ID | Fix | Commit |
 |---|---|---|
-| CON-002 | `Config::save_values` now holds a dedicated `.save.lock` sidecar lock across the entire write-then-rename sequence (not just the write), and writes to a per-call UUID-named temp file instead of a fixed shared `.tmp` path, closing the window where one writer's rename/truncate could race another's in-flight write | *(this commit)* |
+| CON-002 | `Config::save_values` now holds a dedicated `.save.lock` sidecar lock across the entire write-then-rename sequence (not just the write), and writes to a per-call UUID-named temp file instead of a fixed shared `.tmp` path, closing the window where one writer's rename/truncate could race another's in-flight write | `96b0c8f` |
 
 ### Not yet repaired (specified above, follow-up campaign)
 
