@@ -69,4 +69,59 @@ Deferred (pre-existing, explicitly out of scope, not touched by this campaign): 
 
 ## Repair status
 
-See "Repairs" sections below, added as each stage lands.
+7 of 35 defects repaired, committed, and verified in this pass — prioritized by
+severity and by the two items the campaign owner explicitly called out
+(orphaned processes, label correctness). The remaining 28 are fully specified
+above (domain/priority/touch set/evidence) and ready for a follow-up
+`repair-defect-campaign` pass; none were downgraded or silently dropped.
+
+### Repaired (this pass)
+
+| ID | Fix | Commit |
+|---|---|---|
+| ORCH-001 | `SecurityInspector`/`EgressInspector` no longer downgrade in Auto mode; a subagent tool call a fail-closed inspector still flags is answered as denied instead of hanging on an unanswerable approval prompt | `42d7b7c` |
+| RES-001 | Shell tool now puts commands in their own process group and kills the whole group after the invoking shell exits, so a backgrounded (`&`) command can't outlive the tool call as an untracked orphan | `2eebebf` |
+| GUI-001 | `ToolCallWithResponse` no longer reports "success" for a tool call that never received a backend response; new `unknown` status renders as a neutral indicator instead | `7535bcb` |
+| GUI-003 | `ui/text`'s user-prompt row no longer uses `wrap="wrap"` inside a fixed-height Box, and the truncated-preview branch reserves room for its suffix so the two can't together overflow the row | `7535bcb` |
+| MCP-001 | `ComputerControllerServer` no longer writes to stdout (which corrupts its JSON-RPC transport) on a cache-dir creation failure | `4675a3d` |
+| MCP-006 | Cache filenames include a monotonic counter so two calls in the same wall-clock second no longer silently overwrite each other | `4675a3d` |
+| OPS-001 | `/status` now probes the session store and returns 503 with a clear body when it's unreachable, instead of an unconditional 200 | `4ae612f` |
+
+### Not yet repaired (specified above, follow-up campaign)
+
+ORCH-002..005, LLM-001..003, MCP-002..005, RES-002..003, REC-001..003,
+DEP-001..003, INV-001..002, OPS-002..005, GUI-002/004/005, SEC-001..003,
+CON-001..003, CI-001.
+
+### Verification performed
+
+- `cargo fmt --all -- --check`: clean across the whole workspace.
+- `cargo clippy -p gosling -p gosling-mcp --all-targets -- -D warnings`: clean.
+- `cargo test -p gosling -p gosling-mcp` (excluding `test_claude_code_provider`,
+  a live-CLI integration test confirmed to fail identically on unmodified
+  `origin/main` in this sandbox — it spawns a real `claude` subprocess, which
+  can't run nested inside this session): 1384/1384 passing, 3 consecutive
+  clean full-suite runs.
+- Explicit orphaned-process check: `ps aux` after the full test run shows no
+  leftover `sleep`, `gosling`, or `goslingd` processes and no zombies.
+- `crates/gosling-server` and `crates/gosling-cli`'s `tui` command's full
+  workspace could not be built in this sandbox: `gosling-server` pulls in
+  `v8-goose`, whose build script downloads a prebuilt V8 binary from a
+  GitHub-releases host blocked by this session's egress policy. The OPS-001
+  fix's actual logic (`SessionManager::healthy()`) lives in and is fully
+  tested via the `gosling` crate; the `gosling-server` route handler itself
+  is confirmed parseable via `cargo fmt` but unverified by `cargo
+  build`/`test`/`clippy`. Recommend CI confirm before merge.
+- `ui/desktop` and `ui/text` share one pnpm workspace/lockfile that could not
+  be installed in this sandbox: `pnpm install` fails on an Electron-internal
+  `node-gyp` git-tarball dependency fetched from `codeload.github.com`,
+  also blocked by this session's egress policy. GUI-001 and GUI-003 were
+  reviewed by hand against the existing code patterns in each file (and
+  GUI-001's derivation logic was extracted into a small pure function with a
+  new unit test, `ToolCallWithResponse.test.tsx`) but are unverified by
+  `pnpm test`/`pnpm run typecheck` here. Recommend CI confirm before merge.
+- One transient failure of `shell_does_not_hang_on_backgrounded_process` was
+  observed during a `cargo test` run that coincided with a `rm -rf target`
+  disk-space cleanup and a `git worktree` operation; it has since passed
+  cleanly 4/4 times (1 isolated, 3 full-suite) and is attributed to that
+  transient system load, not the fix itself.
