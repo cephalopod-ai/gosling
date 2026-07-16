@@ -11,10 +11,18 @@ use crate::state::AppState;
 #[utoipa::path(get, path = "/status",
     responses(
         (status = 200, description = "ok", body = String),
+        (status = 503, description = "the session store is unreachable", body = String),
     )
 )]
-async fn status() -> String {
-    "ok".to_string()
+async fn status(State(state): State<Arc<AppState>>) -> Result<String, (StatusCode, String)> {
+    state.session_manager().healthy().await.map_err(|error| {
+        tracing::error!(error = %error, "status probe: session store unreachable");
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "degraded: session store unreachable".to_string(),
+        )
+    })?;
+    Ok("ok".to_string())
 }
 
 #[utoipa::path(get, path = "/system_info",

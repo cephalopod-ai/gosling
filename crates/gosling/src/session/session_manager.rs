@@ -501,6 +501,16 @@ impl SessionManager {
         &self.storage
     }
 
+    /// Cheap liveness probe for the session store: acquires the connection
+    /// pool and runs a trivial query. Intended for health/readiness
+    /// endpoints that need to distinguish "the process is up" from "the
+    /// session database is actually reachable", not for hot paths.
+    pub async fn healthy(&self) -> Result<()> {
+        let pool = self.storage.pool().await?;
+        sqlx::query("SELECT 1").fetch_one(pool).await?;
+        Ok(())
+    }
+
     pub async fn create_session(
         &self,
         working_dir: PathBuf,
@@ -3534,6 +3544,15 @@ mod tests {
         sm.add_message(session_id, &Message::user().with_text("hello world"))
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn healthy_succeeds_against_a_reachable_session_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        sm.healthy()
+            .await
+            .expect("a freshly created session store must report healthy");
     }
 
     #[tokio::test]

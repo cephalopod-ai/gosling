@@ -125,7 +125,11 @@ status in that report rather than duplicating it here.
 Corroborates and updates two previously-deferred, still-open findings from
 `reports/2026-07-10-audit-skills-pack-report.md`: the `/status` static-200
 health lie (there: FSR-SRV-001, here: OPS-001) and the hardcoded
-`exit_type="normal"` telemetry (there: FSR-SRV-002, here: OPS-003) — both
-were deferred previously only because that session's sandbox could not link
-`gosling-server`; this session can build and test it, so both are repaired
-here rather than re-deferred.
+`exit_type="normal"` telemetry (there: FSR-SRV-002, here: OPS-003). Both are
+repaired in source here. Correction: this session's sandbox cannot build
+`gosling-server` either (`cargo build -p gosling-server` fails downloading
+`v8-goose`'s prebuilt V8 binary from a blocked GitHub-releases host) — the
+underlying `gosling` crate change (`SessionManager::healthy()`) is
+compiled and tested, but the `gosling-server` route handlers themselves are
+unverified by `cargo build`/`test`/`clippy` in this environment. Recommend
+CI confirm both before merge.
