@@ -3128,34 +3128,52 @@ impl Agent {
         let extensions =
             EnabledExtensionsState::extensions_or_default(Some(&session.extension_data), config);
 
-        let (provider, active_model_config, provider_changed) =
-            if crate::providers::get_from_registry(&provider_name)
-                .await
-                .is_ok()
-            {
-                let p = crate::providers::create_with_working_dir(
+        // Try the session's saved provider first whenever its type is
+        // registered at all — not just when it's registered AND already
+        // configured. The fallback below exists specifically to survive a
+        // known provider type whose credentials were revoked/removed; gating
+        // it on registry presence alone meant that case always hit a hard
+        // create_with_working_dir error instead of ever reaching it.
+        let primary_result = if crate::providers::get_from_registry(&provider_name)
+            .await
+            .is_ok()
+        {
+            Some(
+                crate::providers::create_with_working_dir(
                     &provider_name,
-                    extensions,
+                    extensions.clone(),
                     session.working_dir.clone(),
                 )
-                .await
-                .map_err(|e| anyhow!("Could not create provider: {}", e))?;
-                (p, model_config, false)
-            } else {
+                .await,
+            )
+        } else {
+            None
+        };
+
+        let (provider, active_model_config, provider_changed) = match primary_result {
+            Some(Ok(p)) => (p, model_config, false),
+            primary_result => {
+                let primary_error = primary_result.and_then(Result::err);
+
                 let fallback_provider_name = config
                     .get_gosling_provider()
                     .ok()
                     .filter(|name| name != &provider_name)
-                    .ok_or_else(|| {
-                        anyhow!(
+                    .ok_or_else(|| match &primary_error {
+                        Some(e) => anyhow!("Could not create provider '{}': {}", provider_name, e),
+                        None => anyhow!(
                             "Could not create provider: provider '{}' not found",
                             provider_name
-                        )
+                        ),
                     })?;
 
                 tracing::warn!(
-                    "Session provider '{}' unavailable, falling back to '{}'",
+                    "Session provider '{}' unavailable ({}), falling back to '{}'",
                     provider_name,
+                    primary_error
+                        .as_ref()
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "not found in registry".to_string()),
                     fallback_provider_name
                 );
 
@@ -3198,7 +3216,8 @@ impl Agent {
                 }
 
                 (fallback_provider, fallback_model_config, true)
-            };
+            }
+        };
 
         self.update_provider_with_mode(
             provider,
