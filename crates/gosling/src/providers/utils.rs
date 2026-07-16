@@ -233,6 +233,23 @@ pub fn init_gosling_request_log() -> Result<()> {
     Ok(())
 }
 
+/// Restrict a directory to owner-only access on Unix, mirroring the same
+/// fix already applied to the session-database directory: the LLM request
+/// logs this directory holds contain the full system prompt, every message,
+/// and tool outputs for every CLI invocation (not behind a debug flag),
+/// potentially including secrets a tool call echoed back. Restricting the
+/// directory is sufficient to keep every file created in it unreachable by
+/// other local users, without having to chase each file individually.
+fn restrict_to_owner(dir: &std::path::Path) {
+    #[cfg(unix)]
+    if let Err(e) = fs_err::set_permissions(
+        dir,
+        <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
+    ) {
+        tracing::error!("Failed to restrict LLM request log directory {dir:?} to owner-only: {e}");
+    }
+}
+
 pub struct RequestLog {
     logs_to_keep: usize,
 }
@@ -241,6 +258,7 @@ impl RequestLog {
     pub fn new(logs_to_keep: usize) -> Result<Self> {
         let logs_dir = Paths::in_state_dir("logs");
         fs_err::create_dir_all(&logs_dir)?;
+        restrict_to_owner(&logs_dir);
         Ok(Self { logs_to_keep })
     }
 }
@@ -255,6 +273,7 @@ impl RequestLogger for RequestLog {
     fn start(&self) -> Result<Box<dyn RequestLogHandle>, Box<dyn Error + Send + Sync>> {
         let logs_dir = Paths::in_state_dir("logs");
         fs_err::create_dir_all(&logs_dir)?;
+        restrict_to_owner(&logs_dir);
 
         let request_id = Uuid::new_v4();
         let temp_name = format!("llm_request.{request_id}.jsonl");
@@ -324,6 +343,25 @@ mod tests {
     use serde_json::json;
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[cfg(unix)]
+    #[test]
+    fn restrict_to_owner_sets_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let logs_dir = temp_dir.path().join("logs");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+
+        restrict_to_owner(&logs_dir);
+
+        let mode = std::fs::metadata(&logs_dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o700,
+            "LLM request logs contain full conversations including any secrets a \
+            tool call echoed back; the directory must not be group/world-readable"
+        );
+    }
 
     #[test]
     fn unescape_json_values_with_object() {
