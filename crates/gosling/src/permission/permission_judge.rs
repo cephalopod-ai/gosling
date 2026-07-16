@@ -87,15 +87,23 @@ fn create_read_only_tool() -> Tool {
 }
 
 /// Builds the message to be sent to the LLM for detecting read-only operations.
+/// Includes each request's arguments, not just its tool name: a tool whose
+/// read/write behavior depends on how it's called (e.g. a generic
+/// `run_command` tool) cannot be classified correctly from its name alone,
+/// and the classification is cached and reused for future calls to the same
+/// tool name (see `PermissionInspector::inspect`), so it should be grounded
+/// in a real example call rather than blind to arguments.
 fn create_check_messages(tool_requests: Vec<&ToolRequest>) -> Conversation {
-    let tool_names: Vec<String> = tool_requests
+    let tool_calls: Vec<String> = tool_requests
         .iter()
         .filter_map(|req| {
-            if let Ok(tool_call) = &req.tool_call {
-                Some(tool_call.name.to_string().clone())
-            } else {
-                None // Skip requests with errors in tool_call
-            }
+            let tool_call = req.tool_call.as_ref().ok()?;
+            let arguments = tool_call
+                .arguments
+                .as_ref()
+                .map(|args| serde_json::to_string(args).unwrap_or_default())
+                .unwrap_or_default();
+            Some(format!("{}({})", tool_call.name, arguments))
         })
         .collect();
     let mut check_messages = vec![];
@@ -103,13 +111,14 @@ fn create_check_messages(tool_requests: Vec<&ToolRequest>) -> Conversation {
         rmcp::model::Role::User,
         Utc::now().timestamp(),
         vec![MessageContent::text(format!(
-                "Here are the tool requests: {:?}\n\nAnalyze the tool requests and list the tools that perform read-only operations. \
+                "Here are the tool requests, with the arguments they were actually called with: {:?}\n\nAnalyze the tool requests and list the tools that perform read-only operations. \
                 \n\nGuidelines for Read-Only Operations: \
                 \n- Read-only operations do not modify any data or state. \
                 \n- Examples include file reading, SELECT queries in SQL, and directory listing. \
                 \n- Write operations include INSERT, UPDATE, DELETE, and file writing. \
+                \n- Base your judgment on the arguments shown, not just the tool name: a generic tool (e.g. a shell/command runner) can be read-only for one set of arguments and destructive for another. \
                 \n\nPlease provide a list of tool names that qualify as read-only:",
-                tool_names.join(", "),
+                tool_calls.join(", "),
             ))],
     ));
     Conversation::new_unvalidated(check_messages)
@@ -205,6 +214,39 @@ impl PermissionCheckResult {
 mod tests {
     use super::*;
     use rmcp::model::CallToolRequestParams;
+
+    #[test]
+    fn create_check_messages_includes_call_arguments_not_just_tool_names() {
+        let request = ToolRequest {
+            id: "request-1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("run_command")
+                .with_arguments(rmcp::object!({"command": "rm -rf /important-data"}))),
+            metadata: None,
+            tool_meta: None,
+        };
+
+        let conversation = create_check_messages(vec![&request]);
+
+        let text = conversation.messages()[0]
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                MessageContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+
+        assert!(
+            text.contains("run_command"),
+            "message must name the tool: {text}"
+        );
+        assert!(
+            text.contains("rm -rf /important-data"),
+            "message must include the arguments the tool was actually called with, \
+            not just its name, so the classifier can't be fooled by a generic tool \
+            name into ignoring destructive arguments: {text}"
+        );
+    }
 
     #[test]
     fn approve_all_never_requests_or_denies_approval() {
