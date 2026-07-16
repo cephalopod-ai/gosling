@@ -17,6 +17,45 @@
   "appLayout.openNavigation": {
     "defaultMessage": "Open navigation"
   },
+  "appLayout.toggleOutputs": {
+    "defaultMessage": "Toggle outputs pane"
+  },
+  "artifactPane.closePane": {
+    "defaultMessage": "Close outputs pane"
+  },
+  "artifactPane.copyPath": {
+    "defaultMessage": "Copy path"
+  },
+  "artifactPane.emptyBody": {
+    "defaultMessage": "Open a local file, or send a tool result here from the conversation."
+  },
+  "artifactPane.emptyTitle": {
+    "defaultMessage": "View an output or deliverable"
+  },
+  "artifactPane.loading": {
+    "defaultMessage": "Loading…"
+  },
+  "artifactPane.openExternal": {
+    "defaultMessage": "Open externally"
+  },
+  "artifactPane.openFile": {
+    "defaultMessage": "Open file"
+  },
+  "artifactPane.outputs": {
+    "defaultMessage": "Outputs"
+  },
+  "artifactPane.previewFailed": {
+    "defaultMessage": "Preview unavailable"
+  },
+  "artifactPane.previewTruncated": {
+    "defaultMessage": "This preview is truncated. Open the file for the complete output."
+  },
+  "artifactPane.reveal": {
+    "defaultMessage": "Reveal"
+  },
+  "artifactPane.unsupported": {
+    "defaultMessage": "This file type does not have an in-app preview yet."
+  },
   "authSettings.activeProviderWarning": {
     "defaultMessage": "This is the active provider. New requests may fail until you configure another credential."
   },
@@ -2912,6 +2951,9 @@
   "toolCallWithResponse.logs": {
     "defaultMessage": "Logs"
   },
+  "toolCallWithResponse.openDeliverable": {
+    "defaultMessage": "Open {name} in Outputs"
+  },
   "toolCallWithResponse.output": {
     "defaultMessage": "Output"
   },
@@ -2920,6 +2962,9 @@
   },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Tool result"
+  },
+  "toolCallWithResponse.viewInOutputs": {
+    "defaultMessage": "View in Outputs"
   },
   "toolCallWithResponse.viewSubagentSession": {
     "defaultMessage": "View subagent session"

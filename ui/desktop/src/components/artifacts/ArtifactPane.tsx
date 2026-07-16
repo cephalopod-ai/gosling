@@ -269,7 +269,8 @@ export function ArtifactPane() {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = width;
-    const move = (moveEvent: PointerEvent) => setWidth(startWidth + startX - moveEvent.clientX);
+    const move = (moveEvent: globalThis.PointerEvent) =>
+      setWidth(startWidth + startX - moveEvent.clientX);
     const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
@@ -391,9 +392,7 @@ export function ArtifactPane() {
                 variant="ghost"
                 size="xs"
                 title={intl.formatMessage(i18n.reveal)}
-                onClick={() =>
-                  void window.electron.revealArtifactFile(filePath, fileBaseDirectory)
-                }
+                onClick={() => void window.electron.revealArtifactFile(filePath, fileBaseDirectory)}
               >
                 <FolderOpen className="h-3.5 w-3.5" />
               </Button>
