@@ -117,9 +117,9 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
 
 Full inventory, skill disposition, and repair log:
 [`reports/2026-07-16-defect-audit-and-repair.md`](../reports/2026-07-16-defect-audit-and-repair.md).
-35 defects found across 12 audit lenses, grouped into locality-based repair
-stages. 7 repaired under `repair-defect-campaign` gates (patch, regression
-test, change review, commit per stage) in this pass; 28 remain, fully
+42 defects found across 12 audit lenses, grouped into locality-based repair
+stages. 22 repaired under `repair-defect-campaign` gates (patch, regression
+test, change review, commit per stage) across three passes; 20 remain, fully
 specified for a follow-up pass. Track per-stage status in that report rather
 than duplicating it here.
 

@@ -635,10 +635,10 @@ extensions:
         let config_path = temp_dir.path().join("config.yaml");
         let secrets_path = temp_dir.path().join("secrets.yaml");
         let config = Config::new_with_file_secrets(&config_path, &secrets_path).unwrap();
-        std::fs::create_dir(config_path.with_extension("tmp")).unwrap();
+        std::fs::create_dir(config_path.with_extension("save.lock")).unwrap();
 
         let error = set_extension_with_config(&config, builtin_entry("new extension", true))
-            .expect_err("config write must fail when the temporary path is a directory");
+            .expect_err("config write must fail when the save lock path is a directory");
 
         assert!(matches!(error, ConfigError::FileError(_)));
         assert!(!config_path.exists());
@@ -651,7 +651,7 @@ extensions:
         let secrets_path = temp_dir.path().join("secrets.yaml");
         let config = Config::new_with_file_secrets(&config_path, &secrets_path).unwrap();
         config.set_secret("TOKEN", &"old-value").unwrap();
-        std::fs::create_dir(config_path.with_extension("tmp")).unwrap();
+        std::fs::create_dir(config_path.with_extension("save.lock")).unwrap();
 
         let error = set_extension_with_secrets_and_config(
             &config,

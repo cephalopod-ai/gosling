@@ -730,8 +730,29 @@ impl Config {
                 .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
         }
 
-        // Write to a temporary file first for atomic operation
-        let temp_path = target_path.with_extension("tmp");
+        // Hold a dedicated lock file across the whole write-then-rename sequence
+        // (not just the write) so a second writer can't rename its own temp file
+        // over ours between our unlock and our rename, tearing the result. This
+        // is a separate lock file from `lock_extension_transaction`'s
+        // `.extensions.lock`, which extension-mutation code paths already hold
+        // while calling into `save_values`; reusing that file here would
+        // self-deadlock on the second `flock()` from the same process.
+        let lock_path = target_path.with_extension("save.lock");
+        let mut lock_options = OpenOptions::new();
+        lock_options.read(true).write(true).create(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            lock_options.mode(0o600);
+        }
+        let lock_file = lock_options.open(&lock_path)?;
+        lock_file
+            .lock_exclusive()
+            .map_err(|e| ConfigError::LockError(e.to_string()))?;
+
+        // Write to a process-unique temporary file so concurrent writers never
+        // truncate or overwrite each other's in-flight temp file.
+        let temp_path = target_path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
 
         {
             let mut open_options = OpenOptions::new();
@@ -742,20 +763,15 @@ impl Config {
                 open_options.mode(0o600);
             }
             let mut file = open_options.open(&temp_path)?;
-
-            // Acquire an exclusive lock
-            file.lock_exclusive()
-                .map_err(|e| ConfigError::LockError(e.to_string()))?;
-
-            // Write the contents using the same file handle
             file.write_all(yaml_value.as_bytes())?;
             file.sync_all()?;
-
-            // Unlock is handled automatically when file is dropped
         }
 
-        // Atomically replace the original file
+        // Atomically replace the original file, still under the lock.
         std::fs::rename(&temp_path, &target_path)?;
+
+        // Unlock is handled automatically when `lock_file` is dropped.
+        drop(lock_file);
 
         *lock_ignoring_poison(&self.param_cache) = None;
 
@@ -1936,6 +1952,76 @@ mod tests {
         // The temp file should not exist after successful write
         let temp_path = config_file.path().with_extension("tmp");
         assert!(!temp_path.exists(), "Temporary file should be cleaned up");
+
+        Ok(())
+    }
+
+    #[test]
+    fn save_values_survives_high_concurrency_without_torn_writes() -> Result<(), ConfigError> {
+        use std::sync::Arc;
+        use std::thread;
+
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        let config = Arc::new(Config::new_with_file_secrets(
+            config_file.path(),
+            secrets_file.path(),
+        )?);
+
+        let mut handles = vec![];
+        for thread_idx in 0..8 {
+            let config = Arc::clone(&config);
+            handles.push(thread::spawn(move || -> Result<(), ConfigError> {
+                for round in 0..20 {
+                    // A sizeable payload widens the window during which a
+                    // torn write (truncate/write interleave from a shared
+                    // fixed temp path) would land as invalid YAML instead of
+                    // happening to line up with a valid subset.
+                    let mut values = Mapping::new();
+                    for key_idx in 0..50 {
+                        values.insert(
+                            serde_yaml::to_value(format!(
+                                "thread{thread_idx}_round{round}_key{key_idx}"
+                            ))
+                            .unwrap(),
+                            serde_yaml::to_value(format!("value-{thread_idx}-{round}-{key_idx}"))
+                                .unwrap(),
+                        );
+                    }
+                    config.save_values(&values)?;
+                }
+                Ok(())
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap()?;
+        }
+
+        // The config file must always be complete, valid YAML: never
+        // truncated or interleaved with another writer's in-flight content.
+        let content = std::fs::read_to_string(config_file.path())?;
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&content).unwrap_or_else(|e| {
+            panic!("config file corrupted by concurrent writes: {e}\ncontent:\n{content}")
+        });
+        assert!(parsed.is_mapping());
+
+        // No stray per-writer temp files should be left behind once every
+        // thread has completed its write-then-rename.
+        let config_stem = config_file
+            .path()
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let dir = config_file.path().parent().unwrap();
+        let stray: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name.starts_with(&config_stem) && name.ends_with(".tmp"))
+            .collect();
+        assert!(stray.is_empty(), "leftover temp files: {stray:?}");
 
         Ok(())
     }

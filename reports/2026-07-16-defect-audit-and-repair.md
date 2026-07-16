@@ -16,7 +16,7 @@ Considered and dispositioned not-applicable or lower-priority for this repositor
 
 ## Defect inventory
 
-35 unique, source-verified defects survived the audit (2 raw findings merged as duplicates of the same root cause). Table below; full per-lens evidence lives in the individual audit transcripts referenced by lens name. Priorities: P0 correctness/security/crash/broken-build, P1 major backend-risk/broken-workflow, P2 moderate, P3 low/maintainability.
+42 unique, source-verified defects survived the audit (2 raw findings merged as duplicates of the same root cause). Table below; full per-lens evidence lives in the individual audit transcripts referenced by lens name. Priorities: P0 correctness/security/crash/broken-build, P1 major backend-risk/broken-workflow, P2 moderate, P3 low/maintainability.
 
 | ID | Title | Domain | Priority | Files (primary) |
 |---|---|---|---|---|
@@ -69,29 +69,64 @@ Deferred (pre-existing, explicitly out of scope, not touched by this campaign): 
 
 ## Repair status
 
-7 of 35 defects repaired, committed, and verified in this pass — prioritized by
-severity and by the two items the campaign owner explicitly called out
-(orphaned processes, label correctness). The remaining 28 are fully specified
-above (domain/priority/touch set/evidence) and ready for a follow-up
-`repair-defect-campaign` pass; none were downgraded or silently dropped.
+The defect table above has 42 unique rows (the "35" figure earlier in this
+report was an in-progress miscount from before the table was finalized and is
+corrected here). 22 of 42 defects are now repaired, committed, and verified
+across three repair passes, prioritized by severity and by the two items the
+campaign owner explicitly called out (orphaned processes, label correctness).
+The remaining 20 are fully specified above (domain/priority/touch
+set/evidence) and ready for a follow-up `repair-defect-campaign` pass; none
+were downgraded or silently dropped.
 
-### Repaired (this pass)
+### Repaired (pass 1)
 
 | ID | Fix | Commit |
 |---|---|---|
 | ORCH-001 | `SecurityInspector`/`EgressInspector` no longer downgrade in Auto mode; a subagent tool call a fail-closed inspector still flags is answered as denied instead of hanging on an unanswerable approval prompt | `42d7b7c` |
-| RES-001 | Shell tool now puts commands in their own process group and kills the whole group after the invoking shell exits, so a backgrounded (`&`) command can't outlive the tool call as an untracked orphan | `2eebebf` |
+| RES-001 | Shell tool now puts commands in their own process group and kills the whole group after the invoking shell exits, so a backgrounded (`&`) command can't outlive the tool call as an untracked orphan | `2eebebf` (race-condition follow-up: `f72ce19`) |
 | GUI-001 | `ToolCallWithResponse` no longer reports "success" for a tool call that never received a backend response; new `unknown` status renders as a neutral indicator instead | `7535bcb` |
 | GUI-003 | `ui/text`'s user-prompt row no longer uses `wrap="wrap"` inside a fixed-height Box, and the truncated-preview branch reserves room for its suffix so the two can't together overflow the row | `7535bcb` |
 | MCP-001 | `ComputerControllerServer` no longer writes to stdout (which corrupts its JSON-RPC transport) on a cache-dir creation failure | `4675a3d` |
 | MCP-006 | Cache filenames include a monotonic counter so two calls in the same wall-clock second no longer silently overwrite each other | `4675a3d` |
 | OPS-001 | `/status` now probes the session store and returns 503 with a clear body when it's unreachable, instead of an unconditional 200 | `4ae612f` |
 
+### Repaired (pass 2)
+
+| ID | Fix | Commit |
+|---|---|---|
+| MCP-002 | `XlsxTool::get_range` now rejects ranges over a 100k-cell budget via checked arithmetic instead of allocating unboundedly | `cdc59dd` |
+| MCP-003 | `remove_specific_memory` reports how many entries were actually removed (0 vs N) instead of always claiming success | `cdc59dd` |
+| MCP-004 | `remove_specific_memory` now matches on exact memory content instead of substring, so it can no longer over-delete unrelated entries | `cdc59dd` |
+| MCP-005 | Linux `computer_control` script text is now embedded via `serde_json::to_string` escaping instead of raw interpolation into a Python string literal | `cdc59dd` |
+| LLM-001 | SmartApprove's read-only classifier prompt now includes the pending call's actual arguments, not just the tool name | `3c8a71e` |
+| ORCH-004 | A subagent run cancelled mid-stream now returns `Err` (routed to `CallToolResult::error`) instead of silently reporting truncated partial output as a successful completion | `e186781` |
+| ORCH-005 | Subagent extension-load failures now prepend a named warning to the returned text instead of being logged at `debug!` only | `e186781` |
+| REC-003 | `import_session`/`copy_session` roll back (delete) the stray session if a post-`create_session` step fails, instead of leaving an orphaned partial session | `cc5a97d` |
+| DEP-003 | `load_custom_providers` now skips and logs one malformed config file instead of short-circuiting and discarding every valid provider in the batch | `803c876` |
+| CI-001 | `rebuild-skills-marketplace.yml` now runs `npm test` before `npm run build`, matching `deploy-docs-and-extensions.yml`'s gate | `27bcd62` |
+| DEP-001 | Provider-fallback now engages whenever the primary provider actually fails to construct (e.g. missing/invalid credentials), not only when the provider type is unrecognized | `3892cf7` |
+| SEC-002 | LLM request/response logs (`llm_request.*.jsonl`) are now created in an owner-only (`0700`) directory, matching every other secret-bearing file | `e7ebcc9` |
+| SEC-001 | `gosling tui`'s cwd fallback now verifies the directory is a real gosling workspace root (`[workspace]` Cargo.toml + a `gosling`-named member) before executing `ui/text/dist/tui.js` found there | `bc65027` |
+
+### Repaired (pass 3)
+
+| ID | Fix | Commit |
+|---|---|---|
+| CON-002 | `Config::save_values` now holds a dedicated `.save.lock` sidecar lock across the entire write-then-rename sequence (not just the write), and writes to a per-call UUID-named temp file instead of a fixed shared `.tmp` path, closing the window where one writer's rename/truncate could race another's in-flight write | *(this commit)* |
+
 ### Not yet repaired (specified above, follow-up campaign)
 
-ORCH-002..005, LLM-001..003, MCP-002..005, RES-002..003, REC-001..003,
-DEP-001..003, INV-001..002, OPS-002..005, GUI-002/004/005, SEC-001..003,
-CON-001..003, CI-001.
+ORCH-002, ORCH-003, LLM-002, LLM-003, RES-002, RES-003, REC-001, REC-002,
+DEP-002, INV-001, INV-002, OPS-002, OPS-003, OPS-004, OPS-005, GUI-002,
+GUI-004, GUI-005, SEC-003, CON-001, CON-003.
+
+LLM-002 and LLM-003 remain explicitly deferred: both require extension-provenance
+plumbing / a new tool-result injection-scanning path that this sandbox has no
+safe way to validate without live MCP/LLM integration testing. DEP-002 is
+deferred as too risky to touch in isolation: it sits in the same deeply-nested
+turn-loop logic in `agent.rs` where the ORCH-004/RES-001 race conditions were
+already found, and empty-provider-response scenarios can't be exercised
+end-to-end in this sandbox.
 
 ### Verification performed
 
