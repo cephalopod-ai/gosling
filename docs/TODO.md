@@ -112,3 +112,20 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
   approve recovery, or recursively invoke Tagteam.
 - The legacy Tagteam provider is not removed until workflow parity, migration
   guidance, runtime playtests, and rollback behavior are verified.
+
+## Defect-repair campaign — 2026-07-16
+
+Full inventory, skill disposition, and repair log:
+[`reports/2026-07-16-defect-audit-and-repair.md`](../reports/2026-07-16-defect-audit-and-repair.md).
+35 defects found across 12 audit lenses; grouped into locality-based repair
+stages and repaired under `repair-defect-campaign` gates (patch, regression
+test, adversarial review, change review, commit per stage). Track per-stage
+status in that report rather than duplicating it here.
+
+Corroborates and updates two previously-deferred, still-open findings from
+`reports/2026-07-10-audit-skills-pack-report.md`: the `/status` static-200
+health lie (there: FSR-SRV-001, here: OPS-001) and the hardcoded
+`exit_type="normal"` telemetry (there: FSR-SRV-002, here: OPS-003) — both
+were deferred previously only because that session's sandbox could not link
+`gosling-server`; this session can build and test it, so both are repaired
+here rather than re-deferred.
