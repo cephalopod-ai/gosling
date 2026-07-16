@@ -352,6 +352,27 @@ function ToolCallExpandable({
   );
 }
 
+/**
+ * Derive the tool call's display status from whether a response was ever
+ * received. Streaming ending without a toolResponse (dropped connection,
+ * backend crash, or a backend that never sends a response for this call) is
+ * NOT the same as a confirmed success — it must render as 'unknown', not
+ * silently collapse into the same green 'success' state as a call that
+ * actually completed.
+ */
+export function deriveLoadingStatus(
+  toolResponse: ToolResponseMessageContent | undefined,
+  isStreamingMessage: boolean | undefined
+): LoadingStatus {
+  if (!toolResponse) {
+    const isStreamingComplete = !isStreamingMessage;
+    return isStreamingComplete ? 'unknown' : 'loading';
+  }
+  return (toolResponse.toolResult as Record<string, unknown>).status === 'error'
+    ? 'error'
+    : 'success';
+}
+
 interface ToolCallViewProps {
   isCancelledMessage: boolean;
   toolCall: {
@@ -521,18 +542,7 @@ function ToolCallView({
 
   const isToolDetails = toolCall?.arguments && Object.entries(toolCall.arguments).length > 0;
 
-  // Check if streaming has finished but no tool response was received
-  // This is a workaround for cases where the backend doesn't send tool responses
-  const isStreamingComplete = !isStreamingMessage;
-  const shouldShowAsComplete = isStreamingComplete && !toolResponse;
-
-  const loadingStatus: LoadingStatus = !toolResponse
-    ? shouldShowAsComplete
-      ? 'success'
-      : 'loading'
-    : (toolResponse.toolResult as Record<string, unknown>).status === 'error'
-      ? 'error'
-      : 'success';
+  const loadingStatus: LoadingStatus = deriveLoadingStatus(toolResponse, isStreamingMessage);
 
   // Tool call timing tracking
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -777,6 +787,9 @@ function ToolCallView({
         return 'error';
       case 'loading':
         return 'loading';
+      // No confirmed response was ever received; render the neutral
+      // 'pending' indicator rather than implying either outcome.
+      case 'unknown':
       default:
         return 'pending';
     }

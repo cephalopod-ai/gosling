@@ -285,20 +285,32 @@ function buildContentLines({
         if (flat.length <= maxPreview + 10) {
           return (
             <Box width={safeWidth}>
-              <Text color={TEXT_PRIMARY} bold wrap="wrap">
+              <Text color={TEXT_PRIMARY} bold wrap="truncate">
                 {flat}
               </Text>
             </Box>
           );
         }
-        const preview = flat.slice(0, maxPreview) + "…";
-        const remaining = flat.length - maxPreview;
+        // The truncated preview and the " (N more chars)" suffix are
+        // sibling Texts sharing this single fixed-height row, so the
+        // preview budget must also leave room for the suffix — otherwise
+        // the two together can exceed safeWidth and overflow into the
+        // next line (AGENTS.md's Ink-Text / Ink-HeightBudget guidance:
+        // never wrap="wrap" inside a fixed-height Box, and account for
+        // every sibling sharing the row's character budget).
+        const SUFFIX_BUDGET = 30;
+        const previewBudget = Math.max(
+          Math.min(maxPreview, safeWidth - SUFFIX_BUDGET),
+          10,
+        );
+        const preview = flat.slice(0, previewBudget) + "…";
+        const remaining = flat.length - previewBudget;
         return (
           <Box width={safeWidth}>
-            <Text color={TEXT_PRIMARY} bold wrap="wrap">
+            <Text color={TEXT_PRIMARY} bold wrap="truncate">
               {preview}
             </Text>
-            <Text color={TEXT_DIM}>
+            <Text color={TEXT_DIM} wrap="truncate">
               {" "}
               ({remaining.toLocaleString()} more chars)
             </Text>
