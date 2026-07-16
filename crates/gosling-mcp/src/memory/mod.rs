@@ -304,32 +304,50 @@ impl MemoryServer {
         Ok(memories)
     }
 
+    /// Removes memory entries whose data exactly matches `memory_content`
+    /// (ignoring a leading `# tags` line and surrounding whitespace), and
+    /// returns how many entries were removed. Exact match rather than
+    /// substring containment: a substring match would remove every entry
+    /// that merely mentions `memory_content` anywhere in its text, not just
+    /// the one entry the caller meant to remove.
     pub fn remove_specific_memory_internal(
         &self,
         category: &str,
         memory_content: &str,
         is_global: bool,
         working_dir: Option<&PathBuf>,
-    ) -> io::Result<()> {
+    ) -> io::Result<usize> {
         let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
         if !memory_file_path.exists() {
-            return Ok(());
+            return Ok(0);
         }
 
         let mut file = fs::File::open(&memory_file_path)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
 
-        let memories: Vec<&str> = content.split("\n\n").collect();
-        let new_content: Vec<String> = memories
-            .into_iter()
-            .filter(|entry| !entry.contains(memory_content))
+        let target = memory_content.trim();
+        let mut removed = 0;
+        let new_content: Vec<String> = content
+            .split("\n\n")
+            .filter(|entry| {
+                let data = entry
+                    .strip_prefix('#')
+                    .and_then(|rest| rest.split_once('\n'))
+                    .map_or(*entry, |(_, data)| data);
+                if data.trim() == target {
+                    removed += 1;
+                    false
+                } else {
+                    true
+                }
+            })
             .map(|s| s.to_string())
             .collect();
 
         write_file_atomic(&memory_file_path, &new_content.join("\n\n"))?;
 
-        Ok(())
+        Ok(removed)
     }
 
     pub fn clear_memory(
@@ -472,18 +490,30 @@ impl MemoryServer {
         let params = params.0;
         let working_dir = extract_working_dir_from_meta(&context.meta);
 
-        self.remove_specific_memory_internal(
-            &params.category,
-            &params.memory_content,
-            params.is_global,
-            working_dir.as_ref(),
-        )
-        .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
+        let removed = self
+            .remove_specific_memory_internal(
+                &params.category,
+                &params.memory_content,
+                params.is_global,
+                working_dir.as_ref(),
+            )
+            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Removed specific memory from category: {}",
-            params.category
-        ))]))
+        let message = if removed == 0 {
+            format!(
+                "No matching memory found in category '{}' — nothing was removed",
+                params.category
+            )
+        } else {
+            format!(
+                "Removed {} matching memory entr{} from category: {}",
+                removed,
+                if removed == 1 { "y" } else { "ies" },
+                params.category
+            )
+        };
+
+        Ok(CallToolResult::success(vec![Content::text(message)]))
     }
 }
 
@@ -683,9 +713,10 @@ mod tests {
             .unwrap();
         assert_eq!(memories.len(), 1);
 
-        router
+        let removed = router
             .remove_specific_memory_internal("category", "remove_this", false, Some(&working_dir))
             .unwrap();
+        assert_eq!(removed, 1, "exactly one entry should have matched");
 
         let memories_after = router
             .retrieve("category", false, Some(&working_dir))
@@ -699,5 +730,102 @@ mod tests {
             .values()
             .any(|v| v.iter().any(|content| content.contains("keep_this")));
         assert!(has_kept);
+    }
+
+    #[test]
+    fn test_remove_specific_memory_reports_zero_and_changes_nothing_on_no_match() {
+        let temp_dir = tempdir().unwrap();
+        let memory_base = temp_dir.path().join("remove_no_match_test");
+        let working_dir = memory_base.join("working");
+
+        let router = MemoryServer {
+            tool_router: ToolRouter::new(),
+            instructions: String::new(),
+            global_memory_dir: memory_base.join("global"),
+        };
+
+        router
+            .remember(
+                "context",
+                "category",
+                "keep_this",
+                &[],
+                false,
+                Some(&working_dir),
+            )
+            .unwrap();
+
+        let removed = router
+            .remove_specific_memory_internal(
+                "category",
+                "nothing_matches_this",
+                false,
+                Some(&working_dir),
+            )
+            .unwrap();
+        assert_eq!(
+            removed, 0,
+            "no entry matches, so the caller must be able to tell nothing was removed"
+        );
+
+        let memories_after = router
+            .retrieve("category", false, Some(&working_dir))
+            .unwrap();
+        let has_kept = memories_after
+            .values()
+            .any(|v| v.iter().any(|content| content.contains("keep_this")));
+        assert!(
+            has_kept,
+            "an unmatched removal must not touch other entries"
+        );
+    }
+
+    #[test]
+    fn test_remove_specific_memory_does_not_over_delete_on_substring_match() {
+        let temp_dir = tempdir().unwrap();
+        let memory_base = temp_dir.path().join("remove_substring_test");
+        let working_dir = memory_base.join("working");
+
+        let router = MemoryServer {
+            tool_router: ToolRouter::new(),
+            instructions: String::new(),
+            global_memory_dir: memory_base.join("global"),
+        };
+
+        router
+            .remember(
+                "context",
+                "category",
+                "project uses python 3.11",
+                &[],
+                false,
+                Some(&working_dir),
+            )
+            .unwrap();
+        router
+            .remember(
+                "context",
+                "category",
+                "python formatting: use black",
+                &[],
+                false,
+                Some(&working_dir),
+            )
+            .unwrap();
+
+        // "python" is a substring of both entries above, but an exact-match
+        // removal request for just "python" must not match (and therefore
+        // must not delete) either of them.
+        let removed = router
+            .remove_specific_memory_internal("category", "python", false, Some(&working_dir))
+            .unwrap();
+        assert_eq!(removed, 0);
+
+        let memories_after = router
+            .retrieve("category", false, Some(&working_dir))
+            .unwrap();
+        let remaining: Vec<&String> = memories_after.values().flatten().collect();
+        assert!(remaining.iter().any(|c| c.contains("python 3.11")));
+        assert!(remaining.iter().any(|c| c.contains("use black")));
     }
 }
