@@ -958,6 +958,8 @@ pub struct ChatGptCodexProvider {
     #[serde(skip)]
     name: String,
     #[serde(skip)]
+    client: reqwest::Client,
+    #[serde(skip)]
     request_builder: RequestBuilderDecorator,
 }
 
@@ -973,10 +975,16 @@ impl ChatGptCodexProvider {
         let auth_provider = Arc::new(ChatGptCodexAuthProvider::new(
             ChatGptCodexAuthState::instance(),
         ));
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(
+                DEFAULT_PROVIDER_TIMEOUT_SECS,
+            ))
+            .build()?;
 
         Ok(Self {
             auth_provider,
             name: CHATGPT_CODEX_PROVIDER_NAME.to_string(),
+            client,
             request_builder: crate::session_context::session_id_request_builder(),
         })
     }
@@ -1001,13 +1009,8 @@ impl ChatGptCodexProvider {
             );
         }
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(
-                DEFAULT_PROVIDER_TIMEOUT_SECS,
-            ))
-            .build()
-            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-        let mut request = client
+        let mut request = self
+            .client
             .post(format!("{}/responses", CODEX_API_ENDPOINT))
             .header(
                 "Authorization",
@@ -1025,7 +1028,7 @@ impl ChatGptCodexProvider {
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?
             .send()
             .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+            .map_err(ProviderError::from)?;
 
         handle_status(response).await
     }
