@@ -29,12 +29,32 @@ fn find_local_script() -> Option<PathBuf> {
 
     if let Ok(cwd) = std::env::current_dir() {
         let candidate = cwd.join(TUI_REL_PATH);
-        if candidate.is_file() {
+        if candidate.is_file() && is_gosling_workspace_root(&cwd) {
             return Some(candidate);
         }
     }
 
     None
+}
+
+/// Whether `dir` looks like the root of an actual gosling source checkout,
+/// not just some directory that happens to contain a file at
+/// `ui/text/dist/tui.js`. Without this, `gosling tui` run from any
+/// directory containing an attacker-supplied `ui/text/dist/tui.js` (e.g. an
+/// extracted archive or a cloned repo) would exec `node <that file>`
+/// unprompted, inheriting the invoking process's full environment
+/// (including any exported provider API keys). Checking for a `[workspace]`
+/// `Cargo.toml` whose member actually declares the `gosling` package name
+/// is a much higher bar for an attacker to spoof than dropping one JS file.
+fn is_gosling_workspace_root(dir: &Path) -> bool {
+    let Ok(cargo_toml) = std::fs::read_to_string(dir.join("Cargo.toml")) else {
+        return false;
+    };
+    if !cargo_toml.contains("[workspace]") {
+        return false;
+    }
+    std::fs::read_to_string(dir.join("crates/gosling/Cargo.toml"))
+        .is_ok_and(|member| member.lines().any(|l| l.trim() == "name = \"gosling\""))
 }
 
 fn resolve_source() -> TuiSource {
@@ -95,5 +115,59 @@ pub fn handle_tui(args: Vec<String>) -> Result<()> {
             std::process::exit(status.code().unwrap_or(1));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_gosling_workspace_root_rejects_directory_with_no_cargo_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_gosling_workspace_root(dir.path()));
+    }
+
+    #[test]
+    fn is_gosling_workspace_root_rejects_attacker_supplied_tui_js_with_no_workspace() {
+        // Simulates the actual attack this check exists to prevent: an
+        // archive/repo that contains only a `ui/text/dist/tui.js` file (the
+        // relative path find_local_script looks for) and nothing that
+        // proves it's a real gosling checkout.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("ui/text/dist")).unwrap();
+        std::fs::write(
+            dir.path().join("ui/text/dist/tui.js"),
+            "console.log('not the real tui')",
+        )
+        .unwrap();
+        assert!(!is_gosling_workspace_root(dir.path()));
+    }
+
+    #[test]
+    fn is_gosling_workspace_root_rejects_unrelated_cargo_workspace() {
+        // A [workspace] Cargo.toml alone (e.g. an unrelated Rust monorepo
+        // that happens to sit at the attacker-controlled cwd) must not be
+        // enough; the gosling package itself must be present.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
+        assert!(!is_gosling_workspace_root(dir.path()));
+    }
+
+    #[test]
+    fn is_gosling_workspace_root_accepts_real_workspace_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("crates/gosling")).unwrap();
+        std::fs::write(
+            dir.path().join("crates/gosling/Cargo.toml"),
+            "[package]\nname = \"gosling\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        assert!(is_gosling_workspace_root(dir.path()));
     }
 }
