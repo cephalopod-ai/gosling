@@ -33,6 +33,7 @@ interface GoslingMessageProps {
   toolCallNotifications: Map<string, NotificationEvent[]>;
   append: (value: string) => void;
   isStreaming: boolean;
+  workingDirectory?: string;
   submitElicitationResponse?: (
     elicitationId: string,
     userData: Record<string, unknown>
@@ -50,6 +51,7 @@ function GoslingMessage({
   toolCallNotifications,
   append,
   isStreaming,
+  workingDirectory,
   submitElicitationResponse,
 }: GoslingMessageProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -150,6 +152,7 @@ function GoslingMessage({
                         append={append}
                         confirmationContent={confirmationContent}
                         isApprovalClicked={isApprovalClicked}
+                        workingDirectory={workingDirectory}
                       />
                     </div>
                   );
@@ -183,7 +186,10 @@ function GoslingMessage({
   );
 }
 
-function areGoslingMessagePropsEqual(prev: GoslingMessageProps, next: GoslingMessageProps): boolean {
+function areGoslingMessagePropsEqual(
+  prev: GoslingMessageProps,
+  next: GoslingMessageProps
+): boolean {
   if (
     prev.sessionId !== next.sessionId ||
     prev.message !== next.message ||
@@ -191,6 +197,7 @@ function areGoslingMessagePropsEqual(prev: GoslingMessageProps, next: GoslingMes
     prev.metadata !== next.metadata ||
     prev.append !== next.append ||
     prev.isStreaming !== next.isStreaming ||
+    prev.workingDirectory !== next.workingDirectory ||
     prev.submitElicitationResponse !== next.submitElicitationResponse
   ) {
     return false;

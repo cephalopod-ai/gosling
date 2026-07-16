@@ -75,6 +75,7 @@ interface ProgressiveMessageListProps {
     elicitationId: string,
     userData: Record<string, unknown>
   ) => Promise<boolean>;
+  workingDirectory?: string;
 }
 
 interface MessageRenderIndex {
@@ -100,6 +101,7 @@ export default function ProgressiveMessageList({
   onMessageUpdate,
   onRenderingComplete,
   submitElicitationResponse,
+  workingDirectory,
 }: ProgressiveMessageListProps) {
   const intl = useIntl();
   const [renderedCount, setRenderedCount] = useState(() => {
@@ -370,6 +372,7 @@ export default function ProgressiveMessageList({
                     message.role === 'assistant'
                   }
                   submitElicitationResponse={submitElicitationResponse}
+                  workingDirectory={workingDirectory}
                 />
               )}
             </div>
@@ -389,6 +392,7 @@ export default function ProgressiveMessageList({
     onMessageUpdate,
     messageRenderIndex,
     submitElicitationResponse,
+    workingDirectory,
     getPreviousResolvedModel,
     getResolvedModel,
     renderModelChangeDisclosure,

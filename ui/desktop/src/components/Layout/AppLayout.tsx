@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { IpcRendererEvent } from 'electron';
 import { Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Menu, PanelLeft } from 'lucide-react';
+import { FileOutput, Menu, PanelLeft } from 'lucide-react';
 import { defineMessages, useIntl } from '../../i18n';
 import { Button } from '../ui/button';
 import ChatSessionsContainer from '../ChatSessionsContainer';
@@ -12,6 +12,11 @@ import { Navigation } from './NavigationPanel';
 import { NAV_DIMENSIONS, Z_INDEX } from './constants';
 import { cn } from '../../utils';
 import { UserInput } from '../../types/message';
+import {
+  ArtifactWorkbenchProvider,
+  useArtifactWorkbench,
+} from '../../contexts/ArtifactWorkbenchContext';
+import { ArtifactPane } from '../artifacts/ArtifactPane';
 
 const i18n = defineMessages({
   openNavigation: {
@@ -21,6 +26,10 @@ const i18n = defineMessages({
   collapseNavigation: {
     id: 'appLayout.collapseNavigation',
     defaultMessage: 'Collapse navigation',
+  },
+  toggleOutputs: {
+    id: 'appLayout.toggleOutputs',
+    defaultMessage: 'Toggle outputs pane',
   },
 });
 
@@ -55,6 +64,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
   }, [safeIsMacOS]);
 
   const { isNavExpanded, setIsNavExpanded } = useNavigationContext();
+  const artifactWorkbench = useArtifactWorkbench();
 
   if (!chatContext) {
     throw new Error('AppLayoutContent must be used within ChatProvider');
@@ -87,6 +97,24 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
         </Button>
       </div>
 
+      {!artifactWorkbench.isOpen && (
+        <div
+          style={{ zIndex: Z_INDEX.HEADER }}
+          className={cn('absolute right-4 flex items-center', headerTop)}
+        >
+          <Button
+            onClick={artifactWorkbench.toggle}
+            className="no-drag hover:!bg-background-tertiary"
+            variant="ghost"
+            size="xs"
+            title={intl.formatMessage(i18n.toggleOutputs)}
+            aria-label={intl.formatMessage(i18n.toggleOutputs)}
+          >
+            <FileOutput className="h-5 w-5" />
+          </Button>
+        </div>
+      )}
+
       {/* Main content with navigation. Shared white canvas; the sidebar is a
           rounded outlined card floating on it with breathing room. */}
       <div className="flex flex-1 w-full h-full min-h-0 flex-row">
@@ -104,7 +132,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
         </motion.div>
 
         {/* Main content — no border / no card; just flows on the canvas. */}
-        <div className="flex-1 overflow-hidden min-h-0">
+        <div className="flex-1 overflow-hidden min-h-0 min-w-0">
           <Outlet />
           {/* Always render ChatSessionsContainer to keep SSE connections alive.
               When navigating away from /pair, hide it with CSS */}
@@ -112,6 +140,17 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
             <ChatSessionsContainer setChat={setChat} activeSessions={activeSessions} />
           </div>
         </div>
+
+        <motion.div
+          initial={false}
+          animate={{ width: artifactWorkbench.isOpen ? artifactWorkbench.width : 0 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+          className="relative flex-shrink-0 overflow-hidden h-full p-2 pl-0"
+        >
+          <div style={{ width: artifactWorkbench.width }} className="h-full">
+            <ArtifactPane />
+          </div>
+        </motion.div>
       </div>
     </div>
   );
@@ -127,8 +166,10 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ activeSessions }) => {
   return (
-    <NavigationProvider>
-      <AppLayoutContent activeSessions={activeSessions} />
-    </NavigationProvider>
+    <ArtifactWorkbenchProvider>
+      <NavigationProvider>
+        <AppLayoutContent activeSessions={activeSessions} />
+      </NavigationProvider>
+    </ArtifactWorkbenchProvider>
   );
 };

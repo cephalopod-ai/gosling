@@ -481,6 +481,7 @@ export default function BaseChat({
                     onRenderingComplete={handleRenderingComplete}
                     onMessageUpdate={onMessageUpdate}
                     submitElicitationResponse={submitElicitationResponse}
+                    workingDirectory={session?.working_dir}
                   />
                 </SearchView>
 

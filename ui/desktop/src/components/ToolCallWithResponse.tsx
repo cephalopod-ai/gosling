@@ -13,7 +13,7 @@ import {
 } from '../types/message';
 import { cn, snakeToTitleCase } from '../utils';
 import { LoadingStatus } from './ui/Dot';
-import { ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronRight, ExternalLink, FileOutput } from 'lucide-react';
 import { TooltipWrapper } from './settings/providers/subcomponents/buttons/TooltipWrapper';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ContentBlock } from '../types/message';
@@ -21,6 +21,7 @@ import type { ContentBlock } from '../types/message';
 import McpAppRenderer from './McpApps/McpAppRenderer';
 import ToolApprovalButtons from './ToolApprovalButtons';
 import { defineMessages, useIntl } from '../i18n';
+import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
 
 const i18n = defineMessages({
   viewSubagentSession: {
@@ -54,6 +55,14 @@ const i18n = defineMessages({
   loadingSpinner: {
     id: 'toolCallWithResponse.loadingSpinner',
     defaultMessage: 'Loading spinner',
+  },
+  viewInOutputs: {
+    id: 'toolCallWithResponse.viewInOutputs',
+    defaultMessage: 'View in Outputs',
+  },
+  openDeliverable: {
+    id: 'toolCallWithResponse.openDeliverable',
+    defaultMessage: 'Open {name} in Outputs',
   },
 });
 
@@ -106,6 +115,7 @@ interface ToolCallWithResponseProps {
   append?: (value: string) => void;
   confirmationContent?: ToolConfirmationData;
   isApprovalClicked?: boolean;
+  workingDirectory?: string;
 }
 
 function getSubagentSessionId(
@@ -222,6 +232,7 @@ export default function ToolCallWithResponse({
   append,
   confirmationContent,
   isApprovalClicked,
+  workingDirectory,
 }: ToolCallWithResponseProps) {
   // Handle both the wrapped ToolResult format and the unwrapped format
   // The server serializes ToolResult<T> as { status: "success", value: T } or { status: "error", error: string }
@@ -260,6 +271,7 @@ export default function ToolCallWithResponse({
             toolResponse,
             notifications,
             isStreamingMessage,
+            workingDirectory,
           }}
         />
         {/* Inline approval UI */}
@@ -349,6 +361,7 @@ interface ToolCallViewProps {
   toolResponse?: ToolResponseMessageContent;
   notifications?: NotificationEvent[];
   isStreamingMessage?: boolean;
+  workingDirectory?: string;
 }
 
 interface Progress {
@@ -475,8 +488,10 @@ function ToolCallView({
   toolResponse,
   notifications,
   isStreamingMessage = false,
+  workingDirectory,
 }: ToolCallViewProps) {
   const intl = useIntl();
+  const { openFile } = useArtifactWorkbench();
   const [responseStyle, setResponseStyle] = useState<string>('concise');
 
   useEffect(() => {
@@ -768,6 +783,7 @@ function ToolCallView({
   };
 
   const toolCallStatus = getToolCallStatus(loadingStatus);
+  const outputPaths = getOutputPaths(toolCall);
 
   const toolLabel = (
     <span
@@ -853,6 +869,26 @@ function ToolCallView({
             </div>
           ))}
         </>
+      )}
+
+      {loadingStatus === 'success' && outputPaths.length > 0 && (
+        <div className="border-t border-border-primary px-3 py-2">
+          {outputPaths.map((outputPath) => (
+            <button
+              key={outputPath}
+              type="button"
+              onClick={() => openFile(outputPath, workingDirectory)}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-text-secondary hover:bg-background-secondary hover:text-text-primary"
+            >
+              <FileOutput className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {intl.formatMessage(i18n.openDeliverable, {
+                  name: outputPath.split(/[\\/]/).pop() ?? outputPath,
+                })}
+              </span>
+            </button>
+          ))}
+        </div>
       )}
 
       {(() => {
@@ -957,8 +993,9 @@ interface ToolResultViewProps {
   isStartExpanded: boolean;
 }
 
-function ToolResultView({ result, isStartExpanded }: ToolResultViewProps) {
+function ToolResultView({ toolCall, result, isStartExpanded }: ToolResultViewProps) {
   const intl = useIntl();
+  const { openContent } = useArtifactWorkbench();
   const hasText = (c: ContentBlock): c is ContentBlock & { text: string } =>
     'text' in c && typeof (c as Record<string, unknown>).text === 'string';
 
@@ -996,9 +1033,53 @@ function ToolResultView({ result, isStartExpanded }: ToolResultViewProps) {
         {hasResource(result) && (
           <pre className="font-sans text-sm">{JSON.stringify(result, null, 2)}</pre>
         )}
+        {(hasText(result) || hasImage(result)) && (
+          <Button
+            className="mt-3"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const title = `${snakeToTitleCase(getToolName(toolCall.name))} output`;
+              if (hasImage(result)) {
+                openContent({
+                  title,
+                  content: result.data,
+                  encoding: 'base64',
+                  mimeType: result.mimeType,
+                });
+              } else if (hasText(result)) {
+                openContent({ title, content: result.text, mimeType: 'text/plain' });
+              }
+            }}
+          >
+            <FileOutput className="mr-2 h-4 w-4" />
+            {intl.formatMessage(i18n.viewInOutputs)}
+          </Button>
+        )}
       </div>
     </ToolCallExpandable>
   );
+}
+
+const OUTPUT_PATH_EXTENSION =
+  /\.(?:csv|gif|graphml|html?|jpe?g|jsonl?|md|markdown|pdf|png|svg|txt|webp)$/i;
+const OUTPUT_PATH_KEY =
+  /^(?:destination|destination_path|file|file_path|output|output_file|output_path|path)$/i;
+const MUTATING_TOOL_NAME = /(?:create|edit|export|generate|render|save|update|write)/i;
+
+function getOutputPaths(toolCall: { name: string; arguments: Record<string, unknown> }): string[] {
+  const toolName = getToolName(toolCall.name);
+  const command = typeof toolCall.arguments.command === 'string' ? toolCall.arguments.command : '';
+  const writesFile =
+    MUTATING_TOOL_NAME.test(toolName) ||
+    (toolName === 'text_editor' && /^(?:insert|str_replace|write)$/i.test(command));
+  if (!writesFile) return [];
+
+  const paths = Object.entries(toolCall.arguments)
+    .filter(([key, value]) => OUTPUT_PATH_KEY.test(key) && typeof value === 'string')
+    .map(([, value]) => value as string)
+    .filter((value) => OUTPUT_PATH_EXTENSION.test(value));
+  return [...new Set(paths)];
 }
 
 function SubagentLogEntry({ log }: { log: string }) {

@@ -84,6 +84,16 @@ interface FileResponse {
   found: boolean;
 }
 
+export interface ArtifactFileResponse {
+  content: string;
+  encoding: 'base64' | 'utf8';
+  error: string | null;
+  filePath: string;
+  found: boolean;
+  sizeBytes: number;
+  truncated: boolean;
+}
+
 interface McpAppProxyCsp {
   connectDomains?: string[];
   resourceDomains?: string[];
@@ -117,12 +127,16 @@ type ElectronAPI = {
   reloadApp: () => void;
   checkForOllama: () => Promise<boolean>;
   selectFileOrDirectory: (defaultPath?: string) => Promise<string | null>;
+  selectArtifactFile: (defaultPath?: string) => Promise<string | null>;
   selectImportSessionFile: () => Promise<{
     filePath: string;
     contents: string;
     error?: string;
   } | null>;
   readFile: (directory: string) => Promise<FileResponse>;
+  readArtifactFile: (filePath: string, baseDirectory?: string) => Promise<ArtifactFileResponse>;
+  openArtifactFile: (filePath: string, baseDirectory?: string) => Promise<boolean>;
+  revealArtifactFile: (filePath: string, baseDirectory?: string) => Promise<void>;
   writeFile: (directory: string, content: string) => Promise<boolean>;
   deleteFile: (filePath: string) => Promise<boolean>;
   ensureDirectory: (dirPath: string) => Promise<boolean>;
@@ -203,8 +217,16 @@ const electronAPI: ElectronAPI = {
 
   selectFileOrDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke('select-file-or-directory', defaultPath),
+  selectArtifactFile: (defaultPath?: string) =>
+    ipcRenderer.invoke('select-artifact-file', defaultPath),
   selectImportSessionFile: () => ipcRenderer.invoke('select-import-session-file'),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  readArtifactFile: (filePath: string, baseDirectory?: string) =>
+    ipcRenderer.invoke('read-artifact-file', filePath, baseDirectory),
+  openArtifactFile: (filePath: string, baseDirectory?: string) =>
+    ipcRenderer.invoke('open-artifact-file', filePath, baseDirectory),
+  revealArtifactFile: (filePath: string, baseDirectory?: string) =>
+    ipcRenderer.invoke('reveal-artifact-file', filePath, baseDirectory),
   writeFile: (filePath: string, content: string) =>
     ipcRenderer.invoke('write-file', filePath, content),
   deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),

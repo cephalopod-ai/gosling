@@ -264,6 +264,18 @@ function assertRendererFileAccess(filePath: string): string {
   return resolvedPath;
 }
 
+const rendererArtifactFileGrants = new Set<string>();
+
+function assertRendererArtifactFileAccess(filePath: string, baseDirectory?: string): string {
+  const candidate =
+    baseDirectory && !path.isAbsolute(filePath) ? path.join(baseDirectory, filePath) : filePath;
+  const resolvedPath = resolveRendererPath(candidate);
+  if (rendererArtifactFileGrants.has(resolvedPath)) {
+    return resolvedPath;
+  }
+  return assertRendererFileAccess(resolvedPath);
+}
+
 async function openExternalIfSafe(url: string): Promise<void> {
   if (!isProtocolSafe(url)) {
     console.warn(`[Main] Blocked unsafe external URL: ${url}`);
@@ -2239,6 +2251,19 @@ ipcMain.handle('select-file-or-directory', async (_event, defaultPath?: string) 
   return null;
 });
 
+ipcMain.handle('select-artifact-file', async (_event, defaultPath?: string) => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    defaultPath: defaultPath ? expandTilde(defaultPath) : undefined,
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  const selectedPath = resolveRendererPath(result.filePaths[0]);
+  rendererArtifactFileGrants.add(selectedPath);
+  return selectedPath;
+});
+
 // Native picker tailored for session imports: shows hidden files (so users can
 // reach `~/.claude/projects/...` or `~/.pi/agent/sessions/...`), filters for
 // .json/.jsonl, and returns the file's contents inline so the renderer doesn't
@@ -2338,6 +2363,65 @@ ipcMain.handle('read-file', async (_event, filePath) => {
     };
   }
 });
+
+ipcMain.handle('read-artifact-file', async (_event, filePath: string, baseDirectory?: string) => {
+  try {
+    const resolvedPath = assertRendererArtifactFileAccess(filePath, baseDirectory);
+    const stats = await fs.stat(resolvedPath);
+    if (!stats.isFile()) {
+      throw new Error('The selected output is not a file');
+    }
+
+    const extension = path.extname(resolvedPath).toLowerCase();
+    const binaryExtensions = new Set(['.gif', '.jpeg', '.jpg', '.pdf', '.png', '.svg', '.webp']);
+    const previewLimit = binaryExtensions.has(extension) ? 20 * 1024 * 1024 : 2 * 1024 * 1024;
+    const bytesToRead = Math.min(stats.size, previewLimit);
+    const handle = await fs.open(resolvedPath, 'r');
+    const buffer = Buffer.alloc(bytesToRead);
+    try {
+      await handle.read(buffer, 0, bytesToRead, 0);
+    } finally {
+      await handle.close();
+    }
+
+    const encoding = binaryExtensions.has(extension) ? 'base64' : 'utf8';
+    return {
+      content: buffer.toString(encoding),
+      encoding,
+      error: null,
+      filePath: resolvedPath,
+      found: true,
+      sizeBytes: stats.size,
+      truncated: stats.size > previewLimit,
+    };
+  } catch (error) {
+    return {
+      content: '',
+      encoding: 'utf8',
+      error: errorMessage(error),
+      filePath: resolveRendererPath(filePath),
+      found: false,
+      sizeBytes: 0,
+      truncated: false,
+    };
+  }
+});
+
+ipcMain.handle(
+  'open-artifact-file',
+  async (_event, filePath: string, baseDirectory?: string) => {
+    const resolvedPath = assertRendererArtifactFileAccess(filePath, baseDirectory);
+    return (await shell.openPath(resolvedPath)) === '';
+  }
+);
+
+ipcMain.handle(
+  'reveal-artifact-file',
+  async (_event, filePath: string, baseDirectory?: string) => {
+    const resolvedPath = assertRendererArtifactFileAccess(filePath, baseDirectory);
+    shell.showItemInFolder(resolvedPath);
+  }
+);
 
 ipcMain.handle('write-file', async (_event, filePath, content) => {
   try {
