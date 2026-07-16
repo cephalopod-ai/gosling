@@ -566,13 +566,6 @@ async fn run_command(
             .code()
     };
 
-    // The invoking shell has exited (naturally or via the timeout kill
-    // above), but a command it backgrounded with `&` is not tracked by
-    // `child` at all and does not receive that kill: it inherited the same
-    // process group id, so reap the whole group here rather than leaving
-    // background jobs to run unbounded after the tool call returns.
-    kill_process_group(child_pgid);
-
     const OUTPUT_DRAIN_TIMEOUT_MILLIS: u64 = 500;
     let mut output_collection_error = None;
     let output_truncated = match tokio::time::timeout(
@@ -604,6 +597,18 @@ async fn run_command(
     while let Some(item) = rx.recv().await {
         lines.push(item);
     }
+
+    // The invoking shell has exited (naturally or via the timeout kill
+    // above), but a command it backgrounded with `&` is not tracked by
+    // `child` at all and does not receive that kill: it inherited the same
+    // process group id, so reap the whole group here rather than leaving
+    // background jobs to run unbounded after the tool call returns. This
+    // runs after output collection (rather than right after the shell
+    // exits) so a backgrounded command's own output — which races the
+    // group kill, since it is not sequenced after the foreground command
+    // at all — still has the same output-drain window to flush that it did
+    // before this cleanup existed.
+    kill_process_group(child_pgid);
 
     Ok(ExecutionOutput {
         lines,
@@ -1174,19 +1179,21 @@ mod tests {
             .map(str::trim)
             .expect("expected bgpid in output");
         let _cleanup = KillOnDrop(background_pid.to_string());
-        // Before the process-group cleanup below existed, the backgrounded
-        // `sleep 300` kept the stdout/stderr pipes open and forced this
-        // path through the output-drain timeout (output_truncated = true).
-        // Now that gosling kills it as part of returning from the tool
-        // call, the pipes close immediately and output collection
-        // completes normally.
+        // The backgrounded `sleep 300` keeps the stdout/stderr pipes open,
+        // so this path still goes through the output-drain timeout
+        // (output_truncated = true) exactly as before the process-group
+        // cleanup below existed — the cleanup runs after output collection
+        // specifically so it doesn't race the backgrounded command's own
+        // output (see `echo before && sleep 300 &`: `before` is written by
+        // the backgrounded job, not the foreground shell, so killing the
+        // group too early can lose it).
         assert!(
-            !shell_output.output_truncated,
-            "killing the backgrounded process should let output collection finish normally"
+            shell_output.output_truncated,
+            "backgrounded process should set output_truncated"
         );
         assert!(
             shell_output.output_collection_error.is_none(),
-            "output collection should not report an error on the happy path"
+            "timeout-based truncation should not set output collection error"
         );
         assert!(
             text.contains("before"),
