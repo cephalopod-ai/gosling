@@ -16,7 +16,7 @@ describe('ArtifactWorkbenchProvider', () => {
     localStorage.clear();
   });
 
-  it('opens files and transient tool outputs in the right pane', () => {
+  it('opens local files and transient tool outputs without a source-specific contract', () => {
     render(
       <ArtifactWorkbenchProvider>
         <Harness />
@@ -36,6 +36,25 @@ describe('ArtifactWorkbenchProvider', () => {
     );
     expect(workbench.tabs).toHaveLength(2);
     expect(workbench.activeTab?.kind).toBe('json');
+  });
+
+  it('keeps the same relative output path distinct across unrelated working directories', () => {
+    render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+
+    act(() => {
+      workbench.openFile('output/report.md', '/projects/alpha');
+      workbench.openFile('output/report.md', '/projects/beta');
+    });
+
+    expect(workbench.tabs).toHaveLength(2);
+    expect(workbench.tabs.map((tab) => tab.source)).toEqual([
+      { type: 'file', path: 'output/report.md', baseDirectory: '/projects/alpha' },
+      { type: 'file', path: 'output/report.md', baseDirectory: '/projects/beta' },
+    ]);
   });
 
   it('persists file tabs but not transient content', async () => {

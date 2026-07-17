@@ -3,7 +3,9 @@ import {
   addSandboxCsp,
   artifactKindFromMimeType,
   artifactKindFromPath,
+  localFilePathFromUri,
   parseCsv,
+  viewableFilePathsFromToolArguments,
 } from './artifactUtils';
 
 describe('artifactUtils', () => {
@@ -26,5 +28,22 @@ describe('artifactUtils', () => {
     expect(result).toContain('Content-Security-Policy');
     expect(result).toContain("connect-src 'none'");
     expect(result.indexOf('Content-Security-Policy')).toBeLessThan(result.indexOf('<title>'));
+  });
+
+  it('finds viewable files without depending on a tool name or project layout', () => {
+    expect(
+      viewableFilePathsFromToolArguments({
+        sourcePath: 'analysis/results.json',
+        nested: { outputFiles: ['/tmp/chart.svg', '/tmp/archive.bin'] },
+        deliverables: [{ path: 'nested/deliverable.md' }],
+        uri: 'https://example.com/report.pdf',
+      })
+    ).toEqual(['analysis/results.json', '/tmp/chart.svg', 'nested/deliverable.md']);
+  });
+
+  it('normalizes local resource links and rejects remote resources', () => {
+    expect(localFilePathFromUri('file:///tmp/output%20brief.md')).toBe('/tmp/output brief.md');
+    expect(localFilePathFromUri('relative/output.csv')).toBe('relative/output.csv');
+    expect(localFilePathFromUri('https://example.com/output.csv')).toBeNull();
   });
 });

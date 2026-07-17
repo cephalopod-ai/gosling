@@ -22,6 +22,11 @@ import McpAppRenderer from './McpApps/McpAppRenderer';
 import ToolApprovalButtons from './ToolApprovalButtons';
 import { defineMessages, useIntl } from '../i18n';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
+import {
+  artifactTitleFromPath,
+  localFilePathFromUri,
+  viewableFilePathsFromToolArguments,
+} from './artifacts/artifactUtils';
 
 const i18n = defineMessages({
   viewSubagentSession: {
@@ -783,7 +788,14 @@ function ToolCallView({
   };
 
   const toolCallStatus = getToolCallStatus(loadingStatus);
-  const outputPaths = getOutputPaths(toolCall);
+  const structuredContent = (toolResponse?.toolResult as ToolResultWithMeta | undefined)?.value
+    ?.structuredContent;
+  const viewableFilePaths = [
+    ...new Set([
+      ...viewableFilePathsFromToolArguments(toolCall.arguments),
+      ...viewableFilePathsFromToolArguments(structuredContent),
+    ]),
+  ];
 
   const toolLabel = (
     <span
@@ -865,25 +877,26 @@ function ToolCallView({
                 toolCall={toolCall}
                 result={result}
                 isStartExpanded={isExpandToolDetails}
+                workingDirectory={workingDirectory}
               />
             </div>
           ))}
         </>
       )}
 
-      {loadingStatus === 'success' && outputPaths.length > 0 && (
+      {loadingStatus === 'success' && viewableFilePaths.length > 0 && (
         <div className="border-t border-border-primary px-3 py-2">
-          {outputPaths.map((outputPath) => (
+          {viewableFilePaths.map((filePath) => (
             <button
-              key={outputPath}
+              key={filePath}
               type="button"
-              onClick={() => openFile(outputPath, workingDirectory)}
+              onClick={() => openFile(filePath, workingDirectory)}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-text-secondary hover:bg-background-secondary hover:text-text-primary"
             >
               <FileOutput className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">
                 {intl.formatMessage(i18n.openDeliverable, {
-                  name: outputPath.split(/[\\/]/).pop() ?? outputPath,
+                  name: filePath.split(/[\\/]/).pop() ?? filePath,
                 })}
               </span>
             </button>
@@ -991,11 +1004,17 @@ interface ToolResultViewProps {
   };
   result: ContentBlock;
   isStartExpanded: boolean;
+  workingDirectory?: string;
 }
 
-function ToolResultView({ toolCall, result, isStartExpanded }: ToolResultViewProps) {
+function ToolResultView({
+  toolCall,
+  result,
+  isStartExpanded,
+  workingDirectory,
+}: ToolResultViewProps) {
   const intl = useIntl();
-  const { openContent } = useArtifactWorkbench();
+  const { openContent, openFile } = useArtifactWorkbench();
   const hasText = (c: ContentBlock): c is ContentBlock & { text: string } =>
     'text' in c && typeof (c as Record<string, unknown>).text === 'string';
 
@@ -1007,6 +1026,14 @@ function ToolResultView({ toolCall, result, isStartExpanded }: ToolResultViewPro
 
   const hasResource = (c: ContentBlock): c is ContentBlock & { resource: unknown } =>
     'resource' in c;
+
+  const resourceLinkPath =
+    result.type === 'resource_link' ? localFilePathFromUri(result.uri) : null;
+  const embeddedResource = result.type === 'resource' ? result.resource : null;
+  const canOpenEmbeddedResource =
+    embeddedResource && ('text' in embeddedResource || 'blob' in embeddedResource);
+  const canViewInOutputs =
+    hasText(result) || hasImage(result) || resourceLinkPath !== null || canOpenEmbeddedResource;
 
   return (
     <ToolCallExpandable
@@ -1030,10 +1057,10 @@ function ToolResultView({ toolCall, result, isStartExpanded }: ToolResultViewPro
             }}
           />
         )}
-        {hasResource(result) && (
+        {(hasResource(result) || result.type === 'resource_link') && (
           <pre className="font-sans text-sm">{JSON.stringify(result, null, 2)}</pre>
         )}
-        {(hasText(result) || hasImage(result)) && (
+        {canViewInOutputs && (
           <Button
             className="mt-3"
             variant="outline"
@@ -1049,6 +1076,21 @@ function ToolResultView({ toolCall, result, isStartExpanded }: ToolResultViewPro
                 });
               } else if (hasText(result)) {
                 openContent({ title, content: result.text, mimeType: 'text/plain' });
+              } else if (resourceLinkPath) {
+                openFile(resourceLinkPath, workingDirectory);
+              } else if (embeddedResource && 'text' in embeddedResource) {
+                openContent({
+                  title: artifactTitleFromPath(embeddedResource.uri),
+                  content: embeddedResource.text,
+                  mimeType: embeddedResource.mimeType ?? 'text/plain',
+                });
+              } else if (embeddedResource && 'blob' in embeddedResource) {
+                openContent({
+                  title,
+                  content: embeddedResource.blob,
+                  encoding: 'base64',
+                  mimeType: embeddedResource.mimeType ?? 'application/octet-stream',
+                });
               }
             }}
           >
@@ -1059,27 +1101,6 @@ function ToolResultView({ toolCall, result, isStartExpanded }: ToolResultViewPro
       </div>
     </ToolCallExpandable>
   );
-}
-
-const OUTPUT_PATH_EXTENSION =
-  /\.(?:csv|gif|graphml|html?|jpe?g|jsonl?|md|markdown|pdf|png|svg|txt|webp)$/i;
-const OUTPUT_PATH_KEY =
-  /^(?:destination|destination_path|file|file_path|output|output_file|output_path|path)$/i;
-const MUTATING_TOOL_NAME = /(?:create|edit|export|generate|render|save|update|write)/i;
-
-function getOutputPaths(toolCall: { name: string; arguments: Record<string, unknown> }): string[] {
-  const toolName = getToolName(toolCall.name);
-  const command = typeof toolCall.arguments.command === 'string' ? toolCall.arguments.command : '';
-  const writesFile =
-    MUTATING_TOOL_NAME.test(toolName) ||
-    (toolName === 'text_editor' && /^(?:insert|str_replace|write)$/i.test(command));
-  if (!writesFile) return [];
-
-  const paths = Object.entries(toolCall.arguments)
-    .filter(([key, value]) => OUTPUT_PATH_KEY.test(key) && typeof value === 'string')
-    .map(([, value]) => value as string)
-    .filter((value) => OUTPUT_PATH_EXTENSION.test(value));
-  return [...new Set(paths)];
 }
 
 function SubagentLogEntry({ log }: { log: string }) {

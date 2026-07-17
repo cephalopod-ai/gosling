@@ -19,6 +19,76 @@ const KIND_BY_EXTENSION: Record<string, ArtifactKind> = {
   webp: 'image',
 };
 
+const FILE_ARGUMENT_KEYS = new Set([
+  'artifact',
+  'artifacts',
+  'destination',
+  'destination_path',
+  'destinations',
+  'deliverable',
+  'deliverables',
+  'file',
+  'file_path',
+  'files',
+  'output',
+  'output_file',
+  'output_files',
+  'output_path',
+  'output_paths',
+  'outputs',
+  'path',
+  'paths',
+  'source',
+  'source_path',
+  'sources',
+  'uri',
+  'uris',
+]);
+
+function normalizeArgumentKey(key: string): string {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
+export function localFilePathFromUri(value: string): string | null {
+  const candidate = value.trim();
+  if (!candidate) return null;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(candidate)) return candidate;
+  if (!candidate.toLowerCase().startsWith('file:')) return null;
+
+  try {
+    const url = new URL(candidate);
+    const decodedPath = decodeURIComponent(url.pathname);
+    if (url.host) return `//${url.host}${decodedPath}`;
+    return /^\/[a-z]:\//i.test(decodedPath) ? decodedPath.slice(1) : decodedPath;
+  } catch {
+    return null;
+  }
+}
+
+export function viewableFilePathsFromToolArguments(argumentsValue: unknown): string[] {
+  const paths = new Set<string>();
+
+  const visit = (value: unknown, isFileValue: boolean) => {
+    if (typeof value === 'string') {
+      if (!isFileValue) return;
+      const localPath = localFilePathFromUri(value);
+      if (localPath && artifactKindFromPath(localPath) !== 'unknown') paths.add(localPath);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, isFileValue));
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    Object.entries(value).forEach(([key, nestedValue]) =>
+      visit(nestedValue, FILE_ARGUMENT_KEYS.has(normalizeArgumentKey(key)))
+    );
+  };
+
+  visit(argumentsValue, false);
+  return [...paths];
+}
+
 export function artifactKindFromPath(path: string): ArtifactKind {
   const extension = path.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
   return extension ? (KIND_BY_EXTENSION[extension] ?? 'unknown') : 'unknown';
