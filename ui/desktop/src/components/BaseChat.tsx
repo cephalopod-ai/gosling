@@ -30,6 +30,7 @@ import { Gosling } from './icons';
 import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
 import WorkingDirectoriesSummary from './WorkingDirectoriesSummary';
+import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -108,6 +109,7 @@ export default function BaseChat({
   const disableAnimation = location.state?.disableAnimation || false;
   const isMobile = useIsMobile();
   const navContext = useNavigationContextSafe();
+  const { isOpen: isArtifactWorkbenchOpen } = useArtifactWorkbench();
   const setView = useNavigation();
   const isNavCollapsed = !navContext?.isNavExpanded;
   const contentClassName = cn('pr-1 pb-10 pt-12', (isMobile || isNavCollapsed) && 'pt-16');
@@ -425,7 +427,12 @@ export default function BaseChat({
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Gosling watermark - top right */}
           <div className="pointer-events-none absolute top-[14px] right-4 z-[60] flex flex-col items-end gap-2">
-            <div className="pointer-events-auto flex flex-row items-center gap-2">
+            <div
+              className={cn(
+                'pointer-events-auto flex flex-row items-center gap-2',
+                !isArtifactWorkbenchOpen && 'mr-10'
+              )}
+            >
               <a
                 href="https://github.com/repo-makeover/gosling"
                 target="_blank"
