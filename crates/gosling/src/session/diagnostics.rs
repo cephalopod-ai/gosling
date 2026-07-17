@@ -274,11 +274,42 @@ pub async fn generate_diagnostics(
     let config_path = config_path();
     let system_info = SystemInfo::collect();
     let is_full = matches!(level, DiagnosticsLevel::Full);
-    let errors: Vec<DiagnosticsError> = Vec::new();
+    let mut errors: Vec<DiagnosticsError> = Vec::new();
 
+    // Session export/parse failures are recorded into `errors` instead of aborting
+    // the whole report: a diagnostics report is meant to be a best-effort snapshot,
+    // and a broken session shouldn't hide the system/config/log info that did
+    // collect successfully.
     let session = if is_full {
-        let session_data = session_manager.export_session(session_id).await?;
-        Some(serde_json::from_str(&session_data)?)
+        match session_manager.export_session(session_id).await {
+            Ok(session_data) => match serde_json::from_str(&session_data) {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse exported session {} for diagnostics: {}",
+                        session_id,
+                        e
+                    );
+                    errors.push(DiagnosticsError {
+                        path: None,
+                        message: format!("Failed to parse session data: {}", e),
+                    });
+                    None
+                }
+            },
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to export session {} for diagnostics: {}",
+                    session_id,
+                    e
+                );
+                errors.push(DiagnosticsError {
+                    path: None,
+                    message: format!("Failed to export session: {}", e),
+                });
+                None
+            }
+        }
     } else {
         None
     };
@@ -352,4 +383,58 @@ pub async fn generate_diagnostics(
         prompts,
         errors,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// Regression test for OPS-002: before the fix, a failure to export the
+    /// session (e.g. because it does not exist) aborted the entire report via
+    /// `?`, so `generate_diagnostics` never returned a `DiagnosticsReport` and
+    /// `errors` could never be observed as populated. The fix degrades
+    /// gracefully instead: the report still generates, `session` is `None`,
+    /// and the real failure is recorded in `errors`.
+    #[tokio::test]
+    async fn generate_diagnostics_records_session_export_failure_in_errors() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let report = generate_diagnostics(
+            &session_manager,
+            "session-that-does-not-exist",
+            DiagnosticsLevel::Full,
+        )
+        .await
+        .expect("diagnostics generation should degrade gracefully instead of failing outright");
+
+        assert!(report.session.is_none());
+        assert_eq!(
+            report.errors.len(),
+            1,
+            "expected exactly one recorded error, got: {:?}",
+            report.errors
+        );
+        assert!(report.errors[0].message.contains("export session"));
+    }
+
+    /// Summary-level reports never touch the session at all, so no error
+    /// should be recorded even for a nonexistent session id.
+    #[tokio::test]
+    async fn generate_diagnostics_summary_level_has_no_session_errors() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let report = generate_diagnostics(
+            &session_manager,
+            "session-that-does-not-exist",
+            DiagnosticsLevel::Summary,
+        )
+        .await
+        .unwrap();
+
+        assert!(report.session.is_none());
+        assert!(report.errors.is_empty());
+    }
 }

@@ -52,7 +52,7 @@ async fn diagnostics(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
     Query(query): Query<DiagnosticsQuery>,
-) -> Result<Json<DiagnosticsReport>, StatusCode> {
+) -> Result<Json<DiagnosticsReport>, (StatusCode, String)> {
     generate_diagnostics(
         state.session_manager(),
         &session_id,
@@ -60,7 +60,21 @@ async fn diagnostics(
     )
     .await
     .map(Json)
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    .map_err(|error| {
+        // Diagnostics generation reads local files (config, logs); the raw
+        // error can embed filesystem paths, so log it server-side and return
+        // only a safe, generic summary to the client (matching `status()`
+        // above).
+        tracing::error!(
+            error = %error,
+            session_id = %session_id,
+            "diagnostics generation failed"
+        );
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to generate diagnostics report".to_string(),
+        )
+    })
 }
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
@@ -68,4 +82,43 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/system_info", get(system_info))
         .route("/diagnostics/{session_id}", get(diagnostics))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    /// Combined regression test for OPS-002 and OPS-004: before either fix,
+    /// requesting diagnostics for a session that doesn't exist would abort
+    /// `generate_diagnostics` outright (OPS-002) and the route would then
+    /// discard that error into a bare, unlogged 500 (OPS-004). After both
+    /// fixes the report still generates and records the real failure in
+    /// `errors` instead of failing the whole request.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn diagnostics_endpoint_degrades_gracefully_for_missing_session() {
+        let state = AppState::new(true).await.unwrap();
+        let app = routes(state);
+
+        let request = Request::builder()
+            .uri("/diagnostics/session-that-does-not-exist")
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let report: DiagnosticsReport = serde_json::from_slice(&body).unwrap();
+        assert!(report.session.is_none());
+        assert_eq!(
+            report.errors.len(),
+            1,
+            "expected the missing-session failure recorded in errors, got: {:?}",
+            report.errors
+        );
+    }
 }

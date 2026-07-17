@@ -47,6 +47,34 @@ pub enum MessageEvent {
     Ping,
 }
 
+/// Why `run_reply_task`'s loop stopped, so the `Finish` event and completion
+/// telemetry reflect what actually happened instead of always claiming a
+/// normal completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReplyExitReason {
+    Stop,
+    Error,
+    Cancelled,
+}
+
+impl ReplyExitReason {
+    fn finish_reason(self) -> &'static str {
+        match self {
+            Self::Stop => "stop",
+            Self::Error => "error",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    fn exit_type(self) -> &'static str {
+        match self {
+            Self::Stop => "normal",
+            Self::Error => "error",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
 pub struct ReplyTaskConfig {
     pub state: Arc<AppState>,
     pub session_id: String,
@@ -227,6 +255,7 @@ where
 
     let mut reply_progressed = false;
     let mut heartbeat = heartbeat_interval.map(tokio::time::interval);
+    let mut exit_reason = ReplyExitReason::Stop;
 
     loop {
         if let Some(heartbeat_interval) = heartbeat.as_mut() {
@@ -236,6 +265,7 @@ where
                         rollback_if_pending(state.session_manager(), &session_id, &mut rollback_state).await;
                     }
                     tracing::info!("Agent task cancelled for session {}", session_id);
+                    exit_reason = ReplyExitReason::Cancelled;
                     break;
                 }
                 _ = heartbeat_interval.tick() => {
@@ -244,7 +274,7 @@ where
                     }
                 }
                 response = timeout(Duration::from_millis(500), stream.next()) => {
-                    if handle_stream_result(
+                    match handle_stream_result(
                         response,
                         &state,
                         &session_id,
@@ -255,7 +285,12 @@ where
                     )
                     .await
                     {
-                        break;
+                        StreamOutcome::Continue => {}
+                        StreamOutcome::Stop => break,
+                        StreamOutcome::Error => {
+                            exit_reason = ReplyExitReason::Error;
+                            break;
+                        }
                     }
                 }
             }
@@ -266,10 +301,11 @@ where
                         rollback_if_pending(state.session_manager(), &session_id, &mut rollback_state).await;
                     }
                     tracing::info!("Agent task cancelled for session {}", session_id);
+                    exit_reason = ReplyExitReason::Cancelled;
                     break;
                 }
                 response = timeout(Duration::from_millis(500), stream.next()) => {
-                    if handle_stream_result(
+                    match handle_stream_result(
                         response,
                         &state,
                         &session_id,
@@ -280,7 +316,12 @@ where
                     )
                     .await
                     {
-                        break;
+                        StreamOutcome::Continue => {}
+                        StreamOutcome::Stop => break,
+                        StreamOutcome::Error => {
+                            exit_reason = ReplyExitReason::Error;
+                            break;
+                        }
                     }
                 }
             }
@@ -292,16 +333,26 @@ where
         &session_id,
         session_start,
         all_messages.len(),
+        exit_reason.exit_type(),
     )
     .await;
 
     let final_token_state = get_token_state(state.session_manager(), &session_id).await;
     let _ = sink
         .publish(MessageEvent::Finish {
-            reason: "stop".to_string(),
+            reason: exit_reason.finish_reason().to_string(),
             token_state: final_token_state,
         })
         .await;
+}
+
+/// Outcome of processing one item pulled off the agent's event stream: whether
+/// the reply loop should keep going, stop normally, or stop because of an
+/// error the agent surfaced.
+enum StreamOutcome {
+    Continue,
+    Stop,
+    Error,
 }
 
 async fn handle_stream_result<S, E>(
@@ -312,7 +363,7 @@ async fn handle_stream_result<S, E>(
     rollback_state: &mut Option<ConversationOverrideRollback>,
     reply_progressed: &mut bool,
     sink: &mut S,
-) -> bool
+) -> StreamOutcome
 where
     S: ReplyEventSink,
     E: Display,
@@ -335,31 +386,46 @@ where
             all_messages.push(message.clone());
             let token_state = get_token_state(state.session_manager(), session_id).await;
 
-            !sink
+            let delivered = sink
                 .publish(MessageEvent::Message {
                     message,
                     token_state,
                 })
-                .await
+                .await;
+            if delivered {
+                StreamOutcome::Continue
+            } else {
+                StreamOutcome::Stop
+            }
         }
-        Ok(Some(Ok(AgentEvent::Usage(_)))) => false,
+        Ok(Some(Ok(AgentEvent::Usage(_)))) => StreamOutcome::Continue,
         Ok(Some(Ok(AgentEvent::HistoryReplaced(new_messages)))) => {
             *reply_progressed = true;
             *all_messages = new_messages.clone();
-            !sink
+            let delivered = sink
                 .publish(MessageEvent::UpdateConversation {
                     conversation: new_messages,
                 })
-                .await
+                .await;
+            if delivered {
+                StreamOutcome::Continue
+            } else {
+                StreamOutcome::Stop
+            }
         }
         Ok(Some(Ok(AgentEvent::McpNotification((request_id, notification))))) => {
             *reply_progressed = true;
-            !sink
+            let delivered = sink
                 .publish(MessageEvent::Notification {
                     request_id,
                     message: notification,
                 })
-                .await
+                .await;
+            if delivered {
+                StreamOutcome::Continue
+            } else {
+                StreamOutcome::Stop
+            }
         }
         Ok(Some(Err(error))) => {
             if !*reply_progressed {
@@ -371,15 +437,15 @@ where
                     error: error.to_string(),
                 })
                 .await;
-            true
+            StreamOutcome::Error
         }
         Ok(None) => {
             if !*reply_progressed {
                 rollback_if_pending(state.session_manager(), session_id, rollback_state).await;
             }
-            true
+            StreamOutcome::Stop
         }
-        Err(_) => false,
+        Err(_) => StreamOutcome::Continue,
     }
 }
 
@@ -398,6 +464,7 @@ async fn log_session_completion(
     session_id: &str,
     session_start: Instant,
     fallback_message_count: usize,
+    exit_type: &str,
 ) {
     let session_duration = session_start.elapsed();
 
@@ -407,7 +474,7 @@ async fn log_session_completion(
             monotonic_counter.gosling.session_completions = 1,
             session_type = "app",
             interface = "ui",
-            exit_type = "normal",
+            exit_type = exit_type,
             duration_ms = session_duration.as_millis() as u64,
             total_tokens = total_tokens,
             message_count = session.message_count,
@@ -434,7 +501,7 @@ async fn log_session_completion(
             monotonic_counter.gosling.session_completions = 1,
             session_type = "app",
             interface = "ui",
-            exit_type = "normal",
+            exit_type = exit_type,
             duration_ms = session_duration.as_millis() as u64,
             total_tokens = 0u64,
             message_count = fallback_message_count,
@@ -447,5 +514,109 @@ async fn log_session_completion(
             interface = "ui",
             "Session duration"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reply_exit_reason_maps_to_distinct_wire_values() {
+        assert_eq!(ReplyExitReason::Stop.finish_reason(), "stop");
+        assert_eq!(ReplyExitReason::Error.finish_reason(), "error");
+        assert_eq!(ReplyExitReason::Cancelled.finish_reason(), "cancelled");
+
+        assert_eq!(ReplyExitReason::Stop.exit_type(), "normal");
+        assert_eq!(ReplyExitReason::Error.exit_type(), "error");
+        assert_eq!(ReplyExitReason::Cancelled.exit_type(), "cancelled");
+    }
+
+    mod stream_result_tests {
+        use super::*;
+
+        struct RecordingSink {
+            events: Vec<MessageEvent>,
+        }
+
+        #[async_trait::async_trait]
+        impl ReplyEventSink for RecordingSink {
+            async fn publish(&mut self, event: MessageEvent) -> bool {
+                self.events.push(event);
+                true
+            }
+        }
+
+        #[derive(Debug)]
+        struct TestStreamError(&'static str);
+
+        impl Display for TestStreamError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+
+        /// Regression test for OPS-003: before the fix, `handle_stream_result`
+        /// returned a bare `bool` that only meant "stop the loop", so its
+        /// caller could not distinguish an agent error from a normal end of
+        /// stream, and both `Finish.reason` and telemetry's `exit_type` were
+        /// hardcoded to a success value regardless of which one happened.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn agent_stream_error_maps_to_error_outcome_not_stop() {
+            let state = AppState::new(true).await.unwrap();
+            let mut all_messages = Conversation::default();
+            let mut rollback_state = None;
+            let mut reply_progressed = true;
+            let mut sink = RecordingSink { events: vec![] };
+
+            let response: Result<
+                Option<Result<AgentEvent, TestStreamError>>,
+                tokio::time::error::Elapsed,
+            > = Ok(Some(Err(TestStreamError("boom"))));
+
+            let outcome = handle_stream_result(
+                response,
+                &state,
+                "test-session",
+                &mut all_messages,
+                &mut rollback_state,
+                &mut reply_progressed,
+                &mut sink,
+            )
+            .await;
+
+            assert!(
+                matches!(outcome, StreamOutcome::Error),
+                "an agent-surfaced error must map to StreamOutcome::Error so exit_reason \
+                 becomes ReplyExitReason::Error instead of the default Stop"
+            );
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn end_of_stream_maps_to_stop_outcome_not_error() {
+            let state = AppState::new(true).await.unwrap();
+            let mut all_messages = Conversation::default();
+            let mut rollback_state = None;
+            let mut reply_progressed = true;
+            let mut sink = RecordingSink { events: vec![] };
+
+            let response: Result<
+                Option<Result<AgentEvent, TestStreamError>>,
+                tokio::time::error::Elapsed,
+            > = Ok(None);
+
+            let outcome = handle_stream_result(
+                response,
+                &state,
+                "test-session",
+                &mut all_messages,
+                &mut rollback_state,
+                &mut reply_progressed,
+                &mut sink,
+            )
+            .await;
+
+            assert!(matches!(outcome, StreamOutcome::Stop));
+        }
     }
 }
