@@ -17,7 +17,7 @@ fn boot_marker(message: &str) {
 }
 
 #[cfg(unix)]
-async fn shutdown_signal() {
+async fn platform_signal_wait() {
     use tokio::signal::unix::{signal, SignalKind};
 
     let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
@@ -30,8 +30,44 @@ async fn shutdown_signal() {
 }
 
 #[cfg(not(unix))]
-async fn shutdown_signal() {
+async fn platform_signal_wait() {
     let _ = tokio::signal::ctrl_c().await;
+}
+
+const PARENT_PID_ENV_VAR: &str = "GOSLING_SERVER__PARENT_PID";
+const PARENT_LIVENESS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
+
+fn supervising_parent_pid() -> Option<u32> {
+    std::env::var(PARENT_PID_ENV_VAR).ok()?.parse().ok()
+}
+
+/// Waits for the desktop app that launched this process (if any) to exit.
+///
+/// `goslingd` is normally spawned and owned by the Electron desktop app, which
+/// terminates it via SIGTERM/`taskkill` on a graceful quit. If the desktop app
+/// itself dies without going through that path (force-quit, crash, OS kill),
+/// this process would otherwise survive as an orphan holding an active
+/// session open. `PARENT_PID_ENV_VAR` is set by the desktop app to its own
+/// pid; when present, this resolves once that pid is no longer running so
+/// `shutdown_signal` can fold it into the same graceful shutdown used for
+/// SIGTERM. Standalone invocations (CLI, tests, other embedders) never set
+/// the env var, so this is a no-op `pending()` future for them.
+async fn parent_exit_wait() {
+    match supervising_parent_pid() {
+        Some(pid) => {
+            gosling::subprocess::wait_for_process_exit(pid, PARENT_LIVENESS_POLL_INTERVAL).await
+        }
+        None => std::future::pending().await,
+    }
+}
+
+async fn shutdown_signal() {
+    tokio::select! {
+        _ = platform_signal_wait() => {},
+        _ = parent_exit_wait() => {
+            info!("supervising desktop app process exited; shutting down gracefully");
+        },
+    }
 }
 
 pub async fn run() -> Result<()> {

@@ -194,6 +194,39 @@ describe('startGoslingServe', () => {
     }
   );
 
+  it.skipIf(process.platform === 'win32')(
+    'passes its own pid to the subprocess as the supervising parent pid',
+    async () => {
+      const tempDir = makeTempDir();
+      const parentPidPath = path.join(tempDir, 'parent-pid.txt');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        [
+          '#!/usr/bin/env sh',
+          'printf "%s" "$GOSLING_SERVER__PARENT_PID" > "$TEST_PARENT_PID_PATH"',
+          'while true; do sleep 1; done',
+          '',
+        ].join('\n')
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        env: {
+          TEST_PARENT_PID_PATH: parentPidPath,
+        },
+        readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+      });
+
+      try {
+        await expect(waitForFileLines(parentPidPath)).resolves.toEqual([String(process.pid)]);
+      } finally {
+        await result.cleanup();
+      }
+    }
+  );
+
   it.skipIf(process.platform === 'win32')('captures the TLS fingerprint from stdout', async () => {
     const tempDir = makeTempDir();
     const goslingPath = makeExecutable(
