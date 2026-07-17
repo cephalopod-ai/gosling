@@ -11,6 +11,7 @@
 use std::io::Write;
 use std::path::Path;
 
+use fs2::FileExt;
 use serde::Serialize;
 
 use super::schema::ExtractedFact;
@@ -86,6 +87,19 @@ const DURABLE_SECTION_HEADING: &str = "## Gosling extracted memory";
 /// Unlike [`append_memories`], the target is a human-facing Markdown file the
 /// backend reads as instructions, so facts are rendered as readable bullets
 /// with light provenance rather than JSON lines.
+///
+/// The heading check and the append are protected by a dedicated `.summary.lock`
+/// sidecar file held across the whole sequence, mirroring the `.save.lock`
+/// pattern `Config::save_values` uses (see
+/// `crates/gosling/src/config/base.rs`). Without it, two concurrent
+/// summarizer runs against the same project (e.g. two sessions running
+/// around the same time) could both read the file, both see the heading
+/// missing, and both append it, duplicating the heading. The lock is keyed
+/// off this file's own path (`path.with_extension("summary.lock")`), so it
+/// never collides with `save_values`'s config-file lock even if both files
+/// happened to live in the same directory. Like the config lock, it's an
+/// OS-level advisory lock (`flock`), so it's automatically released if the
+/// holding process dies or crashes — no stale-lock cleanup is needed.
 pub fn append_facts_to_durable_file(
     path: &Path,
     label: &str,
@@ -100,6 +114,17 @@ pub fn append_facts_to_durable_file(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+
+    let lock_path = path.with_extension("summary.lock");
+    let mut lock_options = std::fs::OpenOptions::new();
+    lock_options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        lock_options.mode(0o600);
+    }
+    let lock_file = lock_options.open(&lock_path)?;
+    lock_file.lock_exclusive()?;
 
     let needs_heading = match std::fs::read_to_string(path) {
         Ok(existing) => !existing.contains(DURABLE_SECTION_HEADING),
@@ -130,6 +155,7 @@ pub fn append_facts_to_durable_file(
         )?;
     }
 
+    // Unlock is handled automatically when `lock_file` is dropped.
     Ok(())
 }
 
@@ -219,6 +245,98 @@ mod tests {
         );
         assert!(contents.contains("- Project renamed to gosling _(fact, session session-a,"));
         assert!(contents.contains("- Use anyhow::Result _(preference, session session-b,"));
+    }
+
+    #[test]
+    fn durable_file_survives_concurrent_writers_without_duplicate_heading() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(dir.path().join("AGENTS.md"));
+
+        let mut handles = vec![];
+        for thread_idx in 0..8 {
+            let path = Arc::clone(&path);
+            handles.push(thread::spawn(move || {
+                for round in 0..5 {
+                    let facts = vec![fact(
+                        &format!("fact from thread {thread_idx} round {round}"),
+                        FactType::Fact,
+                    )];
+                    append_facts_to_durable_file(
+                        &path,
+                        "AGENTS.md",
+                        &facts,
+                        &format!("session-{thread_idx}"),
+                        "2026-07-16T00:00:00Z",
+                    )
+                    .unwrap();
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let contents = std::fs::read_to_string(&*path).unwrap();
+        assert_eq!(
+            contents.matches(DURABLE_SECTION_HEADING).count(),
+            1,
+            "concurrent writers must not duplicate the managed heading:\n{contents}"
+        );
+        assert_eq!(
+            contents.matches("_(fact, session session-").count(),
+            40,
+            "every fact from every thread/round should still be appended"
+        );
+    }
+
+    #[test]
+    fn durable_file_write_blocks_while_lock_is_held_externally() {
+        use std::sync::mpsc;
+        use std::thread;
+        use std::time::Duration;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("CLAUDE.md");
+        let lock_path = path.with_extension("summary.lock");
+
+        let mut lock_options = std::fs::OpenOptions::new();
+        lock_options.read(true).write(true).create(true);
+        let held_lock = lock_options.open(&lock_path).unwrap();
+        held_lock.lock_exclusive().unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let path_clone = path.clone();
+        let handle = thread::spawn(move || {
+            append_facts_to_durable_file(
+                &path_clone,
+                "CLAUDE.md",
+                &[fact("blocked fact", FactType::Fact)],
+                "session-blocked",
+                "2026-07-16T00:00:00Z",
+            )
+            .unwrap();
+            tx.send(()).unwrap();
+        });
+
+        assert!(
+            rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "writer should still be blocked on the lock held by this test"
+        );
+
+        held_lock.unlock().unwrap();
+        drop(held_lock);
+
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("writer should complete once the external lock is released");
+        handle.join().unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents.matches(DURABLE_SECTION_HEADING).count(), 1);
+        assert!(contents.contains("blocked fact"));
     }
 
     #[test]
