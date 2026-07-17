@@ -3124,9 +3124,10 @@ async function appMain() {
     event.returnValue = getConfiguredGoslingLocale();
   });
 
-  ipcMain.handle('open-directory-in-explorer', async (_event, path: string) => {
+  ipcMain.handle('open-directory-in-explorer', async (_event, directoryPath: string) => {
     try {
-      const errorMessage = await shell.openPath(path);
+      const resolvedPath = assertRendererFileAccess(directoryPath);
+      const errorMessage = await shell.openPath(resolvedPath);
       return errorMessage === '';
     } catch (error) {
       console.error('Error opening directory in explorer:', error);
