@@ -82,30 +82,27 @@ impl TodoClient {
         }
 
         let manager = &self.context.session_manager;
-        match manager.get_session(session_id, false).await {
-            Ok(mut session) => {
-                let todo_state = extension_data::TodoState::new(content);
-                if todo_state
-                    .to_extension_data(&mut session.extension_data)
-                    .is_ok()
-                {
-                    match manager
-                        .update(session_id)
-                        .extension_data(session.extension_data)
-                        .apply()
-                        .await
-                    {
-                        Ok(_) => Ok(vec![Content::text(format!(
-                            "Updated ({} chars)",
-                            char_count
-                        ))]),
-                        Err(_) => Err("Failed to update session metadata".to_string()),
-                    }
-                } else {
-                    Err("Failed to serialize TODO state".to_string())
-                }
-            }
-            Err(_) => Err("Failed to read session metadata".to_string()),
+        let todo_state = extension_data::TodoState::new(content);
+        let Ok(value) = todo_state.to_value() else {
+            return Err("Failed to serialize TODO state".to_string());
+        };
+        let key = format!(
+            "{}.{}",
+            <extension_data::TodoState as ExtensionState>::EXTENSION_NAME,
+            <extension_data::TodoState as ExtensionState>::VERSION
+        );
+
+        // Merges just the `todo.v0` key atomically instead of read-then-
+        // blind-overwriting the whole `extension_data` blob, so a
+        // concurrent writer to a *different* key (e.g. `enabled_extensions`
+        // from a second, LRU-recreated agent instance for this same
+        // session — see CON-001) can't be silently clobbered.
+        match manager.merge_extension_state(session_id, &key, value).await {
+            Ok(_) => Ok(vec![Content::text(format!(
+                "Updated ({} chars)",
+                char_count
+            ))]),
+            Err(_) => Err("Failed to update session metadata".to_string()),
         }
     }
 
@@ -197,5 +194,95 @@ impl McpClientTrait for TodoClient {
                     .to_string(),
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::platform_extensions::PlatformExtensionContext;
+    use crate::config::{CodeExecutionRuntime, GoslingMode};
+    use crate::session::{SessionManager, SessionType};
+    use serde_json::json;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn test_context(session_manager: Arc<SessionManager>) -> PlatformExtensionContext {
+        PlatformExtensionContext {
+            extension_manager: None,
+            session_manager,
+            session: None,
+            use_login_shell_path: false,
+            code_execution_runtime: CodeExecutionRuntime::Disabled,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_write_todo_does_not_clobber_concurrent_extension_state() {
+        // CON-001 regression: todo_write must not read-then-blind-overwrite
+        // the whole extension_data blob, or a concurrent writer to a
+        // *different* key (e.g. enabled_extensions, written by a second
+        // Agent instance for the same session after an LRU eviction
+        // mid-turn — see execution/manager.rs) could have its update
+        // silently dropped.
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+
+        let session = session_manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "test".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+
+        // Simulate the "other" concurrent writer landing first.
+        session_manager
+            .merge_extension_state(
+                &session.id,
+                "enabled_extensions.v0",
+                json!({"extensions": []}),
+            )
+            .await
+            .unwrap();
+
+        let client = TodoClient::new(test_context(Arc::clone(&session_manager))).unwrap();
+        let mut args = JsonObject::new();
+        args.insert("content".to_string(), json!("- [ ] task"));
+        let result = client.handle_write_todo(&session.id, Some(args)).await;
+        assert!(result.is_ok(), "{result:?}");
+
+        let reloaded = session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        assert!(
+            reloaded
+                .extension_data
+                .extension_states
+                .contains_key("todo.v0"),
+            "todo_write's own key must be persisted"
+        );
+        assert!(
+            reloaded
+                .extension_data
+                .extension_states
+                .contains_key("enabled_extensions.v0"),
+            "the concurrent writer's key must survive, not get clobbered"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_write_todo_missing_session_errors() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let client = TodoClient::new(test_context(session_manager)).unwrap();
+
+        let mut args = JsonObject::new();
+        args.insert("content".to_string(), json!("- [ ] task"));
+        let result = client.handle_write_todo("does-not-exist", Some(args)).await;
+        assert!(result.is_err());
     }
 }

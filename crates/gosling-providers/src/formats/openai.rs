@@ -777,6 +777,19 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
         }
     }
 
+    // A 200 response whose message has no text, reasoning, or tool calls is
+    // never a legitimate "the model chose to say nothing" outcome — that case
+    // still carries content (e.g. a thinking block) or a tool call. Silently
+    // returning an empty message here makes it indistinguishable from a
+    // normal completed turn, so the caller (and the turn loop) never learns
+    // anything went wrong. Surface it as an error instead so it takes the
+    // same visible, user-facing path as other malformed responses.
+    if content.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Provider returned an empty response: no text, reasoning, or tool calls"
+        ));
+    }
+
     Ok(Message::new(
         Role::Assistant,
         chrono::Utc::now().timestamp(),
@@ -1012,6 +1025,12 @@ where
         // reasoning_content in a later chunk would produce duplicated reasoning.
         let mut pending_inline_thinking = String::new();
         let mut last_seen_model: Option<String> = None;
+        // Tracks whether this turn ever produced a message with actual
+        // content (text, thinking, or a tool call) across the whole stream.
+        // A stream that runs to completion (sees `[DONE]` or the connection
+        // ends normally) without ever setting this is a 200 response that
+        // said and did nothing — see the check after the loop below.
+        let mut yielded_any_content = false;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -1159,6 +1178,7 @@ where
                             msg = msg.with_id(id);
                         }
 
+                        yielded_any_content = true;
                         yield (Some(msg), None);
                     }
                 }
@@ -1249,6 +1269,9 @@ where
                     msg = msg.with_id(id);
                 }
 
+                if !msg.content.is_empty() {
+                    yielded_any_content = true;
+                }
                 yield (
                     Some(msg),
                     usage,
@@ -1291,6 +1314,7 @@ where
                         msg = msg.with_id(id);
                     }
 
+                    yielded_any_content = true;
                     yield (
                         Some(msg),
                         if chunk.choices[0].finish_reason.is_some() {
@@ -1326,6 +1350,7 @@ where
                 content.push(MessageContent::thinking(trailing_thinking, ""));
             }
 
+            yielded_any_content = true;
             yield (
                 Some(Message::new(
                     Role::Assistant,
@@ -1334,6 +1359,18 @@ where
                 )),
                 None,
             )
+        }
+
+        // The stream ran to completion (saw `[DONE]` or the connection ended)
+        // without ever producing a message with text, reasoning, or a tool
+        // call. A 200 response like this is indistinguishable at the type
+        // level from a normal completed turn unless we say so here — left
+        // unchecked, the turn loop treats it as "the model said nothing" and
+        // moves on silently instead of surfacing it as the anomaly it is.
+        if !yielded_any_content {
+            Err(anyhow::anyhow!(
+                "Provider returned an empty response: no text, reasoning, or tool calls"
+            ))?;
         }
     }
 }
@@ -2165,6 +2202,57 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("No message in API response"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_response_to_message_empty_content_is_error() -> anyhow::Result<()> {
+        // A 200 with `choices[0].message` present but no text, tool_calls, or
+        // reasoning must be surfaced as an error (DEP-002) rather than
+        // silently accepted as a normal completed turn with an empty message.
+        let response = json!({
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": ""
+                },
+                "finish_reason": "stop"
+            }]
+        });
+
+        let result = response_to_message(&response);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("empty response"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_response_to_message_null_content_is_error() -> anyhow::Result<()> {
+        let response = json!({
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null
+                },
+                "finish_reason": "stop"
+            }]
+        });
+
+        let result = response_to_message(&response);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("empty response"));
 
         Ok(())
     }
@@ -3694,6 +3782,39 @@ data: [DONE]"#;
             result?;
         }
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_turn_with_no_content_at_all_is_error() {
+        // DEP-002: a stream that runs to completion (role delta, empty
+        // content the whole way, finish_reason "stop") without ever
+        // producing text, reasoning, or a tool call must surface as an
+        // error, not silently complete as an empty turn.
+        let response_lines = concat!(
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":0,\"total_tokens\":10}}\n",
+            "data: [DONE]"
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut saw_error = false;
+        while let Some(result) = messages.next().await {
+            match result {
+                Ok((message, _usage)) => {
+                    assert!(
+                        message.is_none_or(|m| !m.content.is_empty()),
+                        "must never yield a message with empty content"
+                    );
+                }
+                Err(e) => {
+                    assert!(e.to_string().contains("empty response"));
+                    saw_error = true;
+                }
+            }
+        }
+        assert!(saw_error, "empty turn must surface as an error");
     }
 
     #[tokio::test]

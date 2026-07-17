@@ -1219,43 +1219,33 @@ impl Agent {
     /// Save current extension state to session metadata
     /// Should be called after any extension add/remove operation
     pub async fn save_extension_state(&self, session: &SessionConfig) -> Result<()> {
-        let extensions_state =
-            EnabledExtensionsState::new(self.extension_configs_for_persistence().await);
-
-        let session_manager = self.config.session_manager.clone();
-        let mut session_data = session_manager.get_session(&session.id, false).await?;
-
-        if let Err(e) = extensions_state.to_extension_data(&mut session_data.extension_data) {
-            warn!("Failed to serialize extension state: {}", e);
-            return Err(anyhow!("Extension state serialization failed: {}", e));
-        }
-
-        session_manager
-            .update(&session.id)
-            .extension_data(session_data.extension_data)
-            .apply()
-            .await?;
-
-        Ok(())
+        self.persist_extension_state(&session.id).await
     }
 
     /// Save current extension state to session by session_id
+    ///
+    /// Merges just the `enabled_extensions.v0` key atomically (via
+    /// `SessionManager::merge_extension_state`) instead of reading
+    /// `extension_data` and blind-overwriting the whole column. The
+    /// LRU-evicted-while-busy agent that this session's `AgentManager` entry
+    /// can get replaced with (see CON-001 in `execution/manager.rs`) writes
+    /// this same key concurrently from a second `Agent` instance; a
+    /// read-then-replace here could silently drop that write, or vice versa.
     pub async fn persist_extension_state(&self, session_id: &str) -> Result<()> {
         let extensions_state =
             EnabledExtensionsState::new(self.extension_configs_for_persistence().await);
-
-        let session_manager = self.config.session_manager.clone();
-        let session = session_manager.get_session(session_id, false).await?;
-        let mut extension_data = session.extension_data.clone();
-
-        extensions_state
-            .to_extension_data(&mut extension_data)
+        let value = extensions_state
+            .to_value()
             .map_err(|e| anyhow!("Failed to serialize extension state: {}", e))?;
 
+        let session_manager = self.config.session_manager.clone();
+        let key = format!(
+            "{}.{}",
+            <EnabledExtensionsState as ExtensionState>::EXTENSION_NAME,
+            <EnabledExtensionsState as ExtensionState>::VERSION
+        );
         session_manager
-            .update(session_id)
-            .extension_data(extension_data)
-            .apply()
+            .merge_extension_state(session_id, &key, value)
             .await?;
 
         Ok(())
