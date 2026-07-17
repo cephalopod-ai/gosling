@@ -144,6 +144,13 @@ export default function UpdateSection() {
   const [autoDownloadForcedByEnv, setAutoDownloadForcedByEnv] = useState<boolean>(false);
   const progressTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProgressRef = React.useRef<number>(0); // Track last progress to prevent backward jumps
+  // Mirrors updateInfo so checkForUpdates can read the latest value after its
+  // await, instead of the stale value captured when the closure was created.
+  const updateInfoRef = React.useRef<UpdateInfo>(updateInfo);
+
+  useEffect(() => {
+    updateInfoRef.current = updateInfo;
+  }, [updateInfo]);
 
   useEffect(() => {
     // Get current version on mount
@@ -265,8 +272,11 @@ export default function UpdateSection() {
         throw new Error(result.error);
       }
 
-      // If we successfully checked and no update is available, show success
-      if (!result.error && updateInfo.isUpdateAvailable === false) {
+      // If we successfully checked and no update is available, show success.
+      // Read from updateInfoRef (not the closed-over updateInfo) because the
+      // 'update-not-available' event may have updated state while we were
+      // awaiting the check above.
+      if (!result.error && updateInfoRef.current.isUpdateAvailable === false) {
         setUpdateStatus('success');
         setTimeout(() => setUpdateStatus('idle'), 3000);
       }
