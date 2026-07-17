@@ -28,7 +28,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
-use super::container::Container;
+use super::container::{Container, DockerExecProcess};
 use super::extension::{
     ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PlatformExtensionContext,
     ToolInfo, PLATFORM_EXTENSIONS,
@@ -126,6 +126,11 @@ struct Extension {
     client: McpClientBox,
     server_info: Option<ServerInfo>,
     _temp_dir: Option<tempfile::TempDir>,
+    /// Set when this extension's server runs inside a shared Docker
+    /// container via `docker exec`. Killing the local `docker exec` client
+    /// (which is all `client`'s own drop/cleanup does) does not terminate
+    /// the process inside the container, so `Drop` below explicitly does.
+    docker_process: Option<DockerExecProcess>,
 }
 
 impl Extension {
@@ -135,6 +140,7 @@ impl Extension {
         client: McpClientBox,
         server_info: Option<ServerInfo>,
         temp_dir: Option<tempfile::TempDir>,
+        docker_process: Option<DockerExecProcess>,
     ) -> Self {
         Self {
             client,
@@ -142,6 +148,7 @@ impl Extension {
             resolved_config,
             server_info,
             _temp_dir: temp_dir,
+            docker_process,
         }
     }
 
@@ -158,6 +165,24 @@ impl Extension {
 
     fn get_client(&self) -> McpClientBox {
         self.client.clone()
+    }
+}
+
+impl Drop for Extension {
+    fn drop(&mut self) {
+        let Some(docker_process) = self.docker_process.take() else {
+            return;
+        };
+        // Covers every teardown path uniformly: explicit removal
+        // (`remove_extension`), silent replacement when an extension is
+        // reconfigured (`extensions.insert` drops the old value), and the
+        // whole manager going away (e.g. agent eviction).
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        handle.spawn(async move {
+            docker_process.kill().await;
+        });
     }
 }
 
@@ -964,6 +989,7 @@ impl ExtensionManager {
         }
 
         let mut temp_dir = None;
+        let mut docker_process = None;
 
         let effective_working_dir = working_dir
             .clone()
@@ -1067,14 +1093,16 @@ impl ExtensionManager {
                             builtin = %name,
                             "Starting builtin extension inside Docker container"
                         );
+                        let in_container_argv = vec![
+                            "gosling".to_string(),
+                            "mcp".to_string(),
+                            normalized_name.clone(),
+                        ];
+                        docker_process =
+                            Some(DockerExecProcess::new(container, in_container_argv.clone()));
                         let command = Command::new("docker").configure(|command| {
-                            command
-                                .arg("exec")
-                                .arg("-i")
-                                .arg(container_id)
-                                .arg("gosling")
-                                .arg("mcp")
-                                .arg(&normalized_name);
+                            command.arg("exec").arg("-i").arg(container_id);
+                            command.args(&in_container_argv);
                         });
 
                         let client = child_process_client(
@@ -1138,14 +1166,17 @@ impl ExtensionManager {
                         cmd = %cmd,
                         "Starting stdio extension inside Docker container"
                     );
+                    let mut in_container_argv = vec![cmd.clone()];
+                    in_container_argv.extend(args.iter().cloned());
+                    docker_process =
+                        Some(DockerExecProcess::new(container, in_container_argv.clone()));
                     Command::new("docker").configure(|command| {
                         command.arg("exec").arg("-i");
                         for (key, value) in &all_envs {
                             command.arg("-e").arg(format!("{}={}", key, value));
                         }
                         command.arg(container_id);
-                        command.arg(cmd);
-                        command.args(args);
+                        command.args(&in_container_argv);
                     })
                 } else {
                     let cmd = resolve_command(cmd);
@@ -1230,6 +1261,7 @@ impl ExtensionManager {
                 Arc::from(client),
                 server_info,
                 temp_dir,
+                docker_process,
             ),
         );
         drop(extensions);
@@ -1249,7 +1281,7 @@ impl ExtensionManager {
         let normalized = name_to_key(&name);
         self.extensions.lock().await.insert(
             normalized,
-            Extension::new(config.clone(), config.clone(), client, info, temp_dir),
+            Extension::new(config.clone(), config.clone(), client, info, temp_dir, None),
         );
         self.invalidate_tools_cache_and_bump_version().await;
     }
@@ -2215,6 +2247,17 @@ mod tests {
             client: McpClientBox,
             available_tools: Vec<String>,
         ) {
+            self.add_mock_extension_with_docker_process(name, client, available_tools, None)
+                .await;
+        }
+
+        async fn add_mock_extension_with_docker_process(
+            &self,
+            name: String,
+            client: McpClientBox,
+            available_tools: Vec<String>,
+            docker_process: Option<DockerExecProcess>,
+        ) {
             let sanitized_name = name_to_key(&name);
             let config = ExtensionConfig::Builtin {
                 name: name.clone(),
@@ -2224,13 +2267,30 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            let extension = Extension::new(config.clone(), config.clone(), client, None, None);
+            let extension = Extension::new(
+                config.clone(),
+                config.clone(),
+                client,
+                None,
+                None,
+                docker_process,
+            );
             self.extensions
                 .lock()
                 .await
                 .insert(sanitized_name, extension);
             self.invalidate_tools_cache_and_bump_version().await;
         }
+    }
+
+    async fn docker_available() -> bool {
+        tokio::process::Command::new("docker")
+            .arg("info")
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map(|output| output.status.success())
+            .unwrap_or(false)
     }
 
     struct MockClient {}
@@ -2764,6 +2824,131 @@ mod tests {
         let tool_names: Vec<String> = tools_after.iter().map(|t| t.name.to_string()).collect();
         assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
         assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
+    }
+
+    /// RES-003: removing a Docker-backed extension must terminate the
+    /// process it started inside the container (Extension's Drop impl
+    /// invoking `DockerExecProcess::kill`), not just the local `docker exec`
+    /// client the extension's `client` field owns — and it must not stop
+    /// the container itself, since other extensions/sessions may share it.
+    /// Requires a real Docker daemon; skips (not fails) if unavailable so
+    /// CI environments without Docker aren't broken by this test.
+    #[tokio::test]
+    async fn test_remove_extension_kills_docker_exec_process_but_not_container() {
+        if !docker_available().await {
+            eprintln!("skipping: docker is not available in this environment");
+            return;
+        }
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or_default();
+        let container_name = format!("gosling-res003-em-test-{}-{}", std::process::id(), nanos);
+
+        let run = tokio::process::Command::new("docker")
+            .args([
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                &container_name,
+                "busybox",
+                "tail",
+                "-f",
+                "/dev/null",
+            ])
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker run");
+        if !run.status.success() {
+            eprintln!(
+                "skipping: could not start busybox test container: {}",
+                String::from_utf8_lossy(&run.stderr)
+            );
+            return;
+        }
+        struct ContainerGuard(String);
+        impl Drop for ContainerGuard {
+            fn drop(&mut self) {
+                let name = self.0.clone();
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(async move {
+                        let _ = tokio::process::Command::new("docker")
+                            .args(["rm", "-f", &name])
+                            .kill_on_drop(true)
+                            .output()
+                            .await;
+                    });
+                }
+            }
+        }
+        let _guard = ContainerGuard(container_name.clone());
+
+        let argv = vec!["sleep".to_string(), "300".to_string()];
+        let exec = tokio::process::Command::new("docker")
+            .arg("exec")
+            .arg("-d")
+            .arg(&container_name)
+            .args(&argv)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker exec");
+        assert!(
+            exec.status.success(),
+            "failed to start process in container"
+        );
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let container = Container::new(container_name.clone());
+        extension_manager
+            .add_mock_extension_with_docker_process(
+                "docker_ext".to_string(),
+                Arc::new(MockClient {}),
+                vec![],
+                Some(DockerExecProcess::new(&container, argv.clone())),
+            )
+            .await;
+
+        extension_manager
+            .remove_extension("docker_ext")
+            .await
+            .unwrap();
+
+        // Extension::drop spawns the cleanup as a detached task; give it a
+        // moment to run.
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+        let pgrep = tokio::process::Command::new("docker")
+            .arg("exec")
+            .arg(&container_name)
+            .arg("pgrep")
+            .arg("-f")
+            .arg(r"sleep\s+300")
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker exec pgrep");
+        assert!(
+            !pgrep.status.success(),
+            "removing the extension should have killed the process it started in the container"
+        );
+
+        let inspect = tokio::process::Command::new("docker")
+            .args(["inspect", "-f", "{{.State.Running}}", &container_name])
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to inspect container");
+        assert_eq!(
+            String::from_utf8_lossy(&inspect.stdout).trim(),
+            "true",
+            "removing one extension's process must not stop the shared container"
+        );
     }
 
     #[tokio::test]
