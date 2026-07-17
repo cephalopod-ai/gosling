@@ -3590,6 +3590,35 @@
       "type": "string",
       "description": "A unique identifier for a conversation session between a client and agent.\n\nSessions maintain their own context, conversation history, and state,\nallowing multiple independent interactions with the same agent.\n\nSee protocol docs: [Session ID](https://agentclientprotocol.com/protocol/session-setup#session-id)"
     },
+    "RecordSessionModelSwitchRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "message"
+      ],
+      "description": "Append a user-visible, agent-hidden model switch marker to a session transcript.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/model-switch-record"
+    },
+    "RecordSessionModelSwitchResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "message": {}
+      },
+      "required": [
+        "message"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/model-switch-record"
+    },
     "ListSessionMessagesRequest_unstable": {
       "type": "object",
       "properties": {
@@ -5306,6 +5335,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/RecordSessionModelSwitchRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/model-switch-record",
+                  "title": "RecordSessionModelSwitchRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ListSessionMessagesRequest_unstable"
                     }
                   ],
@@ -5833,6 +5871,14 @@
                         }
                       ],
                       "title": "GetSessionInfoResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/RecordSessionModelSwitchResponse_unstable"
+                        }
+                      ],
+                      "title": "RecordSessionModelSwitchResponse_unstable"
                     },
                     {
                       "allOf": [

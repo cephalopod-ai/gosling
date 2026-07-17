@@ -325,6 +325,43 @@ impl GoslingAcpAgent {
         })
     }
 
+    pub(super) async fn on_record_session_model_switch(
+        &self,
+        req: RecordSessionModelSwitchRequest,
+    ) -> Result<RecordSessionModelSwitchResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+
+        let message_text = req.message.trim();
+        if message_text.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("message cannot be empty")
+            );
+        }
+
+        self.session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|_| {
+                agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                    .data(format!("Session not found: {}", session_id))
+            })?;
+
+        let message = self
+            .session_manager
+            .add_model_switch_record(session_id, message_text)
+            .await
+            .internal_err_ctx("Failed to record model switch")?;
+
+        Ok(RecordSessionModelSwitchResponse {
+            message: serde_json::to_value(message).internal_err()?,
+        })
+    }
+
     pub(super) async fn on_list_session_messages(
         &self,
         req: ListSessionMessagesRequest,

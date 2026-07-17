@@ -1526,6 +1526,18 @@ export const zGetSessionInfoResponse_unstable = z.object({
 });
 
 /**
+ * Append a user-visible, agent-hidden model switch marker to a session transcript.
+ */
+export const zRecordSessionModelSwitchRequest_unstable = z.object({
+    sessionId: z.string(),
+    message: z.string()
+});
+
+export const zRecordSessionModelSwitchResponse_unstable = z.object({
+    message: z.unknown()
+});
+
+/**
  * List a page of persisted session messages without loading the whole conversation.
  */
 export const zListSessionMessagesRequest_unstable = z.object({
@@ -2099,6 +2111,7 @@ export const zExtRequest = z.object({
             zImportSessionRequest_unstable,
             zShareSessionNostrRequest_unstable,
             zGetSessionInfoRequest_unstable,
+            zRecordSessionModelSwitchRequest_unstable,
             zListSessionMessagesRequest_unstable,
             zSearchSessionMessagesRequest_unstable,
             zGetSessionSummaryRequest_unstable,
@@ -2172,6 +2185,7 @@ export const zExtResponse = z.union([
                 zImportSessionResponse_unstable,
                 zShareSessionNostrResponse_unstable,
                 zGetSessionInfoResponse_unstable,
+                zRecordSessionModelSwitchResponse_unstable,
                 zListSessionMessagesResponse_unstable,
                 zSearchSessionMessagesResponse_unstable,
                 zGetSessionSummaryResponse_unstable,

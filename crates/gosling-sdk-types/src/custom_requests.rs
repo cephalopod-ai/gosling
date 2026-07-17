@@ -706,6 +706,24 @@ pub struct GetSessionInfoResponse {
     pub session: SessionInfo,
 }
 
+/// Append a user-visible, agent-hidden model switch marker to a session transcript.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/model-switch-record",
+    response = RecordSessionModelSwitchResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordSessionModelSwitchRequest {
+    pub session_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordSessionModelSwitchResponse {
+    pub message: serde_json::Value,
+}
+
 /// List a page of persisted session messages without loading the whole conversation.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(

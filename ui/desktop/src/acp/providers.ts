@@ -7,7 +7,12 @@ import {
   type ProviderTemplateCatalogEntryDto,
   type ProviderTemplateDto,
 } from '@repo-makeover/gosling-sdk';
-import type { ProviderDetails, ThinkingEffort, UpdateCustomProviderRequest } from '../types/providers';
+import type {
+  ProviderDetails,
+  ThinkingEffort,
+  UpdateCustomProviderRequest,
+} from '../types/providers';
+import type { Message } from '../types/message';
 import { getAcpClient } from './acpConnection';
 
 export type { CanonicalModelInfoDto, ProviderSecretDto };
@@ -114,7 +119,9 @@ export async function acpListProviderCatalogEntries(
   format?: string
 ): Promise<ProviderTemplateCatalogEntryDto[]> {
   const client = await getAcpClient();
-  const { providers } = await client.gosling.providersCatalogList_unstable(format ? { format } : {});
+  const { providers } = await client.gosling.providersCatalogList_unstable(
+    format ? { format } : {}
+  );
   return providers;
 }
 
@@ -228,7 +235,9 @@ export async function acpClearDefaults(): Promise<void> {
 
 export async function acpReadThinkingEffort(): Promise<ThinkingEffort | null> {
   const client = await getAcpClient();
-  const response = await client.gosling.preferencesRead_unstable({ keys: ['goslingThinkingEffort'] });
+  const response = await client.gosling.preferencesRead_unstable({
+    keys: ['goslingThinkingEffort'],
+  });
   const value = response.values.find((v) => v.key === 'goslingThinkingEffort')?.value;
   return typeof value === 'string' ? (value as ThinkingEffort) : null;
 }
@@ -241,6 +250,7 @@ export async function acpSaveThinkingEffort(effort: ThinkingEffort): Promise<voi
 }
 
 export type AppliedSessionProviderModel = {
+  thinkingEffort?: ThinkingEffort;
   providerId?: string;
   modelId?: string;
 };
@@ -258,7 +268,7 @@ function extractAppliedSessionProviderModel(configOptions: unknown): AppliedSess
     }
 
     const id = 'id' in option ? option.id : undefined;
-    if (id !== 'provider' && id !== 'model') {
+    if (id !== 'provider' && id !== 'model' && id !== 'thinking_effort') {
       continue;
     }
 
@@ -269,8 +279,10 @@ function extractAppliedSessionProviderModel(configOptions: unknown): AppliedSess
 
     if (id === 'provider') {
       applied.providerId = currentValue;
-    } else {
+    } else if (id === 'model') {
       applied.modelId = currentValue;
+    } else {
+      applied.thinkingEffort = currentValue as ThinkingEffort;
     }
   }
 
@@ -323,4 +335,16 @@ export async function acpSetSessionProviderModel(
   }
 
   return extractAppliedSessionProviderModel(response.configOptions);
+}
+
+export async function acpRecordSessionModelSwitch(
+  sessionId: string,
+  message: string
+): Promise<Message> {
+  const client = await getAcpClient();
+  const response = await client.gosling.sessionModelSwitchRecord_unstable({
+    sessionId,
+    message,
+  });
+  return response.message as Message;
 }

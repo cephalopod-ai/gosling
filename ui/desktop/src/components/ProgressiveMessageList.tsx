@@ -87,6 +87,21 @@ interface MessageRenderIndex {
   toolCallChainIndexes: Set<number>;
 }
 
+function isModelSwitchNotification(message: Message): boolean {
+  return message.content.some((content) => {
+    if (content.type !== 'systemNotification' || content.notificationType !== 'inlineMessage') {
+      return false;
+    }
+    return (
+      (typeof content.data === 'object' &&
+        content.data !== null &&
+        'kind' in content.data &&
+        content.data.kind === 'modelSwitch') ||
+      content.msg.startsWith('Model changed:')
+    );
+  });
+}
+
 export default function ProgressiveMessageList({
   messages,
   chat,
@@ -128,6 +143,17 @@ export default function ProgressiveMessageList({
         if (model) return model;
       }
       return null;
+    },
+    [getResolvedModel, messages]
+  );
+
+  const hasModelSwitchRecordSincePreviousResolvedModel = useCallback(
+    (index: number): boolean => {
+      for (let i = index - 1; i >= 0; i--) {
+        if (isModelSwitchNotification(messages[i])) return true;
+        if (getResolvedModel(messages[i])) return false;
+      }
+      return false;
     },
     [getResolvedModel, messages]
   );
@@ -335,7 +361,8 @@ export default function ProgressiveMessageList({
         const showModelChangeDisclosure = Boolean(
           currentResolvedModel &&
           previousResolvedModel &&
-          currentResolvedModel !== previousResolvedModel
+          currentResolvedModel !== previousResolvedModel &&
+          !hasModelSwitchRecordSincePreviousResolvedModel(index)
         );
 
         const messageKey = message.id ?? `msg-${index}-${message.created}`;
@@ -395,6 +422,7 @@ export default function ProgressiveMessageList({
     workingDirectory,
     getPreviousResolvedModel,
     getResolvedModel,
+    hasModelSwitchRecordSincePreviousResolvedModel,
     renderModelChangeDisclosure,
   ]);
 

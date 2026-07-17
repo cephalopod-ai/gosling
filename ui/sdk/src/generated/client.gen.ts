@@ -113,6 +113,8 @@ import type {
   ProviderSupportedModelsListResponse_unstable,
   ReadResourceRequest_unstable,
   ReadResourceResponse_unstable,
+  RecordSessionModelSwitchRequest_unstable,
+  RecordSessionModelSwitchResponse_unstable,
   RefreshProviderInventoryRequest_unstable,
   RefreshProviderInventoryResponse_unstable,
   RemoveConfigExtensionRequest_unstable,
@@ -185,6 +187,7 @@ import {
   zProviderSetupCatalogListResponse_unstable,
   zProviderSupportedModelsListResponse_unstable,
   zReadResourceResponse_unstable,
+  zRecordSessionModelSwitchResponse_unstable,
   zRefreshProviderInventoryResponse_unstable,
   zSearchSessionMessagesResponse_unstable,
   zSessionWorkingDirsResponse_unstable,
@@ -828,6 +831,18 @@ export class GoslingExtClient {
     return zGetSessionInfoResponse_unstable.parse(
       raw,
     ) as GetSessionInfoResponse_unstable;
+  }
+
+  async sessionModelSwitchRecord_unstable(
+    params: RecordSessionModelSwitchRequest_unstable,
+  ): Promise<RecordSessionModelSwitchResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/model-switch-record",
+      params,
+    );
+    return zRecordSessionModelSwitchResponse_unstable.parse(
+      raw,
+    ) as RecordSessionModelSwitchResponse_unstable;
   }
 
   async sessionMessagesList_unstable(

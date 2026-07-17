@@ -5,6 +5,7 @@ import type { ProviderMetadata } from '../types/providers';
 import { acpChatSessionActions, acpChatSessionStore } from '../acp/chatSessionStore';
 import {
   acpReadDefaults,
+  acpRecordSessionModelSwitch,
   acpSaveDefaults,
   acpSetSessionProviderModel,
   type AppliedSessionProviderModel,
@@ -15,6 +16,9 @@ import {
   getProviderDisplayName,
 } from './settings/models/predefinedModelsUtils';
 import { defineMessages, useIntl } from '../i18n';
+import type { Message } from '../types/message';
+import type { ThinkingEffort } from '../types/providers';
+import type { Session } from '../types/session';
 
 const i18n = defineMessages({
   unknownProviderTitle: {
@@ -32,6 +36,10 @@ const i18n = defineMessages({
   switchModelSuccess: {
     id: 'modelAndProviderContext.switchModelSuccess',
     defaultMessage: 'Successfully switched models -- using {model} from {provider}',
+  },
+  modelSwitchRecord: {
+    id: 'modelAndProviderContext.modelSwitchRecord',
+    defaultMessage: 'Model changed: {previousModel} -> {currentModel}',
   },
   modelChangeFailed: {
     id: 'modelAndProviderContext.modelChangeFailed',
@@ -65,23 +73,99 @@ export { i18n as modelAndProviderMessages };
 
 function patchAcpSessionProviderModel(
   sessionId: string,
-  { providerId, modelId }: AppliedSessionProviderModel
+  { providerId, modelId, thinkingEffort }: AppliedSessionProviderModel
 ) {
-  if (!providerId && !modelId) return;
+  if (!providerId && !modelId && !thinkingEffort) return;
 
   const currentSession = acpChatSessionStore.getSnapshot(sessionId)?.session;
   if (!currentSession) return;
 
+  const nextModelConfig: NonNullable<Session['model_config']> | undefined =
+    currentSession.model_config
+      ? { ...currentSession.model_config }
+      : modelId
+        ? { model_name: modelId, toolshim: false }
+        : undefined;
+
+  if (nextModelConfig) {
+    if (modelId) {
+      nextModelConfig.model_name = modelId;
+    }
+    if (thinkingEffort) {
+      nextModelConfig.request_params = {
+        ...(nextModelConfig.request_params ?? {}),
+        thinking_effort: thinkingEffort,
+      };
+    }
+  }
+
   acpChatSessionActions.setSessionMetadata(sessionId, {
     ...currentSession,
     provider_name: providerId ?? currentSession.provider_name,
-    model_config: modelId
-      ? {
-          ...(currentSession.model_config ?? { toolshim: false }),
-          model_name: modelId,
-        }
-      : currentSession.model_config,
+    model_config: nextModelConfig ?? currentSession.model_config,
   });
+}
+
+const THINKING_EFFORTS = new Set<ThinkingEffort>(['off', 'low', 'medium', 'high', 'max', 'ultra']);
+
+function parseThinkingEffort(value: unknown): ThinkingEffort | undefined {
+  return typeof value === 'string' && THINKING_EFFORTS.has(value as ThinkingEffort)
+    ? (value as ThinkingEffort)
+    : undefined;
+}
+
+function formatThinkingEffort(effort: ThinkingEffort | undefined): string | undefined {
+  if (!effort || effort === 'off') return undefined;
+  return effort.charAt(0).toUpperCase() + effort.slice(1);
+}
+
+function formatModelSelectionLabel(input: {
+  providerId?: string | null;
+  providerDisplayName?: string | null;
+  modelId?: string | null;
+  modelDisplayName?: string | null;
+  thinkingEffort?: ThinkingEffort;
+}): string | null {
+  const provider = input.providerDisplayName || input.providerId || '';
+  const model = input.modelDisplayName || input.modelId || '';
+  const effort = formatThinkingEffort(input.thinkingEffort);
+  const parts = [provider, model, effort].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+function sessionModelSelectionLabel(session: Session | undefined): string | null {
+  const modelId = session?.model_config?.model_name;
+  const providerId = session?.provider_name;
+  return formatModelSelectionLabel({
+    providerId,
+    providerDisplayName: modelId ? getProviderDisplayName(modelId) : undefined,
+    modelId,
+    modelDisplayName: modelId ? getModelDisplayName(modelId) : undefined,
+    thinkingEffort: parseThinkingEffort(session?.model_config?.request_params?.thinking_effort),
+  });
+}
+
+function selectedModelSelectionLabel(model: Model): string {
+  return (
+    formatModelSelectionLabel({
+      providerId: model.provider,
+      providerDisplayName: model.subtext || getProviderDisplayName(model.name),
+      modelId: model.name,
+      modelDisplayName: model.alias || getModelDisplayName(model.name),
+      thinkingEffort: parseThinkingEffort(model.request_params?.thinking_effort),
+    }) ?? model.name
+  );
+}
+
+function appendStoredMessage(sessionId: string, message: Message) {
+  const snapshot = acpChatSessionStore.getSnapshot(sessionId);
+  if (
+    !snapshot ||
+    snapshot.messages.some((existing) => existing.id && existing.id === message.id)
+  ) {
+    return;
+  }
+  acpChatSessionActions.setMessages(sessionId, [...snapshot.messages, message]);
 }
 
 export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> = ({ children }) => {
@@ -94,6 +178,9 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
       const modelName = model.name;
       const providerName = model.provider;
       let phase = 'agent';
+      const previousModelLabel = sessionId
+        ? sessionModelSelectionLabel(acpChatSessionStore.getSnapshot(sessionId)?.session)
+        : null;
 
       try {
         if (sessionId) {
@@ -104,6 +191,29 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
             model.request_params?.thinking_effort ?? null
           );
           patchAcpSessionProviderModel(sessionId, applied);
+
+          const modelForRecord: Model = {
+            ...model,
+            request_params: {
+              ...model.request_params,
+              ...(applied.thinkingEffort ? { thinking_effort: applied.thinkingEffort } : {}),
+            },
+          };
+          const currentModelLabel = selectedModelSelectionLabel(modelForRecord);
+          if (previousModelLabel && previousModelLabel !== currentModelLabel) {
+            try {
+              const storedMessage = await acpRecordSessionModelSwitch(
+                sessionId,
+                intl.formatMessage(i18n.modelSwitchRecord, {
+                  previousModel: previousModelLabel,
+                  currentModel: currentModelLabel,
+                })
+              );
+              appendStoredMessage(sessionId, storedMessage);
+            } catch (error) {
+              console.warn('Failed to record model switch:', error);
+            }
+          }
         }
 
         // Only update the global config default when there's no session

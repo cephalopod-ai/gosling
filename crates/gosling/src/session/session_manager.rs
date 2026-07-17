@@ -1,12 +1,13 @@
 use crate::config::paths::Paths;
 use crate::config::GoslingMode;
-use crate::conversation::message::{Message, MessageContent, TokenState};
+use crate::conversation::message::{Message, MessageContent, SystemNotificationType, TokenState};
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
 use crate::session::extension_data::ExtensionData;
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
+use crate::utils::sanitize_unicode_tags;
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use gosling_providers::conversation::token_usage::Usage;
@@ -609,6 +610,22 @@ impl SessionManager {
 
     pub async fn add_message(&self, id: &str, message: &Message) -> Result<()> {
         self.storage.add_message(id, message).await
+    }
+
+    pub async fn add_model_switch_record(
+        &self,
+        id: &str,
+        msg: impl Into<String>,
+    ) -> Result<Message> {
+        let message = Message::assistant()
+            .with_generated_id()
+            .with_system_notification_with_data(
+                SystemNotificationType::InlineMessage,
+                sanitize_unicode_tags(&msg.into()),
+                serde_json::json!({ "kind": "modelSwitch" }),
+            );
+        self.add_message(id, &message).await?;
+        Ok(message)
     }
 
     pub async fn replace_conversation(&self, id: &str, conversation: &Conversation) -> Result<()> {

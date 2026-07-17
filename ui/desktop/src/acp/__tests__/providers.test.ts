@@ -75,6 +75,7 @@ describe('ACP providers', () => {
     expect(applied).toEqual({
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4-5',
+      thinkingEffort: 'high',
     });
   });
 });
