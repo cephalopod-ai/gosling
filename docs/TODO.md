@@ -118,10 +118,16 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
 Full inventory, skill disposition, and repair log:
 [`reports/2026-07-16-defect-audit-and-repair.md`](../reports/2026-07-16-defect-audit-and-repair.md).
 42 defects found across 12 audit lenses, grouped into locality-based repair
-stages. 22 repaired under `repair-defect-campaign` gates (patch, regression
-test, change review, commit per stage) across three passes; 20 remain, fully
-specified for a follow-up pass. Track per-stage status in that report rather
-than duplicating it here.
+stages. Follow-up campaign (branch
+`claude/gosling-defect-repair-followup-6093`, pushed, PR not yet opened)
+repaired 19 of the remaining 21 under `repair-defect-campaign` gates across
+13 stages; 2 (ORCH-002, REC-001) are dispositioned as needing dedicated
+follow-up work with reasons, not silently dropped. A real regression
+introduced mid-campaign (the LLM-002 fix over-broadly removing a fast path)
+was caught by the campaign's own Gate 9 full-suite verification and fixed
+before closeout. Combined with the three passes already on `main`: 41 of 42
+original defects now repaired or honestly dispositioned. Track per-stage
+status in that report rather than duplicating it here.
 
 Corroborates two previously-deferred, still-open findings from
 `reports/2026-07-10-audit-skills-pack-report.md`: the `/status` static-200
