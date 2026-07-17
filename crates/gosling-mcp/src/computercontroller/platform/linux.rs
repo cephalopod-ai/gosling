@@ -205,7 +205,16 @@ def run_command(cmd):
         );
 
         for cmd in commands {
-            script.push_str(&format!("run_command('{}')\n", cmd));
+            // JSON string escaping is a compatible subset of Python
+            // double-quoted string literal escaping (both backslash-escape
+            // `"`, `\`, and control characters the same way), so this
+            // round-trips `cmd` into the generated script safely instead of
+            // interpolating it raw: a command containing a single quote —
+            // extremely common in shell commands with quoted arguments —
+            // would otherwise break out of the previous '...' literal and
+            // let the remainder of the line execute as arbitrary Python.
+            let escaped_cmd = serde_json::to_string(cmd).unwrap_or_else(|_| "\"\"".to_string());
+            script.push_str(&format!("run_command({escaped_cmd})\n"));
         }
 
         script
@@ -267,5 +276,54 @@ impl SystemAutomation for LinuxAutomation {
 
     fn has_display(&self) -> bool {
         self.has_display()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_python_script_escapes_embedded_single_quotes() {
+        let automation = LinuxAutomation::new();
+        // A single quote in the command is extremely common (any shell
+        // command with quoted arguments) and, before this fix, would break
+        // out of the generated `run_command('...')` string literal and let
+        // the remainder execute as arbitrary Python.
+        let commands = ["echo 'hello world' && rm -rf /tmp/x"];
+        let script = automation.create_python_script(&commands);
+
+        assert!(
+            !script.contains("run_command('echo"),
+            "the vulnerable unescaped single-quoted form must not appear: {script}"
+        );
+        // The command must round-trip as a single Python string argument,
+        // not fragment into multiple statements. Match on the call site
+        // specifically (`run_command("`), not the `def run_command(cmd):`
+        // definition earlier in the script, which also contains the
+        // substring `run_command(`.
+        assert_eq!(
+            script.matches("run_command(\"").count(),
+            1,
+            "the embedded quote must not have split this into extra statements: {script}"
+        );
+        assert!(
+            script.contains(r#"run_command("echo 'hello world' && rm -rf /tmp/x")"#),
+            "the command must be embedded as one safely-escaped string literal: {script}"
+        );
+    }
+
+    #[test]
+    fn create_python_script_escapes_embedded_double_quotes_and_backslashes() {
+        let automation = LinuxAutomation::new();
+        let commands = [r#"echo "a\b""#];
+        let script = automation.create_python_script(&commands);
+
+        // Must be valid, parseable Python: an even number of unescaped
+        // double quotes opening/closing the string literal.
+        assert!(
+            script.contains(r#"run_command("echo \"a\\b\"")"#),
+            "double quotes and backslashes must be escaped: {script}"
+        );
     }
 }

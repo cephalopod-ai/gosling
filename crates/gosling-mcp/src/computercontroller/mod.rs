@@ -371,6 +371,10 @@ pub struct ComputerControllerServer {
     system_automation: Arc<Box<dyn SystemAutomation + Send + Sync>>,
     #[cfg(target_os = "macos")]
     peekaboo_installed: Arc<AtomicBool>,
+    // Disambiguates cache filenames for calls that land within the same
+    // second-granularity timestamp, so a second write never silently
+    // overwrites the first (see get_cache_path).
+    cache_call_counter: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Default for ComputerControllerServer {
@@ -391,7 +395,10 @@ impl ComputerControllerServer {
             .unwrap_or_else(|_| create_system_automation().get_temp_path());
 
         fs::create_dir_all(&cache_dir).unwrap_or_else(|_| {
-            println!(
+            // This server is driven over stdio as a JSON-RPC transport
+            // (see mcp_server_runner.rs); writing to stdout here would
+            // corrupt that stream ahead of the first real response.
+            eprintln!(
                 "Warning: Failed to create cache directory at {:?}",
                 cache_dir
             )
@@ -600,14 +607,22 @@ impl ComputerControllerServer {
             system_automation,
             #[cfg(target_os = "macos")]
             peekaboo_installed: Arc::new(AtomicBool::new(crate::peekaboo::is_peekaboo_installed())),
+            cache_call_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
-    // Helper function to generate a cache file path
+    // Helper function to generate a cache file path. Includes a monotonic
+    // counter so two calls within the same wall-clock second never collide
+    // and silently overwrite each other's cached output.
     fn get_cache_path(&self, prefix: &str, extension: &str) -> PathBuf {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        self.cache_dir
-            .join(format!("{}_{}.{}", prefix, timestamp, extension))
+        let call_id = self
+            .cache_call_counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.cache_dir.join(format!(
+            "{}_{}_{}.{}",
+            prefix, timestamp, call_id, extension
+        ))
     }
 
     // Helper function to save content to cache
@@ -1869,5 +1884,21 @@ mod ssrf_tests {
             .await
             .is_err());
         assert!(ensure_public_http_url("not a url").await.is_err());
+    }
+}
+
+#[cfg(test)]
+mod cache_path_tests {
+    use super::ComputerControllerServer;
+
+    #[test]
+    fn get_cache_path_does_not_collide_within_the_same_second() {
+        let server = ComputerControllerServer::new();
+        let first = server.get_cache_path("web", "html");
+        let second = server.get_cache_path("web", "html");
+        assert_ne!(
+            first, second,
+            "two calls in the same wall-clock second must not produce the same cache path"
+        );
     }
 }

@@ -501,6 +501,16 @@ impl SessionManager {
         &self.storage
     }
 
+    /// Cheap liveness probe for the session store: acquires the connection
+    /// pool and runs a trivial query. Intended for health/readiness
+    /// endpoints that need to distinguish "the process is up" from "the
+    /// session database is actually reachable", not for hot paths.
+    pub async fn healthy(&self) -> Result<()> {
+        let pool = self.storage.pool().await?;
+        sqlx::query("SELECT 1").fetch_one(pool).await?;
+        Ok(())
+    }
+
     pub async fn create_session(
         &self,
         working_dir: PathBuf,
@@ -3059,26 +3069,41 @@ impl SessionStorage {
             )
             .await?;
 
-        let mut builder = session_manager
-            .update(&session.id)
-            .extension_data(import.extension_data)
-            .usage(import.usage)
-            .accumulated_usage(import.accumulated_usage)
-            .accumulated_cost(import.accumulated_cost);
+        // If any step after create_session fails, delete the just-created
+        // session rather than leaving an empty, partially-imported stray
+        // behind: create_session, this metadata update, and the conversation
+        // replace are each their own committed transaction, so an
+        // interruption between them is not otherwise atomic.
+        let result: Result<()> = async {
+            let mut builder = session_manager
+                .update(&session.id)
+                .extension_data(import.extension_data)
+                .usage(import.usage)
+                .accumulated_usage(import.accumulated_usage)
+                .accumulated_cost(import.accumulated_cost);
 
-        if !import.additional_working_dirs.is_empty() {
-            builder = builder.additional_working_dirs(import.additional_working_dirs.clone());
+            if !import.additional_working_dirs.is_empty() {
+                builder = builder.additional_working_dirs(import.additional_working_dirs.clone());
+            }
+
+            if import.user_set_name {
+                builder = builder.user_provided_name(import.name.clone());
+            }
+
+            builder.apply().await?;
+
+            if let Some(conversation) = import.conversation {
+                self.replace_conversation(&session.id, &conversation)
+                    .await?;
+            }
+
+            Ok(())
         }
+        .await;
 
-        if import.user_set_name {
-            builder = builder.user_provided_name(import.name.clone());
-        }
-
-        builder.apply().await?;
-
-        if let Some(conversation) = import.conversation {
-            self.replace_conversation(&session.id, &conversation)
-                .await?;
+        if let Err(e) = result {
+            let _ = self.delete_session(&session.id).await;
+            return Err(e);
         }
 
         self.get_session(&session.id, true).await
@@ -3101,29 +3126,43 @@ impl SessionStorage {
             )
             .await?;
 
-        let mut builder = session_manager
-            .update(&new_session.id)
-            .extension_data(original_session.extension_data);
+        // See import_session's identical rollback comment: create_session,
+        // this metadata update, and the conversation replace are each their
+        // own committed transaction, so clean up the just-created session on
+        // any failure in between rather than leaving an empty stray copy.
+        let result: Result<()> = async {
+            let mut builder = session_manager
+                .update(&new_session.id)
+                .extension_data(original_session.extension_data);
 
-        if !original_session.additional_working_dirs.is_empty() {
-            builder = builder.additional_working_dirs(original_session.additional_working_dirs);
-        }
+            if !original_session.additional_working_dirs.is_empty() {
+                builder = builder.additional_working_dirs(original_session.additional_working_dirs);
+            }
 
-        if let Some(project_id) = original_session.project_id {
-            builder = builder.project_id(Some(project_id));
-        }
-        if let Some(provider_name) = original_session.provider_name {
-            builder = builder.provider_name(provider_name);
-        }
-        if let Some(model_config) = original_session.model_config {
-            builder = builder.model_config(model_config);
-        }
-        builder = builder.gosling_mode(original_session.gosling_mode);
-        builder.apply().await?;
+            if let Some(project_id) = original_session.project_id {
+                builder = builder.project_id(Some(project_id));
+            }
+            if let Some(provider_name) = original_session.provider_name {
+                builder = builder.provider_name(provider_name);
+            }
+            if let Some(model_config) = original_session.model_config {
+                builder = builder.model_config(model_config);
+            }
+            builder = builder.gosling_mode(original_session.gosling_mode);
+            builder.apply().await?;
 
-        if let Some(conversation) = original_session.conversation {
-            self.replace_conversation(&new_session.id, &conversation)
-                .await?;
+            if let Some(conversation) = original_session.conversation {
+                self.replace_conversation(&new_session.id, &conversation)
+                    .await?;
+            }
+
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = result {
+            let _ = self.delete_session(&new_session.id).await;
+            return Err(e);
         }
 
         self.get_session(&new_session.id, true).await
@@ -3534,6 +3573,15 @@ mod tests {
         sm.add_message(session_id, &Message::user().with_text("hello world"))
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn healthy_succeeds_against_a_reachable_session_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        sm.healthy()
+            .await
+            .expect("a freshly created session store must report healthy");
     }
 
     #[tokio::test]
@@ -4533,6 +4581,57 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(counter_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_copy_session_deletes_stray_session_when_post_create_step_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let original = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "original".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        // copy_session only reaches replace_conversation (the step broken
+        // below) when the source session has a conversation to copy.
+        sm.add_message(&original.id, &Message::user().with_text("hello"))
+            .await
+            .unwrap();
+
+        let pool = sm.storage().pool().await.unwrap();
+        let before_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+
+        // Breaking the `messages` table (not `sessions`) isolates the
+        // failure to copy_session's final replace_conversation step,
+        // *after* create_session and the extension_data/metadata update
+        // have already succeeded — simulating an interruption partway
+        // through the copy rather than one before it even starts.
+        sqlx::query("ALTER TABLE messages DROP COLUMN content_json")
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let result = sm.copy_session(&original.id, "copy".into()).await;
+        assert!(
+            result.is_err(),
+            "the forced schema mismatch must surface as an error"
+        );
+
+        let after_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            after_count, before_count,
+            "the partially-created copy must be deleted, not left as an empty stray session"
+        );
     }
 
     #[tokio::test]

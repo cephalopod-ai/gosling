@@ -112,3 +112,26 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
   approve recovery, or recursively invoke Tagteam.
 - The legacy Tagteam provider is not removed until workflow parity, migration
   guidance, runtime playtests, and rollback behavior are verified.
+
+## Defect-repair campaign — 2026-07-16
+
+Full inventory, skill disposition, and repair log:
+[`reports/2026-07-16-defect-audit-and-repair.md`](../reports/2026-07-16-defect-audit-and-repair.md).
+42 defects found across 12 audit lenses, grouped into locality-based repair
+stages. 22 repaired under `repair-defect-campaign` gates (patch, regression
+test, change review, commit per stage) across three passes; 20 remain, fully
+specified for a follow-up pass. Track per-stage status in that report rather
+than duplicating it here.
+
+Corroborates two previously-deferred, still-open findings from
+`reports/2026-07-10-audit-skills-pack-report.md`: the `/status` static-200
+health lie (there: FSR-SRV-001, here: OPS-001 — repaired in this pass) and
+the hardcoded `exit_type="normal"` telemetry (there: FSR-SRV-002, here:
+OPS-003 — not yet repaired, carried into the follow-up backlog). Correction:
+this session's sandbox cannot build `gosling-server` either (`cargo build -p
+gosling-server` fails downloading `v8-goose`'s prebuilt V8 binary from a
+blocked GitHub-releases host) — the underlying `gosling` crate change
+(`SessionManager::healthy()`) is compiled and tested, but the
+`gosling-server` route handlers themselves are
+unverified by `cargo build`/`test`/`clippy` in this environment. Recommend
+CI confirm both before merge.

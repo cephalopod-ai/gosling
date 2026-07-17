@@ -31,7 +31,7 @@ pub struct SubagentPromptContext {
 }
 
 type AgentMessagesFuture =
-    Pin<Box<dyn Future<Output = Result<(Conversation, Option<String>)>> + Send>>;
+    Pin<Box<dyn Future<Output = Result<(Conversation, Option<String>, Vec<String>)>> + Send>>;
 
 /// The unit of work delegated to a subagent: system instructions plus the
 /// user-facing prompt that kicks it off.
@@ -54,19 +54,41 @@ pub struct SubagentRunParams {
 
 pub async fn run_subagent_task(params: SubagentRunParams) -> Result<String, anyhow::Error> {
     let return_last_only = params.return_last_only;
-    let (messages, final_output) = get_agent_messages(params).await.map_err(|e| {
-        ErrorData::new(
-            ErrorCode::INTERNAL_ERROR,
-            format!("Failed to execute task: {}", e),
-            None,
-        )
-    })?;
+    let (messages, final_output, failed_extensions) =
+        get_agent_messages(params).await.map_err(|e| {
+            ErrorData::new(
+                ErrorCode::INTERNAL_ERROR,
+                format!("Failed to execute task: {}", e),
+                None,
+            )
+        })?;
 
-    if let Some(output) = final_output {
-        return Ok(output);
+    let response = match final_output {
+        Some(output) => output,
+        None => extract_response_text(&messages, return_last_only),
+    };
+
+    Ok(prepend_extension_failure_warning(
+        response,
+        &failed_extensions,
+    ))
+}
+
+/// Requested extensions the subagent couldn't load run with a silently
+/// reduced tool surface unless the caller sees this: prefix the response
+/// with a warning naming them, so the delegating model (and any operator
+/// reading the result) knows the task ran with fewer tools than requested
+/// rather than assuming the extensions were simply unnecessary.
+fn prepend_extension_failure_warning(response: String, failed_extensions: &[String]) -> String {
+    if failed_extensions.is_empty() {
+        return response;
     }
-
-    Ok(extract_response_text(&messages, return_last_only))
+    format!(
+        "[Warning: the following requested extension(s) failed to load and were unavailable \
+        to this subagent: {}]\n\n{}",
+        failed_extensions.join(", "),
+        response
+    )
 }
 
 fn extract_response_text(messages: &Conversation, return_last_only: bool) -> String {
@@ -153,6 +175,7 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             .await
             .map_err(|e| anyhow!("Failed to set provider on sub agent: {}", e))?;
 
+        let mut failed_extensions = Vec::new();
         for extension in &task_config.extensions {
             if let Err(e) = agent.add_extension(extension.clone(), &session_id).await {
                 debug!(
@@ -160,6 +183,7 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
                     extension.name(),
                     e
                 );
+                failed_extensions.push(extension.name().to_string());
             }
         }
 
@@ -176,6 +200,12 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             compacted_context: false,
             tail_limit: None,
         };
+
+        // Kept alongside the clone moved into `reply` so cancellation can
+        // still be observed after the loop below ends, whether the loop
+        // exited because the stream completed normally or because it was
+        // cancelled mid-run.
+        let cancellation_check = cancellation_token.clone();
 
         let mut stream =
             crate::session_context::with_session_id(Some(session_id.to_string()), async {
@@ -220,7 +250,18 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             }
         }
 
-        Ok((conversation, None))
+        // The reply loop breaks out on cancellation with no terminal
+        // message appended (see Agent::reply_internal), so a cancelled run
+        // and a normally-completed run are otherwise indistinguishable here
+        // — without this check, a cancelled delegate() would return
+        // whatever partial text streamed before cancellation wrapped in
+        // CallToolResult::success, misreporting a truncated, incomplete run
+        // as having finished normally.
+        if crate::utils::is_token_cancelled(&cancellation_check) {
+            anyhow::bail!("subagent task was cancelled before completing");
+        }
+
+        Ok((conversation, None, failed_extensions))
     })
 }
 
@@ -328,5 +369,26 @@ mod tests {
     fn create_tool_notification_ignores_non_tool_request() {
         let content = MessageContent::text("hello");
         assert!(create_tool_notification(&content, "session_1").is_none());
+    }
+
+    #[test]
+    fn prepend_extension_failure_warning_leaves_response_untouched_when_nothing_failed() {
+        let response = super::prepend_extension_failure_warning("done".to_string(), &[]);
+        assert_eq!(response, "done");
+    }
+
+    #[test]
+    fn prepend_extension_failure_warning_names_failed_extensions() {
+        let response = super::prepend_extension_failure_warning(
+            "done".to_string(),
+            &["computercontroller".to_string(), "memory".to_string()],
+        );
+        assert!(response.starts_with("[Warning:"));
+        assert!(response.contains("computercontroller"));
+        assert!(response.contains("memory"));
+        assert!(
+            response.ends_with("done"),
+            "the original response text must still be present: {response}"
+        );
     }
 }

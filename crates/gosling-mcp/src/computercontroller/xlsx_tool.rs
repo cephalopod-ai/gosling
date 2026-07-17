@@ -3,6 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use umya_spreadsheet::{Spreadsheet, Worksheet};
 
+/// Upper bound on cells a single `get_range` call will materialize. Without
+/// this, a range like "A1:A4294967295" (row/column indices are only bounds-
+/// checked as u32, not against sheet size) drives an unbounded allocation
+/// that can OOM or hang the single-threaded stdio MCP server process.
+const MAX_RANGE_CELLS: u64 = 100_000;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorksheetInfo {
     name: String,
@@ -98,6 +104,22 @@ impl XlsxTool {
 
     pub fn get_range(&self, worksheet: &Worksheet, range: &str) -> Result<RangeData> {
         let (start_row, start_col, end_row, end_col) = parse_range(range)?;
+
+        let row_count = end_row
+            .checked_sub(start_row)
+            .and_then(|d| d.checked_add(1))
+            .context("Invalid range: end row is before start row")?;
+        let col_count = end_col
+            .checked_sub(start_col)
+            .and_then(|d| d.checked_add(1))
+            .context("Invalid range: end column is before start column")?;
+        let cell_count = u64::from(row_count) * u64::from(col_count);
+        anyhow::ensure!(
+            cell_count <= MAX_RANGE_CELLS,
+            "Range '{range}' requests {cell_count} cells, exceeding the {MAX_RANGE_CELLS}-cell \
+            limit for a single get_range call. Narrow the range or read it in smaller pieces."
+        );
+
         let mut values = Vec::new();
 
         // Iterate through rows first, then columns
@@ -295,6 +317,18 @@ mod tests {
         let range = xlsx.get_range(worksheet, "A1:C5")?;
         assert_eq!(range.values.len(), 5);
         println!("Range data: {:?}", range);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_range_rejects_oversized_range() -> Result<()> {
+        let xlsx = XlsxTool::new(get_test_file())?;
+        let worksheet = xlsx.get_worksheet_by_index(0)?;
+        let result = xlsx.get_range(worksheet, "A1:A4294967295");
+        assert!(
+            result.is_err(),
+            "an unbounded row range must be rejected instead of driving an unbounded allocation"
+        );
         Ok(())
     }
 

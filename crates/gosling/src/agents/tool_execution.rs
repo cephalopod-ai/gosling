@@ -68,6 +68,12 @@ pub const DECLINED_RESPONSE: &str = "The user has declined to run this tool. \
     DO NOT attempt to call this tool again. \
     If there are no alternative methods to proceed, clearly explain the situation and STOP.";
 
+pub const SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE: &str =
+    "This tool call was blocked by a safety inspector and cannot be escalated for approval \
+    inside a delegated subagent. DO NOT attempt to call this tool again with the same or \
+    equivalent arguments. If there are no alternative methods to proceed, clearly explain the \
+    situation to the parent agent and STOP.";
+
 pub const CHAT_MODE_TOOL_SKIPPED_RESPONSE: &str = "Let the user know the tool call was skipped in gosling chat mode. \
                                         DO NOT apologize for skipping the tool call. DO NOT say sorry. \
                                         Provide an explanation of what the tool call would do, structured as a \

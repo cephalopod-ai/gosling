@@ -387,25 +387,48 @@ pub fn load_provider(id: &str) -> Result<LoadedProvider> {
     Err(anyhow::anyhow!("Provider not found: {}", id))
 }
 
+/// Loads every valid custom provider config in `dir`. A malformed file is
+/// skipped with a warning rather than aborting the whole batch: previously
+/// a single bad file (via `.collect::<Result<Vec<_>>>()`'s short-circuit)
+/// deregistered every other, otherwise-valid custom provider on the
+/// machine, and the resulting error was visible only as a generic "Unknown
+/// provider" for each of them with no indication a sibling file caused it.
+/// Mirrors load_fixed_providers's per-file match/continue pattern below.
 pub fn load_custom_providers(dir: &Path) -> Result<Vec<DeclarativeProviderConfig>> {
     if !dir.exists() {
         return Ok(Vec::new());
     }
 
-    std::fs::read_dir(dir)?
-        .filter_map(|entry| {
-            let path = entry.ok()?.path();
-            (path.extension()? == "json").then_some(path)
-        })
-        .map(|path| {
-            let content = std::fs::read_to_string(&path)?;
-            let config = deserialize_provider_config(&content)
-                .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))?;
-            validate_custom_api_key_env(&config)
-                .map_err(|e| anyhow::anyhow!("Failed to load {}: {}", path.display(), e))?;
-            Ok(config)
-        })
-        .collect()
+    let mut providers = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                tracing::warn!("Skipping unreadable custom provider {:?}: {}", path, e);
+                continue;
+            }
+        };
+        let config = match deserialize_provider_config(&content) {
+            Ok(config) => config,
+            Err(e) => {
+                tracing::warn!("Skipping invalid custom provider {:?}: {}", path, e);
+                continue;
+            }
+        };
+        if let Err(e) = validate_custom_api_key_env(&config) {
+            tracing::warn!("Skipping invalid custom provider {:?}: {}", path, e);
+            continue;
+        }
+
+        providers.push(config);
+    }
+
+    Ok(providers)
 }
 
 fn deserialize_provider_config(content: &str) -> Result<DeclarativeProviderConfig> {
@@ -564,6 +587,33 @@ pub fn register_declarative_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn load_custom_providers_skips_malformed_file_instead_of_deregistering_valid_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("good.json"),
+            r#"{
+                "name": "good-provider",
+                "engine": "openai",
+                "display_name": "Good Provider",
+                "base_url": "https://good.example.com",
+                "models": []
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("bad.json"), "{ this is not valid json").unwrap();
+
+        let providers = load_custom_providers(dir.path())
+            .expect("a malformed sibling file must not fail the whole batch");
+
+        assert_eq!(
+            providers.len(),
+            1,
+            "the valid provider must still load despite the malformed sibling"
+        );
+        assert_eq!(providers[0].id(), "good-provider");
+    }
 
     #[test]
     fn test_existing_json_files_still_deserialize_without_new_fields() {

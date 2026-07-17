@@ -58,6 +58,13 @@ impl ToolInspector for SecurityInspector {
         "security"
     }
 
+    fn auto_downgrades_require_approval(&self) -> bool {
+        // A high-confidence malicious-command finding must still block or ask
+        // even in Auto mode; Auto mode's advisory-downgrade behavior is for
+        // routine permission prompts, not detected malicious tool calls.
+        false
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -149,5 +156,13 @@ mod tests {
     fn test_security_inspector_name() {
         let inspector = SecurityInspector::new();
         assert_eq!(inspector.name(), "security");
+    }
+
+    #[test]
+    fn test_security_inspector_does_not_downgrade_in_auto_mode() {
+        // A malicious-command finding must still block/ask in Auto mode
+        // instead of being silently allowed like a routine permission prompt.
+        let inspector = SecurityInspector::new();
+        assert!(!inspector.auto_downgrades_require_approval());
     }
 }

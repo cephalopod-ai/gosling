@@ -527,6 +527,10 @@ async fn run_command(
     let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to spawn shell command: {}", error))?;
+    // `process_group(0)` in build_shell_command puts this child in a new
+    // process group whose id equals the child's own pid, so this doubles as
+    // the group id for cleanup below.
+    let child_pgid = child.id();
 
     let child_stdout = child
         .stdout
@@ -593,6 +597,18 @@ async fn run_command(
     while let Some(item) = rx.recv().await {
         lines.push(item);
     }
+
+    // The invoking shell has exited (naturally or via the timeout kill
+    // above), but a command it backgrounded with `&` is not tracked by
+    // `child` at all and does not receive that kill: it inherited the same
+    // process group id, so reap the whole group here rather than leaving
+    // background jobs to run unbounded after the tool call returns. This
+    // runs after output collection (rather than right after the shell
+    // exits) so a backgrounded command's own output — which races the
+    // group kill, since it is not sequenced after the foreground command
+    // at all — still has the same output-drain window to flush that it did
+    // before this cleanup existed.
+    kill_process_group(child_pgid);
 
     Ok(ExecutionOutput {
         lines,
@@ -667,9 +683,36 @@ fn build_shell_command(
     // cancellation racing ahead of the timeout branch), don't leave the shell
     // running orphaned.
     command.kill_on_drop(true);
+    // Put the shell in its own process group (id == its own pid) so a
+    // command it backgrounds with `&` — which inherits this group rather
+    // than gaining its own — can be reaped as a group via kill_process_group,
+    // instead of surviving as an untracked, unbounded orphan.
+    #[cfg(unix)]
+    command.process_group(0);
     command.set_no_window();
     command
 }
+
+/// Send SIGKILL to every process in `pgid`'s process group (Unix only), so a
+/// command backgrounded with `&` inside the shell tool does not outlive the
+/// tool call. `ESRCH` (nothing left in the group) is expected and ignored;
+/// this is best-effort cleanup, not a correctness-critical wait.
+#[cfg(unix)]
+fn kill_process_group(pgid: Option<u32>) {
+    let Some(pgid) = pgid else { return };
+    let Ok(pgid) = i32::try_from(pgid) else {
+        return;
+    };
+    // SAFETY: kill(2) with a negative pid targets the process group with
+    // that id rather than a single process; passing a plain integer has no
+    // memory-safety implications.
+    unsafe {
+        libc::kill(-pgid, libc::SIGKILL);
+    }
+}
+
+#[cfg(not(unix))]
+fn kill_process_group(_pgid: Option<u32>) {}
 
 /// Split tagged lines into (stdout, stderr, interleaved) strings.
 fn split_lines(lines: &[(bool, String)]) -> (String, String, String) {
@@ -1102,6 +1145,9 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn shell_does_not_hang_on_backgrounded_process() {
+        // Safety net only: if gosling's own cleanup (asserted below) somehow
+        // regresses, don't leave a real `sleep 300` running after the test
+        // process exits.
         struct KillOnDrop(String);
         impl Drop for KillOnDrop {
             fn drop(&mut self) {
@@ -1133,6 +1179,14 @@ mod tests {
             .map(str::trim)
             .expect("expected bgpid in output");
         let _cleanup = KillOnDrop(background_pid.to_string());
+        // The backgrounded `sleep 300` keeps the stdout/stderr pipes open,
+        // so this path still goes through the output-drain timeout
+        // (output_truncated = true) exactly as before the process-group
+        // cleanup below existed — the cleanup runs after output collection
+        // specifically so it doesn't race the backgrounded command's own
+        // output (see `echo before && sleep 300 &`: `before` is written by
+        // the backgrounded job, not the foreground shell, so killing the
+        // group too early can lose it).
         assert!(
             shell_output.output_truncated,
             "backgrounded process should set output_truncated"
@@ -1148,6 +1202,26 @@ mod tests {
         assert!(
             text.contains("after"),
             "should capture output after background cmd"
+        );
+
+        // The regression this test guards: gosling must not leave the
+        // backgrounded `sleep 300` running once the tool call has returned.
+        // Zombie reaping by the test process's ancestor can lag slightly
+        // behind the SIGKILL, so poll briefly rather than checking once.
+        let still_alive = |pid: &str| {
+            std::process::Command::new("kill")
+                .args(["-0", pid])
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while still_alive(background_pid) && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            !still_alive(background_pid),
+            "backgrounded process {background_pid} must be killed, not left as an orphan"
         );
     }
 }

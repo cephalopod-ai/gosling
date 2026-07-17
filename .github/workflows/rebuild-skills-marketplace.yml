@@ -76,6 +76,7 @@ jobs:
           INKEEP_ORG_ID: ${{ secrets.INKEEP_ORG_ID }}
         run: |
           npm install
+          npm test
           npm run build
 
       - name: Verify docs map was generated

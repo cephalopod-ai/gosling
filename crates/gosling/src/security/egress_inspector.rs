@@ -312,6 +312,13 @@ impl ToolInspector for EgressInspector {
         "egress"
     }
 
+    fn auto_downgrades_require_approval(&self) -> bool {
+        // A high-confidence exfiltration finding must still block or ask
+        // even in Auto mode; Auto mode's advisory-downgrade behavior is for
+        // routine permission prompts, not detected exfiltration attempts.
+        false
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -617,5 +624,13 @@ mod tests {
                 InspectionAction::RequireApproval(_)
             ));
         }
+    }
+
+    #[test]
+    fn test_egress_inspector_does_not_downgrade_in_auto_mode() {
+        // An exfiltration finding must still block/ask in Auto mode instead
+        // of being silently allowed like a routine permission prompt.
+        let inspector = EgressInspector::new();
+        assert!(!inspector.auto_downgrades_require_approval());
     }
 }

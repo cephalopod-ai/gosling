@@ -16,7 +16,10 @@ use super::frontend_tool_result_router::{
 };
 use super::mcp_client::GoslingMcpHostInfo;
 use super::tool_confirmation_router::ToolConfirmationRouter;
-use super::tool_execution::{ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
+use super::tool_execution::{
+    ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE,
+    SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE,
+};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult, ToolInfo};
 use crate::agents::extension_manager::{
@@ -50,7 +53,9 @@ use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager, SessionNameUpdate, DEFAULT_SESSION_TAIL_LIMIT};
+use crate::session::{
+    Session, SessionManager, SessionNameUpdate, SessionType, DEFAULT_SESSION_TAIL_LIMIT,
+};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -823,6 +828,35 @@ impl Agent {
                     request.id.clone(),
                     Ok(CallToolResult::error(vec![rmcp::model::Content::text(
                         DECLINED_RESPONSE,
+                    )])),
+                    request.metadata.as_ref(),
+                );
+            }
+        }
+    }
+
+    /// Subagents run in `GoslingMode::Auto` with nothing that can ever answer
+    /// an approval prompt (`get_agent_messages` does not forward
+    /// `ActionRequired` to the parent). A tool call an inspector still flags
+    /// as `RequireApproval` even after Auto mode's default downgrade (i.e. a
+    /// fail-closed inspector such as security/egress/adversary) must
+    /// therefore be answered as denied here rather than left to hang forever
+    /// on an unanswerable confirmation channel.
+    fn redirect_unapprovable_subagent_requests(
+        gosling_mode: GoslingMode,
+        session_type: SessionType,
+        permission_check_result: &mut PermissionCheckResult,
+        request_to_response_map: &mut HashMap<String, Message>,
+    ) {
+        if gosling_mode != GoslingMode::Auto || session_type != SessionType::SubAgent {
+            return;
+        }
+        for request in permission_check_result.needs_approval.drain(..) {
+            if let Some(response) = request_to_response_map.get_mut(&request.id) {
+                response.add_tool_response_with_metadata(
+                    request.id.clone(),
+                    Ok(CallToolResult::error(vec![rmcp::model::Content::text(
+                        SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE,
                     )])),
                     request.metadata.as_ref(),
                 );
@@ -2358,7 +2392,7 @@ impl Agent {
                                         )
                                         .await?;
 
-                                    let permission_check_result = self
+                                    let mut permission_check_result = self
                                         .tool_inspection_manager
                                         .process_inspection_results_with_permission_inspector(
                                             &remaining_requests,
@@ -2375,6 +2409,13 @@ impl Agent {
                                                 .extend(remaining_requests.iter().cloned());
                                             result
                                         });
+
+                                    Self::redirect_unapprovable_subagent_requests(
+                                        gosling_mode,
+                                        session.session_type,
+                                        &mut permission_check_result,
+                                        &mut request_to_response_map,
+                                    );
 
                                     // Track extension requests
                                     let mut enable_extension_request_ids = vec![];
@@ -3087,34 +3128,52 @@ impl Agent {
         let extensions =
             EnabledExtensionsState::extensions_or_default(Some(&session.extension_data), config);
 
-        let (provider, active_model_config, provider_changed) =
-            if crate::providers::get_from_registry(&provider_name)
-                .await
-                .is_ok()
-            {
-                let p = crate::providers::create_with_working_dir(
+        // Try the session's saved provider first whenever its type is
+        // registered at all — not just when it's registered AND already
+        // configured. The fallback below exists specifically to survive a
+        // known provider type whose credentials were revoked/removed; gating
+        // it on registry presence alone meant that case always hit a hard
+        // create_with_working_dir error instead of ever reaching it.
+        let primary_result = if crate::providers::get_from_registry(&provider_name)
+            .await
+            .is_ok()
+        {
+            Some(
+                crate::providers::create_with_working_dir(
                     &provider_name,
-                    extensions,
+                    extensions.clone(),
                     session.working_dir.clone(),
                 )
-                .await
-                .map_err(|e| anyhow!("Could not create provider: {}", e))?;
-                (p, model_config, false)
-            } else {
+                .await,
+            )
+        } else {
+            None
+        };
+
+        let (provider, active_model_config, provider_changed) = match primary_result {
+            Some(Ok(p)) => (p, model_config, false),
+            primary_result => {
+                let primary_error = primary_result.and_then(Result::err);
+
                 let fallback_provider_name = config
                     .get_gosling_provider()
                     .ok()
                     .filter(|name| name != &provider_name)
-                    .ok_or_else(|| {
-                        anyhow!(
+                    .ok_or_else(|| match &primary_error {
+                        Some(e) => anyhow!("Could not create provider '{}': {}", provider_name, e),
+                        None => anyhow!(
                             "Could not create provider: provider '{}' not found",
                             provider_name
-                        )
+                        ),
                     })?;
 
                 tracing::warn!(
-                    "Session provider '{}' unavailable, falling back to '{}'",
+                    "Session provider '{}' unavailable ({}), falling back to '{}'",
                     provider_name,
+                    primary_error
+                        .as_ref()
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "not found in registry".to_string()),
                     fallback_provider_name
                 );
 
@@ -3157,7 +3216,8 @@ impl Agent {
                 }
 
                 (fallback_provider, fallback_model_config, true)
-            };
+            }
+        };
 
         self.update_provider_with_mode(
             provider,
@@ -3297,6 +3357,86 @@ mod tests {
             Some(false),
             &GoslingPlatform::GoslingDesktop
         ));
+    }
+
+    fn needs_approval_fixture() -> (PermissionCheckResult, HashMap<String, Message>) {
+        let request = ToolRequest {
+            id: "req-1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("shell").with_arguments(rmcp::object!({}))),
+            metadata: None,
+            tool_meta: None,
+        };
+        let permission_check_result = PermissionCheckResult {
+            approved: vec![],
+            needs_approval: vec![request],
+            denied: vec![],
+        };
+        let mut request_to_response_map = HashMap::new();
+        request_to_response_map.insert("req-1".to_string(), Message::user().with_generated_id());
+        (permission_check_result, request_to_response_map)
+    }
+
+    #[test]
+    fn redirect_unapprovable_subagent_requests_denies_in_auto_mode_subagent() {
+        let (mut permission_check_result, mut request_to_response_map) = needs_approval_fixture();
+
+        Agent::redirect_unapprovable_subagent_requests(
+            GoslingMode::Auto,
+            SessionType::SubAgent,
+            &mut permission_check_result,
+            &mut request_to_response_map,
+        );
+
+        assert!(
+            permission_check_result.needs_approval.is_empty(),
+            "the unanswerable approval request must be drained, not left to hang"
+        );
+        let response = request_to_response_map
+            .get("req-1")
+            .expect("response entry must still exist");
+        let has_error_tool_response = response.content.iter().any(|c| match c {
+            MessageContent::ToolResponse(r) => matches!(
+                &r.tool_result,
+                Ok(result) if r.id == "req-1" && result.is_error == Some(true)
+            ),
+            _ => false,
+        });
+        assert!(
+            has_error_tool_response,
+            "a synthesized error tool response must be written instead of hanging"
+        );
+    }
+
+    #[test]
+    fn redirect_unapprovable_subagent_requests_leaves_top_level_auto_mode_untouched() {
+        let (mut permission_check_result, mut request_to_response_map) = needs_approval_fixture();
+
+        Agent::redirect_unapprovable_subagent_requests(
+            GoslingMode::Auto,
+            SessionType::User,
+            &mut permission_check_result,
+            &mut request_to_response_map,
+        );
+
+        assert_eq!(
+            permission_check_result.needs_approval.len(),
+            1,
+            "a top-level (non-subagent) session can answer its own approval prompt"
+        );
+    }
+
+    #[test]
+    fn redirect_unapprovable_subagent_requests_leaves_non_auto_subagent_untouched() {
+        let (mut permission_check_result, mut request_to_response_map) = needs_approval_fixture();
+
+        Agent::redirect_unapprovable_subagent_requests(
+            GoslingMode::SmartApprove,
+            SessionType::SubAgent,
+            &mut permission_check_result,
+            &mut request_to_response_map,
+        );
+
+        assert_eq!(permission_check_result.needs_approval.len(), 1);
     }
 
     struct ActionRequiredProvider {
