@@ -55,14 +55,20 @@ pub struct ChatGptCodexModelAttrs {
     pub reasoning_levels: &'static [&'static str],
 }
 
+// "ultra" is deliberately absent here even though the Codex CLI catalog lists it
+// for these models: the CLI implements ultra as client-side multi-agent task
+// delegation on top of "max" reasoning, never sending "ultra" over the wire. The
+// chatgpt.com/backend-api/codex Responses endpoint this provider talks to directly
+// only recognizes none/minimal/low/medium/high/xhigh/max for `reasoning.effort` and
+// returns HTTP 400 invalid_value if sent "ultra" literally.
 pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     ChatGptCodexModelAttrs {
         name: "gpt-5.6-sol",
-        reasoning_levels: &["low", "medium", "high", "xhigh", "max", "ultra"],
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
     ChatGptCodexModelAttrs {
         name: "gpt-5.6-terra",
-        reasoning_levels: &["low", "medium", "high", "xhigh", "max", "ultra"],
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
     ChatGptCodexModelAttrs {
         name: "gpt-5.6-luna",
@@ -277,7 +283,10 @@ fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
                 ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
                 ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
                 ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
-                ThinkingEffort::Ultra => &["ultra", "max", "xhigh", "high", "medium", "low"],
+                // No known model's reasoning_levels includes "ultra" (see the
+                // CHATGPT_CODEX_KNOWN_MODELS comment) so this always falls
+                // through to "max".
+                ThinkingEffort::Ultra => &["max", "xhigh", "high", "medium", "low"],
             };
 
             preferred_levels
@@ -1511,8 +1520,8 @@ mod tests {
 
     #[test_case(
         "gpt-5.6-sol",
-        &["low", "medium", "high", "xhigh", "max", "ultra"];
-        "gpt-5.6-sol supports ultra reasoning"
+        &["low", "medium", "high", "xhigh", "max"];
+        "gpt-5.6-sol keeps max as its ceiling (backend rejects ultra over HTTP)"
     )]
     #[test_case(
         "gpt-5.6-luna",
@@ -1547,7 +1556,7 @@ mod tests {
         assert_eq!(context_limit_for_model(model), expected_context_limit);
     }
 
-    #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("ultra"); "sol supports ultra")]
+    #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("max"); "sol falls back to max (backend rejects ultra over HTTP)")]
     #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("max"); "luna falls back to max")]
     #[test_case("gpt-5.5", ThinkingEffort::Ultra, Some("xhigh"); "older models fall back to xhigh")]
     fn test_reasoning_effort_for_config_uses_supported_ceiling(
