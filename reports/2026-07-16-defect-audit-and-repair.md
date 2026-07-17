@@ -160,3 +160,66 @@ end-to-end in this sandbox.
   disk-space cleanup and a `git worktree` operation; it has since passed
   cleanly 4/4 times (1 isolated, 3 full-suite) and is attributed to that
   transient system load, not the fix itself.
+
+## Follow-up campaign — pass 4+ (continued, same day)
+
+Branch: `claude/gosling-defect-repair-followup-6093`, restarted from merged
+`main` (includes PR #31 plus two small unrelated post-merge commits:
+`f8a01e936` Cargo target-cfg reorg for `libc` from `linux`-only to
+`cfg(unix)`, and `2ff2b6239` a conditional CSS class in `BaseChat.tsx` for the
+artifact workbench sidebar — both reviewed by hand, neither is a defect).
+Continuing under `repair-defect-campaign` in Existing Findings Mode: the 21
+defects left in the "Not yet repaired" list above are the source of truth;
+each is re-verified against current code before being patched, not blindly
+trusted.
+
+### Gate 0 — orientation delta vs. the prior passes
+
+This sandbox has network egress the prior passes' sandbox lacked:
+`cargo check -p gosling-server` and `pnpm install`/`pnpm run typecheck` in
+`ui/desktop` (via `ui/`, pnpm workspace root) both succeed here (pnpm needed
+bumping past the corepack-shimmed 10.6.4 to the `engines`-pinned `>=10.30.0`,
+available at `/Users/eric/.local/node/node-v24.13.0-darwin-arm64/bin/pnpm`).
+This means the `gosling-server` route handlers and the `ui/desktop`/`ui/text`
+TypeScript surface — unverified by build/test in passes 1-3 — can be verified
+here, and the `LLM-002`/`LLM-003`/`DEP-002` deferrals from pass 1-3 (recorded
+as needing "live MCP/LLM integration testing") are being re-investigated
+rather than automatically re-deferred, per this skill's Existing-Findings-Mode
+instruction to verify before grouping, not just carry forward a prior
+disposition.
+
+Baseline: `cargo check -p gosling --features nostr` green (2m52s clean
+build). `ui/desktop`: `pnpm run typecheck` (`tsc --noEmit`) green.
+
+### Gate 2 — locality grouping and campaign plan
+
+Campaign scope: the 21 not-yet-repaired defects from the table above.
+Baseline: `claude/gosling-defect-repair-followup-6093` @ `main` HEAD, tests
+green, git available, remote authorized for local commits only (no push
+without separate authorization; `main` is ruleset-protected, PR required).
+
+Groups, ordered P1 (ascending blast radius) → P2 → P3:
+
+| Group | Defects | Files | Why grouped |
+|---|---|---|---|
+| G9 | GUI-002 | `ToolApprovalButtons.tsx` | standalone |
+| G1 | ORCH-002 | `agents/platform_extensions/summon.rs` | standalone |
+| G3 | LLM-002 | `permission/permission_inspector.rs` | standalone |
+| G4 | LLM-003 | `agents/large_response_handler.rs`, `security/scanner.rs` | standalone, shared injection-scanning surface |
+| G2 | ORCH-003 | `agents/platform_extensions/orchestrator.rs`, `agents/tool_execution.rs` | shared orchestrator approval-routing surface |
+| G5 | RES-002 | `gosling-server/src/commands/agent.rs`, `ui/desktop/src/goslingServe.ts`, `gosling`/`gosling-mcp` `subprocess.rs` | shared subprocess-lifecycle surface |
+| G7 | INV-001, INV-002 | `acp/server/providers.rs`, `gosling-sdk-types/src/custom_requests.rs`, `ui/desktop/src/acp/providers.ts`, `ui/desktop/src/types/*.ts` | shared Rust-enum/TS-mirror contract surface |
+| G8 | OPS-002, OPS-003, OPS-004, OPS-005 | `gosling-server/src/routes/{agent,session,status,reply_service}.rs`, `session/diagnostics.rs`, `acp/server/diagnostics.rs`, `ui/desktop/src/types/diagnostics.ts` | shared `gosling-server` routes error-signal-fidelity pattern |
+| G6 | REC-001, DEP-002, CON-001, REC-002 | `agents/agent.rs`, `execution/manager.rs`, `agents/platform_extensions/todo.rs`, `session/session_manager.rs`, `session/legacy.rs`, `gosling-providers/src/{formats/openai,base}.rs` | all four share the turn-loop/session-persistence data path in `agent.rs`/`session_manager.rs`; highest blast radius, ordered last among P1 groups per the prior campaign's own note that this is the riskiest surface (already the site of the ORCH-004/RES-001 race conditions) |
+| G11 | RES-003 | `agents/extension_manager.rs`, `agents/container.rs` | standalone (P2) |
+| G10 | GUI-004, GUI-005 | `settings/app/ExternalBackendSection.tsx`, `settings/app/UpdateSection.tsx` | shared settings silent-failure pattern (P2+P3) |
+| G12 | CON-003 | `context_mgmt/summarizer/writer.rs` | standalone (P3) |
+| G13 | SEC-003 | `ui/desktop/src/main.ts` | standalone (P3) |
+
+Cross-stage risk: G6 and G8 both touch session/turn state (`session_manager.rs`
+read by G6, `session/diagnostics.rs` read by G8) but through disjoint
+functions — no write overlap expected; re-verified at G6/G8's own Gate 6.
+
+Commit boundary: one commit per completed group stage, on this branch, no
+push/PR yet (opened once the full campaign closes out, per repo's
+ruleset-protected `main`).
