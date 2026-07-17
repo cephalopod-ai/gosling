@@ -31,11 +31,10 @@ impl PermissionInspector {
         }
     }
 
-    /// A server's own `read_only_hint` annotation is never trusted for auto-execution:
-    /// it's an unverified claim made by the same server whose call is being judged, so
-    /// only the write-side hint (`read_only_hint: false`) is used here, to conservatively
-    /// force those tools to ask before use. Whether a tool actually gets auto-allowed is
-    /// decided independently, in `inspect`, by the cached/live LLM classification.
+    /// Delegates to `PermissionManager::apply_tool_annotations`: a server's own
+    /// `read_only_hint: true` is trusted for auto-execution only when the tool's
+    /// name doesn't look destructive (see that method's doc comment); a
+    /// `read_only_hint: false` always forces the tool to ask before use.
     pub fn apply_tool_annotations(&self, tools: &[Tool]) {
         self.permission_manager.apply_tool_annotations(tools);
     }
@@ -142,14 +141,15 @@ impl ToolInspector for PermissionInspector {
                                     InspectionAction::RequireApproval(None)
                                 }
                             }
-                        // 2. Check for a cached SmartApprove decision from the independent
-                        // LLM classifier (see `permission_judge::detect_read_only_tools`).
-                        // A server's self-declared `read_only_hint` annotation is
-                        // deliberately not checked here: trusting it directly would let a
-                        // server vouch for its own safety and silently auto-execute
-                        // destructive calls (confused deputy). Annotated tools fall through
-                        // to step 4 like any unclassified tool and must earn this cache
-                        // entry via the classifier before they can be auto-allowed.
+                        // 2. Check for a cached SmartApprove decision. This cache is
+                        // populated either by the independent LLM classifier (see
+                        // `permission_judge::detect_read_only_tools`) or, for tools
+                        // annotated `read_only_hint: true` with a non-destructive-looking
+                        // name, directly by `PermissionManager::apply_tool_annotations`.
+                        // A destructive-looking name (e.g. `delete_all_records` claiming
+                        // read-only) is never trusted this way and must earn this cache
+                        // entry via the classifier instead, so a server can't vouch for
+                        // its own safety on an obviously mutating call (confused deputy).
                         } else if gosling_mode == GoslingMode::SmartApprove
                             && permission_manager.get_smart_approve_permission(tool_name)
                                 == Some(PermissionLevel::AlwaysAllow)
