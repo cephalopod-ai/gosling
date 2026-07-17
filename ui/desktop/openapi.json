@@ -1846,6 +1846,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "the session store is unreachable",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -5092,7 +5102,8 @@
           "low",
           "medium",
           "high",
-          "max"
+          "max",
+          "ultra"
         ]
       },
       "TokenState": {
