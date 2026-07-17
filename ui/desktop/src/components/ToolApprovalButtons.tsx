@@ -145,6 +145,11 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
       return;
     }
 
+    if (!resolveAcpPermissionRequest(sessionId, id, 'always_allow')) {
+      setApprovalError(intl.formatMessage(i18n.staleApprovalRequest));
+      return;
+    }
+
     setIsAllowingExtension(true);
     try {
       const tools = await listTools(sessionId, extensionName);
@@ -153,12 +158,8 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
       );
       await setToolPermissions(toolPermissions);
 
-      if (resolveAcpPermissionRequest(sessionId, id, 'always_allow')) {
-        setBulkAllowedExtension(extensionName);
-        setResolvedDecision('always_allow');
-      } else {
-        setApprovalError(intl.formatMessage(i18n.staleApprovalRequest));
-      }
+      setBulkAllowedExtension(extensionName);
+      setResolvedDecision('always_allow');
     } catch (err) {
       console.error('Error allowing extension tools:', err);
       setApprovalError(intl.formatMessage(i18n.failedToAllowExtension));
