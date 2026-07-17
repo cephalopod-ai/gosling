@@ -885,7 +885,7 @@ export type ProviderInventoryEntryDto = {
     /**
      * Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
      */
-    providerType: string;
+    providerType: ProviderTypeDto;
     /**
      * Whether this inventory entry represents an agent provider or a model provider.
      */
@@ -931,6 +931,16 @@ export type ProviderInventoryEntryDto = {
      */
     modelSelectionHint?: string | null;
 };
+
+/**
+ * Provider classification, mirroring the `gosling` crate's `ProviderType` enum.
+ *
+ * Wire values are pinned explicitly via `#[serde(rename_all = "PascalCase")]`
+ * rather than derived from `ProviderType`'s `Debug` output, so this contract
+ * is deliberate and stable. See `provider_type_to_dto` in
+ * `crates/gosling/src/acp/server/providers.rs` for the conversion.
+ */
+export type ProviderTypeDto = 'Preferred' | 'Builtin' | 'Declarative' | 'Custom';
 
 export type ProviderSetupCategoryDto = 'agent' | 'model';
 

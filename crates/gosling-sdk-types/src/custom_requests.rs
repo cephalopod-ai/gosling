@@ -1834,6 +1834,22 @@ pub struct ProviderInventoryModelDto {
     pub recommended: bool,
 }
 
+/// Provider classification, mirroring the `gosling` crate's `ProviderType` enum.
+///
+/// Wire values are pinned explicitly via `#[serde(rename_all = "PascalCase")]`
+/// rather than derived from `ProviderType`'s `Debug` output, so this contract
+/// is deliberate and stable. See `provider_type_to_dto` in
+/// `crates/gosling/src/acp/server/providers.rs` for the conversion.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub enum ProviderTypeDto {
+    Preferred,
+    #[default]
+    Builtin,
+    Declarative,
+    Custom,
+}
+
 /// Provider inventory entry.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -1849,7 +1865,7 @@ pub struct ProviderInventoryEntryDto {
     /// Whether Gosling has enough configuration to use this provider.
     pub configured: bool,
     /// Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
-    pub provider_type: String,
+    pub provider_type: ProviderTypeDto,
     /// Whether this inventory entry represents an agent provider or a model provider.
     pub category: ProviderSetupCategoryDto,
     /// Required configuration keys and setup metadata.

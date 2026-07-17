@@ -1,15 +1,27 @@
-import type {
-  CanonicalModelInfoDto,
-  CustomProviderCreateRequest_unstable,
-  CustomProviderReadResponse_unstable,
-  ProviderSecretDto,
-  ProviderTemplateCatalogEntryDto,
-  ProviderTemplateDto,
+import {
+  zProviderTypeDto,
+  type CanonicalModelInfoDto,
+  type CustomProviderCreateRequest_unstable,
+  type CustomProviderReadResponse_unstable,
+  type ProviderSecretDto,
+  type ProviderTemplateCatalogEntryDto,
+  type ProviderTemplateDto,
 } from '@repo-makeover/gosling-sdk';
 import type { ProviderDetails, ThinkingEffort, UpdateCustomProviderRequest } from '../types/providers';
 import { getAcpClient } from './acpConnection';
 
 export type { CanonicalModelInfoDto, ProviderSecretDto };
+
+/**
+ * Validates a provider type string against the set of known values instead of
+ * blindly trusting the wire format. Throws loudly if the server ever sends a
+ * value the client doesn't recognize (e.g. after a Rust-side enum change that
+ * wasn't matched by a client update) rather than silently producing a value
+ * that only *claims* to be a `ProviderDetails['provider_type']`.
+ */
+export function parseProviderType(value: string): ProviderDetails['provider_type'] {
+  return zProviderTypeDto.parse(value);
+}
 
 function updateRequestToCreate(
   request: UpdateCustomProviderRequest
@@ -35,7 +47,7 @@ export async function acpListProviderDetails(): Promise<ProviderDetails[]> {
   return entries.map((entry) => ({
     name: entry.providerId,
     is_configured: entry.configured,
-    provider_type: entry.providerType as ProviderDetails['provider_type'],
+    provider_type: parseProviderType(entry.providerType),
     metadata: {
       name: entry.providerId,
       display_name: entry.providerName,

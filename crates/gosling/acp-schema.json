@@ -1648,7 +1648,7 @@
           "description": "Whether Gosling has enough configuration to use this provider."
         },
         "providerType": {
-          "type": "string",
+          "$ref": "#/$defs/ProviderTypeDto",
           "description": "Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`."
         },
         "category": {
@@ -1733,6 +1733,16 @@
         "stale"
       ],
       "description": "Provider inventory entry."
+    },
+    "ProviderTypeDto": {
+      "type": "string",
+      "enum": [
+        "Preferred",
+        "Builtin",
+        "Declarative",
+        "Custom"
+      ],
+      "description": "Provider classification, mirroring the `gosling` crate's `ProviderType` enum.\n\nWire values are pinned explicitly via `#[serde(rename_all = \"PascalCase\")]`\nrather than derived from `ProviderType`'s `Debug` output, so this contract\nis deliberate and stable. See `provider_type_to_dto` in\n`crates/gosling/src/acp/server/providers.rs` for the conversion."
     },
     "ProviderSetupCategoryDto": {
       "type": "string",

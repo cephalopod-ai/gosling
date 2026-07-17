@@ -733,6 +733,21 @@ export const zListProvidersRequest_unstable = z.object({
     providerIds: z.array(z.string()).optional().default([])
 });
 
+/**
+ * Provider classification, mirroring the `gosling` crate's `ProviderType` enum.
+ *
+ * Wire values are pinned explicitly via `#[serde(rename_all = "PascalCase")]`
+ * rather than derived from `ProviderType`'s `Debug` output, so this contract
+ * is deliberate and stable. See `provider_type_to_dto` in
+ * `crates/gosling/src/acp/server/providers.rs` for the conversion.
+ */
+export const zProviderTypeDto = z.enum([
+    'Preferred',
+    'Builtin',
+    'Declarative',
+    'Custom'
+]);
+
 export const zProviderSetupCategoryDto = z.enum(['agent', 'model']);
 
 export const zProviderConfigKey = z.object({
@@ -778,7 +793,7 @@ export const zProviderInventoryEntryDto = z.object({
     description: z.string(),
     defaultModel: z.string(),
     configured: z.boolean(),
-    providerType: z.string(),
+    providerType: zProviderTypeDto,
     category: zProviderSetupCategoryDto,
     configKeys: z.array(zProviderConfigKey),
     setupSteps: z.array(z.string()),
