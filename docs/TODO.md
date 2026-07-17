@@ -1,5 +1,18 @@
 # TODO
 
+## Chat reliability and CLI usage backlog — 2026-07-17
+
+- [ ] Keep the chat view pinned to the bottom while a new user input is typed
+  and while new content is appended, so the most recent chat item remains
+  visible instead of the scroll position jumping to the middle of the window.
+- [ ] Make chat persistence incremental and crash-resilient: store each user
+  message as soon as Enter is submitted, and store assistant output as it is
+  written to the chat window, so an abrupt Gosling exit does not erase the last
+  chat item.
+- [ ] For CLI usage with subscription-backed providers where usage data is
+  available, including Codex and Claude, add a way to inspect current usage
+  during a session.
+
 ## Tagteam workflow, MCP control plane, and Run Steward
 
 **Status:** Phase 1 foundation and an isolated Phase 2 Unix-socket MCP adapter
