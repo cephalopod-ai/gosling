@@ -48,3 +48,11 @@ accessible sidebar management, and regression coverage.
 
 All gates are complete, the acceptance evidence is committed, and local `main` matches
 `origin/main`. No continuation action is required for this campaign.
+
+## Resume verification
+
+- Verified waypoint: `e288415f36612519147123c0732b293076a96395`.
+- A duplicate build invocation on 2026-07-18 found no worktree or remote drift.
+- Current-checkout verification passed: 26 workspace Rust tests, 479 Desktop tests, 6 SDK tests,
+  Desktop/SDK typechecks, `cargo fmt --check`, and mandatory clippy.
+- The completed Gate 8 plan is adopted unchanged; no duplicate implementation is required.
