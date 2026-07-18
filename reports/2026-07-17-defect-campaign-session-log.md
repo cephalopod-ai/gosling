@@ -73,6 +73,28 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
   unchanged. No additional finding.
 - Change review: scoped to four provider files plus this log; no unrelated
   formatting or protected deferred work.
+- Commit: `ae9264458`.
+
+### Stage 2 — SmartApprove authority
+
+- Defects: AUD-003 and AUD-004 fixed.
+- Changes: MCP `readOnlyHint=true` is advisory and can no longer populate
+  `AlwaysAllow`; `readOnlyHint=false` still tightens policy. LLM read-only
+  results authorize only the concrete call and are no longer persisted by
+  tool name. Negative decisions remain safely cached as `AskBefore`, and old
+  positive cache entries are reclassified instead of trusted.
+- Regression guardrails: annotation tests now query the actual tool name and
+  cover an innocuously named hostile tool; legacy positive, negative, and deny
+  cache behavior is explicit. Permission-judge coverage continues to assert
+  that concrete arguments enter classification.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: `git diff --check` passed. Tests were not executed under
+  the repository authorization rule.
+- Adversarial review: verified explicit user `AlwaysAllow` remains authoritative,
+  extension management remains approval-gated, legacy smart-positive entries
+  cannot bypass classification, and classifier failure tightens to approval.
+- Change review: three permission files plus this log; obsolete name heuristics
+  and misleading cache comments removed.
 - Commit: pending.
 
 ## Campaign closeout

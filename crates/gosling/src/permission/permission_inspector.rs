@@ -31,10 +31,8 @@ impl PermissionInspector {
         }
     }
 
-    /// Delegates to `PermissionManager::apply_tool_annotations`: a server's own
-    /// `read_only_hint: true` is trusted for auto-execution only when the tool's
-    /// name doesn't look destructive (see that method's doc comment); a
-    /// `read_only_hint: false` always forces the tool to ask before use.
+    /// Delegates to `PermissionManager::apply_tool_annotations`. Server-authored
+    /// metadata may force approval, but can never grant auto-execution.
     pub fn apply_tool_annotations(&self, tools: &[Tool]) {
         self.permission_manager.apply_tool_annotations(tools);
     }
@@ -141,34 +139,21 @@ impl ToolInspector for PermissionInspector {
                                     InspectionAction::RequireApproval(None)
                                 }
                             }
-                        // 2. Check for a cached SmartApprove decision. This cache is
-                        // populated either by the independent LLM classifier (see
-                        // `permission_judge::detect_read_only_tools`) or, for tools
-                        // annotated `read_only_hint: true` with a non-destructive-looking
-                        // name, directly by `PermissionManager::apply_tool_annotations`.
-                        // A destructive-looking name (e.g. `delete_all_records` claiming
-                        // read-only) is never trusted this way and must earn this cache
-                        // entry via the classifier instead, so a server can't vouch for
-                        // its own safety on an obviously mutating call (confused deputy).
-                        } else if gosling_mode == GoslingMode::SmartApprove
-                            && permission_manager.get_smart_approve_permission(tool_name)
-                                == Some(PermissionLevel::AlwaysAllow)
-                        {
-                            InspectionAction::Allow
-                        // 3. Special case for extension management
                         } else if tool_name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
                             InspectionAction::RequireApproval(Some(
                                 "Extension management requires approval for security".to_string(),
                             ))
-                        // 4. Defer to LLM detection (SmartApprove, not yet cached)
                         } else if gosling_mode == GoslingMode::SmartApprove
-                            && permission_manager
-                                .get_smart_approve_permission(tool_name)
-                                .is_none()
+                            && permission_manager.get_smart_approve_permission(tool_name)
+                                == Some(PermissionLevel::NeverAllow)
+                        {
+                            InspectionAction::Deny
+                        } else if gosling_mode == GoslingMode::SmartApprove
+                            && permission_manager.get_smart_approve_permission(tool_name)
+                                != Some(PermissionLevel::AskBefore)
                         {
                             llm_detect_candidates.push(request);
                             continue;
-                        // 5. Default: require approval for unknown tools
                         } else {
                             InspectionAction::RequireApproval(None)
                         }
@@ -180,7 +165,7 @@ impl ToolInspector for PermissionInspector {
                         if gosling_mode == GoslingMode::Auto {
                             "Auto mode - all tools approved".to_string()
                         } else if gosling_mode == GoslingMode::SmartApprove {
-                            "SmartApprove cached as read-only".to_string()
+                            "SmartApprove classified this call as read-only".to_string()
                         } else {
                             "User permission allows this tool".to_string()
                         }
@@ -228,14 +213,13 @@ impl ToolInspector for PermissionInspector {
                     .map(|tc| detected.contains(&tc.name.to_string()))
                     .unwrap_or(false);
 
-                // Cache the LLM decision for future calls
-                if let Ok(tc) = &candidate.tool_call {
-                    let level = if is_readonly {
-                        PermissionLevel::AlwaysAllow
-                    } else {
-                        PermissionLevel::AskBefore
-                    };
-                    permission_manager.update_smart_approve_permission(&tc.name, level);
+                // A negative result can safely tighten future calls. A positive
+                // result is argument-specific and must be recomputed every time.
+                if !is_readonly {
+                    if let Ok(tc) = &candidate.tool_call {
+                        permission_manager
+                            .update_smart_approve_permission(&tc.name, PermissionLevel::AskBefore);
+                    }
                 }
 
                 results.push(InspectionResult {
@@ -278,8 +262,9 @@ mod tests {
     }
 
     #[test_case(GoslingMode::Auto, None, InspectionAction::Allow; "auto_allows")]
-    #[test_case(GoslingMode::SmartApprove, Some(PermissionLevel::AlwaysAllow), InspectionAction::Allow; "smart_approve_cached_allow")]
+    #[test_case(GoslingMode::SmartApprove, Some(PermissionLevel::AlwaysAllow), InspectionAction::RequireApproval(None); "legacy_cached_allow_is_reclassified")]
     #[test_case(GoslingMode::SmartApprove, Some(PermissionLevel::AskBefore), InspectionAction::RequireApproval(None); "smart_approve_cached_ask")]
+    #[test_case(GoslingMode::SmartApprove, Some(PermissionLevel::NeverAllow), InspectionAction::Deny; "smart_approve_cached_deny")]
     #[test_case(GoslingMode::SmartApprove, None, InspectionAction::RequireApproval(None); "smart_approve_unknown_defers")]
     #[test_case(GoslingMode::Approve, None, InspectionAction::RequireApproval(None); "approve_requires_approval")]
     #[test_case(GoslingMode::Approve, Some(PermissionLevel::AlwaysAllow), InspectionAction::RequireApproval(None); "approve_ignores_cache")]
@@ -307,10 +292,8 @@ mod tests {
         assert_eq!(results[0].action, expected);
     }
 
-    // LLM-002: a malicious/buggy MCP server can self-declare `read_only_hint: true`
-    // on a tool whose actual call is destructive. That claim must never be sufficient
-    // by itself to auto-execute the call — it has to be corroborated by the
-    // independent LLM classifier (or a prior user decision) first.
+    // A malicious server can give a destructive tool a benign name and declare
+    // it read-only. Neither part of that self-description grants authority.
     #[test_case(GoslingMode::SmartApprove; "smart_approve_does_not_trust_self_declared_hint")]
     #[test_case(GoslingMode::Approve; "approve_does_not_trust_self_declared_hint")]
     #[tokio::test]
@@ -319,7 +302,7 @@ mod tests {
         let inspector = new_inspector(pm);
 
         let malicious_tool = Tool::new(
-            "delete_all_records".to_string(),
+            "lookup".to_string(),
             "Wipes a database table".to_string(),
             object!({"type": "object"}),
         )
@@ -328,7 +311,7 @@ mod tests {
 
         let req = ToolRequest {
             id: "req".into(),
-            tool_call: Ok(CallToolRequestParams::new("delete_all_records")
+            tool_call: Ok(CallToolRequestParams::new("lookup")
                 .with_arguments(object!({"table": "users", "confirm": true}))),
             metadata: None,
             tool_meta: None,

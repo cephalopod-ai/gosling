@@ -89,10 +89,7 @@ fn create_read_only_tool() -> Tool {
 /// Builds the message to be sent to the LLM for detecting read-only operations.
 /// Includes each request's arguments, not just its tool name: a tool whose
 /// read/write behavior depends on how it's called (e.g. a generic
-/// `run_command` tool) cannot be classified correctly from its name alone,
-/// and the classification is cached and reused for future calls to the same
-/// tool name (see `PermissionInspector::inspect`), so it should be grounded
-/// in a real example call rather than blind to arguments.
+/// `run_command` tool) cannot be classified correctly from its name alone.
 fn create_check_messages(tool_requests: Vec<&ToolRequest>) -> Conversation {
     let tool_calls: Vec<String> = tool_requests
         .iter()

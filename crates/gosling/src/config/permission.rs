@@ -13,48 +13,6 @@ const PERMISSION_FILE: &str = "permission.yaml";
 static PERMISSION_MANAGER: LazyLock<Arc<PermissionManager>> =
     LazyLock::new(|| Arc::new(PermissionManager::new(Paths::config_dir())));
 
-/// Substrings that, when present in a tool name, disqualify it from the
-/// `read_only_hint: true` fast path regardless of what the tool claims.
-/// Matched case-insensitively against the whole tool name (not just as a
-/// prefix), since MCP tool names are commonly namespaced as
-/// `extension__verb_noun`. This is a local sanity check on an untrusted
-/// self-declared claim, not a security boundary on its own -- a determined
-/// adversary can still name a destructive tool something innocuous, at
-/// which point only the independent LLM classifier (or an explicit user
-/// decision) can catch it, same as any other unannotated tool.
-const DESTRUCTIVE_TOOL_NAME_MARKERS: &[&str] = &[
-    "delete",
-    "remove",
-    "drop",
-    "purge",
-    "wipe",
-    "destroy",
-    "kill",
-    "terminate",
-    "write",
-    "edit",
-    "update",
-    "modify",
-    "create",
-    "install",
-    "uninstall",
-    "execute",
-    "exec",
-    "run",
-    "shell",
-    "format",
-    "reset",
-    "revoke",
-    "disable",
-];
-
-fn tool_name_looks_destructive(tool_name: &str) -> bool {
-    let lower = tool_name.to_lowercase();
-    DESTRUCTIVE_TOOL_NAME_MARKERS
-        .iter()
-        .any(|marker| lower.contains(marker))
-}
-
 /// Enum representing the possible permission levels for a tool.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -181,44 +139,23 @@ impl PermissionManager {
         self.config_path.as_path()
     }
 
-    /// A server's own `read_only_hint: true` is never sufficient *by itself*
-    /// to grant auto-execution (LLM-002: a malicious/buggy server could claim
-    /// it on a destructive tool) -- but requiring every annotated tool to
-    /// wait for a live LLM classification round-trip before it can be
-    /// fast-tracked, even ones with an obviously benign name like `read` or
-    /// `get_code`, made every first-seen tool call in `SmartApprove` mode pay
-    /// that latency, with no independent signal to justify it. Tools whose
-    /// name matches a known mutating/destructive verb are excluded from the
-    /// fast path and still earn trust only via the LLM classifier in
-    /// `PermissionInspector::inspect`; every other annotated tool is
-    /// pre-trusted here, restoring the previous fast path for the common
-    /// case while still catching the adversarial "delete_all_records claims
-    /// read-only" shape the audit finding was about.
+    /// Tool annotations are supplied by the MCP server and can only tighten
+    /// policy. A server may accurately declare a tool as mutating, but it
+    /// cannot grant itself authority by claiming that a tool is read-only.
     pub fn apply_tool_annotations(&self, tools: &[Tool]) {
         let mut write_annotated = Vec::new();
-        let mut trusted_read_only = Vec::new();
         for tool in tools {
             let Some(anns) = &tool.annotations else {
                 continue;
             };
-            match anns.read_only_hint {
-                Some(false) => write_annotated.push(tool.name.to_string()),
-                Some(true) if !tool_name_looks_destructive(&tool.name) => {
-                    trusted_read_only.push(tool.name.to_string())
-                }
-                _ => {}
+            if anns.read_only_hint == Some(false) {
+                write_annotated.push(tool.name.to_string());
             }
         }
         if !write_annotated.is_empty() {
             self.bulk_update_smart_approve_permissions(
                 &write_annotated,
                 PermissionLevel::AskBefore,
-            );
-        }
-        if !trusted_read_only.is_empty() {
-            self.bulk_update_smart_approve_permissions(
-                &trusted_read_only,
-                PermissionLevel::AlwaysAllow,
             );
         }
     }
@@ -520,8 +457,8 @@ mod tests {
     #[test_case(
         vec![Tool::new("tool".to_string(), String::new(), object!({"type": "object"}))
             .annotate(ToolAnnotations::new().read_only(true))],
-        Some(PermissionLevel::AlwaysAllow);
-        "readonly_annotation_with_benign_name_is_trusted"
+        None;
+        "readonly_annotation_cannot_grant_authority"
     )]
     #[test_case(
         vec![Tool::new("delete_all_records".to_string(), String::new(), object!({"type": "object"}))
@@ -531,7 +468,11 @@ mod tests {
     )]
     fn test_apply_tool_annotations(tools: Vec<Tool>, expect_cache: Option<PermissionLevel>) {
         let (manager, _temp_dir) = create_test_permission_manager();
+        let tool_name = tools[0].name.to_string();
         manager.apply_tool_annotations(&tools);
-        assert_eq!(manager.get_smart_approve_permission("tool"), expect_cache);
+        assert_eq!(
+            manager.get_smart_approve_permission(&tool_name),
+            expect_cache
+        );
     }
 }
