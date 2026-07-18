@@ -267,6 +267,34 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
 - Change review: server command/state/SSE lifecycle, the single resume call
   site, desktop child cleanup and its focused test, plus this log; routing and
   session persistence are otherwise untouched.
+- Commit: `e741c3527`.
+
+### Stage 9 — bounded, complete MCP discovery
+
+- Defects: AUD-020 and AUD-021 fixed.
+- Changes: tool, resource, UI-resource, and prompt discovery now consumes every
+  MCP page. A shared pagination guard rejects repeated cursors, more than 100
+  pages, more than 10,000 returned items, and arithmetic overflow before
+  aggregate vectors can grow without bound.
+- Regression guardrails: a two-page mock covers complete tool/resource/prompt
+  collection; a repeating server cursor is rejected; page and item ceilings
+  have direct boundary tests.
+- Modularization: `extension_manager.rs` remains >=2000 lines and routed for
+  dedicated modularization; this change adds one small shared guard and three
+  category-specific collection seams without broad file movement.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: every extension-manager discovery call site was
+  enumerated against the paginated collectors; `git diff --check` passed. Rust
+  tests/build/Clippy were not executed under the repository's explicit
+  authorization rule.
+- Adversarial review: verified unavailable tools still count toward the remote
+  item budget; empty cursor pages cannot loop beyond the page cap; a cursor is
+  recorded before another request can use it; cancellation is propagated on
+  every page; pagination failures preserve the existing per-extension error
+  behavior; and UI resources from later pages are filtered only after complete
+  bounded collection.
+- Change review: one extension-manager implementation/test file plus this log;
+  MCP wire request construction already forwarded cursors and is unchanged.
 - Commit: pending.
 
 ## Campaign closeout

@@ -12,7 +12,7 @@ use rmcp::transport::streamable_http_client::{
 use rmcp::transport::{
     ConfigureCommandExt, DynamicTransportError, StreamableHttpClientTransport, TokioChildProcess,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
@@ -57,6 +57,121 @@ use schemars::_private::NoSerialize;
 use serde_json::Value;
 
 type McpClientBox = Arc<dyn McpClientTrait>;
+
+const MAX_MCP_LIST_PAGES: usize = 100;
+const MAX_MCP_LIST_ITEMS: usize = 10_000;
+
+#[derive(Default)]
+struct PaginationGuard {
+    pages: usize,
+    items: usize,
+    cursors: HashSet<String>,
+}
+
+impl PaginationGuard {
+    fn record_page(
+        &mut self,
+        item_kind: &str,
+        page_items: usize,
+        next_cursor: Option<&str>,
+    ) -> std::result::Result<(), String> {
+        self.pages += 1;
+        if self.pages > MAX_MCP_LIST_PAGES {
+            return Err(format!(
+                "MCP {item_kind} pagination exceeded {MAX_MCP_LIST_PAGES} pages"
+            ));
+        }
+
+        self.items = self
+            .items
+            .checked_add(page_items)
+            .ok_or_else(|| format!("MCP {item_kind} item count overflowed"))?;
+        if self.items > MAX_MCP_LIST_ITEMS {
+            return Err(format!(
+                "MCP {item_kind} pagination exceeded {MAX_MCP_LIST_ITEMS} items"
+            ));
+        }
+
+        if let Some(cursor) = next_cursor {
+            if !self.cursors.insert(cursor.to_string()) {
+                return Err(format!(
+                    "MCP {item_kind} pagination repeated cursor {cursor:?}"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+async fn collect_paginated_tools(
+    client: &McpClientBox,
+    session_id: &str,
+    cancellation_token: CancellationToken,
+) -> std::result::Result<Vec<Tool>, String> {
+    let mut cursor = None;
+    let mut guard = PaginationGuard::default();
+    let mut tools = Vec::new();
+    loop {
+        let page = client
+            .list_tools(session_id, cursor, cancellation_token.clone())
+            .await
+            .map_err(|error| format!("MCP list tools request failed: {error}"))?;
+        guard.record_page("tool", page.tools.len(), page.next_cursor.as_deref())?;
+        tools.extend(page.tools);
+        match page.next_cursor {
+            Some(next_cursor) => cursor = Some(next_cursor),
+            None => return Ok(tools),
+        }
+    }
+}
+
+async fn collect_paginated_resources(
+    client: &McpClientBox,
+    session_id: &str,
+    cancellation_token: CancellationToken,
+) -> std::result::Result<Vec<Resource>, String> {
+    let mut cursor = None;
+    let mut guard = PaginationGuard::default();
+    let mut resources = Vec::new();
+    loop {
+        let page = client
+            .list_resources(session_id, cursor, cancellation_token.clone())
+            .await
+            .map_err(|error| format!("MCP list resources request failed: {error}"))?;
+        guard.record_page(
+            "resource",
+            page.resources.len(),
+            page.next_cursor.as_deref(),
+        )?;
+        resources.extend(page.resources);
+        match page.next_cursor {
+            Some(next_cursor) => cursor = Some(next_cursor),
+            None => return Ok(resources),
+        }
+    }
+}
+
+async fn collect_paginated_prompts(
+    client: &McpClientBox,
+    session_id: &str,
+    cancellation_token: CancellationToken,
+) -> std::result::Result<Vec<Prompt>, String> {
+    let mut cursor = None;
+    let mut guard = PaginationGuard::default();
+    let mut prompts = Vec::new();
+    loop {
+        let page = client
+            .list_prompts(session_id, cursor, cancellation_token.clone())
+            .await
+            .map_err(|error| format!("MCP list prompts request failed: {error}"))?;
+        guard.record_page("prompt", page.prompts.len(), page.next_cursor.as_deref())?;
+        prompts.extend(page.prompts);
+        match page.next_cursor {
+            Some(next_cursor) => cursor = Some(next_cursor),
+            None => return Ok(prompts),
+        }
+    }
+}
 
 struct ActionRequiredStream {
     inner: ReceiverStream<crate::conversation::message::Message>,
@@ -1516,59 +1631,37 @@ impl ExtensionManager {
             let ext_name = name.clone();
             async move {
                 let mut tools = Vec::new();
-                let mut client_tools = match client
-                    .list_tools(session_id, None, cancel_token.clone())
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        warn!(extension = %ext_name, error = %e, "Failed to list tools");
-                        return Err((name, e.to_string()));
-                    }
-                };
+                let client_tools =
+                    match collect_paginated_tools(&client, session_id, cancel_token).await {
+                        Ok(tools) => tools,
+                        Err(e) => {
+                            warn!(extension = %ext_name, error = %e, "Failed to list tools");
+                            return Err((name, e));
+                        }
+                    };
 
                 let expose_unprefixed = is_unprefixed_extension(&config);
 
-                loop {
-                    for mut tool in client_tools.tools {
-                        if config.is_tool_available(&tool.name) {
-                            let public_name = if expose_unprefixed {
-                                tool.name.to_string()
-                            } else {
-                                format!("{}__{}", name, tool.name)
-                            };
+                for mut tool in client_tools {
+                    if config.is_tool_available(&tool.name) {
+                        let public_name = if expose_unprefixed {
+                            tool.name.to_string()
+                        } else {
+                            format!("{}__{}", name, tool.name)
+                        };
 
-                            let mut meta_map = tool
-                                .meta
-                                .as_ref()
-                                .map(|m| m.0.clone())
-                                .unwrap_or_default();
-                            meta_map.insert(
-                                TOOL_EXTENSION_META_KEY.to_string(),
-                                serde_json::Value::String(name.clone()),
-                            );
+                        let mut meta_map =
+                            tool.meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
+                        meta_map.insert(
+                            TOOL_EXTENSION_META_KEY.to_string(),
+                            serde_json::Value::String(name.clone()),
+                        );
 
-                            tool.name = public_name.into();
-                            tool.meta = Some(rmcp::model::Meta(meta_map));
+                        tool.name = public_name.into();
+                        tool.meta = Some(rmcp::model::Meta(meta_map));
 
-                            tools.push(tool);
-                        }
+                        tools.push(tool);
                     }
-
-                    if client_tools.next_cursor.is_none() {
-                        break;
-                    }
-
-                    client_tools = match client
-                        .list_tools(session_id, client_tools.next_cursor, cancel_token.clone())
-                        .await
-                    {
-                        Ok(t) => t,
-                        Err(e) => {
-                            warn!(extension = %ext_name, error = %e, "Failed to list tools (pagination)");
-                            return Err((name, e.to_string()));
-                        }
-                    };
                 }
 
                 Ok((name, tools))
@@ -1701,12 +1794,11 @@ impl ExtensionManager {
         };
 
         for (extension_name, client) in extensions_to_check {
-            match client
-                .list_resources(session_id, None, CancellationToken::default())
+            match collect_paginated_resources(&client, session_id, CancellationToken::default())
                 .await
             {
-                Ok(list_response) => {
-                    for resource in list_response.resources {
+                Ok(resources) => {
+                    for resource in resources {
                         if resource.uri.starts_with("ui://") {
                             ui_resources.push((extension_name.clone(), resource));
                         }
@@ -1738,8 +1830,7 @@ impl ExtensionManager {
                 )
             })?;
 
-        client
-            .list_resources(session_id, None, cancellation_token)
+        collect_paginated_resources(&client, session_id, cancellation_token)
             .await
             .map_err(|e| {
                 ErrorData::new(
@@ -1748,9 +1839,8 @@ impl ExtensionManager {
                     None,
                 )
             })
-            .map(|lr| {
-                let resource_list = lr
-                    .resources
+            .map(|resources| {
+                let resource_list = resources
                     .into_iter()
                     .map(|r| format!("{} - {}, uri: ({})", extension_name, r.name, r.uri))
                     .collect::<Vec<String>>()
@@ -2036,8 +2126,7 @@ impl ExtensionManager {
                 )
             })?;
 
-        client
-            .list_prompts(session_id, None, cancellation_token)
+        collect_paginated_prompts(&client, session_id, cancellation_token)
             .await
             .map_err(|e| {
                 ErrorData::new(
@@ -2046,7 +2135,6 @@ impl ExtensionManager {
                     None,
                 )
             })
-            .map(|lp| lp.prompts)
     }
 
     pub async fn list_prompts(
@@ -2229,6 +2317,7 @@ impl ExtensionManager {
 mod tests {
     use super::*;
     use rmcp::model::CallToolResult;
+    use rmcp::model::{AnnotateAble, RawResource};
     use rmcp::model::{InitializeResult, JsonObject};
     use rmcp::{object, ServiceError as Error};
 
@@ -2318,6 +2407,155 @@ mod tests {
     struct MockClient {}
 
     struct FailingListToolsClient;
+
+    struct PaginatedDiscoveryClient {
+        repeat_tool_cursor: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for PaginatedDiscoveryClient {
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+
+        async fn list_resources(
+            &self,
+            _session_id: &str,
+            next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListResourcesResult, Error> {
+            let (name, next_cursor) = match next_cursor.as_deref() {
+                None => ("resource-one", Some("resources-page-two".to_string())),
+                Some("resources-page-two") => ("resource-two", None),
+                _ => return Err(Error::UnexpectedResponse),
+            };
+            Ok(ListResourcesResult {
+                resources: vec![RawResource::new(format!("ui://{name}"), name).no_annotation()],
+                next_cursor,
+                meta: None,
+            })
+        }
+
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            let (name, next_cursor) = match next_cursor.as_deref() {
+                None => ("tool-one", Some("tools-page-two".to_string())),
+                Some("tools-page-two") => (
+                    "tool-two",
+                    self.repeat_tool_cursor
+                        .then(|| "tools-page-two".to_string()),
+                ),
+                _ => return Err(Error::UnexpectedResponse),
+            };
+            Ok(ListToolsResult {
+                tools: vec![Tool::new(
+                    name,
+                    format!("{name} description"),
+                    Arc::new(JsonObject::new()),
+                )],
+                next_cursor,
+                meta: None,
+            })
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<JsonObject>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            Err(Error::UnexpectedResponse)
+        }
+
+        async fn list_prompts(
+            &self,
+            _session_id: &str,
+            next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListPromptsResult, Error> {
+            let (name, next_cursor) = match next_cursor.as_deref() {
+                None => ("prompt-one", Some("prompts-page-two".to_string())),
+                Some("prompts-page-two") => ("prompt-two", None),
+                _ => return Err(Error::UnexpectedResponse),
+            };
+            Ok(ListPromptsResult {
+                prompts: vec![Prompt::new(name, Some(format!("{name} description")), None)],
+                next_cursor,
+                meta: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn paginated_discovery_collects_all_pages() {
+        let client: McpClientBox = Arc::new(PaginatedDiscoveryClient {
+            repeat_tool_cursor: false,
+        });
+
+        let tools = collect_paginated_tools(&client, "session", CancellationToken::new())
+            .await
+            .unwrap();
+        let resources = collect_paginated_resources(&client, "session", CancellationToken::new())
+            .await
+            .unwrap();
+        let prompts = collect_paginated_prompts(&client, "session", CancellationToken::new())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tools
+                .into_iter()
+                .map(|tool| tool.name.to_string())
+                .collect::<Vec<_>>(),
+            vec!["tool-one".to_string(), "tool-two".to_string()]
+        );
+        assert_eq!(
+            resources
+                .into_iter()
+                .map(|resource| resource.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["resource-one".to_string(), "resource-two".to_string()]
+        );
+        assert_eq!(
+            prompts
+                .into_iter()
+                .map(|prompt| prompt.name)
+                .collect::<Vec<_>>(),
+            vec!["prompt-one".to_string(), "prompt-two".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn paginated_discovery_rejects_repeated_cursor() {
+        let client: McpClientBox = Arc::new(PaginatedDiscoveryClient {
+            repeat_tool_cursor: true,
+        });
+
+        let error = collect_paginated_tools(&client, "session", CancellationToken::new())
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("repeated cursor"));
+    }
+
+    #[test]
+    fn pagination_guard_enforces_page_and_item_limits() {
+        let mut page_guard = PaginationGuard::default();
+        for _ in 0..MAX_MCP_LIST_PAGES {
+            page_guard.record_page("tool", 0, None).unwrap();
+        }
+        assert!(page_guard.record_page("tool", 0, None).is_err());
+
+        let mut item_guard = PaginationGuard::default();
+        assert!(item_guard
+            .record_page("tool", MAX_MCP_LIST_ITEMS + 1, None)
+            .is_err());
+    }
 
     #[async_trait::async_trait]
     impl McpClientTrait for MockClient {
