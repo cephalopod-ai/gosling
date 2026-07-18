@@ -3148,5 +3148,8 @@
   },
   "toolCallWithResponse.viewInOutputs": {
     "defaultMessage": "View in Outputs"
+  },
+  "externalBackendSection.saveError": {
+    "defaultMessage": "Failed to save external backend settings. Your change was not persisted."
   }
 }
