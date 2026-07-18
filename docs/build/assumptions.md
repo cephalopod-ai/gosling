@@ -1,0 +1,15 @@
+# Workspaces assumption ledger
+
+| ID | Assumption | Basis | Validation | Status |
+|---|---|---|---|---|
+| ASM-001 | Workspaces are a Desktop feature; CLI behavior remains unchanged. | User scope and backward-compatibility requirement. | Desktop-only handlers do not alter CLI entry paths. | accepted |
+| ASM-002 | The backend data directory is the correct owner for workspace metadata. | Sessions and other durable agent data already use the injected data directory. | Contract and persistence tests. | accepted |
+| ASM-003 | `Config` keyring/protected fallback remains the sole secret store. | Explicit security requirement and existing abstraction. | Sentinel-secret tests across workspace/session/export/rendered DTOs. | accepted |
+| ASM-004 | Provider secrets are read during provider construction, so a scoped construction context can pin credentials without a global swap. | Repository search of provider constructors. | Provider-profile resolution tests plus targeted provider tests. | to validate |
+| ASM-005 | Legacy sessions can remain nullable and display as Default or Unassigned without rewriting historical rows. | User migration requirement. | v21-to-v22 migration and resume tests. | accepted |
+| ASM-006 | Existing Desktop settings/localStorage may store only harmless workspace UI preferences. | User security and state-management requirements. | Renderer storage tests/search. | accepted |
+| ASM-007 | There is no general application-level product export service to retarget today. | Artifact workbench and session archive inspection. | Recheck save/export call sites during Gate 5. | to validate |
+| ASM-008 | Optional extension defaults can be omitted because extension enablement is currently a separate session/setup concern. | Explicit conditional scope in user request. | Re-evaluate during contract design. | accepted |
+| ASM-009 | Multi-window synchronization can reuse the typed renderer-event broadcast pattern. | Existing theme/event IPC architecture. | Two-listener unit test and main-process broadcast test. | to validate |
+| ASM-010 | Workspace imports/templates must reject secret-shaped fields rather than preserve them as unknown fields. | Non-negotiable security architecture. | Import sentinel and unknown-field tests. | accepted |
+

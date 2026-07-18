@@ -1,0 +1,17 @@
+# Workspaces risk register
+
+| ID | Risk | Likelihood | Impact | Mitigation | Evidence/owner |
+|---|---|---|---|---|---|
+| RSK-001 | A raw credential reaches workspace JSON, session metadata, IPC, or logs. | medium | critical | Metadata-only DTOs, write-only secret requests, namespaced keyring keys, sentinel searches/tests. | Gate 4/6 |
+| RSK-002 | Global provider config is mutated during workspace switching, changing an active session. | medium | high | Resolve and pin credential profile at session creation; scoped provider construction; no canonical-secret copying. | ARC-GOS-002 |
+| RSK-003 | Missing/deleted credential profile silently falls back to another provider. | high | high | Disable fallback for workspace-pinned sessions and return a recoverable relink error. | Agent restore path |
+| RSK-004 | Workspace file corruption loses all definitions. | low | high | Versioned store, lock, fsync, atomic rename, restrictive permissions, recovery of interrupted temp writes. | Gate 4 |
+| RSK-005 | Symlink or traversal bypasses folder containment checks. | medium | high | Lexical normalization plus canonical-path validation, platform-aware tests, no mutation during validation. | Gate 4/6 |
+| RSK-006 | Desktop introduces a second session list state store. | medium | medium | Filter/group the existing `useNavigationSessions` result by workspace metadata. | Gate 5 |
+| RSK-007 | Workspace UI bloats `NavigationPanel.tsx` and increases regression risk. | high | medium | Extract Workspaces section, row, and editor components; keep persistence in context. | ARC-GOS-001 |
+| RSK-008 | v22 session migration breaks old databases or fresh schema parity. | medium | high | Migration tests from v21 fixture and fresh schema-column parity checks. | Gate 4 |
+| RSK-009 | Generated ACP/SDK types drift through hand edits. | medium | high | Change canonical Rust custom DTOs and run the approved generator/check. | Gate 2/4 |
+| RSK-010 | Broad UI and provider changes exceed practical test time. | medium | medium | Gate-scoped targeted tests first, then required typecheck, desktop tests, Rust tests, fmt, and clippy. | Gate 8 |
+| RSK-011 | Existing renderer-managed secret profiles are mistaken for secure provider profiles. | high | high | Use distinct backend credential-profile DTOs and never read `managedSecretProfiles`. | Security escalation |
+| RSK-012 | Deleted workspaces cascade into sessions or files. | low | high | Store snapshots and nullable references; delete metadata only; explicit no-cascade tests. | Gate 4 |
+
