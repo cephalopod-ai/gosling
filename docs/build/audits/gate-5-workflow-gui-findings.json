@@ -1,0 +1,417 @@
+[
+  {
+    "id": "WFG-GOS-001",
+    "title": "Folder operations could fail without operator feedback",
+    "domain": "Workflow-GUI",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/components/workspaces/WorkspaceEditorDialog.tsx",
+        "lines": "80-101,539-560",
+        "symbol": "chooseDirectory/reveal/output create",
+        "quote": "toast.error(workspaceErrorMessage(cause, 'Unable to reveal the folder'))"
+      }
+    ],
+    "observed": "Chooser, reveal, and output creation had unhandled or unchecked failure paths.",
+    "expected_boundary": "Operator-visible status derives from the Electron or ACP result.",
+    "failure_mechanism": "Fire-and-forget async callbacks were treated as completion.",
+    "break_it_angle": "Reject chooser/output IPC or return false from reveal.",
+    "impact": "Operators cannot distinguish failure from completion and may retain unavailable folders.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "user-visible",
+      "reversibility": "reversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "safe"
+    },
+    "adjacent": ["missing folder validation", "Electron IPC rejection"],
+    "mitigation": {
+      "patterns": ["result-derived feedback", "actionable failure"],
+      "minimal_repair": "Catch all paths and require reveal/write result booleans.",
+      "local_guardrail": "Do not mutate the draft after a failed chooser.",
+      "behavior_test": "Unavailable folder paths show a recovery reason."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "Three UI handlers share one diagnostic boundary.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": ["focused workspace component tests", "full Desktop suite"],
+    "non_goals": ["redesign Electron shell APIs"],
+    "patch_priority": 2,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The missing catch/boolean checks were deterministic source properties."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Reliability",
+        "reason": "IPC rejection and unavailable paths trigger the defect."
+      }
+    ]
+  },
+  {
+    "id": "WFG-GOS-002",
+    "title": "Secret-shaped provider errors were rendered verbatim",
+    "domain": "Workflow-GUI",
+    "severity": "High",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/utils/workspaceError.ts",
+        "lines": "1-14",
+        "symbol": "workspaceErrorMessage",
+        "quote": ".replace(SECRET_ASSIGNMENT, '$1[redacted]')"
+      }
+    ],
+    "observed": "Credential and provider Error.message values crossed directly into renderer feedback.",
+    "expected_boundary": "Actionable diagnostics never reproduce credential values.",
+    "failure_mechanism": "The general error formatter performed no secret redaction.",
+    "break_it_angle": "Reject profile creation with api_key=SENTINEL_WORKSPACE_SECRET.",
+    "impact": "Credential values can appear in the UI, screenshots, or copied diagnostics.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "secret-display",
+      "reversibility": "irreversible",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": ["provider diagnostics", "secure-storage errors"],
+    "mitigation": {
+      "patterns": ["renderer-boundary redaction", "bounded diagnostics"],
+      "minimal_repair": "Redact secret assignments, bearer/provider tokens, and serialized values.",
+      "local_guardrail": "Clear secret component state after success, failure, or cancel.",
+      "behavior_test": "Sentinel error and input value are absent after failure."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "One renderer utility and credential regression cover the boundary.",
+      "cost_drivers": ["security", "tests"]
+    },
+    "validation": ["credential sentinel rejection test", "full Desktop suite"],
+    "non_goals": ["display raw provider response bodies"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": true,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The sentinel test reproduced the renderer path and verifies repair."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Security",
+        "reason": "The workflow defect exposes credential material."
+      }
+    ]
+  },
+  {
+    "id": "WFG-GOS-003",
+    "title": "Optimistic session rows dropped pinned workspace identity",
+    "domain": "Workflow-GUI",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/hooks/useNavigationSessions.ts",
+        "lines": "38-54",
+        "symbol": "sessionToListItem",
+        "quote": "workspaceId: s.workspace_id ?? undefined"
+      }
+    ],
+    "observed": "The local new-session projection omitted workspace ID/name until polling.",
+    "expected_boundary": "Local and backend session projections expose identical pinned ownership.",
+    "failure_mechanism": "The new fields were omitted from one projection seam.",
+    "break_it_angle": "Inspect a new sidebar row before the first ACP list poll.",
+    "impact": "Sidebar grouping and visible ownership can transiently disagree with persistence.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "user-visible",
+      "reversibility": "reversible",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "safe"
+    },
+    "adjacent": ["session filtering", "header badge"],
+    "mitigation": {
+      "patterns": ["complete projection"],
+      "minimal_repair": "Project workspace ID and snapshot name.",
+      "local_guardrail": "Keep one navigation-session state store.",
+      "behavior_test": "Optimistic projection retains both fields."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "XS",
+      "nominal_agent": "codex",
+      "rationale": "One projection plus test.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": ["sessionToListItem regression"],
+    "non_goals": ["second session list store"],
+    "patch_priority": 3,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The omitted object fields were deterministic."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Internal-API",
+        "reason": "A producer/consumer projection lost contract fields."
+      }
+    ]
+  },
+  {
+    "id": "WFG-GOS-004",
+    "title": "Workspace refreshes reset an intentional temporary working directory",
+    "domain": "Workflow-GUI",
+    "severity": "High",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/components/Hub.tsx",
+        "lines": "60-83",
+        "symbol": "Hub workspace reconciliation",
+        "quote": "reconcileWorkspaceWorkingDir(current, previous, activeWorkspace)"
+      }
+    ],
+    "observed": "Any backend refetch replaced Hub workingDir because the workspace object identity changed.",
+    "expected_boundary": "Only a workspace switch or followed-primary edit replaces the default; a one-off override persists.",
+    "failure_mechanism": "Object refresh was conflated with an operator default change.",
+    "break_it_angle": "Choose /tmp/one-off then trigger profile or multi-window refresh.",
+    "impact": "A new agent can read or write the wrong project directory.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file-targeting",
+      "reversibility": "compensatable",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": ["workspace switching", "multi-window refresh"],
+    "mitigation": {
+      "patterns": ["identity-aware reconciliation"],
+      "minimal_repair": "Compare IDs and the previously followed primary path.",
+      "local_guardrail": "Preserve a path that differs from the previous primary.",
+      "behavior_test": "Switch/edit/temporary override reconciliation matrix."
+    },
+    "implementation_assessment": {
+      "complexity": "workflow_protocol",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "A pure reconciliation rule plus Hub integration is sufficient.",
+      "cost_drivers": ["state", "tests"]
+    },
+    "validation": ["three working-dir reconciliation tests"],
+    "non_goals": ["persist temporary overrides across restart"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "Context refetch deterministically creates a new active workspace object."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Data-Integrity",
+        "reason": "The wrong path can become a session's persisted effective working directory."
+      }
+    ]
+  },
+  {
+    "id": "WFG-GOS-005",
+    "title": "Workspace warning indicators hid the actionable reason",
+    "domain": "Workflow-GUI",
+    "severity": "Low",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/components/workspaces/WorkspaceSidebarSection.tsx",
+        "lines": "223-253",
+        "symbol": "WorkspaceRow",
+        "quote": "aria-label={`Workspace needs attention: ${warningSummary}`}"
+      }
+    ],
+    "observed": "Structured backend validation was reduced to a generic warning icon.",
+    "expected_boundary": "The warning exposes the specific folder/credential recovery reason.",
+    "failure_mechanism": "Validation issues were collapsed to a boolean.",
+    "break_it_angle": "Inspect the accessible name for a missing primary folder.",
+    "impact": "Keyboard and screen-reader operators cannot diagnose the warning in place.",
+    "operational_impact": {
+      "blast_radius": "Local",
+      "side_effect_class": "accessibility",
+      "reversibility": "reversible",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "safe"
+    },
+    "adjacent": ["missing credential", "foreign-platform path"],
+    "mitigation": {
+      "patterns": ["diagnostic accessibility name"],
+      "minimal_repair": "Join validation messages into title and accessible name.",
+      "local_guardrail": "Keep Edit reachable through the keyboard menu.",
+      "behavior_test": "Warning name includes the relink reason."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "XS",
+      "nominal_agent": "codex",
+      "rationale": "One render path and accessibility assertion.",
+      "cost_drivers": ["accessibility", "tests"]
+    },
+    "validation": ["sidebar warning accessibility test"],
+    "non_goals": ["redesign sidebar density"],
+    "patch_priority": 5,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": true,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The rendered accessible name is asserted."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Accessibility",
+        "reason": "The defect primarily affects non-visual diagnosis."
+      }
+    ]
+  },
+  {
+    "id": "WFG-GOS-006",
+    "title": "Removing the default output left an invalid workspace draft",
+    "domain": "Workflow-GUI",
+    "severity": "Low",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/components/workspaces/WorkspaceEditorDialog.tsx",
+        "lines": "171-180",
+        "symbol": "removeOutput",
+        "quote": "remaining[0] = { ...remaining[0], isDefault: true };"
+      }
+    ],
+    "observed": "The remove action did not transfer default status when another output remained.",
+    "expected_boundary": "Supported editor actions preserve exactly one default output.",
+    "failure_mechanism": "Collection deletion ignored a dependent selection invariant.",
+    "break_it_angle": "Add a second output, remove the current default, and save.",
+    "impact": "The next save fails despite a repairable, apparently valid remaining destination.",
+    "operational_impact": {
+      "blast_radius": "Local",
+      "side_effect_class": "user-visible",
+      "reversibility": "reversible",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "safe"
+    },
+    "adjacent": ["default credential binding", "single-output guard"],
+    "mitigation": {
+      "patterns": ["dependent invariant repair"],
+      "minimal_repair": "Promote the first remaining output when deleting the default.",
+      "local_guardrail": "Keep deleting the sole output disabled and backend-rejected.",
+      "behavior_test": "Remaining output radio is selected."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "XS",
+      "nominal_agent": "codex",
+      "rationale": "One collection update and test.",
+      "cost_drivers": ["state", "tests"]
+    },
+    "validation": ["default-output removal regression"],
+    "non_goals": ["drag-and-drop output ordering"],
+    "patch_priority": 6,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": true,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The invalid state was deterministic and the repaired state is rendered in test."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Data-Integrity",
+        "reason": "The UI must preserve the backend exactly-one-default invariant."
+      }
+    ]
+  },
+  {
+    "id": "WFG-GOS-007",
+    "title": "Extension always-allow used an impossible post-consumption liveness check",
+    "domain": "Workflow-GUI",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-and-test-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/acp/permissionRequests.ts",
+        "lines": "35-52",
+        "symbol": "resolveAcpPermissionRequest",
+        "quote": "pendingRequests.delete(key);"
+      },
+      {
+        "file": "ui/desktop/src/components/ToolApprovalButtons.tsx",
+        "lines": "142-169",
+        "symbol": "handleAlwaysAllowExtension",
+        "quote": "if (!resolveAcpPermissionRequest(sessionId, id, 'always_allow'))"
+      }
+    ],
+    "observed": "A successful consuming resolve was followed by a check that necessarily reported the request absent.",
+    "expected_boundary": "A live request is consumed once before policy persistence; stale requests mutate nothing.",
+    "failure_mechanism": "Consuming and non-consuming liveness checks were sequenced as though both could remain true.",
+    "break_it_angle": "Use Always allow all tools on a live extension request.",
+    "impact": "The tool proceeds once, durable extension permission is skipped, and UI reports stale state.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "permission",
+      "reversibility": "compensatable",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": ["stale approval", "partial permission write"],
+    "mitigation": {
+      "patterns": ["single consuming gate", "ordered mutation"],
+      "minimal_repair": "Use the resolve return as the liveness gate and remove the impossible second check.",
+      "local_guardrail": "Do not list or persist tools when resolve returns false.",
+      "behavior_test": "Live call order is resolve/list/persist; stale mutates nothing."
+    },
+    "implementation_assessment": {
+      "complexity": "workflow_protocol",
+      "cost": "XS",
+      "nominal_agent": "codex",
+      "rationale": "One contradictory check and existing focused tests.",
+      "cost_drivers": ["approval", "tests"]
+    },
+    "validation": [
+      "ToolApprovalButtons live and stale tests",
+      "468-test Desktop suite"
+    ],
+    "non_goals": ["redesign ACP permission semantics"],
+    "patch_priority": 4,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": true,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The full suite reproduced the false-stale path before repair."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Security",
+        "reason": "The workflow controls durable tool permission state."
+      }
+    ]
+  }
+]

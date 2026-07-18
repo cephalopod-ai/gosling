@@ -48,6 +48,7 @@ import { getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
+import { WorkspaceProvider, useWorkspace } from './contexts/WorkspaceContext';
 
 function PageViewTracker() {
   usePageViewTracking();
@@ -73,6 +74,7 @@ const PairRouteWrapper = ({
   ) => void;
 }) => {
   const { extensionsList } = useConfig();
+  const { activeWorkspace } = useWorkspace();
   const location = useLocation();
   const routeState =
     (location.state as PairRouteState) || (window.history.state as PairRouteState) || {};
@@ -90,9 +92,13 @@ const PairRouteWrapper = ({
 
       (async () => {
         try {
-          const newSession = await createSession(getInitialWorkingDir(), {
-            allExtensions: extensionsList,
-          });
+          const newSession = await createSession(
+            activeWorkspace?.workingFolder ?? getInitialWorkingDir(),
+            {
+              allExtensions: extensionsList,
+              workspaceId: activeWorkspace?.id,
+            }
+          );
 
           window.dispatchEvent(
             new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
@@ -121,7 +127,7 @@ const PairRouteWrapper = ({
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialMessage, resumeSessionId, setSearchParams, extensionsList]);
+  }, [initialMessage, resumeSessionId, setSearchParams, extensionsList, activeWorkspace]);
 
   // Add resumed session to active sessions if not already there
   useEffect(() => {
@@ -603,9 +609,11 @@ export default function App() {
   return (
     <ThemeProvider>
       <ModelAndProviderProvider>
-        <HashRouter>
-          <AppInner />
-        </HashRouter>
+        <WorkspaceProvider>
+          <HashRouter>
+            <AppInner />
+          </HashRouter>
+        </WorkspaceProvider>
         <AnnouncementModal />
       </ModelAndProviderProvider>
     </ThemeProvider>

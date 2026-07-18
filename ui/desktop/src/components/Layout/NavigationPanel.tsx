@@ -35,6 +35,7 @@ import { cancelAcpElicitationRequestsForSession } from '../../acp/elicitationReq
 import { cancelAcpPermissionRequestsForSession } from '../../acp/permissionRequests';
 import { errorMessage } from '../../utils/conversionUtils';
 import { toast } from 'react-toastify';
+import { WorkspaceSidebarSection } from '../workspaces/WorkspaceSidebarSection';
 
 type StreamState = 'idle' | 'loading' | 'streaming' | 'error';
 
@@ -442,6 +443,10 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
             onClick={() => handleNavClick(item.path)}
           />
         ))}
+      </div>
+
+      <div className="mt-3 max-h-[45%] overflow-y-auto">
+        <WorkspaceSidebarSection />
       </div>
 
       {/* Chats section — takes remaining vertical space */}

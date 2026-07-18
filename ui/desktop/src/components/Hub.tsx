@@ -25,6 +25,8 @@ import {
   selectNextChatExtensions,
   type NextChatExtensionDraft,
 } from '../utils/nextChatExtensions';
+import { useWorkspace } from '../contexts/WorkspaceContext';
+import { reconcileWorkspaceWorkingDir } from '../utils/workspaceWorkingDir';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -54,12 +56,31 @@ export default function Hub({
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
-  const [workingDir, setWorkingDir] = useState(getInitialWorkingDir());
+  const { activeWorkspace } = useWorkspace();
+  const [workingDir, setWorkingDir] = useState(
+    activeWorkspace?.workingFolder ?? getInitialWorkingDir()
+  );
+  const previousWorkspaceRef = useRef(
+    activeWorkspace
+      ? { id: activeWorkspace.id, workingFolder: activeWorkspace.workingFolder }
+      : undefined
+  );
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
     useState<NextChatExtensionDraft | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { time, meridiem, hour } = useClock();
+
+  useEffect(() => {
+    if (activeWorkspace) {
+      const previous = previousWorkspaceRef.current;
+      setWorkingDir((current) => reconcileWorkspaceWorkingDir(current, previous, activeWorkspace));
+      previousWorkspaceRef.current = {
+        id: activeWorkspace.id,
+        workingFolder: activeWorkspace.workingFolder,
+      };
+    }
+  }, [activeWorkspace?.id, activeWorkspace?.workingFolder]);
 
   const greeting = useMemo(() => {
     if (hour < 12) return intl.formatMessage(i18n.goodMorning);
@@ -96,8 +117,8 @@ export default function Hub({
         : [];
       const sessionOptions =
         selectedExtensions.length > 0
-          ? { extensionConfigs: selectedExtensions }
-          : { allExtensions: extensionsList };
+          ? { extensionConfigs: selectedExtensions, workspaceId: activeWorkspace?.id }
+          : { allExtensions: extensionsList, workspaceId: activeWorkspace?.id };
 
       const session = await createSession(workingDir, sessionOptions);
       setNextChatExtensionDraft(null);

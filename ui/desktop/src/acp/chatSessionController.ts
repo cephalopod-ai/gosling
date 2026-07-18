@@ -43,7 +43,11 @@ export interface AcpSubmitMessageOptions extends AcpSnapshotOptions {
 }
 
 export interface AcpChatSessionController {
-  createSession(cwd: string, goslingExtensions: GoslingExtension[]): Promise<Session>;
+  createSession(
+    cwd: string,
+    goslingExtensions: GoslingExtension[],
+    workspaceId?: string
+  ): Promise<Session>;
   loadSession(sessionId: string, options?: AcpLoadSessionOptions): Promise<boolean>;
   submitMessage(
     sessionId: string,
@@ -101,8 +105,12 @@ async function forkSessionWithEditedMessage(
   window.dispatchEvent(event);
 }
 
-async function createSession(cwd: string, goslingExtensions: GoslingExtension[]): Promise<Session> {
-  const { sessionId, sessionInfo, meta } = await acpNewSession(cwd, goslingExtensions);
+async function createSession(
+  cwd: string,
+  goslingExtensions: GoslingExtension[],
+  workspaceId?: string
+): Promise<Session> {
+  const { sessionId, sessionInfo, meta } = await acpNewSession(cwd, goslingExtensions, workspaceId);
   const session = sessionInfoToSession(sessionInfo, meta);
   const connectionGeneration = getAcpConnectionGeneration();
   if (connectionGeneration === null) {

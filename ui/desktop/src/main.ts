@@ -3062,6 +3062,15 @@ async function appMain() {
     });
   });
 
+  ipcMain.on(desktopCommandChannels.broadcastWorkspaceChange, (event) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    BrowserWindow.getAllWindows().forEach((window) => {
+      if (window.id !== senderWindow?.id) {
+        window.webContents.send(rendererEventChannels.workspacesChanged);
+      }
+    });
+  });
+
   ipcMain.on('reload-app', (event) => {
     // Get the window that sent the event
     const window = BrowserWindow.fromWebContents(event.sender);

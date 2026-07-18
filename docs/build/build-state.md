@@ -25,7 +25,7 @@ accessible sidebar management, and regression coverage.
 | 2 — Contracts and design    | complete | `docs/architecture.md`, ADR-0001–0005, `io-contract.md`, `execution-plan.md` |
 | 3 — Boundaries and harness  | complete | canonical SDK DTOs; `evidence/gate-3.md`                                     |
 | 4 — Backend vertical slice  | complete | workspace/session/credential backend; `evidence/gate-4.md`                   |
-| 5 — Desktop vertical slice  | pending  | —                                                                            |
+| 5 — Desktop vertical slice  | complete | Desktop UI/session integration; `evidence/gate-5.md`                         |
 | 6 — Audit and repair        | pending  | —                                                                            |
 | 7 — Documentation           | pending  | —                                                                            |
 | 8 — Acceptance and handoff  | pending  | —                                                                            |
@@ -46,6 +46,5 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-Close Gate 5 around the implemented Desktop WorkspaceContext, sidebar/editor/profile UI,
-session filter/header behavior, multi-window invalidation, and active-workspace new-session
-propagation. Run the workflow/GUI audit and focused/full Desktop checks.
+Run Gate 6’s exhaustive cross-cutting security, concurrency, and reliability audit over the
+complete backend + Desktop Workspaces feature and repair every confirmed finding.

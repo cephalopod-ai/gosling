@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import type { Permission } from '../types/permissions';
-import { isAcpPermissionRequestPending, resolveAcpPermissionRequest } from '../acp/permissionRequests';
+import { resolveAcpPermissionRequest } from '../acp/permissionRequests';
 import { listTools, setToolPermissions } from '../acp/permissions';
 import { defineMessages, useIntl } from '../i18n';
 
@@ -152,11 +152,6 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
 
     setIsAllowingExtension(true);
     try {
-      if (!isAcpPermissionRequestPending(sessionId, id)) {
-        setApprovalError(intl.formatMessage(i18n.staleApprovalRequest));
-        return;
-      }
-
       const tools = await listTools(sessionId, extensionName);
       const toolPermissions = (tools.length > 0 ? tools.map((t) => t.name) : [toolName]).map(
         (name) => ({ toolName: name, permission: 'always_allow' as const })
@@ -222,7 +217,11 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
             {intl.formatMessage(i18n.alwaysAllowExtension, { extensionName })}
           </Button>
         )}
-        <Button className="rounded-full" variant="outline" onClick={() => handleAction('deny_once')}>
+        <Button
+          className="rounded-full"
+          variant="outline"
+          onClick={() => handleAction('deny_once')}
+        >
           {intl.formatMessage(i18n.deny)}
         </Button>
       </div>

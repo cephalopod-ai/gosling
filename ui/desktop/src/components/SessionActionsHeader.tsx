@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 
 const i18n = defineMessages({
   actionsLabel: {
@@ -325,8 +326,12 @@ export default function SessionActionsHeader({
   const [isJsonLoading, setIsJsonLoading] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [fullTextSelection, setFullTextSelection] = useState<FullTextSelection | null>(null);
+  const { activeWorkspace } = useWorkspace();
 
   const title = useMemo(() => (session ? getSessionDisplayName(session) : ''), [session]);
+  const workspaceMismatch = Boolean(
+    session?.workspace_id && activeWorkspace && session.workspace_id !== activeWorkspace.id
+  );
 
   useEffect(() => {
     if (session && isRenameOpen) {
@@ -454,10 +459,27 @@ export default function SessionActionsHeader({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-7 max-w-full items-center gap-1 rounded-md px-2.5 text-text-primary transition-colors hover:bg-background-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
+              className="flex min-h-7 max-w-full items-center gap-1 rounded-md px-2.5 text-text-primary transition-colors hover:bg-background-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
               aria-label={intl.formatMessage(i18n.actionsLabel)}
             >
               <span className="truncate text-xs font-medium">{title}</span>
+              {session.workspace_name && (
+                <span
+                  className={cn(
+                    'max-w-36 truncate rounded-full px-1.5 py-0.5 text-[10px]',
+                    workspaceMismatch
+                      ? 'bg-amber-500/15 text-amber-700'
+                      : 'bg-background-tertiary text-text-secondary'
+                  )}
+                  title={
+                    workspaceMismatch
+                      ? `Pinned to ${session.workspace_name}; new chats use ${activeWorkspace?.name}`
+                      : `Workspace: ${session.workspace_name}`
+                  }
+                >
+                  {session.workspace_name}
+                </span>
+              )}
               <ChevronDown className="size-3.5 text-text-secondary" />
             </button>
           </DropdownMenuTrigger>
@@ -506,7 +528,10 @@ export default function SessionActionsHeader({
             <Button variant="outline" onClick={() => setIsRenameOpen(false)} disabled={isRenaming}>
               {intl.formatMessage(i18n.cancel)}
             </Button>
-            <Button onClick={() => void handleRename()} disabled={isRenaming || !renameValue.trim()}>
+            <Button
+              onClick={() => void handleRename()}
+              disabled={isRenaming || !renameValue.trim()}
+            >
               {isRenaming ? intl.formatMessage(i18n.saving) : intl.formatMessage(i18n.save)}
             </Button>
           </DialogFooter>

@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { getSessionDisplayName, shouldShowNewChatTitle } from '../sessions';
-import { activeSessionsOnly, prependUnique } from '../hooks/useNavigationSessions';
+import {
+  activeSessionsOnly,
+  prependUnique,
+  sessionToListItem,
+} from '../hooks/useNavigationSessions';
 import type { SessionListItem } from '../acp/sessions';
 import type { Session } from '../types/session';
 
@@ -96,5 +100,18 @@ describe('activeSessionsOnly', () => {
     ]);
 
     expect(result.map((session) => session.id)).toEqual(['active']);
+  });
+});
+
+describe('sessionToListItem', () => {
+  it('preserves the pinned workspace snapshot in optimistic sidebar rows', () => {
+    const item = sessionToListItem(
+      makeSession({ workspace_id: 'workspace-1', workspace_name: 'Annual Meeting' })
+    );
+
+    expect(item).toMatchObject({
+      workspaceId: 'workspace-1',
+      workspaceName: 'Annual Meeting',
+    });
   });
 });

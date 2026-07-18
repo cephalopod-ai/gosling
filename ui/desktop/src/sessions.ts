@@ -42,6 +42,7 @@ export function resumeSession(session: Session, setView: setViewType) {
 interface CreateSessionOptions {
   extensionConfigs?: ExtensionConfig[];
   allExtensions?: FixedExtensionEntry[];
+  workspaceId?: string;
 }
 
 function selectedExtensionConfigs(options?: CreateSessionOptions): ExtensionConfig[] {
@@ -70,7 +71,11 @@ async function createAcpSession(
           .filter((entry) => selectedNames.has(goslingExtensionName(entry.extension)))
           .map((entry) => entry.extension)
       : [];
-  return acpChatSessionController.createSession(workingDir, goslingExtensions);
+  return acpChatSessionController.createSession(
+    workingDir,
+    goslingExtensions,
+    options?.workspaceId
+  );
 }
 
 export async function createSession(
@@ -86,6 +91,7 @@ export async function startNewSession(
   workingDir: string,
   options?: {
     allExtensions?: FixedExtensionEntry[];
+    workspaceId?: string;
   }
 ): Promise<Session> {
   const session = await createSession(workingDir, options);

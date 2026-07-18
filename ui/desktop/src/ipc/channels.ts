@@ -20,6 +20,7 @@ export const desktopCommandChannels = {
   reactReady: 'react-ready',
   createChatWindow: 'create-chat-window',
   broadcastThemeChange: 'broadcast-theme-change',
+  broadcastWorkspaceChange: 'broadcast-workspace-change',
   openExternal: 'open-external',
   closeWindow: 'close-window',
   getAppVersion: 'get-app-version',
@@ -43,6 +44,7 @@ export const rendererEventChannels = {
   toggleNavigation: 'toggle-navigation',
   updaterEvent: 'updater-event',
   useSelectionFind: 'use-selection-find',
+  workspacesChanged: 'workspaces-changed',
 } as const;
 
 export type RendererEventChannel =
@@ -68,6 +70,7 @@ export interface RendererEventPayloads {
   [rendererEventChannels.toggleNavigation]: [];
   [rendererEventChannels.updaterEvent]: [event: UpdaterEvent];
   [rendererEventChannels.useSelectionFind]: [];
+  [rendererEventChannels.workspacesChanged]: [];
 }
 
 export type RendererEventCallback<T extends RendererEventChannel> = (

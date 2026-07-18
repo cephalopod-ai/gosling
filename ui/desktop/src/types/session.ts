@@ -23,13 +23,7 @@ export type Usage = {
   total_tokens?: number | null;
 };
 
-export type SessionType =
-  | 'user'
-  | 'scheduled'
-  | 'sub_agent'
-  | 'hidden'
-  | 'terminal'
-  | 'acp';
+export type SessionType = 'user' | 'scheduled' | 'sub_agent' | 'hidden' | 'terminal' | 'acp';
 
 export type Session = {
   accumulated_cost?: number | null;
@@ -54,4 +48,6 @@ export type Session = {
   usage?: Usage;
   user_set_name?: boolean;
   working_dir: string;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
 };

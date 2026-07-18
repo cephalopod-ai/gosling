@@ -73,7 +73,11 @@ describe('createSession ACP session extensions', () => {
     });
 
     expect(mockedGetConfiguredGoslingExtensions).toHaveBeenCalledOnce();
-    expect(mockedCreateAcpSession).toHaveBeenCalledWith('/tmp', [goslingExtension('developer')]);
+    expect(mockedCreateAcpSession).toHaveBeenCalledWith(
+      '/tmp',
+      [goslingExtension('developer')],
+      undefined
+    );
   });
 
   it('falls back to enabled configured extensions when extension configs are empty', async () => {
@@ -83,7 +87,11 @@ describe('createSession ACP session extensions', () => {
     });
 
     expect(mockedGetConfiguredGoslingExtensions).toHaveBeenCalledOnce();
-    expect(mockedCreateAcpSession).toHaveBeenCalledWith('/tmp', [goslingExtension('developer')]);
+    expect(mockedCreateAcpSession).toHaveBeenCalledWith(
+      '/tmp',
+      [goslingExtension('developer')],
+      undefined
+    );
   });
 
   it('omits ACP session extensions when no configured extensions are enabled', async () => {
@@ -92,6 +100,15 @@ describe('createSession ACP session extensions', () => {
     });
 
     expect(mockedGetConfiguredGoslingExtensions).not.toHaveBeenCalled();
-    expect(mockedCreateAcpSession).toHaveBeenCalledWith('/tmp', []);
+    expect(mockedCreateAcpSession).toHaveBeenCalledWith('/tmp', [], undefined);
+  });
+
+  it('pins the selected workspace on new ACP sessions', async () => {
+    await createSession('/workspace/project', {
+      allExtensions: [],
+      workspaceId: 'workspace-id',
+    });
+
+    expect(mockedCreateAcpSession).toHaveBeenCalledWith('/workspace/project', [], 'workspace-id');
   });
 });

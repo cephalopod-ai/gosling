@@ -165,6 +165,7 @@ type ElectronAPI = {
   on: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => void;
   off: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => void;
   broadcastThemeChange: (themeData: ThemeChangePayload) => void;
+  broadcastWorkspaceChange: () => void;
   openExternal: (url: string) => Promise<void>;
   // Update-related functions
   getVersion: () => string;
@@ -330,6 +331,9 @@ const electronAPI: ElectronAPI = {
   },
   broadcastThemeChange: (themeData: ThemeChangePayload) => {
     ipcRenderer.send(desktopCommandChannels.broadcastThemeChange, themeData);
+  },
+  broadcastWorkspaceChange: () => {
+    ipcRenderer.send(desktopCommandChannels.broadcastWorkspaceChange);
   },
   openExternal: (url: string): Promise<void> => {
     return ipcRenderer.invoke(desktopCommandChannels.openExternal, url);

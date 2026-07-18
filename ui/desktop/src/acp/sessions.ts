@@ -26,6 +26,8 @@ interface GoslingSessionInfoMeta {
   additionalWorkingDirs?: string[];
   restrictToolsToWorkingDirs?: boolean;
   goslingMode?: GoslingMode;
+  workspaceId?: string;
+  workspaceName?: string;
 }
 
 export const COMPACTED_SESSION_TAIL_LIMIT = 50;
@@ -54,6 +56,8 @@ export interface SessionListItem {
   providerId?: string;
   modelId?: string;
   userSetName?: boolean;
+  workspaceId?: string;
+  workspaceName?: string;
 }
 
 export interface SessionListPage {
@@ -65,6 +69,8 @@ export interface LoadSessionMeta {
   extensionResults?: ExtensionLoadResult[] | null;
   workingDir?: string;
   historyLoad?: HistoryLoadMeta;
+  workspaceId?: string;
+  workspaceName?: string;
 }
 
 export interface AcpLoadSessionResult {
@@ -81,6 +87,8 @@ function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
     extensionResults: meta.extensionResults,
     workingDir: typeof meta.workingDir === 'string' ? meta.workingDir : undefined,
     historyLoad: isHistoryLoadMeta(meta.historyLoad) ? meta.historyLoad : undefined,
+    workspaceId: typeof meta.workspaceId === 'string' ? meta.workspaceId : undefined,
+    workspaceName: typeof meta.workspaceName === 'string' ? meta.workspaceName : undefined,
   };
 }
 
@@ -126,6 +134,8 @@ export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta =
     user_set_name: meta.userSetName,
     last_message_snippet: meta.lastMessageSnippet,
     gosling_mode: meta.goslingMode,
+    workspace_id: meta.workspaceId ?? loadMeta.workspaceId,
+    workspace_name: meta.workspaceName ?? loadMeta.workspaceName,
   };
 }
 
@@ -145,6 +155,8 @@ function sessionInfoToListItem(s: SessionInfo): SessionListItem {
     providerId: meta.providerId,
     modelId: meta.modelId,
     userSetName: meta.userSetName,
+    workspaceId: meta.workspaceId,
+    workspaceName: meta.workspaceName,
   };
 }
 
@@ -152,6 +164,8 @@ export interface SessionListFilter {
   keyword?: string;
   archiveState?: SessionArchiveState;
   includeLastMessageSnippet?: boolean;
+  workspaceId?: string;
+  includeUnassigned?: boolean;
 }
 
 const SESSION_LIST_TYPES = ['user', 'scheduled'] as const;
@@ -171,6 +185,10 @@ export async function acpListSessions(
   if (keyword) {
     meta.query = keyword;
   }
+  if (filter?.workspaceId) {
+    meta.workspaceId = filter.workspaceId;
+    meta.includeUnassigned = filter.includeUnassigned ?? false;
+  }
   meta.gosling = {
     archiveState: filter?.archiveState ?? 'active',
     includeLastMessageSnippet: filter?.includeLastMessageSnippet ?? false,
@@ -185,7 +203,8 @@ export async function acpListSessions(
 
 export async function acpListRecentSessions(
   maxSessions: number,
-  archiveState: SessionArchiveState = 'active'
+  archiveState: SessionArchiveState = 'active',
+  filter?: Pick<SessionListFilter, 'workspaceId' | 'includeUnassigned'>
 ): Promise<SessionListItem[]> {
   if (maxSessions <= 0) {
     return [];
@@ -199,6 +218,12 @@ export async function acpListRecentSessions(
         archiveState,
         includeLastMessageSnippet: false,
       },
+      ...(filter?.workspaceId
+        ? {
+            workspaceId: filter.workspaceId,
+            includeUnassigned: filter.includeUnassigned ?? false,
+          }
+        : {}),
     },
   });
   return response.sessions.slice(0, maxSessions).map(sessionInfoToListItem);
@@ -315,12 +340,16 @@ export interface AcpNewSessionResult {
 
 export async function acpNewSession(
   cwd: string,
-  goslingExtensions: GoslingExtension[]
+  goslingExtensions: GoslingExtension[],
+  workspaceId?: string
 ): Promise<AcpNewSessionResult> {
   const client = await getAcpClient();
   const meta: Record<string, unknown> = { client: 'gosling-desktop' };
   if (goslingExtensions.length > 0) {
     meta.enabledExtensions = goslingExtensions;
+  }
+  if (workspaceId) {
+    meta.workspaceId = workspaceId;
   }
   const request: NewSessionRequest = { cwd, mcpServers: [], _meta: meta };
   const response = await client.newSession(request);
@@ -438,10 +467,7 @@ export async function acpExportSession(sessionId: string): Promise<string> {
   return response.data;
 }
 
-export async function acpImportSession(
-  input: string,
-  source: SessionImportSource
-): Promise<void> {
+export async function acpImportSession(input: string, source: SessionImportSource): Promise<void> {
   const client = await getAcpClient();
   await client.gosling.sessionImport_unstable({ input, source });
 }

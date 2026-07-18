@@ -7,6 +7,7 @@ import {
   acpListRecentSessions,
   acpListSessions,
   acpLoadSession,
+  acpNewSession,
   acpUnarchiveSession,
   sessionInfoToSession,
 } from '../sessions';
@@ -39,6 +40,44 @@ describe('ACP sessions', () => {
     const session = sessionInfoToSession(sessionInfo());
 
     expect(session.session_type).toBe('scheduled');
+  });
+
+  it('preserves pinned workspace metadata from session info', () => {
+    const session = sessionInfoToSession(
+      sessionInfo({
+        _meta: {
+          workspaceId: 'workspace-1',
+          workspaceName: 'Project',
+        },
+      })
+    );
+
+    expect(session.workspace_id).toBe('workspace-1');
+    expect(session.workspace_name).toBe('Project');
+  });
+
+  it('pins workspace id in ACP new-session metadata', async () => {
+    const client = {
+      newSession: vi.fn().mockResolvedValue({
+        sessionId: 'session-1',
+        _meta: { workspaceId: 'workspace-1', workspaceName: 'Project' },
+      }),
+      gosling: {
+        sessionInfo_unstable: vi.fn().mockResolvedValue({ session: sessionInfo() }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    const result = await acpNewSession('/workspace/project', [], 'workspace-1');
+
+    expect(client.newSession).toHaveBeenCalledWith({
+      cwd: '/workspace/project',
+      mcpServers: [],
+      _meta: { client: 'gosling-desktop', workspaceId: 'workspace-1' },
+    });
+    expect(result.meta).toMatchObject({ workspaceId: 'workspace-1', workspaceName: 'Project' });
   });
 
   it('returns session info refreshed after loading the ACP session', async () => {
@@ -161,6 +200,32 @@ describe('ACP sessions', () => {
     expect(client.listSessions).toHaveBeenCalledWith({
       _meta: {
         types: ['user', 'scheduled'],
+        gosling: {
+          archiveState: 'active',
+          includeLastMessageSnippet: false,
+        },
+      },
+    });
+  });
+
+  it('filters sessions by workspace and includes legacy sessions under Default', async () => {
+    const client = {
+      listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    await acpListSessions(null, {
+      workspaceId: 'default-workspace',
+      includeUnassigned: true,
+    });
+
+    expect(client.listSessions).toHaveBeenCalledWith({
+      _meta: {
+        types: ['user', 'scheduled'],
+        workspaceId: 'default-workspace',
+        includeUnassigned: true,
         gosling: {
           archiveState: 'active',
           includeLastMessageSnippet: false,

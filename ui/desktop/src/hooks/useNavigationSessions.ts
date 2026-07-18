@@ -9,6 +9,7 @@ import {
   acpListRecentSessions,
   type SessionListItem,
 } from '../acp/sessions';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 
 const MAX_RECENT_SESSIONS = 25;
 
@@ -48,6 +49,8 @@ export function sessionToListItem(s: Session): SessionListItem {
     providerId: s.provider_name ?? undefined,
     modelId: s.model_config?.model_name ?? undefined,
     userSetName: s.user_set_name ?? undefined,
+    workspaceId: s.workspace_id ?? undefined,
+    workspaceName: s.workspace_name ?? undefined,
   };
 }
 
@@ -56,6 +59,13 @@ export function useNavigationSessions() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const chatContext = useChatContext();
+  const { sessionWorkspaceFilterId, defaultWorkspaceId } = useWorkspace();
+  const sessionFilter = sessionWorkspaceFilterId
+    ? {
+        workspaceId: sessionWorkspaceFilterId,
+        includeUnassigned: sessionWorkspaceFilterId === defaultWorkspaceId,
+      }
+    : undefined;
 
   const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
   const lastSessionIdRef = useRef<string | null>(null);
@@ -73,13 +83,13 @@ export function useNavigationSessions() {
   const fetchSessions = useCallback(async () => {
     try {
       const sessions = activeSessionsOnly(
-        await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active')
+        await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active', sessionFilter)
       );
       setRecentSessions(sessions);
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
     }
-  }, []);
+  }, [defaultWorkspaceId, sessionWorkspaceFilterId]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -118,7 +128,7 @@ export function useNavigationSessions() {
         pollCount++;
         try {
           const listed = activeSessionsOnly(
-            await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active')
+            await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active', sessionFilter)
           );
           setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
         } catch (error) {
@@ -141,7 +151,7 @@ export function useNavigationSessions() {
       window.removeEventListener(AppEvents.SESSION_CREATED, handleSessionCreated);
       pollingTimeouts.forEach(clearTimeout);
     };
-  }, []);
+  }, [defaultWorkspaceId, sessionWorkspaceFilterId]);
 
   useEffect(() => {
     let fetchVersion = 0;
@@ -155,7 +165,7 @@ export function useNavigationSessions() {
         lastSessionIdRef.current = null;
       }
       const version = ++fetchVersion;
-      acpListRecentSessions(MAX_RECENT_SESSIONS, 'active')
+      acpListRecentSessions(MAX_RECENT_SESSIONS, 'active', sessionFilter)
         .then((sessions) => {
           if (version !== fetchVersion) return;
           setRecentSessions(
