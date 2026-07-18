@@ -11,6 +11,7 @@ use super::orchestrator::{
     emit_findings, run_checks_in_parallel, run_main_pass_in_parallel, Severity,
 };
 use super::prompt::{build_review_prompt, DEFAULT_REVIEW_PROMPT};
+use super::worker::ReviewWorkerPool;
 
 /// Options for `gosling review`.
 #[derive(Debug, Clone, Default)]
@@ -71,6 +72,7 @@ pub struct ReviewOptions {
 /// Entry point for the `gosling review` subcommand.
 pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
     let repo_root = find_repo_root().context("not inside a git repository")?;
+    let review_workers = ReviewWorkerPool::new(repo_root.clone());
 
     // Validate `--severity` once, up front, so a bogus value fails fast
     // regardless of which orchestration path we end up taking.
@@ -187,7 +189,8 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
             // so it has no way to "skip the main pass". Fall back to the
             // orchestrator's check-runner (which IS able to run checks
             // in isolation) instead of silently no-op'ing.
-            let check_results = run_checks_in_parallel(&discovered.checks, &diff, &opts).await;
+            let check_results =
+                run_checks_in_parallel(&discovered.checks, &diff, &opts, &review_workers).await;
             let mut total_emitted = 0usize;
             let mut total_seen = 0usize;
             for findings in &check_results {
@@ -228,10 +231,10 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
         if opts.checks_only {
             Vec::new()
         } else {
-            run_main_pass_in_parallel(&diff, &base_prompt, &opts).await
+            run_main_pass_in_parallel(&diff, &base_prompt, &opts, &review_workers).await
         }
     };
-    let checks_fut = run_checks_in_parallel(&discovered.checks, &diff, &opts);
+    let checks_fut = run_checks_in_parallel(&discovered.checks, &diff, &opts, &review_workers);
     let (main_findings, check_results) = tokio::join!(main_findings_fut, checks_fut);
 
     let mut total_emitted = 0usize;

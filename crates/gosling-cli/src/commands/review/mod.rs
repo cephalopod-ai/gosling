@@ -12,5 +12,6 @@
 pub mod handler;
 pub mod orchestrator;
 pub mod prompt;
+mod worker;
 
 pub use handler::{handle_review, ReviewOptions};

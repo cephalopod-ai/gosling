@@ -369,6 +369,39 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
 - Change review: transition ordering/serialization, ACP cwd compensation,
   extension root error propagation, focused tests, and this log; tool dispatch
   was deliberately left unchanged at the mandatory stop checkpoint.
+- Commit: `0ea3eac71`.
+
+### Stage 12 — review and delegation capacity
+
+- Defects: AUD-028, AUD-029, and AUD-030 fixed.
+- Changes: review subprocess launch and permit ownership now live in one
+  repository-rooted worker pool shared by the main and check phases. Async
+  delegation atomically reserves a semaphore slot before any setup, retains it
+  for the task's full running lifetime, and cannot be cancelled between child
+  spawn and task registration.
+- Regression guardrails: the extracted worker command asserts its child cwd;
+  an eight-worker, two-phase-style concurrency test observes one shared peak;
+  and barrier-synchronized delegation reservations with a limit of one admit
+  exactly one contender.
+- Modularization: worker launch and capacity coordination moved out of the
+  1001-1999-line review orchestrator into `review/worker.rs` before behavior
+  changed. The localized summon ownership change remains in the >=2000-line
+  routed file.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: both concurrent review futures receive the same worker
+  pool, every subprocess command is rooted at the resolved repository, and
+  every constructed background task owns a slot; `git diff --check` passed.
+  Rust tests/build/Clippy were not executed under the repository's explicit
+  authorization rule.
+- Adversarial review: verified the shared permit surrounds process creation,
+  stdin delivery, and exit collection; legacy checks-only fan-out uses the same
+  root and limit; a failed delegate setup releases its reservation; cleanup,
+  cancellation, synchronous load, and timed reinsertion retain or release the
+  slot with task ownership; and no await point remains between subagent spawn
+  and task-map insertion.
+- Change review: review handler/orchestrator/extracted worker, the summon slot
+  lifecycle, focused tests, and this log; review parsing and sync delegation
+  behavior are unchanged.
 - Commit: pending.
 
 ## Campaign closeout

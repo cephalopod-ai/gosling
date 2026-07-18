@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, OwnedSemaphorePermit, Semaphore};
 
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -69,6 +69,7 @@ pub struct BackgroundTask {
     pub handle: JoinHandle<Result<String>>,
     pub cancellation_token: CancellationToken,
     pub notification_buffer: Arc<Mutex<Vec<ServerNotification>>>,
+    _slot: OwnedSemaphorePermit,
 }
 
 pub struct CompletedTask {
@@ -326,6 +327,8 @@ pub struct SummonClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
     source_cache: Mutex<Option<(Instant, PathBuf, Vec<SourceEntry>)>>,
+    background_task_slots: Arc<Semaphore>,
+    max_background_tasks: usize,
     background_tasks: Mutex<HashMap<String, BackgroundTask>>,
     completed_tasks: Mutex<HashMap<String, CompletedTask>>,
     notification_subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
@@ -344,6 +347,13 @@ impl Drop for SummonClient {
 
 impl SummonClient {
     pub fn new(context: PlatformExtensionContext) -> Result<Self> {
+        Self::with_background_task_limit(context, max_background_tasks())
+    }
+
+    fn with_background_task_limit(
+        context: PlatformExtensionContext,
+        max_background_tasks: usize,
+    ) -> Result<Self> {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Summon"));
 
@@ -351,10 +361,24 @@ impl SummonClient {
             info,
             context,
             source_cache: Mutex::new(None),
+            background_task_slots: Arc::new(Semaphore::new(max_background_tasks)),
+            max_background_tasks,
             background_tasks: Mutex::new(HashMap::new()),
             completed_tasks: Mutex::new(HashMap::new()),
             notification_subscribers: Arc::new(Mutex::new(Vec::new())),
         })
+    }
+
+    fn try_reserve_background_task_slot(&self) -> Result<OwnedSemaphorePermit, String> {
+        self.background_task_slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                format!(
+                    "Maximum {} background tasks already running. Wait for completion or use sync mode.",
+                    self.max_background_tasks
+                )
+            })
     }
 
     fn spawn_notification_bridge(
@@ -1364,14 +1388,7 @@ impl SummonClient {
         session_id: &str,
         params: DelegateParams,
     ) -> Result<(Vec<Content>, String), String> {
-        let task_count = self.background_tasks.lock().await.len();
-        let max_tasks = max_background_tasks();
-        if task_count >= max_tasks {
-            return Err(format!(
-                "Maximum {} background tasks already running. Wait for completion or use sync mode.",
-                max_tasks
-            ));
-        }
+        let task_slot = self.try_reserve_background_task_slot()?;
 
         let session = self
             .context
@@ -1440,6 +1457,7 @@ impl SummonClient {
             Arc::clone(&notification_buffer),
         );
 
+        let mut background_tasks = self.background_tasks.lock().await;
         let handle = tokio::spawn(async move {
             run_subagent_task(SubagentRunParams {
                 config: agent_config,
@@ -1466,12 +1484,10 @@ impl SummonClient {
             handle,
             cancellation_token: task_token,
             notification_buffer,
+            _slot: task_slot,
         };
 
-        self.background_tasks
-            .lock()
-            .await
-            .insert(task_id.clone(), task);
+        background_tasks.insert(task_id.clone(), task);
 
         let content = vec![Content::text(format!(
             "Task {} started in background: \"{}\"\n\
@@ -2135,6 +2151,50 @@ You review code."#;
     }
 
     #[tokio::test]
+    async fn background_task_slot_reservation_is_atomic() {
+        async fn attempt(
+            client: &SummonClient,
+            start: Arc<tokio::sync::Barrier>,
+            winner_ready: Arc<tokio::sync::Barrier>,
+            mut release: tokio::sync::watch::Receiver<bool>,
+        ) -> bool {
+            start.wait().await;
+            let Ok(_slot) = client.try_reserve_background_task_slot() else {
+                return false;
+            };
+            winner_ready.wait().await;
+            release.changed().await.unwrap();
+            true
+        }
+
+        let client = SummonClient::with_background_task_limit(create_test_context(), 1).unwrap();
+        let start = Arc::new(tokio::sync::Barrier::new(3));
+        let winner_ready = Arc::new(tokio::sync::Barrier::new(2));
+        let (release_tx, release_rx) = tokio::sync::watch::channel(false);
+
+        let first = attempt(
+            &client,
+            Arc::clone(&start),
+            Arc::clone(&winner_ready),
+            release_rx.clone(),
+        );
+        let second = attempt(
+            &client,
+            Arc::clone(&start),
+            Arc::clone(&winner_ready),
+            release_rx,
+        );
+        let driver = async {
+            start.wait().await;
+            winner_ready.wait().await;
+            release_tx.send(true).unwrap();
+        };
+
+        let (first_reserved, second_reserved, ()) = tokio::join!(first, second, driver);
+        assert_ne!(first_reserved, second_reserved);
+    }
+
+    #[tokio::test]
     async fn test_async_task_result_lifecycle() {
         let client = SummonClient::new(create_test_context()).unwrap();
         let temp_dir = TempDir::new().unwrap();
@@ -2176,6 +2236,7 @@ You review code."#;
                     }),
                     cancellation_token: CancellationToken::new(),
                     notification_buffer: buffer,
+                    _slot: client.try_reserve_background_task_slot().unwrap(),
                 },
             );
         }
@@ -2301,6 +2362,7 @@ You review code."#;
                     }),
                     cancellation_token: token.clone(),
                     notification_buffer: Arc::new(Mutex::new(Vec::new())),
+                    _slot: client.try_reserve_background_task_slot().unwrap(),
                 },
             );
         }
@@ -2343,6 +2405,7 @@ You review code."#;
                     }),
                     cancellation_token: CancellationToken::new(),
                     notification_buffer: Arc::new(Mutex::new(Vec::new())),
+                    _slot: client.try_reserve_background_task_slot().unwrap(),
                 },
             );
         }

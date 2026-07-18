@@ -28,22 +28,18 @@
 //! so the user sees both their findings as soon as the slower of the
 //! two completes.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::process::Stdio;
-use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use super::handler::ReviewOptions;
+use super::worker::ReviewWorkerPool;
 use gosling::checks::{Check, DEFAULT_CHECK_TURN_LIMIT};
 
-/// Maximum number of check subprocesses we run concurrently. 4 is
+/// Maximum number of review subprocesses we run concurrently. 4 is
 /// empirically the sweet spot before LLM-side rate limits and local
 /// resource contention start hurting wall-clock.
-pub const MAX_WORKERS: usize = 4;
+pub(super) const MAX_WORKERS: usize = 4;
 
 /// One review finding emitted by a check or by the main correctness
 /// pass.
@@ -83,16 +79,16 @@ struct RawFinding {
 /// A failed check (subprocess error, turn-limit exhaustion, malformed JSON) yields an
 /// empty findings list and a warning on stderr; a single broken check
 /// must never block the rest of the review.
-pub async fn run_checks_in_parallel(
+pub(super) async fn run_checks_in_parallel(
     checks: &[Check],
     diff: &str,
     opts: &ReviewOptions,
+    workers: &ReviewWorkerPool,
 ) -> Vec<Vec<Finding>> {
-    let semaphore = Arc::new(Semaphore::new(MAX_WORKERS));
     let mut set = JoinSet::new();
 
     for (idx, check) in checks.iter().enumerate() {
-        let sem = semaphore.clone();
+        let workers = workers.clone();
         let check = check.clone();
         let diff = diff.to_string();
         let provider = opts.provider.clone();
@@ -102,10 +98,8 @@ pub async fn run_checks_in_parallel(
         let instructions = opts.instructions.clone();
 
         set.spawn(async move {
-            // Bounded concurrency: drop the permit only after the
-            // subprocess completes.
-            let _permit = sem.acquire().await.expect("semaphore is never closed");
             let result = run_single_check_subprocess(
+                &workers,
                 &check,
                 &diff,
                 provider.as_deref(),
@@ -190,6 +184,7 @@ fn resolve_main_turn_limit(default_turn_limit: Option<usize>) -> usize {
 /// Spawn a single `gosling run` subprocess for one check and parse its
 /// output into [`Finding`]s.
 async fn run_single_check_subprocess(
+    workers: &ReviewWorkerPool,
     check: &Check,
     diff: &str,
     provider: Option<&str>,
@@ -200,6 +195,7 @@ async fn run_single_check_subprocess(
     let turns = max_turns.expect("check subprocess always has a resolved turn limit");
     let prompt = build_check_prompt(check, diff, instructions, turns);
     let raw = run_subprocess_for_findings(
+        workers,
         &prompt,
         &format!("check '{}'", check.name),
         provider,
@@ -226,55 +222,16 @@ async fn run_single_check_subprocess(
 /// by the per-check and per-file main-pass orchestrators so both get
 /// the same robust JSON extraction and error reporting.
 async fn run_subprocess_for_findings(
+    workers: &ReviewWorkerPool,
     prompt: &str,
     label: &str,
     provider: Option<&str>,
     model: Option<&str>,
     max_turns: Option<usize>,
 ) -> Result<Vec<RawFinding>> {
-    let gosling_bin = std::env::current_exe().context("locate current gosling binary")?;
-
-    let mut cmd = Command::new(&gosling_bin);
-    cmd.arg("run")
-        .arg("--no-session")
-        .arg("--quiet")
-        .arg("--no-profile")
-        .arg("-i")
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        // If this future is dropped, kill the child so it does not keep
-        // running (and racking up tokens) in the background.
-        .kill_on_drop(true);
-
-    if let Some(p) = provider {
-        cmd.arg("--provider").arg(p);
-    }
-    if let Some(m) = model {
-        cmd.arg("--model").arg(m);
-    }
-    if let Some(t) = max_turns {
-        cmd.arg("--max-turns").arg(t.to_string());
-    }
-
-    let mut child = cmd
-        .spawn()
-        .with_context(|| format!("spawn subprocess for {label}"))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(prompt.as_bytes())
-            .await
-            .with_context(|| format!("write prompt to {label} stdin"))?;
-        // Closing stdin signals EOF to `gosling run -i -`.
-        drop(stdin);
-    }
-
-    let output = child
-        .wait_with_output()
-        .await
-        .with_context(|| format!("wait on {label}"))?;
+    let output = workers
+        .run(prompt, label, provider, model, max_turns)
+        .await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -304,22 +261,22 @@ async fn run_subprocess_for_findings(
 /// so total wall clock stays close to the slowest single file rather
 /// than scaling with diff size. Failures on one file never block the
 /// others.
-pub async fn run_main_pass_in_parallel(
+pub(super) async fn run_main_pass_in_parallel(
     diff: &str,
     base_prompt: &str,
     opts: &ReviewOptions,
+    workers: &ReviewWorkerPool,
 ) -> Vec<Finding> {
     let per_file = split_diff_by_file(diff);
     if per_file.is_empty() {
         return Vec::new();
     }
 
-    let semaphore = Arc::new(Semaphore::new(MAX_WORKERS));
     let mut set: JoinSet<(usize, String, Result<Vec<RawFinding>>, bool)> = JoinSet::new();
     let max_turns = resolve_main_turn_limit(opts.default_turn_limit);
 
     for (idx, (path, file_diff)) in per_file.iter().enumerate() {
-        let sem = semaphore.clone();
+        let workers = workers.clone();
         let path = path.clone();
         let file_diff = file_diff.clone();
         let provider = opts.provider.clone();
@@ -329,7 +286,6 @@ pub async fn run_main_pass_in_parallel(
         let base_prompt = base_prompt.to_string();
 
         set.spawn(async move {
-            let _permit = sem.acquire().await.expect("semaphore is never closed");
             let prompt = build_main_pass_prompt(
                 &path,
                 &file_diff,
@@ -339,6 +295,7 @@ pub async fn run_main_pass_in_parallel(
             );
             let label = format!("main:{path}");
             let result = run_subprocess_for_findings(
+                &workers,
                 &prompt,
                 &label,
                 provider.as_deref(),
