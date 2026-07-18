@@ -253,7 +253,8 @@ impl GoslingAcpAgent {
         agent
             .extension_manager
             .update_working_dirs(&session.working_dir, &session.additional_working_dirs)
-            .await;
+            .await
+            .internal_err_ctx("Failed to update extension working directories")?;
 
         let (mode_state, config_options) =
             build_session_setup_config(&self.provider_inventory, &session).await?;

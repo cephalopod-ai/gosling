@@ -27,6 +27,8 @@ impl GoslingAcpAgent {
             return Ok(EmptyResponse {});
         }
 
+        let agent = self.get_session_agent(session_id).await?;
+
         self.session_manager
             .update(session_id)
             .working_dir(path)
@@ -34,24 +36,77 @@ impl GoslingAcpAgent {
             .await
             .internal_err_ctx("Failed to update session working directory")?;
 
-        let session = self
+        let updated_session = self
             .session_manager
             .get_session(session_id, false)
             .await
             .internal_err_ctx("Failed to reload session")?;
 
-        let agent = self.get_session_agent(session_id).await?;
-        agent
-            .restore_provider_from_session(&session)
-            .await
-            .internal_err_ctx("Failed to refresh provider from session")?;
+        let transition_error =
+            if let Err(error) = agent.restore_provider_from_session(&updated_session).await {
+                Some(format!("failed to refresh provider: {error}"))
+            } else if let Err(error) = agent
+                .extension_manager
+                .update_working_dirs(
+                    &updated_session.working_dir,
+                    &updated_session.additional_working_dirs,
+                )
+                .await
+            {
+                Some(format!(
+                    "failed to update extension working directories: {error}"
+                ))
+            } else {
+                None
+            };
 
-        agent
-            .extension_manager
-            .update_working_dirs(&session.working_dir, &session.additional_working_dirs)
-            .await;
+        if let Some(transition_error) = transition_error {
+            return Err(self
+                .rollback_working_dir_transition(&agent, &session, transition_error)
+                .await);
+        }
 
         Ok(EmptyResponse {})
+    }
+
+    async fn rollback_working_dir_transition(
+        &self,
+        agent: &Arc<Agent>,
+        previous_session: &Session,
+        transition_error: String,
+    ) -> agent_client_protocol::Error {
+        let mut rollback_errors = Vec::new();
+        if let Err(error) = self
+            .session_manager
+            .update(&previous_session.id)
+            .working_dir(previous_session.working_dir.clone())
+            .apply()
+            .await
+        {
+            rollback_errors.push(format!("session: {error}"));
+        }
+        if let Err(error) = agent.restore_provider_from_session(previous_session).await {
+            rollback_errors.push(format!("provider: {error}"));
+        }
+        if let Err(error) = agent
+            .extension_manager
+            .update_working_dirs(
+                &previous_session.working_dir,
+                &previous_session.additional_working_dirs,
+            )
+            .await
+        {
+            rollback_errors.push(format!("extensions: {error}"));
+        }
+
+        let rollback_detail = if rollback_errors.is_empty() {
+            "rollback completed".to_string()
+        } else {
+            format!("rollback errors: {}", rollback_errors.join("; "))
+        };
+        agent_client_protocol::Error::internal_error().data(format!(
+            "Working directory transition failed: {transition_error}; {rollback_detail}"
+        ))
     }
 
     pub(super) async fn on_add_session_working_dir(
@@ -165,7 +220,8 @@ impl GoslingAcpAgent {
         agent
             .extension_manager
             .update_working_dirs(&session.working_dir, &session.additional_working_dirs)
-            .await;
+            .await
+            .internal_err_ctx("Failed to update extension working directories")?;
 
         Ok(SessionWorkingDirsResponse {
             working_dir: session.working_dir.to_string_lossy().to_string(),

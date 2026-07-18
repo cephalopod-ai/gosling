@@ -262,6 +262,7 @@ pub struct Agent {
     pub(super) provider: SharedProvider,
     pub config: AgentConfig,
     pub(super) current_gosling_mode: Mutex<GoslingMode>,
+    state_transition: Mutex<()>,
 
     pub extension_manager: Arc<ExtensionManager>,
     pub(super) frontend_extensions: Mutex<HashMap<String, ExtensionConfig>>,
@@ -382,6 +383,7 @@ impl Agent {
             provider: provider.clone(),
             config,
             current_gosling_mode: Mutex::new(initial_mode),
+            state_transition: Mutex::new(()),
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
                 session_manager,
@@ -2972,12 +2974,25 @@ impl Agent {
         model_config: gosling_providers::model::ModelConfig,
         session_id: &str,
     ) -> Result<()> {
+        let _transition = self.state_transition.lock().await;
         let mode = self.gosling_mode().await;
-        self.update_provider_with_mode(provider, model_config, session_id, mode)
+        self.apply_provider_transition(provider, model_config, session_id, mode)
             .await
     }
 
     async fn update_provider_with_mode(
+        &self,
+        provider: Arc<dyn Provider>,
+        model_config: gosling_providers::model::ModelConfig,
+        session_id: &str,
+        mode: GoslingMode,
+    ) -> Result<()> {
+        let _transition = self.state_transition.lock().await;
+        self.apply_provider_transition(provider, model_config, session_id, mode)
+            .await
+    }
+
+    async fn apply_provider_transition(
         &self,
         provider: Arc<dyn Provider>,
         model_config: gosling_providers::model::ModelConfig,
@@ -3003,8 +3018,6 @@ impl Agent {
             .map_err(|e| anyhow::anyhow!("Provider rejected mode update: {e}"))?;
 
         let mut current_provider = self.provider.lock().await;
-        *current_provider = Some(provider);
-
         self.config
             .session_manager
             .clone()
@@ -3013,7 +3026,11 @@ impl Agent {
             .model_config(model_config)
             .apply()
             .await
-            .context("Failed to persist provider config to session")
+            .context("Failed to persist provider config to session")?;
+
+        *current_provider = Some(provider);
+        *self.current_gosling_mode.lock().await = mode;
+        Ok(())
     }
 
     pub async fn update_gosling_mode(&self, mode: GoslingMode, session_id: &str) -> Result<()> {
@@ -3022,14 +3039,9 @@ impl Agent {
         // be an external subprocess for ACP-backed providers, with no
         // timeout) would stall every other task that needs self.provider,
         // including the main reply loop, for as long as that hangs.
-        let provider = self.provider.lock().await.clone();
-        if let Some(provider) = provider {
-            provider
-                .update_mode(session_id, mode)
-                .await
-                .map_err(|e| anyhow::anyhow!("Provider rejected mode update: {e}"))?;
-        }
-        *self.current_gosling_mode.lock().await = mode;
+        let _transition = self.state_transition.lock().await;
+        let mut current_mode = self.current_gosling_mode.lock().await;
+        let previous_mode = *current_mode;
         self.config
             .session_manager
             .clone()
@@ -3037,7 +3049,40 @@ impl Agent {
             .gosling_mode(mode)
             .apply()
             .await
-            .context("Failed to persist gosling_mode to session")
+            .context("Failed to persist gosling_mode to session")?;
+
+        let provider = self.provider.lock().await.clone();
+        if let Some(provider) = provider {
+            if let Err(error) = provider.update_mode(session_id, mode).await {
+                let provider_rollback = provider.update_mode(session_id, previous_mode).await;
+                let rollback = self
+                    .config
+                    .session_manager
+                    .clone()
+                    .update(session_id)
+                    .gosling_mode(previous_mode)
+                    .apply()
+                    .await;
+                let mut rollback_errors = Vec::new();
+                if let Err(provider_rollback) = provider_rollback {
+                    rollback_errors.push(format!("provider: {provider_rollback}"));
+                }
+                if let Err(rollback_error) = rollback {
+                    rollback_errors.push(format!("session: {rollback_error}"));
+                }
+                let rollback_detail = if rollback_errors.is_empty() {
+                    String::new()
+                } else {
+                    format!("; rollback errors: {}", rollback_errors.join("; "))
+                };
+                return Err(anyhow::anyhow!(
+                    "Provider rejected mode update: {error}{rollback_detail}"
+                ));
+            }
+        }
+
+        *current_mode = mode;
+        Ok(())
     }
 
     pub async fn gosling_mode(&self) -> GoslingMode {
@@ -3218,7 +3263,6 @@ impl Agent {
             session.gosling_mode,
         )
         .await?;
-        *self.current_gosling_mode.lock().await = session.gosling_mode;
         Ok(provider_changed)
     }
 
@@ -3895,6 +3939,99 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             )
             .await?;
 
+        assert_eq!(
+            provider.updates.lock().await.as_slice(),
+            &[(session.id, GoslingMode::Auto)]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn provider_persistence_failure_preserves_live_provider() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let agent = Agent::with_config(AgentConfig::new(
+            session_manager.clone(),
+            Arc::new(PermissionManager::new(temp_dir.path().to_path_buf())),
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        ));
+        let session = session_manager
+            .create_session(
+                PathBuf::default(),
+                "provider-persistence-failure".to_string(),
+                SessionType::Hidden,
+                GoslingMode::Auto,
+            )
+            .await?;
+        agent
+            .update_provider(
+                Arc::new(ChunkedTextProvider),
+                gosling_providers::model::ModelConfig::new("old-model"),
+                &session.id,
+            )
+            .await?;
+        sqlx::query(
+            "CREATE TRIGGER fail_session_updates BEFORE UPDATE ON sessions \
+             BEGIN SELECT RAISE(FAIL, 'injected update failure'); END",
+        )
+        .execute(session_manager.storage().pool().await?)
+        .await?;
+
+        let result = agent
+            .update_provider(
+                Arc::new(ModeRecordingProvider::default()),
+                gosling_providers::model::ModelConfig::new("new-model"),
+                &session.id,
+            )
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(agent.provider().await?.get_name(), "chunked-text");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn mode_persistence_failure_preserves_live_mode() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let agent = Agent::with_config(AgentConfig::new(
+            session_manager.clone(),
+            Arc::new(PermissionManager::new(temp_dir.path().to_path_buf())),
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        ));
+        let session = session_manager
+            .create_session(
+                PathBuf::default(),
+                "mode-persistence-failure".to_string(),
+                SessionType::Hidden,
+                GoslingMode::Auto,
+            )
+            .await?;
+        let provider = Arc::new(ModeRecordingProvider::default());
+        agent
+            .update_provider(
+                provider.clone(),
+                gosling_providers::model::ModelConfig::new("model"),
+                &session.id,
+            )
+            .await?;
+        sqlx::query(
+            "CREATE TRIGGER fail_session_updates BEFORE UPDATE ON sessions \
+             BEGIN SELECT RAISE(FAIL, 'injected update failure'); END",
+        )
+        .execute(session_manager.storage().pool().await?)
+        .await?;
+
+        let result = agent
+            .update_gosling_mode(GoslingMode::SmartApprove, &session.id)
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(agent.gosling_mode().await, GoslingMode::Auto);
         assert_eq!(
             provider.updates.lock().await.as_slice(),
             &[(session.id, GoslingMode::Auto)]

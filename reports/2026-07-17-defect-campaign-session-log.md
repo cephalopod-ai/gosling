@@ -328,6 +328,47 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
 - Change review: the two CLI providers, one focused Codex outcome module, their
   local tests, and this log; permission flags and command working directories
   are unchanged.
+- Commit: `92dab2abf`.
+
+### Stage 11 — failure-atomic live state transitions
+
+- Defects: AUD-026 and AUD-027 fixed. AUD-031 reached its mandatory campaign
+  stop checkpoint and remains residual; see below.
+- Changes: provider/mode transitions are serialized. A replacement provider is
+  configured while detached, persisted, and only then installed live. Mode
+  persistence occurs before live mutation, with provider and session rollback
+  on rejection. ACP primary-working-directory changes now compensate provider,
+  session, and every extension root when downstream refresh fails; extension
+  root fan-out reports aggregate failures instead of silently warning.
+- Regression guardrails: injected SQLite update failures assert the previous
+  live provider and mode remain installed. Root propagation errors are now
+  observable at load, refresh, and primary-directory transition boundaries.
+- Modularization: `agent.rs`, `acp/server.rs`, and `extension_manager.rs` remain
+  >=2000-line routed targets. The ACP transition is isolated in the existing
+  small `manage_sessions.rs` submodule; no broad routed-file split was mixed in.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: every extension-root update call now consumes its
+  result; transition locks cover provider and mode writers; `git diff --check`
+  passed. Rust tests/build/Clippy were not executed under the repository's
+  explicit authorization rule.
+- Adversarial review: verified persistence failure cannot swap the provider or
+  call the live provider's mode transition; detached-provider setup failure is
+  inert; concurrent provider/mode transitions cannot interleave; provider
+  rejection attempts both provider and durable rollback; cwd rollback attempts
+  all three state surfaces even after one compensation fails; and partial root
+  fan-out is followed by an old-root fan-out during rollback.
+- AUD-031 stop checkpoint: at-most-once external side effects across process
+  death require a durable operation identity/ledger, an in-doubt recovery state,
+  request replay semantics, and idempotency-key support where external tools can
+  honor it. Persisting a tool-request message before dispatch is insufficient:
+  a crash between dispatch and response durability cannot distinguish “not
+  executed” from “executed,” and conversation repair currently removes orphaned
+  requests, allowing a new model call to issue a fresh ID. Implementing the
+  required protocol/schema/recovery contract is a broad architectural rewrite,
+  so the campaign's explicit stop rule forbids an approximate reorder patch.
+- Change review: transition ordering/serialization, ACP cwd compensation,
+  extension root error propagation, focused tests, and this log; tool dispatch
+  was deliberately left unchanged at the mandatory stop checkpoint.
 - Commit: pending.
 
 ## Campaign closeout
