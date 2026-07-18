@@ -654,4 +654,132 @@ impl GoslingAcpAgent {
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         self.on_dictation_model_select(req).await
     }
+
+    #[custom_method(WorkspaceListRequest)]
+    async fn dispatch_workspace_list(
+        &self,
+        req: WorkspaceListRequest,
+    ) -> Result<WorkspaceListResponse, agent_client_protocol::Error> {
+        self.on_workspace_list(req).await
+    }
+
+    #[custom_method(WorkspaceCreateRequest)]
+    async fn dispatch_workspace_create(
+        &self,
+        req: WorkspaceCreateRequest,
+    ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        self.on_workspace_create(req).await
+    }
+
+    #[custom_method(WorkspaceUpdateRequest)]
+    async fn dispatch_workspace_update(
+        &self,
+        req: WorkspaceUpdateRequest,
+    ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        self.on_workspace_update(req).await
+    }
+
+    #[custom_method(WorkspaceDuplicateRequest)]
+    async fn dispatch_workspace_duplicate(
+        &self,
+        req: WorkspaceDuplicateRequest,
+    ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        self.on_workspace_duplicate(req).await
+    }
+
+    #[custom_method(WorkspaceDeleteRequest)]
+    async fn dispatch_workspace_delete(
+        &self,
+        req: WorkspaceDeleteRequest,
+    ) -> Result<WorkspaceDeleteResponse, agent_client_protocol::Error> {
+        self.on_workspace_delete(req).await
+    }
+
+    #[custom_method(WorkspaceSetActiveRequest)]
+    async fn dispatch_workspace_set_active(
+        &self,
+        req: WorkspaceSetActiveRequest,
+    ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        self.on_workspace_set_active(req).await
+    }
+
+    #[custom_method(WorkspaceValidateRequest)]
+    async fn dispatch_workspace_validate(
+        &self,
+        req: WorkspaceValidateRequest,
+    ) -> Result<WorkspaceValidationResponse, agent_client_protocol::Error> {
+        self.on_workspace_validate(req).await
+    }
+
+    #[custom_method(WorkspaceExportRequest)]
+    async fn dispatch_workspace_export(
+        &self,
+        req: WorkspaceExportRequest,
+    ) -> Result<WorkspaceExportResponse, agent_client_protocol::Error> {
+        self.on_workspace_export(req).await
+    }
+
+    #[custom_method(WorkspaceImportRequest)]
+    async fn dispatch_workspace_import(
+        &self,
+        req: WorkspaceImportRequest,
+    ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        self.on_workspace_import(req).await
+    }
+
+    #[custom_method(WorkspaceCreateOutputFolderRequest)]
+    async fn dispatch_workspace_create_output_folder(
+        &self,
+        req: WorkspaceCreateOutputFolderRequest,
+    ) -> Result<WorkspaceValidationResponse, agent_client_protocol::Error> {
+        self.on_workspace_create_output_folder(req).await
+    }
+
+    #[custom_method(CredentialProfileListRequest)]
+    async fn dispatch_credential_profile_list(
+        &self,
+        req: CredentialProfileListRequest,
+    ) -> Result<CredentialProfileListResponse, agent_client_protocol::Error> {
+        self.on_credential_profile_list(req).await
+    }
+
+    #[custom_method(CredentialProfileCreateRequest)]
+    async fn dispatch_credential_profile_create(
+        &self,
+        req: CredentialProfileCreateRequest,
+    ) -> Result<CredentialProfileResponse, agent_client_protocol::Error> {
+        self.on_credential_profile_create(req).await
+    }
+
+    #[custom_method(CredentialProfileUpdateRequest)]
+    async fn dispatch_credential_profile_update(
+        &self,
+        req: CredentialProfileUpdateRequest,
+    ) -> Result<CredentialProfileResponse, agent_client_protocol::Error> {
+        self.on_credential_profile_update(req).await
+    }
+
+    #[custom_method(CredentialProfileDeleteRequest)]
+    async fn dispatch_credential_profile_delete(
+        &self,
+        req: CredentialProfileDeleteRequest,
+    ) -> Result<CredentialProfileDeleteResponse, agent_client_protocol::Error> {
+        self.on_credential_profile_delete(req).await
+    }
+
+    #[custom_method(CredentialProfileUsageRequest)]
+    async fn dispatch_credential_profile_usage(
+        &self,
+        req: CredentialProfileUsageRequest,
+    ) -> Result<CredentialProfileUsageResponse, agent_client_protocol::Error> {
+        self.on_credential_profile_usage(req).await
+    }
+
+    #[custom_method(CredentialProfileTestRequest)]
+    async fn dispatch_credential_profile_test(
+        &self,
+        req: CredentialProfileTestRequest,
+    ) -> Result<CredentialProfileTestResponse, agent_client_protocol::Error> {
+        self.on_credential_profile_test(req).await
+    }
 }

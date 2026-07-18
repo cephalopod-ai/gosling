@@ -3,15 +3,19 @@
 No finding disappears. Dispositions: fixed, verified-not-a-defect, deferred-with-risk,
 blocked-by-missing-input, or blocked-by-tooling. Every fixed defect names a regression test.
 
-Last updated: Gate 1
+Last updated: Gate 4
 
-| ID | Gate | Source | Severity | Finding | Root cause | Disposition | Patch | Regression test | Validation evidence | Residual risk |
-|---|---|---|---|---|---|---|---|---|---|---|
+| ID          | Gate | Source               | Severity | Finding                                                                            | Root cause                                                   | Disposition | Patch                                                                               | Regression test                                                                                                                       | Validation evidence                   | Residual risk                                                        |
+| ----------- | ---- | -------------------- | -------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------ | ----------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------- |
+| DAT-GOS-001 | 4    | data-integrity audit | Medium   | Reused workspace temp file was opened without truncation.                          | Locking was mistaken for complete atomic-write hygiene.      | fixed       | truncate-only temp opener                                                           | `stale_longer_temp_is_truncated_before_replacement`                                                                                   | 23-test workspace suite passes        | destructive kill drill not run                                       |
+| DAT-GOS-002 | 4    | data-integrity audit | Medium   | Credential metadata and secure values could partially commit.                      | Two atomic stores lacked a cross-store recovery protocol.    | fixed       | metadata-first fail-closed writes + pending secure-deletion journal + startup drain | effective-secret status test; store/journal invariants                                                                                | workspace + scoped-secret suites pass | live keyring failure injection deferred to acceptance/manual runtime |
+| DAT-GOS-003 | 4    | data-integrity audit | Medium   | Incomplete profiles were promoted as configured and produced no workspace warning. | Metadata presence was treated as readiness.                  | fixed       | derived actual fields/status + validation warning + prepare-session refusal         | `required_secret_status_is_derived_from_secure_storage_presence`; `unavailable_credential_profile_is_visible_before_session_creation` | workspace suite passes                | network validation remains provider-dependent                        |
+| DAT-GOS-004 | 4    | data-integrity audit | Medium   | Foreign-platform paths could validate and reach native directory creation.         | Syntax normalization was conflated with native reachability. | fixed       | platform-unavailable issues + native-I/O guard                                      | `foreign_platform_primary_folder_blocks_sessions`; `output_creation_rejects_foreign_platform_paths`                                   | workspace suite passes                | no drive/share translation by design                                 |
+| DAT-GOS-005 | 4    | data-integrity audit | Low      | Store reads permitted duplicate canonical IDs/names.                               | Uniqueness existed only in service writers.                  | fixed       | read-time identity/schema invariants + corruption quarantine                        | `duplicate_workspace_identity_is_quarantined_on_startup`                                                                              | workspace suite passes                | ambiguous records are preserved for manual recovery, not merged      |
 
 ## Root-cause patterns and prevention rules
 
-| Pattern | Prevention rule adopted | Plan-change ref |
-|---|---|---|
-| Ambient session inputs (ARC-GOS-002) | Every workspace-sensitive provider/session input is explicit or scoped and pinned. | initial charter |
+| Pattern                                   | Prevention rule adopted                                                               | Plan-change ref |
+| ----------------------------------------- | ------------------------------------------------------------------------------------- | --------------- |
+| Ambient session inputs (ARC-GOS-002)      | Every workspace-sensitive provider/session input is explicit or scoped and pinned.    | initial charter |
 | Oversized persistence owner (ARC-GOS-001) | Workspace metadata receives a dedicated store; session manager stores snapshots only. | initial charter |
-

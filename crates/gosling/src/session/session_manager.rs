@@ -8,6 +8,7 @@ use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
 use crate::utils::sanitize_unicode_tags;
+use crate::workspace::WorkspaceSessionContext;
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use gosling_providers::conversation::token_usage::Usage;
@@ -23,7 +24,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 21;
+pub const CURRENT_SCHEMA_VERSION: i32 = 22;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -115,6 +116,18 @@ pub struct Session {
     pub last_message_at: Option<DateTime<Utc>>,
     pub provider_name: Option<String>,
     pub model_config: Option<ModelConfig>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub workspace_name: Option<String>,
+    #[serde(default)]
+    pub credential_profile_id: Option<String>,
+    #[serde(default)]
+    pub credential_profile_name: Option<String>,
+    #[serde(default)]
+    pub credential_binding_id: Option<String>,
+    #[serde(default)]
+    pub workspace_context: Option<WorkspaceSessionContext>,
     #[serde(default)]
     pub gosling_mode: GoslingMode,
     #[serde(default)]
@@ -257,6 +270,12 @@ pub struct SessionUpdateBuilder<'a> {
     accumulated_cost: Option<Option<f64>>,
     provider_name: Option<Option<String>>,
     model_config: Option<Option<ModelConfig>>,
+    workspace_id: Option<Option<String>>,
+    workspace_name: Option<Option<String>>,
+    credential_profile_id: Option<Option<String>>,
+    credential_profile_name: Option<Option<String>>,
+    credential_binding_id: Option<Option<String>>,
+    workspace_context: Option<Option<WorkspaceSessionContext>>,
     gosling_mode: Option<GoslingMode>,
     workflow_kind: Option<SessionWorkflow>,
     archived_at: Option<Option<DateTime<Utc>>>,
@@ -289,6 +308,12 @@ impl<'a> SessionUpdateBuilder<'a> {
             accumulated_cost: None,
             provider_name: None,
             model_config: None,
+            workspace_id: None,
+            workspace_name: None,
+            credential_profile_id: None,
+            credential_profile_name: None,
+            credential_binding_id: None,
+            workspace_context: None,
             gosling_mode: None,
             workflow_kind: None,
             archived_at: None,
@@ -394,6 +419,24 @@ impl<'a> SessionUpdateBuilder<'a> {
         self.project_id = Some(project_id);
         self
     }
+
+    pub fn workspace_snapshot(
+        mut self,
+        workspace_id: String,
+        workspace_name: String,
+        credential_profile_id: Option<String>,
+        credential_profile_name: Option<String>,
+        credential_binding_id: Option<String>,
+        context: WorkspaceSessionContext,
+    ) -> Self {
+        self.workspace_id = Some(Some(workspace_id));
+        self.workspace_name = Some(Some(workspace_name));
+        self.credential_profile_id = Some(credential_profile_id);
+        self.credential_profile_name = Some(credential_profile_name);
+        self.credential_binding_id = Some(credential_binding_id);
+        self.workspace_context = Some(Some(context));
+        self
+    }
 }
 
 pub struct SessionManager {
@@ -428,6 +471,8 @@ pub(crate) struct SessionListFilters<'a> {
     pub(crate) keyword: Option<&'a str>,
     pub(crate) only_sessions_with_messages: bool,
     pub(crate) archive_state: SessionArchiveState,
+    pub(crate) workspace_id: Option<&'a str>,
+    pub(crate) include_unassigned: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -892,6 +937,12 @@ impl Default for Session {
             last_message_at: None,
             provider_name: None,
             model_config: None,
+            workspace_id: None,
+            workspace_name: None,
+            credential_profile_id: None,
+            credential_profile_name: None,
+            credential_binding_id: None,
+            workspace_context: None,
             gosling_mode: GoslingMode::default(),
             workflow_kind: SessionWorkflow::default(),
             archived_at: None,
@@ -950,6 +1001,13 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             .try_get::<String, _>("workflow_kind")?
             .parse::<SessionWorkflow>()
             .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
+        let workspace_context = row
+            .try_get::<Option<String>, _>("workspace_context_json")
+            .ok()
+            .flatten()
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
 
         Ok(Session {
             id: row.try_get("id")?,
@@ -989,6 +1047,12 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             last_message_at,
             provider_name: row.try_get("provider_name").ok().flatten(),
             model_config,
+            workspace_id: row.try_get("workspace_id").ok().flatten(),
+            workspace_name: row.try_get("workspace_name").ok().flatten(),
+            credential_profile_id: row.try_get("credential_profile_id").ok().flatten(),
+            credential_profile_name: row.try_get("credential_profile_name").ok().flatten(),
+            credential_binding_id: row.try_get("credential_binding_id").ok().flatten(),
+            workspace_context,
             gosling_mode: row
                 .try_get::<String, _>("gosling_mode")
                 .ok()
@@ -1180,6 +1244,12 @@ impl SessionStorage {
                 workflow_kind TEXT NOT NULL DEFAULT 'standard',
                 archived_at TIMESTAMP,
                 project_id TEXT
+                ,workspace_id TEXT
+                ,workspace_name TEXT
+                ,credential_profile_id TEXT
+                ,credential_profile_name TEXT
+                ,credential_binding_id TEXT
+                ,workspace_context_json TEXT
             )
         "#,
         )
@@ -1222,6 +1292,9 @@ impl SessionStorage {
             .execute(&mut *tx)
             .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_type ON sessions(session_type)")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id)")
             .execute(&mut *tx)
             .await?;
 
@@ -2120,6 +2193,34 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
+            22 => {
+                for column in [
+                    "workspace_id",
+                    "workspace_name",
+                    "credential_profile_id",
+                    "credential_profile_name",
+                    "credential_binding_id",
+                    "workspace_context_json",
+                ] {
+                    let exists = sqlx::query_scalar::<_, i32>(
+                        "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = ?",
+                    )
+                    .bind(column)
+                    .fetch_one(&mut **tx)
+                    .await?
+                        > 0;
+                    if !exists {
+                        sqlx::query(&format!("ALTER TABLE sessions ADD COLUMN {column} TEXT"))
+                            .execute(&mut **tx)
+                            .await?;
+                    }
+                }
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id)",
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -2184,7 +2285,9 @@ impl SessionStorage {
                accumulated_cache_read_tokens, accumulated_cache_write_tokens,
                accumulated_cost,
                provider_name, model_config_json, gosling_mode, workflow_kind,
-               archived_at, project_id
+               archived_at, project_id, workspace_id, workspace_name,
+               credential_profile_id, credential_profile_name, credential_binding_id,
+               workspace_context_json
         FROM sessions
         WHERE id = ?
     "#,
@@ -2264,6 +2367,12 @@ impl SessionStorage {
         add_update!(builder.accumulated_cost, "accumulated_cost");
         add_update!(builder.provider_name, "provider_name");
         add_update!(builder.model_config, "model_config_json");
+        add_update!(builder.workspace_id, "workspace_id");
+        add_update!(builder.workspace_name, "workspace_name");
+        add_update!(builder.credential_profile_id, "credential_profile_id");
+        add_update!(builder.credential_profile_name, "credential_profile_name");
+        add_update!(builder.credential_binding_id, "credential_binding_id");
+        add_update!(builder.workspace_context, "workspace_context_json");
         add_update!(builder.gosling_mode, "gosling_mode");
         add_update!(builder.workflow_kind, "workflow_kind");
         add_update!(builder.archived_at, "archived_at");
@@ -2331,6 +2440,28 @@ impl SessionStorage {
                 .map(|mc| serde_json::to_string(&mc))
                 .transpose()?;
             q = q.bind(model_config_json);
+        }
+        if let Some(workspace_id) = builder.workspace_id {
+            q = q.bind(workspace_id);
+        }
+        if let Some(workspace_name) = builder.workspace_name {
+            q = q.bind(workspace_name);
+        }
+        if let Some(profile_id) = builder.credential_profile_id {
+            q = q.bind(profile_id);
+        }
+        if let Some(profile_name) = builder.credential_profile_name {
+            q = q.bind(profile_name);
+        }
+        if let Some(binding_id) = builder.credential_binding_id {
+            q = q.bind(binding_id);
+        }
+        if let Some(context) = builder.workspace_context {
+            q = q.bind(
+                context
+                    .map(|value| serde_json::to_string(&value))
+                    .transpose()?,
+            );
         }
         if let Some(gosling_mode) = builder.gosling_mode {
             q = q.bind(gosling_mode.to_string());
@@ -3012,6 +3143,13 @@ impl SessionStorage {
         if filters.working_dir.is_some() {
             where_clauses.push("s.working_dir = ?".to_string());
         }
+        if filters.workspace_id.is_some() {
+            where_clauses.push(if filters.include_unassigned {
+                "(s.workspace_id = ? OR s.workspace_id IS NULL)".to_string()
+            } else {
+                "s.workspace_id = ?".to_string()
+            });
+        }
         if !keywords.is_empty() {
             where_clauses.push(message_keyword_clause(keywords.len()));
         }
@@ -3048,7 +3186,9 @@ impl SessionStorage {
                    s.accumulated_cache_read_tokens, s.accumulated_cache_write_tokens,
                    s.accumulated_cost,
                    s.provider_name, s.model_config_json, s.gosling_mode, s.workflow_kind,
-                   s.archived_at, s.project_id,
+                   s.archived_at, s.project_id, s.workspace_id, s.workspace_name,
+                   s.credential_profile_id, s.credential_profile_name,
+                   s.credential_binding_id, s.workspace_context_json,
                    COUNT(m.id) as message_count,
                    MAX({}) as last_message_timestamp,
                    {} as sort_timestamp
@@ -3077,6 +3217,9 @@ impl SessionStorage {
         }
         if let Some(working_dir) = filters.working_dir {
             q = q.bind(working_dir.to_string_lossy().to_string());
+        }
+        if let Some(workspace_id) = filters.workspace_id {
+            q = q.bind(workspace_id);
         }
         for term in keywords {
             q = q.bind(term);
@@ -3341,6 +3484,20 @@ impl SessionStorage {
             }
             if let Some(model_config) = original_session.model_config {
                 builder = builder.model_config(model_config);
+            }
+            if let (Some(workspace_id), Some(workspace_name), Some(context)) = (
+                original_session.workspace_id,
+                original_session.workspace_name,
+                original_session.workspace_context,
+            ) {
+                builder = builder.workspace_snapshot(
+                    workspace_id,
+                    workspace_name,
+                    original_session.credential_profile_id,
+                    original_session.credential_profile_name,
+                    original_session.credential_binding_id,
+                    context,
+                );
             }
             builder = builder.gosling_mode(original_session.gosling_mode);
             builder.apply().await?;
@@ -4669,6 +4826,7 @@ mod tests {
             keyword: Some("postgres"),
             only_sessions_with_messages: true,
             archive_state: SessionArchiveState::Active,
+            ..Default::default()
         };
         let cursor = sm
             .list_sessions_paged(SessionListPageQuery {
@@ -5454,6 +5612,102 @@ mod tests {
             .unwrap();
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.workflow_kind, SessionWorkflow::Tagteam);
+    }
+
+    #[tokio::test]
+    async fn workspace_snapshot_round_trips_and_is_copied() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "workspace session".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let context = WorkspaceSessionContext {
+            workspace_id: "workspace-id".into(),
+            workspace_name: "Project".into(),
+            primary_working_folder: temp_dir.path().to_string_lossy().to_string(),
+            folders: Vec::new(),
+            product_output_folders: Vec::new(),
+        };
+        sm.update(&session.id)
+            .workspace_snapshot(
+                "workspace-id".into(),
+                "Project".into(),
+                Some("profile-id".into()),
+                Some("Provider profile".into()),
+                Some("binding-id".into()),
+                context.clone(),
+            )
+            .apply()
+            .await
+            .unwrap();
+
+        let reloaded = sm.get_session(&session.id, false).await.unwrap();
+        assert_eq!(reloaded.workspace_id.as_deref(), Some("workspace-id"));
+        assert_eq!(reloaded.workspace_context, Some(context.clone()));
+        let copied = sm.copy_session(&session.id, "copy".into()).await.unwrap();
+        assert_eq!(copied.workspace_id, reloaded.workspace_id);
+        assert_eq!(copied.credential_profile_id, reloaded.credential_profile_id);
+        assert_eq!(copied.workspace_context, Some(context));
+
+        let database = std::fs::read(temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME)).unwrap();
+        assert!(!String::from_utf8_lossy(&database).contains("GOSLING_SENTINEL_SECRET"));
+    }
+
+    #[tokio::test]
+    async fn workspace_columns_migrate_from_schema_21_without_assigning_legacy_sessions() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query("DROP INDEX idx_sessions_workspace")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for column in [
+            "workspace_context_json",
+            "credential_binding_id",
+            "credential_profile_name",
+            "credential_profile_id",
+            "workspace_name",
+            "workspace_id",
+        ] {
+            sqlx::query(&format!("ALTER TABLE sessions DROP COLUMN {column}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        sqlx::query("UPDATE schema_version SET version = 21")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode) VALUES ('legacy-workspace', 'Legacy', '/tmp', '{}', 'auto')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let legacy = sm.get_session("legacy-workspace", false).await.unwrap();
+        assert!(legacy.workspace_id.is_none());
+        assert!(legacy.credential_profile_id.is_none());
+        assert!(legacy.workspace_context.is_none());
     }
 
     #[tokio::test]

@@ -60,6 +60,7 @@ use crate::session::{
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
+use crate::workspace::WorkspaceService;
 use gosling_providers::errors::ProviderError;
 use gosling_providers::thinking::ThinkingEffort;
 use rmcp::model::{
@@ -204,6 +205,7 @@ pub struct AgentConfig {
     pub mcp_host_info: Option<GoslingMcpHostInfo>,
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
     pub use_login_shell_path: Option<bool>,
+    pub workspace_service: Option<Arc<WorkspaceService>>,
 }
 
 impl AgentConfig {
@@ -224,6 +226,7 @@ impl AgentConfig {
             mcp_host_info: None,
             session_name_update_tx: None,
             use_login_shell_path: None,
+            workspace_service: None,
         }
     }
 
@@ -247,6 +250,11 @@ impl AgentConfig {
 
     pub fn with_use_login_shell_path(mut self, use_login_shell_path: bool) -> Self {
         self.use_login_shell_path = Some(use_login_shell_path);
+        self
+    }
+
+    pub fn with_workspace_service(mut self, service: Arc<WorkspaceService>) -> Self {
+        self.workspace_service = Some(service);
         self
     }
 
@@ -3135,13 +3143,10 @@ impl Agent {
             Config::global(),
         );
 
-        let provider = crate::providers::create_with_working_dir(
-            provider_name,
-            extensions,
-            session.working_dir.clone(),
-        )
-        .await
-        .map_err(|e| anyhow!("Could not create provider: {}", e))?;
+        let provider = self
+            .create_provider_with_session_scope(&session, provider_name, extensions)
+            .await
+            .map_err(|e| anyhow!("Could not create provider: {}", e))?;
 
         self.update_provider(provider, model_config, session_id)
             .await?;
@@ -3204,10 +3209,10 @@ impl Agent {
             .is_ok()
         {
             Some(
-                crate::providers::create_with_working_dir(
+                self.create_provider_with_session_scope(
+                    session,
                     &provider_name,
                     extensions.clone(),
-                    session.working_dir.clone(),
                 )
                 .await,
             )
@@ -3217,6 +3222,19 @@ impl Agent {
 
         let (provider, active_model_config, provider_changed) = match primary_result {
             Some(Ok(p)) => (p, model_config, false),
+            Some(Err(error)) if session.credential_profile_id.is_some() => {
+                return Err(anyhow!(
+                    "Pinned credential profile is unavailable for provider '{}': {}",
+                    provider_name,
+                    error
+                ));
+            }
+            None if session.credential_profile_id.is_some() => {
+                return Err(anyhow!(
+                    "Pinned provider '{}' is no longer available",
+                    provider_name
+                ));
+            }
             primary_result => {
                 let primary_error = primary_result.and_then(Result::err);
 
@@ -3292,6 +3310,37 @@ impl Agent {
         )
         .await?;
         Ok(provider_changed)
+    }
+
+    async fn create_provider_with_session_scope(
+        &self,
+        session: &Session,
+        provider_name: &str,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<Arc<dyn Provider>> {
+        let Some(profile_id) = session.credential_profile_id.as_deref() else {
+            return crate::providers::create_with_working_dir(
+                provider_name,
+                extensions,
+                session.working_dir.clone(),
+            )
+            .await;
+        };
+        let service = self
+            .config
+            .workspace_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("Workspace credential service is unavailable"))?;
+        let scope = service.config_scope(profile_id).await?;
+        Config::with_resolution_scope(scope, async {
+            crate::providers::create_with_working_dir(
+                provider_name,
+                extensions,
+                session.working_dir.clone(),
+            )
+            .await
+        })
+        .await
     }
 
     /// Override the system prompt with a custom template

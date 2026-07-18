@@ -1991,6 +1991,331 @@ export const zDictationModelSelectRequest_unstable = z.object({
     modelId: z.string()
 });
 
+export const zWorkspaceListRequest_unstable = z.record(z.unknown());
+
+export const zWorkspaceFolderKind = z.enum([
+    'source',
+    'reference',
+    'working'
+]);
+
+export const zWorkspaceFolderAccess = z.enum(['read', 'read_write']);
+
+export const zWorkspaceFolder = z.object({
+    id: z.string(),
+    label: z.string(),
+    path: z.string(),
+    kind: zWorkspaceFolderKind,
+    access: zWorkspaceFolderAccess
+});
+
+export const zProductType = z.enum([
+    'document',
+    'spreadsheet',
+    'presentation',
+    'image',
+    'video',
+    'code',
+    'data',
+    'export',
+    'other'
+]);
+
+export const zProductOutputFolder = z.object({
+    id: z.string(),
+    label: z.string(),
+    path: z.string(),
+    productTypes: z.array(zProductType),
+    isDefault: z.boolean(),
+    createIfMissing: z.boolean()
+});
+
+export const zCredentialTargetKind = z.enum([
+    'provider',
+    'extension',
+    'service'
+]);
+
+export const zCredentialBinding = z.object({
+    id: z.string(),
+    label: z.string(),
+    credentialProfileId: z.string(),
+    targetKind: zCredentialTargetKind,
+    targetId: z.string(),
+    isDefault: z.boolean()
+});
+
+export const zWorkspace = z.object({
+    id: z.string(),
+    schemaVersion: z.number().int().gte(0),
+    name: z.string(),
+    description: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    icon: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    workingFolder: z.string(),
+    folders: z.array(zWorkspaceFolder).optional().default([]),
+    productOutputFolders: z.array(zProductOutputFolder),
+    credentialBindings: z.array(zCredentialBinding).optional().default([]),
+    defaultCredentialBindingId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    defaultProvider: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    defaultModel: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    lastOpenedAt: z.string()
+});
+
+export const zWorkspaceIssueCode = z.enum([
+    'missing_folder',
+    'not_directory',
+    'inaccessible_folder',
+    'relative_path',
+    'path_traversal',
+    'duplicate_path',
+    'missing_primary_folder',
+    'missing_credential_profile',
+    'credential_needs_authentication',
+    'invalid_credential_binding',
+    'missing_output_folder',
+    'invalid_output_configuration',
+    'unsupported_schema_version',
+    'secret_field_rejected'
+]);
+
+export const zWorkspaceIssueSeverity = z.enum(['warning', 'error']);
+
+export const zWorkspaceIssue = z.object({
+    code: zWorkspaceIssueCode,
+    severity: zWorkspaceIssueSeverity,
+    message: z.string(),
+    targetId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    path: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zWorkspaceValidationReport = z.object({
+    validForSession: z.boolean(),
+    issues: z.array(zWorkspaceIssue).optional().default([]),
+    normalizedWorkingFolder: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zWorkspaceWithValidation = z.object({
+    workspace: zWorkspace,
+    validation: zWorkspaceValidationReport
+});
+
+export const zWorkspaceListResponse_unstable = z.object({
+    workspaces: z.array(zWorkspaceWithValidation),
+    activeWorkspaceId: z.string(),
+    defaultWorkspaceId: z.string()
+});
+
+export const zWorkspaceMutation = z.object({
+    name: z.string(),
+    description: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    icon: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    workingFolder: z.string(),
+    folders: z.array(zWorkspaceFolder).optional().default([]),
+    productOutputFolders: z.array(zProductOutputFolder),
+    credentialBindings: z.array(zCredentialBinding).optional().default([]),
+    defaultCredentialBindingId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    defaultProvider: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    defaultModel: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zWorkspaceCreateRequest_unstable = z.object({
+    workspace: zWorkspaceMutation
+});
+
+export const zWorkspaceResponse_unstable = z.object({
+    workspace: zWorkspace,
+    validation: zWorkspaceValidationReport
+});
+
+export const zWorkspaceUpdateRequest_unstable = z.object({
+    workspaceId: z.string(),
+    workspace: zWorkspaceMutation
+});
+
+export const zWorkspaceDuplicateRequest_unstable = z.object({
+    workspaceId: z.string()
+});
+
+export const zWorkspaceDeleteRequest_unstable = z.object({
+    workspaceId: z.string()
+});
+
+export const zWorkspaceDeleteResponse_unstable = z.object({
+    activeWorkspaceId: z.string(),
+    defaultWorkspaceId: z.string()
+});
+
+export const zWorkspaceSetActiveRequest_unstable = z.object({
+    workspaceId: z.string()
+});
+
+export const zWorkspaceValidateRequest_unstable = z.object({
+    workspaceId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    workspace: zWorkspaceMutation
+});
+
+export const zWorkspaceValidationResponse_unstable = z.object({
+    validation: zWorkspaceValidationReport
+});
+
+export const zWorkspaceExportRequest_unstable = z.object({
+    workspaceId: z.string()
+});
+
+export const zWorkspaceExportResponse_unstable = z.object({
+    document: z.string()
+});
+
+export const zWorkspaceImportRequest_unstable = z.object({
+    document: z.string()
+});
+
+export const zWorkspaceCreateOutputFolderRequest_unstable = z.object({
+    workspaceId: z.string(),
+    outputFolderId: z.string()
+});
+
+export const zCredentialProfileListRequest_unstable = z.record(z.unknown());
+
+export const zCredentialAuthKind = z.enum([
+    'api_key',
+    'config_fields',
+    'oauth',
+    'cli',
+    'local',
+    'other'
+]);
+
+export const zCredentialProfileStatus = z.enum([
+    'configured',
+    'missing',
+    'needs_authentication'
+]);
+
+export const zCredentialProfileSource = z.enum([
+    'workspace_secure_storage',
+    'global_configuration_alias',
+    'distribution_template'
+]);
+
+export const zCredentialProfile = z.object({
+    id: z.string(),
+    name: z.string(),
+    providerOrServiceId: z.string(),
+    authKind: zCredentialAuthKind,
+    configuredSecretFields: z.array(z.string()).optional().default([]),
+    nonSecretFields: z.record(z.string()).optional().default({}),
+    status: zCredentialProfileStatus,
+    source: zCredentialProfileSource,
+    createdAt: z.string(),
+    updatedAt: z.string()
+});
+
+export const zCredentialProfileListResponse_unstable = z.object({
+    profiles: z.array(zCredentialProfile)
+});
+
+export const zCredentialFieldUpdate = z.object({
+    key: z.string(),
+    value: z.string()
+});
+
+export const zCredentialProfileCreateRequest_unstable = z.object({
+    name: z.string(),
+    providerOrServiceId: z.string(),
+    authKind: zCredentialAuthKind,
+    nonSecretFields: z.record(z.string()).optional().default({}),
+    secretFields: z.array(zCredentialFieldUpdate).optional().default([])
+});
+
+export const zCredentialProfileResponse_unstable = z.object({
+    profile: zCredentialProfile
+});
+
+export const zCredentialProfileUpdateRequest_unstable = z.object({
+    profileId: z.string(),
+    name: z.string(),
+    authKind: zCredentialAuthKind,
+    nonSecretFields: z.record(z.string()).optional().default({}),
+    secretFields: z.array(zCredentialFieldUpdate).optional().default([]),
+    clearSecretFields: z.array(z.string()).optional().default([])
+});
+
+export const zCredentialProfileDeleteRequest_unstable = z.object({
+    profileId: z.string(),
+    confirmReferenced: z.boolean().optional().default(false)
+});
+
+export const zCredentialProfileDeleteResponse_unstable = z.object({
+    deleted: z.boolean()
+});
+
+export const zCredentialProfileUsageRequest_unstable = z.object({
+    profileId: z.string()
+});
+
+export const zCredentialProfileWorkspaceReference = z.object({
+    workspaceId: z.string(),
+    workspaceName: z.string()
+});
+
+export const zCredentialProfileUsageResponse_unstable = z.object({
+    workspaces: z.array(zCredentialProfileWorkspaceReference)
+});
+
+export const zCredentialProfileTestRequest_unstable = z.object({
+    profileId: z.string()
+});
+
+export const zCredentialProfileTestResponse_unstable = z.object({
+    status: zCredentialProfileStatus,
+    supported: z.boolean()
+});
+
 /**
  * Streaming context-window usage update for a session.
  */
@@ -2134,7 +2459,23 @@ export const zExtRequest = z.object({
             zDictationConfigRequest_unstable,
             zDictationSecretSaveRequest_unstable,
             zDictationSecretDeleteRequest_unstable,
-            zDictationModelSelectRequest_unstable
+            zDictationModelSelectRequest_unstable,
+            zWorkspaceListRequest_unstable,
+            zWorkspaceCreateRequest_unstable,
+            zWorkspaceUpdateRequest_unstable,
+            zWorkspaceDuplicateRequest_unstable,
+            zWorkspaceDeleteRequest_unstable,
+            zWorkspaceSetActiveRequest_unstable,
+            zWorkspaceValidateRequest_unstable,
+            zWorkspaceExportRequest_unstable,
+            zWorkspaceImportRequest_unstable,
+            zWorkspaceCreateOutputFolderRequest_unstable,
+            zCredentialProfileListRequest_unstable,
+            zCredentialProfileCreateRequest_unstable,
+            zCredentialProfileUpdateRequest_unstable,
+            zCredentialProfileDeleteRequest_unstable,
+            zCredentialProfileUsageRequest_unstable,
+            zCredentialProfileTestRequest_unstable
         ]),
         z.union([
             z.record(z.unknown()),
@@ -2199,7 +2540,17 @@ export const zExtResponse = z.union([
                 zExportSourceResponse_unstable,
                 zImportSourcesResponse_unstable,
                 zDictationTranscribeResponse_unstable,
-                zDictationConfigResponse_unstable
+                zDictationConfigResponse_unstable,
+                zWorkspaceListResponse_unstable,
+                zWorkspaceResponse_unstable,
+                zWorkspaceDeleteResponse_unstable,
+                zWorkspaceValidationResponse_unstable,
+                zWorkspaceExportResponse_unstable,
+                zCredentialProfileListResponse_unstable,
+                zCredentialProfileResponse_unstable,
+                zCredentialProfileDeleteResponse_unstable,
+                zCredentialProfileUsageResponse_unstable,
+                zCredentialProfileTestResponse_unstable
             ]),
             z.unknown()
         ]).optional()

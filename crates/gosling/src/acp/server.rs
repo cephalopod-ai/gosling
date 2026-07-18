@@ -39,6 +39,7 @@ use crate::session::{
 };
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
+use crate::workspace::WorkspaceService;
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
     AuthenticateResponse, BlobResourceContents, CancelNotification, CloseSessionRequest,
@@ -102,6 +103,7 @@ mod slash_commands;
 mod sources;
 mod tool_notifications;
 mod tools;
+mod workspace_handlers;
 
 pub type AcpProviderFactory = Arc<
     dyn Fn(
@@ -226,6 +228,7 @@ pub struct GoslingAcpAgent {
     disable_session_naming: bool,
     provider_inventory: ProviderInventoryService,
     additional_source_roots: Vec<SourceRoot>,
+    workspace_service: Arc<WorkspaceService>,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -1034,6 +1037,14 @@ impl GoslingAcpAgent {
 
     // TODO: gosling reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
     pub async fn new(options: GoslingAcpAgentOptions) -> Result<Self> {
+        let default_working_folder = std::env::var_os("GOSLING_WORKING_DIR")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("/"));
+        let workspace_service = Arc::new(
+            WorkspaceService::initialize(&options.data_dir, &default_working_folder).await?,
+        );
         let session_manager = Arc::new(SessionManager::new(options.data_dir));
 
         // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
@@ -1052,7 +1063,8 @@ impl GoslingAcpAgent {
             options.disable_session_naming,
             options.gosling_platform.clone(),
         )
-        .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime());
+        .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime())
+        .with_workspace_service(Arc::clone(&workspace_service));
         let agent_manager = Arc::new(AgentManager::new(agent_config, None).await?);
 
         Ok(Self {
@@ -1075,6 +1087,7 @@ impl GoslingAcpAgent {
             disable_session_naming: options.disable_session_naming,
             provider_inventory,
             additional_source_roots: options.additional_source_roots,
+            workspace_service,
         })
     }
 
@@ -1253,6 +1266,14 @@ impl GoslingAcpAgent {
             .get_or_create_session_agent_with_results(cx, session.id.clone())
             .await?;
         let agent = agent_result.agent.clone();
+        if let Some(context) = &session.workspace_context {
+            agent
+                .extend_system_prompt(
+                    "workspace".to_string(),
+                    WorkspaceService::render_session_context(context),
+                )
+                .await;
+        }
         self.apply_acp_extension_overrides(cx, &agent, session)
             .await;
         self.maybe_refresh_provider_inventory_with_agent(session, &agent)
@@ -1272,12 +1293,21 @@ impl GoslingAcpAgent {
         let mut builder = self.session_manager.update(&session.id);
         let mut session_needs_update = false;
 
-        if cwd != session.working_dir {
+        if session.workspace_id.is_none() && cwd != session.working_dir {
             builder = builder.working_dir(cwd);
             session_needs_update = true;
         }
 
-        if session.provider_name.is_none() || session.model_config.is_none() {
+        if session.workspace_id.is_some()
+            && (session.provider_name.is_none() || session.model_config.is_none())
+        {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("workspace session is missing its pinned provider or model"));
+        }
+
+        if session.workspace_id.is_none()
+            && (session.provider_name.is_none() || session.model_config.is_none())
+        {
             let (resolved_provider, resolved_model_config) =
                 resolve_default_provider_model_config(config)?;
             builder = builder

@@ -8,9 +8,10 @@ use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_yaml::Mapping;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::OpenOptions;
+use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "system-keyring")]
@@ -112,6 +113,35 @@ pub enum ConfigError {
 }
 
 pub const GOSLING_CODE_EXECUTION_RUNTIME_KEY: &str = "GOSLING_CODE_EXECUTION_RUNTIME";
+
+#[derive(Debug, Clone, Default)]
+pub struct ConfigResolutionScope {
+    scoped_keys: HashSet<String>,
+    secret_keys: HashMap<String, String>,
+    parameter_values: HashMap<String, Value>,
+}
+
+impl ConfigResolutionScope {
+    pub fn new(
+        scoped_keys: impl IntoIterator<Item = String>,
+        secret_keys: HashMap<String, String>,
+        parameter_values: HashMap<String, Value>,
+    ) -> Self {
+        Self {
+            scoped_keys: scoped_keys.into_iter().collect(),
+            secret_keys,
+            parameter_values,
+        }
+    }
+
+    fn contains(&self, key: &str) -> bool {
+        self.scoped_keys.contains(key)
+    }
+}
+
+tokio::task_local! {
+    static CONFIG_RESOLUTION_SCOPE: ConfigResolutionScope;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -493,6 +523,13 @@ fn secret_storage(config_dir: &Path, _keyring_disabled: bool, _service: &str) ->
 }
 
 impl Config {
+    pub async fn with_resolution_scope<F, T>(scope: ConfigResolutionScope, future: F) -> T
+    where
+        F: Future<Output = T>,
+    {
+        CONFIG_RESOLUTION_SCOPE.scope(scope, future).await
+    }
+
     /// Get the global configuration instance.
     ///
     /// This will initialize the configuration with the default path (~/.config/gosling/config.yaml)
@@ -899,6 +936,20 @@ impl Config {
     /// - The value cannot be deserialized into the requested type
     /// - There is an error reading the config file
     pub fn get_param<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Result<T, ConfigError> {
+        if let Some(value) = CONFIG_RESOLUTION_SCOPE
+            .try_with(|scope| {
+                scope
+                    .contains(key)
+                    .then(|| scope.parameter_values.get(key).cloned())
+            })
+            .ok()
+            .flatten()
+        {
+            return value
+                .ok_or_else(|| ConfigError::NotFound(key.to_string()))
+                .and_then(|value| serde_json::from_value(value).map_err(ConfigError::from));
+        }
+
         let env_key = key.to_uppercase();
         if let Ok(val) = env::var(&env_key) {
             let value = Self::parse_env_value(&val)?;
@@ -1014,6 +1065,24 @@ impl Config {
     /// - The value cannot be deserialized into the requested type
     /// - There is an error accessing the keyring
     pub fn get_secret<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Result<T, ConfigError> {
+        if let Some(stored_key) = CONFIG_RESOLUTION_SCOPE
+            .try_with(|scope| {
+                scope
+                    .contains(key)
+                    .then(|| scope.secret_keys.get(key).cloned())
+            })
+            .ok()
+            .flatten()
+        {
+            let stored_key = stored_key.ok_or_else(|| ConfigError::NotFound(key.to_string()))?;
+            let values = self.all_secrets()?;
+            return values
+                .get(&stored_key)
+                .cloned()
+                .ok_or_else(|| ConfigError::NotFound(key.to_string()))
+                .and_then(|value| serde_json::from_value(value).map_err(ConfigError::from));
+        }
+
         // First check environment variables (convert to uppercase)
         let env_key = key.to_uppercase();
         if let Ok(val) = env::var(&env_key) {
@@ -1035,6 +1104,20 @@ impl Config {
         primary: &str,
         maybe_secret: &[&str],
     ) -> Result<HashMap<String, String>, ConfigError> {
+        let scoped = CONFIG_RESOLUTION_SCOPE
+            .try_with(|scope| scope.contains(primary))
+            .unwrap_or(false);
+        if scoped {
+            let mut result = HashMap::new();
+            result.insert(primary.to_string(), self.get_secret(primary)?);
+            for &key in maybe_secret {
+                if let Ok(value) = self.get_secret(key) {
+                    result.insert(key.to_string(), value);
+                }
+            }
+            return Ok(result);
+        }
+
         let use_env = env::var(primary.to_uppercase()).is_ok();
         let get_value = |key: &str| -> Result<String, ConfigError> {
             if use_env {
@@ -2980,5 +3063,82 @@ extensions:
             Some(ThinkingEffort::High)
         );
         assert_eq!(Config::legacy_gemini3_thinking_effort("auto"), None);
+    }
+
+    #[tokio::test]
+    async fn resolution_scopes_are_task_local_and_fail_closed() {
+        let temp = TempDir::new().unwrap();
+        let config = Arc::new(
+            Config::new_with_file_secrets(
+                temp.path().join("config.yaml"),
+                temp.path().join("secrets.yaml"),
+            )
+            .unwrap(),
+        );
+        config.set_param("SCOPE_HOST", "global-host").unwrap();
+        config
+            .set_secret("scope-secret-a", &"GOSLING_SENTINEL_A")
+            .unwrap();
+        config
+            .set_secret("scope-secret-b", &"GOSLING_SENTINEL_B")
+            .unwrap();
+
+        let scoped = |stored_secret: &str, host: &str| {
+            ConfigResolutionScope::new(
+                ["SCOPE_SECRET".to_string(), "SCOPE_HOST".to_string()],
+                HashMap::from([("SCOPE_SECRET".to_string(), stored_secret.to_string())]),
+                HashMap::from([("SCOPE_HOST".to_string(), Value::String(host.to_string()))]),
+            )
+        };
+        let first_config = Arc::clone(&config);
+        let second_config = Arc::clone(&config);
+        let first = Config::with_resolution_scope(scoped("scope-secret-a", "first"), async move {
+            (
+                first_config.get_secret::<String>("SCOPE_SECRET"),
+                first_config.get_param::<String>("SCOPE_HOST"),
+                first_config.get_secret::<String>("UNMAPPED_SECRET"),
+            )
+        });
+        let second =
+            Config::with_resolution_scope(scoped("scope-secret-b", "second"), async move {
+                (
+                    second_config.get_secret::<String>("SCOPE_SECRET"),
+                    second_config.get_param::<String>("SCOPE_HOST"),
+                )
+            });
+        let (first, second) = tokio::join!(first, second);
+
+        assert_eq!(first.0.unwrap(), "GOSLING_SENTINEL_A");
+        assert_eq!(first.1.unwrap(), "first");
+        assert!(matches!(first.2, Err(ConfigError::NotFound(_))));
+        assert_eq!(second.0.unwrap(), "GOSLING_SENTINEL_B");
+        assert_eq!(second.1.unwrap(), "second");
+        assert_eq!(
+            config.get_param::<String>("SCOPE_HOST").unwrap(),
+            "global-host"
+        );
+    }
+
+    #[tokio::test]
+    async fn scoped_declared_key_never_falls_back_to_global_config() {
+        let temp = TempDir::new().unwrap();
+        let config = Config::new_with_file_secrets(
+            temp.path().join("config.yaml"),
+            temp.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        config.set_param("SCOPED_REQUIRED", "global-value").unwrap();
+        let scope = ConfigResolutionScope::new(
+            ["SCOPED_REQUIRED".to_string()],
+            HashMap::new(),
+            HashMap::new(),
+        );
+
+        let result = Config::with_resolution_scope(scope, async {
+            config.get_param::<String>("SCOPED_REQUIRED")
+        })
+        .await;
+
+        assert!(matches!(result, Err(ConfigError::NotFound(_))));
     }
 }

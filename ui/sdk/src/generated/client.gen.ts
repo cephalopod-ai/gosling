@@ -23,6 +23,17 @@ import type {
   ConfigUpsertRequest_unstable,
   CreateSourceRequest_unstable,
   CreateSourceResponse_unstable,
+  CredentialProfileCreateRequest_unstable,
+  CredentialProfileDeleteRequest_unstable,
+  CredentialProfileDeleteResponse_unstable,
+  CredentialProfileListRequest_unstable,
+  CredentialProfileListResponse_unstable,
+  CredentialProfileResponse_unstable,
+  CredentialProfileTestRequest_unstable,
+  CredentialProfileTestResponse_unstable,
+  CredentialProfileUpdateRequest_unstable,
+  CredentialProfileUsageRequest_unstable,
+  CredentialProfileUsageResponse_unstable,
   CustomProviderCreateRequest_unstable,
   CustomProviderCreateResponse_unstable,
   CustomProviderDeleteRequest_unstable,
@@ -141,12 +152,32 @@ import type {
   UpdateSourceRequest_unstable,
   UpdateSourceResponse_unstable,
   UpdateWorkingDirRequest_unstable,
+  WorkspaceCreateOutputFolderRequest_unstable,
+  WorkspaceCreateRequest_unstable,
+  WorkspaceDeleteRequest_unstable,
+  WorkspaceDeleteResponse_unstable,
+  WorkspaceDuplicateRequest_unstable,
+  WorkspaceExportRequest_unstable,
+  WorkspaceExportResponse_unstable,
+  WorkspaceImportRequest_unstable,
+  WorkspaceListRequest_unstable,
+  WorkspaceListResponse_unstable,
+  WorkspaceResponse_unstable,
+  WorkspaceSetActiveRequest_unstable,
+  WorkspaceUpdateRequest_unstable,
+  WorkspaceValidateRequest_unstable,
+  WorkspaceValidationResponse_unstable,
 } from './types.gen.js';
 import {
   zCanonicalModelInfoResponse_unstable,
   zConfigReadAllResponse_unstable,
   zConfigReadResponse_unstable,
   zCreateSourceResponse_unstable,
+  zCredentialProfileDeleteResponse_unstable,
+  zCredentialProfileListResponse_unstable,
+  zCredentialProfileResponse_unstable,
+  zCredentialProfileTestResponse_unstable,
+  zCredentialProfileUsageResponse_unstable,
   zCustomProviderCreateResponse_unstable,
   zCustomProviderDeleteResponse_unstable,
   zCustomProviderReadResponse_unstable,
@@ -195,6 +226,11 @@ import {
   zShareSessionNostrResponse_unstable,
   zSteerSessionResponse_unstable,
   zUpdateSourceResponse_unstable,
+  zWorkspaceDeleteResponse_unstable,
+  zWorkspaceExportResponse_unstable,
+  zWorkspaceListResponse_unstable,
+  zWorkspaceResponse_unstable,
+  zWorkspaceValidationResponse_unstable,
 } from './zod.gen.js';
 
 export class GoslingExtClient {
@@ -1056,6 +1092,188 @@ export class GoslingExtClient {
       "_gosling/unstable/dictation/models/select",
       params,
     );
+  }
+
+  async workspacesList_unstable(
+    params: WorkspaceListRequest_unstable,
+  ): Promise<WorkspaceListResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/list",
+      params,
+    );
+    return zWorkspaceListResponse_unstable.parse(
+      raw,
+    ) as WorkspaceListResponse_unstable;
+  }
+
+  async workspacesCreate_unstable(
+    params: WorkspaceCreateRequest_unstable,
+  ): Promise<WorkspaceResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/create",
+      params,
+    );
+    return zWorkspaceResponse_unstable.parse(raw) as WorkspaceResponse_unstable;
+  }
+
+  async workspacesUpdate_unstable(
+    params: WorkspaceUpdateRequest_unstable,
+  ): Promise<WorkspaceResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/update",
+      params,
+    );
+    return zWorkspaceResponse_unstable.parse(raw) as WorkspaceResponse_unstable;
+  }
+
+  async workspacesDuplicate_unstable(
+    params: WorkspaceDuplicateRequest_unstable,
+  ): Promise<WorkspaceResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/duplicate",
+      params,
+    );
+    return zWorkspaceResponse_unstable.parse(raw) as WorkspaceResponse_unstable;
+  }
+
+  async workspacesDelete_unstable(
+    params: WorkspaceDeleteRequest_unstable,
+  ): Promise<WorkspaceDeleteResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/delete",
+      params,
+    );
+    return zWorkspaceDeleteResponse_unstable.parse(
+      raw,
+    ) as WorkspaceDeleteResponse_unstable;
+  }
+
+  async workspacesActiveSet_unstable(
+    params: WorkspaceSetActiveRequest_unstable,
+  ): Promise<WorkspaceResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/active/set",
+      params,
+    );
+    return zWorkspaceResponse_unstable.parse(raw) as WorkspaceResponse_unstable;
+  }
+
+  async workspacesValidate_unstable(
+    params: WorkspaceValidateRequest_unstable,
+  ): Promise<WorkspaceValidationResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/validate",
+      params,
+    );
+    return zWorkspaceValidationResponse_unstable.parse(
+      raw,
+    ) as WorkspaceValidationResponse_unstable;
+  }
+
+  async workspacesExport_unstable(
+    params: WorkspaceExportRequest_unstable,
+  ): Promise<WorkspaceExportResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/export",
+      params,
+    );
+    return zWorkspaceExportResponse_unstable.parse(
+      raw,
+    ) as WorkspaceExportResponse_unstable;
+  }
+
+  async workspacesImport_unstable(
+    params: WorkspaceImportRequest_unstable,
+  ): Promise<WorkspaceResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/import",
+      params,
+    );
+    return zWorkspaceResponse_unstable.parse(raw) as WorkspaceResponse_unstable;
+  }
+
+  async workspacesOutputCreate_unstable(
+    params: WorkspaceCreateOutputFolderRequest_unstable,
+  ): Promise<WorkspaceValidationResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/workspaces/output/create",
+      params,
+    );
+    return zWorkspaceValidationResponse_unstable.parse(
+      raw,
+    ) as WorkspaceValidationResponse_unstable;
+  }
+
+  async credentialProfilesList_unstable(
+    params: CredentialProfileListRequest_unstable,
+  ): Promise<CredentialProfileListResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/credential-profiles/list",
+      params,
+    );
+    return zCredentialProfileListResponse_unstable.parse(
+      raw,
+    ) as CredentialProfileListResponse_unstable;
+  }
+
+  async credentialProfilesCreate_unstable(
+    params: CredentialProfileCreateRequest_unstable,
+  ): Promise<CredentialProfileResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/credential-profiles/create",
+      params,
+    );
+    return zCredentialProfileResponse_unstable.parse(
+      raw,
+    ) as CredentialProfileResponse_unstable;
+  }
+
+  async credentialProfilesUpdate_unstable(
+    params: CredentialProfileUpdateRequest_unstable,
+  ): Promise<CredentialProfileResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/credential-profiles/update",
+      params,
+    );
+    return zCredentialProfileResponse_unstable.parse(
+      raw,
+    ) as CredentialProfileResponse_unstable;
+  }
+
+  async credentialProfilesDelete_unstable(
+    params: CredentialProfileDeleteRequest_unstable,
+  ): Promise<CredentialProfileDeleteResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/credential-profiles/delete",
+      params,
+    );
+    return zCredentialProfileDeleteResponse_unstable.parse(
+      raw,
+    ) as CredentialProfileDeleteResponse_unstable;
+  }
+
+  async credentialProfilesUsage_unstable(
+    params: CredentialProfileUsageRequest_unstable,
+  ): Promise<CredentialProfileUsageResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/credential-profiles/usage",
+      params,
+    );
+    return zCredentialProfileUsageResponse_unstable.parse(
+      raw,
+    ) as CredentialProfileUsageResponse_unstable;
+  }
+
+  async credentialProfilesTest_unstable(
+    params: CredentialProfileTestRequest_unstable,
+  ): Promise<CredentialProfileTestResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/credential-profiles/test",
+      params,
+    );
+    return zCredentialProfileTestResponse_unstable.parse(
+      raw,
+    ) as CredentialProfileTestResponse_unstable;
   }
 }
 

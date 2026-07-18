@@ -399,6 +399,86 @@
       "method": "_gosling/unstable/dictation/models/select",
       "requestType": "DictationModelSelectRequest_unstable",
       "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/list",
+      "requestType": "WorkspaceListRequest_unstable",
+      "responseType": "WorkspaceListResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/create",
+      "requestType": "WorkspaceCreateRequest_unstable",
+      "responseType": "WorkspaceResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/update",
+      "requestType": "WorkspaceUpdateRequest_unstable",
+      "responseType": "WorkspaceResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/duplicate",
+      "requestType": "WorkspaceDuplicateRequest_unstable",
+      "responseType": "WorkspaceResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/delete",
+      "requestType": "WorkspaceDeleteRequest_unstable",
+      "responseType": "WorkspaceDeleteResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/active/set",
+      "requestType": "WorkspaceSetActiveRequest_unstable",
+      "responseType": "WorkspaceResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/validate",
+      "requestType": "WorkspaceValidateRequest_unstable",
+      "responseType": "WorkspaceValidationResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/export",
+      "requestType": "WorkspaceExportRequest_unstable",
+      "responseType": "WorkspaceExportResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/import",
+      "requestType": "WorkspaceImportRequest_unstable",
+      "responseType": "WorkspaceResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/workspaces/output/create",
+      "requestType": "WorkspaceCreateOutputFolderRequest_unstable",
+      "responseType": "WorkspaceValidationResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/credential-profiles/list",
+      "requestType": "CredentialProfileListRequest_unstable",
+      "responseType": "CredentialProfileListResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/credential-profiles/create",
+      "requestType": "CredentialProfileCreateRequest_unstable",
+      "responseType": "CredentialProfileResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/credential-profiles/update",
+      "requestType": "CredentialProfileUpdateRequest_unstable",
+      "responseType": "CredentialProfileResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/credential-profiles/delete",
+      "requestType": "CredentialProfileDeleteRequest_unstable",
+      "responseType": "CredentialProfileDeleteResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/credential-profiles/usage",
+      "requestType": "CredentialProfileUsageRequest_unstable",
+      "responseType": "CredentialProfileUsageResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/credential-profiles/test",
+      "requestType": "CredentialProfileTestRequest_unstable",
+      "responseType": "CredentialProfileTestResponse_unstable"
     }
   ],
   "notifications": [

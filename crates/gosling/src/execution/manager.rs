@@ -210,6 +210,9 @@ impl AgentManager {
                     session_id, session.provider_name
                 );
                 if let Err(e) = agent.restore_provider_from_session(&session).await {
+                    if session.credential_profile_id.is_some() {
+                        return Err(e);
+                    }
                     tracing::warn!(
                         "Failed to restore provider for session {}: {}",
                         session_id,

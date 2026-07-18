@@ -3,6 +3,7 @@ use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
 use crate::session::{ExtensionData, Session, SessionType};
+use crate::workspace::PreparedWorkspaceSession;
 
 use super::GoslingAcpAgent;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
@@ -16,6 +17,7 @@ struct InitialSessionConfig {
     model_config: ModelConfig,
     extension_data: ExtensionData,
     project_id: Option<String>,
+    workspace: Option<PreparedWorkspaceSession>,
 }
 
 impl GoslingAcpAgent {
@@ -24,9 +26,19 @@ impl GoslingAcpAgent {
         cx: &ConnectionTo<Client>,
         args: NewSessionRequest,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
-        validate_absolute_cwd(&args.cwd)?;
         let config = Config::global();
         let project_id = meta_string(args.meta.as_ref(), "projectId")?;
+        let workspace_id = meta_string(args.meta.as_ref(), "workspaceId")?;
+        let workspace = workspace_id
+            .as_deref()
+            .map(|workspace_id| self.workspace_service.prepare_session(workspace_id))
+            .transpose()
+            .invalid_params_err_ctx("Workspace is unavailable")?;
+        let effective_cwd = workspace
+            .as_ref()
+            .map(|workspace| workspace.working_folder.clone())
+            .unwrap_or_else(|| args.cwd.clone());
+        validate_absolute_cwd(&effective_cwd)?;
         let session_type = match meta_string(args.meta.as_ref(), "client")? {
             Some(_) => SessionType::User,
             None => SessionType::Acp,
@@ -36,7 +48,7 @@ impl GoslingAcpAgent {
         let session = self
             .session_manager
             .create_session(
-                args.cwd.clone(),
+                effective_cwd,
                 "New Chat".to_string(),
                 session_type,
                 current_mode,
@@ -44,7 +56,7 @@ impl GoslingAcpAgent {
             .await
             .internal_err_ctx("Failed to create session")?;
         match self
-            .finish_new_session_setup(cx, config, &session, args, project_id)
+            .finish_new_session_setup(cx, config, &session, args, project_id, workspace)
             .await
         {
             Ok(response) => Ok(response),
@@ -62,8 +74,9 @@ impl GoslingAcpAgent {
         session: &Session,
         args: NewSessionRequest,
         project_id: Option<String>,
+        workspace: Option<PreparedWorkspaceSession>,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
-        self.configure_new_session(config, session, args, project_id)
+        self.configure_new_session(config, session, args, project_id, workspace)
             .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
@@ -111,9 +124,10 @@ impl GoslingAcpAgent {
         session: &Session,
         args: NewSessionRequest,
         project_id: Option<String>,
+        workspace: Option<PreparedWorkspaceSession>,
     ) -> Result<(), agent_client_protocol::Error> {
         let (provider, model_config) = self
-            .resolve_provider_and_model(config, args.meta.as_ref())
+            .resolve_provider_and_model(config, args.meta.as_ref(), workspace.as_ref())
             .await?;
 
         let gosling_extensions = meta_gosling_extensions(args.meta.as_ref())?;
@@ -131,6 +145,7 @@ impl GoslingAcpAgent {
                 model_config,
                 extension_data,
                 project_id,
+                workspace,
             },
         )
         .await?;
@@ -152,7 +167,19 @@ impl GoslingAcpAgent {
         &self,
         config: &Config,
         meta: Option<&Meta>,
+        workspace: Option<&PreparedWorkspaceSession>,
     ) -> Result<(String, ModelConfig), agent_client_protocol::Error> {
+        if let Some(workspace) = workspace {
+            if let Some(provider) = workspace.provider.clone() {
+                let model_config = if let Some(model) = workspace.model.as_deref() {
+                    crate::model_config::model_config_from_user_config(&provider, model)
+                        .invalid_params_err_ctx("Workspace model is invalid")?
+                } else {
+                    super::resolve_provider_default_model_config(&provider).await?
+                };
+                return Ok((provider, model_config));
+            }
+        }
         let provider = match meta_string(meta, "provider")? {
             Some(provider) => provider,
             None => {
@@ -178,6 +205,16 @@ impl GoslingAcpAgent {
             .extension_data(config.extension_data);
         if let Some(project_id) = config.project_id {
             builder = builder.project_id(Some(project_id));
+        }
+        if let Some(workspace) = config.workspace {
+            builder = builder.workspace_snapshot(
+                workspace.workspace_id,
+                workspace.workspace_name,
+                workspace.credential_profile_id,
+                workspace.credential_profile_name,
+                workspace.credential_binding_id,
+                workspace.context,
+            );
         }
         builder
             .apply()

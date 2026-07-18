@@ -4659,6 +4659,911 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/dictation/models/select"
     },
+    "WorkspaceListRequest_unstable": {
+      "type": "object",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/list"
+    },
+    "WorkspaceListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceWithValidation"
+          }
+        },
+        "activeWorkspaceId": {
+          "type": "string"
+        },
+        "defaultWorkspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaces",
+        "activeWorkspaceId",
+        "defaultWorkspaceId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/list"
+    },
+    "WorkspaceWithValidation": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        },
+        "validation": {
+          "$ref": "#/$defs/WorkspaceValidationReport"
+        }
+      },
+      "required": [
+        "workspace",
+        "validation"
+      ]
+    },
+    "Workspace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workingFolder": {
+          "type": "string"
+        },
+        "folders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceFolder"
+          },
+          "default": []
+        },
+        "productOutputFolders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProductOutputFolder"
+          }
+        },
+        "credentialBindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialBinding"
+          },
+          "default": []
+        },
+        "defaultCredentialBindingId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultProvider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "lastOpenedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "name",
+        "workingFolder",
+        "productOutputFolders",
+        "createdAt",
+        "updatedAt",
+        "lastOpenedAt"
+      ]
+    },
+    "WorkspaceFolder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/WorkspaceFolderKind"
+        },
+        "access": {
+          "$ref": "#/$defs/WorkspaceFolderAccess"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "path",
+        "kind",
+        "access"
+      ]
+    },
+    "WorkspaceFolderKind": {
+      "type": "string",
+      "enum": [
+        "source",
+        "reference",
+        "working"
+      ]
+    },
+    "WorkspaceFolderAccess": {
+      "type": "string",
+      "enum": [
+        "read",
+        "read_write"
+      ]
+    },
+    "ProductOutputFolder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "productTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProductType"
+          }
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "createIfMissing": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "path",
+        "productTypes",
+        "isDefault",
+        "createIfMissing"
+      ]
+    },
+    "ProductType": {
+      "type": "string",
+      "enum": [
+        "document",
+        "spreadsheet",
+        "presentation",
+        "image",
+        "video",
+        "code",
+        "data",
+        "export",
+        "other"
+      ]
+    },
+    "CredentialBinding": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "credentialProfileId": {
+          "type": "string"
+        },
+        "targetKind": {
+          "$ref": "#/$defs/CredentialTargetKind"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "credentialProfileId",
+        "targetKind",
+        "targetId",
+        "isDefault"
+      ]
+    },
+    "CredentialTargetKind": {
+      "type": "string",
+      "enum": [
+        "provider",
+        "extension",
+        "service"
+      ]
+    },
+    "WorkspaceValidationReport": {
+      "type": "object",
+      "properties": {
+        "validForSession": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceIssue"
+          },
+          "default": []
+        },
+        "normalizedWorkingFolder": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "validForSession"
+      ]
+    },
+    "WorkspaceIssue": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/WorkspaceIssueCode"
+        },
+        "severity": {
+          "$ref": "#/$defs/WorkspaceIssueSeverity"
+        },
+        "message": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ]
+    },
+    "WorkspaceIssueCode": {
+      "type": "string",
+      "enum": [
+        "missing_folder",
+        "not_directory",
+        "inaccessible_folder",
+        "relative_path",
+        "path_traversal",
+        "duplicate_path",
+        "missing_primary_folder",
+        "missing_credential_profile",
+        "credential_needs_authentication",
+        "invalid_credential_binding",
+        "missing_output_folder",
+        "invalid_output_configuration",
+        "unsupported_schema_version",
+        "secret_field_rejected"
+      ]
+    },
+    "WorkspaceIssueSeverity": {
+      "type": "string",
+      "enum": [
+        "warning",
+        "error"
+      ]
+    },
+    "WorkspaceCreateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceMutation"
+        }
+      },
+      "required": [
+        "workspace"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/create"
+    },
+    "WorkspaceMutation": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workingFolder": {
+          "type": "string"
+        },
+        "folders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceFolder"
+          },
+          "default": []
+        },
+        "productOutputFolders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProductOutputFolder"
+          }
+        },
+        "credentialBindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialBinding"
+          },
+          "default": []
+        },
+        "defaultCredentialBindingId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultProvider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "workingFolder",
+        "productOutputFolders"
+      ]
+    },
+    "WorkspaceResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        },
+        "validation": {
+          "$ref": "#/$defs/WorkspaceValidationReport"
+        }
+      },
+      "required": [
+        "workspace",
+        "validation"
+      ],
+      "x-side": "agent"
+    },
+    "WorkspaceUpdateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceMutation"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "workspace"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/update"
+    },
+    "WorkspaceDuplicateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/duplicate"
+    },
+    "WorkspaceDeleteRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/delete"
+    },
+    "WorkspaceDeleteResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "activeWorkspaceId": {
+          "type": "string"
+        },
+        "defaultWorkspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "activeWorkspaceId",
+        "defaultWorkspaceId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/delete"
+    },
+    "WorkspaceSetActiveRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/active/set"
+    },
+    "WorkspaceValidateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceMutation"
+        }
+      },
+      "required": [
+        "workspace"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/validate"
+    },
+    "WorkspaceValidationResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "validation": {
+          "$ref": "#/$defs/WorkspaceValidationReport"
+        }
+      },
+      "required": [
+        "validation"
+      ],
+      "x-side": "agent"
+    },
+    "WorkspaceExportRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/export"
+    },
+    "WorkspaceExportResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "document"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/export"
+    },
+    "WorkspaceImportRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "document"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/import"
+    },
+    "WorkspaceCreateOutputFolderRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "outputFolderId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "outputFolderId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/workspaces/output/create"
+    },
+    "CredentialProfileListRequest_unstable": {
+      "type": "object",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/list"
+    },
+    "CredentialProfileListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialProfile"
+          }
+        }
+      },
+      "required": [
+        "profiles"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/list"
+    },
+    "CredentialProfile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "providerOrServiceId": {
+          "type": "string"
+        },
+        "authKind": {
+          "$ref": "#/$defs/CredentialAuthKind"
+        },
+        "configuredSecretFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "nonSecretFields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "status": {
+          "$ref": "#/$defs/CredentialProfileStatus"
+        },
+        "source": {
+          "$ref": "#/$defs/CredentialProfileSource"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "providerOrServiceId",
+        "authKind",
+        "status",
+        "source",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CredentialAuthKind": {
+      "type": "string",
+      "enum": [
+        "api_key",
+        "config_fields",
+        "oauth",
+        "cli",
+        "local",
+        "other"
+      ]
+    },
+    "CredentialProfileStatus": {
+      "type": "string",
+      "enum": [
+        "configured",
+        "missing",
+        "needs_authentication"
+      ]
+    },
+    "CredentialProfileSource": {
+      "type": "string",
+      "enum": [
+        "workspace_secure_storage",
+        "global_configuration_alias",
+        "distribution_template"
+      ]
+    },
+    "CredentialProfileCreateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "providerOrServiceId": {
+          "type": "string"
+        },
+        "authKind": {
+          "$ref": "#/$defs/CredentialAuthKind"
+        },
+        "nonSecretFields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "secretFields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialFieldUpdate"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "name",
+        "providerOrServiceId",
+        "authKind"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/create"
+    },
+    "CredentialFieldUpdate": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ]
+    },
+    "CredentialProfileResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/CredentialProfile"
+        }
+      },
+      "required": [
+        "profile"
+      ],
+      "x-side": "agent"
+    },
+    "CredentialProfileUpdateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "authKind": {
+          "$ref": "#/$defs/CredentialAuthKind"
+        },
+        "nonSecretFields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "secretFields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialFieldUpdate"
+          },
+          "default": []
+        },
+        "clearSecretFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "profileId",
+        "name",
+        "authKind"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/update"
+    },
+    "CredentialProfileDeleteRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "confirmReferenced": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "profileId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/delete"
+    },
+    "CredentialProfileDeleteResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/delete"
+    },
+    "CredentialProfileUsageRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/usage"
+    },
+    "CredentialProfileUsageResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialProfileWorkspaceReference"
+          }
+        }
+      },
+      "required": [
+        "workspaces"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/usage"
+    },
+    "CredentialProfileWorkspaceReference": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "workspaceName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "workspaceName"
+      ]
+    },
+    "CredentialProfileTestRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/test"
+    },
+    "CredentialProfileTestResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/CredentialProfileStatus"
+        },
+        "supported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status",
+        "supported"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/credential-profiles/test"
+    },
     "GoslingSessionNotification_unstable": {
       "type": "object",
       "properties": {
@@ -5529,6 +6434,150 @@
                   ],
                   "description": "Params for _gosling/unstable/dictation/models/select",
                   "title": "DictationModelSelectRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/list",
+                  "title": "WorkspaceListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceCreateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/create",
+                  "title": "WorkspaceCreateRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceUpdateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/update",
+                  "title": "WorkspaceUpdateRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceDuplicateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/duplicate",
+                  "title": "WorkspaceDuplicateRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceDeleteRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/delete",
+                  "title": "WorkspaceDeleteRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceSetActiveRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/active/set",
+                  "title": "WorkspaceSetActiveRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceValidateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/validate",
+                  "title": "WorkspaceValidateRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceExportRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/export",
+                  "title": "WorkspaceExportRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceImportRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/import",
+                  "title": "WorkspaceImportRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WorkspaceCreateOutputFolderRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/workspaces/output/create",
+                  "title": "WorkspaceCreateOutputFolderRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CredentialProfileListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/credential-profiles/list",
+                  "title": "CredentialProfileListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CredentialProfileCreateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/credential-profiles/create",
+                  "title": "CredentialProfileCreateRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CredentialProfileUpdateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/credential-profiles/update",
+                  "title": "CredentialProfileUpdateRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CredentialProfileDeleteRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/credential-profiles/delete",
+                  "title": "CredentialProfileDeleteRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CredentialProfileUsageRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/credential-profiles/usage",
+                  "title": "CredentialProfileUsageRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/CredentialProfileTestRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/credential-profiles/test",
+                  "title": "CredentialProfileTestRequest_unstable"
                 }
               ]
             },
@@ -5975,6 +7024,86 @@
                         }
                       ],
                       "title": "DictationConfigResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/WorkspaceListResponse_unstable"
+                        }
+                      ],
+                      "title": "WorkspaceListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/WorkspaceResponse_unstable"
+                        }
+                      ],
+                      "title": "WorkspaceResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/WorkspaceDeleteResponse_unstable"
+                        }
+                      ],
+                      "title": "WorkspaceDeleteResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/WorkspaceValidationResponse_unstable"
+                        }
+                      ],
+                      "title": "WorkspaceValidationResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/WorkspaceExportResponse_unstable"
+                        }
+                      ],
+                      "title": "WorkspaceExportResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CredentialProfileListResponse_unstable"
+                        }
+                      ],
+                      "title": "CredentialProfileListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CredentialProfileResponse_unstable"
+                        }
+                      ],
+                      "title": "CredentialProfileResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CredentialProfileDeleteResponse_unstable"
+                        }
+                      ],
+                      "title": "CredentialProfileDeleteResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CredentialProfileUsageResponse_unstable"
+                        }
+                      ],
+                      "title": "CredentialProfileUsageResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/CredentialProfileTestResponse_unstable"
+                        }
+                      ],
+                      "title": "CredentialProfileTestResponse_unstable"
                     }
                   ]
                 },

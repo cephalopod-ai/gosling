@@ -47,6 +47,10 @@ struct SessionMeta<'a> {
     additional_working_dirs: Vec<String>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     restrict_tools_to_working_dirs: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workspace_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workspace_name: Option<&'a str>,
 }
 
 impl<'a> From<&'a Session> for SessionMeta<'a> {
@@ -72,6 +76,8 @@ impl<'a> From<&'a Session> for SessionMeta<'a> {
                 .map(|dir| dir.to_string_lossy().to_string())
                 .collect(),
             restrict_tools_to_working_dirs: session.restrict_tools_to_working_dirs,
+            workspace_id: session.workspace_id.as_deref(),
+            workspace_name: session.workspace_name.as_deref(),
         }
     }
 }
@@ -95,6 +101,18 @@ pub(super) fn session_response_meta(
         "workingDir".to_string(),
         serde_json::Value::String(session.working_dir.to_string_lossy().to_string()),
     );
+    if let Some(workspace_id) = &session.workspace_id {
+        meta.insert(
+            "workspaceId".to_string(),
+            serde_json::Value::String(workspace_id.clone()),
+        );
+    }
+    if let Some(workspace_name) = &session.workspace_name {
+        meta.insert(
+            "workspaceName".to_string(),
+            serde_json::Value::String(workspace_name.clone()),
+        );
+    }
     meta
 }
 

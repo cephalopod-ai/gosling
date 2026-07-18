@@ -1,0 +1,322 @@
+[
+  {
+    "id": "DAT-GOS-001",
+    "title": "Stale temporary bytes can corrupt the next workspace-store write",
+    "domain": "Data-Integrity",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/workspace/store.rs",
+        "lines": "223-230,263-271",
+        "symbol": "write_document/private_create",
+        "quote": "options.create(true).read(true).write(true).truncate(false);"
+      }
+    ],
+    "observed": "The reused temporary path is opened without truncation before replacement.",
+    "expected_boundary": "Every atomic replacement starts with an empty temporary file.",
+    "failure_mechanism": "A shorter write leaves trailing bytes from an interrupted longer temp file.",
+    "break_it_angle": "Leave a longer stale temp and persist a shorter document.",
+    "impact": "A malformed temp can replace the last valid canonical workspace store.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "compensatable",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": ["crash recovery", "multi-window writes"],
+    "mitigation": {
+      "patterns": ["truncate-on-open", "behavior regression"],
+      "minimal_repair": "Truncate the document temp file before writing.",
+      "local_guardrail": "Keep the lock file non-truncating.",
+      "behavior_test": "Persist shorter JSON over a longer stale temp and parse exact bytes."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "XS",
+      "nominal_agent": "codex",
+      "rationale": "One file-open mode and a focused deterministic test.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": ["stale-longer-temp regression", "workspace store tests"],
+    "non_goals": ["replace the file lock"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed for missing truncation; runtime crash manifestation unobserved",
+      "rationale": "The unsafe file-open property is deterministic in source."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Reliability",
+        "reason": "The trigger is an interrupted write and recovery path."
+      }
+    ]
+  },
+  {
+    "id": "DAT-GOS-002",
+    "title": "Credential metadata and secure values can partially commit",
+    "domain": "Data-Integrity",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/workspace/credentials.rs",
+        "lines": "161-195,215-231",
+        "symbol": "update_profile/delete_profile",
+        "quote": "Config::global().update_secret_values(&updates, &deletions)?;"
+      }
+    ],
+    "observed": "Secure storage mutates before the independent workspace metadata write.",
+    "expected_boundary": "Cross-store mutation remains fail-closed and restart-recoverable without raw-secret journaling.",
+    "failure_mechanism": "There is no durable non-secret intent or cleanup record between the stores.",
+    "break_it_angle": "Fail or terminate after secure mutation and before metadata replacement.",
+    "impact": "Pinned sessions can lose credentials or secure values can become orphaned.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "compensatable",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "unknown"
+    },
+    "adjacent": ["stale configured status", "secure residue"],
+    "mitigation": {
+      "patterns": [
+        "metadata-first fail-closed commit",
+        "non-secret cleanup journal"
+      ],
+      "minimal_repair": "Persist expected metadata and pending deletions before secure mutation, then finalize.",
+      "local_guardrail": "Drain pending secret deletions at startup.",
+      "behavior_test": "Inject halfway failures and assert fail-closed metadata plus restart cleanup."
+    },
+    "implementation_assessment": {
+      "complexity": "persistence_recovery",
+      "cost": "M",
+      "nominal_agent": "codex",
+      "rationale": "The repair crosses the JSON store, secure abstraction, and startup lifecycle.",
+      "cost_drivers": ["modules", "tests", "runtime_verification"]
+    },
+    "validation": [
+      "halfway update test",
+      "halfway delete/restart cleanup test"
+    ],
+    "non_goals": ["plaintext journal", "new keyring implementation"],
+    "patch_priority": 2,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed for absent recovery boundary",
+      "rationale": "The split writes and absent compensation are directly visible."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Security",
+        "reason": "The secondary store contains credentials."
+      },
+      {
+        "secondary_lens": "Reliability",
+        "reason": "Restart recovery is required."
+      }
+    ]
+  },
+  {
+    "id": "DAT-GOS-003",
+    "title": "Incomplete credential profiles are promoted as configured",
+    "domain": "Data-Integrity",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/workspace/credentials.rs",
+        "lines": "89-103",
+        "symbol": "create_profile",
+        "quote": "status: CredentialProfileStatus::Configured,"
+      },
+      {
+        "file": "crates/gosling/src/workspace/validation.rs",
+        "lines": "102-114",
+        "symbol": "validate_workspace_mutation",
+        "quote": "if !profile_ids.contains(binding.credential_profile_id.as_str())"
+      }
+    ],
+    "observed": "Creation hard-codes configured and workspace validation checks only profile ID presence.",
+    "expected_boundary": "Readiness derives from required declared fields and actual secure presence.",
+    "failure_mechanism": "Metadata existence is promoted to credential authority.",
+    "break_it_angle": "Create and bind a required-secret profile with no secret.",
+    "impact": "The UI reports readiness and session creation fails only during provider activation.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "user-visible",
+      "reversibility": "reversible",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "safe"
+    },
+    "adjacent": ["distribution provisioning", "deleted profile resume"],
+    "mitigation": {
+      "patterns": ["derive status from authority", "early validation"],
+      "minimal_repair": "Refresh actual fields/status and warn/block before session preparation.",
+      "local_guardrail": "Fail profile resolution when required fields are missing.",
+      "behavior_test": "Missing required secret is never reported configured."
+    },
+    "implementation_assessment": {
+      "complexity": "workflow_protocol",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "Two backend modules and focused status/validation tests.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": [
+      "missing profile status test",
+      "workspace warning test",
+      "resolution fail-closed test"
+    ],
+    "non_goals": ["network credential validation"],
+    "patch_priority": 3,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The wrong status assignment is deterministic."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Workflow-GUI",
+        "reason": "The bad derived status misleads the operator."
+      }
+    ]
+  },
+  {
+    "id": "DAT-GOS-004",
+    "title": "Foreign-platform paths are treated as session-ready",
+    "domain": "Data-Integrity",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/workspace/validation.rs",
+        "lines": "167-201",
+        "symbol": "validate_path",
+        "quote": "if is_native_path(&normalized) {"
+      },
+      {
+        "file": "crates/gosling/src/workspace/service.rs",
+        "lines": "223-241",
+        "symbol": "create_output_folder",
+        "quote": "std::fs::create_dir_all(path)?;"
+      }
+    ],
+    "observed": "Non-native paths skip reachability checks and can reach native directory creation.",
+    "expected_boundary": "Foreign syntax may persist but cannot authorize native I/O.",
+    "failure_mechanism": "Syntax normalization is conflated with platform availability.",
+    "break_it_angle": "Create a Windows output path on Unix.",
+    "impact": "Late session failure or a wrongly named local directory.",
+    "operational_impact": {
+      "blast_radius": "Local",
+      "side_effect_class": "file",
+      "reversibility": "reversible",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": ["cross-device import", "distribution templates"],
+    "mitigation": {
+      "patterns": ["native-I/O guard", "platform-unavailable validation"],
+      "minimal_repair": "Issue unavailable errors/warnings and reject non-native create.",
+      "local_guardrail": "Keep cross-platform normalization for display/round-trip only.",
+      "behavior_test": "Foreign primary blocks and foreign output creates nothing."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "Validation and one I/O boundary require platform-conditional tests.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": ["non-native validation test", "non-native create rejection"],
+    "non_goals": ["path translation between operating systems"],
+    "patch_priority": 4,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed for deterministic platform branch",
+      "rationale": "On Unix, Windows syntax deterministically skips the check and is not an absolute native PathBuf."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Input-Output-Path",
+        "reason": "The value reaches filesystem creation."
+      }
+    ]
+  },
+  {
+    "id": "DAT-GOS-005",
+    "title": "Store validation permits duplicate canonical identities",
+    "domain": "Data-Integrity",
+    "severity": "Low",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/workspace/store.rs",
+        "lines": "84-109",
+        "symbol": "WorkspaceStoreDocument::validate",
+        "quote": "if self.workspaces.is_empty() {"
+      }
+    ],
+    "observed": "The persistence reader does not enforce workspace/profile ID or name uniqueness.",
+    "expected_boundary": "The source-of-truth reader rejects semantic identity ambiguity.",
+    "failure_mechanism": "Writer-only checks are treated as persistent constraints.",
+    "break_it_angle": "Duplicate an ID while retaining valid active/default references.",
+    "impact": "Reads and edits can select a different record than the operator intended.",
+    "operational_impact": {
+      "blast_radius": "Local",
+      "side_effect_class": "file",
+      "reversibility": "compensatable",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": ["future migration", "manual corruption"],
+    "mitigation": {
+      "patterns": ["read-time invariant validation", "quarantine recovery"],
+      "minimal_repair": "Reject duplicate IDs/names and unsupported schema versions.",
+      "local_guardrail": "Preserve malformed bytes in a private corruption backup.",
+      "behavior_test": "Ambiguous store is quarantined and never loaded as authority."
+    },
+    "implementation_assessment": {
+      "complexity": "persistence_recovery",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "A local validator and recovery test cover the source-of-truth seam.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": [
+      "duplicate workspace test",
+      "duplicate profile test",
+      "backup preservation test"
+    ],
+    "non_goals": ["automatic ambiguous-record merge"],
+    "patch_priority": 5,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The absent constraints are a static schema/reader property."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Reliability",
+        "reason": "Semantic corruption otherwise prevents deterministic startup behavior."
+      }
+    ]
+  }
+]

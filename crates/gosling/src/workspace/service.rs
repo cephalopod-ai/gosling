@@ -1,0 +1,687 @@
+use super::store::{WorkspaceStore, WorkspaceStoreDocument};
+use super::{
+    validate_workspace_mutation, Workspace, WorkspaceMutation, WorkspaceSessionContext,
+    WorkspaceValidationReport, WorkspaceWithValidation, WORKSPACE_SCHEMA_VERSION,
+};
+use anyhow::{anyhow, bail, Context, Result};
+use chrono::Utc;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use tokio::sync::Mutex;
+use uuid::Uuid;
+
+#[derive(Debug, Clone)]
+pub struct PreparedWorkspaceSession {
+    pub workspace_id: String,
+    pub workspace_name: String,
+    pub working_folder: PathBuf,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub credential_profile_id: Option<String>,
+    pub credential_profile_name: Option<String>,
+    pub credential_binding_id: Option<String>,
+    pub context: WorkspaceSessionContext,
+}
+
+pub struct WorkspaceService {
+    pub(super) store: WorkspaceStore,
+    pub(super) operation_lock: Mutex<()>,
+}
+
+impl WorkspaceService {
+    pub async fn initialize(data_dir: &Path, default_working_folder: &Path) -> Result<Self> {
+        let store = WorkspaceStore::new(data_dir);
+        store.load_or_initialize(default_working_folder)?;
+        let service = Self {
+            store,
+            operation_lock: Mutex::new(()),
+        };
+        service.cleanup_pending_secret_deletions().await?;
+        service
+            .materialize_distribution_templates(data_dir, default_working_folder)
+            .await?;
+        service.migrate_global_provider_profile().await?;
+        Ok(service)
+    }
+
+    pub fn list(&self) -> Result<(Vec<WorkspaceWithValidation>, String, String)> {
+        let document = self.store.load()?;
+        let profiles = super::credentials::effective_profiles(&document);
+        let workspaces = document
+            .workspaces
+            .iter()
+            .cloned()
+            .map(|workspace| WorkspaceWithValidation {
+                validation: validate_workspace_mutation(
+                    &WorkspaceMutation::from(&workspace),
+                    &profiles,
+                ),
+                workspace,
+            })
+            .collect();
+        Ok((
+            workspaces,
+            document.active_workspace_id,
+            document.default_workspace_id,
+        ))
+    }
+
+    pub fn get(&self, workspace_id: &str) -> Result<Workspace> {
+        self.store
+            .load()?
+            .workspaces
+            .into_iter()
+            .find(|workspace| workspace.id == workspace_id)
+            .ok_or_else(|| anyhow!("workspace not found"))
+    }
+
+    pub fn validate(&self, workspace: &WorkspaceMutation) -> Result<WorkspaceValidationReport> {
+        let document = self.store.load()?;
+        Ok(validate_workspace_mutation(
+            workspace,
+            &super::credentials::effective_profiles(&document),
+        ))
+    }
+
+    pub async fn create(&self, mutation: WorkspaceMutation) -> Result<Workspace> {
+        let _guard = self.operation_lock.lock().await;
+        validate_workspace_boundary(&mutation)?;
+        let now = Utc::now().to_rfc3339();
+        self.store.mutate(|document| {
+            reject_duplicate_name(document, None, &mutation.name)?;
+            let workspace = workspace_from_mutation(
+                Uuid::now_v7().to_string(),
+                mutation,
+                now.clone(),
+                now.clone(),
+                now.clone(),
+            );
+            document.workspaces.push(workspace.clone());
+            document.workspaces.sort_by(workspace_order);
+            Ok(workspace)
+        })
+    }
+
+    pub async fn update(
+        &self,
+        workspace_id: &str,
+        mutation: WorkspaceMutation,
+    ) -> Result<Workspace> {
+        let _guard = self.operation_lock.lock().await;
+        validate_workspace_boundary(&mutation)?;
+        let now = Utc::now().to_rfc3339();
+        self.store.mutate(|document| {
+            reject_duplicate_name(document, Some(workspace_id), &mutation.name)?;
+            let index = document
+                .workspaces
+                .iter()
+                .position(|workspace| workspace.id == workspace_id)
+                .ok_or_else(|| anyhow!("workspace not found"))?;
+            let existing = &document.workspaces[index];
+            let workspace = workspace_from_mutation(
+                existing.id.clone(),
+                mutation,
+                existing.created_at.clone(),
+                now,
+                existing.last_opened_at.clone(),
+            );
+            document.workspaces[index] = workspace.clone();
+            document.workspaces.sort_by(workspace_order);
+            Ok(workspace)
+        })
+    }
+
+    pub async fn duplicate(&self, workspace_id: &str) -> Result<Workspace> {
+        let _guard = self.operation_lock.lock().await;
+        let now = Utc::now().to_rfc3339();
+        self.store.mutate(|document| {
+            let source = document
+                .workspaces
+                .iter()
+                .find(|workspace| workspace.id == workspace_id)
+                .cloned()
+                .ok_or_else(|| anyhow!("workspace not found"))?;
+            let name = unique_copy_name(document, &source.name);
+            let mut mutation = WorkspaceMutation::from(&source);
+            mutation.name = name;
+            remap_nested_ids(&mut mutation);
+            let copy = workspace_from_mutation(
+                Uuid::now_v7().to_string(),
+                mutation,
+                now.clone(),
+                now.clone(),
+                now.clone(),
+            );
+            document.workspaces.push(copy.clone());
+            document.workspaces.sort_by(workspace_order);
+            Ok(copy)
+        })
+    }
+
+    pub async fn delete(&self, workspace_id: &str) -> Result<(String, String)> {
+        let _guard = self.operation_lock.lock().await;
+        self.store.mutate(|document| {
+            let Some(index) = document
+                .workspaces
+                .iter()
+                .position(|workspace| workspace.id == workspace_id)
+            else {
+                bail!("workspace not found");
+            };
+            if document.workspaces.len() == 1 {
+                bail!("the only workspace cannot be deleted");
+            }
+            if workspace_id == document.default_workspace_id {
+                bail!("the default workspace cannot be deleted");
+            }
+            document.workspaces.remove(index);
+            if document.active_workspace_id == workspace_id {
+                document.active_workspace_id = document.default_workspace_id.clone();
+            }
+            Ok((
+                document.active_workspace_id.clone(),
+                document.default_workspace_id.clone(),
+            ))
+        })
+    }
+
+    pub async fn set_active(&self, workspace_id: &str) -> Result<Workspace> {
+        let _guard = self.operation_lock.lock().await;
+        let now = Utc::now().to_rfc3339();
+        self.store.mutate(|document| {
+            let workspace = document
+                .workspaces
+                .iter_mut()
+                .find(|workspace| workspace.id == workspace_id)
+                .ok_or_else(|| anyhow!("workspace not found"))?;
+            workspace.last_opened_at = now;
+            document.active_workspace_id = workspace_id.to_string();
+            Ok(workspace.clone())
+        })
+    }
+
+    pub fn export(&self, workspace_id: &str) -> Result<String> {
+        let workspace = self.get(workspace_id)?;
+        reject_secret_shaped_value(&serde_json::to_value(&workspace)?)?;
+        let mut document = serde_json::to_string_pretty(&workspace)?;
+        document.push('\n');
+        Ok(document)
+    }
+
+    pub async fn import(&self, document: &str) -> Result<Workspace> {
+        let value: Value =
+            serde_json::from_str(document).context("workspace import is malformed")?;
+        reject_secret_shaped_value(&value)?;
+        let imported: Workspace =
+            serde_json::from_value(value).context("invalid workspace import")?;
+        if imported.schema_version > WORKSPACE_SCHEMA_VERSION {
+            bail!("workspace schema is newer than this version of Gosling");
+        }
+        let mutation = WorkspaceMutation::from(&imported);
+        self.create(mutation).await
+    }
+
+    pub async fn create_output_folder(
+        &self,
+        workspace_id: &str,
+        output_folder_id: &str,
+    ) -> Result<WorkspaceValidationReport> {
+        let workspace = self.get(workspace_id)?;
+        let output = workspace
+            .product_output_folders
+            .iter()
+            .find(|output| output.id == output_folder_id)
+            .ok_or_else(|| anyhow!("output folder not found"))?;
+        if !output.create_if_missing {
+            bail!("output folder is not configured for explicit creation");
+        }
+        let path = PathBuf::from(
+            super::normalize_workspace_path(&output.path).map_err(anyhow::Error::msg)?,
+        );
+        if !super::validation::is_native_workspace_path(&path.to_string_lossy()) {
+            bail!("output folder is unavailable on this platform");
+        }
+        std::fs::create_dir_all(path)?;
+        self.validate(&WorkspaceMutation::from(&workspace))
+    }
+
+    pub fn prepare_session(&self, workspace_id: &str) -> Result<PreparedWorkspaceSession> {
+        let document = self.store.load()?;
+        let profiles = super::credentials::effective_profiles(&document);
+        let workspace = document
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.id == workspace_id)
+            .ok_or_else(|| anyhow!("workspace not found"))?;
+        let report = validate_workspace_mutation(&WorkspaceMutation::from(workspace), &profiles);
+        if !report.valid_for_session {
+            let message = report
+                .issues
+                .iter()
+                .find(|issue| issue.severity == super::WorkspaceIssueSeverity::Error)
+                .map(|issue| issue.message.as_str())
+                .unwrap_or("workspace is unavailable");
+            bail!(message.to_string());
+        }
+        let working_folder = PathBuf::from(
+            report
+                .normalized_working_folder
+                .clone()
+                .unwrap_or_else(|| workspace.working_folder.clone()),
+        );
+        let binding = workspace
+            .default_credential_binding_id
+            .as_deref()
+            .and_then(|id| {
+                workspace
+                    .credential_bindings
+                    .iter()
+                    .find(|item| item.id == id)
+            });
+        let profile = binding.and_then(|binding| {
+            profiles
+                .iter()
+                .find(|profile| profile.id == binding.credential_profile_id)
+        });
+        if binding.is_some() && profile.is_none() {
+            bail!("credential profile must be relinked before resuming this workspace");
+        }
+        if profile
+            .is_some_and(|profile| profile.status != super::CredentialProfileStatus::Configured)
+        {
+            bail!("credential profile must be configured or authenticated before starting");
+        }
+        Ok(PreparedWorkspaceSession {
+            workspace_id: workspace.id.clone(),
+            workspace_name: workspace.name.clone(),
+            working_folder,
+            provider: workspace
+                .default_provider
+                .clone()
+                .or_else(|| profile.map(|profile| profile.provider_or_service_id.clone())),
+            model: workspace.default_model.clone(),
+            credential_profile_id: profile.map(|profile| profile.id.clone()),
+            credential_profile_name: profile.map(|profile| profile.name.clone()),
+            credential_binding_id: binding.map(|binding| binding.id.clone()),
+            context: WorkspaceSessionContext {
+                workspace_id: workspace.id.clone(),
+                workspace_name: workspace.name.clone(),
+                primary_working_folder: workspace.working_folder.clone(),
+                folders: workspace.folders.clone(),
+                product_output_folders: workspace.product_output_folders.clone(),
+            },
+        })
+    }
+
+    pub fn render_session_context(context: &WorkspaceSessionContext) -> String {
+        let folders = context
+            .folders
+            .iter()
+            .map(|folder| {
+                format!(
+                    "- {} ({:?}, {:?}): {}",
+                    folder.label, folder.kind, folder.access, folder.path
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let outputs = context
+            .product_output_folders
+            .iter()
+            .map(|output| {
+                let types = output
+                    .product_types
+                    .iter()
+                    .map(|item| format!("{item:?}").to_lowercase())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("- {} [{}]: {}", output.label, types, output.path)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "# Workspace\nWorkspace: {}\nPrimary working folder: {}\n\nAdditional folders:\n{}\n\nProduct outputs:\n{}\n\nTreat the primary working folder as the default project root. Reference read-only folders without modifying them. Place user-facing deliverables in the output folder matching the product type, or the default output when no specific destination exists. Never move or delete existing files merely because the active workspace changed.",
+            context.workspace_name,
+            context.primary_working_folder,
+            if folders.is_empty() { "- None" } else { &folders },
+            outputs
+        )
+    }
+}
+
+pub(super) fn workspace_from_mutation(
+    id: String,
+    mutation: WorkspaceMutation,
+    created_at: String,
+    updated_at: String,
+    last_opened_at: String,
+) -> Workspace {
+    Workspace {
+        id,
+        schema_version: WORKSPACE_SCHEMA_VERSION,
+        name: mutation.name.trim().to_string(),
+        description: mutation
+            .description
+            .filter(|value| !value.trim().is_empty()),
+        icon: mutation.icon.filter(|value| !value.trim().is_empty()),
+        working_folder: mutation.working_folder,
+        folders: mutation.folders,
+        product_output_folders: mutation.product_output_folders,
+        credential_bindings: mutation.credential_bindings,
+        default_credential_binding_id: mutation.default_credential_binding_id,
+        default_provider: mutation.default_provider,
+        default_model: mutation.default_model,
+        created_at,
+        updated_at,
+        last_opened_at,
+    }
+}
+
+pub(super) fn validate_workspace_boundary(mutation: &WorkspaceMutation) -> Result<()> {
+    normalized_name(&mutation.name)?;
+    super::normalize_workspace_path(&mutation.working_folder).map_err(anyhow::Error::msg)?;
+    for folder in &mutation.folders {
+        super::normalize_workspace_path(&folder.path).map_err(anyhow::Error::msg)?;
+    }
+    for output in &mutation.product_output_folders {
+        super::normalize_workspace_path(&output.path).map_err(anyhow::Error::msg)?;
+    }
+    let report = validate_workspace_mutation(mutation, &[]);
+    if report.issues.iter().any(|issue| {
+        issue.severity == super::WorkspaceIssueSeverity::Error
+            && issue.code != super::WorkspaceIssueCode::MissingPrimaryFolder
+            && issue.code != super::WorkspaceIssueCode::MissingCredentialProfile
+    }) {
+        let message = report
+            .issues
+            .iter()
+            .find(|issue| issue.severity == super::WorkspaceIssueSeverity::Error)
+            .map(|issue| issue.message.clone())
+            .unwrap_or_else(|| "invalid workspace".to_string());
+        bail!(message);
+    }
+    Ok(())
+}
+
+pub(super) fn normalized_name(name: &str) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        bail!("name cannot be empty");
+    }
+    if name.chars().count() > 100 {
+        bail!("name must be at most 100 characters");
+    }
+    Ok(name.to_string())
+}
+
+fn reject_duplicate_name(
+    document: &WorkspaceStoreDocument,
+    current_id: Option<&str>,
+    name: &str,
+) -> Result<()> {
+    if document.workspaces.iter().any(|workspace| {
+        Some(workspace.id.as_str()) != current_id
+            && workspace.name.eq_ignore_ascii_case(name.trim())
+    }) {
+        bail!("workspace name is already in use");
+    }
+    Ok(())
+}
+
+fn unique_copy_name(document: &WorkspaceStoreDocument, source: &str) -> String {
+    (1..)
+        .map(|index| {
+            if index == 1 {
+                format!("{source} copy")
+            } else {
+                format!("{source} copy {index}")
+            }
+        })
+        .find(|candidate| {
+            !document
+                .workspaces
+                .iter()
+                .any(|workspace| workspace.name.eq_ignore_ascii_case(candidate))
+        })
+        .expect("unbounded copy suffixes always yield a unique name")
+}
+
+fn remap_nested_ids(mutation: &mut WorkspaceMutation) {
+    for folder in &mut mutation.folders {
+        folder.id = Uuid::now_v7().to_string();
+    }
+    for output in &mut mutation.product_output_folders {
+        output.id = Uuid::now_v7().to_string();
+    }
+    let old_default = mutation.default_credential_binding_id.clone();
+    let mut mapping = HashMap::new();
+    for binding in &mut mutation.credential_bindings {
+        let old = binding.id.clone();
+        binding.id = Uuid::now_v7().to_string();
+        mapping.insert(old, binding.id.clone());
+    }
+    mutation.default_credential_binding_id = old_default.and_then(|id| mapping.get(&id).cloned());
+}
+
+pub(super) fn workspace_order(left: &Workspace, right: &Workspace) -> std::cmp::Ordering {
+    left.name
+        .to_lowercase()
+        .cmp(&right.name.to_lowercase())
+        .then_with(|| left.id.cmp(&right.id))
+}
+
+pub(super) fn reject_secret_shaped_value(value: &Value) -> Result<()> {
+    fn walk(value: &Value) -> Result<()> {
+        match value {
+            Value::Object(map) => {
+                for (key, value) in map {
+                    let normalized = key.to_ascii_lowercase().replace(['-', '_'], "");
+                    let forbidden = normalized == "secret"
+                        || normalized == "secrets"
+                        || normalized == "password"
+                        || normalized == "apikey"
+                        || normalized == "accesstoken"
+                        || normalized == "refreshtoken"
+                        || normalized == "privatekey"
+                        || normalized == "cookie"
+                        || normalized == "secretfields";
+                    if forbidden {
+                        bail!("workspace documents cannot contain secret fields");
+                    }
+                    walk(value)?;
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    walk(value)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    walk(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::GoslingMode;
+    use crate::session::session_manager::{SessionManager, SessionType};
+    use crate::workspace::{ProductOutputFolder, ProductType, WorkspaceFolder};
+
+    fn mutation(root: &Path) -> WorkspaceMutation {
+        WorkspaceMutation {
+            name: "Project".into(),
+            working_folder: root.to_string_lossy().to_string(),
+            folders: vec![WorkspaceFolder {
+                id: "reference".into(),
+                label: "Reference".into(),
+                path: root.to_string_lossy().to_string(),
+                ..WorkspaceFolder::default()
+            }],
+            product_output_folders: vec![ProductOutputFolder {
+                id: "output".into(),
+                label: "Outputs".into(),
+                path: root.join("outputs").to_string_lossy().to_string(),
+                product_types: vec![ProductType::Document],
+                is_default: true,
+                create_if_missing: true,
+            }],
+            ..WorkspaceMutation::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn create_duplicate_switch_and_delete_preserve_default() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let created = service.create(mutation(root.path())).await.unwrap();
+        let copy = service.duplicate(&created.id).await.unwrap();
+        service.set_active(&copy.id).await.unwrap();
+        let (active, default) = service.delete(&copy.id).await.unwrap();
+
+        assert_eq!(active, default);
+        assert!(service.get(&created.id).is_ok());
+        assert!(service.delete(&default).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn export_and_persistence_never_include_secret_sentinel() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let workspace = service.create(mutation(root.path())).await.unwrap();
+        let export = service.export(&workspace.id).unwrap();
+        let persistence =
+            std::fs::read_to_string(data.path().join("workspaces").join("workspaces.json"))
+                .unwrap();
+
+        assert!(!export.contains("GOSLING_SENTINEL_SECRET"));
+        assert!(!persistence.contains("GOSLING_SENTINEL_SECRET"));
+    }
+
+    #[tokio::test]
+    async fn import_rejects_secret_fields_and_path_traversal() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let workspace = service.create(mutation(root.path())).await.unwrap();
+        let mut value = serde_json::to_value(workspace).unwrap();
+        value["apiKey"] = Value::String("GOSLING_SENTINEL_SECRET".into());
+        assert!(service.import(&value.to_string()).await.is_err());
+
+        let mut traversal = mutation(root.path());
+        traversal.working_folder = root.path().join("../escape").to_string_lossy().to_string();
+        let imported = Workspace {
+            id: "ignored".into(),
+            schema_version: WORKSPACE_SCHEMA_VERSION,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+            last_opened_at: "now".into(),
+            ..Workspace::default()
+        };
+        let mut value = serde_json::to_value(imported).unwrap();
+        value["workingFolder"] = Value::String(traversal.working_folder);
+        value["name"] = Value::String("Traversal".into());
+        value["productOutputFolders"] =
+            serde_json::to_value(traversal.product_output_folders).unwrap();
+        assert!(service.import(&value.to_string()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn deleting_workspace_preserves_pinned_sessions_and_user_files() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let user_file = root.path().join("deliverable.txt");
+        std::fs::write(&user_file, "preserve me").unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let workspace = service.create(mutation(root.path())).await.unwrap();
+        let prepared = service.prepare_session(&workspace.id).unwrap();
+        let sessions = SessionManager::new(data.path().to_path_buf());
+        let session = sessions
+            .create_session(
+                prepared.working_folder,
+                "Pinned session".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        sessions
+            .update(&session.id)
+            .workspace_snapshot(
+                prepared.workspace_id,
+                prepared.workspace_name,
+                prepared.credential_profile_id,
+                prepared.credential_profile_name,
+                prepared.credential_binding_id,
+                prepared.context,
+            )
+            .apply()
+            .await
+            .unwrap();
+
+        service.delete(&workspace.id).await.unwrap();
+
+        let reloaded = sessions.get_session(&session.id, false).await.unwrap();
+        assert_eq!(
+            reloaded.workspace_id.as_deref(),
+            Some(workspace.id.as_str())
+        );
+        assert_eq!(std::fs::read_to_string(user_file).unwrap(), "preserve me");
+    }
+
+    #[tokio::test]
+    async fn output_creation_rejects_foreign_platform_paths() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut workspace = mutation(root.path());
+        let foreign = if cfg!(windows) {
+            "/tmp/gosling-foreign-output"
+        } else {
+            "C:\\Gosling\\ForeignOutput"
+        };
+        workspace.product_output_folders[0].path = foreign.into();
+        let workspace = service.create(workspace).await.unwrap();
+
+        let result = service.create_output_folder(&workspace.id, "output").await;
+
+        assert!(result.is_err());
+        if !cfg!(windows) {
+            assert!(!Path::new(foreign).exists());
+        }
+    }
+
+    #[test]
+    fn rendered_context_contains_no_credential_metadata() {
+        let context = WorkspaceSessionContext {
+            workspace_id: "workspace".into(),
+            workspace_name: "Project".into(),
+            primary_working_folder: "/project".into(),
+            folders: Vec::new(),
+            product_output_folders: vec![ProductOutputFolder {
+                label: "Documents".into(),
+                path: "/project/documents".into(),
+                product_types: vec![ProductType::Document],
+                ..ProductOutputFolder::default()
+            }],
+        };
+        let rendered = WorkspaceService::render_session_context(&context);
+        assert!(!rendered.to_ascii_lowercase().contains("credential"));
+        assert!(!rendered.contains("workspace-credential::"));
+    }
+}

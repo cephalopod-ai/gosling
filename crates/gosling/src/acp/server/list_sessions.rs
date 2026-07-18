@@ -31,6 +31,8 @@ struct SessionListCursorFilters {
     keyword: Option<String>,
     only_sessions_with_messages: bool,
     archive_state: SessionArchiveState,
+    workspace_id: Option<String>,
+    include_unassigned: bool,
 }
 
 fn invalid_session_list_cursor(message: &'static str) -> agent_client_protocol::Error {
@@ -139,6 +141,8 @@ fn session_list_filter_hash(
     session_types: &[SessionType],
     keyword: Option<&str>,
     archive_state: SessionArchiveState,
+    workspace_id: Option<&str>,
+    include_unassigned: bool,
 ) -> Result<String, agent_client_protocol::Error> {
     let mut session_type_names = session_types
         .iter()
@@ -151,6 +155,8 @@ fn session_list_filter_hash(
         keyword: keyword.map(ToString::to_string),
         only_sessions_with_messages: true,
         archive_state,
+        workspace_id: workspace_id.map(ToString::to_string),
+        include_unassigned,
     };
     let bytes =
         serde_json::to_vec(&filters).internal_err_ctx("Failed to encode session list filters")?;
@@ -163,6 +169,8 @@ fn decode_session_list_cursor(
     session_types: &[SessionType],
     keyword: Option<&str>,
     archive_state: SessionArchiveState,
+    workspace_id: Option<&str>,
+    include_unassigned: bool,
 ) -> Result<Option<SessionListCursor>, agent_client_protocol::Error> {
     let Some(cursor) = cursor else {
         return Ok(None);
@@ -178,8 +186,14 @@ fn decode_session_list_cursor(
         return Err(invalid_session_list_cursor("malformed session list cursor"));
     }
 
-    let expected_filter_hash =
-        session_list_filter_hash(cwd, session_types, keyword, archive_state)?;
+    let expected_filter_hash = session_list_filter_hash(
+        cwd,
+        session_types,
+        keyword,
+        archive_state,
+        workspace_id,
+        include_unassigned,
+    )?;
     if token.filter_hash != expected_filter_hash {
         return Err(invalid_session_list_cursor(
             "session list cursor does not match filters",
@@ -198,11 +212,20 @@ fn encode_session_list_cursor(
     session_types: &[SessionType],
     keyword: Option<&str>,
     archive_state: SessionArchiveState,
+    workspace_id: Option<&str>,
+    include_unassigned: bool,
 ) -> Result<String, agent_client_protocol::Error> {
     let token = SessionListCursorToken {
         sort_at: cursor.sort_at,
         session_id: cursor.session_id.clone(),
-        filter_hash: session_list_filter_hash(cwd, session_types, keyword, archive_state)?,
+        filter_hash: session_list_filter_hash(
+            cwd,
+            session_types,
+            keyword,
+            archive_state,
+            workspace_id,
+            include_unassigned,
+        )?,
     };
     let bytes =
         serde_json::to_vec(&token).internal_err_ctx("Failed to encode session list cursor")?;
@@ -227,12 +250,27 @@ impl GoslingAcpAgent {
         let include_last_message_snippet =
             include_last_message_snippet_from_meta(req.meta.as_ref())?;
         let archive_state = archive_state_from_meta(req.meta.as_ref())?;
+        let workspace_id = meta_string(req.meta.as_ref(), "workspaceId")?;
+        let include_unassigned = req
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("includeUnassigned"))
+            .map(|value| {
+                value.as_bool().ok_or_else(|| {
+                    agent_client_protocol::Error::invalid_params()
+                        .data("includeUnassigned must be a boolean")
+                })
+            })
+            .transpose()?
+            .unwrap_or(false);
         let cursor = decode_session_list_cursor(
             req.cursor.as_deref(),
             cwd,
             &session_types,
             keyword.as_deref(),
             archive_state,
+            workspace_id.as_deref(),
+            include_unassigned,
         )?;
 
         // ACP clients see their own (Acp) sessions plus legacy User/Scheduled ones.
@@ -245,6 +283,8 @@ impl GoslingAcpAgent {
                     keyword: keyword.as_deref(),
                     only_sessions_with_messages: true,
                     archive_state,
+                    workspace_id: workspace_id.as_deref(),
+                    include_unassigned,
                 },
                 cursor: cursor.as_ref(),
                 page_size: SESSION_LIST_PAGE_SIZE,
@@ -265,6 +305,8 @@ impl GoslingAcpAgent {
                     &session_types,
                     keyword.as_deref(),
                     archive_state,
+                    workspace_id.as_deref(),
+                    include_unassigned,
                 )
             })
             .transpose()?;

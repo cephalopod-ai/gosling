@@ -1,6 +1,6 @@
 # Workspaces build state
 
-Last updated: 2026-07-18T14:03:06Z
+Last updated: 2026-07-18
 
 ## Objective
 
@@ -18,17 +18,17 @@ accessible sidebar management, and regression coverage.
 
 ## Gate status
 
-| Gate | Status | Exit evidence |
-|---|---|---|
-| 0 — Orientation | complete | `evidence/gate-0.md`, `audits/gate-0-audit.md` |
-| 1 — Intent and traceability | complete | `docs/INTENT.md`, `traceability-matrix.md`, `evidence/gate-1.md` |
-| 2 — Contracts and design | complete | `docs/architecture.md`, ADR-0001–0005, `io-contract.md`, `execution-plan.md` |
-| 3 — Boundaries and harness | complete | canonical SDK DTOs; `evidence/gate-3.md` |
-| 4 — Backend vertical slice | pending | — |
-| 5 — Desktop vertical slice | pending | — |
-| 6 — Audit and repair | pending | — |
-| 7 — Documentation | pending | — |
-| 8 — Acceptance and handoff | pending | — |
+| Gate                        | Status   | Exit evidence                                                                |
+| --------------------------- | -------- | ---------------------------------------------------------------------------- |
+| 0 — Orientation             | complete | `evidence/gate-0.md`, `audits/gate-0-audit.md`                               |
+| 1 — Intent and traceability | complete | `docs/INTENT.md`, `traceability-matrix.md`, `evidence/gate-1.md`             |
+| 2 — Contracts and design    | complete | `docs/architecture.md`, ADR-0001–0005, `io-contract.md`, `execution-plan.md` |
+| 3 — Boundaries and harness  | complete | canonical SDK DTOs; `evidence/gate-3.md`                                     |
+| 4 — Backend vertical slice  | complete | workspace/session/credential backend; `evidence/gate-4.md`                   |
+| 5 — Desktop vertical slice  | pending  | —                                                                            |
+| 6 — Audit and repair        | pending  | —                                                                            |
+| 7 — Documentation           | pending  | —                                                                            |
+| 8 — Acceptance and handoff  | pending  | —                                                                            |
 
 ## Current decisions
 
@@ -46,6 +46,6 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-Begin Gate 4 with the backend vertical slice: workspace store/service/validation,
-metadata-only credential lifecycle, strict Config scope, session schema v22, ACP handlers,
-session pin/resume/list metadata, prompt context, and schema generation.
+Close Gate 5 around the implemented Desktop WorkspaceContext, sidebar/editor/profile UI,
+session filter/header behavior, multi-window invalidation, and active-workspace new-session
+propagation. Run the workflow/GUI audit and focused/full Desktop checks.
