@@ -250,7 +250,10 @@ where
 
     let mut reply_progressed = false;
     let mut heartbeat = heartbeat_interval.map(tokio::time::interval);
-    let mut exit_reason = ReplyExitReason::Normal;
+    // Every path out of the loop below is a `break` that assigns this first,
+    // so an initial value here would itself be an unused-assignments warning
+    // under -D warnings — the compiler can prove it's always set before use.
+    let exit_reason;
 
     loop {
         if let Some(heartbeat_interval) = heartbeat.as_mut() {

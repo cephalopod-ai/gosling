@@ -926,6 +926,9 @@
   "externalBackendSection.restartNote": {
     "defaultMessage": "Changes apply to new chat windows. Restart Gosling to update existing windows."
   },
+  "externalBackendSection.saveError": {
+    "defaultMessage": "Failed to save external backend settings. Your change was not persisted."
+  },
   "externalBackendSection.secretKey": {
     "defaultMessage": "Secret Key"
   },
