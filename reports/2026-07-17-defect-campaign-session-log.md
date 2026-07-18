@@ -233,6 +233,40 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
 - Change review: request ownership, two stream loops, the optional-token helper,
   developer shell cancellation plumbing, the extracted guard, and this log;
   provider and session persistence behavior are untouched.
+- Commit: `1dc1880e1`.
+
+### Stage 8 — server, extension-loader, and desktop lifecycle supervision
+
+- Defects: AUD-017, AUD-018, and AUD-019 fixed.
+- Changes: one application shutdown token now fans out to the HTTP/TLS server,
+  SSE producers, and extension-loader registry; TLS graceful shutdown has a
+  ten-second deadline, and blocked SSE sends wake on shutdown. Extension-loader
+  registration is atomic, concurrent waiters share one result, and replacement,
+  removal, or application shutdown aborts the owned task. Desktop cleanup no
+  longer treats `ChildProcess.killed` as an exit; it escalates after the grace
+  period, waits for `close` up to a hard deadline, and retains the registry
+  record unless actual closure was observed.
+- Regression guardrails: extension-loader tests cover atomic registration and
+  replacement/removal aborts; an SSE backpressure test covers shutdown wakeup;
+  the desktop integration test uses a child that ignores `SIGTERM` and asserts
+  forced exit precedes registry removal.
+- Modularization: route coordination remains one atomic state call in the
+  1001-1999-line `routes/agent.rs`; ownership and sharing live in `state.rs`.
+- Formatting: `source bin/activate-hermit && cargo fmt` and targeted Prettier
+  formatting passed.
+- Static verification: `pnpm exec tsc --noEmit` and `git diff --check` passed.
+  Rust tests/build/Clippy were not executed under the repository's explicit
+  authorization rule.
+- Tests: `pnpm exec vitest run src/goslingServe.test.ts` passed, 14 tests.
+- Adversarial review: verified signal observation is centralized; pre-cancelled
+  tokens still stop newly starting servers/streams; channel backpressure cannot
+  hide shutdown; loader replacement/removal can abort without waiting behind a
+  task-held mutex; two resume calls cannot both spawn; cleanup is idempotent;
+  kill-request state is never used as liveness; and a deadline failure preserves
+  the backend registry record for later recovery.
+- Change review: server command/state/SSE lifecycle, the single resume call
+  site, desktop child cleanup and its focused test, plus this log; routing and
+  session persistence are otherwise untouched.
 - Commit: pending.
 
 ## Campaign closeout

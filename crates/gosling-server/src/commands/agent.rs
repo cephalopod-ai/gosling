@@ -36,6 +36,8 @@ async fn platform_signal_wait() {
 
 const PARENT_PID_ENV_VAR: &str = "GOSLING_SERVER__PARENT_PID";
 const PARENT_LIVENESS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
+#[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
+const TLS_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn supervising_parent_pid() -> Option<u32> {
     std::env::var(PARENT_PID_ENV_VAR).ok()?.parse().ok()
@@ -88,6 +90,12 @@ pub async fn run() -> Result<()> {
 
     boot_marker("appstate init start");
     let app_state = state::AppState::new(settings.tls).await?;
+    let shutdown_state = app_state.clone();
+    let shutdown_token = app_state.shutdown_token();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        shutdown_state.shutdown().await;
+    });
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -131,9 +139,10 @@ pub async fn run() -> Result<()> {
 
             let handle = Handle::new();
             let shutdown_handle = handle.clone();
+            let tls_shutdown = shutdown_token.clone();
             tokio::spawn(async move {
-                shutdown_signal().await;
-                shutdown_handle.graceful_shutdown(None);
+                tls_shutdown.cancelled().await;
+                shutdown_handle.graceful_shutdown(Some(TLS_SHUTDOWN_TIMEOUT));
             });
 
             info!("listening on https://{}", addr);
@@ -167,7 +176,7 @@ pub async fn run() -> Result<()> {
         boot_marker("listening");
 
         axum::serve(listener, app)
-            .with_graceful_shutdown(async { shutdown_signal().await })
+            .with_graceful_shutdown(shutdown_token.cancelled_owned())
             .await?;
     }
 

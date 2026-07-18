@@ -390,4 +390,36 @@ describe('startGoslingServe', () => {
       }
     }
   );
+
+  it.skipIf(process.platform === 'win32')(
+    'escalates termination and keeps the process registered until it exits',
+    async () => {
+      const tempDir = makeTempDir();
+      const processRegistryPath = path.join(tempDir, 'backend-processes.json');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        '#!/usr/bin/env sh\ntrap "" TERM\nexec sleep 30\n'
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        processRegistryPath,
+        readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+      });
+
+      try {
+        await result.cleanup();
+        expect(result.hasExited()).toBe(true);
+        const registry = JSON.parse(fs.readFileSync(processRegistryPath, 'utf8'));
+        expect(registry.processes).toEqual([]);
+      } finally {
+        if (!result.hasExited() && result.process.pid) {
+          process.kill(result.process.pid, 'SIGKILL');
+        }
+      }
+    },
+    15000
+  );
 });

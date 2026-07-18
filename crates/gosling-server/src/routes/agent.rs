@@ -267,19 +267,17 @@ async fn resume_agent(
                 status: code,
             })?;
 
-        if !state.has_extension_loading_task(&payload.session_id).await {
-            let session_for_task = session.clone();
-            let agent_for_task = agent.clone();
-            let session_id_for_task = payload.session_id.clone();
-            let task = tokio::spawn(async move {
-                agent_for_task
-                    .load_extensions_from_session(&session_for_task)
-                    .await
-            });
-            state
-                .set_extension_loading_task(session_id_for_task, task)
-                .await;
-        }
+        let session_for_task = session.clone();
+        let agent_for_task = agent.clone();
+        state
+            .spawn_extension_loading_task_if_absent(payload.session_id.clone(), move || {
+                tokio::spawn(async move {
+                    agent_for_task
+                        .load_extensions_from_session(&session_for_task)
+                        .await
+                })
+            })
+            .await;
 
         let provider_changed = agent
             .restore_provider_from_session(&session)
