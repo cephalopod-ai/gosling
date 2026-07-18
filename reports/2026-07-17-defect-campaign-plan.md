@@ -221,3 +221,30 @@ confirms that only a broad architecture rewrite can repair it safely.
   rewrite, stop and report that single residual after completing safe groups.
 - Routed modularization targets: `session_manager.rs`, `acp/server.rs`,
   `agent.rs`, `extension_manager.rs`, `summon.rs`, and `ui/desktop/src/main.ts`.
+
+## Execution summary
+
+The audit checkpoint was committed and remote-verified at `cdf2634ae` before
+this repair skill was loaded. Repair commits remain local by user instruction.
+
+| Group | Disposition | Commit |
+|---|---|---|
+| 1 | AUD-011, AUD-033 fixed | `ae9264458` |
+| 2 | AUD-003, AUD-004 fixed | `dac101bcf` |
+| 3 | AUD-001, AUD-002 fixed | `a52862231` |
+| 4 | AUD-009, AUD-010 fixed | `f69a00d87` |
+| 5 | AUD-012, AUD-013, AUD-032 fixed | `1f9867b66` |
+| 6 | AUD-005–AUD-008, AUD-022 fixed | `ea69344aa` |
+| 7 | AUD-014–AUD-016 fixed | `1dc1880e1` |
+| 8 | AUD-017–AUD-019 fixed | `e741c3527` |
+| 9 | AUD-020, AUD-021 fixed | `4a24b7f8f` |
+| 10 | AUD-023–AUD-025 fixed | `92dab2abf` |
+| 11 | AUD-026, AUD-027 fixed; AUD-031 mandatory architectural residual | `0ea3eac71` |
+| 12 | AUD-028–AUD-030 fixed | `03895803e` |
+| 13 | AUD-034 fixed | `cb0d45640` |
+| Post-freeze | POST-001 extension request schema fixed | `7f6203b57` |
+
+Final frozen-inventory disposition: 33 fixed, 1 architectural residual
+(AUD-031). The additional POST-001 defect discovered by TypeScript verification
+was also fixed. Detailed change, regression, and adversarial notes are in
+`reports/2026-07-17-defect-campaign-session-log.md`.

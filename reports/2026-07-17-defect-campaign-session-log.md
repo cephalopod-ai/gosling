@@ -457,11 +457,34 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
   field `extension`.
 - Change review: two request literals and this log only; extension conversion,
   persistence ordering, and UI state transitions are unchanged.
-- Commit: pending.
+- Commit: `7f6203b57`.
 
 ## Campaign closeout
 
-- Final regression/adversarial walkthrough: pending.
-- Documentation refresh: plan and session log created; `docs/TODO.md` pending.
-- Residual risks/follow-up: pending.
-- Final status: `partially_completed_groups_remaining`.
+- Final inventory: 33 of 34 frozen findings fixed. AUD-031 is the sole frozen
+  residual at its mandatory architectural stop checkpoint. POST-001, discovered
+  after freeze by verification, is also fixed.
+- Final regression walkthrough: `source bin/activate-hermit && cargo fmt
+  --check` and `git diff --check cdf2634ae..HEAD` passed. Desktop
+  `tsc --noEmit` passed; five targeted Vitest files passed, 65 tests. Text UI
+  `tsc --noEmit -p text/tsconfig.json` passed and its focused Node/TSX suite
+  passed, 3 tests. Rust build/test/Clippy were not run under the repository's
+  explicit authorization rule.
+- Final adversarial walkthrough: all 34 frozen IDs map exactly once to a group;
+  old review double-semaphore and summon check-then-insert patterns are absent;
+  no executable text-UI `wrap="wrap"` remains; no post-freeze request-boundary
+  `as any` remains; no repair-stage TODO/FIXME/XXX/HACK marker was introduced;
+  required formatting and whitespace checks pass; and the worktree contains
+  only these closeout documents.
+- Documentation refresh: the execution ledger was appended to the plan, this
+  session log carries per-stage evidence and hashes, and `docs/TODO.md` records
+  the architectural residual, routed modularization work, and withheld Rust
+  verification.
+- Residual risk: AUD-031 cannot honestly be closed without a durable
+  operation/recovery protocol and cooperation from side-effecting tools. An
+  approximate persistence reorder would still allow duplicate or ambiguous
+  external effects after process death.
+- Git posture: the audit checkpoint remains synchronized at `cdf2634ae`.
+  Repair and closeout commits remain local and are not pushed without further
+  authorization.
+- Final status: `completed_with_one_architectural_residual`.

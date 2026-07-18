@@ -126,6 +126,39 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
 - The legacy Tagteam provider is not removed until workflow parity, migration
   guidance, runtime playtests, and rollback behavior are verified.
 
+## Exhaustive defect-repair campaign — 2026-07-17
+
+Audit checkpoint:
+[`reports/2026-07-17-exhaustive-defect-audit-checkpoint.md`](../reports/2026-07-17-exhaustive-defect-audit-checkpoint.md).
+Repair plan and evidence:
+[`reports/2026-07-17-defect-campaign-plan.md`](../reports/2026-07-17-defect-campaign-plan.md)
+and
+[`reports/2026-07-17-defect-campaign-session-log.md`](../reports/2026-07-17-defect-campaign-session-log.md).
+
+The synchronized audit froze 34 findings. The repair campaign fixed 33 and
+left one explicitly dispositioned architectural residual; it also fixed one
+post-freeze SDK request-shape defect found by verification. Only the audit
+checkpoint is synchronized to the remote. All repair and closeout commits are
+local until a separate push is authorized.
+
+- [ ] AUD-031: design a durable, versioned tool-operation ledger with stable
+  operation identities, in-doubt recovery, replay semantics, and external
+  idempotency-key propagation where supported. A request-before-dispatch
+  reorder is not sufficient to guarantee at-most-once side effects across a
+  process crash.
+- [ ] Modularize the routed >=2000-line files in dedicated changes, preserving
+  behavior and avoiding mixed repair/refactor commits:
+  `crates/gosling/src/session/session_manager.rs`,
+  `crates/gosling/src/acp/server.rs`,
+  `crates/gosling/src/agents/agent.rs`,
+  `crates/gosling/src/agents/extension_manager.rs`,
+  `crates/gosling/src/agents/platform_extensions/summon.rs`, and
+  `ui/desktop/src/main.ts`.
+- [ ] Run the added Rust regression suite, workspace build, and Clippy before
+  merge when explicitly authorized. This campaign ran required formatting and
+  UI verification, but repository policy reserved Cargo build/test/Clippy for
+  an explicit request.
+
 ## Defect-repair campaign — 2026-07-16
 
 Full inventory, skill disposition, and repair log:
