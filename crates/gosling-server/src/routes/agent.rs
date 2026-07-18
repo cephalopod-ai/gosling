@@ -834,7 +834,22 @@ async fn ensure_extensions_loaded(state: &AppState, session_id: &str) -> Result<
                         err
                     ))
                 })?;
-            agent.load_extensions_from_session(&session).await;
+            let retry_results = agent.load_extensions_from_session(&session).await;
+            let failed: Vec<String> = retry_results
+                .iter()
+                .filter(|result| !result.success)
+                .map(|result| match &result.error {
+                    Some(error) => format!("{}: {}", result.name, error),
+                    None => result.name.clone(),
+                })
+                .collect();
+            if !failed.is_empty() {
+                return Err(ErrorResponse::internal(format!(
+                    "Extension loading retry for session {} still failed for: {}",
+                    session_id,
+                    failed.join(", ")
+                )));
+            }
             Ok(())
         }
     }

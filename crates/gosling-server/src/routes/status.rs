@@ -52,7 +52,7 @@ async fn diagnostics(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
     Query(query): Query<DiagnosticsQuery>,
-) -> Result<Json<DiagnosticsReport>, StatusCode> {
+) -> Result<Json<DiagnosticsReport>, (StatusCode, String)> {
     generate_diagnostics(
         state.session_manager(),
         &session_id,
@@ -60,7 +60,13 @@ async fn diagnostics(
     )
     .await
     .map(Json)
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    .map_err(|error| {
+        tracing::error!(error = %error, session_id = %session_id, "failed to generate diagnostics");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to generate diagnostics: {error}"),
+        )
+    })
 }
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()

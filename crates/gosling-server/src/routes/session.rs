@@ -90,13 +90,22 @@ async fn update_session_name(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
     Json(request): Json<UpdateSessionNameRequest>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<StatusCode, ErrorResponse> {
     let name = request.name.trim();
     if name.is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(ErrorResponse {
+            message: "Session name must not be empty".to_string(),
+            status: StatusCode::BAD_REQUEST,
+        });
     }
     if name.len() > MAX_NAME_LENGTH {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(ErrorResponse {
+            message: format!(
+                "Session name must be at most {} characters",
+                MAX_NAME_LENGTH
+            ),
+            status: StatusCode::BAD_REQUEST,
+        });
     }
 
     state
@@ -105,7 +114,17 @@ async fn update_session_name(
         .user_provided_name(name.to_string())
         .apply()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to update session name for {}: {}", session_id, e);
+            ErrorResponse {
+                status: if e.to_string().contains("not found") {
+                    StatusCode::NOT_FOUND
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                },
+                message: format!("Failed to update session name: {}", e),
+            }
+        })?;
 
     Ok(StatusCode::OK)
 }
