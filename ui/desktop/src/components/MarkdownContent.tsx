@@ -293,6 +293,11 @@ const MarkdownContent = memo(function MarkdownContent({
                 />
               );
             },
+            img: ({ alt }) => (
+              <span role="img" aria-label="Remote image blocked">
+                {alt ? `[Image blocked: ${alt}]` : '[Image blocked]'}
+              </span>
+            ),
             code: MarkdownCode,
           }}
         >
@@ -302,7 +307,9 @@ const MarkdownContent = memo(function MarkdownContent({
       <ConfirmationModal
         isOpen={pendingLink !== null}
         title={intl.formatMessage(i18n.openExternalLink)}
-        message={intl.formatMessage(i18n.openProtocolLink, { protocol: pendingLink?.protocol ?? '' })}
+        message={intl.formatMessage(i18n.openProtocolLink, {
+          protocol: pendingLink?.protocol ?? '',
+        })}
         detail={intl.formatMessage(i18n.thisWillOpen, { href: pendingLink?.href ?? '' })}
         onConfirm={handleConfirmOpen}
         onCancel={handleCancelOpen}

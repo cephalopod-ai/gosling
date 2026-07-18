@@ -33,6 +33,7 @@ import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
 import { getOverrideOriginForRequest } from './requestOrigin';
 import { acpWebSocketUrlFromHttpBase, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde } from './utils/pathUtils';
+import { assertPathWithinRoots, canonicalizePotentialPath } from './utils/rendererFileAccess';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
@@ -233,13 +234,6 @@ function resolveRendererPath(filePath: string): string {
   return path.resolve(expandTilde(filePath));
 }
 
-function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
-  const relative = path.relative(rootPath, targetPath);
-  return (
-    relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
-  );
-}
-
 function rendererFileRoots(): string[] {
   const roots = new Set<string>();
   roots.add(path.resolve(app.getPath('userData')));
@@ -255,21 +249,20 @@ function rendererFileRoots(): string[] {
   return [...roots];
 }
 
-function assertRendererFileAccess(filePath: string): string {
+async function assertRendererFileAccess(filePath: string): Promise<string> {
   const resolvedPath = resolveRendererPath(filePath);
-  const allowed = rendererFileRoots().some((root) => isPathWithinRoot(resolvedPath, root));
-  if (!allowed) {
-    throw new Error('Renderer file access denied for path outside approved roots');
-  }
-  return resolvedPath;
+  return assertPathWithinRoots(resolvedPath, rendererFileRoots());
 }
 
 const rendererArtifactFileGrants = new Set<string>();
 
-function assertRendererArtifactFileAccess(filePath: string, baseDirectory?: string): string {
+async function assertRendererArtifactFileAccess(
+  filePath: string,
+  baseDirectory?: string
+): Promise<string> {
   const candidate =
     baseDirectory && !path.isAbsolute(filePath) ? path.join(baseDirectory, filePath) : filePath;
-  const resolvedPath = resolveRendererPath(candidate);
+  const resolvedPath = await canonicalizePotentialPath(resolveRendererPath(candidate));
   if (rendererArtifactFileGrants.has(resolvedPath)) {
     return resolvedPath;
   }
@@ -2259,7 +2252,7 @@ ipcMain.handle('select-artifact-file', async (_event, defaultPath?: string) => {
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
-  const selectedPath = resolveRendererPath(result.filePaths[0]);
+  const selectedPath = await canonicalizePotentialPath(resolveRendererPath(result.filePaths[0]));
   rendererArtifactFileGrants.add(selectedPath);
   return selectedPath;
 });
@@ -2350,7 +2343,7 @@ ipcMain.handle('check-ollama', async () => {
 
 ipcMain.handle('read-file', async (_event, filePath) => {
   try {
-    const expandedPath = assertRendererFileAccess(filePath);
+    const expandedPath = await assertRendererFileAccess(filePath);
     const buffer = await fs.readFile(expandedPath);
     return { file: buffer.toString('utf8'), filePath: expandedPath, error: null, found: true };
   } catch (error) {
@@ -2366,7 +2359,7 @@ ipcMain.handle('read-file', async (_event, filePath) => {
 
 ipcMain.handle('read-artifact-file', async (_event, filePath: string, baseDirectory?: string) => {
   try {
-    const resolvedPath = assertRendererArtifactFileAccess(filePath, baseDirectory);
+    const resolvedPath = await assertRendererArtifactFileAccess(filePath, baseDirectory);
     const stats = await fs.stat(resolvedPath);
     if (!stats.isFile()) {
       throw new Error('The selected output is not a file');
@@ -2407,25 +2400,19 @@ ipcMain.handle('read-artifact-file', async (_event, filePath: string, baseDirect
   }
 });
 
-ipcMain.handle(
-  'open-artifact-file',
-  async (_event, filePath: string, baseDirectory?: string) => {
-    const resolvedPath = assertRendererArtifactFileAccess(filePath, baseDirectory);
-    return (await shell.openPath(resolvedPath)) === '';
-  }
-);
+ipcMain.handle('open-artifact-file', async (_event, filePath: string, baseDirectory?: string) => {
+  const resolvedPath = await assertRendererArtifactFileAccess(filePath, baseDirectory);
+  return (await shell.openPath(resolvedPath)) === '';
+});
 
-ipcMain.handle(
-  'reveal-artifact-file',
-  async (_event, filePath: string, baseDirectory?: string) => {
-    const resolvedPath = assertRendererArtifactFileAccess(filePath, baseDirectory);
-    shell.showItemInFolder(resolvedPath);
-  }
-);
+ipcMain.handle('reveal-artifact-file', async (_event, filePath: string, baseDirectory?: string) => {
+  const resolvedPath = await assertRendererArtifactFileAccess(filePath, baseDirectory);
+  shell.showItemInFolder(resolvedPath);
+});
 
 ipcMain.handle('write-file', async (_event, filePath, content) => {
   try {
-    const expandedPath = assertRendererFileAccess(filePath);
+    const expandedPath = await assertRendererFileAccess(filePath);
     await fs.writeFile(expandedPath, content, { encoding: 'utf8' });
     return true;
   } catch (error) {
@@ -2436,7 +2423,7 @@ ipcMain.handle('write-file', async (_event, filePath, content) => {
 
 ipcMain.handle('delete-file', async (_event, filePath) => {
   try {
-    const expandedPath = assertRendererFileAccess(filePath);
+    const expandedPath = await assertRendererFileAccess(filePath);
     await fs.unlink(expandedPath);
     return true;
   } catch (error) {
@@ -2448,7 +2435,7 @@ ipcMain.handle('delete-file', async (_event, filePath) => {
 // Enhanced file operations
 ipcMain.handle('ensure-directory', async (_event, dirPath) => {
   try {
-    const expandedPath = assertRendererFileAccess(dirPath);
+    const expandedPath = await assertRendererFileAccess(dirPath);
     await fs.mkdir(expandedPath, { recursive: true });
     return true;
   } catch (error) {
@@ -2459,7 +2446,7 @@ ipcMain.handle('ensure-directory', async (_event, dirPath) => {
 
 ipcMain.handle('list-files', async (_event, dirPath, extension) => {
   try {
-    const expandedPath = assertRendererFileAccess(dirPath);
+    const expandedPath = await assertRendererFileAccess(dirPath);
     const files = await fs.readdir(expandedPath);
     if (extension) {
       return files.filter((file) => file.endsWith(extension));
@@ -3126,7 +3113,7 @@ async function appMain() {
 
   ipcMain.handle('open-directory-in-explorer', async (_event, directoryPath: string) => {
     try {
-      const resolvedPath = assertRendererFileAccess(directoryPath);
+      const resolvedPath = await assertRendererFileAccess(directoryPath);
       const errorMessage = await shell.openPath(resolvedPath);
       return errorMessage === '';
     } catch (error) {

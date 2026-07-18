@@ -140,6 +140,39 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
   adds no environment after applying the allowlist.
 - Change review: two implementation files plus this log; extension transport
   and lifecycle behavior are otherwise unchanged.
+- Commit: `f69a00d87`.
+
+### Stage 5 — desktop content, filesystem, and transport boundaries
+
+- Defects: AUD-012, AUD-013, and AUD-032 fixed.
+- Changes: untrusted Markdown images render as inert alt-text placeholders and
+  the renderer CSP no longer permits arbitrary HTTPS image loads. Renderer IPC
+  file operations canonicalize existing paths and the nearest existing parent
+  for prospective paths, reject symlink escapes and dangling symlink ancestors,
+  and store artifact-picker grants canonically. The ACP WebSocket receive path
+  now has per-message, aggregate-character, and message-count bounds, respects
+  ReadableStream backpressure, and closes oversized peers with code 1009.
+- Regression guardrails: Markdown rendering and CSP tests cover remote-image
+  suppression; path tests cover legitimate existing/missing paths, `..`-prefixed
+  names, existing/missing symlink escapes, and dangling links; WebSocket tests
+  cover queue and single-message overflow.
+- Modularization: the focused canonical-path helper is isolated for testing;
+  `main.ts` remains >=2000 lines and routed for dedicated modularization rather
+  than undergoing a broad split in this campaign.
+- Formatting: `source bin/activate-hermit && cargo fmt` and targeted Prettier
+  formatting passed.
+- Static verification: `pnpm exec tsc --noEmit` and `git diff --check` passed.
+  The package-script wrapper could not run because the environment has pnpm
+  10.6.4 while the manifest requires >=10.30.0; the same local compiler was
+  invoked directly through `pnpm exec`.
+- Tests: four targeted Vitest files passed, 51 tests total.
+- Adversarial review: verified canonical paths, not attacker-controlled lexical
+  aliases, reach filesystem APIs; dangling links fail closed; stale invalid
+  approved roots cannot deny unrelated valid roots; the receive buffer is
+  bounded by both item count and encoded size; and only one parsed message can
+  enter the ReadableStream queue per pull.
+- Change review: desktop boundary files, focused test helpers, and this log;
+  generated API code and unrelated renderer behavior are untouched.
 - Commit: pending.
 
 ## Campaign closeout
