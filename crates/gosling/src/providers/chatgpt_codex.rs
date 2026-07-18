@@ -417,11 +417,8 @@ impl TokenCache {
     }
 
     fn save(&self, token_data: &TokenData) -> Result<()> {
-        if let Some(parent) = self.cache_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let contents = serde_json::to_string(token_data)?;
-        std::fs::write(&self.cache_path, contents)?;
+        crate::config::base::write_secrets_file(&self.cache_path, &contents)?;
         Ok(())
     }
 
@@ -1219,6 +1216,16 @@ mod tests {
             .unwrap();
 
         assert!(TokenCache::new().has_token());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(get_cache_path())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
     }
 
     #[test_case(

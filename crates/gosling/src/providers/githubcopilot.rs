@@ -208,11 +208,8 @@ impl DiskCache {
     }
 
     async fn save(&self, info: &CopilotState) -> Result<()> {
-        if let Some(parent) = self.cache_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
         let contents = serde_json::to_string(info)?;
-        tokio::fs::write(&self.cache_path, contents).await?;
+        crate::config::base::write_secrets_file(&self.cache_path, &contents)?;
         Ok(())
     }
 
@@ -752,6 +749,39 @@ fn promote_tool_choice(response: Value) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn disk_cache_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = DiskCache {
+            cache_path: temp_dir.path().join("copilot.json"),
+        };
+        let state = CopilotState {
+            expires_at: Utc::now(),
+            info: CopilotTokenInfo {
+                token: "secret".to_string(),
+                expires_at: 1,
+                refresh_in: 1,
+                endpoints: CopilotTokenEndpoints {
+                    api: "https://api.github.com".to_string(),
+                    _extra: HashMap::new(),
+                },
+                _extra: HashMap::new(),
+            },
+        };
+
+        cache.save(&state).await.unwrap();
+
+        let mode = std::fs::metadata(&cache.cache_path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
 
     #[test]
     fn responses_models_routed_correctly() {

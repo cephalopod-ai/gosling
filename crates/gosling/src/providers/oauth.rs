@@ -101,10 +101,11 @@ impl TokenCache {
 }
 
 async fn get_workspace_endpoints(host: &str) -> Result<OidcEndpoints> {
-    let base_url = Url::parse(host).expect("Invalid host URL");
+    let base_url = Url::parse(host)
+        .map_err(|error| anyhow::anyhow!("Invalid Databricks host URL {host:?}: {error}"))?;
     let oidc_url = base_url
         .join("oidc/.well-known/oauth-authorization-server")
-        .expect("Invalid OIDC URL");
+        .map_err(|error| anyhow::anyhow!("Invalid Databricks OIDC URL for {host:?}: {error}"))?;
 
     let client = reqwest::Client::new();
     let resp = client.get(oidc_url.clone()).send().await?;
@@ -505,6 +506,15 @@ mod tests {
         assert_eq!(endpoints.token_endpoint, "https://example.com/oauth2/token");
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_workspace_host_returns_error() {
+        let error = get_workspace_endpoints("not a valid URL")
+            .await
+            .expect_err("invalid host should return a configuration error");
+
+        assert!(error.to_string().contains("Invalid Databricks host URL"));
     }
 
     #[test]

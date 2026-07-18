@@ -56,7 +56,24 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
 
 ## Stage results
 
-No source stage has started.
+### Stage 1 — credential persistence and OAuth input
+
+- Defects: AUD-011 and AUD-033 fixed.
+- Changes: ChatGPT Codex, GitHub Copilot, and Kimi token caches now use the
+  repository's owner-only atomic secret writer. Databricks workspace/OIDC URL
+  parsing now returns contextual errors instead of panicking.
+- Regression guardrails added: Unix mode assertions for each cache and an
+  invalid Databricks host test.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: `git diff --check` passed. Regression tests were not
+  executed under the repository's build/test authorization rule.
+- Adversarial review: verified parent-directory creation remains supplied by
+  the shared helper, existing-file replacement receives 0600 through atomic
+  rename, invalid input performs no request, and cache clear/load contracts are
+  unchanged. No additional finding.
+- Change review: scoped to four provider files plus this log; no unrelated
+  formatting or protected deferred work.
+- Commit: pending.
 
 ## Campaign closeout
 

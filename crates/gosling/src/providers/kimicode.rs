@@ -115,15 +115,8 @@ impl TokenCache {
     }
 
     async fn save(&self, token: &KimiToken) -> Result<()> {
-        if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        tokio::fs::write(&self.path, serde_json::to_string(token)?).await?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            tokio::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600)).await?;
-        }
+        let contents = serde_json::to_string(token)?;
+        crate::config::base::write_secrets_file(&self.path, &contents)?;
         Ok(())
     }
 
@@ -490,6 +483,27 @@ mod tests {
     use serde_json::json;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn token_cache_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = TokenCache {
+            path: temp_dir.path().join("token.json"),
+        };
+        let token = KimiToken {
+            access_token: "access".to_string(),
+            refresh_token: "refresh".to_string(),
+            expires_at: Utc::now() + Duration::seconds(3600),
+        };
+
+        cache.save(&token).await.unwrap();
+
+        let mode = std::fs::metadata(&cache.path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
 
     fn test_provider(server_uri: &str, device_id: &str) -> KimiCodeProvider {
         KimiCodeProvider {
