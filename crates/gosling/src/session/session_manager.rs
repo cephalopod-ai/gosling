@@ -3006,7 +3006,7 @@ impl SessionStorage {
                 WHERE session_id = ? AND message_id = ?
             "#,
             )
-            .bind(&role)
+            .bind(role)
             .bind(&content_json)
             .bind(message.created)
             .bind(&metadata_json)

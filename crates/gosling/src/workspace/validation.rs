@@ -315,7 +315,9 @@ fn normalize_windows_path(path: &str) -> String {
         value = value.replace("\\.\\", "\\");
     }
     if value.as_bytes().get(1) == Some(&b':') {
-        value.replace_range(0..1, &value[0..1].to_ascii_uppercase());
+        if let Some(drive_letter) = value.get_mut(..1) {
+            drive_letter.make_ascii_uppercase();
+        }
     }
     while value.len() > 3 && value.ends_with('\\') {
         value.pop();

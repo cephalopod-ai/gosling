@@ -195,12 +195,10 @@ async fn prepare_profiles(
             bail!("workspace template contains an undeclared credential field name");
         }
         let configured = configured_distribution_fields(&template.id, &template.secret_field_names);
-        let status = if template.secret_field_names.is_empty()
-            && template.auth_kind == CredentialAuthKind::Local
-        {
-            CredentialProfileStatus::Configured
-        } else if !template.secret_field_names.is_empty()
-            && configured.len() == template.secret_field_names.len()
+        let status = if (template.secret_field_names.is_empty()
+            && template.auth_kind == CredentialAuthKind::Local)
+            || (!template.secret_field_names.is_empty()
+                && configured.len() == template.secret_field_names.len())
         {
             CredentialProfileStatus::Configured
         } else if matches!(

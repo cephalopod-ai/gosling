@@ -28,23 +28,23 @@ accessible sidebar management, and regression coverage.
 | 5 — Desktop vertical slice  | complete | Desktop UI/session integration; `evidence/gate-5.md`                         |
 | 6 — Audit and repair        | complete | security/concurrency/LLM audit; `evidence/gate-6.md`                          |
 | 7 — Documentation           | complete | user/operator/distribution docs; `evidence/gate-7.md`                         |
-| 8 — Acceptance and handoff  | active   | final traceability and verification matrix                                   |
+| 8 — Acceptance and handoff  | complete | `evidence/gate-8.md`; all traceability rows closed                            |
 
 ## Current decisions
 
-- Workspace metadata and active selection will be owned by a backend workspace store.
-- Workspace credentials will use metadata-only profiles plus namespaced keys in the
+- Workspace metadata and active selection are owned by a backend workspace store.
+- Workspace credentials use metadata-only profiles plus namespaced keys in the
   existing `Config` secret-storage abstraction.
-- Session rows will pin workspace, credential-profile, effective working folder, and
+- Session rows pin workspace, credential-profile, effective working folder, and
   a non-secret workspace-context snapshot.
-- Provider construction will receive a session-scoped credential resolution context;
+- Provider construction receives a session-scoped credential resolution context;
   workspace switching will never rewrite global provider secrets.
-- Workspace React state will live in a focused context; sidebar components will only
+- Workspace React state lives in a focused context; sidebar components only
   present and invoke that state.
 - Optional extension defaults are excluded unless implementation discovery reveals a
   clean session-scoped hook.
 
 ## Continuation point
 
-Run the Gate 8 acceptance matrix, close traceability and limitations, checkpoint the handoff, and
-synchronize `main` with `origin/main`.
+All gates are complete. Commit the final acceptance repairs/evidence and synchronize `main` with
+`origin/main`.

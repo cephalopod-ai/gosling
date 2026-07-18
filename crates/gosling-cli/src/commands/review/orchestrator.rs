@@ -28,7 +28,7 @@
 //! so the user sees both their findings as soon as the slower of the
 //! two completes.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 

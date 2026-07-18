@@ -358,7 +358,9 @@ mod tests {
             json_args(&[("path", "dangling/new.txt")]),
         );
 
-        assert!(out_of_scope_path(&call, &working_dir, &[working_dir.clone()]).is_err());
+        assert!(
+            out_of_scope_path(&call, &working_dir, std::slice::from_ref(&working_dir)).is_err()
+        );
     }
 
     #[test]
