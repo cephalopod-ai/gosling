@@ -26,8 +26,8 @@ accessible sidebar management, and regression coverage.
 | 3 — Boundaries and harness  | complete | canonical SDK DTOs; `evidence/gate-3.md`                                     |
 | 4 — Backend vertical slice  | complete | workspace/session/credential backend; `evidence/gate-4.md`                   |
 | 5 — Desktop vertical slice  | complete | Desktop UI/session integration; `evidence/gate-5.md`                         |
-| 6 — Audit and repair        | pending  | —                                                                            |
-| 7 — Documentation           | pending  | —                                                                            |
+| 6 — Audit and repair        | complete | security/concurrency/LLM audit; `evidence/gate-6.md`                          |
+| 7 — Documentation           | active   | operator/user/distribution documentation                                    |
 | 8 — Acceptance and handoff  | pending  | —                                                                            |
 
 ## Current decisions
@@ -46,5 +46,5 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-Run Gate 6’s exhaustive cross-cutting security, concurrency, and reliability audit over the
-complete backend + Desktop Workspaces feature and repair every confirmed finding.
+Document user, operator, persistence, distribution-template, credential-security, and known
+limitation behavior for Gate 7, then run the Gate 8 acceptance matrix.

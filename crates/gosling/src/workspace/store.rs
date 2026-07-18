@@ -15,6 +15,7 @@ const WORKSPACE_DIRECTORY: &str = "workspaces";
 const STORE_FILE: &str = "workspaces.json";
 const TEMP_FILE: &str = ".workspaces.json.tmp";
 const LOCK_FILE: &str = ".workspaces.lock";
+const CREDENTIAL_LOCK_FILE: &str = ".credential-transaction.lock";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct WorkspaceStoreDocument {
@@ -163,6 +164,9 @@ impl WorkspaceStoreDocument {
             self.pending_secret_deletions.iter().map(String::as_str),
             "pending secret deletion keys",
         )?;
+        super::service::reject_secret_shaped_value(&Value::Object(
+            self.unknown_fields.clone().into_iter().collect(),
+        ))?;
         Ok(())
     }
 
@@ -244,6 +248,15 @@ impl WorkspaceStore {
         })();
         FileExt::unlock(&lock)?;
         result
+    }
+
+    pub(crate) fn lock_credential_transaction(&self) -> Result<File> {
+        self.ensure_private_directory()?;
+        let path = self.directory.join(CREDENTIAL_LOCK_FILE);
+        let file = private_create(&path)?;
+        set_private_file_permissions(&path)?;
+        file.lock_exclusive()?;
+        Ok(file)
     }
 
     fn read_document(&self, path: &Path) -> Result<WorkspaceStoreDocument> {
@@ -435,6 +448,63 @@ mod tests {
             store.load().unwrap().unknown_fields["futureField"],
             serde_json::json!({"kept": true})
         );
+    }
+
+    #[test]
+    fn secret_shaped_unknown_fields_are_never_persisted() {
+        let temp = tempfile::tempdir().unwrap();
+        let working = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore::new(temp.path());
+        store.load_or_initialize(working.path()).unwrap();
+
+        let result = store.mutate(|document| {
+            document.unknown_fields.insert(
+                "api_key".into(),
+                Value::String("GOSLING_SENTINEL_SECRET".into()),
+            );
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        assert!(!fs::read_to_string(store.path())
+            .unwrap()
+            .contains("GOSLING_SENTINEL_SECRET"));
+    }
+
+    #[test]
+    fn concurrent_store_mutations_preserve_both_updates() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let temp = tempfile::tempdir().unwrap();
+        let working = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore::new(temp.path());
+        store.load_or_initialize(working.path()).unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+
+        let writers = ["futureOne", "futureTwo"].map(|field| {
+            let data_dir = temp.path().to_path_buf();
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                let store = WorkspaceStore::new(&data_dir);
+                barrier.wait();
+                store
+                    .mutate(|document| {
+                        document
+                            .unknown_fields
+                            .insert(field.into(), serde_json::json!({"kept": true}));
+                        Ok(())
+                    })
+                    .unwrap();
+            })
+        });
+
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        let document = store.load().unwrap();
+        assert_eq!(document.unknown_fields["futureOne"]["kept"], true);
+        assert_eq!(document.unknown_fields["futureTwo"]["kept"], true);
     }
 
     #[test]

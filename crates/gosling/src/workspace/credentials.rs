@@ -47,6 +47,7 @@ impl WorkspaceService {
         secret_fields: Vec<super::CredentialFieldUpdate>,
     ) -> Result<CredentialProfile> {
         let _guard = self.operation_lock.lock().await;
+        let _transaction = self.store.lock_credential_transaction()?;
         let declared = declared_provider_keys(&provider).await?;
         validate_profile_fields(&declared, &non_secret_fields, &secret_fields, &[])?;
         let id = Uuid::now_v7().to_string();
@@ -123,6 +124,7 @@ impl WorkspaceService {
         clear_secret_fields: Vec<String>,
     ) -> Result<CredentialProfile> {
         let _guard = self.operation_lock.lock().await;
+        let _transaction = self.store.lock_credential_transaction()?;
         let original_document = self.store.load()?;
         let existing = original_document
             .credential_profiles
@@ -233,6 +235,7 @@ impl WorkspaceService {
 
     pub async fn delete_profile(&self, profile_id: &str, confirm_referenced: bool) -> Result<()> {
         let _guard = self.operation_lock.lock().await;
+        let _transaction = self.store.lock_credential_transaction()?;
         let document = self.store.load()?;
         let profile = document
             .credential_profiles
@@ -329,6 +332,7 @@ impl WorkspaceService {
 
     pub(super) async fn migrate_global_provider_profile(&self) -> Result<()> {
         let _guard = self.operation_lock.lock().await;
+        let _transaction = self.store.lock_credential_transaction()?;
         let document = self.store.load()?;
         if document.migration_completed {
             return Ok(());
@@ -376,6 +380,7 @@ impl WorkspaceService {
 
     pub(super) async fn cleanup_pending_secret_deletions(&self) -> Result<()> {
         let _guard = self.operation_lock.lock().await;
+        let _transaction = self.store.lock_credential_transaction()?;
         let pending = self.store.load()?.pending_secret_deletions;
         if pending.is_empty() {
             return Ok(());

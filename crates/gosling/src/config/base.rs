@@ -1162,11 +1162,36 @@ impl Config {
         Ok(())
     }
 
+    fn lock_secret_transaction(&self) -> Result<std::fs::File, ConfigError> {
+        let lock_path = match &self.secrets {
+            #[cfg(feature = "system-keyring")]
+            SecretStorage::Keyring { .. } => Paths::config_dir().join(".secrets.lock"),
+            SecretStorage::File { path } => path.with_extension("lock"),
+        };
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| ConfigError::DirectoryError(error.to_string()))?;
+        }
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options.open(lock_path)?;
+        file.lock_exclusive()
+            .map_err(|error| ConfigError::LockError(error.to_string()))?;
+        Ok(file)
+    }
+
     fn mutate_secrets(
         &self,
         mutate: impl FnOnce(&mut HashMap<String, Value>),
     ) -> Result<(), ConfigError> {
         let _guard = lock_ignoring_poison(&self.guard);
+        let _storage_guard = self.lock_secret_transaction()?;
+        self.invalidate_secrets_cache();
         let mut values = self.all_secrets()?;
         mutate(&mut values);
         self.write_all_secrets(&values)
@@ -2106,6 +2131,46 @@ mod tests {
             .collect();
         assert!(stray.is_empty(), "leftover temp files: {stray:?}");
 
+        Ok(())
+    }
+
+    #[test]
+    fn secret_mutations_across_config_instances_do_not_drop_updates() -> Result<(), ConfigError> {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("config.yaml");
+        let secrets_path = temp.path().join("secrets.yaml");
+        let first = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        let second = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+
+        assert!(first.all_secrets()?.is_empty());
+        assert!(second.all_secrets()?.is_empty());
+
+        let barrier = Arc::new(Barrier::new(2));
+        let first_barrier = Arc::clone(&barrier);
+        let first_writer = thread::spawn(move || -> Result<(), ConfigError> {
+            first_barrier.wait();
+            first.set_secret("workspace-profile-one", &"first")
+        });
+        let second_writer = thread::spawn(move || -> Result<(), ConfigError> {
+            barrier.wait();
+            second.set_secret("workspace-profile-two", &"second")
+        });
+
+        first_writer.join().unwrap()?;
+        second_writer.join().unwrap()?;
+
+        let reloaded = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        assert_eq!(
+            reloaded.get_secret::<String>("workspace-profile-one")?,
+            "first"
+        );
+        assert_eq!(
+            reloaded.get_secret::<String>("workspace-profile-two")?,
+            "second"
+        );
         Ok(())
     }
 

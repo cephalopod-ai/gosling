@@ -1,0 +1,263 @@
+[
+  {
+    "id": "SEC-GOS-001",
+    "title": "ACP debug mode logged credential-profile request values",
+    "domain": "Security",
+    "severity": "High",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced and regression-observed",
+    "evidence": [
+      {
+        "file": "ui/sdk/src/http-stream.ts",
+        "lines": "21-78",
+        "symbol": "redactAcpDebugPayload/acpDebug",
+        "quote": "console.debug(`[acp] ${label}`, redactAcpDebugPayload(payload))"
+      },
+      {
+        "file": "ui/sdk/tests/http-stream-redaction.test.ts",
+        "lines": "13-40",
+        "symbol": "ACP debug sentinel regressions",
+        "quote": "assert.equal(JSON.stringify(calls).includes(sentinel), false)"
+      }
+    ],
+    "observed": "The transport debug sink previously received complete ACP messages containing credential secretFields values.",
+    "expected_boundary": "Diagnostics never reproduce credential values.",
+    "failure_mechanism": "Generic transport logging had no structured secret redaction.",
+    "break_it_angle": "Enable ACP_DEBUG and create a profile with a sentinel secret.",
+    "impact": "Credentials could enter developer logs, screenshots, or copied diagnostics.",
+    "operational_impact": {
+      "blast_radius": "local-user",
+      "side_effect_class": "secret-exposure",
+      "reversibility": "irreversible",
+      "operator_visibility": "debug-only",
+      "rerun_safety": "unsafe"
+    },
+    "mitigation": {
+      "patterns": ["structured redaction", "single diagnostic boundary"],
+      "minimal_repair": "Redact secret-bearing properties and values before console output.",
+      "local_guardrail": "Credential-profile secretFields is always fully redacted.",
+      "behavior_test": "The real console call omits a sentinel value."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "One shared SDK sink covers all ACP debug calls.",
+      "cost_drivers": ["security", "tests"]
+    },
+    "validation": ["ui/sdk build", "ui/sdk tests", "ui/sdk test typecheck"],
+    "non_goals": ["log raw credentials in any debug mode"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"]
+  },
+  {
+    "id": "SEC-GOS-002",
+    "title": "Future-compatible workspace fields could preserve secret-shaped data",
+    "domain": "Security",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/workspace/store.rs",
+        "lines": "39-40,163-169",
+        "symbol": "WorkspaceStoreDocument::unknown_fields/validate",
+        "quote": "reject_secret_shaped_value(&Value::Object(self.unknown_fields...))"
+      },
+      {
+        "file": "crates/gosling/src/workspace/store.rs",
+        "lines": "453-471",
+        "symbol": "secret_shaped_unknown_fields_are_never_persisted",
+        "quote": "assert!(!fs::read_to_string(store.path()).unwrap().contains(...))"
+      }
+    ],
+    "observed": "Flattened unknown store fields were preserved without the import/export secret-field guard.",
+    "expected_boundary": "Forward compatibility preserves benign metadata but never normalizes raw secret-shaped fields into workspace persistence.",
+    "failure_mechanism": "The compatibility map bypassed canonical secret-shaped-field validation.",
+    "break_it_angle": "Insert api_key with a sentinel and perform a store mutation.",
+    "impact": "A future or malformed writer could cause secret material to persist in the workspace store.",
+    "operational_impact": {
+      "blast_radius": "workspace-store",
+      "side_effect_class": "secret-persistence",
+      "reversibility": "compensatable",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "mitigation": {
+      "patterns": ["boundary validation", "safe forward compatibility"],
+      "minimal_repair": "Apply secret-shaped-field rejection to flattened unknown fields.",
+      "local_guardrail": "Keep benign unknown-field round-trip coverage.",
+      "behavior_test": "Secret sentinel is rejected and absent from the store."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "XS",
+      "nominal_agent": "codex",
+      "rationale": "One store invariant closes every mutation path.",
+      "cost_drivers": ["security", "compatibility"]
+    },
+    "validation": ["workspace Rust suite"],
+    "non_goals": ["discard benign future fields"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"]
+  },
+  {
+    "id": "CON-GOS-001",
+    "title": "Concurrent profile writes could lose or misalign secure state",
+    "domain": "Concurrency",
+    "severity": "High",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced and concurrent-test-observed",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/config/base.rs",
+        "lines": "1165-1197",
+        "symbol": "lock_secret_transaction/mutate_secrets",
+        "quote": "self.invalidate_secrets_cache(); let mut values = self.all_secrets()?"
+      },
+      {
+        "file": "crates/gosling/src/workspace/store.rs",
+        "lines": "253-259",
+        "symbol": "lock_credential_transaction",
+        "quote": "file.lock_exclusive()?"
+      },
+      {
+        "file": "crates/gosling/src/config/base.rs",
+        "lines": "2137-2174",
+        "symbol": "secret_mutations_across_config_instances_do_not_drop_updates",
+        "quote": "first_barrier.wait(); first.set_secret(...)"
+      }
+    ],
+    "observed": "Process-local locks and cached aggregate reads allowed two Config/service instances to overwrite or reorder profile state.",
+    "expected_boundary": "Concurrent disjoint writes survive and profile metadata remains ordered with its secure-store operation.",
+    "failure_mechanism": "Stale read-modify-write plus a missing cross-process transaction boundary.",
+    "break_it_angle": "Release two pre-cached Config writers simultaneously and assert both final keys.",
+    "impact": "Credentials can disappear or disagree with configured metadata, breaking authentication and recovery truth.",
+    "operational_impact": {
+      "blast_radius": "all-local-credentials",
+      "side_effect_class": "credential-loss",
+      "reversibility": "compensatable",
+      "operator_visibility": "delayed",
+      "rerun_safety": "unsafe"
+    },
+    "mitigation": {
+      "patterns": ["cross-process lock", "fresh read under lock", "cross-store protocol"],
+      "minimal_repair": "Serialize secure aggregate mutation and the complete profile metadata/secret workflow.",
+      "local_guardrail": "Retain pending deletion recovery for process interruption.",
+      "behavior_test": "Two concurrent writers leave both effects."
+    },
+    "implementation_assessment": {
+      "complexity": "workflow_protocol",
+      "cost": "M",
+      "nominal_agent": "codex",
+      "rationale": "The repair spans Config and workspace/profile transaction seams.",
+      "cost_drivers": ["concurrency", "secure-storage", "tests"]
+    },
+    "validation": ["real concurrent Config test", "real concurrent workspace store test", "workspace Rust suite"],
+    "non_goals": ["distributed locking across different data directories"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"]
+  },
+  {
+    "id": "LLM-GOS-001",
+    "title": "Workspace metadata entered the system context as instruction-like prose",
+    "domain": "LLM",
+    "severity": "Medium",
+    "confidence": "Likely",
+    "evidence_basis": "source-evidenced source-to-context-to-model path",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/workspace/service.rs",
+        "lines": "225-235,320-334",
+        "symbol": "import/prepare_session/render_session_context",
+        "quote": "The JSON below is user-configured workspace metadata"
+      },
+      {
+        "file": "crates/gosling/src/acp/server.rs",
+        "lines": "1269-1274",
+        "symbol": "prepare_acp_session_agent",
+        "quote": "extend_system_prompt(... WorkspaceService::render_session_context(context))"
+      }
+    ],
+    "observed": "Imported/template-controlled strings were previously concatenated into an undifferentiated system-prompt prose block.",
+    "expected_boundary": "Workspace metadata is represented as untrusted structured data and grants no authority.",
+    "failure_mechanism": "Data and operational guidance shared the same instruction-like formatting.",
+    "break_it_angle": "Import a workspace label resembling a tool instruction and inspect the session context/tool decision.",
+    "impact": "Supplied metadata can steer model behavior, though it cannot grant a tool or replace backend session/profile state.",
+    "operational_impact": {
+      "blast_radius": "one-session",
+      "side_effect_class": "model-steering",
+      "reversibility": "reversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "mitigation": {
+      "patterns": ["data/instruction separation", "deterministic tool authorization"],
+      "minimal_repair": "Serialize typed JSON and explicitly label every contained string as data.",
+      "local_guardrail": "Keep credential metadata out of context and retain code-enforced tool permissions.",
+      "behavior_test": "Rendered context is structured and contains no credential identifiers."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "The workspace context has one backend renderer.",
+      "cost_drivers": ["LLM trust boundary", "tests"]
+    },
+    "validation": ["workspace context Rust regression"],
+    "non_goals": ["treat prompt labeling as an authorization boundary"],
+    "patch_priority": 2,
+    "reviewed_by": ["codex-root"]
+  },
+  {
+    "id": "LLM-GOS-002",
+    "title": "Workspace metadata could exhaust the session context",
+    "domain": "LLM",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/workspace/service.rs",
+        "lines": "367-427",
+        "symbol": "validate_workspace_boundary",
+        "quote": "workspace metadata must be at most {MAX_SERIALIZED_WORKSPACE_BYTES} bytes"
+      },
+      {
+        "file": "crates/gosling/src/workspace/service.rs",
+        "lines": "743-771",
+        "symbol": "workspace_boundary_limits_model_context_size",
+        "quote": "assert!(validate_workspace_boundary(&oversized).is_err())"
+      }
+    ],
+    "observed": "Unbounded folder/output arrays and strings were copied into durable workspace state and every session context.",
+    "expected_boundary": "Model-visible workspace metadata has deterministic count, field, and aggregate bounds.",
+    "failure_mechanism": "No resource limit existed at the canonical workspace boundary.",
+    "break_it_angle": "Import thousands of folders or a smaller set of multi-kilobyte paths and start a session.",
+    "impact": "Context exhaustion, elevated token cost, startup failure, or degraded behavior.",
+    "operational_impact": {
+      "blast_radius": "one-workspace",
+      "side_effect_class": "resource-exhaustion",
+      "reversibility": "reversible",
+      "operator_visibility": "delayed",
+      "rerun_safety": "unsafe"
+    },
+    "mitigation": {
+      "patterns": ["ingress resource bounds", "aggregate size cap"],
+      "minimal_repair": "Cap collections, fields, paths, and total serialized workspace bytes.",
+      "local_guardrail": "Apply the same boundary to create/update/import/template/store reload.",
+      "behavior_test": "Over-count and over-size workspaces are rejected."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "One canonical backend validator covers all persistence and context paths.",
+      "cost_drivers": ["LLM consumption", "compatibility"]
+    },
+    "validation": ["workspace boundary Rust regression"],
+    "non_goals": ["make arbitrary-sized workspaces model-visible"],
+    "patch_priority": 2,
+    "reviewed_by": ["codex-root"]
+  }
+]

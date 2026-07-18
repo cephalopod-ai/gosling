@@ -3,7 +3,66 @@ import type { AnyMessage, Stream } from "@agentclientprotocol/sdk";
 const ACP_CONNECTION_HEADER = "Acp-Connection-Id";
 const ACP_SESSION_HEADER = "Acp-Session-Id";
 
-function acpDebug(label: string, payload: unknown): void {
+const SENSITIVE_PROPERTY_NAMES = new Set([
+  "apikey",
+  "accesstoken",
+  "refreshtoken",
+  "password",
+  "secret",
+  "authorization",
+  "cookie",
+  "privatekey",
+]);
+const SECRET_ASSIGNMENT =
+  /(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization|cookie|private[_-]?key|value)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}\]]+)/gi;
+const BEARER_TOKEN = /\bBearer\s+[^\s,;}\]]+/gi;
+const PROVIDER_TOKEN = /\bsk-[A-Za-z0-9_-]{8,}\b/g;
+
+export function redactAcpDebugPayload(payload: unknown): unknown {
+  return redactDebugValue(payload, false, new WeakSet<object>());
+}
+
+function redactDebugValue(
+  value: unknown,
+  secretValue: boolean,
+  visited: WeakSet<object>,
+): unknown {
+  if (typeof value === "string") {
+    if (secretValue) return "[redacted]";
+    return value
+      .replace(SECRET_ASSIGNMENT, "$1[redacted]")
+      .replace(BEARER_TOKEN, "Bearer [redacted]")
+      .replace(PROVIDER_TOKEN, "[redacted]");
+  }
+  if (value === null || typeof value !== "object") return value;
+  if (visited.has(value)) return "[circular]";
+  visited.add(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => redactDebugValue(item, secretValue, visited));
+  }
+
+  const source = value as Record<string, unknown>;
+  const declaredSecretValue =
+    source.secret === true ||
+    (typeof source.key === "string" &&
+      SENSITIVE_PROPERTY_NAMES.has(normalizePropertyName(source.key)));
+  return Object.fromEntries(
+    Object.entries(source).map(([key, item]) => {
+      const normalizedKey = normalizePropertyName(key);
+      if (normalizedKey === "secretfields") return [key, "[redacted]"];
+      const redactItem =
+        SENSITIVE_PROPERTY_NAMES.has(normalizedKey) ||
+        (normalizedKey === "value" && (secretValue || declaredSecretValue));
+      return [key, redactDebugValue(item, redactItem, visited)];
+    }),
+  );
+}
+
+function normalizePropertyName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+export function acpDebug(label: string, payload: unknown): void {
   const g = globalThis as {
     ACP_DEBUG?: unknown;
     localStorage?: { getItem?: (k: string) => string | null };
@@ -16,7 +75,7 @@ function acpDebug(label: string, payload: unknown): void {
     !!g.process?.env?.ACP_DEBUG;
   if (!on) return;
   // eslint-disable-next-line no-console
-  console.debug(`[acp] ${label}`, payload);
+  console.debug(`[acp] ${label}`, redactAcpDebugPayload(payload));
 }
 
 const SESSION_SCOPED_METHODS = new Set<string>([
@@ -51,7 +110,12 @@ function isNotification(msg: AnyMessage): boolean {
 }
 
 function isResponse(msg: AnyMessage): boolean {
-  const m = msg as { method?: unknown; id?: unknown; result?: unknown; error?: unknown };
+  const m = msg as {
+    method?: unknown;
+    id?: unknown;
+    result?: unknown;
+    error?: unknown;
+  };
   return (
     m.method === undefined &&
     m.id !== undefined &&

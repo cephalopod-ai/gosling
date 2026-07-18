@@ -60,6 +60,7 @@ impl WorkspaceService {
         default_working_folder: &Path,
     ) -> Result<()> {
         let _guard = self.operation_lock.lock().await;
+        let _credential_transaction = self.store.lock_credential_transaction()?;
         if self.store.load()?.templates_materialized {
             return Ok(());
         }
