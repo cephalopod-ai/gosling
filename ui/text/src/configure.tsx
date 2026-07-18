@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
-import type { GoslingClient, ProviderInventoryEntryDto } from "@repo-makeover/gosling-sdk";
+import type {
+  GoslingClient,
+  ProviderInventoryEntryDto,
+} from "@repo-makeover/gosling-sdk";
 import {
   CRANBERRY,
   TEAL,
@@ -12,6 +15,7 @@ import {
 import { Spinner, SPINNER_FRAMES } from "./components/Spinner.js";
 import { ErrorScreen } from "./components/ErrorScreen.js";
 import { ProviderSelector, ProviderConfigurator } from "./onboarding.js";
+import { truncateTerminalText } from "./utils.js";
 
 const LOAD_MODELS_TIMEOUT_MS = 30000;
 
@@ -173,6 +177,10 @@ const ModelSelector = React.memo(function ModelSelector({
   }
 
   if (models.length === 0) {
+    const message = truncateTerminalText(
+      "This provider does not currently expose any models in inventory.",
+      maxWidth,
+    );
     return (
       <Box flexDirection="column" height={height} width={columns} paddingX={2}>
         <Box marginTop={1} />
@@ -186,8 +194,8 @@ const ModelSelector = React.memo(function ModelSelector({
         </Box>
         <Box justifyContent="center">
           <Box width={maxWidth}>
-            <Text color={TEXT_DIM} wrap="wrap">
-              This provider does not currently expose any models in inventory.
+            <Text color={TEXT_DIM} wrap="truncate">
+              {message}
             </Text>
           </Box>
         </Box>
@@ -528,7 +536,7 @@ export default function ConfigureScreen({
             ◆ Configure provider ◆
           </Text>
         </Box>
-        <ErrorScreen errorMsg={errorMsg} onRetry={handleRetry} />
+        <ErrorScreen errorMsg={errorMsg} width={width} onRetry={handleRetry} />
       </Box>
     );
   }

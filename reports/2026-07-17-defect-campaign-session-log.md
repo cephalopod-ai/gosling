@@ -402,6 +402,37 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
 - Change review: review handler/orchestrator/extracted worker, the summon slot
   lifecycle, focused tests, and this log; review parsing and sync delegation
   behavior are unchanged.
+- Commit: `03895803e`.
+
+### Stage 13 — fixed-height Ink text budgets
+
+- Defect: AUD-034 fixed.
+- Changes: every affected fixed-height screen now flattens and conservatively
+  pre-truncates dynamic text to an explicit cell budget and uses Ink truncation
+  instead of wrapping. The provider configurator counts all margins and rows,
+  bounds visible setup steps to remaining height, and truncates descriptions,
+  key labels, help, and setup strings. Error screens use the parent width and
+  render title, error, and retry text as fixed one-line rows.
+- Regression guardrails: focused utility tests cover ASCII limits, multi-line
+  flattening, non-ASCII conservative budgeting, and zero/one-cell edges. A
+  source scan confirms no executable `wrap="wrap"` remains under `ui/text/src`.
+- Modularization: all touched files remain <=1000 lines; the shared truncation
+  seam lives in the existing small `utils.tsx` module.
+- Formatting: targeted Prettier formatting passed.
+- Tests: `tsx --test text/src/utils.test.ts` passed, 3 tests.
+- Static verification: `git diff --check` passed. Text-UI TypeScript checking
+  reached two pre-existing `extensions.tsx` request-shape errors where
+  `{config}` is supplied to an SDK request requiring `{extension}`; this newly
+  surfaced post-freeze defect is isolated for the next local repair stage.
+- Adversarial review: verified newlines/tabs cannot create extra rows; the
+  conservative non-ASCII policy cannot underestimate cell use; every former
+  wrapped value has a matching content-width budget; configurator height math
+  includes header margins, per-key margins, input/help spacing, setup header,
+  and per-step margins; and omitted setup rows are represented by a bounded
+  summary when space permits.
+- Change review: the three audited screens, one shared helper and focused test,
+  plus the single ErrorScreen call-site width propagation and this log; input
+  handling and provider persistence are unchanged.
 - Commit: pending.
 
 ## Campaign closeout

@@ -339,7 +339,11 @@ export default function ExtensionsManager({
             ◆ Manage extensions ◆
           </Text>
         </Box>
-        <ErrorScreen errorMsg={errorMsg} onRetry={() => reload()} />
+        <ErrorScreen
+          errorMsg={errorMsg}
+          width={columns}
+          onRetry={() => reload()}
+        />
       </Box>
     );
   }
