@@ -13,7 +13,7 @@ accessible sidebar management, and regression coverage.
 - Repository: `cephalopod-ai/gosling`
 - Branch: `main`
 - Baseline commit: `9b9571febf06f7fc6dfddea32267b5c0d325b369`
-- Remote state: `main` matched `origin/main` before Workspaces changes began.
+- Remote state: the completed Workspaces gates are synchronized to `origin/main`.
 - Execution profile: existing-repository/Giles, governed repair.
 
 ## Gate status
@@ -46,5 +46,5 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-All gates are complete. Commit the final acceptance repairs/evidence and synchronize `main` with
-`origin/main`.
+All gates are complete, the acceptance evidence is committed, and local `main` matches
+`origin/main`. No continuation action is required for this campaign.
