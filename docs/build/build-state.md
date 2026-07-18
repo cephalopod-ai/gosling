@@ -21,7 +21,7 @@ accessible sidebar management, and regression coverage.
 | Gate | Status | Exit evidence |
 |---|---|---|
 | 0 — Orientation | complete | `evidence/gate-0.md`, `audits/gate-0-audit.md` |
-| 1 — Intent and traceability | pending | — |
+| 1 — Intent and traceability | complete | `docs/INTENT.md`, `traceability-matrix.md`, `evidence/gate-1.md` |
 | 2 — Contracts and design | pending | — |
 | 3 — Boundaries and harness | pending | — |
 | 4 — Backend vertical slice | pending | — |
@@ -46,7 +46,6 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-Begin Gate 1 by writing `docs/INTENT.md`, acceptance traceability, and a requirements
-coverage matrix. Keep the architecture-audit findings in `audits/gate-0-audit.md` as
-design constraints.
-
+Begin Gate 2 by selecting the canonical DTO shapes, workspace-store and credential-scope
+contracts, DB v22 fields, ADRs, file plan, and acceptance-test commands. Preserve the
+Gate 0 findings as design constraints and the Gate 1 negative-space cases as required tests.
