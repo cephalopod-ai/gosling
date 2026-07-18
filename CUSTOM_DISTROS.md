@@ -8,7 +8,7 @@ This guide explains how to create custom distributions of gosling tailored to yo
 
 gosling's architecture is designed for extensibility. Organizations can create "remixed" versions that:
 
-- **Preconfigure AI providers**: Ship with a specific model (local or cloud) and API credentials
+- **Preconfigure AI providers**: Ship with a specific model and non-secret credential-profile references; provision actual credentials separately
 - **Bundle custom tools**: Include proprietary extensions for internal data sources
 - **Customize the experience**: Modify branding, UI, and default behaviors
 - **Target specific audiences**: Create specialized versions for developers, legal teams, designers, etc.
@@ -45,6 +45,7 @@ gosling's architecture is designed for extensibility. Organizations can create "
 | What You Want | Where to Look | Complexity |
 |---------------|---------------|------------|
 | Preconfigure a model/provider | `config.yaml`, `init-config.yaml`, environment variables | Low |
+| Preconfigure Desktop workspaces | `GOSLING_WORKSPACE_TEMPLATES` in first-run configuration | Low |
 | Add custom AI providers | `crates/gosling/src/providers/declarative/` | Low |
 | Bundle custom MCP extensions | `config.yaml` extensions section, `ui/desktop/src/built-in-extensions.json`, `ui/desktop/src/components/settings/extensions/bundled-extensions.json` | Medium |
 | Modify system prompts | `crates/gosling/src/prompts/` | Low |
@@ -149,12 +150,13 @@ GOSLING_PROVIDER: anthropic
 GOSLING_MODEL: claude-sonnet-4-20250514
 ```
 
-2. **Inject secrets at install time** or via your MDM/configuration management:
+2. **Provision secrets separately** through gosling's existing secure configuration path. An
+   installer or MDM integration should call the same `Config` secure setter used by Desktop; for
+   manual setup, run the interactive `gosling configure` flow:
 
 ```bash
-# Secrets are stored in system keyring or ~/.config/gosling/secrets.yaml
-# if GOSLING_DISABLE_KEYRING=1
-gosling configure set-secret ANTHROPIC_API_KEY "your-corporate-key"
+# Enter the provider secret interactively; do not place it in a workspace template.
+gosling configure
 ```
 
 3. **Lock down provider changes** (optional) by modifying the settings UI.
@@ -493,7 +495,89 @@ For providers with unique APIs, implement the Provider trait:
 
 ---
 
-## H. Complex Workflows with Subagents
+## H. Preconfigured Desktop Workspaces
+
+**Goal**: Materialize repeatable, non-secret workspace definitions on first launch.
+
+Add `GOSLING_WORKSPACE_TEMPLATES` to the layered configuration applied by your distribution. Use
+stable UUIDs so an installer can provision the matching credential-profile secret through gosling's
+existing `Config` secure-storage abstraction.
+
+```yaml
+GOSLING_WORKSPACE_TEMPLATES:
+  schemaVersion: 1
+  credentialProfiles:
+    - id: "8b3e6d4e-34c9-4c0e-a9cf-9926b2aa3b2d"
+      name: "Organization Anthropic"
+      providerOrServiceId: "anthropic"
+      authKind: "api_key"
+      secretFieldNames:
+        - "ANTHROPIC_API_KEY"
+  workspaces:
+    - id: "638f97aa-91a0-4768-b72e-5a1919e9db38"
+      workspace:
+        name: "Annual Meeting"
+        description: "Shared working and delivery layout"
+        workingFolder: "${HOME}/Projects/Annual-Meeting"
+        folders:
+          - id: "3d30ff53-42ad-4ea4-a1cb-87e93d7909ae"
+            label: "Brand reference"
+            path: "${HOME}/Projects/Branding"
+            kind: "reference"
+            access: "read"
+        productOutputFolders:
+          - id: "ec01b0ce-25e7-43de-94cf-f7b853314caf"
+            label: "Deliverables"
+            path: "${HOME}/Projects/Annual-Meeting/Deliverables"
+            productTypes:
+              - "document"
+              - "presentation"
+              - "image"
+              - "export"
+            isDefault: true
+            createIfMissing: true
+        credentialBindings:
+          - id: "0b029eb4-e3e1-40ed-ab98-a0117d18e99d"
+            label: "Organization Anthropic"
+            credentialProfileId: "8b3e6d4e-34c9-4c0e-a9cf-9926b2aa3b2d"
+            targetKind: "provider"
+            targetId: "anthropic"
+            isDefault: true
+        defaultCredentialBindingId: "0b029eb4-e3e1-40ed-ab98-a0117d18e99d"
+        defaultProvider: "anthropic"
+        defaultModel: "claude-sonnet-4-20250514"
+  activeWorkspaceTemplateId: "638f97aa-91a0-4768-b72e-5a1919e9db38"
+```
+
+Supported path placeholders are `${HOME}`, `${CONFIG_DIR}`, `${DATA_DIR}`, and `${CWD}`, optionally
+followed by a relative suffix. A leading `~` is also supported. Other placeholders and parent
+traversal are rejected.
+
+The template contains field names and profile references only. It must never contain an API key,
+token, password, cookie, private key, or OAuth credential. Provision the actual value separately
+through an installer, MDM/bootstrap component, OAuth flow, or other existing code that calls
+gosling's secure Config setter. The resulting internal secure identifier is
+`workspace-credential::<profile UUID>::<declared field>`; do not call a platform keyring library or
+edit the fallback file directly from new distribution code.
+
+If a matching value was not securely provisioned, Desktop shows the template profile as missing or
+needing authentication. It does not claim the profile is configured and does not fall back to a
+different credential. Users can create a local secure profile in Desktop and relink the workspace.
+
+Templates materialize once. Missing folders produce visible warnings; a missing primary folder must
+be relinked before a chat can start. Workspace templates cannot currently set per-workspace
+extension defaults because extension configuration is not cleanly session-scoped.
+
+### Technical Details
+
+- Template materialization: `crates/gosling/src/workspace/bootstrap.rs`
+- Workspace persistence: `crates/gosling/src/workspace/store.rs`
+- Secure profile resolution: `crates/gosling/src/workspace/credentials.rs`
+- Desktop management: `ui/desktop/src/components/workspaces/`
+
+---
+
+## I. Complex Workflows with Subagents
 
 **Goal**: Build sophisticated multi-step workflows that orchestrate multiple specialized tasks.
 

@@ -27,8 +27,8 @@ accessible sidebar management, and regression coverage.
 | 4 — Backend vertical slice  | complete | workspace/session/credential backend; `evidence/gate-4.md`                   |
 | 5 — Desktop vertical slice  | complete | Desktop UI/session integration; `evidence/gate-5.md`                         |
 | 6 — Audit and repair        | complete | security/concurrency/LLM audit; `evidence/gate-6.md`                          |
-| 7 — Documentation           | active   | operator/user/distribution documentation                                    |
-| 8 — Acceptance and handoff  | pending  | —                                                                            |
+| 7 — Documentation           | complete | user/operator/distribution docs; `evidence/gate-7.md`                         |
+| 8 — Acceptance and handoff  | active   | final traceability and verification matrix                                   |
 
 ## Current decisions
 
@@ -46,5 +46,5 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-Document user, operator, persistence, distribution-template, credential-security, and known
-limitation behavior for Gate 7, then run the Gate 8 acceptance matrix.
+Run the Gate 8 acceptance matrix, close traceability and limitations, checkpoint the handoff, and
+synchronize `main` with `origin/main`.

@@ -122,6 +122,24 @@ describe('WorkspaceEditorDialog', () => {
     expect(createWorkspace).not.toHaveBeenCalled();
   });
 
+  it('validates a draft without persisting it', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    await user.type(screen.getByLabelText('Name'), 'Validated workspace');
+    await user.click(screen.getByRole('button', { name: 'Validate' }));
+
+    expect(validateWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Validated workspace' }),
+      undefined
+    );
+    expect(await screen.findByText('Workspace validation passed.')).toBeInTheDocument();
+    expect(createWorkspace).not.toHaveBeenCalled();
+    expect(updateWorkspace).not.toHaveBeenCalled();
+  });
+
   it('reassigns the default before removing the current default output', async () => {
     const user = userEvent.setup();
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {

@@ -28,7 +28,7 @@ In your first session, gosling prompts you to [set up an LLM (Large Language Mod
 
         gosling Desktop supports working with multiple active chat sessions in the same window. Your new sessions are added to the `Chat` section of the sidebar, so you can quickly switch between your 10 most recent sessions. Just click a session to [continue working](#resume-session) in that session.
         
-        To change your working directory, click the <FolderDot className="inline" size={16} /> directory switcher at the bottom of the app.
+        New chats use the active [workspace](/docs/guides/workspaces) primary folder by default. To use a one-off working directory without changing that workspace, click the <FolderDot className="inline" size={16} /> directory switcher at the bottom of the app.
 
         :::info Starting Sessions in a New Window
         To start a session in a new window, click the <AppWindow className="inline" size={16} /> button in the top-left. After you send your first prompt, the new session is added to the `Chat` section of the sidebar. 
@@ -268,6 +268,10 @@ Search allows you to find specific content within sessions or find specific sess
     #### Switch Between Active Sessions
 
     gosling Desktop allows you to switch between multiple chat sessions in the same window. You can start a task in one session, switch to another to do some work, and return to the first session when the task is completed. 
+
+    Each new Desktop session pins its workspace, effective working folder, and non-secret output
+    context. Changing the active workspace affects future chats only; resuming a session restores
+    its pinned workspace behavior.
 
     Your most recent sessions (up to 10) are available in the sidebar for quick access:
 

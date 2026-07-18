@@ -61,6 +61,7 @@ export function WorkspaceEditorDialog({
   );
   const [validation, setValidation] = useState<WorkspaceValidationReport | null>(null);
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +69,7 @@ export function WorkspaceEditorDialog({
     if (open) {
       setDraft(createDraft(workspace, activeWorkspace?.workingFolder));
       setValidation(null);
+      setValidating(false);
       setError(null);
     }
   }, [activeWorkspace?.workingFolder, open, workspace]);
@@ -115,13 +117,29 @@ export function WorkspaceEditorDialog({
     });
   }, []);
 
-  const save = useCallback(async () => {
-    if (!draft.name.trim() || saving) return;
-    setSaving(true);
+  const runValidation = useCallback(async (): Promise<WorkspaceValidationReport | null> => {
+    if (!draft.name.trim() || validating) return null;
+    setValidating(true);
     setError(null);
     try {
       const report = await validateWorkspace(draft, workspace?.id);
       setValidation(report);
+      return report;
+    } catch (cause) {
+      setError(workspaceErrorMessage(cause, 'Unable to validate workspace'));
+      return null;
+    } finally {
+      setValidating(false);
+    }
+  }, [draft, validateWorkspace, validating, workspace?.id]);
+
+  const save = useCallback(async () => {
+    if (!draft.name.trim() || saving || validating) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const report = await runValidation();
+      if (!report) return;
       if (workspace) {
         await updateWorkspace(workspace.id, draft);
       } else {
@@ -138,7 +156,16 @@ export function WorkspaceEditorDialog({
     } finally {
       setSaving(false);
     }
-  }, [createWorkspace, draft, onOpenChange, saving, updateWorkspace, validateWorkspace, workspace]);
+  }, [
+    createWorkspace,
+    draft,
+    onOpenChange,
+    runValidation,
+    saving,
+    updateWorkspace,
+    validating,
+    workspace,
+  ]);
 
   const updateFolder = useCallback((id: string, patch: Partial<WorkspaceFolder>) => {
     setDraft((current) => ({
@@ -615,10 +642,24 @@ export function WorkspaceEditorDialog({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            <Button
+              variant="outline"
+              onClick={() => void runValidation()}
+              disabled={saving || validating || !draft.name.trim()}
+            >
+              {validating ? 'Validating…' : 'Validate'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={saving || validating}
+            >
               Cancel
             </Button>
-            <Button onClick={() => void save()} disabled={saving || !draft.name.trim()}>
+            <Button
+              onClick={() => void save()}
+              disabled={saving || validating || !draft.name.trim()}
+            >
               {saving ? 'Saving…' : 'Save workspace'}
             </Button>
           </DialogFooter>

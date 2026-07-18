@@ -17,6 +17,7 @@ This file is the durable map for the repository's documentation surface.
 - [quickstart](./docs/quickstart.md)
 - [getting started](./docs/getting-started/)
 - [guides](./docs/guides/)
+- [workspaces guide](./docs/guides/workspaces.md)
 - [troubleshooting](./docs/troubleshooting/)
 - [release notes](./docs/release-notes/)
 - [tutorials](./docs/tutorials/)

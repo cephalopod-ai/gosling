@@ -1,0 +1,154 @@
+---
+title: Workspaces
+sidebar_position: 31
+sidebar_label: Workspaces
+description: Create repeatable folders, output destinations, and secure provider profiles for gosling Desktop sessions
+---
+
+# Workspaces
+
+:::info Desktop only
+Workspace management is currently available in gosling Desktop. The CLI continues to use its
+current working directory and global provider configuration.
+:::
+
+A workspace is a repeatable environment for new chats. It can define:
+
+- one primary working folder;
+- additional source or reference folders with read-only or read/write guidance;
+- named product output folders for documents, spreadsheets, presentations, images, video, code,
+  data, exports, or other deliverables;
+- a secure credential-profile binding;
+- optional default provider and model identifiers.
+
+gosling creates a usable `Default` workspace automatically. Existing sessions remain valid and do
+not need to be migrated manually.
+
+## Switch or filter workspaces
+
+Open the sidebar and expand **Workspaces**.
+
+- Click a workspace row to make it active. New chats use its defaults.
+- Double-click a row, or choose **Show its chats** from its menu, to filter the existing chat list.
+- Choose **All workspaces** to see sessions across every workspace.
+
+Switching workspaces does not move or restart the chat currently on screen. The chat header shows
+the session's pinned workspace and calls out when new chats use a different active workspace.
+
+## Create a workspace
+
+1. Select **Add workspace** next to the Workspaces heading.
+2. Enter a name and, optionally, a description, icon label, provider, and model.
+3. Choose the primary working folder.
+4. Add source or reference folders as needed and choose **Read only** or **Read/write** for each.
+5. Add one or more product output destinations. Assign product types and select exactly one default
+   output.
+6. Optionally add a credential binding.
+7. Select **Validate**, resolve any required errors, and save.
+
+The primary folder must exist and be a directory before a new chat can start. A missing optional
+reference or output folder produces a warning instead of disabling the entire app. If an output is
+marked **Allow explicit creation if missing**, edit the saved workspace and choose **Create now**;
+gosling asks for confirmation before creating it.
+
+Removing a folder from a workspace removes only the reference. It never deletes, moves, or rewrites
+the physical folder.
+
+## Manage secure credential profiles
+
+From the workspace editor, open **Manage credential profiles**.
+
+1. Choose **New profile**.
+2. Select a provider and enter a profile name.
+3. Enter the provider's required values. Secret fields use password inputs.
+4. Save the profile, then add or update the workspace's credential binding.
+
+After save, gosling displays only metadata and status. It never sends the stored value back to the
+Desktop renderer. Editing a profile shows `Configured — enter a replacement` instead of the old
+value. Canceling, succeeding, or failing clears secret form values.
+
+Credential values use gosling's existing OS keyring by default. If the keyring is unavailable,
+gosling uses its existing owner-protected `secrets.yaml` fallback. Workspace metadata stores only a
+profile UUID and configured-field metadata, using internal secure identifiers shaped like
+`workspace-credential::<profile UUID>::<field>`.
+
+Deleting a referenced profile requires confirmation and leaves affected workspaces in a visible
+relink-required state. gosling does not silently substitute another credential. Global-migration
+aliases and distribution-managed profiles are read-only in the workspace profile manager; create a
+new local profile and relink the workspace when you need different values.
+
+## Session behavior
+
+When a new chat starts, the backend:
+
+1. validates the selected workspace and primary folder;
+2. resolves the selected credential profile through secure storage;
+3. pins the workspace/profile references, effective working folder, workspace name, and non-secret
+   folder/output snapshot to the new session;
+4. gives the agent the workspace's non-secret folder and output context.
+
+Resuming a session uses that pinned snapshot and profile reference, not whichever workspace is
+active now. Deleting a workspace preserves its sessions and files; historical sessions continue to
+show the saved workspace name. A missing profile produces a relink error instead of falling back to
+another account.
+
+Legacy sessions without a workspace ID remain resumable and appear with the default/unassigned
+session behavior. Session search still works across workspaces when **All workspaces** is selected.
+
+## Product outputs and exports
+
+The agent receives named output paths and product types as structured, non-secret session context.
+Use specific destinations for their matching product types and the default destination otherwise.
+
+Workspace metadata exports default to an output that supports `export`, falling back to the default
+output folder. Other generated artifacts are created by the existing agent tools, which receive the
+same routing context. Save dialogs or extensions that own an independent destination picker may
+still ask you where to save because gosling does not yet have one universal artifact-export router.
+
+## Workspace actions
+
+Open the actions menu next to a workspace to:
+
+- open/switch or filter its chats;
+- edit or duplicate it;
+- reveal its primary folder;
+- export non-secret metadata;
+- delete it.
+
+The `Default` workspace cannot be deleted. Deleting another workspace preserves all sessions and
+files. Exports never include credential values, keyring identifiers, or stored provider tokens.
+
+## Persistence and recovery
+
+The backend is the source of truth. Workspace metadata and the active workspace are stored in the
+gosling data directory at `workspaces/workspaces.json` with schema version 1. Writes use an
+owner-only directory/file, a lock, fsync, and atomic rename. Benign unknown future fields are
+preserved; secret-shaped unknown fields are rejected.
+
+If the current store is malformed, gosling preserves it as an owner-only
+`workspaces.corrupt-<id>.json` recovery file and creates a usable `Default` workspace. It never reads
+or modifies an upstream Goose workspace, config directory, or keyring namespace.
+
+Only harmless UI preferences—the section's collapsed state and chat filter—use browser local
+storage. Workspace definitions and credentials do not.
+
+## Troubleshooting
+
+| Symptom | What to do |
+| ------- | ---------- |
+| Primary folder warning | Edit the workspace and choose a current directory. A new chat cannot start until it is relinked. |
+| Optional folder warning | Relink or remove the reference; other workspace features remain usable. |
+| Credential missing or needs authentication | Create/update a local secure profile and relink the default binding. |
+| Deleted profile on resume | Relink the workspace/session dependency; gosling does not choose another profile automatically. |
+| Output folder missing | Enable explicit creation, save, then choose **Create now**, or select an existing folder. |
+| Chats seem hidden | Select **All workspaces** in the Workspaces section. |
+
+## Current limits
+
+- Workspace definitions are local only; cloud/team synchronization is not included.
+- Extension defaults are not stored per workspace because current extension configuration is not
+  cleanly session-scoped.
+- Credential network testing is reported as unsupported unless a provider exposes a safe validation
+  hook; configured status currently proves required secure values are present, not that a remote
+  provider accepted them.
+- The workspace manager does not clone repositories, create Git worktrees, or move existing files.

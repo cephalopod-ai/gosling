@@ -78,9 +78,10 @@ export function WorkspaceSidebarSection() {
   const exportMetadata = useCallback(async (workspace: Workspace) => {
     try {
       const document = await acpExportWorkspace(workspace.id);
+      const fileName = `${safeFileName(workspace.name)}.gosling-workspace.json`;
       const result = await window.electron.showSaveDialog({
         title: 'Export workspace metadata',
-        defaultPath: `${safeFileName(workspace.name)}.gosling-workspace.json`,
+        defaultPath: workspaceOutputPath(workspace, 'export', fileName),
         filters: [{ name: 'Gosling workspace', extensions: ['json'] }],
       });
       if (!result.canceled && result.filePath) {
@@ -300,4 +301,18 @@ function safeFileName(name: string): string {
       .replace(/[^a-zA-Z0-9._-]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'workspace'
   );
+}
+
+export function workspaceOutputPath(
+  workspace: Workspace,
+  productType: 'export',
+  fileName: string
+): string {
+  const output =
+    workspace.productOutputFolders.find((candidate) =>
+      candidate.productTypes.includes(productType)
+    ) ?? workspace.productOutputFolders.find((candidate) => candidate.isDefault);
+  if (!output) return fileName;
+  const separator = output.path.includes('\\') ? '\\' : '/';
+  return `${output.path.replace(/[\\/]+$/, '')}${separator}${fileName}`;
 }

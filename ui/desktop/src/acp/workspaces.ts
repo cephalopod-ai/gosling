@@ -107,6 +107,11 @@ export async function acpCredentialProfileUsage(profileId: string) {
   return client.gosling.credentialProfilesUsage_unstable({ profileId });
 }
 
+export async function acpTestCredentialProfile(profileId: string) {
+  const client = await getAcpClient();
+  return client.gosling.credentialProfilesTest_unstable({ profileId });
+}
+
 export function workspaceToMutation(workspace: Workspace): WorkspaceMutation {
   return {
     name: workspace.name,

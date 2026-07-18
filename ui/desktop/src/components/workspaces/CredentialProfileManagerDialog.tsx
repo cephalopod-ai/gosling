@@ -5,7 +5,7 @@ import type {
   CredentialProfile,
   ProviderConfigKey,
 } from '@repo-makeover/gosling-sdk';
-import { acpCredentialProfileUsage } from '../../acp/workspaces';
+import { acpCredentialProfileUsage, acpTestCredentialProfile } from '../../acp/workspaces';
 import { acpListProviderDetails } from '../../acp/providers';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import type { ProviderDetails } from '../../types/providers';
@@ -55,6 +55,8 @@ export function CredentialProfileManagerDialog({
   } = useWorkspace();
   const [providers, setProviders] = useState<ProviderDetails[]>([]);
   const [draft, setDraft] = useState<ProfileDraft | null>(null);
+  const [profileStatus, setProfileStatus] = useState<string | null>(null);
+  const [testingProfileId, setTestingProfileId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +64,7 @@ export function CredentialProfileManagerDialog({
     if (!open) {
       setDraft(null);
       setError(null);
+      setProfileStatus(null);
       return;
     }
     void acpListProviderDetails()
@@ -85,11 +88,31 @@ export function CredentialProfileManagerDialog({
       clearFields: [],
     });
     setError(null);
+    setProfileStatus(null);
   }, []);
 
   const closeForm = useCallback(() => {
     setDraft(null);
     setError(null);
+    setProfileStatus(null);
+  }, []);
+
+  const testProfile = useCallback(async (profile: CredentialProfile) => {
+    setTestingProfileId(profile.id);
+    setError(null);
+    setProfileStatus(null);
+    try {
+      const result = await acpTestCredentialProfile(profile.id);
+      setProfileStatus(
+        result.supported
+          ? `Credential test result: ${result.status.replace(/_/g, ' ')}.`
+          : `Live credential testing is not supported for ${profile.providerOrServiceId}. Secure profile status: ${result.status.replace(/_/g, ' ')}.`
+      );
+    } catch (cause) {
+      setError(workspaceErrorMessage(cause, 'Unable to test credential profile'));
+    } finally {
+      setTestingProfileId(null);
+    }
   }, []);
 
   const handleOpenChange = useCallback(
@@ -267,6 +290,15 @@ export function CredentialProfileManagerDialog({
                       </div>
                     </div>
                     <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => void testProfile(profile)}
+                      disabled={testingProfileId !== null}
+                      aria-label={`Test ${profile.name}`}
+                    >
+                      {testingProfileId === profile.id ? 'Testing…' : 'Test'}
+                    </Button>
+                    <Button
                       variant="ghost"
                       size="xs"
                       onClick={() => beginEdit(profile)}
@@ -290,6 +322,11 @@ export function CredentialProfileManagerDialog({
               {error && (
                 <p role="alert" className="text-sm text-red-600">
                   {error}
+                </p>
+              )}
+              {profileStatus && (
+                <p role="status" className="text-sm text-text-secondary">
+                  {profileStatus}
                 </p>
               )}
             </div>

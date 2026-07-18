@@ -1,8 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { acpExportWorkspace } from '../../acp/workspaces';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { WorkspaceSidebarSection } from './WorkspaceSidebarSection';
+
+vi.mock('../../acp/workspaces', () => ({
+  acpExportWorkspace: vi.fn(),
+}));
 
 vi.mock('../../contexts/WorkspaceContext', () => ({
   useWorkspace: vi.fn(),
@@ -24,7 +29,7 @@ const workspace = {
       id: 'output-1',
       label: 'Documents',
       path: '/projects/annual-meeting/documents',
-      productTypes: ['document' as const],
+      productTypes: ['document' as const, 'export' as const],
       isDefault: true,
       createIfMissing: true,
     },
@@ -148,5 +153,31 @@ describe('WorkspaceSidebarSection', () => {
       })
     );
     expect(deleteWorkspace).toHaveBeenCalledWith('workspace-1');
+  });
+
+  it('defaults metadata exports to the matching workspace output folder', async () => {
+    const user = userEvent.setup();
+    vi.mocked(acpExportWorkspace).mockResolvedValue('{"schemaVersion":1}\n');
+    Object.assign(window.electron, {
+      showSaveDialog: vi.fn().mockResolvedValue({
+        canceled: false,
+        filePath: '/projects/annual-meeting/documents/Annual-Meeting.gosling-workspace.json',
+      }),
+      writeFile: vi.fn().mockResolvedValue(true),
+    });
+    render(<WorkspaceSidebarSection />);
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Annual Meeting' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Export metadata' }));
+
+    expect(window.electron.showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultPath: '/projects/annual-meeting/documents/Annual-Meeting.gosling-workspace.json',
+      })
+    );
+    expect(window.electron.writeFile).toHaveBeenCalledWith(
+      '/projects/annual-meeting/documents/Annual-Meeting.gosling-workspace.json',
+      '{"schemaVersion":1}\n'
+    );
   });
 });

@@ -15,6 +15,7 @@ gosling is designed to be forked and customized. You can create your own "distro
 | Preconfigure a model/provider | Low |
 | Add custom AI providers (declarative JSON, no code) | Low |
 | Bundle custom MCP extensions | Medium |
+| Preconfigure non-secret Desktop workspace templates | Low |
 | Modify system prompts | Low |
 | Customize desktop branding (icons, names, colors) | Medium |
 | Build a new UI via REST API or ACP | High |
@@ -23,7 +24,7 @@ gosling is designed to be forked and customized. You can create your own "distro
 
 The full guide lives in the repo root since you'll need to work at the code level to build a custom distribution:
 
-👉 **[CUSTOM_DISTROS.md](https://github.com/repo-makeover/gosling/blob/main/CUSTOM_DISTROS.md)**
+👉 **[CUSTOM_DISTROS.md](https://github.com/cephalopod-ai/gosling/blob/main/CUSTOM_DISTROS.md)**
 
 It covers:
 
@@ -33,6 +34,7 @@ It covers:
 - **Custom branding** — replacing icons, app names, system prompts
 - **Building new interfaces** — integrating via the REST API or Agent Client Protocol (ACP)
 - **Custom AI providers** — declarative JSON providers or implementing the Provider trait
+- **Workspace templates** — names, safe path placeholders, product outputs, and credential-profile references without embedded secrets
 - **Licensing & contribution guidance** — staying compliant with Apache 2.0
 
 ## Quick example: ship gosling with a local model
@@ -51,4 +53,4 @@ GOSLING_PROVIDER: ollama
 GOSLING_MODEL: qwen3-coder:latest
 ```
 
-See the [full guide](https://github.com/repo-makeover/gosling/blob/main/CUSTOM_DISTROS.md) for more scenarios including corporate API key distribution, audience-specific builds, and custom UIs.
+See the [full guide](https://github.com/cephalopod-ai/gosling/blob/main/CUSTOM_DISTROS.md) for more scenarios including separately provisioned corporate credentials, [workspace templates](/docs/guides/workspaces), audience-specific builds, and custom UIs.

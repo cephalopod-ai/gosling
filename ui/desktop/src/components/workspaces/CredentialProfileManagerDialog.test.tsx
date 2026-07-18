@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acpListProviderDetails } from '../../acp/providers';
-import { acpCredentialProfileUsage } from '../../acp/workspaces';
+import { acpCredentialProfileUsage, acpTestCredentialProfile } from '../../acp/workspaces';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { IntlTestWrapper } from '../../i18n/test-utils';
 import { CredentialProfileManagerDialog } from './CredentialProfileManagerDialog';
@@ -13,6 +13,7 @@ vi.mock('../../acp/providers', () => ({
 
 vi.mock('../../acp/workspaces', () => ({
   acpCredentialProfileUsage: vi.fn(),
+  acpTestCredentialProfile: vi.fn(),
 }));
 
 vi.mock('../../contexts/WorkspaceContext', () => ({
@@ -175,5 +176,42 @@ describe('CredentialProfileManagerDialog', () => {
       expect.objectContaining({ message: expect.stringContaining('Annual Meeting') })
     );
     expect(deleteCredentialProfile).toHaveBeenCalledWith('profile-1', true);
+  });
+
+  it('reports provider test support without exposing a credential value', async () => {
+    const user = userEvent.setup();
+    const context = vi.mocked(useWorkspace)();
+    vi.mocked(useWorkspace).mockReturnValue({
+      ...context,
+      credentialProfiles: [
+        {
+          id: 'profile-1',
+          name: 'AFRL Anthropic',
+          providerOrServiceId: 'anthropic',
+          authKind: 'config_fields',
+          configuredSecretFields: ['ANTHROPIC_API_KEY'],
+          nonSecretFields: {},
+          status: 'configured',
+          source: 'workspace_secure_storage',
+          createdAt: '2026-07-18T00:00:00Z',
+          updatedAt: '2026-07-18T00:00:00Z',
+        },
+      ],
+    });
+    vi.mocked(acpTestCredentialProfile).mockResolvedValue({
+      supported: false,
+      status: 'configured',
+    });
+    render(<CredentialProfileManagerDialog open onOpenChange={vi.fn()} />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Test AFRL Anthropic' }));
+
+    expect(acpTestCredentialProfile).toHaveBeenCalledWith('profile-1');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Live credential testing is not supported for anthropic. Secure profile status: configured.'
+    );
+    expect(screen.queryByText(/SENTINEL_WORKSPACE_SECRET/)).not.toBeInTheDocument();
   });
 });

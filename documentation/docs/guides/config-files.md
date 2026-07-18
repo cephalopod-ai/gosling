@@ -20,6 +20,7 @@ The configuration files allow you to set default behaviors, configure language m
 - **secrets.yaml** - API keys and secrets (when gosling is using [file-based secret storage](#security-considerations))
 - **permissions/tool_permissions.json** - Runtime permission decisions (auto-managed)
 - **prompts/** - Customized [prompt templates](/docs/guides/context-engineering/prompt-templates)
+- **data directory/workspaces/workspaces.json** - Versioned, non-secret Desktop [workspace metadata](/docs/guides/workspaces) and active selection (auto-managed)
 
 In addition to editing configuration files directly, many settings can be managed from gosling Desktop and gosling CLI:
 - **gosling Desktop**: From the `Settings` page and the bottom toolbar
@@ -174,6 +175,8 @@ Settings are applied in the following order of precedence:
 ## Security Considerations
 
 - Avoid storing sensitive information (API keys, tokens) in the config file
+- Workspace JSON and workspace exports contain only non-secret profile references and metadata;
+  never place API keys or tokens in workspace names, paths, templates, or export files.
 - Use the system keyring (keychain on macOS) for storing secrets. When available, this is the recommended option.
 - If gosling is using file-based secret storage, secrets are stored in a separate `secrets.yaml` file (in plain text). This can happen when:
 
