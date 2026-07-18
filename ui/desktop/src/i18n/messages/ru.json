@@ -3154,5 +3154,8 @@
   },
   "modelAndProviderContext.modelSwitchRecord": {
     "defaultMessage": "Model changed: {previousModel} -> {currentModel}"
+  },
+  "artifactMessageLinks.openDeliverable": {
+    "defaultMessage": "Open {name} in Outputs"
   }
 }

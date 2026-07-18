@@ -20,6 +20,7 @@ import ToolCallConfirmation from './ToolCallConfirmation';
 import ElicitationRequest from './ElicitationRequest';
 import MessageCopyLink from './MessageCopyLink';
 import { cn } from '../utils';
+import { ArtifactMessageLinks } from './artifacts/ArtifactMessageLinks';
 
 interface GoslingMessageProps {
   sessionId: string;
@@ -101,6 +102,9 @@ function GoslingMessage({
             {displayText.trim() && (
               <div ref={contentRef} className="w-full">
                 <MarkdownContent content={displayText} />
+                {!isStreaming && (
+                  <ArtifactMessageLinks content={displayText} baseDirectory={workingDirectory} />
+                )}
               </div>
             )}
 

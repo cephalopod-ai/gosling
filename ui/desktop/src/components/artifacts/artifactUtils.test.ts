@@ -6,6 +6,7 @@ import {
   localFilePathFromUri,
   parseCsv,
   viewableFilePathsFromToolArguments,
+  viewableFilePathsFromMarkdown,
 } from './artifactUtils';
 
 describe('artifactUtils', () => {
@@ -45,5 +46,26 @@ describe('artifactUtils', () => {
     expect(localFilePathFromUri('file:///tmp/output%20brief.md')).toBe('/tmp/output brief.md');
     expect(localFilePathFromUri('relative/output.csv')).toBe('relative/output.csv');
     expect(localFilePathFromUri('https://example.com/output.csv')).toBeNull();
+  });
+
+  it('finds viewable file references in assistant markdown', () => {
+    const content = `Human-readable packet: \`docs/gcp/build/review-packet.md\`
+
+[Open the chart](artifacts/chart.svg)
+
+\`\`\`text
+docs/gcp/build/evidence/gate-1/
+├── proposals.jsonl
+└── review.json
+\`\`\`
+
+Ignore \`src/main.rs\` and [remote output](https://example.com/report.pdf).`;
+
+    expect(viewableFilePathsFromMarkdown(content)).toEqual([
+      'docs/gcp/build/review-packet.md',
+      'artifacts/chart.svg',
+      'docs/gcp/build/evidence/gate-1/proposals.jsonl',
+      'docs/gcp/build/evidence/gate-1/review.json',
+    ]);
   });
 });

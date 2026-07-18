@@ -89,6 +89,76 @@ export function viewableFilePathsFromToolArguments(argumentsValue: unknown): str
   return [...paths];
 }
 
+function viewableFilePathFromText(value: string): string | null {
+  const candidate = value
+    .trim()
+    .replace(/^[\s│├└─]+/, '')
+    .replace(/^(["'<])|(["'>])$/g, '')
+    .trim();
+  if (!candidate || candidate.includes('\n') || candidate.includes('\0')) return null;
+
+  const localPath = localFilePathFromUri(candidate);
+  return localPath && artifactKindFromPath(localPath) !== 'unknown' ? localPath : null;
+}
+
+function viewableFilePathsFromCodeBlock(block: string): string[] {
+  const paths: string[] = [];
+  let treeDirectory: string | null = null;
+
+  for (const line of block.split('\n')) {
+    const candidate = line
+      .trim()
+      .replace(/^[│├└─\s]+/, '')
+      .trim();
+    if (!candidate) continue;
+    if (candidate.endsWith('/') && localFilePathFromUri(candidate)) {
+      treeDirectory = candidate;
+      continue;
+    }
+
+    const directPath = viewableFilePathFromText(candidate);
+    if (!directPath) continue;
+    if (treeDirectory && !/[\\/]/.test(directPath)) {
+      paths.push(`${treeDirectory}${directPath}`);
+    } else {
+      paths.push(directPath);
+    }
+  }
+
+  return paths;
+}
+
+export function viewableFilePathsFromMarkdown(content: string): string[] {
+  const references: Array<{ index: number; path: string }> = [];
+  const addPath = (candidate: string, index: number) => {
+    const path = viewableFilePathFromText(candidate);
+    if (path) references.push({ index, path });
+  };
+
+  const contentWithoutFencedCode = content.replace(
+    /```[^\n]*\n?([\s\S]*?)```/g,
+    (match, block: string, offset: number) => {
+      viewableFilePathsFromCodeBlock(block).forEach((path, index) =>
+        references.push({ index: offset + index, path })
+      );
+      return ' '.repeat(match.length);
+    }
+  );
+
+  for (const match of contentWithoutFencedCode.matchAll(/\]\(\s*(?:<([^>\n]+)>|([^\n)]+))\s*\)/g)) {
+    addPath(match[1] ?? match[2] ?? '', match.index);
+  }
+  for (const match of contentWithoutFencedCode.matchAll(/`([^`\n]+)`/g)) {
+    addPath(match[1], match.index);
+  }
+  for (const match of contentWithoutFencedCode.matchAll(/^ {4}(.+)$/gm)) {
+    addPath(match[1], match.index);
+  }
+
+  references.sort((left, right) => left.index - right.index);
+  return [...new Set(references.map(({ path }) => path))];
+}
+
 export function artifactKindFromPath(path: string): ArtifactKind {
   const extension = path.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
   return extension ? (KIND_BY_EXTENSION[extension] ?? 'unknown') : 'unknown';

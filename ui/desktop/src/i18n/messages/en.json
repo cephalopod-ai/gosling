@@ -20,6 +20,9 @@
   "appLayout.toggleOutputs": {
     "defaultMessage": "Toggle outputs pane"
   },
+  "artifactMessageLinks.openDeliverable": {
+    "defaultMessage": "Open {name} in Outputs"
+  },
   "artifactPane.closePane": {
     "defaultMessage": "Close outputs pane"
   },
