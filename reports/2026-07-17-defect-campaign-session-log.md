@@ -295,6 +295,39 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
   bounded collection.
 - Change review: one extension-manager implementation/test file plus this log;
   MCP wire request construction already forwarded cursors and is unchanged.
+- Commit: `4a24b7f8f`.
+
+### Stage 10 — CLI provider terminal outcomes
+
+- Defects: AUD-023, AUD-024, and AUD-025 fixed.
+- Changes: Cursor now drains stdout and a bounded stderr tail concurrently,
+  preventing pipe saturation while retaining failure diagnostics. Its parser
+  rejects malformed JSON, explicit error events/results, empty or missing
+  results, and duplicate terminal results. Codex now fails on every nonzero
+  process exit even when stdout contains partial text, and an extracted outcome
+  module makes `error` and `*.failed` events authoritative over accumulated
+  agent messages.
+- Regression guardrails: Cursor parser cases cover explicit, malformed, empty,
+  and non-terminal output; a Unix fake CLI floods stderr beyond pipe capacity;
+  Codex covers partial text followed by `turn.failed` and partial stdout followed
+  by exit 7 with stderr.
+- Modularization: Cursor remains <=1000 lines. Codex remains in the 1001-1999
+  band, with terminal event/process interpretation extracted to
+  `providers/codex/output.rs` before the runner and parser were changed.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: obsolete partial-success conditions and Cursor fallback
+  paths were searched and are absent; `git diff --check` passed. Rust
+  tests/build/Clippy were not executed under the repository's explicit
+  authorization rule.
+- Adversarial review: verified both Cursor pipes begin draining before waiting;
+  stderr retention is tail-bounded; late Cursor errors override an earlier
+  result; a successful exit cannot legitimize malformed/empty output; Codex
+  checks process status before returning lines; terminal event classification
+  runs before response accumulation; missing error messages still yield a
+  terminal failure; and context/rate-limit error mapping is preserved.
+- Change review: the two CLI providers, one focused Codex outcome module, their
+  local tests, and this log; permission flags and command working directories
+  are unchanged.
 - Commit: pending.
 
 ## Campaign closeout

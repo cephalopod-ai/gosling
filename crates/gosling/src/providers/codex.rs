@@ -26,6 +26,8 @@ use gosling_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Role;
 use rmcp::model::Tool;
 
+mod output;
+
 const CODEX_PROVIDER_NAME: &str = "codex";
 pub const CODEX_DEFAULT_MODEL: &str = "gpt-5.6-sol";
 pub const CODEX_KNOWN_MODELS: &[&str] = &[
@@ -306,14 +308,12 @@ impl CodexProvider {
             ProviderError::RequestFailed(format!("Failed to wait for command: {}", e))
         })?;
 
-        // Allow the stderr task to finish
-        let _ = stderr_handle.await;
+        let stderr = stderr_handle.await.map_err(|error| {
+            ProviderError::RequestFailed(format!("Codex stderr task failed: {error}"))
+        })?;
 
-        if !exit_status.success() && lines.is_empty() {
-            return Err(ProviderError::RequestFailed(format!(
-                "Codex command failed with exit code: {:?}",
-                exit_status.code()
-            )));
+        if !exit_status.success() {
+            return Err(output::command_failure(exit_status, &stderr));
         }
 
         tracing::debug!("Codex CLI executed successfully, got {} lines", lines.len());
@@ -354,21 +354,6 @@ impl CodexProvider {
                 .and_then(|v| v.as_i64())
                 .map(|v| v as i32);
         }
-    }
-
-    /// Extract error message from an error event
-    fn extract_error(parsed: &serde_json::Value) -> Option<String> {
-        parsed
-            .get("message")
-            .and_then(|m| m.as_str())
-            .map(|s| s.to_string())
-            .or_else(|| {
-                parsed
-                    .get("error")
-                    .and_then(|e| e.get("message"))
-                    .and_then(|m| m.as_str())
-                    .map(|s| s.to_string())
-            })
     }
 
     /// Extract text from legacy message formats
@@ -412,9 +397,12 @@ impl CodexProvider {
 
     /// Parse newline-delimited JSON response from Codex CLI
     fn parse_response(&self, lines: &[String]) -> Result<(Message, Usage), ProviderError> {
+        if let Some(error) = output::terminal_event_error(lines) {
+            return Err(error);
+        }
+
         let mut all_text_content = Vec::new();
         let mut usage = Usage::default();
-        let mut error_message: Option<String> = None;
 
         for line in lines {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
@@ -433,33 +421,12 @@ impl CodexProvider {
                             }
                             all_text_content.extend(Self::extract_legacy_text(&parsed));
                         }
-                        "error" | "turn.failed" => {
-                            error_message = Self::extract_error(&parsed);
-                        }
                         "message" | "assistant" => {
                             all_text_content.extend(Self::extract_legacy_text(&parsed));
                         }
                         _ => {}
                     }
                 }
-            }
-        }
-
-        if let Some(err) = error_message {
-            if all_text_content.is_empty() {
-                if err.contains("context window") || err.contains("context_length_exceeded") {
-                    return Err(ProviderError::ContextLengthExceeded(err));
-                }
-                if err.to_lowercase().contains("rate limit") {
-                    return Err(ProviderError::RateLimitExceeded {
-                        details: err,
-                        retry_delay: None,
-                    });
-                }
-                return Err(ProviderError::RequestFailed(format!(
-                    "Codex CLI error: {}",
-                    err
-                )));
             }
         }
 
@@ -1263,6 +1230,72 @@ mod tests {
         let lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
         let result = provider.parse_response(&lines);
         assert_eq!(result.unwrap_err(), expected);
+    }
+
+    #[test]
+    fn terminal_failure_overrides_partial_agent_text() {
+        let provider = CodexProvider {
+            command: PathBuf::from("codex"),
+            name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
+            skip_git_check: false,
+            mcp_config_overrides: Vec::new(),
+            mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
+        };
+        let lines = vec![
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"partial"}}"#
+                .to_string(),
+            r#"{"type":"turn.failed","error":{"message":"connection reset"}}"#.to_string(),
+        ];
+
+        assert_eq!(
+            provider.parse_response(&lines).unwrap_err(),
+            ProviderError::RequestFailed("Codex CLI error: connection reset".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn nonzero_exit_overrides_partial_stdout() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let command = directory.path().join("codex");
+        std::fs::write(
+            &command,
+            concat!(
+                "#!/bin/sh\n",
+                "cat >/dev/null\n",
+                "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"partial\"}}'\n",
+                "printf 'terminal stderr\\n' >&2\n",
+                "exit 7\n",
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let provider = CodexProvider {
+            command,
+            name: "codex".to_string(),
+            working_dir: directory.path().to_path_buf(),
+            skip_git_check: false,
+            mcp_config_overrides: Vec::new(),
+            mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
+        };
+
+        let error = provider
+            .execute_command(
+                &ModelConfig::new(CODEX_DEFAULT_MODEL),
+                "system",
+                &[],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap_err();
+
+        let error = error.to_string();
+        assert!(error.contains("exit code"));
+        assert!(error.contains("terminal stderr"));
     }
 
     #[test]
