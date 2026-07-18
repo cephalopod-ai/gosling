@@ -433,6 +433,30 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
 - Change review: the three audited screens, one shared helper and focused test,
   plus the single ErrorScreen call-site width propagation and this log; input
   handling and provider persistence are unchanged.
+- Commit: `cb0d45640`.
+
+### Stage 14 — post-freeze extension request schema
+
+- Defect: POST-001 fixed. This was discovered by Stage 13 verification after
+  the synchronized audit inventory was frozen.
+- Changes: both text-UI session-extension add paths now use the generated
+  request's `extension` field and convert local entries to the SDK's
+  `GoslingExtension` wire type. The obsolete `{config: value as any}` shape is
+  gone.
+- Regression guardrail: the text-UI TypeScript compiler checks both request
+  literals directly against the generated SDK client signature.
+- Formatting: Stage 13's targeted Prettier output remains valid; the two-line
+  schema repair required no additional mechanical reformatting.
+- Static verification: `tsc --noEmit -p text/tsconfig.json` passed;
+  `tsx --test text/src/utils.test.ts` passed, 3 tests; and `git diff --check`
+  passed.
+- Adversarial review: verified enable-existing and create-then-enable both use
+  the same typed conversion; no `as any` remains at either request boundary;
+  config persistence still precedes session activation for a new extension;
+  and the server request type and generated TypeScript schema both name the
+  field `extension`.
+- Change review: two request literals and this log only; extension conversion,
+  persistence ordering, and UI state transitions are unchanged.
 - Commit: pending.
 
 ## Campaign closeout
