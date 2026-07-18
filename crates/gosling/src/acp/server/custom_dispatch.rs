@@ -479,6 +479,14 @@ impl GoslingAcpAgent {
         self.on_get_session_info(req).await
     }
 
+    #[custom_method(RecordSessionModelSwitchRequest)]
+    async fn dispatch_record_session_model_switch(
+        &self,
+        req: RecordSessionModelSwitchRequest,
+    ) -> Result<RecordSessionModelSwitchResponse, agent_client_protocol::Error> {
+        self.on_record_session_model_switch(req).await
+    }
+
     #[custom_method(ListSessionMessagesRequest)]
     async fn dispatch_list_session_messages(
         &self,

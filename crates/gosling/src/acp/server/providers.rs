@@ -1062,3 +1062,44 @@ impl GoslingAcpAgent {
         Ok(CanonicalModelInfoResponse { model_info })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_type_to_dto_maps_every_variant() {
+        assert_eq!(
+            provider_type_to_dto(ProviderType::Preferred),
+            ProviderTypeDto::Preferred
+        );
+        assert_eq!(
+            provider_type_to_dto(ProviderType::Builtin),
+            ProviderTypeDto::Builtin
+        );
+        assert_eq!(
+            provider_type_to_dto(ProviderType::Declarative),
+            ProviderTypeDto::Declarative
+        );
+        assert_eq!(
+            provider_type_to_dto(ProviderType::Custom),
+            ProviderTypeDto::Custom
+        );
+    }
+
+    #[test]
+    fn provider_type_dto_wire_format_is_pinned() {
+        for (provider_type, expected) in [
+            (ProviderType::Preferred, "Preferred"),
+            (ProviderType::Builtin, "Builtin"),
+            (ProviderType::Declarative, "Declarative"),
+            (ProviderType::Custom, "Custom"),
+        ] {
+            let dto = provider_type_to_dto(provider_type);
+            assert_eq!(
+                serde_json::to_value(dto).unwrap(),
+                serde_json::json!(expected)
+            );
+        }
+    }
+}

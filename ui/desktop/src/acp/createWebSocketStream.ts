@@ -4,15 +4,48 @@ export type ClosableAcpStream = Stream & {
   close: () => void;
 };
 
+export const MAX_BUFFERED_ACP_MESSAGES = 1024;
+export const MAX_ACP_MESSAGE_CHARS = 1_000_000;
+export const MAX_BUFFERED_ACP_MESSAGE_CHARS = 8_000_000;
+
 export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
   const ws = new window.WebSocket(wsUrl);
 
-  const incoming: unknown[] = [];
+  const incoming: Array<{ message: unknown; encodedLength: number }> = [];
   const waiters: Array<() => void> = [];
   let closed = false;
+  let closeError: Error | undefined;
+  let bufferedChars = 0;
 
-  function pushMessage(message: unknown): void {
-    incoming.push(message);
+  const closeWaiters = (error?: Error) => {
+    closed = true;
+    closeError ??= error;
+    for (const waiter of waiters) {
+      waiter();
+    }
+    waiters.length = 0;
+  };
+
+  function rejectOversizedPeer(): void {
+    incoming.length = 0;
+    bufferedChars = 0;
+    closeWaiters(new Error('ACP WebSocket receive buffer exceeded its limit'));
+    ws.close(1009, 'ACP receive buffer limit exceeded');
+  }
+
+  function pushMessage(message: unknown, encodedLength: number): void {
+    if (closed) {
+      return;
+    }
+    if (
+      incoming.length >= MAX_BUFFERED_ACP_MESSAGES ||
+      bufferedChars + encodedLength > MAX_BUFFERED_ACP_MESSAGE_CHARS
+    ) {
+      rejectOversizedPeer();
+      return;
+    }
+    incoming.push({ message, encodedLength });
+    bufferedChars += encodedLength;
     waiters.shift()?.();
   }
 
@@ -34,31 +67,34 @@ export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
     if (typeof event.data !== 'string') {
       return;
     }
+    if (event.data.length > MAX_ACP_MESSAGE_CHARS) {
+      rejectOversizedPeer();
+      return;
+    }
     try {
-      pushMessage(JSON.parse(event.data));
+      pushMessage(JSON.parse(event.data), event.data.length);
     } catch {
       // Ignore malformed messages from the transport.
     }
   });
 
-  const closeWaiters = () => {
-    closed = true;
-    for (const waiter of waiters) {
-      waiter();
-    }
-    waiters.length = 0;
-  };
-
-  ws.addEventListener('close', closeWaiters);
-  ws.addEventListener('error', closeWaiters);
+  ws.addEventListener('close', () => closeWaiters());
+  ws.addEventListener('error', () => closeWaiters(new Error('ACP WebSocket connection failed')));
 
   const readable = new window.ReadableStream({
     async pull(controller) {
       await waitForMessage();
-      while (incoming.length > 0) {
-        controller.enqueue(incoming.shift());
+      if (incoming.length > 0) {
+        const next = incoming.shift();
+        if (next) {
+          bufferedChars -= next.encodedLength;
+          controller.enqueue(next.message);
+        }
+        return;
       }
-      if (closed && incoming.length === 0) {
+      if (closeError) {
+        controller.error(closeError);
+      } else if (closed) {
         controller.close();
       }
     },

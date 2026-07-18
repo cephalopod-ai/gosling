@@ -26,9 +26,20 @@ fn send_replay_content_chunk(
     cx.send_notification(SessionNotification::new(session_id.clone(), update))
 }
 
+fn is_model_switch_notification(notification: &SystemNotificationContent) -> bool {
+    notification.notification_type == SystemNotificationType::InlineMessage
+        && notification
+            .data
+            .as_ref()
+            .and_then(|data| data.get("kind"))
+            .and_then(|kind| kind.as_str())
+            == Some("modelSwitch")
+}
+
 fn replay_conversation_to_client(
     cx: &ConnectionTo<Client>,
     session: &Session,
+    supports_gosling_custom_notifications: bool,
 ) -> Result<HashMap<String, crate::conversation::message::ToolRequest>, agent_client_protocol::Error>
 {
     let session_id = SessionId::new(session.id.clone());
@@ -154,6 +165,16 @@ fn replay_conversation_to_client(
                         ),
                     ))?;
                 }
+                MessageContent::SystemNotification(notification)
+                    if is_model_switch_notification(notification) =>
+                {
+                    send_status_message_update(
+                        cx,
+                        supports_gosling_custom_notifications,
+                        session_id.0.as_ref(),
+                        notification,
+                    )?;
+                }
                 MessageContent::SystemNotification(_) => {}
                 _ => {}
             }
@@ -202,7 +223,11 @@ impl GoslingAcpAgent {
                 .internal_err_ctx("Failed to load compacted session")?;
         }
 
-        let replay_tool_requests = replay_conversation_to_client(cx, &session)?;
+        let replay_tool_requests = replay_conversation_to_client(
+            cx,
+            &session,
+            self.supports_gosling_custom_notifications(),
+        )?;
         let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
         self.register_acp_session(
             session_id_str.clone(),
@@ -228,7 +253,8 @@ impl GoslingAcpAgent {
         agent
             .extension_manager
             .update_working_dirs(&session.working_dir, &session.additional_working_dirs)
-            .await;
+            .await
+            .internal_err_ctx("Failed to update extension working directories")?;
 
         let (mode_state, config_options) =
             build_session_setup_config(&self.provider_inventory, &session).await?;

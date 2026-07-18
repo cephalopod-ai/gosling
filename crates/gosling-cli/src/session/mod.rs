@@ -30,6 +30,7 @@ use gosling::permission::PermissionConfirmation;
 use gosling::providers::base::Provider;
 use gosling::providers::base::ProviderUsage;
 use gosling::utils::safe_truncate;
+use gosling_providers::thinking::ThinkingEffort;
 
 use anyhow::Result;
 use completion::GoslingCompleter;
@@ -109,6 +110,13 @@ enum NotificationData {
         total: Option<f64>,
         message: Option<String>,
     },
+}
+
+fn model_switch_label(provider: &str, model: &str, effort: Option<ThinkingEffort>) -> String {
+    match effort {
+        Some(ThinkingEffort::Off) | None => format!("{provider}/{model}"),
+        Some(effort) => format!("{provider}/{model} {effort}"),
+    }
 }
 
 pub enum RunMode {
@@ -837,6 +845,7 @@ impl CliSession {
 
         let new_model_config =
             build_switched_model_config(&current_provider_name, model_name, &current_model_config)?;
+        let new_model_name = new_model_config.model_name.clone();
 
         let configured_effort = Config::global().get_gosling_thinking_effort();
         let new_effort = new_model_config.thinking_effort().or(configured_effort);
@@ -864,9 +873,18 @@ impl CliSession {
         self.agent
             .update_gosling_mode(mode, &self.session_id)
             .await?;
+        let previous_label =
+            model_switch_label(&current_provider_name, &current_model_name, current_effort);
+        let new_label = model_switch_label(&current_provider_name, &new_model_name, new_effort);
+        gosling::session::SessionManager::instance()
+            .add_model_switch_record(
+                &self.session_id,
+                format!("Model changed: {previous_label} -> {new_label}"),
+            )
+            .await?;
         output::gosling_mode_message(&format!(
             "Session model switched from '{}' to '{}' for provider '{}'",
-            current_model_name, model_name, current_provider_name
+            current_model_name, new_model_name, current_provider_name
         ));
         Ok(())
     }

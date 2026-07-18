@@ -75,3 +75,42 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/diagnostics/{session_id}", get(diagnostics))
         .with_state(state)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    /// Combined regression test for OPS-002 and OPS-004: before either fix,
+    /// requesting diagnostics for a session that doesn't exist would abort
+    /// `generate_diagnostics` outright (OPS-002) and the route would then
+    /// discard that error into a bare, unlogged 500 (OPS-004). After both
+    /// fixes the report still generates and records the real failure in
+    /// `errors` instead of failing the whole request.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn diagnostics_endpoint_degrades_gracefully_for_missing_session() {
+        let state = AppState::new(true).await.unwrap();
+        let app = routes(state);
+
+        let request = Request::builder()
+            .uri("/diagnostics/session-that-does-not-exist")
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let report: DiagnosticsReport = serde_json::from_slice(&body).unwrap();
+        assert!(report.session.is_none());
+        assert_eq!(
+            report.errors.len(),
+            1,
+            "expected the missing-session failure recorded in errors, got: {:?}",
+            report.errors
+        );
+    }
+}

@@ -228,7 +228,7 @@ export default function ExtensionsManager({
       } else {
         await client.gosling.sessionExtensionsAdd_unstable({
           sessionId,
-          config: sel as any,
+          extension: toGoslingExtension(sel),
         });
       }
     });
@@ -244,7 +244,7 @@ export default function ExtensionsManager({
         });
         await client.gosling.sessionExtensionsAdd_unstable({
           sessionId,
-          config: config as any,
+          extension: toGoslingExtension(config),
         });
       });
     },
@@ -339,7 +339,11 @@ export default function ExtensionsManager({
             ◆ Manage extensions ◆
           </Text>
         </Box>
-        <ErrorScreen errorMsg={errorMsg} onRetry={() => reload()} />
+        <ErrorScreen
+          errorMsg={errorMsg}
+          width={columns}
+          onRetry={() => reload()}
+        />
       </Box>
     );
   }

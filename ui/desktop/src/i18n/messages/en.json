@@ -927,7 +927,7 @@
     "defaultMessage": "Changes apply to new chat windows. Restart Gosling to update existing windows."
   },
   "externalBackendSection.saveError": {
-    "defaultMessage": "Failed to save external backend settings. Your change was not persisted."
+    "defaultMessage": "Failed to save external backend settings: {error}"
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "Secret Key"
@@ -1627,6 +1627,9 @@
   },
   "modelAndProviderContext.modelChangedTitle": {
     "defaultMessage": "Model changed"
+  },
+  "modelAndProviderContext.modelSwitchRecord": {
+    "defaultMessage": "Model changed: {previousModel} -> {currentModel}"
   },
   "modelAndProviderContext.selectModel": {
     "defaultMessage": "Select Model"

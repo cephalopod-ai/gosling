@@ -4,7 +4,7 @@ use crate::agents::tool_execution::ToolCallContext;
 use crate::agents::{AgentEvent, SessionConfig};
 use crate::config::{Config, ExtensionConfig, GoslingMode};
 use crate::context_mgmt::format_message_for_compacting;
-use crate::conversation::message::Message;
+use crate::conversation::message::{ActionRequiredData, Message};
 use crate::execution::manager::AgentManager;
 use crate::providers;
 use crate::providers::base::Provider;
@@ -12,6 +12,7 @@ use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use futures::StreamExt;
 use rmcp::model::{
     CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult,
@@ -512,42 +513,14 @@ impl OrchestratorClient {
             .await
             .map_err(|e| format!("Failed to start reply: {}", e))?;
 
-        let mut response_parts: Vec<String> = Vec::new();
-        let mut cancelled = false;
-
-        loop {
-            tokio::select! {
-                _ = parent_cancel.cancelled() => {
-                    cancel_token.cancel();
-                    cancelled = true;
-                    break;
-                }
-                event = stream.next() => {
-                    match event {
-                        Some(Ok(AgentEvent::Message(msg))) => {
-                            let text = msg.as_concat_text();
-                            if !text.is_empty() {
-                                response_parts.push(text);
-                            }
-                        }
-                        Some(Ok(_)) => {}
-                        Some(Err(e)) => {
-                            response_parts.push(format!("Error during agent processing: {}", e));
-                            break;
-                        }
-                        None => break,
-                    }
-                }
-            }
-        }
+        let result =
+            drain_managed_agent_reply(&session_id, &mut stream, &cancel_token, parent_cancel).await;
 
         drop(stream);
         guard.disarm();
         manager.unregister_cancel_token(&session_id).await;
 
-        if cancelled {
-            return Err("Cancelled by parent session".into());
-        }
+        let response_parts = result?;
 
         if response_parts.is_empty() {
             Ok(CallToolResult::success(vec![Content::text(
@@ -678,4 +651,176 @@ fn extract_string(args: &JsonObject, key: &str) -> Result<String, String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| format!("Missing or invalid '{}'", key))
+}
+
+fn approval_unavailable_error(session_id: &str, tool_name: &str) -> String {
+    format!(
+        "Agent session '{session_id}' needs human approval to run tool '{tool_name}', but \
+        orchestrated agent sessions have no UI attached to answer approval requests. The call \
+        was aborted instead of hanging. Grant the managed agent a permission mode that does not \
+        require approval for this tool (e.g. auto) before delegating tasks that need it, or \
+        perform the tool call yourself."
+    )
+}
+
+// Drives a managed agent's reply stream to completion, collecting response text.
+//
+// Any `ActionRequired::ToolConfirmation` message means the managed agent's tool call is
+// blocked waiting on `Agent::handle_confirmation`, which nothing will ever call for an
+// orchestrator-managed session — there is no UI attached to it. Rather than let the stream
+// hang forever on that unanswerable wait, cancel the managed agent's turn and fail closed
+// with an actionable error.
+async fn drain_managed_agent_reply<'a>(
+    session_id: &str,
+    stream: &mut BoxStream<'a, Result<AgentEvent>>,
+    cancel_token: &CancellationToken,
+    parent_cancel: &CancellationToken,
+) -> Result<Vec<String>, String> {
+    let mut response_parts: Vec<String> = Vec::new();
+
+    loop {
+        tokio::select! {
+            _ = parent_cancel.cancelled() => {
+                cancel_token.cancel();
+                return Err("Cancelled by parent session".into());
+            }
+            event = stream.next() => {
+                match event {
+                    Some(Ok(AgentEvent::Message(msg))) => {
+                        if let Some(action_required) =
+                            msg.content.iter().find_map(|c| c.as_action_required())
+                        {
+                            if let ActionRequiredData::ToolConfirmation { tool_name, .. } =
+                                &action_required.data
+                            {
+                                cancel_token.cancel();
+                                return Err(approval_unavailable_error(session_id, tool_name));
+                            }
+                        }
+
+                        let text = msg.as_concat_text();
+                        if !text.is_empty() {
+                            response_parts.push(text);
+                        }
+                    }
+                    Some(Ok(_)) => {}
+                    Some(Err(e)) => {
+                        response_parts.push(format!("Error during agent processing: {}", e));
+                        break;
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+
+    Ok(response_parts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::stream;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    fn pending_forever_after<'a>(
+        first: anyhow::Result<AgentEvent>,
+    ) -> BoxStream<'a, Result<AgentEvent>> {
+        stream::once(async move { first })
+            .chain(stream::pending())
+            .boxed()
+    }
+
+    // Reproduces ORCH-003: a managed agent's tool call needing approval used to hang
+    // `drain_managed_agent_reply` forever, since nothing ever answers the confirmation
+    // channel for an orchestrator-managed session. This stream mimics that exactly: it
+    // yields the `ActionRequired` message the real approval flow would emit, then never
+    // yields again (as `handle_approval_tool_requests` would, parked on `confirmation_rx`).
+    #[tokio::test]
+    async fn drain_managed_agent_reply_fails_closed_on_approval_request_instead_of_hanging() {
+        let action_required_msg = Message::assistant().with_action_required(
+            "req-1".to_string(),
+            "developer__shell".to_string(),
+            serde_json::Map::new(),
+            None,
+        );
+        let mut fake_stream = pending_forever_after(Ok(AgentEvent::Message(action_required_msg)));
+
+        let cancel_token = CancellationToken::new();
+        let parent_cancel = CancellationToken::new();
+
+        let result = timeout(
+            Duration::from_secs(5),
+            drain_managed_agent_reply("session-1", &mut fake_stream, &cancel_token, &parent_cancel),
+        )
+        .await
+        .expect("drain_managed_agent_reply hung instead of failing closed");
+
+        let err = result.expect_err("expected an Err when approval is required and unanswerable");
+        assert!(
+            err.contains("session-1"),
+            "error should name the session: {err}"
+        );
+        assert!(
+            err.contains("developer__shell"),
+            "error should name the blocked tool: {err}"
+        );
+        assert!(
+            cancel_token.is_cancelled(),
+            "the managed agent's turn should be cancelled so it doesn't keep running"
+        );
+    }
+
+    #[tokio::test]
+    async fn drain_managed_agent_reply_returns_text_when_no_approval_needed() {
+        let mut fake_stream = stream::iter(vec![
+            Ok(AgentEvent::Message(Message::assistant().with_text("hello"))),
+            Ok(AgentEvent::Message(Message::assistant().with_text("world"))),
+        ])
+        .boxed();
+
+        let cancel_token = CancellationToken::new();
+        let parent_cancel = CancellationToken::new();
+
+        let result = timeout(
+            Duration::from_secs(5),
+            drain_managed_agent_reply("session-1", &mut fake_stream, &cancel_token, &parent_cancel),
+        )
+        .await
+        .expect("drain_managed_agent_reply should not hang on a normal stream");
+
+        assert_eq!(result, Ok(vec!["hello".to_string(), "world".to_string()]));
+        assert!(
+            !cancel_token.is_cancelled(),
+            "the normal path must not cancel the managed agent's turn"
+        );
+    }
+
+    #[tokio::test]
+    async fn drain_managed_agent_reply_honors_parent_cancellation() {
+        let mut fake_stream: BoxStream<'_, Result<AgentEvent>> = stream::pending().boxed();
+
+        let cancel_token = CancellationToken::new();
+        let parent_cancel = CancellationToken::new();
+        parent_cancel.cancel();
+
+        let result = timeout(
+            Duration::from_secs(5),
+            drain_managed_agent_reply("session-1", &mut fake_stream, &cancel_token, &parent_cancel),
+        )
+        .await
+        .expect("drain_managed_agent_reply should not hang when the parent cancels");
+
+        assert_eq!(result, Err("Cancelled by parent session".to_string()));
+        assert!(cancel_token.is_cancelled());
+    }
+
+    #[test]
+    fn approval_unavailable_error_names_session_and_tool() {
+        let err = approval_unavailable_error("session-42", "developer__shell");
+        assert!(err.contains("session-42"));
+        assert!(err.contains("developer__shell"));
+        assert!(err.contains("approval"));
+    }
 }

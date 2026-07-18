@@ -267,19 +267,17 @@ async fn resume_agent(
                 status: code,
             })?;
 
-        if !state.has_extension_loading_task(&payload.session_id).await {
-            let session_for_task = session.clone();
-            let agent_for_task = agent.clone();
-            let session_id_for_task = payload.session_id.clone();
-            let task = tokio::spawn(async move {
-                agent_for_task
-                    .load_extensions_from_session(&session_for_task)
-                    .await
-            });
-            state
-                .set_extension_loading_task(session_id_for_task, task)
-                .await;
-        }
+        let session_for_task = session.clone();
+        let agent_for_task = agent.clone();
+        state
+            .spawn_extension_loading_task_if_absent(payload.session_id.clone(), move || {
+                tokio::spawn(async move {
+                    agent_for_task
+                        .load_extensions_from_session(&session_for_task)
+                        .await
+                })
+            })
+            .await;
 
         let provider_changed = agent
             .restore_provider_from_session(&session)
@@ -796,14 +794,42 @@ async fn update_working_dir(
     Ok(StatusCode::OK)
 }
 
+/// Summarizes any per-extension failures from a load attempt into a single
+/// client-facing message, or `None` if every extension loaded successfully.
+fn extension_load_failure_message(results: &[ExtensionLoadResult]) -> Option<String> {
+    let failures: Vec<String> = results
+        .iter()
+        .filter(|result| !result.success)
+        .map(|result| {
+            format!(
+                "{}: {}",
+                result.name,
+                result.error.as_deref().unwrap_or("unknown error")
+            )
+        })
+        .collect();
+
+    (!failures.is_empty()).then(|| failures.join("; "))
+}
+
 async fn ensure_extensions_loaded(state: &AppState, session_id: &str) -> Result<(), ErrorResponse> {
     match state.take_extension_loading_task(session_id).await {
-        Ok(Some(_)) => {
+        Ok(Some(results)) => {
             tracing::debug!(
                 "Awaited background extension loading for session {} before serving request",
                 session_id
             );
             state.remove_extension_loading_task(session_id).await;
+            if let Some(message) = extension_load_failure_message(&results) {
+                error!(
+                    "Background extension loading failed for session {}: {}",
+                    session_id, message
+                );
+                return Err(ErrorResponse::internal(format!(
+                    "Extension loading failed: {}",
+                    message
+                )));
+            }
             Ok(())
         }
         Ok(None) => Ok(()),
@@ -834,20 +860,15 @@ async fn ensure_extensions_loaded(state: &AppState, session_id: &str) -> Result<
                         err
                     ))
                 })?;
-            let retry_results = agent.load_extensions_from_session(&session).await;
-            let failed: Vec<String> = retry_results
-                .iter()
-                .filter(|result| !result.success)
-                .map(|result| match &result.error {
-                    Some(error) => format!("{}: {}", result.name, error),
-                    None => result.name.clone(),
-                })
-                .collect();
-            if !failed.is_empty() {
+            let results = agent.load_extensions_from_session(&session).await;
+            if let Some(message) = extension_load_failure_message(&results) {
+                error!(
+                    "Retried extension loading failed for session {}: {}",
+                    session_id, message
+                );
                 return Err(ErrorResponse::internal(format!(
-                    "Extension loading retry for session {} still failed for: {}",
-                    session_id,
-                    failed.join(", ")
+                    "Extension loading failed: {}",
+                    message
                 )));
             }
             Ok(())
@@ -869,4 +890,177 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/agent/set_container", post(set_container))
         .route("/agent/stop", post(stop_agent))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extension_load_failure_message_is_none_when_all_succeed() {
+        let results = vec![
+            ExtensionLoadResult {
+                name: "a".to_string(),
+                success: true,
+                error: None,
+            },
+            ExtensionLoadResult {
+                name: "b".to_string(),
+                success: true,
+                error: None,
+            },
+        ];
+
+        assert_eq!(extension_load_failure_message(&results), None);
+    }
+
+    #[test]
+    fn extension_load_failure_message_reports_failed_extensions() {
+        let results = vec![
+            ExtensionLoadResult {
+                name: "good".to_string(),
+                success: true,
+                error: None,
+            },
+            ExtensionLoadResult {
+                name: "bad".to_string(),
+                success: false,
+                error: Some("boom".to_string()),
+            },
+        ];
+
+        let message = extension_load_failure_message(&results).expect("failure expected");
+        assert!(message.contains("bad"));
+        assert!(message.contains("boom"));
+    }
+
+    mod integration_tests {
+        use super::*;
+        use axum::body::{to_bytes, Body};
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        fn add_extension_body(session_id: &str) -> String {
+            serde_json::to_string(&serde_json::json!({
+                "session_id": session_id,
+                "config": {
+                    "type": "builtin",
+                    "name": "developer",
+                    "display_name": null,
+                    "timeout": null,
+                    "bundled": null,
+                }
+            }))
+            .unwrap()
+        }
+
+        /// Regression test for OPS-005: before the fix, a failed background
+        /// extension reload was discarded by `ensure_extensions_loaded` and the
+        /// endpoint still returned 200 OK as if nothing had gone wrong.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn add_extension_surfaces_failed_background_extension_reload() {
+            let state = AppState::new(true).await.unwrap();
+            let session_id = "ops-005-background-reload-failure".to_string();
+
+            let task = tokio::spawn(async {
+                vec![ExtensionLoadResult {
+                    name: "bogus-extension".to_string(),
+                    success: false,
+                    error: Some("boom: extension failed to start".to_string()),
+                }]
+            });
+            state
+                .set_extension_loading_task(session_id.clone(), task)
+                .await;
+
+            let app = routes(state);
+            let request = Request::builder()
+                .uri("/agent/add_extension")
+                .method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(add_extension_body(&session_id)))
+                .unwrap();
+
+            let response = app.oneshot(request).await.unwrap();
+
+            assert_ne!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body_text = String::from_utf8(body.to_vec()).unwrap();
+            assert!(
+                body_text.contains("bogus-extension") && body_text.contains("boom"),
+                "expected the failure detail in the response body, got: {body_text}"
+            );
+        }
+
+        /// Regression test for OPS-005's synchronous-retry branch: when the
+        /// background join itself fails, `ensure_extensions_loaded` retries
+        /// `load_extensions_from_session` inline. Before the fix, that retry's
+        /// result was discarded (`agent.load_extensions_from_session(&session).await;`
+        /// with no binding) and the handler always returned 200 OK.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn add_extension_surfaces_synchronous_retry_failure() {
+            let state = AppState::new(true).await.unwrap();
+
+            let session = state
+                .session_manager()
+                .create_session(
+                    PathBuf::from("/tmp"),
+                    "ops-005-retry-failure".to_string(),
+                    SessionType::Hidden,
+                    GoslingMode::default(),
+                )
+                .await
+                .unwrap();
+
+            let mut extension_data = session.extension_data.clone();
+            let broken_extensions = EnabledExtensionsState::new(vec![ExtensionConfig::Stdio {
+                name: "definitely-not-a-real-command".to_string(),
+                description: String::new(),
+                cmd: "definitely-not-a-real-command-xyz".to_string(),
+                args: vec![],
+                envs: Default::default(),
+                env_keys: vec![],
+                timeout: Some(1),
+                cwd: None,
+                bundled: None,
+                available_tools: vec![],
+            }]);
+            broken_extensions
+                .to_extension_data(&mut extension_data)
+                .unwrap();
+            state
+                .session_manager()
+                .update(&session.id)
+                .extension_data(extension_data)
+                .apply()
+                .await
+                .unwrap();
+
+            // A task that immediately panics forces `take_extension_loading_task`
+            // into its `Err(JoinError)` branch, which is what triggers the
+            // synchronous retry inside `ensure_extensions_loaded`.
+            let task = tokio::spawn(async { panic!("simulated background join failure") });
+            state
+                .set_extension_loading_task(session.id.clone(), task)
+                .await;
+
+            let app = routes(state);
+            let request = Request::builder()
+                .uri("/agent/add_extension")
+                .method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(add_extension_body(&session.id)))
+                .unwrap();
+
+            let response = app.oneshot(request).await.unwrap();
+
+            assert_ne!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body_text = String::from_utf8(body.to_vec()).unwrap();
+            assert!(
+                body_text.contains("definitely-not-a-real-command"),
+                "expected the failure detail in the response body, got: {body_text}"
+            );
+        }
+    }
 }

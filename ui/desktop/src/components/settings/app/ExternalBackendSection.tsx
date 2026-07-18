@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Switch } from '../../ui/switch';
 import { Input } from '../../ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
@@ -6,6 +6,7 @@ import { AlertCircle } from 'lucide-react';
 import { ExternalGoslingdConfig, defaultSettings } from '../../../utils/settings';
 import { defineMessages, useIntl } from '../../../i18n';
 import { normalizeAcpHttpBaseUrl } from '../../../acp/url';
+import { errorMessage } from '../../../utils/conversionUtils';
 
 const i18n = defineMessages({
   title: {
@@ -44,7 +45,8 @@ const i18n = defineMessages({
   },
   secretKeyHelp: {
     id: 'externalBackendSection.secretKeyHelp',
-    defaultMessage: 'The secret key configured on the external backend (GOSLING_SERVER__SECRET_KEY).',
+    defaultMessage:
+      'The secret key configured on the external backend (GOSLING_SERVER__SECRET_KEY).',
   },
   certFingerprint: {
     id: 'externalBackendSection.certFingerprint',
@@ -56,7 +58,8 @@ const i18n = defineMessages({
   },
   certFingerprintHelp: {
     id: 'externalBackendSection.certFingerprintHelp',
-    defaultMessage: 'Pin a specific TLS certificate fingerprint. If omitted, the certificate is trusted on first use (TOFU).',
+    defaultMessage:
+      'Pin a specific TLS certificate fingerprint. If omitted, the certificate is trusted on first use (TOFU).',
   },
   restartNote: {
     id: 'externalBackendSection.restartNote',
@@ -77,11 +80,12 @@ const i18n = defineMessages({
   },
   urlBaseError: {
     id: 'externalBackendSection.urlBaseError',
-    defaultMessage: 'URL must be the backend base URL before /acp, without query parameters or fragments',
+    defaultMessage:
+      'URL must be the backend base URL before /acp, without query parameters or fragments',
   },
   saveError: {
     id: 'externalBackendSection.saveError',
-    defaultMessage: 'Failed to save external backend settings. Your change was not persisted.',
+    defaultMessage: 'Failed to save external backend settings: {error}',
   },
 });
 
@@ -91,20 +95,20 @@ export default function ExternalBackendSection() {
   const [isSaving, setIsSaving] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  const loadSettings = async () => {
-    const externalGoslingd = await window.electron.getSetting('externalGoslingd');
-    setConfig(externalGoslingd);
-  };
+  // Tracks the config we last confirmed was persisted, so a failed save can
+  // roll the visible fields back instead of appearing to have succeeded.
+  const lastSavedConfigRef = useRef<ExternalGoslingdConfig>(defaultSettings.externalGoslingd);
 
   useEffect(() => {
+    const loadSettings = async () => {
+      const externalGoslingd = await window.electron.getSetting('externalGoslingd');
+      setConfig(externalGoslingd);
+      lastSavedConfigRef.current = externalGoslingd;
+    };
     loadSettings();
   }, []);
 
-  const validateUrl = (
-    value: string,
-    certFingerprint = config.certFingerprint
-  ): boolean => {
+  const validateUrl = (value: string, certFingerprint = config.certFingerprint): boolean => {
     if (!value) {
       setUrlError(null);
       return true;
@@ -138,14 +142,16 @@ export default function ExternalBackendSection() {
     setIsSaving(true);
     try {
       await window.electron.setSetting('externalGoslingd', newConfig);
+      lastSavedConfigRef.current = newConfig;
       setSaveError(null);
     } catch (error) {
       console.error('Failed to save external backend settings:', error);
-      setSaveError(intl.formatMessage(i18n.saveError));
-      // The field already shows newConfig optimistically; resync from the
-      // actually-persisted value so it doesn't keep displaying a change that
-      // was never saved.
-      await loadSettings();
+      // Persistence failed - revert the optimistic update so the fields
+      // don't keep displaying a value that was never actually saved.
+      setConfig(lastSavedConfigRef.current);
+      setSaveError(
+        intl.formatMessage(i18n.saveError, { error: errorMessage(error, 'Unknown error') })
+      );
     } finally {
       setIsSaving(false);
     }
@@ -187,20 +193,23 @@ export default function ExternalBackendSection() {
       <Card className="pb-2">
         <CardHeader className="pb-0">
           <CardTitle>{intl.formatMessage(i18n.title)}</CardTitle>
-          <CardDescription>
-            {intl.formatMessage(i18n.description)}
-          </CardDescription>
+          <CardDescription>{intl.formatMessage(i18n.description)}</CardDescription>
         </CardHeader>
         <CardContent className="pt-4 space-y-4 px-4">
           {saveError && (
-            <p className="text-xs text-red-500 flex items-center gap-1">
-              <AlertCircle size={12} />
-              {saveError}
-            </p>
+            <div
+              role="alert"
+              className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2"
+            >
+              <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-800 dark:text-red-200">{saveError}</p>
+            </div>
           )}
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-text-primary text-xs">{intl.formatMessage(i18n.useExternalServer)}</h3>
+              <h3 className="text-text-primary text-xs">
+                {intl.formatMessage(i18n.useExternalServer)}
+              </h3>
               <p className="text-xs text-text-secondary max-w-md mt-[2px]">
                 {intl.formatMessage(i18n.useExternalServerDescription)}
               </p>

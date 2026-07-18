@@ -32,9 +32,18 @@ enum ReplyExitReason {
 }
 
 impl ReplyExitReason {
-    fn as_str(self) -> &'static str {
+    fn finish_reason(self) -> &'static str {
         match self {
             ReplyExitReason::Normal => "stop",
+            ReplyExitReason::Error => "error",
+            ReplyExitReason::Disconnected => "disconnected",
+            ReplyExitReason::Cancelled => "cancelled",
+        }
+    }
+
+    fn exit_type(self) -> &'static str {
+        match self {
+            ReplyExitReason::Normal => "normal",
             ReplyExitReason::Error => "error",
             ReplyExitReason::Disconnected => "disconnected",
             ReplyExitReason::Cancelled => "cancelled",
@@ -331,7 +340,7 @@ where
     let final_token_state = get_token_state(state.session_manager(), &session_id).await;
     let _ = sink
         .publish(MessageEvent::Finish {
-            reason: exit_reason.as_str().to_string(),
+            reason: exit_reason.finish_reason().to_string(),
             token_state: final_token_state,
         })
         .await;
@@ -437,7 +446,7 @@ async fn log_session_completion(
     exit_reason: ReplyExitReason,
 ) {
     let session_duration = session_start.elapsed();
-    let exit_type = exit_reason.as_str();
+    let exit_type = exit_reason.exit_type();
 
     if let Ok(session) = session_manager.get_session(session_id, true).await {
         let total_tokens = session.usage.total_tokens.unwrap_or(0);
@@ -485,5 +494,25 @@ async fn log_session_completion(
             interface = "ui",
             "Session duration"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReplyExitReason;
+
+    #[test]
+    fn reply_exit_reason_maps_finish_and_telemetry_values() {
+        assert_eq!(ReplyExitReason::Normal.finish_reason(), "stop");
+        assert_eq!(ReplyExitReason::Normal.exit_type(), "normal");
+        assert_eq!(ReplyExitReason::Error.finish_reason(), "error");
+        assert_eq!(ReplyExitReason::Error.exit_type(), "error");
+        assert_eq!(
+            ReplyExitReason::Disconnected.finish_reason(),
+            "disconnected"
+        );
+        assert_eq!(ReplyExitReason::Disconnected.exit_type(), "disconnected");
+        assert_eq!(ReplyExitReason::Cancelled.finish_reason(), "cancelled");
+        assert_eq!(ReplyExitReason::Cancelled.exit_type(), "cancelled");
     }
 }

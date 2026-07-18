@@ -274,3 +274,77 @@ pub fn routes(state: Arc<AppState>) -> Router {
         )
         .with_state(state)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    /// Regression test for OPS-004: before the fix, a failed session mutation
+    /// mapped its error to a bare `StatusCode`, discarding the root cause and
+    /// returning an empty error response.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn update_session_name_reports_failure_reason_for_missing_session() {
+        let state = AppState::new(true).await.unwrap();
+        let app = routes(state);
+
+        let request = Request::builder()
+            .uri("/sessions/session-that-does-not-exist/name")
+            .method("PUT")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::to_string(&serde_json::json!({ "name": "new name" })).unwrap(),
+            ))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body_text = String::from_utf8(body.to_vec()).unwrap();
+        assert!(
+            !body_text.is_empty(),
+            "expected a JSON error body instead of an empty response"
+        );
+        assert!(
+            body_text.contains("session-that-does-not-exist"),
+            "expected the underlying failure reason in the response body, got: {body_text}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn update_session_name_still_succeeds_for_a_real_session() {
+        let state = AppState::new(true).await.unwrap();
+        let session = state
+            .session_manager()
+            .create_session(
+                std::path::PathBuf::from("/tmp"),
+                "ops-004-rename-test".to_string(),
+                gosling::session::session_manager::SessionType::Hidden,
+                gosling::config::GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let app = routes(state);
+        let request = Request::builder()
+            .uri(format!("/sessions/{}/name", session.id))
+            .method("PUT")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::to_string(&serde_json::json!({ "name": "renamed" })).unwrap(),
+            ))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert!(
+            body.is_empty(),
+            "success path must not gain a response body"
+        );
+    }
+}

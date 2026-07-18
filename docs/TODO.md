@@ -1,5 +1,18 @@
 # TODO
 
+## Chat reliability and CLI usage backlog — 2026-07-17
+
+- [ ] Keep the chat view pinned to the bottom while a new user input is typed
+  and while new content is appended, so the most recent chat item remains
+  visible instead of the scroll position jumping to the middle of the window.
+- [ ] Make chat persistence incremental and crash-resilient: store each user
+  message as soon as Enter is submitted, and store assistant output as it is
+  written to the chat window, so an abrupt Gosling exit does not erase the last
+  chat item.
+- [ ] For CLI usage with subscription-backed providers where usage data is
+  available, including Codex and Claude, add a way to inspect current usage
+  during a session.
+
 ## Tagteam workflow, MCP control plane, and Run Steward
 
 **Status:** Phase 1 foundation and an isolated Phase 2 Unix-socket MCP adapter
@@ -112,6 +125,39 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
   approve recovery, or recursively invoke Tagteam.
 - The legacy Tagteam provider is not removed until workflow parity, migration
   guidance, runtime playtests, and rollback behavior are verified.
+
+## Exhaustive defect-repair campaign — 2026-07-17
+
+Audit checkpoint:
+[`reports/2026-07-17-exhaustive-defect-audit-checkpoint.md`](../reports/2026-07-17-exhaustive-defect-audit-checkpoint.md).
+Repair plan and evidence:
+[`reports/2026-07-17-defect-campaign-plan.md`](../reports/2026-07-17-defect-campaign-plan.md)
+and
+[`reports/2026-07-17-defect-campaign-session-log.md`](../reports/2026-07-17-defect-campaign-session-log.md).
+
+The synchronized audit froze 34 findings. The repair campaign fixed 33 and
+left one explicitly dispositioned architectural residual; it also fixed one
+post-freeze SDK request-shape defect found by verification. Only the audit
+checkpoint is synchronized to the remote. All repair and closeout commits are
+local until a separate push is authorized.
+
+- [ ] AUD-031: design a durable, versioned tool-operation ledger with stable
+  operation identities, in-doubt recovery, replay semantics, and external
+  idempotency-key propagation where supported. A request-before-dispatch
+  reorder is not sufficient to guarantee at-most-once side effects across a
+  process crash.
+- [ ] Modularize the routed >=2000-line files in dedicated changes, preserving
+  behavior and avoiding mixed repair/refactor commits:
+  `crates/gosling/src/session/session_manager.rs`,
+  `crates/gosling/src/acp/server.rs`,
+  `crates/gosling/src/agents/agent.rs`,
+  `crates/gosling/src/agents/extension_manager.rs`,
+  `crates/gosling/src/agents/platform_extensions/summon.rs`, and
+  `ui/desktop/src/main.ts`.
+- [ ] Run the added Rust regression suite, workspace build, and Clippy before
+  merge when explicitly authorized. This campaign ran required formatting and
+  UI verification, but repository policy reserved Cargo build/test/Clippy for
+  an explicit request.
 
 ## Defect-repair campaign — 2026-07-16
 

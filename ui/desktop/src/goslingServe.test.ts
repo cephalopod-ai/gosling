@@ -194,6 +194,39 @@ describe('startGoslingServe', () => {
     }
   );
 
+  it.skipIf(process.platform === 'win32')(
+    'passes its own pid to the subprocess as the supervising parent pid',
+    async () => {
+      const tempDir = makeTempDir();
+      const parentPidPath = path.join(tempDir, 'parent-pid.txt');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        [
+          '#!/usr/bin/env sh',
+          'printf "%s" "$GOSLING_SERVER__PARENT_PID" > "$TEST_PARENT_PID_PATH"',
+          'while true; do sleep 1; done',
+          '',
+        ].join('\n')
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        env: {
+          TEST_PARENT_PID_PATH: parentPidPath,
+        },
+        readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+      });
+
+      try {
+        await expect(waitForFileLines(parentPidPath)).resolves.toEqual([String(process.pid)]);
+      } finally {
+        await result.cleanup();
+      }
+    }
+  );
+
   it.skipIf(process.platform === 'win32')('captures the TLS fingerprint from stdout', async () => {
     const tempDir = makeTempDir();
     const goslingPath = makeExecutable(
@@ -356,5 +389,37 @@ describe('startGoslingServe', () => {
         await result.cleanup();
       }
     }
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'escalates termination and keeps the process registered until it exits',
+    async () => {
+      const tempDir = makeTempDir();
+      const processRegistryPath = path.join(tempDir, 'backend-processes.json');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        '#!/usr/bin/env sh\ntrap "" TERM\nexec sleep 30\n'
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        processRegistryPath,
+        readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+      });
+
+      try {
+        await result.cleanup();
+        expect(result.hasExited()).toBe(true);
+        const registry = JSON.parse(fs.readFileSync(processRegistryPath, 'utf8'));
+        expect(registry.processes).toEqual([]);
+      } finally {
+        if (!result.hasExited() && result.process.pid) {
+          process.kill(result.process.pid, 'SIGKILL');
+        }
+      }
+    },
+    15000
   );
 });

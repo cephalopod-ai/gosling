@@ -169,6 +169,8 @@ describe('buildCSP', () => {
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(csp).toContain('connect-src');
     expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("img-src 'self' data:");
+    expect(csp).not.toContain("img-src 'self' data: https:");
     expect(csp).not.toContain("frame-src 'self' https: http:");
   });
 

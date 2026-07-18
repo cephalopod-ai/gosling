@@ -15,6 +15,15 @@ vi.mock('./icons', () => ({
 
 describe('MarkdownContent', () => {
   describe('HTML Security Integration', () => {
+    it('does not fetch images embedded in untrusted markdown', async () => {
+      const { container } = renderWithIntl(
+        <MarkdownContent content="![tracking pixel](https://attacker.example/track.png)" />
+      );
+
+      expect(await screen.findByText('[Image blocked: tracking pixel]')).toBeInTheDocument();
+      expect(container.querySelector('img')).toBeNull();
+    });
+
     it('renders safe markdown content normally', async () => {
       const content = `# Test Title
 

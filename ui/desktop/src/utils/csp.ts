@@ -101,7 +101,7 @@ export function buildCSP(
     "default-src 'self';" +
     "style-src 'self' 'unsafe-inline';" +
     "script-src 'self';" +
-    "img-src 'self' data: https:;" +
+    "img-src 'self' data:;" +
     `connect-src ${connectSrc};` +
     "object-src 'none';" +
     `frame-src ${frameSrc};` +

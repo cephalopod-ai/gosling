@@ -1,12 +1,13 @@
 use crate::config::paths::Paths;
 use crate::config::GoslingMode;
-use crate::conversation::message::{Message, MessageContent, TokenState};
+use crate::conversation::message::{Message, MessageContent, SystemNotificationType, TokenState};
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
-use crate::session::extension_data::ExtensionData;
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
+use crate::utils::sanitize_unicode_tags;
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use gosling_providers::conversation::token_usage::Usage;
@@ -22,7 +23,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 20;
+pub const CURRENT_SCHEMA_VERSION: i32 = 21;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -611,6 +612,22 @@ impl SessionManager {
         self.storage.add_message(id, message).await
     }
 
+    pub async fn add_model_switch_record(
+        &self,
+        id: &str,
+        msg: impl Into<String>,
+    ) -> Result<Message> {
+        let message = Message::assistant()
+            .with_generated_id()
+            .with_system_notification_with_data(
+                SystemNotificationType::InlineMessage,
+                sanitize_unicode_tags(&msg.into()),
+                serde_json::json!({ "kind": "modelSwitch" }),
+            );
+        self.add_message(id, &message).await?;
+        Ok(message)
+    }
+
     pub async fn replace_conversation(&self, id: &str, conversation: &Conversation) -> Result<()> {
         self.storage.replace_conversation(id, conversation).await
     }
@@ -795,6 +812,25 @@ impl SessionManager {
     ) -> Result<()> {
         self.storage
             .update_tool_request_meta(session_id, message_id, tool_call_id, patch)
+            .await
+    }
+
+    /// Atomically merge a single extension's state (keyed as
+    /// `"{extension_name}.{version}"`, see `ExtensionState`/`ExtensionData`)
+    /// into the session's `extension_data`, leaving every other key
+    /// untouched. Unlike `update(...).extension_data(...)`, which replaces
+    /// the whole column from a snapshot the caller read earlier, this reads
+    /// and writes inside a single `BEGIN IMMEDIATE` transaction so a
+    /// concurrent writer touching a *different* key can never be silently
+    /// clobbered (CON-001) — see `SessionStorage::merge_extension_state`.
+    pub async fn merge_extension_state(
+        &self,
+        session_id: &str,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<()> {
+        self.storage
+            .merge_extension_state(session_id, key, value)
             .await
     }
 }
@@ -1032,9 +1068,21 @@ impl SessionStorage {
                     Self::run_migrations(&self.pool).await?;
                 } else {
                     Self::create_schema(&self.pool).await?;
+                }
+
+                // Gated independently of schema creation/migration above: on a
+                // brand-new database `legacy_import_status` starts unmarked, so
+                // if the process is killed mid-import the next startup retries
+                // it rather than treating the (already-committed) schema as
+                // proof the import also finished. Databases that predate this
+                // marker get it backfilled as already-complete by migration 21
+                // (see `apply_migration`), so upgrading installs never get
+                // silently re-imported.
+                if !Self::legacy_import_completed(&self.pool).await? {
                     if let Err(e) = Self::import_legacy(&self.pool, &self.session_dir).await {
                         warn!("Failed to import some legacy sessions: {}", e);
                     }
+                    Self::mark_legacy_import_complete(&self.pool).await?;
                 }
                 Ok::<(), anyhow::Error>(())
             })
@@ -1078,6 +1126,21 @@ impl SessionStorage {
             .bind(CURRENT_SCHEMA_VERSION)
             .execute(&mut *tx)
             .await?;
+
+        // Left unmarked here (see `legacy_import_completed`/`mark_legacy_import_complete`)
+        // so the caller in `pool()` knows to actually run `import_legacy` for a
+        // fresh database, and can retry it if the process is interrupted
+        // before the import finishes.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS legacy_import_status (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                completed_at TIMESTAMP
+            )
+        "#,
+        )
+        .execute(&mut *tx)
+        .await?;
 
         sqlx::query(
             r#"
@@ -1285,6 +1348,24 @@ impl SessionStorage {
         Ok(())
     }
 
+    async fn legacy_import_completed(pool: &Pool<Sqlite>) -> Result<bool> {
+        let completed = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM legacy_import_status WHERE id = 1)",
+        )
+        .fetch_one(pool)
+        .await?;
+        Ok(completed)
+    }
+
+    async fn mark_legacy_import_complete(pool: &Pool<Sqlite>) -> Result<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO legacy_import_status (id, completed_at) VALUES (1, CURRENT_TIMESTAMP)",
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     async fn import_legacy(pool: &Pool<Sqlite>, session_dir: &PathBuf) -> Result<()> {
         use crate::session::legacy;
 
@@ -1375,11 +1456,18 @@ impl SessionStorage {
         .execute(&mut *tx)
         .await?;
 
-        tx.commit().await?;
-
+        // The session row and its messages commit together so a crash
+        // mid-import can never leave a session that looks imported (row
+        // present) but is missing its conversation. On retry, the `INSERT
+        // INTO sessions` above fails fast on the id's PRIMARY KEY for any
+        // session that already fully committed, which safely skips
+        // re-importing it instead of clobbering conversation history it may
+        // have accumulated since.
         if let Some(conversation) = &session.conversation {
-            Self::replace_conversation_inner(pool, &session.id, conversation).await?;
+            Self::replace_conversation_in_tx(&mut tx, &session.id, conversation).await?;
         }
+
+        tx.commit().await?;
         Ok(())
     }
 
@@ -1999,6 +2087,31 @@ impl SessionStorage {
                     ON CONFLICT(session_id) DO UPDATE SET
                         last_generation = MAX(last_generation, excluded.last_generation)
                     "#,
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
+            21 => {
+                sqlx::query(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS legacy_import_status (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        completed_at TIMESTAMP
+                    )
+                    "#,
+                )
+                .execute(&mut **tx)
+                .await?;
+
+                // Databases reaching this migration already existed before the
+                // marker was introduced, so whatever legacy `.jsonl` import they
+                // were ever going to run has already happened (or never
+                // applied because they predate the legacy on-disk format).
+                // Backfill it as complete so upgrading installs don't get
+                // silently re-imported and have since-accumulated session
+                // history overwritten by the original legacy snapshot.
+                sqlx::query(
+                    "INSERT OR IGNORE INTO legacy_import_status (id, completed_at) VALUES (1, CURRENT_TIMESTAMP)",
                 )
                 .execute(&mut **tx)
                 .await?;
@@ -2741,24 +2854,22 @@ impl SessionStorage {
         Ok(())
     }
 
-    async fn replace_conversation_inner(
-        pool: &Pool<Sqlite>,
+    async fn replace_conversation_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
         session_id: &str,
         conversation: &Conversation,
     ) -> Result<()> {
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-
         sqlx::query("DELETE FROM messages WHERE session_id = ?")
             .bind(session_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
             .bind(session_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         sqlx::query("DELETE FROM session_summaries WHERE session_id = ?")
             .bind(session_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
 
         for message in conversation.messages() {
@@ -2781,10 +2892,20 @@ impl SessionStorage {
             .bind(serde_json::to_string(&message.content)?)
             .bind(message.created)
             .bind(metadata_json)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
 
+        Ok(())
+    }
+
+    async fn replace_conversation_inner(
+        pool: &Pool<Sqlite>,
+        session_id: &str,
+        conversation: &Conversation,
+    ) -> Result<()> {
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        Self::replace_conversation_in_tx(&mut tx, session_id, conversation).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -3059,6 +3180,11 @@ impl SessionStorage {
     ) -> Result<Session> {
         let normalized = super::import_formats::convert_to_gosling_session_json(json)?;
         let import: Session = serde_json::from_str(&normalized)?;
+        let mut extension_data = import.extension_data.clone();
+        extension_data.remove_extension_state(
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION,
+        );
 
         let session = self
             .create_session(
@@ -3077,7 +3203,8 @@ impl SessionStorage {
         let result: Result<()> = async {
             let mut builder = session_manager
                 .update(&session.id)
-                .extension_data(import.extension_data)
+                .extension_data(extension_data)
+                .restrict_tools_to_working_dirs(import.restrict_tools_to_working_dirs)
                 .usage(import.usage)
                 .accumulated_usage(import.accumulated_usage)
                 .accumulated_cost(import.accumulated_cost);
@@ -3354,6 +3481,50 @@ impl SessionStorage {
             tx.commit().await?;
             return Ok(());
         }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Read-modify-write `extension_data` for one key inside a single
+    /// `BEGIN IMMEDIATE` transaction. `BEGIN IMMEDIATE` takes SQLite's write
+    /// lock before the read, so a second concurrent caller of this method
+    /// (or of any other writer using the same transaction pattern) blocks
+    /// until this one commits, then reads the up-to-date row — the two
+    /// writes can never interleave and silently drop one side's key.
+    async fn merge_extension_state(
+        &self,
+        session_id: &str,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT extension_data FROM sessions WHERE id = ?")
+                .bind(session_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+        let Some((extension_data_json,)) = row else {
+            tx.commit().await?;
+            return Err(anyhow::anyhow!("Session not found: {}", session_id));
+        };
+
+        let mut extension_data: ExtensionData =
+            serde_json::from_str(&extension_data_json).unwrap_or_default();
+        extension_data
+            .extension_states
+            .insert(key.to_string(), value);
+
+        sqlx::query(
+            "UPDATE sessions SET extension_data = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .bind(serde_json::to_string(&extension_data)?)
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
 
         tx.commit().await?;
         Ok(())
@@ -3784,6 +3955,73 @@ mod tests {
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.name, "Manual title");
         assert!(reloaded.user_set_name);
+    }
+
+    #[tokio::test]
+    async fn test_merge_extension_state_concurrent_writers_do_not_clobber_each_other() {
+        // CON-001 regression: two different extensions (or, concretely, an
+        // LRU-evicted-but-still-running agent and the freshly re-created
+        // agent that replaced it) writing *different* extension_data keys
+        // for the same session at the same time must not lose either
+        // write. The old `get_session` -> mutate -> `update().extension_data()`
+        // pattern raced two independent DB round trips; `merge_extension_state`
+        // does the read and write inside one `BEGIN IMMEDIATE` transaction so
+        // SQLite serializes the two callers instead.
+        let temp_dir = TempDir::new().unwrap();
+        let sm = std::sync::Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "New Chat".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let mut handles = Vec::new();
+        for i in 0..20 {
+            let sm = std::sync::Arc::clone(&sm);
+            let session_id = session.id.clone();
+            handles.push(tokio::spawn(async move {
+                sm.merge_extension_state(
+                    &session_id,
+                    &format!("ext_{i}.v0"),
+                    serde_json::json!({ "value": i }),
+                )
+                .await
+            }));
+        }
+
+        for handle in handles {
+            handle.await.unwrap().unwrap();
+        }
+
+        let reloaded = sm.get_session(&session.id, false).await.unwrap();
+        for i in 0..20 {
+            let key = format!("ext_{i}.v0");
+            assert_eq!(
+                reloaded.extension_data.extension_states.get(&key),
+                Some(&serde_json::json!({ "value": i })),
+                "key {key} must survive concurrent merges to other keys"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_merge_extension_state_missing_session_errors() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let result = sm
+            .merge_extension_state("does-not-exist", "todo.v0", serde_json::json!({}))
+            .await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Session not found"));
     }
 
     #[tokio::test]
@@ -4474,9 +4712,37 @@ mod tests {
             .await
             .unwrap();
 
+        let mut extension_data = ExtensionData::new();
+        extension_data.set_extension_state(
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION,
+            serde_json::json!({
+                "extensions": [{
+                    "type": "stdio",
+                    "name": "imported-executable",
+                    "description": "must be quarantined",
+                    "cmd": "sh",
+                    "args": ["-c", "touch /tmp/imported-session-executed"],
+                    "envs": {},
+                    "env_keys": [],
+                    "timeout": null,
+                    "cwd": null,
+                    "bundled": false,
+                    "available_tools": []
+                }]
+            }),
+        );
+        extension_data.set_extension_state(
+            "todo",
+            "v0",
+            serde_json::json!({"content": "safe imported state"}),
+        );
+
         sm.update(&original.id)
             .usage(usage)
             .accumulated_usage(accumulated_usage)
+            .restrict_tools_to_working_dirs(true)
+            .extension_data(extension_data)
             .workflow_kind(SessionWorkflow::Tagteam)
             .apply()
             .await
@@ -4517,6 +4783,18 @@ mod tests {
         assert_eq!(imported.usage, usage);
         assert_eq!(imported.accumulated_usage, accumulated_usage);
         assert_eq!(imported.workflow_kind, SessionWorkflow::Standard);
+        assert!(imported.restrict_tools_to_working_dirs);
+        assert!(imported
+            .extension_data
+            .get_extension_state(
+                EnabledExtensionsState::EXTENSION_NAME,
+                EnabledExtensionsState::VERSION,
+            )
+            .is_none());
+        assert_eq!(
+            imported.extension_data.get_extension_state("todo", "v0"),
+            Some(&serde_json::json!({"content": "safe imported state"}))
+        );
         assert_eq!(imported.message_count, 2);
 
         let conversation = imported.conversation.unwrap();
@@ -4824,6 +5102,142 @@ mod tests {
             imported.accumulated_usage,
             Usage::new(Some(600), Some(400), Some(1000))
         );
+    }
+
+    #[tokio::test]
+    async fn test_legacy_import_retries_after_interrupted_first_run() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_dir = temp_dir.path().join(SESSIONS_FOLDER);
+        fs::create_dir_all(&session_dir).unwrap();
+
+        let legacy_content = r#"{"description":"Legacy session","id":"20240101_120000","created_at":"2024-01-01T12:00:00Z","updated_at":"2024-01-01T12:00:00Z","extension_data":{},"message_count":0}
+{"id":"msg1","role":"user","created":1704110400,"content":[{"type":"text","text":"Hello"}]}
+{"id":"msg2","role":"assistant","created":1704110401,"content":[{"type":"text","text":"Hi there"}]}"#;
+        fs::write(session_dir.join("20240101_120000.jsonl"), legacy_content).unwrap();
+
+        // Simulate a process that was killed right after the schema was
+        // created but before `import_legacy` ran: create the schema
+        // directly (bypassing `pool()`'s init sequence) and leave
+        // `legacy_import_status` unmarked, exactly as `create_schema`
+        // itself leaves it.
+        let db_path = session_dir.join(DB_NAME);
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        let completed_before: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM legacy_import_status WHERE id = 1)")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!completed_before);
+        pool.close().await;
+
+        // Starting a `SessionManager` against this half-initialized
+        // database must retry the legacy import instead of treating the
+        // already-committed schema as proof the import also finished.
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage().pool().await.unwrap();
+
+        let imported = sm
+            .get_session("20240101_120000", true)
+            .await
+            .expect("interrupted legacy import must be retried, not silently skipped");
+        assert_eq!(imported.name, "Legacy session");
+        let messages = imported.conversation.unwrap().messages().len();
+        assert_eq!(messages, 2);
+
+        let completed_after: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM legacy_import_status WHERE id = 1)")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert!(completed_after);
+    }
+
+    #[tokio::test]
+    async fn test_legacy_import_not_replayed_for_pre_existing_database() {
+        let temp_dir = TempDir::new().unwrap();
+        let session_dir = temp_dir.path().join(SESSIONS_FOLDER);
+        fs::create_dir_all(&session_dir).unwrap();
+
+        // A legacy `.jsonl` file that, if (re-)imported, would clobber the
+        // session below with stale content.
+        let legacy_content = r#"{"description":"Stale legacy content","id":"20240101_120000","created_at":"2024-01-01T12:00:00Z","updated_at":"2024-01-01T12:00:00Z","extension_data":{},"message_count":0}
+{"id":"msg1","role":"user","created":1704110400,"content":[{"type":"text","text":"stale legacy message"}]}"#;
+        fs::write(session_dir.join("20240101_120000.jsonl"), legacy_content).unwrap();
+
+        let db_path = session_dir.join(DB_NAME);
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+
+        // Simulate a database that was already fully set up and used
+        // *before* the `legacy_import_status` marker existed (schema
+        // version predates migration 21), with the same session id already
+        // present and since diverged from whatever the legacy file holds.
+        sqlx::query("UPDATE schema_version SET version = 20")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("20240101_120000")
+        .bind("Live session name")
+        .bind("/tmp")
+        .bind("{}")
+        .bind("auto")
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("msg_live")
+        .bind("20240101_120000")
+        .bind("user")
+        .bind(r#"[{"type":"text","text":"live message"}]"#)
+        .bind(1_704_200_000_i64)
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        // Upgrading this pre-existing database must not silently replay
+        // the legacy import and overwrite session data accumulated since
+        // the original (pre-marker) import.
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage().pool().await.unwrap();
+
+        let session = sm.get_session("20240101_120000", true).await.unwrap();
+        assert_eq!(session.name, "Live session name");
+        let messages = session.conversation.unwrap();
+        assert_eq!(messages.messages().len(), 1);
+        assert_eq!(
+            messages.messages()[0].content,
+            vec![MessageContent::text("live message")]
+        );
+
+        let completed: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM legacy_import_status WHERE id = 1)")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert!(completed);
     }
 
     #[test_case(GoslingMode::Approve)]

@@ -5,6 +5,9 @@ use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::CallToolRequestParams;
+use std::ffi::OsString;
+use std::io::ErrorKind;
+use std::path::Component;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -52,7 +55,7 @@ impl ToolInspector for WorkingDirScopeInspector {
             let Ok(tool_call) = &request.tool_call else {
                 continue;
             };
-            let Some(path) = out_of_scope_path(tool_call, &session.working_dir, &allowed_dirs)
+            let Some(path) = out_of_scope_path(tool_call, &session.working_dir, &allowed_dirs)?
             else {
                 continue;
             };
@@ -83,10 +86,83 @@ impl ToolInspector for WorkingDirScopeInspector {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn auto_downgrades_require_approval(&self) -> bool {
+        false
+    }
 }
 
-fn is_within_any(path: &Path, dirs: &[PathBuf]) -> bool {
-    dirs.iter().any(|dir| path.starts_with(dir))
+fn normalize_resolved_path(path: PathBuf) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(segment) => normalized.push(segment),
+        }
+    }
+    normalized
+}
+
+fn canonicalize_potential_path(path: &Path) -> Result<PathBuf> {
+    let mut existing_ancestor = path.to_path_buf();
+    let mut missing_segments: Vec<OsString> = Vec::new();
+
+    loop {
+        match std::fs::canonicalize(&existing_ancestor) {
+            Ok(canonical_ancestor) => {
+                missing_segments.reverse();
+                let resolved = missing_segments
+                    .into_iter()
+                    .fold(canonical_ancestor, |path, segment| path.join(segment));
+                return Ok(normalize_resolved_path(resolved));
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                match std::fs::symlink_metadata(&existing_ancestor) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => {
+                        anyhow::bail!(
+                            "cannot authorize path through dangling symbolic link: {}",
+                            path.display()
+                        );
+                    }
+                    Ok(_) => return Err(error.into()),
+                    Err(metadata_error) if metadata_error.kind() == ErrorKind::NotFound => {}
+                    Err(metadata_error) => return Err(metadata_error.into()),
+                }
+
+                let Some(name) = existing_ancestor.file_name().map(OsString::from) else {
+                    return Err(error.into());
+                };
+                let Some(parent) = existing_ancestor.parent() else {
+                    return Err(error.into());
+                };
+                missing_segments.push(name);
+                existing_ancestor = parent.to_path_buf();
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+fn canonical_allowed_dirs(dirs: &[PathBuf]) -> Vec<PathBuf> {
+    dirs.iter()
+        .filter_map(|dir| canonicalize_potential_path(dir).ok())
+        .collect()
+}
+
+fn is_within_any(path: &Path, dirs: &[PathBuf]) -> Result<bool> {
+    let canonical_path = canonicalize_potential_path(path)?;
+    let canonical_dirs = canonical_allowed_dirs(dirs);
+    if canonical_dirs.is_empty() {
+        anyhow::bail!("no working directory could be canonicalized");
+    }
+    Ok(canonical_dirs
+        .iter()
+        .any(|dir| canonical_path.starts_with(dir)))
 }
 
 fn resolve(value: &str, working_dir: &Path) -> PathBuf {
@@ -107,14 +183,16 @@ fn out_of_scope_path(
     tool_call: &CallToolRequestParams,
     working_dir: &Path,
     allowed_dirs: &[PathBuf],
-) -> Option<PathBuf> {
-    let args = tool_call.arguments.as_ref()?;
+) -> Result<Option<PathBuf>> {
+    let Some(args) = tool_call.arguments.as_ref() else {
+        return Ok(None);
+    };
 
     for key in ["path", "file", "file_path", "filePath"] {
         if let Some(value) = args.get(key).and_then(|v| v.as_str()) {
             let resolved = resolve(value, working_dir);
-            if !is_within_any(&resolved, allowed_dirs) {
-                return Some(resolved);
+            if !is_within_any(&resolved, allowed_dirs)? {
+                return Ok(Some(canonicalize_potential_path(&resolved)?));
             }
         }
     }
@@ -125,13 +203,13 @@ fn out_of_scope_path(
                 continue;
             }
             let resolved = PathBuf::from(&token);
-            if !is_within_any(&resolved, allowed_dirs) {
-                return Some(resolved);
+            if !is_within_any(&resolved, allowed_dirs)? {
+                return Ok(Some(canonicalize_potential_path(&resolved)?));
             }
         }
     }
 
-    None
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -164,8 +242,11 @@ mod tests {
             json_args(&[("path", "/etc/passwd")]),
         );
 
-        let result = out_of_scope_path(&call, &working_dir, &allowed);
-        assert_eq!(result, Some(PathBuf::from("/etc/passwd")));
+        let result = out_of_scope_path(&call, &working_dir, &allowed).unwrap();
+        assert_eq!(
+            result,
+            Some(canonicalize_potential_path(Path::new("/etc/passwd")).unwrap())
+        );
     }
 
     #[test]
@@ -177,7 +258,10 @@ mod tests {
             json_args(&[("path", "/home/user/project/src/main.rs")]),
         );
 
-        assert_eq!(out_of_scope_path(&call, &working_dir, &allowed), None);
+        assert_eq!(
+            out_of_scope_path(&call, &working_dir, &allowed).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -189,7 +273,10 @@ mod tests {
             json_args(&[("path", "/home/user/other/file.txt")]),
         );
 
-        assert_eq!(out_of_scope_path(&call, &working_dir, &allowed), None);
+        assert_eq!(
+            out_of_scope_path(&call, &working_dir, &allowed).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -201,7 +288,77 @@ mod tests {
             json_args(&[("path", "src/main.rs")]),
         );
 
-        assert_eq!(out_of_scope_path(&call, &working_dir, &allowed), None);
+        assert_eq!(
+            out_of_scope_path(&call, &working_dir, &allowed).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn flags_relative_parent_traversal() {
+        let root = tempfile::tempdir().unwrap();
+        let working_dir = root.path().join("project");
+        std::fs::create_dir(&working_dir).unwrap();
+        let allowed = vec![working_dir.clone()];
+        let call = tool_call(
+            "developer__text_editor__write",
+            json_args(&[("path", "../outside.txt")]),
+        );
+
+        assert_eq!(
+            out_of_scope_path(&call, &working_dir, &allowed).unwrap(),
+            Some(
+                std::fs::canonicalize(root.path())
+                    .unwrap()
+                    .join("outside.txt")
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn flags_existing_and_missing_paths_through_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let working_dir = root.path().join("project");
+        let outside = root.path().join("outside");
+        std::fs::create_dir(&working_dir).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "secret").unwrap();
+        symlink(&outside, working_dir.join("redirect")).unwrap();
+        let allowed = vec![working_dir.clone()];
+
+        for path in ["redirect/secret.txt", "redirect/new.txt"] {
+            let call = tool_call(
+                "developer__text_editor__write",
+                json_args(&[("path", path)]),
+            );
+            assert!(out_of_scope_path(&call, &working_dir, &allowed)
+                .unwrap()
+                .is_some());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_fails_closed() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let working_dir = root.path().join("project");
+        std::fs::create_dir(&working_dir).unwrap();
+        symlink(
+            working_dir.join("missing-target"),
+            working_dir.join("dangling"),
+        )
+        .unwrap();
+        let call = tool_call(
+            "developer__text_editor__write",
+            json_args(&[("path", "dangling/new.txt")]),
+        );
+
+        assert!(out_of_scope_path(&call, &working_dir, &[working_dir.clone()]).is_err());
     }
 
     #[test]
@@ -213,8 +370,11 @@ mod tests {
             json_args(&[("command", "cat /etc/passwd")]),
         );
 
-        let result = out_of_scope_path(&call, &working_dir, &allowed);
-        assert_eq!(result, Some(PathBuf::from("/etc/passwd")));
+        let result = out_of_scope_path(&call, &working_dir, &allowed).unwrap();
+        assert_eq!(
+            result,
+            Some(canonicalize_potential_path(Path::new("/etc/passwd")).unwrap())
+        );
     }
 
     #[test]
@@ -223,7 +383,10 @@ mod tests {
         let allowed = vec![working_dir.clone()];
         let call = tool_call("developer__shell", json_args(&[("command", "ls -la src")]));
 
-        assert_eq!(out_of_scope_path(&call, &working_dir, &allowed), None);
+        assert_eq!(
+            out_of_scope_path(&call, &working_dir, &allowed).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -232,7 +395,10 @@ mod tests {
         let allowed = vec![working_dir.clone()];
         let call = CallToolRequestParams::new("developer__todo__read".to_string());
 
-        assert_eq!(out_of_scope_path(&call, &working_dir, &allowed), None);
+        assert_eq!(
+            out_of_scope_path(&call, &working_dir, &allowed).unwrap(),
+            None
+        );
     }
 
     fn write_request(id: &str, path: &str) -> ToolRequest {

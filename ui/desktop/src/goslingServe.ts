@@ -139,6 +139,8 @@ const appendErrorTail = (target: string[], lines: string[], maxLines = 100): voi
 
 const CERT_FINGERPRINT_PREFIX = 'GOSLINGD_CERT_FINGERPRINT=';
 const TLS_FINGERPRINT_TIMEOUT_MS = 5000;
+const CHILD_SHUTDOWN_GRACE_MS = 5000;
+const CHILD_SHUTDOWN_DEADLINE_MS = 10000;
 
 const normalizeFingerprint = (fingerprint: string): string =>
   fingerprint.replace(/[^a-fA-F0-9]/g, '').toUpperCase();
@@ -379,6 +381,10 @@ const buildGoslingServeEnv = (
   }
 
   env.GOSLING_SERVER__SECRET_KEY = serverSecret;
+  // Lets goslingd detect this app dying without a graceful quit (force-quit,
+  // crash, OS kill) and self-terminate instead of surviving as an orphan.
+  // See crates/gosling-server/src/commands/agent.rs `parent_exit_wait`.
+  env.GOSLING_SERVER__PARENT_PID = String(process.pid);
 
   return env;
 };
@@ -594,44 +600,70 @@ export const startGoslingServe = async ({
     startupTrace?.record('spawn_error', { message: error.message, name: error.name });
   });
 
-  const cleanup = async (): Promise<void> => {
-    await new Promise<void>((resolve) => {
-      if (exited || goslingProcess.killed) {
-        resolve();
-        return;
-      }
-
-      let resolved = false;
-      const finish = () => {
-        if (!resolved) {
-          resolved = true;
-          resolve();
+  let cleanupPromise: Promise<void> | null = null;
+  const cleanup = (): Promise<void> => {
+    cleanupPromise ??= (async () => {
+      const closed = await new Promise<boolean>((resolve) => {
+        if (exited) {
+          resolve(true);
+          return;
         }
-      };
 
-      goslingProcess.once('close', finish);
-
-      logger.info('Terminating gosling serve');
-      try {
-        if (process.platform === 'win32') {
-          if (goslingProcess.pid) {
-            spawn('taskkill', ['/pid', goslingProcess.pid.toString(), '/f', '/t']);
+        let finished = false;
+        let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+        let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (didClose: boolean) => {
+          if (finished) {
+            return;
           }
-        } else {
-          goslingProcess.kill('SIGTERM');
-        }
-      } catch (error) {
-        logger.error('Error while terminating gosling serve process:', error);
-      }
+          finished = true;
+          if (forceKillTimer) {
+            clearTimeout(forceKillTimer);
+          }
+          if (deadlineTimer) {
+            clearTimeout(deadlineTimer);
+          }
+          goslingProcess.off('close', onClose);
+          resolve(didClose);
+        };
+        const onClose = () => finish(true);
 
-      setTimeout(() => {
-        if (!exited && !goslingProcess.killed && process.platform !== 'win32') {
-          goslingProcess.kill('SIGKILL');
+        goslingProcess.once('close', onClose);
+
+        logger.info('Terminating gosling serve');
+        try {
+          if (process.platform === 'win32') {
+            if (goslingProcess.pid) {
+              spawn('taskkill', ['/pid', goslingProcess.pid.toString(), '/f', '/t']);
+            }
+          } else {
+            goslingProcess.kill('SIGTERM');
+          }
+        } catch (error) {
+          logger.error('Error while terminating gosling serve process:', error);
         }
-        finish();
-      }, 5000);
-    });
-    await unregisterTrackedProcess();
+
+        if (process.platform !== 'win32') {
+          forceKillTimer = setTimeout(() => {
+            if (!exited) {
+              try {
+                goslingProcess.kill('SIGKILL');
+              } catch (error) {
+                logger.error('Error while force-killing gosling serve process:', error);
+              }
+            }
+          }, CHILD_SHUTDOWN_GRACE_MS);
+        }
+        deadlineTimer = setTimeout(() => finish(false), CHILD_SHUTDOWN_DEADLINE_MS);
+      });
+
+      if (closed || exited) {
+        await unregisterTrackedProcess();
+      } else {
+        logger.error('gosling serve did not exit before the cleanup deadline');
+      }
+    })();
+    return cleanupPromise;
   };
 
   const stopOutputCollection = () => {

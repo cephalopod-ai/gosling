@@ -532,6 +532,15 @@ pub async fn collect_stream(
     }
 
     match final_message {
+        // A message with no content at all (no text, thinking, or tool
+        // calls) is the same anomaly as a stream that never yielded a
+        // message — a 200 response that said and did nothing. Treat both
+        // the same way rather than letting one silently pass as success:
+        // callers of `complete()` already handle `ProviderError`, so this
+        // reuses that existing path instead of going undetected.
+        Some(msg) if msg.content.is_empty() => Err(ProviderError::ExecutionError(
+            "Stream yielded an empty message with no content".to_string(),
+        )),
         Some(msg) => {
             let usage = final_usage
                 .unwrap_or_else(|| ProviderUsage::new("unknown".to_string(), Usage::default()));
@@ -702,6 +711,12 @@ pub trait Provider: Send + Sync {
         false
     }
 
+    /// Whether this provider can invoke tools without routing them through
+    /// Gosling's tool inspection and permission pipeline.
+    fn executes_tools_outside_gosling(&self) -> bool {
+        false
+    }
+
     /// Configure OAuth authentication for this provider
     ///
     /// This method is called when a provider has configuration keys marked with oauth_flow = true.
@@ -842,6 +857,30 @@ mod tests {
         let (msg, usage) = collect_stream(Box::pin(stream)).await.unwrap();
         assert_eq!(content_to_strings(&msg), vec!["Hello"]);
         assert_eq!(usage.model, "unknown");
+    }
+
+    #[tokio::test]
+    async fn test_collect_stream_no_message_is_error() {
+        let stream = futures::stream::empty();
+        let result = collect_stream(Box::pin(stream)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_collect_stream_empty_content_message_is_error() {
+        // DEP-002: a stream that yields a `Some(Message)` with no content at
+        // all (no text, thinking, or tool calls) must be treated the same as
+        // a stream that yielded no message — not silently accepted as a
+        // normal completed turn.
+        let message = Message::new(
+            rmcp::model::Role::Assistant,
+            chrono::Utc::now().timestamp(),
+            vec![],
+        );
+        let stream = futures::stream::once(async move { Ok((Some(message), None)) });
+        let result = collect_stream(Box::pin(stream)).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty message"));
     }
 
     #[test]

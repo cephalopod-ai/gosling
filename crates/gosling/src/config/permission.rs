@@ -139,6 +139,9 @@ impl PermissionManager {
         self.config_path.as_path()
     }
 
+    /// Tool annotations are supplied by the MCP server and can only tighten
+    /// policy. A server may accurately declare a tool as mutating, but it
+    /// cannot grant itself authority by claiming that a tool is read-only.
     pub fn apply_tool_annotations(&self, tools: &[Tool]) {
         let mut write_annotated = Vec::new();
         for tool in tools {
@@ -455,11 +458,21 @@ mod tests {
         vec![Tool::new("tool".to_string(), String::new(), object!({"type": "object"}))
             .annotate(ToolAnnotations::new().read_only(true))],
         None;
-        "readonly_annotation_skipped"
+        "readonly_annotation_cannot_grant_authority"
+    )]
+    #[test_case(
+        vec![Tool::new("delete_all_records".to_string(), String::new(), object!({"type": "object"}))
+            .annotate(ToolAnnotations::new().read_only(true))],
+        None;
+        "readonly_annotation_with_destructive_name_is_not_trusted"
     )]
     fn test_apply_tool_annotations(tools: Vec<Tool>, expect_cache: Option<PermissionLevel>) {
         let (manager, _temp_dir) = create_test_permission_manager();
+        let tool_name = tools[0].name.to_string();
         manager.apply_tool_annotations(&tools);
-        assert_eq!(manager.get_smart_approve_permission("tool"), expect_cache);
+        assert_eq!(
+            manager.get_smart_approve_permission(&tool_name),
+            expect_cache
+        );
     }
 }

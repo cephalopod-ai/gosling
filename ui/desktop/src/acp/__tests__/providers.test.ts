@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
-import { acpSetSessionProviderModel } from '../providers';
+import { acpSetSessionProviderModel, parseProviderType } from '../providers';
 
 vi.mock('../acpConnection', () => ({
   getAcpClient: vi.fn(),
@@ -75,6 +75,24 @@ describe('ACP providers', () => {
     expect(applied).toEqual({
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4-5',
+      thinkingEffort: 'high',
     });
+  });
+});
+
+describe('parseProviderType', () => {
+  it.each(['Preferred', 'Builtin', 'Declarative', 'Custom'] as const)(
+    'accepts the known provider type %s',
+    (value) => {
+      expect(parseProviderType(value)).toBe(value);
+    }
+  );
+
+  it('throws instead of silently casting an unrecognized provider type', () => {
+    expect(() => parseProviderType('SomeFutureProviderType')).toThrow();
+  });
+
+  it('throws on a case mismatch rather than accepting it', () => {
+    expect(() => parseProviderType('preferred')).toThrow();
   });
 });

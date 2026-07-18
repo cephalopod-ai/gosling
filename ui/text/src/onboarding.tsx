@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
 import { TextInput, PasswordInput } from "@inkjs/ui";
-import type { GoslingClient, ProviderInventoryEntryDto } from "@repo-makeover/gosling-sdk";
+import type {
+  GoslingClient,
+  ProviderInventoryEntryDto,
+} from "@repo-makeover/gosling-sdk";
 import {
   CRANBERRY,
   TEAL,
@@ -13,6 +16,7 @@ import {
 } from "./colors.js";
 import { Spinner, SPINNER_FRAMES } from "./components/Spinner.js";
 import { ErrorScreen } from "./components/ErrorScreen.js";
+import { truncateTerminalText } from "./utils.js";
 
 type Phase =
   | "loading"
@@ -405,13 +409,41 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({
   const currentVal = keyValues[currentKey?.name ?? ""] ?? "";
   const masked = currentKey?.secret && !showMasked[currentKey?.name ?? ""];
   const maxWidth = Math.min(columns - 4, 80);
+  const contentWidth = Math.max(1, maxWidth - 4);
+  const description = provider.description
+    ? truncateTerminalText(provider.description, contentWidth)
+    : "";
+  const helpText = currentKey
+    ? `enter confirm · esc back${currentKey.secret ? ` · tab ${masked ? "reveal" : "hide"}` : ""}`
+    : "";
 
-  // Calculate content height for proper centering
-  const headerHeight = 1 + (provider.description ? 2 : 0) + 1; // title + description + spacer
-  const keysHeight = keys.length; // one line per key
-  const inputHeight = currentKey ? 3 : 0; // input + help text + spacing
-  const setupStepsHeight = provider.setupSteps?.length
-    ? provider.setupSteps.length + 1
+  const headerHeight = 3 + (description ? 2 : 0);
+  const keysHeight = keys.length * 2;
+  const inputHeight = currentKey ? 4 : 0;
+  const remainingSetupHeight = Math.max(
+    0,
+    height - headerHeight - keysHeight - inputHeight,
+  );
+  const setupStepLimit = Math.max(
+    0,
+    Math.floor((remainingSetupHeight - 3) / 2),
+  );
+  const setupSteps = provider.setupSteps ?? [];
+  const visibleSetupSteps =
+    setupSteps.length <= setupStepLimit
+      ? setupSteps
+      : setupStepLimit === 0
+        ? []
+        : setupStepLimit === 1
+          ? [
+              `${setupSteps.length} setup steps available in provider documentation`,
+            ]
+          : [
+              ...setupSteps.slice(0, setupStepLimit - 1),
+              `… ${setupSteps.length - setupStepLimit + 1} more setup steps`,
+            ];
+  const setupStepsHeight = visibleSetupSteps.length
+    ? 3 + visibleSetupSteps.length * 2
     : 0;
   const contentHeight =
     headerHeight + keysHeight + inputHeight + setupStepsHeight;
@@ -429,14 +461,17 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({
         {/* Header */}
         <Box justifyContent="center" marginBottom={1}>
           <Text color={TEXT_PRIMARY} bold>
-            ◆ Configure {provider.providerName} ◆
+            {truncateTerminalText(
+              `◆ Configure ${provider.providerName} ◆`,
+              contentWidth,
+            )}
           </Text>
         </Box>
-        {provider.description && (
+        {description && (
           <Box justifyContent="center" marginBottom={1}>
-            <Box width={maxWidth - 4}>
-              <Text color={TEXT_DIM} wrap="wrap">
-                {provider.description}
+            <Box width={contentWidth}>
+              <Text color={TEXT_DIM} wrap="truncate">
+                {description}
               </Text>
             </Box>
           </Box>
@@ -445,16 +480,24 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({
 
         {/* Configuration Keys */}
         {keys.map((k, i) => (
-          <Box key={k.name} marginBottom={1}>
+          <Box key={k.name} marginBottom={1} width={contentWidth}>
             <Text color={i === activeKeyIdx ? GOLD : TEXT_DIM}>
               {i < activeKeyIdx ? "✓ " : i === activeKeyIdx ? "▸ " : "  "}
             </Text>
-            <Text
-              color={i === activeKeyIdx ? TEXT_PRIMARY : TEXT_DIM}
-              bold={i === activeKeyIdx}
+            <Box
+              width={Math.max(1, contentWidth - 2 - (i < activeKeyIdx ? 7 : 0))}
             >
-              {k.name}
-            </Text>
+              <Text
+                color={i === activeKeyIdx ? TEXT_PRIMARY : TEXT_DIM}
+                bold={i === activeKeyIdx}
+                wrap="truncate"
+              >
+                {truncateTerminalText(
+                  k.name,
+                  Math.max(1, contentWidth - 2 - (i < activeKeyIdx ? 7 : 0)),
+                )}
+              </Text>
+            </Box>
             {i < activeKeyIdx && <Text color={TEAL}> ••••••</Text>}
           </Box>
         ))}
@@ -484,15 +527,9 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({
               )}
             </Box>
             <Box marginTop={1}>
-              <Box width={maxWidth - 4}>
-                <Text color={TEXT_DIM} wrap="wrap">
-                  enter confirm · esc back
-                  {currentKey.secret && (
-                    <>
-                      {" · tab "}
-                      {masked ? "reveal" : "hide"}
-                    </>
-                  )}
+              <Box width={contentWidth}>
+                <Text color={TEXT_DIM} wrap="truncate">
+                  {truncateTerminalText(helpText, contentWidth)}
                 </Text>
               </Box>
             </Box>
@@ -500,16 +537,20 @@ export const ProviderConfigurator = React.memo(function ProviderConfigurator({
         )}
 
         {/* Setup Steps */}
-        {provider.setupSteps && provider.setupSteps.length > 0 && (
+        {visibleSetupSteps.length > 0 && (
           <Box marginTop={2} flexDirection="column">
             <Text color={TEXT_DIM}>Setup steps:</Text>
-            {provider.setupSteps.map((step, i) => (
-              <Box key={i} width={maxWidth - 4} marginTop={1}>
-                <Text color={TEXT_DIM} wrap="wrap">
-                  {i + 1}. {step}
-                </Text>
-              </Box>
-            ))}
+            {visibleSetupSteps.map((step, i) => {
+              const prefix = `${i + 1}. `;
+              return (
+                <Box key={i} width={contentWidth} marginTop={1}>
+                  <Text color={TEXT_DIM} wrap="truncate">
+                    {prefix}
+                    {truncateTerminalText(step, contentWidth - prefix.length)}
+                  </Text>
+                </Box>
+              );
+            })}
           </Box>
         )}
       </Box>
@@ -677,7 +718,7 @@ export default function Onboarding({
         alignItems="center"
         width={width}
       >
-        <ErrorScreen errorMsg={errorMsg} onRetry={handleRetry} />
+        <ErrorScreen errorMsg={errorMsg} width={width} onRetry={handleRetry} />
       </Box>
     );
   }

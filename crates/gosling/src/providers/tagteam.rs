@@ -8,6 +8,7 @@ use rmcp::model::{Role, Tool};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::RwLock;
 use tokio::process::Command;
 
 use super::base::{
@@ -16,7 +17,7 @@ use super::base::{
 };
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::search_path::SearchPaths;
-use crate::config::{Config, ExtensionConfig};
+use crate::config::{Config, ExtensionConfig, GoslingMode};
 use crate::conversation::message::Message;
 use crate::subprocess::configure_subprocess;
 
@@ -75,6 +76,9 @@ pub struct TagteamProvider {
     command: PathBuf,
     #[serde(skip)]
     name: String,
+    working_dir: PathBuf,
+    #[serde(skip)]
+    gosling_mode: RwLock<GoslingMode>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,8 +98,14 @@ struct TagteamFinalRun {
 }
 
 impl TagteamProvider {
-    async fn from_env(
+    async fn from_env(tls_config: Option<crate::providers::api_client::TlsConfig>) -> Result<Self> {
+        Self::from_env_with_working_dir(tls_config, crate::providers::base::current_working_dir())
+            .await
+    }
+
+    async fn from_env_with_working_dir(
         _tls_config: Option<crate::providers::api_client::TlsConfig>,
+        working_dir: PathBuf,
     ) -> Result<Self> {
         let config = Config::global();
         let command = config
@@ -106,6 +116,8 @@ impl TagteamProvider {
         Ok(Self {
             command: resolved_command,
             name: TAGTEAM_PROVIDER_NAME.to_string(),
+            working_dir,
+            gosling_mode: RwLock::new(config.get_gosling_mode().unwrap_or_default()),
         })
     }
 
@@ -174,27 +186,43 @@ impl TagteamProvider {
         args
     }
 
+    fn build_command(
+        &self,
+        profile: &TagteamProfile,
+        prompt: &str,
+    ) -> Result<Command, ProviderError> {
+        let mode = *self
+            .gosling_mode
+            .read()
+            .map_err(|_| ProviderError::RequestFailed("Tagteam mode lock poisoned".to_string()))?;
+        if mode != GoslingMode::Auto {
+            return Err(ProviderError::ExecutionError(format!(
+                "tagteam has no approval-compatible execution mode for Gosling mode '{mode}'"
+            )));
+        }
+
+        let mut command = Command::new(&self.command);
+        configure_subprocess(&mut command);
+        command.current_dir(&self.working_dir);
+
+        if let Ok(path) = SearchPaths::builder().with_npm().path() {
+            command.env("PATH", path);
+        }
+
+        command.args(Self::build_args(profile, prompt));
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        Ok(command)
+    }
+
     async fn run_tagteam(
         &self,
         profile: &TagteamProfile,
         prompt: &str,
     ) -> Result<String, ProviderError> {
-        let mut cmd = Command::new(&self.command);
-        configure_subprocess(&mut cmd);
-
-        if let Ok(path) = SearchPaths::builder().with_npm().path() {
-            cmd.env("PATH", path);
-        }
-
-        for arg in Self::build_args(profile, prompt) {
-            cmd.arg(arg);
-        }
-
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let output = cmd.output().await.map_err(|e| {
+        let output = self.build_command(profile, prompt)?.output().await.map_err(|e| {
             ProviderError::RequestFailed(format!(
                 "Failed to run tagteam command '{}': {e}. Make sure tagteam is installed and available in PATH, or set TAGTEAM_COMMAND.",
                 self.command.display()
@@ -302,6 +330,14 @@ impl ProviderDef for TagteamProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(tls_config))
     }
+
+    fn from_env_with_working_dir(
+        _extensions: Vec<ExtensionConfig>,
+        working_dir: PathBuf,
+        tls_config: Option<crate::providers::api_client::TlsConfig>,
+    ) -> BoxFuture<'static, Result<Self::Provider>> {
+        Box::pin(Self::from_env_with_working_dir(tls_config, working_dir))
+    }
 }
 
 #[async_trait]
@@ -312,6 +348,22 @@ impl Provider for TagteamProvider {
 
     fn manages_own_context(&self) -> bool {
         true
+    }
+
+    fn executes_tools_outside_gosling(&self) -> bool {
+        true
+    }
+
+    async fn update_mode(&self, _session_id: &str, mode: GoslingMode) -> Result<(), ProviderError> {
+        if mode != GoslingMode::Auto {
+            return Err(ProviderError::ExecutionError(format!(
+                "tagteam has no approval-compatible execution mode for Gosling mode '{mode}'"
+            )));
+        }
+        *self.gosling_mode.write().map_err(|_| {
+            ProviderError::RequestFailed("Tagteam mode lock poisoned".to_string())
+        })? = mode;
+        Ok(())
     }
 
     fn skip_canonical_filtering(&self) -> bool {
@@ -451,5 +503,27 @@ mod tests {
         assert!(err
             .to_string()
             .contains("coding-adversarial, relay, supervisor-worker"));
+    }
+
+    #[test]
+    fn command_requires_auto_mode_and_uses_session_working_directory() {
+        let provider = TagteamProvider {
+            command: PathBuf::from("tagteam"),
+            name: TAGTEAM_PROVIDER_NAME.to_string(),
+            working_dir: PathBuf::from("/tmp/tagteam-project"),
+            gosling_mode: RwLock::new(GoslingMode::Auto),
+        };
+        let command = provider
+            .build_command(&TAGTEAM_PROFILES[0], "prompt")
+            .unwrap();
+        assert_eq!(
+            command.as_std().get_current_dir(),
+            Some(PathBuf::from("/tmp/tagteam-project").as_path())
+        );
+
+        *provider.gosling_mode.write().unwrap() = GoslingMode::Approve;
+        assert!(provider
+            .build_command(&TAGTEAM_PROFILES[0], "prompt")
+            .is_err());
     }
 }

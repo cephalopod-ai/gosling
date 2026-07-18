@@ -3150,6 +3150,9 @@
     "defaultMessage": "View in Outputs"
   },
   "externalBackendSection.saveError": {
-    "defaultMessage": "Failed to save external backend settings. Your change was not persisted."
+    "defaultMessage": "Failed to save external backend settings: {error}"
+  },
+  "modelAndProviderContext.modelSwitchRecord": {
+    "defaultMessage": "Model changed: {previousModel} -> {currentModel}"
   }
 }

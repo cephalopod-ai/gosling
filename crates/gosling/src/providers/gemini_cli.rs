@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
@@ -14,6 +14,7 @@ use super::cli_common::{error_from_event, extract_usage_tokens};
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::search_path::SearchPaths;
 use crate::config::Config;
+use crate::config::GoslingMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::providers::base::ConfigKey;
 use crate::subprocess::configure_subprocess;
@@ -42,11 +43,22 @@ pub struct GeminiCliProvider {
     name: String,
     #[serde(skip)]
     cli_session_id: Arc<OnceLock<String>>,
+    working_dir: PathBuf,
+    #[serde(skip)]
+    gosling_mode: RwLock<GoslingMode>,
 }
 
 impl GeminiCliProvider {
     pub async fn from_env(
+        tls_config: Option<crate::providers::api_client::TlsConfig>,
+    ) -> Result<Self> {
+        Self::from_env_with_working_dir(tls_config, crate::providers::base::current_working_dir())
+            .await
+    }
+
+    async fn from_env_with_working_dir(
         _tls_config: Option<crate::providers::api_client::TlsConfig>,
+        working_dir: PathBuf,
     ) -> Result<Self> {
         let config = Config::global();
         let command: String = config.get_gemini_cli_command().unwrap_or_default().into();
@@ -56,6 +68,8 @@ impl GeminiCliProvider {
             command: resolved_command,
             name: GEMINI_CLI_PROVIDER_NAME.to_string(),
             cli_session_id: Arc::new(OnceLock::new()),
+            working_dir,
+            gosling_mode: RwLock::new(config.get_gosling_mode().unwrap_or_default()),
         })
     }
 
@@ -91,9 +105,15 @@ impl GeminiCliProvider {
         }
     }
 
-    fn build_command(&self, prompt: &str, model_name: &str) -> Command {
+    fn build_command(
+        &self,
+        prompt: &str,
+        model_name: &str,
+        gosling_mode: GoslingMode,
+    ) -> Result<Command, ProviderError> {
         let mut cmd = Command::new(&self.command);
         configure_subprocess(&mut cmd);
+        cmd.current_dir(&self.working_dir);
 
         if let Ok(path) = SearchPaths::builder().with_npm().path() {
             cmd.env("PATH", path);
@@ -105,17 +125,30 @@ impl GeminiCliProvider {
             cmd.arg("-r").arg(sid);
         }
 
+        let approval_mode = match gosling_mode {
+            GoslingMode::Auto => "yolo",
+            GoslingMode::SmartApprove => "auto_edit",
+            GoslingMode::Approve => "default",
+            GoslingMode::Chat => {
+                return Err(ProviderError::ExecutionError(
+                    "Gemini CLI plan mode can transition into tool execution and cannot enforce Gosling chat mode"
+                        .to_string(),
+                ));
+            }
+        };
+
         cmd.arg("-p")
             .arg(prompt)
             .arg("--output-format")
             .arg("stream-json")
-            .arg("--yolo");
+            .arg("--approval-mode")
+            .arg(approval_mode);
 
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        cmd
+        Ok(cmd)
     }
 
     fn spawn_command(
@@ -134,7 +167,11 @@ impl GeminiCliProvider {
 
         tracing::debug!(command = ?self.command, "Executing Gemini CLI command");
 
-        let mut cmd = self.build_command(&prompt, model_name);
+        let gosling_mode = *self
+            .gosling_mode
+            .read()
+            .map_err(|_| ProviderError::RequestFailed("Gemini mode lock poisoned".to_string()))?;
+        let mut cmd = self.build_command(&prompt, model_name, gosling_mode)?;
 
         let mut child = cmd.kill_on_drop(true).spawn().map_err(|e| {
             ProviderError::RequestFailed(format!(
@@ -182,6 +219,14 @@ impl ProviderDef for GeminiCliProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(tls_config))
     }
+
+    fn from_env_with_working_dir(
+        _extensions: Vec<crate::config::ExtensionConfig>,
+        working_dir: PathBuf,
+        tls_config: Option<crate::providers::api_client::TlsConfig>,
+    ) -> BoxFuture<'static, Result<Self::Provider>> {
+        Box::pin(Self::from_env_with_working_dir(tls_config, working_dir))
+    }
 }
 
 #[async_trait]
@@ -192,6 +237,25 @@ impl Provider for GeminiCliProvider {
 
     fn manages_own_context(&self) -> bool {
         true
+    }
+
+    fn executes_tools_outside_gosling(&self) -> bool {
+        true
+    }
+
+    async fn update_mode(&self, _session_id: &str, mode: GoslingMode) -> Result<(), ProviderError> {
+        if mode == GoslingMode::Chat {
+            return Err(ProviderError::ExecutionError(
+                "Gemini CLI plan mode can transition into tool execution and cannot enforce Gosling chat mode"
+                    .to_string(),
+            ));
+        }
+        *self
+            .gosling_mode
+            .write()
+            .map_err(|_| ProviderError::RequestFailed("Gemini mode lock poisoned".to_string()))? =
+            mode;
+        Ok(())
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
@@ -344,6 +408,8 @@ mod tests {
             command: PathBuf::from("gemini"),
             name: "gemini-cli".to_string(),
             cli_session_id: Arc::new(OnceLock::new()),
+            working_dir: PathBuf::from("/tmp/gemini-project"),
+            gosling_mode: RwLock::new(GoslingMode::SmartApprove),
         }
     }
 
@@ -372,5 +438,33 @@ mod tests {
         ];
         let prompt = provider.build_prompt("You are helpful.", &messages);
         assert_eq!(prompt, "Follow up question");
+    }
+
+    #[test]
+    fn command_maps_modes_and_working_directory() {
+        let provider = make_provider();
+        for (mode, expected) in [
+            (GoslingMode::Auto, "yolo"),
+            (GoslingMode::SmartApprove, "auto_edit"),
+            (GoslingMode::Approve, "default"),
+        ] {
+            let command = provider.build_command("prompt", "model", mode).unwrap();
+            let args = command
+                .as_std()
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            assert!(args
+                .windows(2)
+                .any(|args| args == ["--approval-mode", expected]));
+            assert_eq!(
+                command.as_std().get_current_dir(),
+                Some(PathBuf::from("/tmp/gemini-project").as_path())
+            );
+        }
+
+        assert!(provider
+            .build_command("prompt", "model", GoslingMode::Chat)
+            .is_err());
     }
 }

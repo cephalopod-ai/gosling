@@ -26,6 +26,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::CancellationToken;
 
 // ── Request / Response types ────────────────────────────────────────────
 
@@ -115,6 +116,18 @@ fn serialize_session_event(seq: u64, request_id: Option<&str>, event: &MessageEv
     format_sse_event(seq, &json_str)
 }
 
+async fn send_sse_frame(
+    tx: &mpsc::Sender<String>,
+    frame: String,
+    shutdown: &CancellationToken,
+) -> bool {
+    tokio::select! {
+        biased;
+        _ = shutdown.cancelled() => false,
+        result = tx.send(frame) => result.is_ok(),
+    }
+}
+
 struct EventBusReplySink {
     bus: Arc<crate::session_event_bus::SessionEventBus>,
     request_id: String,
@@ -184,6 +197,7 @@ pub async fn session_events(
     let (tx, rx) = mpsc::channel::<String>(256);
     let stream = ReceiverStream::new(rx);
     let task_bus = bus.clone();
+    let shutdown = state.shutdown_token();
 
     tokio::spawn(async move {
         let bus = task_bus;
@@ -200,7 +214,7 @@ pub async fn session_events(
             let json_str = serde_json::to_string(&serde_json::to_value(&event).unwrap_or_default())
                 .unwrap_or_default();
             let frame = format!("data: {}\n\n", json_str);
-            if tx.send(frame).await.is_err() {
+            if !send_sse_frame(&tx, frame, &shutdown).await {
                 return;
             }
         }
@@ -209,7 +223,7 @@ pub async fn session_events(
         for event in &replay {
             let frame =
                 serialize_session_event(event.seq, event.request_id.as_deref(), &event.event);
-            if tx.send(frame).await.is_err() {
+            if !send_sse_frame(&tx, frame, &shutdown).await {
                 return;
             }
         }
@@ -221,13 +235,15 @@ pub async fn session_events(
 
         loop {
             tokio::select! {
+                biased;
+                _ = shutdown.cancelled() => return,
                 _ = heartbeat_interval.tick() => {
                     // Send heartbeat directly without publishing to the bus,
                     // so pings don't evict real events from the replay buffer.
                     // Use a comment-style SSE id so it won't interfere with Last-Event-ID.
                     let frame = format!(": ping {}\n\n", heartbeat_seq);
                     heartbeat_seq += 1;
-                    if tx.send(frame).await.is_err() {
+                    if !send_sse_frame(&tx, frame, &shutdown).await {
                         return;
                     }
                 }
@@ -244,7 +260,7 @@ pub async fn session_events(
                                 event.request_id.as_deref(),
                                 &event.event,
                             );
-                            if tx.send(frame).await.is_err() {
+                            if !send_sse_frame(&tx, frame, &shutdown).await {
                                 return;
                             }
                         }
@@ -405,4 +421,26 @@ pub fn routes(state: Arc<AppState>) -> Router {
         )
         .route("/sessions/{id}/cancel", post(session_cancel))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn blocked_sse_send_wakes_for_server_shutdown() {
+        let (tx, _rx) = mpsc::channel(1);
+        tx.send("occupied".to_string()).await.unwrap();
+        let shutdown = CancellationToken::new();
+        shutdown.cancel();
+
+        let sent = tokio::time::timeout(
+            Duration::from_millis(100),
+            send_sse_frame(&tx, "blocked".to_string(), &shutdown),
+        )
+        .await
+        .unwrap();
+
+        assert!(!sent);
+    }
 }

@@ -291,6 +291,11 @@
       "responseType": "GetSessionInfoResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/session/model-switch-record",
+      "requestType": "RecordSessionModelSwitchRequest_unstable",
+      "responseType": "RecordSessionModelSwitchResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/session/messages/list",
       "requestType": "ListSessionMessagesRequest_unstable",
       "responseType": "ListSessionMessagesResponse_unstable"

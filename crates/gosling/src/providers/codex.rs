@@ -26,6 +26,8 @@ use gosling_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Role;
 use rmcp::model::Tool;
 
+mod output;
+
 const CODEX_PROVIDER_NAME: &str = "codex";
 pub const CODEX_DEFAULT_MODEL: &str = "gpt-5.6-sol";
 pub const CODEX_KNOWN_MODELS: &[&str] = &[
@@ -52,6 +54,7 @@ pub struct CodexProvider {
     command: PathBuf,
     #[serde(skip)]
     name: String,
+    working_dir: PathBuf,
     /// Whether to skip git repo check
     skip_git_check: bool,
     /// CLI config overrides for MCP servers
@@ -145,6 +148,16 @@ impl CodexProvider {
         Ok(())
     }
 
+    fn base_command(&self) -> Command {
+        let mut command = Command::new(&self.command);
+        configure_subprocess(&mut command);
+        command.current_dir(&self.working_dir);
+        if let Ok(path) = SearchPaths::builder().with_npm().path() {
+            command.env("PATH", path);
+        }
+        command
+    }
+
     /// Execute codex CLI command
     async fn execute_command(
         &self,
@@ -173,15 +186,7 @@ impl CodexProvider {
             println!("============================");
         }
 
-        let mut cmd = Command::new(&self.command);
-        configure_subprocess(&mut cmd);
-
-        // Propagate extended PATH so the codex subprocess can find Node.js
-        // and other dependencies (especially when launched from the desktop app
-        // where the inherited PATH is limited).
-        if let Ok(path) = SearchPaths::builder().with_npm().path() {
-            cmd.env("PATH", path);
-        }
+        let mut cmd = self.base_command();
 
         // Use 'exec' subcommand for non-interactive mode
         cmd.arg("exec");
@@ -303,14 +308,12 @@ impl CodexProvider {
             ProviderError::RequestFailed(format!("Failed to wait for command: {}", e))
         })?;
 
-        // Allow the stderr task to finish
-        let _ = stderr_handle.await;
+        let stderr = stderr_handle.await.map_err(|error| {
+            ProviderError::RequestFailed(format!("Codex stderr task failed: {error}"))
+        })?;
 
-        if !exit_status.success() && lines.is_empty() {
-            return Err(ProviderError::RequestFailed(format!(
-                "Codex command failed with exit code: {:?}",
-                exit_status.code()
-            )));
+        if !exit_status.success() {
+            return Err(output::command_failure(exit_status, &stderr));
         }
 
         tracing::debug!("Codex CLI executed successfully, got {} lines", lines.len());
@@ -351,21 +354,6 @@ impl CodexProvider {
                 .and_then(|v| v.as_i64())
                 .map(|v| v as i32);
         }
-    }
-
-    /// Extract error message from an error event
-    fn extract_error(parsed: &serde_json::Value) -> Option<String> {
-        parsed
-            .get("message")
-            .and_then(|m| m.as_str())
-            .map(|s| s.to_string())
-            .or_else(|| {
-                parsed
-                    .get("error")
-                    .and_then(|e| e.get("message"))
-                    .and_then(|m| m.as_str())
-                    .map(|s| s.to_string())
-            })
     }
 
     /// Extract text from legacy message formats
@@ -409,9 +397,12 @@ impl CodexProvider {
 
     /// Parse newline-delimited JSON response from Codex CLI
     fn parse_response(&self, lines: &[String]) -> Result<(Message, Usage), ProviderError> {
+        if let Some(error) = output::terminal_event_error(lines) {
+            return Err(error);
+        }
+
         let mut all_text_content = Vec::new();
         let mut usage = Usage::default();
-        let mut error_message: Option<String> = None;
 
         for line in lines {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
@@ -430,33 +421,12 @@ impl CodexProvider {
                             }
                             all_text_content.extend(Self::extract_legacy_text(&parsed));
                         }
-                        "error" | "turn.failed" => {
-                            error_message = Self::extract_error(&parsed);
-                        }
                         "message" | "assistant" => {
                             all_text_content.extend(Self::extract_legacy_text(&parsed));
                         }
                         _ => {}
                     }
                 }
-            }
-        }
-
-        if let Some(err) = error_message {
-            if all_text_content.is_empty() {
-                if err.contains("context window") || err.contains("context_length_exceeded") {
-                    return Err(ProviderError::ContextLengthExceeded(err));
-                }
-                if err.to_lowercase().contains("rate limit") {
-                    return Err(ProviderError::RateLimitExceeded {
-                        details: err,
-                        retry_delay: None,
-                    });
-                }
-                return Err(ProviderError::RequestFailed(format!(
-                    "Codex CLI error: {}",
-                    err
-                )));
             }
         }
 
@@ -697,6 +667,18 @@ impl ProviderDef for CodexProvider {
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,
+        tls_config: Option<crate::providers::api_client::TlsConfig>,
+    ) -> BoxFuture<'static, Result<Self::Provider>> {
+        Self::from_env_with_working_dir(
+            extensions,
+            crate::providers::base::current_working_dir(),
+            tls_config,
+        )
+    }
+
+    fn from_env_with_working_dir(
+        extensions: Vec<ExtensionConfig>,
+        working_dir: PathBuf,
         _tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(async move {
@@ -718,6 +700,7 @@ impl ProviderDef for CodexProvider {
             Ok(Self {
                 command: resolved_command,
                 name: CODEX_PROVIDER_NAME.to_string(),
+                working_dir,
                 skip_git_check,
                 mcp_config_overrides: codex_mcp_config_overrides(&resolved),
                 mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -730,6 +713,10 @@ impl ProviderDef for CodexProvider {
 impl Provider for CodexProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    fn executes_tools_outside_gosling(&self) -> bool {
+        true
     }
 
     async fn get_context_limit(&self, model_config: &ModelConfig) -> Result<usize, ProviderError> {
@@ -992,6 +979,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1011,6 +999,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1044,6 +1033,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1133,6 +1123,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1157,6 +1148,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1229,6 +1221,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1240,10 +1233,77 @@ mod tests {
     }
 
     #[test]
+    fn terminal_failure_overrides_partial_agent_text() {
+        let provider = CodexProvider {
+            command: PathBuf::from("codex"),
+            name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
+            skip_git_check: false,
+            mcp_config_overrides: Vec::new(),
+            mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
+        };
+        let lines = vec![
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"partial"}}"#
+                .to_string(),
+            r#"{"type":"turn.failed","error":{"message":"connection reset"}}"#.to_string(),
+        ];
+
+        assert_eq!(
+            provider.parse_response(&lines).unwrap_err(),
+            ProviderError::RequestFailed("Codex CLI error: connection reset".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn nonzero_exit_overrides_partial_stdout() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let command = directory.path().join("codex");
+        std::fs::write(
+            &command,
+            concat!(
+                "#!/bin/sh\n",
+                "cat >/dev/null\n",
+                "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"partial\"}}'\n",
+                "printf 'terminal stderr\\n' >&2\n",
+                "exit 7\n",
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let provider = CodexProvider {
+            command,
+            name: "codex".to_string(),
+            working_dir: directory.path().to_path_buf(),
+            skip_git_check: false,
+            mcp_config_overrides: Vec::new(),
+            mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
+        };
+
+        let error = provider
+            .execute_command(
+                &ModelConfig::new(CODEX_DEFAULT_MODEL),
+                "system",
+                &[],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap_err();
+
+        let error = error.to_string();
+        assert!(error.contains("exit code"));
+        assert!(error.contains("terminal stderr"));
+    }
+
+    #[test]
     fn test_parse_response_skips_reasoning() {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1381,6 +1441,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1425,5 +1486,21 @@ mod tests {
             .map(|a| a.to_str().unwrap())
             .collect();
         assert_eq!(args, expected);
+    }
+
+    #[test]
+    fn command_uses_session_working_directory() {
+        let provider = CodexProvider {
+            command: PathBuf::from("codex"),
+            name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
+            skip_git_check: false,
+            mcp_config_overrides: Vec::new(),
+            mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
+        };
+        assert_eq!(
+            provider.base_command().as_std().get_current_dir(),
+            Some(PathBuf::from("/tmp/codex-project").as_path())
+        );
     }
 }

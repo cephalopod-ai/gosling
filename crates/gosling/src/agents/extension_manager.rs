@@ -12,7 +12,7 @@ use rmcp::transport::streamable_http_client::{
 use rmcp::transport::{
     ConfigureCommandExt, DynamicTransportError, StreamableHttpClientTransport, TokioChildProcess,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
@@ -28,7 +28,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
-use super::container::Container;
+use super::container::{Container, DockerExecProcess};
 use super::extension::{
     ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PlatformExtensionContext,
     ToolInfo, PLATFORM_EXTENSIONS,
@@ -57,6 +57,121 @@ use schemars::_private::NoSerialize;
 use serde_json::Value;
 
 type McpClientBox = Arc<dyn McpClientTrait>;
+
+const MAX_MCP_LIST_PAGES: usize = 100;
+const MAX_MCP_LIST_ITEMS: usize = 10_000;
+
+#[derive(Default)]
+struct PaginationGuard {
+    pages: usize,
+    items: usize,
+    cursors: HashSet<String>,
+}
+
+impl PaginationGuard {
+    fn record_page(
+        &mut self,
+        item_kind: &str,
+        page_items: usize,
+        next_cursor: Option<&str>,
+    ) -> std::result::Result<(), String> {
+        self.pages += 1;
+        if self.pages > MAX_MCP_LIST_PAGES {
+            return Err(format!(
+                "MCP {item_kind} pagination exceeded {MAX_MCP_LIST_PAGES} pages"
+            ));
+        }
+
+        self.items = self
+            .items
+            .checked_add(page_items)
+            .ok_or_else(|| format!("MCP {item_kind} item count overflowed"))?;
+        if self.items > MAX_MCP_LIST_ITEMS {
+            return Err(format!(
+                "MCP {item_kind} pagination exceeded {MAX_MCP_LIST_ITEMS} items"
+            ));
+        }
+
+        if let Some(cursor) = next_cursor {
+            if !self.cursors.insert(cursor.to_string()) {
+                return Err(format!(
+                    "MCP {item_kind} pagination repeated cursor {cursor:?}"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+async fn collect_paginated_tools(
+    client: &McpClientBox,
+    session_id: &str,
+    cancellation_token: CancellationToken,
+) -> std::result::Result<Vec<Tool>, String> {
+    let mut cursor = None;
+    let mut guard = PaginationGuard::default();
+    let mut tools = Vec::new();
+    loop {
+        let page = client
+            .list_tools(session_id, cursor, cancellation_token.clone())
+            .await
+            .map_err(|error| format!("MCP list tools request failed: {error}"))?;
+        guard.record_page("tool", page.tools.len(), page.next_cursor.as_deref())?;
+        tools.extend(page.tools);
+        match page.next_cursor {
+            Some(next_cursor) => cursor = Some(next_cursor),
+            None => return Ok(tools),
+        }
+    }
+}
+
+async fn collect_paginated_resources(
+    client: &McpClientBox,
+    session_id: &str,
+    cancellation_token: CancellationToken,
+) -> std::result::Result<Vec<Resource>, String> {
+    let mut cursor = None;
+    let mut guard = PaginationGuard::default();
+    let mut resources = Vec::new();
+    loop {
+        let page = client
+            .list_resources(session_id, cursor, cancellation_token.clone())
+            .await
+            .map_err(|error| format!("MCP list resources request failed: {error}"))?;
+        guard.record_page(
+            "resource",
+            page.resources.len(),
+            page.next_cursor.as_deref(),
+        )?;
+        resources.extend(page.resources);
+        match page.next_cursor {
+            Some(next_cursor) => cursor = Some(next_cursor),
+            None => return Ok(resources),
+        }
+    }
+}
+
+async fn collect_paginated_prompts(
+    client: &McpClientBox,
+    session_id: &str,
+    cancellation_token: CancellationToken,
+) -> std::result::Result<Vec<Prompt>, String> {
+    let mut cursor = None;
+    let mut guard = PaginationGuard::default();
+    let mut prompts = Vec::new();
+    loop {
+        let page = client
+            .list_prompts(session_id, cursor, cancellation_token.clone())
+            .await
+            .map_err(|error| format!("MCP list prompts request failed: {error}"))?;
+        guard.record_page("prompt", page.prompts.len(), page.next_cursor.as_deref())?;
+        prompts.extend(page.prompts);
+        match page.next_cursor {
+            Some(next_cursor) => cursor = Some(next_cursor),
+            None => return Ok(prompts),
+        }
+    }
+}
 
 struct ActionRequiredStream {
     inner: ReceiverStream<crate::conversation::message::Message>,
@@ -126,6 +241,11 @@ struct Extension {
     client: McpClientBox,
     server_info: Option<ServerInfo>,
     _temp_dir: Option<tempfile::TempDir>,
+    /// Set when this extension's server runs inside a shared Docker
+    /// container via `docker exec`. Killing the local `docker exec` client
+    /// (which is all `client`'s own drop/cleanup does) does not terminate
+    /// the process inside the container, so `Drop` below explicitly does.
+    docker_process: Option<DockerExecProcess>,
 }
 
 impl Extension {
@@ -135,6 +255,7 @@ impl Extension {
         client: McpClientBox,
         server_info: Option<ServerInfo>,
         temp_dir: Option<tempfile::TempDir>,
+        docker_process: Option<DockerExecProcess>,
     ) -> Self {
         Self {
             client,
@@ -142,6 +263,7 @@ impl Extension {
             resolved_config,
             server_info,
             _temp_dir: temp_dir,
+            docker_process,
         }
     }
 
@@ -158,6 +280,24 @@ impl Extension {
 
     fn get_client(&self) -> McpClientBox {
         self.client.clone()
+    }
+}
+
+impl Drop for Extension {
+    fn drop(&mut self) {
+        let Some(docker_process) = self.docker_process.take() else {
+            return;
+        };
+        // Covers every teardown path uniformly: explicit removal
+        // (`remove_extension`), silent replacement when an extension is
+        // reconfigured (`extensions.insert` drops the old value), and the
+        // whole manager going away (e.g. agent eviction).
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        handle.spawn(async move {
+            docker_process.kill().await;
+        });
     }
 }
 
@@ -254,6 +394,10 @@ fn minimal_child_environment() -> HashMap<String, String> {
     }
 
     env
+}
+
+fn apply_minimal_child_environment(command: &mut Command) {
+    command.env_clear().envs(minimal_child_environment());
 }
 
 fn require_str_parameter<'a>(v: &'a serde_json::Value, name: &str) -> Result<&'a str, ErrorData> {
@@ -964,6 +1108,7 @@ impl ExtensionManager {
         }
 
         let mut temp_dir = None;
+        let mut docker_process = None;
 
         let effective_working_dir = working_dir
             .clone()
@@ -1067,14 +1212,16 @@ impl ExtensionManager {
                             builtin = %name,
                             "Starting builtin extension inside Docker container"
                         );
+                        let in_container_argv = vec![
+                            "gosling".to_string(),
+                            "mcp".to_string(),
+                            normalized_name.clone(),
+                        ];
+                        docker_process =
+                            Some(DockerExecProcess::new(container, in_container_argv.clone()));
                         let command = Command::new("docker").configure(|command| {
-                            command
-                                .arg("exec")
-                                .arg("-i")
-                                .arg(container_id)
-                                .arg("gosling")
-                                .arg("mcp")
-                                .arg(&normalized_name);
+                            command.arg("exec").arg("-i").arg(container_id);
+                            command.args(&in_container_argv);
                         });
 
                         let client = child_process_client(
@@ -1138,14 +1285,17 @@ impl ExtensionManager {
                         cmd = %cmd,
                         "Starting stdio extension inside Docker container"
                     );
+                    let mut in_container_argv = vec![cmd.clone()];
+                    in_container_argv.extend(args.iter().cloned());
+                    docker_process =
+                        Some(DockerExecProcess::new(container, in_container_argv.clone()));
                     Command::new("docker").configure(|command| {
                         command.arg("exec").arg("-i");
                         for (key, value) in &all_envs {
                             command.arg("-e").arg(format!("{}={}", key, value));
                         }
                         command.arg(container_id);
-                        command.arg(cmd);
-                        command.args(args);
+                        command.args(&in_container_argv);
                     })
                 } else {
                     let cmd = resolve_command(cmd);
@@ -1187,6 +1337,7 @@ impl ExtensionManager {
                 std::fs::write(&file_path, code)?;
 
                 let command = Command::new("uvx").configure(|command| {
+                    apply_minimal_child_environment(command);
                     command.arg("--with").arg("mcp");
                     dependencies.iter().flatten().for_each(|dep| {
                         command.arg("--with").arg(dep);
@@ -1230,6 +1381,7 @@ impl ExtensionManager {
                 Arc::from(client),
                 server_info,
                 temp_dir,
+                docker_process,
             ),
         );
         drop(extensions);
@@ -1249,7 +1401,7 @@ impl ExtensionManager {
         let normalized = name_to_key(&name);
         self.extensions.lock().await.insert(
             normalized,
-            Extension::new(config.clone(), config.clone(), client, info, temp_dir),
+            Extension::new(config.clone(), config.clone(), client, info, temp_dir, None),
         );
         self.invalidate_tools_cache_and_bump_version().await;
     }
@@ -1285,16 +1437,25 @@ impl ExtensionManager {
         &self,
         primary: &std::path::Path,
         additional: &[std::path::PathBuf],
-    ) {
+    ) -> ExtensionResult<()> {
         let extensions = self.extensions.lock().await;
+        let mut failures = Vec::new();
         for (name, ext) in extensions.iter() {
             if let Err(e) = ext
                 .client
                 .update_working_dirs(primary.to_path_buf(), additional.to_vec())
                 .await
             {
-                tracing::warn!(extension = %name, error = %e, "failed to update roots");
+                failures.push(format!("{name}: {e}"));
             }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(ExtensionError::SetupError(format!(
+                "failed to update extension roots: {}",
+                failures.join("; ")
+            )))
         }
     }
 
@@ -1479,59 +1640,37 @@ impl ExtensionManager {
             let ext_name = name.clone();
             async move {
                 let mut tools = Vec::new();
-                let mut client_tools = match client
-                    .list_tools(session_id, None, cancel_token.clone())
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        warn!(extension = %ext_name, error = %e, "Failed to list tools");
-                        return Err((name, e.to_string()));
-                    }
-                };
+                let client_tools =
+                    match collect_paginated_tools(&client, session_id, cancel_token).await {
+                        Ok(tools) => tools,
+                        Err(e) => {
+                            warn!(extension = %ext_name, error = %e, "Failed to list tools");
+                            return Err((name, e));
+                        }
+                    };
 
                 let expose_unprefixed = is_unprefixed_extension(&config);
 
-                loop {
-                    for mut tool in client_tools.tools {
-                        if config.is_tool_available(&tool.name) {
-                            let public_name = if expose_unprefixed {
-                                tool.name.to_string()
-                            } else {
-                                format!("{}__{}", name, tool.name)
-                            };
+                for mut tool in client_tools {
+                    if config.is_tool_available(&tool.name) {
+                        let public_name = if expose_unprefixed {
+                            tool.name.to_string()
+                        } else {
+                            format!("{}__{}", name, tool.name)
+                        };
 
-                            let mut meta_map = tool
-                                .meta
-                                .as_ref()
-                                .map(|m| m.0.clone())
-                                .unwrap_or_default();
-                            meta_map.insert(
-                                TOOL_EXTENSION_META_KEY.to_string(),
-                                serde_json::Value::String(name.clone()),
-                            );
+                        let mut meta_map =
+                            tool.meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
+                        meta_map.insert(
+                            TOOL_EXTENSION_META_KEY.to_string(),
+                            serde_json::Value::String(name.clone()),
+                        );
 
-                            tool.name = public_name.into();
-                            tool.meta = Some(rmcp::model::Meta(meta_map));
+                        tool.name = public_name.into();
+                        tool.meta = Some(rmcp::model::Meta(meta_map));
 
-                            tools.push(tool);
-                        }
+                        tools.push(tool);
                     }
-
-                    if client_tools.next_cursor.is_none() {
-                        break;
-                    }
-
-                    client_tools = match client
-                        .list_tools(session_id, client_tools.next_cursor, cancel_token.clone())
-                        .await
-                    {
-                        Ok(t) => t,
-                        Err(e) => {
-                            warn!(extension = %ext_name, error = %e, "Failed to list tools (pagination)");
-                            return Err((name, e.to_string()));
-                        }
-                    };
                 }
 
                 Ok((name, tools))
@@ -1664,12 +1803,11 @@ impl ExtensionManager {
         };
 
         for (extension_name, client) in extensions_to_check {
-            match client
-                .list_resources(session_id, None, CancellationToken::default())
+            match collect_paginated_resources(&client, session_id, CancellationToken::default())
                 .await
             {
-                Ok(list_response) => {
-                    for resource in list_response.resources {
+                Ok(resources) => {
+                    for resource in resources {
                         if resource.uri.starts_with("ui://") {
                             ui_resources.push((extension_name.clone(), resource));
                         }
@@ -1701,8 +1839,7 @@ impl ExtensionManager {
                 )
             })?;
 
-        client
-            .list_resources(session_id, None, cancellation_token)
+        collect_paginated_resources(&client, session_id, cancellation_token)
             .await
             .map_err(|e| {
                 ErrorData::new(
@@ -1711,9 +1848,8 @@ impl ExtensionManager {
                     None,
                 )
             })
-            .map(|lr| {
-                let resource_list = lr
-                    .resources
+            .map(|resources| {
+                let resource_list = resources
                     .into_iter()
                     .map(|r| format!("{} - {}, uri: ({})", extension_name, r.name, r.uri))
                     .collect::<Vec<String>>()
@@ -1999,8 +2135,7 @@ impl ExtensionManager {
                 )
             })?;
 
-        client
-            .list_prompts(session_id, None, cancellation_token)
+        collect_paginated_prompts(&client, session_id, cancellation_token)
             .await
             .map_err(|e| {
                 ErrorData::new(
@@ -2009,7 +2144,6 @@ impl ExtensionManager {
                     None,
                 )
             })
-            .map(|lp| lp.prompts)
     }
 
     pub async fn list_prompts(
@@ -2192,6 +2326,7 @@ impl ExtensionManager {
 mod tests {
     use super::*;
     use rmcp::model::CallToolResult;
+    use rmcp::model::{AnnotateAble, RawResource};
     use rmcp::model::{InitializeResult, JsonObject};
     use rmcp::{object, ServiceError as Error};
 
@@ -2202,6 +2337,23 @@ mod tests {
     use rmcp::model::ServerNotification;
 
     use tokio::sync::mpsc;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn minimal_child_environment_drops_inherited_secrets() {
+        let mut command = Command::new("sh");
+        command.env("GOSLING_INHERITED_SECRET", "secret");
+        apply_minimal_child_environment(&mut command);
+        let output = command
+            .arg("-c")
+            .arg("printf %s \"${GOSLING_INHERITED_SECRET-unset}\"")
+            .output()
+            .await
+            .unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+    }
 
     impl ExtensionManager {
         async fn add_mock_extension(&self, name: String, client: McpClientBox) {
@@ -2215,6 +2367,17 @@ mod tests {
             client: McpClientBox,
             available_tools: Vec<String>,
         ) {
+            self.add_mock_extension_with_docker_process(name, client, available_tools, None)
+                .await;
+        }
+
+        async fn add_mock_extension_with_docker_process(
+            &self,
+            name: String,
+            client: McpClientBox,
+            available_tools: Vec<String>,
+            docker_process: Option<DockerExecProcess>,
+        ) {
             let sanitized_name = name_to_key(&name);
             let config = ExtensionConfig::Builtin {
                 name: name.clone(),
@@ -2224,7 +2387,14 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            let extension = Extension::new(config.clone(), config.clone(), client, None, None);
+            let extension = Extension::new(
+                config.clone(),
+                config.clone(),
+                client,
+                None,
+                None,
+                docker_process,
+            );
             self.extensions
                 .lock()
                 .await
@@ -2233,9 +2403,168 @@ mod tests {
         }
     }
 
+    async fn docker_available() -> bool {
+        tokio::process::Command::new("docker")
+            .arg("info")
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+
     struct MockClient {}
 
     struct FailingListToolsClient;
+
+    struct PaginatedDiscoveryClient {
+        repeat_tool_cursor: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for PaginatedDiscoveryClient {
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+
+        async fn list_resources(
+            &self,
+            _session_id: &str,
+            next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListResourcesResult, Error> {
+            let (name, next_cursor) = match next_cursor.as_deref() {
+                None => ("resource-one", Some("resources-page-two".to_string())),
+                Some("resources-page-two") => ("resource-two", None),
+                _ => return Err(Error::UnexpectedResponse),
+            };
+            Ok(ListResourcesResult {
+                resources: vec![RawResource::new(format!("ui://{name}"), name).no_annotation()],
+                next_cursor,
+                meta: None,
+            })
+        }
+
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            let (name, next_cursor) = match next_cursor.as_deref() {
+                None => ("tool-one", Some("tools-page-two".to_string())),
+                Some("tools-page-two") => (
+                    "tool-two",
+                    self.repeat_tool_cursor
+                        .then(|| "tools-page-two".to_string()),
+                ),
+                _ => return Err(Error::UnexpectedResponse),
+            };
+            Ok(ListToolsResult {
+                tools: vec![Tool::new(
+                    name,
+                    format!("{name} description"),
+                    Arc::new(JsonObject::new()),
+                )],
+                next_cursor,
+                meta: None,
+            })
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<JsonObject>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            Err(Error::UnexpectedResponse)
+        }
+
+        async fn list_prompts(
+            &self,
+            _session_id: &str,
+            next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListPromptsResult, Error> {
+            let (name, next_cursor) = match next_cursor.as_deref() {
+                None => ("prompt-one", Some("prompts-page-two".to_string())),
+                Some("prompts-page-two") => ("prompt-two", None),
+                _ => return Err(Error::UnexpectedResponse),
+            };
+            Ok(ListPromptsResult {
+                prompts: vec![Prompt::new(name, Some(format!("{name} description")), None)],
+                next_cursor,
+                meta: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn paginated_discovery_collects_all_pages() {
+        let client: McpClientBox = Arc::new(PaginatedDiscoveryClient {
+            repeat_tool_cursor: false,
+        });
+
+        let tools = collect_paginated_tools(&client, "session", CancellationToken::new())
+            .await
+            .unwrap();
+        let resources = collect_paginated_resources(&client, "session", CancellationToken::new())
+            .await
+            .unwrap();
+        let prompts = collect_paginated_prompts(&client, "session", CancellationToken::new())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tools
+                .into_iter()
+                .map(|tool| tool.name.to_string())
+                .collect::<Vec<_>>(),
+            vec!["tool-one".to_string(), "tool-two".to_string()]
+        );
+        assert_eq!(
+            resources
+                .into_iter()
+                .map(|resource| resource.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["resource-one".to_string(), "resource-two".to_string()]
+        );
+        assert_eq!(
+            prompts
+                .into_iter()
+                .map(|prompt| prompt.name)
+                .collect::<Vec<_>>(),
+            vec!["prompt-one".to_string(), "prompt-two".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn paginated_discovery_rejects_repeated_cursor() {
+        let client: McpClientBox = Arc::new(PaginatedDiscoveryClient {
+            repeat_tool_cursor: true,
+        });
+
+        let error = collect_paginated_tools(&client, "session", CancellationToken::new())
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("repeated cursor"));
+    }
+
+    #[test]
+    fn pagination_guard_enforces_page_and_item_limits() {
+        let mut page_guard = PaginationGuard::default();
+        for _ in 0..MAX_MCP_LIST_PAGES {
+            page_guard.record_page("tool", 0, None).unwrap();
+        }
+        assert!(page_guard.record_page("tool", 0, None).is_err());
+
+        let mut item_guard = PaginationGuard::default();
+        assert!(item_guard
+            .record_page("tool", MAX_MCP_LIST_ITEMS + 1, None)
+            .is_err());
+    }
 
     #[async_trait::async_trait]
     impl McpClientTrait for MockClient {
@@ -2764,6 +3093,131 @@ mod tests {
         let tool_names: Vec<String> = tools_after.iter().map(|t| t.name.to_string()).collect();
         assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
         assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
+    }
+
+    /// RES-003: removing a Docker-backed extension must terminate the
+    /// process it started inside the container (Extension's Drop impl
+    /// invoking `DockerExecProcess::kill`), not just the local `docker exec`
+    /// client the extension's `client` field owns — and it must not stop
+    /// the container itself, since other extensions/sessions may share it.
+    /// Requires a real Docker daemon; skips (not fails) if unavailable so
+    /// CI environments without Docker aren't broken by this test.
+    #[tokio::test]
+    async fn test_remove_extension_kills_docker_exec_process_but_not_container() {
+        if !docker_available().await {
+            eprintln!("skipping: docker is not available in this environment");
+            return;
+        }
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or_default();
+        let container_name = format!("gosling-res003-em-test-{}-{}", std::process::id(), nanos);
+
+        let run = tokio::process::Command::new("docker")
+            .args([
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                &container_name,
+                "busybox",
+                "tail",
+                "-f",
+                "/dev/null",
+            ])
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker run");
+        if !run.status.success() {
+            eprintln!(
+                "skipping: could not start busybox test container: {}",
+                String::from_utf8_lossy(&run.stderr)
+            );
+            return;
+        }
+        struct ContainerGuard(String);
+        impl Drop for ContainerGuard {
+            fn drop(&mut self) {
+                let name = self.0.clone();
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(async move {
+                        let _ = tokio::process::Command::new("docker")
+                            .args(["rm", "-f", &name])
+                            .kill_on_drop(true)
+                            .output()
+                            .await;
+                    });
+                }
+            }
+        }
+        let _guard = ContainerGuard(container_name.clone());
+
+        let argv = vec!["sleep".to_string(), "300".to_string()];
+        let exec = tokio::process::Command::new("docker")
+            .arg("exec")
+            .arg("-d")
+            .arg(&container_name)
+            .args(&argv)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker exec");
+        assert!(
+            exec.status.success(),
+            "failed to start process in container"
+        );
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let container = Container::new(container_name.clone());
+        extension_manager
+            .add_mock_extension_with_docker_process(
+                "docker_ext".to_string(),
+                Arc::new(MockClient {}),
+                vec![],
+                Some(DockerExecProcess::new(&container, argv.clone())),
+            )
+            .await;
+
+        extension_manager
+            .remove_extension("docker_ext")
+            .await
+            .unwrap();
+
+        // Extension::drop spawns the cleanup as a detached task; give it a
+        // moment to run.
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+        let pgrep = tokio::process::Command::new("docker")
+            .arg("exec")
+            .arg(&container_name)
+            .arg("pgrep")
+            .arg("-f")
+            .arg(r"sleep\s+300")
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker exec pgrep");
+        assert!(
+            !pgrep.status.success(),
+            "removing the extension should have killed the process it started in the container"
+        );
+
+        let inspect = tokio::process::Command::new("docker")
+            .args(["inspect", "-f", "{{.State.Running}}", &container_name])
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to inspect container");
+        assert_eq!(
+            String::from_utf8_lossy(&inspect.stdout).trim(),
+            "true",
+            "removing one extension's process must not stop the shared container"
+        );
     }
 
     #[tokio::test]
