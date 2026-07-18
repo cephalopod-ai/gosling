@@ -11,6 +11,7 @@ import {
 import type { Workspace, WorkspaceWithValidation } from '@repo-makeover/gosling-sdk';
 import { toast } from 'react-toastify';
 import { acpExportWorkspace } from '../../acp/workspaces';
+import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { cn } from '../../utils';
 import { workspaceErrorMessage } from '../../utils/workspaceError';
@@ -25,6 +26,7 @@ import { WorkspaceEditorDialog } from './WorkspaceEditorDialog';
 const COLLAPSED_KEY = 'workspaces_sidebar_collapsed';
 
 export function WorkspaceSidebarSection() {
+  const { saveArtifact } = useArtifactRouter();
   const {
     workspaces,
     activeWorkspaceId,
@@ -75,24 +77,25 @@ export function WorkspaceSidebarSection() {
     }
   }, []);
 
-  const exportMetadata = useCallback(async (workspace: Workspace) => {
-    try {
-      const document = await acpExportWorkspace(workspace.id);
-      const fileName = `${safeFileName(workspace.name)}.gosling-workspace.json`;
-      const result = await window.electron.showSaveDialog({
-        title: 'Export workspace metadata',
-        defaultPath: workspaceOutputPath(workspace, 'export', fileName),
-        filters: [{ name: 'Gosling workspace', extensions: ['json'] }],
-      });
-      if (!result.canceled && result.filePath) {
-        const written = await window.electron.writeFile(result.filePath, document);
-        if (!written) throw new Error('The export file could not be written');
-        toast.success('Workspace metadata exported');
+  const exportMetadata = useCallback(
+    async (workspace: Workspace) => {
+      try {
+        const document = await acpExportWorkspace(workspace.id);
+        const result = await saveArtifact({
+          workspaceId: workspace.id,
+          productType: 'export',
+          suggestedName: `${workspace.name}.gosling-workspace.json`,
+          title: 'Export workspace metadata',
+          filters: [{ name: 'Gosling workspace', extensions: ['json'] }],
+          source: { type: 'content', content: document, encoding: 'utf8' },
+        });
+        if (!result.canceled) toast.success('Workspace metadata exported');
+      } catch (cause) {
+        toast.error(workspaceErrorMessage(cause, 'Unable to export workspace'));
       }
-    } catch (cause) {
-      toast.error(workspaceErrorMessage(cause, 'Unable to export workspace'));
-    }
-  }, []);
+    },
+    [saveArtifact]
+  );
 
   const remove = useCallback(
     async (workspace: Workspace) => {
@@ -292,27 +295,4 @@ function workspaceRowClass(selected: boolean): string {
     'transition-colors hover:bg-background-tertiary/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active',
     selected && 'bg-background-tertiary'
   );
-}
-
-function safeFileName(name: string): string {
-  return (
-    name
-      .trim()
-      .replace(/[^a-zA-Z0-9._-]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'workspace'
-  );
-}
-
-export function workspaceOutputPath(
-  workspace: Workspace,
-  productType: 'export',
-  fileName: string
-): string {
-  const output =
-    workspace.productOutputFolders.find((candidate) =>
-      candidate.productTypes.includes(productType)
-    ) ?? workspace.productOutputFolders.find((candidate) => candidate.isDefault);
-  if (!output) return fileName;
-  const separator = output.path.includes('\\') ? '\\' : '/';
-  return `${output.path.replace(/[\\/]+$/, '')}${separator}${fileName}`;
 }

@@ -100,10 +100,25 @@ session behavior. Session search still works across workspaces when **All worksp
 The agent receives named output paths and product types as structured, non-secret session context.
 Use specific destinations for their matching product types and the default destination otherwise.
 
-Workspace metadata exports default to an output that supports `export`, falling back to the default
-output folder. Other generated artifacts are created by the existing agent tools, which receive the
-same routing context. Save dialogs or extensions that own an independent destination picker may
-still ask you where to save because gosling does not yet have one universal artifact-export router.
+gosling's artifact router applies the same rule to every Desktop-owned save, export, and native
+download. It recognizes documents, spreadsheets, presentations, images, video, code, data,
+exports, and other files. Workspace and session exports use an `export` destination; **Save a
+copy** in the Outputs pane uses the artifact's type; browser-style downloads are placed directly in
+the matching folder with a collision-safe name. A save dialog still lets you deliberately choose a
+different location.
+
+Artifacts opened from a chat retain that session's pinned workspace, even after the active
+workspace changes. An unavailable or deleted pinned workspace never silently redirects the save to
+another workspace. Missing outputs show a relink error, or—when **Allow explicit creation if
+missing** is enabled—ask before creating the directory. If a native download cannot be routed,
+gosling shows a warning instead of silently claiming it used the workspace. Rapid workspace
+switches are ordered so a slower validation of an older selection cannot restore its download
+destination.
+
+The router never moves an already-generated file. **Save a copy** copies the complete source file,
+not a truncated preview. Direct absolute-path writes performed inside an independent third-party
+extension or agent tool remain controlled by that tool and the user's permissions; app updates,
+automatic transcript archives, and configuration files keep their dedicated storage locations.
 
 ## Workspace actions
 
@@ -134,20 +149,22 @@ storage. Workspace definitions and credentials do not.
 
 ## Troubleshooting
 
-| Symptom | What to do |
-| ------- | ---------- |
-| Primary folder warning | Edit the workspace and choose a current directory. A new chat cannot start until it is relinked. |
-| Optional folder warning | Relink or remove the reference; other workspace features remain usable. |
-| Credential missing or needs authentication | Create/update a local secure profile and relink the default binding. |
-| Deleted profile on resume | Relink the workspace/session dependency; gosling does not choose another profile automatically. |
-| Output folder missing | Enable explicit creation, save, then choose **Create now**, or select an existing folder. |
-| Chats seem hidden | Select **All workspaces** in the Workspaces section. |
+| Symptom                                    | What to do                                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Primary folder warning                     | Edit the workspace and choose a current directory. A new chat cannot start until it is relinked. |
+| Optional folder warning                    | Relink or remove the reference; other workspace features remain usable.                          |
+| Credential missing or needs authentication | Create/update a local secure profile and relink the default binding.                             |
+| Deleted profile on resume                  | Relink the workspace/session dependency; gosling does not choose another profile automatically.  |
+| Output folder missing                      | Enable explicit creation, save, then choose **Create now**, or select an existing folder.        |
+| Chats seem hidden                          | Select **All workspaces** in the Workspaces section.                                             |
 
 ## Current limits
 
 - Workspace definitions are local only; cloud/team synchronization is not included.
 - Extension defaults are not stored per workspace because current extension configuration is not
   cleanly session-scoped.
+- An independent third-party tool that writes directly to an explicit absolute path does not pass
+  through the Desktop save/download router; Gosling-owned export, Outputs, and download surfaces do.
 - Credential network testing is reported as unsupported unless a provider exposes a safe validation
   hook; configured status currently proves required secure values are present, not that a remote
   provider accepted them.

@@ -22,14 +22,20 @@ import { ScrollArea } from '../ui/scroll-area';
 import { SearchView } from '../conversation/SearchView';
 import { Skeleton } from '../ui/skeleton';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
 import { errorMessage } from '../../utils/conversionUtils';
 import { writeTextToClipboard } from '../../utils/clipboard';
 import { groupSessionsByDate, sessionActivityAt, type DateGroup } from '../../utils/dateUtils';
 import {
   acpDeleteSession,
-  acpExportSession,
   acpForkSession,
   acpListSessions,
   acpRenameSession,
@@ -48,6 +54,8 @@ import {
   getTrackedArchiveFile,
   removeTrackedArchiveFile,
 } from '../../sessionArchive';
+import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
+import { saveSessionArtifactExport } from '../../utils/sessionArtifactExport';
 
 const i18n = defineMessages({
   editSessionTitle: { id: 'sessions.edit.title', defaultMessage: 'Edit Session Description' },
@@ -356,6 +364,7 @@ function archiveTimestamp(session: SessionListItem): string {
 export default function SessionListPane({ mode, onSelectSession }: SessionListPaneProps) {
   const intl = useIntl();
   const navigate = useNavigate();
+  const { saveArtifact } = useArtifactRouter();
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [isPrefetchingSessions, setIsPrefetchingSessions] = useState(false);
   const [dateGroups, setDateGroups] = useState<DateGroup[]>([]);
@@ -416,10 +425,7 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
           startTransition(() => {
             setSessions((prev) => {
               const seen = new Set(prev.map((session) => session.id));
-              return [
-                ...prev,
-                ...response.sessions.filter((session) => !seen.has(session.id)),
-              ];
+              return [...prev, ...response.sessions.filter((session) => !seen.has(session.id))];
             });
           });
         }
@@ -736,24 +742,15 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
       event.stopPropagation();
 
       try {
-        const json = await acpExportSession(session.id);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = `${session.name}.json`;
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
-        URL.revokeObjectURL(url);
-        toast.success(intl.formatMessage(i18n.exportSuccess));
+        const result = await saveSessionArtifactExport(session, saveArtifact);
+        if (!result.canceled) toast.success(intl.formatMessage(i18n.exportSuccess));
       } catch (exportError) {
         // Bind success to the export actually resolving; on failure surface an
         // error toast instead of leaving the async handler to reject silently.
         toast.error(`Failed to export session: ${errorMessage(exportError, 'Unknown error')}`);
       }
     },
-    [intl]
+    [intl, saveArtifact]
   );
 
   const handleShareSessionNostr = useCallback(
@@ -812,8 +809,9 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
               <Calendar className="mr-1 h-3 w-3 flex-shrink-0" />
               <span>
                 {formatMessageTimestamp(
-                  Date.parse(mode === 'archived' ? archiveTimestamp(session) : sessionActivityAt(session)) /
-                    1000
+                  Date.parse(
+                    mode === 'archived' ? archiveTimestamp(session) : sessionActivityAt(session)
+                  ) / 1000
                 )}
               </span>
             </div>
@@ -1005,9 +1003,7 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
           <div className="mt-4 flex h-full flex-col items-center justify-center text-text-secondary">
             <MessageSquareText className="mb-4 h-12 w-12" />
             <p className="mb-2 text-lg">
-              {intl.formatMessage(
-                mode === 'archived' ? i18n.noMatchingArchives : i18n.noMatching
-              )}
+              {intl.formatMessage(mode === 'archived' ? i18n.noMatchingArchives : i18n.noMatching)}
             </p>
             <p className="text-sm">{intl.formatMessage(i18n.noMatchingDesc)}</p>
           </div>
@@ -1073,7 +1069,9 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
             >
               <div
                 className={`absolute inset-0 transition-opacity duration-300 ${
-                  isLoading || showSkeleton ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                  isLoading || showSkeleton
+                    ? 'opacity-100 z-10'
+                    : 'opacity-0 z-0 pointer-events-none'
                 }`}
               >
                 <div className="space-y-8">

@@ -4,6 +4,6 @@ The initial charter and Gate 1 plan are the baseline. Material scope, architectu
 contract, sequencing, or prevention-rule changes are appended here and cross-linked
 from the affected artifacts.
 
-| PC | Date | Gate | Kind | Summary | Evidence |
-|---|---|---|---|---|---|
-
+| PC     | Date       | Gate | Kind               | Summary                                                                                                                                                                                                                                                                                                                                                                         | Evidence                                                                                                                        |
+| ------ | ---------- | ---- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| PC-001 | 2026-07-18 | 5–8  | scope/architecture | Reopen bounded REQ-025 and add a universal application-owned artifact router. A shared classifier selects a matching/default workspace output; Electron performs save/copy and native-download placement; session/workspace exports and the artifact workbench migrate to the seam. App updates, configuration, and transcript archives keep their dedicated storage contracts. | `docs/adr/0006-universal-artifact-router.md`; `audits/pc-001-artifact-router-audit.md`; `evidence/pc-001.md`; REQ-025 verified. |

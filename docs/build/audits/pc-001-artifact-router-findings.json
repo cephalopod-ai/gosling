@@ -1,0 +1,384 @@
+[
+  {
+    "id": "IOP-GOS-001",
+    "title": "Malformed base64 could be reported as a saved artifact",
+    "domain": "Input-Output-Path",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/utils/artifactSave.ts",
+        "lines": "14-27",
+        "symbol": "decodeBase64",
+        "quote": "throw new Error('The artifact contains invalid base64 data')",
+        "note": "Repair boundary added after the audit found direct permissive Buffer.from decoding."
+      }
+    ],
+    "observed": "Malformed base64 could decode permissively, be written, and return success.",
+    "expected_boundary": "Invalid encoded content aborts before a target file is written.",
+    "failure_mechanism": "The save helper trusted Buffer.from base64 decoding without validating alphabet, padding, or round-trip integrity.",
+    "break_it_angle": "Save not!base64 as a generated image and inspect the filesystem.",
+    "impact": "A generated document or image could be silently corrupted while the UI reported success.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "reversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "safe"
+    },
+    "adjacent": ["partial output presented complete", "format confusion"],
+    "mitigation": {
+      "patterns": ["strict boundary decoding", "postcondition-derived success"],
+      "minimal_repair": "Validate base64 and decode/re-encode equivalence before writing.",
+      "local_guardrail": "Leave no target file on validation failure.",
+      "behavior_test": "Malformed base64 rejects and the target remains absent."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "One main-process helper and filesystem regression close the boundary.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": [
+      "artifactSave malformed-base64 filesystem regression",
+      "full Desktop suite"
+    ],
+    "non_goals": ["inspect or transcode valid image/document bytes"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "Permissive decode followed by unconditional write/success was a deterministic code path."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Workflow-GUI",
+        "reason": "The corrupt write previously produced a success indication."
+      }
+    ]
+  },
+  {
+    "id": "IOP-GOS-002",
+    "title": "Concurrent downloads could reserve the same filename",
+    "domain": "Input-Output-Path",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/utils/artifactDownloads.ts",
+        "lines": "49-69",
+        "symbol": "installArtifactDownloadRouter",
+        "quote": "reservedPaths.add(destination)",
+        "note": "Reservation added after the audit found filesystem-only check-then-act selection."
+      }
+    ],
+    "observed": "Two will-download events could both observe the same path as absent before either file existed.",
+    "expected_boundary": "In-flight destinations participate in collision selection.",
+    "failure_mechanism": "The uniqueness check considered disk state but not concurrent reservations.",
+    "break_it_angle": "Start two downloads named brief.pdf in the same event turn.",
+    "impact": "Downloads could contend for or overwrite one workspace artifact path.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "compensatable",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": ["check-then-act race", "output overwrite"],
+    "mitigation": {
+      "patterns": ["in-flight reservation", "collision-safe naming"],
+      "minimal_repair": "Reserve the selected path until Electron reports the download done.",
+      "local_guardrail": "Include reservations and existing files in the same name predicate.",
+      "behavior_test": "Two simultaneous names resolve to base and numbered paths."
+    },
+    "implementation_assessment": {
+      "complexity": "cross_process_coordination",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "The coordination is process-local to one Electron session and requires a focused event regression.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": [
+      "simultaneous will-download reservation regression",
+      "full Desktop suite"
+    ],
+    "non_goals": ["coordinate downloads across separate Gosling processes"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The two event callbacks deterministically shared a filesystem-only availability predicate."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Concurrency",
+        "reason": "The defect is a check-then-act collision between in-flight events."
+      }
+    ]
+  },
+  {
+    "id": "WFG-GOS-008",
+    "title": "Unroutable downloads silently fell back outside the workspace",
+    "domain": "Workflow-GUI",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/contexts/ArtifactRouterContext.tsx",
+        "lines": "72-80",
+        "symbol": "handleUnroutedDownload",
+        "quote": "could not use a workspace output folder",
+        "note": "Typed feedback added after the audit found silent returns in will-download."
+      }
+    ],
+    "observed": "A missing or rejected routing config returned without setting a path or notifying the renderer.",
+    "expected_boundary": "If a download cannot honor the workspace, the operator is told and given a recovery action.",
+    "failure_mechanism": "The main-process listener treated absence of a route as a neutral no-op while Electron continued its default behavior.",
+    "break_it_angle": "Make the configured output inaccessible and initiate a native download.",
+    "impact": "The user searches the workspace while the artifact lands elsewhere.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "user-visible",
+      "reversibility": "reversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "safe"
+    },
+    "adjacent": ["missing output folder", "stale native routing config"],
+    "mitigation": {
+      "patterns": ["fail-visible fallback", "typed cross-process signal"],
+      "minimal_repair": "Emit an event from every unrouted branch and show a relink warning.",
+      "local_guardrail": "Do not claim or toast workspace success for an unrouted download.",
+      "behavior_test": "Missing config invokes the warning callback with the filename."
+    },
+    "implementation_assessment": {
+      "complexity": "operator_ux",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "One typed IPC event connects the already-known main failure to actionable renderer feedback.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": [
+      "unrouted callback regression",
+      "renderer warning regression",
+      "full Desktop suite"
+    ],
+    "non_goals": ["guess an alternate workspace destination"],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The no-config branch deterministically returned with no renderer signal."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Input-Output-Path",
+        "reason": "The silent status mismatch changed the actual destination."
+      }
+    ]
+  },
+  {
+    "id": "IOP-GOS-003",
+    "title": "In-memory artifact saves lacked a resource bound",
+    "domain": "Input-Output-Path",
+    "severity": "Medium",
+    "confidence": "Likely",
+    "evidence_basis": "simulation-reasoned",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/utils/artifactSave.ts",
+        "lines": "7,34-41",
+        "symbol": "MAX_ARTIFACT_CONTENT_LENGTH",
+        "quote": "The in-memory artifact is too large to save safely",
+        "note": "Bound added after the audit found unbounded renderer content and base64 allocation."
+      }
+    ],
+    "observed": "The save helper accepted an arbitrary-length content string and could allocate decoded bytes in the main process.",
+    "expected_boundary": "In-memory artifact payloads have an explicit bound; large existing files use streaming copy.",
+    "failure_mechanism": "Neither the renderer save seam nor the main helper capped content length.",
+    "break_it_angle": "Submit a very large embedded tool result and observe main-process memory pressure.",
+    "impact": "Desktop responsiveness or availability could degrade; runtime exhaustion was not reproduced.",
+    "operational_impact": {
+      "blast_radius": "Service",
+      "side_effect_class": "process",
+      "reversibility": "reversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": ["base64 allocation amplification", "oversized tool output"],
+    "mitigation": {
+      "patterns": ["resource bound", "stream existing files"],
+      "minimal_repair": "Reject in-memory content above 256 MiB before opening the dialog.",
+      "local_guardrail": "Keep file-source copies on the filesystem path rather than materializing preview bytes.",
+      "behavior_test": "Injected small cap rejects before destination selection."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "A centralized size policy covers every content save without changing file-copy behavior.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": ["oversized content regression", "full Desktop suite"],
+    "non_goals": ["run a destructive memory-exhaustion drill"],
+    "patch_priority": 2,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Likely",
+      "rationale": "The missing bound was static; actual OOM or stall behavior was not reproduced."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Reliability",
+        "reason": "The consequence is main-process resource pressure."
+      }
+    ]
+  },
+  {
+    "id": "IOP-GOS-004",
+    "title": "Unicode-heavy artifact names could exceed filesystem byte limits",
+    "domain": "Input-Output-Path",
+    "severity": "Low",
+    "confidence": "Likely",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/utils/artifactRouting.ts",
+        "lines": "103-140",
+        "symbol": "safeArtifactFileName",
+        "quote": "const stemBudget = MAX_FILENAME_BYTES - textEncoder.encode(extension).length",
+        "note": "UTF-8 byte truncation added after the audit found a JavaScript character-count cap at the portable filename boundary."
+      }
+    ],
+    "observed": "A multi-byte Unicode filename could remain under 180 JavaScript characters while exceeding a common filesystem component byte limit.",
+    "expected_boundary": "Every proposed leaf name fits the router's UTF-8 byte budget without splitting a code point or losing its bounded extension.",
+    "failure_mechanism": "The sanitizer measured UTF-16 string length instead of encoded filesystem bytes.",
+    "break_it_angle": "Route an 80-emoji PNG title and measure the proposed leaf in UTF-8 bytes.",
+    "impact": "A generated artifact save or native download could fail despite a syntactically valid title.",
+    "operational_impact": {
+      "blast_radius": "Local",
+      "side_effect_class": "file",
+      "reversibility": "reversible",
+      "operator_visibility": "visible",
+      "rerun_safety": "safe"
+    },
+    "adjacent": [
+      "filesystem portability",
+      "extension loss",
+      "split Unicode code point"
+    ],
+    "mitigation": {
+      "patterns": ["UTF-8 byte budget", "code-point-safe truncation"],
+      "minimal_repair": "Truncate shared portable filenames to 180 UTF-8 bytes and reserve a bounded extension budget.",
+      "local_guardrail": "Apply the sanitizer before both explicit default paths and native download destinations.",
+      "behavior_test": "An 80-emoji PNG name is at most 180 bytes, retains .png, and contains no replacement character."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "One pure shared sanitizer and boundary regression cover all routed artifact names.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": [
+      "Unicode filename byte-bound regression",
+      "full Desktop suite"
+    ],
+    "non_goals": ["model every filesystem-specific normalization rule"],
+    "patch_priority": 2,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Likely",
+      "rationale": "The over-budget encoded output was deterministic; native rejection was not exercised on every supported filesystem."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Reliability",
+        "reason": "The primary consequence is a failed save/download for a valid artifact."
+      }
+    ]
+  },
+  {
+    "id": "CON-GOS-002",
+    "title": "Older async validation could restore a stale workspace download route",
+    "domain": "Concurrency",
+    "severity": "Medium",
+    "confidence": "Likely",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/utils/artifactRoutingRegistry.ts",
+        "lines": "20-42",
+        "symbol": "ArtifactRoutingRegistry.update",
+        "quote": "if (this.revisions.get(webContentsId) !== revision) { return false; }",
+        "note": "Revision guard added after the audit found awaited validators writing a shared map without ordering protection."
+      }
+    ],
+    "observed": "An earlier routing update could finish validation after a newer update and overwrite the newer per-window config; cleanup could likewise be undone by an in-flight validator.",
+    "expected_boundary": "Only the most recently received config or clear operation may publish routing state.",
+    "failure_mechanism": "Async filesystem validation separated request ordering from the final shared-map write, with no revision check around the await.",
+    "break_it_angle": "Hold validation for workspace A, publish validated workspace B, then release A; also clear the window before releasing a pending validator.",
+    "impact": "A native download could be routed into the previously active workspace output folder.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "compensatable",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": [
+      "stale write",
+      "ordering dependency",
+      "window-cleanup resurrection"
+    ],
+    "mitigation": {
+      "patterns": ["monotonic revision", "commit-after-await guard"],
+      "minimal_repair": "Assign a per-window revision before validation and commit only when it remains current.",
+      "local_guardrail": "Clearing a window also advances its revision so pending validation cannot restore state.",
+      "behavior_test": "Forced out-of-order validations retain the newer config and clear-during-validation remains empty."
+    },
+    "implementation_assessment": {
+      "complexity": "cross_process_coordination",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "A focused registry makes publication ordering explicit without changing renderer or Electron Session contracts.",
+      "cost_drivers": ["modules", "tests"]
+    },
+    "validation": [
+      "forced out-of-order validation regression",
+      "clear-during-validation regression",
+      "full Desktop suite"
+    ],
+    "non_goals": [
+      "serialize unrelated windows",
+      "cancel filesystem validation already in progress"
+    ],
+    "patch_priority": 1,
+    "reviewed_by": ["codex-root"],
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Likely",
+      "rationale": "The unguarded stale-write mechanism was source-confirmed and forced-interleave tested after repair; a packaged Electron misroute was not observed."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Input-Output-Path",
+        "reason": "The stale routing state changes the native download destination."
+      }
+    ]
+  }
+]

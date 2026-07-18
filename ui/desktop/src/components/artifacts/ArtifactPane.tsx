@@ -6,8 +6,10 @@ import {
   FileOutput,
   FolderOpen,
   PanelRightClose,
+  Save,
   X,
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { defineMessages, useIntl } from '../../i18n';
 import { useArtifactWorkbench } from '../../contexts/ArtifactWorkbenchContext';
 import { cn } from '../../utils';
@@ -15,6 +17,8 @@ import MarkdownContent from '../MarkdownContent';
 import { Button } from '../ui/button';
 import { addSandboxCsp, parseCsv } from './artifactUtils';
 import type { ArtifactTab } from './types';
+import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
+import { errorMessage } from '../../utils/conversionUtils';
 
 const i18n = defineMessages({
   outputs: { id: 'artifactPane.outputs', defaultMessage: 'Outputs' },
@@ -38,6 +42,12 @@ const i18n = defineMessages({
   copyPath: { id: 'artifactPane.copyPath', defaultMessage: 'Copy path' },
   reveal: { id: 'artifactPane.reveal', defaultMessage: 'Reveal' },
   openExternal: { id: 'artifactPane.openExternal', defaultMessage: 'Open externally' },
+  saveCopy: { id: 'artifactPane.saveCopy', defaultMessage: 'Save a copy' },
+  savedCopy: { id: 'artifactPane.savedCopy', defaultMessage: 'Artifact copy saved' },
+  saveCopyFailed: {
+    id: 'artifactPane.saveCopyFailed',
+    defaultMessage: 'Unable to save artifact: {error}',
+  },
 });
 
 interface PreviewData {
@@ -203,6 +213,7 @@ function Preview({ tab, data }: { tab: ArtifactTab; data: PreviewData }) {
 
 export function ArtifactPane() {
   const intl = useIntl();
+  const { saveArtifact } = useArtifactRouter();
   const {
     activeTab,
     activeTabId,
@@ -282,6 +293,38 @@ export function ArtifactPane() {
   const filePath = activeTab?.source.type === 'file' ? activeTab.source.path : null;
   const fileBaseDirectory =
     activeTab?.source.type === 'file' ? activeTab.source.baseDirectory : undefined;
+
+  const saveCopy = async () => {
+    if (!activeTab) return;
+    try {
+      const source =
+        activeTab.source.type === 'file'
+          ? {
+              type: 'file' as const,
+              path: activeTab.source.path,
+              baseDirectory: activeTab.source.baseDirectory,
+            }
+          : {
+              type: 'content' as const,
+              content: activeTab.source.content,
+              encoding: activeTab.source.encoding,
+            };
+      const result = await saveArtifact({
+        workspaceId: activeTab.workspaceId,
+        mimeType: mimeTypeForTab(activeTab),
+        suggestedName: activeTab.title,
+        title: intl.formatMessage(i18n.saveCopy),
+        source,
+      });
+      if (!result.canceled) toast.success(intl.formatMessage(i18n.savedCopy));
+    } catch (cause) {
+      toast.error(
+        intl.formatMessage(i18n.saveCopyFailed, {
+          error: errorMessage(cause, 'Unknown error'),
+        })
+      );
+    }
+  };
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border-primary bg-background-primary">
@@ -378,6 +421,16 @@ export function ArtifactPane() {
           <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-text-secondary">
             {filePath ?? activeTab.title}
           </span>
+          <Button
+            variant="ghost"
+            size="xs"
+            title={intl.formatMessage(i18n.saveCopy)}
+            aria-label={intl.formatMessage(i18n.saveCopy)}
+            disabled={loading || Boolean(preview?.error)}
+            onClick={() => void saveCopy()}
+          >
+            <Save className="h-3.5 w-3.5" />
+          </Button>
           {filePath && (
             <>
               <Button

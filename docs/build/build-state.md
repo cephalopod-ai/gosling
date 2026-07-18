@@ -26,9 +26,15 @@ accessible sidebar management, and regression coverage.
 | 3 — Boundaries and harness  | complete | canonical SDK DTOs; `evidence/gate-3.md`                                     |
 | 4 — Backend vertical slice  | complete | workspace/session/credential backend; `evidence/gate-4.md`                   |
 | 5 — Desktop vertical slice  | complete | Desktop UI/session integration; `evidence/gate-5.md`                         |
-| 6 — Audit and repair        | complete | security/concurrency/LLM audit; `evidence/gate-6.md`                          |
-| 7 — Documentation           | complete | user/operator/distribution docs; `evidence/gate-7.md`                         |
-| 8 — Acceptance and handoff  | complete | `evidence/gate-8.md`; all traceability rows closed                            |
+| 6 — Audit and repair        | complete | security/concurrency/LLM audit; `evidence/gate-6.md`                         |
+| 7 — Documentation           | complete | user/operator/distribution docs; `evidence/gate-7.md`                        |
+| 8 — Acceptance and handoff  | complete | `evidence/gate-8.md`; all traceability rows closed                           |
+
+## Plan-change status
+
+| Change                             | Status   | Exit evidence                                                                    |
+| ---------------------------------- | -------- | -------------------------------------------------------------------------------- |
+| PC-001 — universal artifact router | complete | `evidence/pc-001.md`, `audits/pc-001-artifact-router-audit.md`, REQ-025 verified |
 
 ## Current decisions
 
@@ -46,8 +52,9 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-All gates are complete, the acceptance evidence is committed, and local `main` matches
-`origin/main`. No continuation action is required for this campaign.
+PC-001 is complete. All Gosling-owned Desktop artifact saves, exports, Outputs copies, and native
+downloads use the workspace-aware router. The implementation is validated and ready for a local
+checkpoint commit; remote synchronization remains outside this invocation.
 
 ## Resume verification
 

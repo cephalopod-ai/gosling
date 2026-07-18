@@ -29,4 +29,5 @@ export interface ArtifactTab {
   kind: ArtifactKind;
   source: ArtifactSource;
   title: string;
+  workspaceId?: string;
 }

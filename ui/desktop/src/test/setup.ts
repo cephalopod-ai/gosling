@@ -91,6 +91,8 @@ Object.defineProperty(window, 'electron', {
     setWakelockActive: vi.fn(() => Promise.resolve(true)),
     reloadApp: vi.fn(),
     showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })),
+    saveArtifact: vi.fn(() => Promise.resolve({ canceled: true })),
+    setArtifactRoutingConfig: vi.fn(() => Promise.resolve(true)),
     getIsFullScreen: vi.fn(() => Promise.resolve(false)),
     on: vi.fn(),
     off: vi.fn(),

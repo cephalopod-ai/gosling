@@ -21,6 +21,7 @@ interface OpenContentInput {
   encoding?: 'base64' | 'utf8';
   mimeType?: string;
   title: string;
+  workspaceId?: string;
 }
 
 interface ArtifactWorkbenchValue {
@@ -29,7 +30,7 @@ interface ArtifactWorkbenchValue {
   closeTab: (id: string) => void;
   isOpen: boolean;
   openContent: (input: OpenContentInput) => void;
-  openFile: (path: string, baseDirectory?: string) => void;
+  openFile: (path: string, baseDirectory?: string, workspaceId?: string) => void;
   resolveFilePath: (id: string, path: string) => void;
   setActiveTabId: (id: string) => void;
   setIsOpen: (isOpen: boolean) => void;
@@ -86,13 +87,14 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
     localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
   }, [activeTabId, isOpen, tabs, width]);
 
-  const openFile = useCallback((path: string, baseDirectory?: string) => {
+  const openFile = useCallback((path: string, baseDirectory?: string, workspaceId?: string) => {
     setTabs((current) => {
       const existing = current.find(
         (tab) =>
           tab.source.type === 'file' &&
           tab.source.path === path &&
-          tab.source.baseDirectory === baseDirectory
+          tab.source.baseDirectory === baseDirectory &&
+          tab.workspaceId === workspaceId
       );
       if (existing) {
         setActiveTabId(existing.id);
@@ -103,6 +105,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
         kind: artifactKindFromPath(path),
         source: { type: 'file', path, baseDirectory },
         title: artifactTitleFromPath(path),
+        workspaceId,
       };
       setActiveTabId(tab.id);
       return [...current, tab];
@@ -122,6 +125,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
         mimeType,
       },
       title: input.title,
+      workspaceId: input.workspaceId,
     };
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);

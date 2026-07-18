@@ -76,6 +76,7 @@ interface ProgressiveMessageListProps {
     userData: Record<string, unknown>
   ) => Promise<boolean>;
   workingDirectory?: string;
+  workspaceId?: string;
 }
 
 interface MessageRenderIndex {
@@ -117,6 +118,7 @@ export default function ProgressiveMessageList({
   onRenderingComplete,
   submitElicitationResponse,
   workingDirectory,
+  workspaceId,
 }: ProgressiveMessageListProps) {
   const intl = useIntl();
   const [renderedCount, setRenderedCount] = useState(() => {
@@ -400,6 +402,7 @@ export default function ProgressiveMessageList({
                   }
                   submitElicitationResponse={submitElicitationResponse}
                   workingDirectory={workingDirectory}
+                  workspaceId={workspaceId}
                 />
               )}
             </div>
@@ -420,6 +423,7 @@ export default function ProgressiveMessageList({
     messageRenderIndex,
     submitElicitationResponse,
     workingDirectory,
+    workspaceId,
     getPreviousResolvedModel,
     getResolvedModel,
     hasModelSwitchRecordSincePreviousResolvedModel,

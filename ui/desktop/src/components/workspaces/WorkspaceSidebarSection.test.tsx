@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acpExportWorkspace } from '../../acp/workspaces';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
+import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
 import { WorkspaceSidebarSection } from './WorkspaceSidebarSection';
 
 vi.mock('../../acp/workspaces', () => ({
@@ -11,6 +12,10 @@ vi.mock('../../acp/workspaces', () => ({
 
 vi.mock('../../contexts/WorkspaceContext', () => ({
   useWorkspace: vi.fn(),
+}));
+
+vi.mock('../../contexts/ArtifactRouterContext', () => ({
+  useArtifactRouter: vi.fn(),
 }));
 
 vi.mock('./WorkspaceEditorDialog', () => ({
@@ -44,10 +49,15 @@ describe('WorkspaceSidebarSection', () => {
   const setSessionWorkspaceFilterId = vi.fn();
   const duplicateWorkspace = vi.fn();
   const deleteWorkspace = vi.fn();
+  const saveArtifact = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    vi.mocked(useArtifactRouter).mockReturnValue({
+      saveArtifact,
+      setVisibleSessionWorkspaceId: vi.fn(),
+    });
     vi.mocked(useWorkspace).mockReturnValue({
       workspaces: [
         {
@@ -158,26 +168,19 @@ describe('WorkspaceSidebarSection', () => {
   it('defaults metadata exports to the matching workspace output folder', async () => {
     const user = userEvent.setup();
     vi.mocked(acpExportWorkspace).mockResolvedValue('{"schemaVersion":1}\n');
-    Object.assign(window.electron, {
-      showSaveDialog: vi.fn().mockResolvedValue({
-        canceled: false,
-        filePath: '/projects/annual-meeting/documents/Annual-Meeting.gosling-workspace.json',
-      }),
-      writeFile: vi.fn().mockResolvedValue(true),
-    });
+    saveArtifact.mockResolvedValue({ canceled: false });
     render(<WorkspaceSidebarSection />);
 
     await user.click(screen.getByRole('button', { name: 'Actions for Annual Meeting' }));
     await user.click(screen.getByRole('menuitem', { name: 'Export metadata' }));
 
-    expect(window.electron.showSaveDialog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        defaultPath: '/projects/annual-meeting/documents/Annual-Meeting.gosling-workspace.json',
-      })
-    );
-    expect(window.electron.writeFile).toHaveBeenCalledWith(
-      '/projects/annual-meeting/documents/Annual-Meeting.gosling-workspace.json',
-      '{"schemaVersion":1}\n'
-    );
+    expect(saveArtifact).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      productType: 'export',
+      suggestedName: 'Annual Meeting.gosling-workspace.json',
+      title: 'Export workspace metadata',
+      filters: [{ name: 'Gosling workspace', extensions: ['json'] }],
+      source: { type: 'content', content: '{"schemaVersion":1}\n', encoding: 'utf8' },
+    });
   });
 });

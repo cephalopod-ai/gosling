@@ -121,6 +121,7 @@ interface ToolCallWithResponseProps {
   confirmationContent?: ToolConfirmationData;
   isApprovalClicked?: boolean;
   workingDirectory?: string;
+  workspaceId?: string;
 }
 
 function getSubagentSessionId(
@@ -238,6 +239,7 @@ export default function ToolCallWithResponse({
   confirmationContent,
   isApprovalClicked,
   workingDirectory,
+  workspaceId,
 }: ToolCallWithResponseProps) {
   // Handle both the wrapped ToolResult format and the unwrapped format
   // The server serializes ToolResult<T> as { status: "success", value: T } or { status: "error", error: string }
@@ -277,6 +279,7 @@ export default function ToolCallWithResponse({
             notifications,
             isStreamingMessage,
             workingDirectory,
+            workspaceId,
           }}
         />
         {/* Inline approval UI */}
@@ -388,6 +391,7 @@ interface ToolCallViewProps {
   notifications?: NotificationEvent[];
   isStreamingMessage?: boolean;
   workingDirectory?: string;
+  workspaceId?: string;
 }
 
 interface Progress {
@@ -515,6 +519,7 @@ function ToolCallView({
   notifications,
   isStreamingMessage = false,
   workingDirectory,
+  workspaceId,
 }: ToolCallViewProps) {
   const intl = useIntl();
   const { openFile } = useArtifactWorkbench();
@@ -891,6 +896,7 @@ function ToolCallView({
                 result={result}
                 isStartExpanded={isExpandToolDetails}
                 workingDirectory={workingDirectory}
+                workspaceId={workspaceId}
               />
             </div>
           ))}
@@ -903,7 +909,7 @@ function ToolCallView({
             <button
               key={filePath}
               type="button"
-              onClick={() => openFile(filePath, workingDirectory)}
+              onClick={() => openFile(filePath, workingDirectory, workspaceId)}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-text-secondary hover:bg-background-secondary hover:text-text-primary"
             >
               <FileOutput className="h-3.5 w-3.5 shrink-0" />
@@ -1018,6 +1024,7 @@ interface ToolResultViewProps {
   result: ContentBlock;
   isStartExpanded: boolean;
   workingDirectory?: string;
+  workspaceId?: string;
 }
 
 function ToolResultView({
@@ -1025,6 +1032,7 @@ function ToolResultView({
   result,
   isStartExpanded,
   workingDirectory,
+  workspaceId,
 }: ToolResultViewProps) {
   const intl = useIntl();
   const { openContent, openFile } = useArtifactWorkbench();
@@ -1086,16 +1094,23 @@ function ToolResultView({
                   content: result.data,
                   encoding: 'base64',
                   mimeType: result.mimeType,
+                  workspaceId,
                 });
               } else if (hasText(result)) {
-                openContent({ title, content: result.text, mimeType: 'text/plain' });
+                openContent({
+                  title,
+                  content: result.text,
+                  mimeType: 'text/plain',
+                  workspaceId,
+                });
               } else if (resourceLinkPath) {
-                openFile(resourceLinkPath, workingDirectory);
+                openFile(resourceLinkPath, workingDirectory, workspaceId);
               } else if (embeddedResource && 'text' in embeddedResource) {
                 openContent({
                   title: artifactTitleFromPath(embeddedResource.uri),
                   content: embeddedResource.text,
                   mimeType: embeddedResource.mimeType ?? 'text/plain',
+                  workspaceId,
                 });
               } else if (embeddedResource && 'blob' in embeddedResource) {
                 openContent({
@@ -1103,6 +1118,7 @@ function ToolResultView({
                   content: embeddedResource.blob,
                   encoding: 'base64',
                   mimeType: embeddedResource.mimeType ?? 'application/octet-stream',
+                  workspaceId,
                 });
               }
             }}

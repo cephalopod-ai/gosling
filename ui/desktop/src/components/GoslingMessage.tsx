@@ -35,6 +35,7 @@ interface GoslingMessageProps {
   append: (value: string) => void;
   isStreaming: boolean;
   workingDirectory?: string;
+  workspaceId?: string;
   submitElicitationResponse?: (
     elicitationId: string,
     userData: Record<string, unknown>
@@ -53,6 +54,7 @@ function GoslingMessage({
   append,
   isStreaming,
   workingDirectory,
+  workspaceId,
   submitElicitationResponse,
 }: GoslingMessageProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -103,7 +105,11 @@ function GoslingMessage({
               <div ref={contentRef} className="w-full">
                 <MarkdownContent content={displayText} />
                 {!isStreaming && (
-                  <ArtifactMessageLinks content={displayText} baseDirectory={workingDirectory} />
+                  <ArtifactMessageLinks
+                    content={displayText}
+                    baseDirectory={workingDirectory}
+                    workspaceId={workspaceId}
+                  />
                 )}
               </div>
             )}
@@ -157,6 +163,7 @@ function GoslingMessage({
                         confirmationContent={confirmationContent}
                         isApprovalClicked={isApprovalClicked}
                         workingDirectory={workingDirectory}
+                        workspaceId={workspaceId}
                       />
                     </div>
                   );

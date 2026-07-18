@@ -31,6 +31,7 @@ import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
 import WorkingDirectoriesSummary from './WorkingDirectoriesSummary';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
+import { useArtifactRouter } from '../contexts/ArtifactRouterContext';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -110,6 +111,7 @@ export default function BaseChat({
   const isMobile = useIsMobile();
   const navContext = useNavigationContextSafe();
   const { isOpen: isArtifactWorkbenchOpen } = useArtifactWorkbench();
+  const { setVisibleSessionWorkspaceId } = useArtifactRouter();
   const setView = useNavigation();
   const isNavCollapsed = !navContext?.isNavExpanded;
   const contentClassName = cn('pr-1 pb-10 pt-12', (isMobile || isNavCollapsed) && 'pt-16');
@@ -142,6 +144,12 @@ export default function BaseChat({
     sessionId,
     onStreamFinish,
   });
+
+  useEffect(() => {
+    if (!isActiveSession) return;
+    setVisibleSessionWorkspaceId(session?.workspace_id ?? null);
+    return () => setVisibleSessionWorkspaceId(undefined);
+  }, [isActiveSession, session?.workspace_id, setVisibleSessionWorkspaceId]);
 
   const handleWorkingDirChange = useCallback(
     async (newDir: string) => {
@@ -494,6 +502,7 @@ export default function BaseChat({
                     onMessageUpdate={onMessageUpdate}
                     submitElicitationResponse={submitElicitationResponse}
                     workingDirectory={session?.working_dir}
+                    workspaceId={session?.workspace_id ?? undefined}
                   />
                 </SearchView>
 

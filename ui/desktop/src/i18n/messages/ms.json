@@ -3157,5 +3157,17 @@
   },
   "artifactMessageLinks.openDeliverable": {
     "defaultMessage": "Open {name} in Outputs"
+  },
+  "artifactPane.saveCopy": {
+    "defaultMessage": "Save a copy"
+  },
+  "artifactPane.saveCopyFailed": {
+    "defaultMessage": "Unable to save artifact: {error}"
+  },
+  "artifactPane.savedCopy": {
+    "defaultMessage": "Artifact copy saved"
+  },
+  "artifactRouter.unroutedDownload": {
+    "defaultMessage": "“{fileName}” could not use a workspace output folder. Relink the output and download again."
   }
 }

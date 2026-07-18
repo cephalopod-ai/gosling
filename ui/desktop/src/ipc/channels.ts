@@ -29,6 +29,7 @@ export const desktopCommandChannels = {
 
 export const rendererEventChannels = {
   addExtension: 'add-extension',
+  artifactDownloadUnrouted: 'artifact-download-unrouted',
   fatalError: 'fatal-error',
   findCommand: 'find-command',
   findNext: 'find-next',
@@ -52,6 +53,7 @@ export type RendererEventChannel =
 
 export interface RendererEventPayloads {
   [rendererEventChannels.addExtension]: [url: string];
+  [rendererEventChannels.artifactDownloadUnrouted]: [fileName: string];
   [rendererEventChannels.fatalError]: [message: string];
   [rendererEventChannels.findCommand]: [];
   [rendererEventChannels.findNext]: [];

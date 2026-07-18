@@ -17,6 +17,7 @@ import {
   useArtifactWorkbench,
 } from '../../contexts/ArtifactWorkbenchContext';
 import { ArtifactPane } from '../artifacts/ArtifactPane';
+import { ArtifactRouterProvider } from '../../contexts/ArtifactRouterContext';
 
 const i18n = defineMessages({
   openNavigation: {
@@ -166,10 +167,12 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ activeSessions }) => {
   return (
-    <ArtifactWorkbenchProvider>
-      <NavigationProvider>
-        <AppLayoutContent activeSessions={activeSessions} />
-      </NavigationProvider>
-    </ArtifactWorkbenchProvider>
+    <ArtifactRouterProvider>
+      <ArtifactWorkbenchProvider>
+        <NavigationProvider>
+          <AppLayoutContent activeSessions={activeSessions} />
+        </NavigationProvider>
+      </ArtifactWorkbenchProvider>
+    </ArtifactRouterProvider>
   );
 };

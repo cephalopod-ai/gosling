@@ -14,9 +14,14 @@ const i18n = defineMessages({
 interface ArtifactMessageLinksProps {
   baseDirectory?: string;
   content: string;
+  workspaceId?: string;
 }
 
-export function ArtifactMessageLinks({ content, baseDirectory }: ArtifactMessageLinksProps) {
+export function ArtifactMessageLinks({
+  content,
+  baseDirectory,
+  workspaceId,
+}: ArtifactMessageLinksProps) {
   const intl = useIntl();
   const { openFile } = useArtifactWorkbench();
   const paths = useMemo(() => viewableFilePathsFromMarkdown(content), [content]);
@@ -35,7 +40,7 @@ export function ArtifactMessageLinks({ content, baseDirectory }: ArtifactMessage
             type="button"
             aria-label={label}
             title={label}
-            onClick={() => openFile(filePath, baseDirectory)}
+            onClick={() => openFile(filePath, baseDirectory, workspaceId)}
             className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border-primary bg-background-secondary px-2 py-1 font-mono text-xs text-text-secondary transition-colors hover:bg-background-primary hover:text-text-primary"
           >
             <FileOutput className="h-3.5 w-3.5 shrink-0" />

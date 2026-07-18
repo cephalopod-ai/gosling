@@ -20,16 +20,16 @@ moves, or recursively alters a directory.
 
 The session snapshot is rendered as an internal “Workspace context” system section that names
 folders, access intentions, and product-output routing but excludes every credential detail.
-Application-level product exports use a matching/default output only where an existing
-product-export seam exists; session archives and application updates are not product outputs.
+Application-level product exports use a matching/default output through the universal router in
+ADR-0006; session archives and application updates are not product outputs.
 
 ## Alternatives considered
 
-| Alternative | Why rejected |
-|---|---|
-| Renderer-only path checks | Considered, rejected: alternate clients and TOCTOU bypass. |
-| Prompt-only validation/routing | Considered, rejected: prompt text is not a filesystem safety boundary. |
-| Automatically create all configured outputs | Considered, rejected: unexpected filesystem mutation. |
+| Alternative                                 | Why rejected                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------- |
+| Renderer-only path checks                   | Considered, rejected: alternate clients and TOCTOU bypass.                      |
+| Prompt-only validation/routing              | Considered, rejected: prompt text is not a filesystem safety boundary.          |
+| Automatically create all configured outputs | Considered, rejected: unexpected filesystem mutation.                           |
 | Route session archives into product outputs | Considered, rejected: transcript backup is not a user deliverable product type. |
 
 ## Consequences
@@ -41,4 +41,3 @@ is told only about the saved snapshot and the UI shows warnings.
 ## Dependency record
 
 No new dependency; standard path/filesystem APIs and existing Electron chooser/reveal helpers are reused.
-

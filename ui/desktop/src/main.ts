@@ -56,6 +56,10 @@ import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-insta
 import { isProtocolSafe, WEB_PROTOCOLS } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
 import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
+import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifactRouter';
+import { installArtifactDownloadRouter } from './utils/artifactDownloads';
+import { ArtifactRoutingRegistry } from './utils/artifactRoutingRegistry';
+import { saveArtifactWithDialog } from './utils/artifactSave';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -255,6 +259,18 @@ async function assertRendererFileAccess(filePath: string): Promise<string> {
 }
 
 const rendererArtifactFileGrants = new Set<string>();
+const artifactRoutingRegistry = new ArtifactRoutingRegistry();
+const ARTIFACT_PRODUCT_TYPES = new Set([
+  'code',
+  'data',
+  'document',
+  'export',
+  'image',
+  'other',
+  'presentation',
+  'spreadsheet',
+  'video',
+]);
 
 async function assertRendererArtifactFileAccess(
   filePath: string,
@@ -267,6 +283,42 @@ async function assertRendererArtifactFileAccess(
     return resolvedPath;
   }
   return assertRendererFileAccess(resolvedPath);
+}
+
+async function validateArtifactRoutingConfig(
+  config: ArtifactRoutingConfig
+): Promise<ArtifactRoutingConfig | null> {
+  if (
+    typeof config.workspaceId !== 'string' ||
+    typeof config.workspaceName !== 'string' ||
+    !Array.isArray(config.outputs) ||
+    config.outputs.length > 64
+  ) {
+    return null;
+  }
+
+  const outputs = [];
+  for (const output of config.outputs) {
+    if (
+      typeof output.id !== 'string' ||
+      typeof output.path !== 'string' ||
+      typeof output.isDefault !== 'boolean' ||
+      !Array.isArray(output.productTypes) ||
+      output.productTypes.length === 0 ||
+      !output.productTypes.every((productType) => ARTIFACT_PRODUCT_TYPES.has(productType))
+    ) {
+      continue;
+    }
+    try {
+      const outputPath = await assertRendererFileAccess(output.path);
+      const stats = await fs.stat(outputPath);
+      if (stats.isDirectory()) outputs.push({ ...output, path: outputPath });
+    } catch {
+      continue;
+    }
+  }
+
+  return outputs.length > 0 ? { ...config, outputs } : null;
 }
 
 async function openExternalIfSafe(url: string): Promise<void> {
@@ -1370,6 +1422,16 @@ const createChat = async (
       },
     });
     installBackendCertificateVerifier(mainWindow.webContents.session);
+    installArtifactDownloadRouter(
+      mainWindow.webContents.session,
+      (webContentsId) => artifactRoutingRegistry.get(webContentsId),
+      (webContentsId, fileName) => {
+        const target = BrowserWindow.getAllWindows().find(
+          (window) => window.webContents.id === webContentsId
+        );
+        target?.webContents.send(rendererEventChannels.artifactDownloadUnrouted, fileName);
+      }
+    );
   } catch (error) {
     await cleanupUnregisteredGoslingServeLease();
     throw error;
@@ -1473,6 +1535,10 @@ const createChat = async (
   });
 
   const windowId = mainWindow.id;
+  const webContentsId = mainWindow.webContents.id;
+  mainWindow.webContents.once('destroyed', () => {
+    artifactRoutingRegistry.clear(webContentsId);
+  });
   const url = getAppUrl();
 
   let appPath = '/';
@@ -2462,9 +2528,19 @@ ipcMain.handle('show-message-box', async (_event, options) => {
   return dialog.showMessageBox(options);
 });
 
-ipcMain.handle('show-save-dialog', async (_event, options) => {
-  return dialog.showSaveDialog(options);
+ipcMain.handle('save-artifact', async (_event, request: ArtifactSaveRequest) => {
+  return saveArtifactWithDialog(request, {
+    resolveSource: assertRendererArtifactFileAccess,
+    showSaveDialog: (options) => dialog.showSaveDialog(options),
+  });
 });
+
+ipcMain.handle(
+  'set-artifact-routing-config',
+  async (event, config: ArtifactRoutingConfig | null): Promise<boolean> => {
+    return artifactRoutingRegistry.update(event.sender.id, config, validateArtifactRoutingConfig);
+  }
+);
 
 ipcMain.handle('write-clipboard-text', async (_event, text: string) => {
   clipboard.writeText(text);

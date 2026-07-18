@@ -56,8 +56,20 @@
   "artifactPane.reveal": {
     "defaultMessage": "Reveal"
   },
+  "artifactPane.saveCopy": {
+    "defaultMessage": "Save a copy"
+  },
+  "artifactPane.saveCopyFailed": {
+    "defaultMessage": "Unable to save artifact: {error}"
+  },
+  "artifactPane.savedCopy": {
+    "defaultMessage": "Artifact copy saved"
+  },
   "artifactPane.unsupported": {
     "defaultMessage": "This file type does not have an in-app preview yet."
+  },
+  "artifactRouter.unroutedDownload": {
+    "defaultMessage": "“{fileName}” could not use a workspace output folder. Relink the output and download again."
   },
   "authSettings.activeProviderWarning": {
     "defaultMessage": "This is the active provider. New requests may fail until you configure another credential."
