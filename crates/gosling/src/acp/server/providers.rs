@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::declarative_providers;
+use crate::providers::base::ProviderType;
 use crate::providers::inventory::ensure_refresh_identity_current;
 use crate::providers::provider_secrets;
 use std::str::FromStr;
@@ -34,6 +35,15 @@ fn provider_secret_to_dto(secret: provider_secrets::ProviderSecret) -> ProviderS
     }
 }
 
+fn provider_type_to_dto(provider_type: ProviderType) -> ProviderTypeDto {
+    match provider_type {
+        ProviderType::Preferred => ProviderTypeDto::Preferred,
+        ProviderType::Builtin => ProviderTypeDto::Builtin,
+        ProviderType::Declarative => ProviderTypeDto::Declarative,
+        ProviderType::Custom => ProviderTypeDto::Custom,
+    }
+}
+
 fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEntryDto {
     let stale = ProviderInventoryService::is_stale(&entry);
     ProviderInventoryEntryDto {
@@ -42,7 +52,7 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
         description: entry.description,
         default_model: entry.default_model,
         configured: entry.configured,
-        provider_type: format!("{:?}", entry.provider_type),
+        provider_type: provider_type_to_dto(entry.provider_type),
         category: provider_setup_category_to_dto(entry.category),
         config_keys: entry
             .config_keys

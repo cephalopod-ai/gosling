@@ -2,6 +2,7 @@ import type { RequestPermissionRequest, RequestPermissionResponse } from '@agent
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   cancelAcpPermissionRequestsForSession,
+  isAcpPermissionRequestPending,
   requestAcpPermission,
   resolveAcpPermissionRequest,
 } from '../permissionRequests';
@@ -106,6 +107,22 @@ describe('ACP permission requests', () => {
         optionId: 'reject-once',
       },
     });
+  });
+
+  it('isAcpPermissionRequestPending reports liveness without consuming the request', async () => {
+    const response = requestAcpPermission(permissionRequest('session-1', 'tool-1'));
+
+    expect(isAcpPermissionRequestPending('session-1', 'tool-1')).toBe(true);
+    // A non-consuming check must not resolve or remove the pending request.
+    expect(isAcpPermissionRequestPending('session-1', 'tool-1')).toBe(true);
+    await expectStillPending(response);
+
+    expect(resolveAcpPermissionRequest('session-1', 'tool-1', 'allow_once')).toBe(true);
+    expect(isAcpPermissionRequestPending('session-1', 'tool-1')).toBe(false);
+  });
+
+  it('isAcpPermissionRequestPending is false for an unknown or already-resolved request', () => {
+    expect(isAcpPermissionRequestPending('session-1', 'never-requested')).toBe(false);
   });
 
   it('cancels an older duplicate request for the same session and tool call', async () => {

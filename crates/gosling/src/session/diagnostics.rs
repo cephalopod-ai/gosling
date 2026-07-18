@@ -214,17 +214,17 @@ fn llm_log_name(path: &std::path::Path) -> String {
         .to_string()
 }
 
-pub fn read_tail(path: &std::path::Path, max_lines: usize) -> Option<String> {
-    let content = fs::read_to_string(path).ok()?;
+pub fn read_tail(path: &std::path::Path, max_lines: usize) -> std::io::Result<String> {
+    let content = fs::read_to_string(path)?;
     let lines: Vec<&str> = content.lines().collect();
     let start = lines.len().saturating_sub(max_lines);
-    Some(lines[start..].join("\n"))
+    Ok(lines[start..].join("\n"))
 }
 
-pub fn read_capped(path: &std::path::Path, max_bytes: usize) -> Option<String> {
-    let content = fs::read_to_string(path).ok()?;
+pub fn read_capped(path: &std::path::Path, max_bytes: usize) -> std::io::Result<String> {
+    let content = fs::read_to_string(path)?;
     if content.len() <= max_bytes {
-        return Some(content);
+        return Ok(content);
     }
     let half = max_bytes / 2;
     let head: String = content
@@ -250,7 +250,7 @@ pub fn read_capped(path: &std::path::Path, max_bytes: usize) -> Option<String> {
         chars.collect()
     };
     let omitted = content.len() - head.len() - tail.len();
-    Some(format!(
+    Ok(format!(
         "{}\n\n... ({} bytes omitted) ...\n\n{}",
         head, omitted, tail,
     ))
@@ -274,7 +274,7 @@ pub async fn generate_diagnostics(
     let config_path = config_path();
     let system_info = SystemInfo::collect();
     let is_full = matches!(level, DiagnosticsLevel::Full);
-    let errors: Vec<DiagnosticsError> = Vec::new();
+    let mut errors: Vec<DiagnosticsError> = Vec::new();
 
     let session = if is_full {
         let session_data = session_manager.export_session(session_id).await?;
@@ -285,7 +285,16 @@ pub async fn generate_diagnostics(
 
     let config = if is_full {
         let config_yaml = if config_path.exists() {
-            read_capped(&config_path, CONFIG_MAX_BYTES)
+            match read_capped(&config_path, CONFIG_MAX_BYTES) {
+                Ok(content) => Some(content),
+                Err(e) => {
+                    errors.push(DiagnosticsError {
+                        path: Some(config_path.display().to_string()),
+                        message: format!("failed to read config: {e}"),
+                    });
+                    None
+                }
+            }
         } else {
             None
         };
@@ -300,28 +309,43 @@ pub async fn generate_diagnostics(
     };
 
     let logs = if is_full {
-        DiagnosticsLogs {
-            server: latest_server_log_path().and_then(|path| {
-                read_tail(&path, SERVER_LOG_TAIL_LINES).map(|content| DiagnosticsTextFile {
+        let server = latest_server_log_path().and_then(|path| {
+            match read_tail(&path, SERVER_LOG_TAIL_LINES) {
+                Ok(content) => Some(DiagnosticsTextFile {
                     path: path.display().to_string(),
                     content,
                     truncated: true,
-                })
-            }),
-            llm: recent_llm_log_paths()
-                .into_iter()
-                .filter_map(|path| {
-                    read_capped(&path, LLM_LOG_MAX_BYTES).map(|content| {
-                        let truncated = was_truncated(&content);
-                        DiagnosticsTextFile {
-                            path: path.display().to_string(),
-                            content,
-                            truncated,
-                        }
+                }),
+                Err(e) => {
+                    errors.push(DiagnosticsError {
+                        path: Some(path.display().to_string()),
+                        message: format!("failed to read server log: {e}"),
+                    });
+                    None
+                }
+            }
+        });
+        let llm = recent_llm_log_paths()
+            .into_iter()
+            .filter_map(|path| match read_capped(&path, LLM_LOG_MAX_BYTES) {
+                Ok(content) => {
+                    let truncated = was_truncated(&content);
+                    Some(DiagnosticsTextFile {
+                        path: path.display().to_string(),
+                        content,
+                        truncated,
                     })
-                })
-                .collect(),
-        }
+                }
+                Err(e) => {
+                    errors.push(DiagnosticsError {
+                        path: Some(path.display().to_string()),
+                        message: format!("failed to read LLM log: {e}"),
+                    });
+                    None
+                }
+            })
+            .collect();
+        DiagnosticsLogs { server, llm }
     } else {
         DiagnosticsLogs::default()
     };
@@ -352,4 +376,31 @@ pub async fn generate_diagnostics(
         prompts,
         errors,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_tail_surfaces_the_io_error_instead_of_swallowing_it() {
+        let missing = std::path::Path::new("/nonexistent/gosling-diagnostics-test-fixture.log");
+        let error = read_tail(missing, 50).expect_err("missing file must return Err, not None");
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn read_capped_surfaces_the_io_error_instead_of_swallowing_it() {
+        let missing = std::path::Path::new("/nonexistent/gosling-diagnostics-test-fixture.yaml");
+        let error = read_capped(missing, 1024).expect_err("missing file must return Err, not None");
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn read_capped_still_succeeds_and_truncates_within_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("small.txt");
+        std::fs::write(&path, "hello").unwrap();
+        assert_eq!(read_capped(&path, 1024).unwrap(), "hello");
+    }
 }

@@ -24,6 +24,14 @@ export async function requestAcpPermission(
   });
 }
 
+// Non-consuming check for whether a permission request is still pending, so
+// a caller can validate liveness before an irreversible side effect (e.g. a
+// bulk backend permission mutation) rather than only discovering staleness
+// after the side effect already happened.
+export function isAcpPermissionRequestPending(sessionId: string, toolCallId: string): boolean {
+  return pendingRequests.has(permissionRequestKey(sessionId, toolCallId));
+}
+
 export function resolveAcpPermissionRequest(
   sessionId: string,
   toolCallId: string,
