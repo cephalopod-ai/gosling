@@ -116,6 +116,30 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
   trusted local config remains the fallback after quarantine.
 - Change review: two session files plus this log, no schema or unrelated import
   behavior changed.
+- Commit: `a52862231`.
+
+### Stage 4 — extension secret and process-environment boundaries
+
+- Defects: AUD-009 and AUD-010 fixed.
+- Changes: configured environment values are rehydrated only when a client
+  echoes the exact stored Stdio command/arguments or HTTP URI/headers/socket,
+  preventing same-name endpoint substitution. Inline Python now receives the
+  same allowlisted child environment as Stdio extensions instead of inheriting
+  the server's full process environment.
+- Regression guardrails: Stdio and HTTP endpoint-redirection cases cover each
+  identity field, and a Unix subprocess test verifies an inherited secret is
+  removed by the shared minimal-environment policy.
+- Modularization: `acp/server.rs` and `extension_manager.rs` are >=2000 lines,
+  so both patches remain local and both files stay routed for dedicated
+  modularization.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: `git diff --check` passed; tests not executed by policy.
+- Adversarial review: verified client-supplied values still win on an exact
+  destination, mismatched transport variants cannot cross-match, configured
+  HTTP headers are part of destination identity, and the Inline Python launch
+  adds no environment after applying the allowlist.
+- Change review: two implementation files plus this log; extension transport
+  and lifecycle behavior are otherwise unchanged.
 - Commit: pending.
 
 ## Campaign closeout

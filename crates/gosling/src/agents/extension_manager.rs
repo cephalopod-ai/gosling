@@ -281,6 +281,10 @@ fn minimal_child_environment() -> HashMap<String, String> {
     env
 }
 
+fn apply_minimal_child_environment(command: &mut Command) {
+    command.env_clear().envs(minimal_child_environment());
+}
+
 fn require_str_parameter<'a>(v: &'a serde_json::Value, name: &str) -> Result<&'a str, ErrorData> {
     let v = v.get(name).ok_or_else(|| {
         ErrorData::new(
@@ -1218,6 +1222,7 @@ impl ExtensionManager {
                 std::fs::write(&file_path, code)?;
 
                 let command = Command::new("uvx").configure(|command| {
+                    apply_minimal_child_environment(command);
                     command.arg("--with").arg("mcp");
                     dependencies.iter().flatten().for_each(|dep| {
                         command.arg("--with").arg(dep);
@@ -2234,6 +2239,23 @@ mod tests {
     use rmcp::model::ServerNotification;
 
     use tokio::sync::mpsc;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn minimal_child_environment_drops_inherited_secrets() {
+        let mut command = Command::new("sh");
+        command.env("GOSLING_INHERITED_SECRET", "secret");
+        apply_minimal_child_environment(&mut command);
+        let output = command
+            .arg("-c")
+            .arg("printf %s \"${GOSLING_INHERITED_SECRET-unset}\"")
+            .output()
+            .await
+            .unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+    }
 
     impl ExtensionManager {
         async fn add_mock_extension(&self, name: String, client: McpClientBox) {

@@ -448,18 +448,22 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
 }
 
 /// Restore config-stored plain `envs` (and `env_keys`) on a client-supplied
-/// extension that matches a configured one by name.
+/// extension that matches a configured endpoint exactly.
 ///
 /// The client-facing extension DTO intentionally strips plain `envs` so env
 /// values never leave the server (see `config_to_gosling_extension`). But
 /// clients echo those stripped extensions back at session creation, so
 /// without this merge a session silently loses every configured environment
-/// variable (e.g. a stdio server's `envs:` block in config.yaml). Values the
-/// client did supply win on key collisions; stored `env_keys` are only
-/// adopted when the client sent none.
+/// variable (e.g. a stdio server's `envs:` block in config.yaml). Binding the
+/// merge to command/arguments or URI/headers/socket prevents a client from
+/// redirecting stored secrets by reusing only the configured name. Values the
+/// client did supply win on key collisions; stored `env_keys` are only adopted
+/// when the client sent none.
 fn rehydrate_configured_envs(extension: &mut ExtensionConfig, configured: &[ExtensionConfig]) {
-    let name = extension.name().to_string();
-    let Some(stored) = configured.iter().find(|c| c.name() == name) else {
+    let Some(stored) = configured
+        .iter()
+        .find(|stored| same_extension_secret_destination(extension, stored))
+    else {
         return;
     };
     match (extension, stored) {
@@ -487,6 +491,47 @@ fn rehydrate_configured_envs(extension: &mut ExtensionConfig, configured: &[Exte
             }
         }
         _ => {}
+    }
+}
+
+fn same_extension_secret_destination(
+    candidate: &ExtensionConfig,
+    stored: &ExtensionConfig,
+) -> bool {
+    match (candidate, stored) {
+        (
+            ExtensionConfig::Stdio {
+                name, cmd, args, ..
+            },
+            ExtensionConfig::Stdio {
+                name: stored_name,
+                cmd: stored_cmd,
+                args: stored_args,
+                ..
+            },
+        ) => name == stored_name && cmd == stored_cmd && args == stored_args,
+        (
+            ExtensionConfig::StreamableHttp {
+                name,
+                uri,
+                headers,
+                socket,
+                ..
+            },
+            ExtensionConfig::StreamableHttp {
+                name: stored_name,
+                uri: stored_uri,
+                headers: stored_headers,
+                socket: stored_socket,
+                ..
+            },
+        ) => {
+            name == stored_name
+                && uri == stored_uri
+                && headers == stored_headers
+                && socket == stored_socket
+        }
+        _ => false,
     }
 }
 
@@ -3275,6 +3320,27 @@ extensions:
         }
     }
 
+    fn http_extension(
+        uri: &str,
+        headers: HashMap<String, String>,
+        socket: Option<String>,
+        envs: Envs,
+        env_keys: Vec<String>,
+    ) -> ExtensionConfig {
+        ExtensionConfig::StreamableHttp {
+            name: "muninn".into(),
+            description: String::new(),
+            uri: uri.into(),
+            envs,
+            env_keys,
+            headers,
+            timeout: Some(300),
+            socket,
+            bundled: Some(false),
+            available_tools: vec![],
+        }
+    }
+
     #[test]
     fn rehydrate_configured_envs_restores_stripped_stdio_envs() {
         // The client-facing DTO strips plain `envs` (config_to_gosling_extension),
@@ -3326,6 +3392,102 @@ extensions:
             panic!("expected stdio extension");
         };
         assert!(envs.get_env().is_empty());
+
+        for redirected in [
+            ExtensionConfig::Stdio {
+                name: "muninn".into(),
+                description: String::new(),
+                cmd: "different-server".into(),
+                args: vec!["mcp".into()],
+                envs: Envs::default(),
+                env_keys: vec![],
+                timeout: Some(300),
+                cwd: None,
+                bundled: Some(false),
+                available_tools: vec![],
+            },
+            ExtensionConfig::Stdio {
+                name: "muninn".into(),
+                description: String::new(),
+                cmd: "server-bin".into(),
+                args: vec!["serve".into()],
+                envs: Envs::default(),
+                env_keys: vec![],
+                timeout: Some(300),
+                cwd: None,
+                bundled: Some(false),
+                available_tools: vec![],
+            },
+        ] {
+            let mut redirected = redirected;
+            rehydrate_configured_envs(&mut redirected, &configured);
+            let ExtensionConfig::Stdio { envs, env_keys, .. } = redirected else {
+                panic!("expected stdio extension");
+            };
+            assert!(envs.get_env().is_empty());
+            assert!(env_keys.is_empty());
+        }
+    }
+
+    #[test]
+    fn rehydrate_configured_envs_requires_exact_http_destination() {
+        let configured_headers = HashMap::from([("Authorization".into(), "Bearer token".into())]);
+        let configured = vec![http_extension(
+            "https://mcp.example.test/api",
+            configured_headers.clone(),
+            Some("socket-a".into()),
+            Envs::new([("MUNINN_SECRET".into(), "stored".into())].into()),
+            vec!["MUNINN_SECRET_KEY".into()],
+        )];
+
+        let mut echoed = http_extension(
+            "https://mcp.example.test/api",
+            configured_headers.clone(),
+            Some("socket-a".into()),
+            Envs::default(),
+            vec![],
+        );
+        rehydrate_configured_envs(&mut echoed, &configured);
+        let ExtensionConfig::StreamableHttp { envs, env_keys, .. } = echoed else {
+            panic!("expected HTTP extension");
+        };
+        assert_eq!(
+            envs.get_env().get("MUNINN_SECRET").map(String::as_str),
+            Some("stored")
+        );
+        assert_eq!(env_keys, vec!["MUNINN_SECRET_KEY"]);
+
+        for redirected in [
+            http_extension(
+                "https://attacker.example.test/api",
+                configured_headers.clone(),
+                Some("socket-a".into()),
+                Envs::default(),
+                vec![],
+            ),
+            http_extension(
+                "https://mcp.example.test/api",
+                HashMap::from([("Authorization".into(), "Bearer different".into())]),
+                Some("socket-a".into()),
+                Envs::default(),
+                vec![],
+            ),
+            http_extension(
+                "https://mcp.example.test/api",
+                configured_headers.clone(),
+                Some("socket-b".into()),
+                Envs::default(),
+                vec![],
+            ),
+        ] {
+            let mut redirected = redirected;
+            rehydrate_configured_envs(&mut redirected, &configured);
+            let ExtensionConfig::StreamableHttp { envs, env_keys, .. } = redirected else {
+                panic!("expected HTTP extension");
+            };
+            assert!(envs.get_env().is_empty());
+            assert!(env_keys.is_empty());
+        }
     }
 
     fn new_resource_link(content: &str) -> anyhow::Result<(ResourceLink, NamedTempFile)> {
