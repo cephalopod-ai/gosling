@@ -220,9 +220,14 @@ export default function BaseChat({
       .reverse();
   }, [messages]);
 
-  const chatInputSubmit = (input: UserInput) => {
-    handleSubmit(input);
-  };
+  const chatInputSubmit = useCallback(
+    (input: UserInput) => {
+      scrollRef.current?.scrollToBottom('auto');
+      void handleSubmit(input);
+      window.requestAnimationFrame(() => scrollRef.current?.scrollToBottom('auto'));
+    },
+    [handleSubmit]
+  );
 
   const sessionModel = session?.model_config?.model_name ?? null;
   const sessionProvider = session?.provider_name ?? null;
@@ -282,7 +287,7 @@ export default function BaseChat({
       initialRenderRef.current = false;
       requestScrollToBottom(0, 'auto');
     } else if (scrollRef.current?.isFollowing) {
-      requestScrollToBottom();
+      requestScrollToBottom(0, 'auto');
     }
   }, [messages.length, requestScrollToBottom]);
 

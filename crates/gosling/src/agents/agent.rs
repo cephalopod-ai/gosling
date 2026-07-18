@@ -3,6 +3,7 @@ use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
@@ -75,6 +76,7 @@ const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
 const COMPACTION_THINKING_TEXT: &str = "gosling is compacting the conversation...";
 const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
 const DEFAULT_FRONTEND_INSTRUCTIONS: &str = "The following tools are provided directly by the frontend and will be executed by the frontend when called.";
+const STREAM_CHECKPOINT_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToolCategory {
@@ -2245,6 +2247,9 @@ impl Agent {
                 let mut tools_updated = false;
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
+                let stream_message_id = format!("msg_{}", Uuid::new_v4());
+                let mut last_stream_checkpoint_at: Option<Instant> = None;
+                let mut last_stream_checkpoint_id: Option<String> = None;
 
                 // Track whether this provider turn has already emitted visible
                 // thinking so a later tool-call chunk can suppress replayed
@@ -2266,6 +2271,11 @@ impl Agent {
                             }
 
                             if let Some(response) = response {
+                                let response = if response.id.is_some() {
+                                    response
+                                } else {
+                                    response.with_id(stream_message_id.clone())
+                                };
                                 let ToolCategorizeResult {
                                     frontend_requests,
                                     remaining_requests,
@@ -2326,9 +2336,6 @@ impl Agent {
                                     },
                                 );
 
-                                yield AgentEvent::Message(filtered_response.clone());
-                                tokio::task::yield_now().await;
-
                                 let num_tool_requests = frontend_requests.len() + remaining_requests.len();
                                 if num_tool_requests == 0 {
                                     let text = filtered_response.as_concat_text();
@@ -2336,8 +2343,29 @@ impl Agent {
                                         last_assistant_text.push_str(&text);
                                     }
                                     messages_to_add.push(response);
+
+                                    if let Some(message) = messages_to_add.last() {
+                                        let is_new_message = message.id.as_deref()
+                                            != last_stream_checkpoint_id.as_deref();
+                                        let checkpoint_due = last_stream_checkpoint_at
+                                            .map(|checkpoint| checkpoint.elapsed() >= STREAM_CHECKPOINT_INTERVAL)
+                                            .unwrap_or(true);
+                                        if is_new_message || checkpoint_due {
+                                            session_manager
+                                                .upsert_message(&session_config.id, message)
+                                                .await?;
+                                            last_stream_checkpoint_at = Some(Instant::now());
+                                            last_stream_checkpoint_id = message.id.clone();
+                                        }
+                                    }
+
+                                    yield AgentEvent::Message(filtered_response.clone());
+                                    tokio::task::yield_now().await;
                                     continue;
                                 }
+
+                                yield AgentEvent::Message(filtered_response.clone());
+                                tokio::task::yield_now().await;
 
                                 let mut request_to_response_map = HashMap::new();
                                 let mut request_metadata: HashMap<String, Option<ProviderMetadata>> = HashMap::new();
@@ -2886,7 +2914,7 @@ impl Agent {
                 };
 
                 for msg in &messages_to_add {
-                    session_manager.add_message(&session_config.id, msg).await?;
+                    session_manager.upsert_message(&session_config.id, msg).await?;
                 }
                 conversation.extend(messages_to_add);
 
@@ -4535,6 +4563,75 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             Some("streamed assistant reply")
         );
         assert!(payload.get("message").is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reply_persists_user_input_and_streamed_assistant_checkpoints() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
+        let (agent, session_id) = create_test_agent(
+            temp_dir.path().join("data"),
+            hook_manager,
+            Arc::new(ChunkedTextProvider),
+        )
+        .await?;
+        let session_config = SessionConfig {
+            id: session_id.clone(),
+            max_turns: Some(10),
+            compacted_context: false,
+            tail_limit: None,
+        };
+
+        let reply_stream = agent
+            .reply(Message::user().with_text("hello"), session_config, None)
+            .await?;
+
+        let submitted = agent
+            .config
+            .session_manager
+            .get_session(&session_id, true)
+            .await?;
+        let submitted_messages = submitted.conversation.unwrap();
+        assert_eq!(submitted_messages.messages().len(), 1);
+        assert_eq!(submitted_messages.messages()[0].as_concat_text(), "hello");
+
+        tokio::pin!(reply_stream);
+        let first_event = reply_stream.next().await.transpose()?;
+        let Some(AgentEvent::Message(first_chunk)) = first_event else {
+            panic!("expected the first streamed assistant chunk");
+        };
+        assert_eq!(first_chunk.as_concat_text(), "streamed ");
+
+        let checkpoint = agent
+            .config
+            .session_manager
+            .get_session(&session_id, true)
+            .await?;
+        let checkpoint_messages = checkpoint.conversation.unwrap();
+        assert_eq!(checkpoint_messages.messages().len(), 2);
+        assert_eq!(
+            checkpoint_messages.messages()[1].as_concat_text(),
+            "streamed "
+        );
+
+        while let Some(event) = reply_stream.next().await {
+            event?;
+        }
+
+        let completed = agent
+            .config
+            .session_manager
+            .get_session(&session_id, true)
+            .await?;
+        let completed_messages = completed.conversation.unwrap();
+        assert_eq!(completed_messages.messages().len(), 2);
+        assert_eq!(
+            completed_messages.messages()[1].as_concat_text(),
+            "streamed assistant reply"
+        );
+        assert!(completed_messages.messages()[1].id.is_some());
 
         Ok(())
     }

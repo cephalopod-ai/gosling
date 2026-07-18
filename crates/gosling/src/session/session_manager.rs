@@ -612,6 +612,10 @@ impl SessionManager {
         self.storage.add_message(id, message).await
     }
 
+    pub async fn upsert_message(&self, id: &str, message: &Message) -> Result<()> {
+        self.storage.upsert_message(id, message).await
+    }
+
     pub async fn add_model_switch_record(
         &self,
         id: &str,
@@ -2854,6 +2858,69 @@ impl SessionStorage {
         Ok(())
     }
 
+    async fn upsert_message(&self, session_id: &str, message: &Message) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        let role = role_to_string(&message.role);
+        let content_json = serde_json::to_string(&message.content)?;
+        let metadata_json = serde_json::to_string(&message.metadata)?;
+        let mut updated = false;
+
+        if let Some(message_id) = message.id.as_deref() {
+            let result = sqlx::query(
+                r#"
+                UPDATE messages
+                SET role = ?, content_json = ?, created_timestamp = ?, metadata_json = ?
+                WHERE session_id = ? AND message_id = ?
+            "#,
+            )
+            .bind(&role)
+            .bind(&content_json)
+            .bind(message.created)
+            .bind(&metadata_json)
+            .bind(session_id)
+            .bind(message_id)
+            .execute(&mut *tx)
+            .await?;
+            updated = result.rows_affected() > 0;
+        }
+
+        if !updated {
+            let message_id = message
+                .id
+                .clone()
+                .unwrap_or_else(|| format!("msg_{}_{}", session_id, uuid::Uuid::new_v4()));
+            sqlx::query(
+                r#"
+                INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+            "#,
+            )
+            .bind(message_id)
+            .bind(session_id)
+            .bind(role)
+            .bind(content_json)
+            .bind(message.created)
+            .bind(metadata_json)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("UPDATE session_summaries SET status = 'stale', updated_at = datetime('now') WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn replace_conversation_in_tx(
         tx: &mut sqlx::Transaction<'_, Sqlite>,
         session_id: &str,
@@ -3753,6 +3820,45 @@ mod tests {
         sm.healthy()
             .await
             .expect("a freshly created session store must report healthy");
+    }
+
+    #[tokio::test]
+    async fn upsert_message_replaces_a_stream_checkpoint_in_place() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Streaming checkpoint".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+
+        sm.upsert_message(
+            &session.id,
+            &Message::assistant()
+                .with_id("stream-reply")
+                .with_text("partial"),
+        )
+        .await
+        .unwrap();
+        sm.upsert_message(
+            &session.id,
+            &Message::assistant()
+                .with_id("stream-reply")
+                .with_text("partial response"),
+        )
+        .await
+        .unwrap();
+
+        let reloaded = sm.get_session(&session.id, true).await.unwrap();
+        let messages = reloaded.conversation.unwrap();
+        assert_eq!(reloaded.message_count, 1);
+        assert_eq!(messages.messages().len(), 1);
+        assert_eq!(messages.messages()[0].id.as_deref(), Some("stream-reply"));
+        assert_eq!(messages.messages()[0].as_concat_text(), "partial response");
     }
 
     #[tokio::test]
