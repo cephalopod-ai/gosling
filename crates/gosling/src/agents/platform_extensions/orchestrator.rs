@@ -411,12 +411,19 @@ impl OrchestratorClient {
             return Err(format!("'{}' is not a directory", working_dir));
         }
 
-        let mode = GoslingMode::default();
+        // Orchestrator-managed agents have no ACP client or UI attached to answer a
+        // permission prompt, so they must run in the same Auto+SubAgent combination
+        // delegate() subagents use: Agent::redirect_unapprovable_subagent_requests
+        // only auto-resolves unanswerable approval requests for that exact
+        // combination, and SmartApprove+User (the prior default) left any
+        // sensitive-tool-call request stuck in needs_approval forever, hanging
+        // send_message with no way for the orchestrator or its caller to recover.
+        let mode = GoslingMode::Auto;
 
         let session = self
             .context
             .session_manager
-            .create_session(path, name.clone(), SessionType::User, mode)
+            .create_session(path, name.clone(), SessionType::SubAgent, mode)
             .await
             .map_err(|e| format!("Failed to create session: {}", e))?;
 

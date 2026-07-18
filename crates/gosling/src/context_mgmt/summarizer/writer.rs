@@ -8,9 +8,10 @@
 //! breaking the existing reader, since serde ignores unknown fields on a
 //! struct that doesn't opt into `deny_unknown_fields`.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 
+use fs2::FileExt;
 use serde::Serialize;
 
 use super::schema::ExtractedFact;
@@ -101,15 +102,19 @@ pub fn append_facts_to_durable_file(
         std::fs::create_dir_all(parent)?;
     }
 
-    let needs_heading = match std::fs::read_to_string(path) {
-        Ok(existing) => !existing.contains(DURABLE_SECTION_HEADING),
-        Err(_) => true,
-    };
-
+    // Hold an exclusive lock across the read-check and the append so two
+    // concurrent summarizer runs on the same project can't both observe
+    // "heading missing" and each append their own copy of it.
     let mut file = std::fs::OpenOptions::new()
         .create(true)
+        .read(true)
         .append(true)
         .open(path)?;
+    file.lock_exclusive()?;
+
+    let mut existing = String::new();
+    file.read_to_string(&mut existing)?;
+    let needs_heading = !existing.contains(DURABLE_SECTION_HEADING);
 
     if needs_heading {
         writeln!(file, "\n{DURABLE_SECTION_HEADING}")?;
@@ -219,6 +224,41 @@ mod tests {
         );
         assert!(contents.contains("- Project renamed to gosling _(fact, session session-a,"));
         assert!(contents.contains("- Use anyhow::Result _(preference, session session-b,"));
+    }
+
+    #[test]
+    fn concurrent_durable_file_appends_write_heading_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("AGENTS.md");
+
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    append_facts_to_durable_file(
+                        &path,
+                        "AGENTS.md",
+                        &[fact(&format!("fact {i}"), FactType::Fact)],
+                        &format!("session-{i}"),
+                        "2026-07-05T00:00:00Z",
+                    )
+                    .unwrap();
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            contents.matches(DURABLE_SECTION_HEADING).count(),
+            1,
+            "concurrent summarizer runs on the same project must not duplicate the heading"
+        );
+        for i in 0..8 {
+            assert!(contents.contains(&format!("fact {i}")));
+        }
     }
 
     #[test]

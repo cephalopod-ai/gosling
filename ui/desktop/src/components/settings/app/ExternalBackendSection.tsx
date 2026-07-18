@@ -79,6 +79,10 @@ const i18n = defineMessages({
     id: 'externalBackendSection.urlBaseError',
     defaultMessage: 'URL must be the backend base URL before /acp, without query parameters or fragments',
   },
+  saveError: {
+    id: 'externalBackendSection.saveError',
+    defaultMessage: 'Failed to save external backend settings. Your change was not persisted.',
+  },
 });
 
 export default function ExternalBackendSection() {
@@ -86,12 +90,14 @@ export default function ExternalBackendSection() {
   const [config, setConfig] = useState<ExternalGoslingdConfig>(defaultSettings.externalGoslingd);
   const [isSaving, setIsSaving] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const loadSettings = async () => {
+    const externalGoslingd = await window.electron.getSetting('externalGoslingd');
+    setConfig(externalGoslingd);
+  };
 
   useEffect(() => {
-    const loadSettings = async () => {
-      const externalGoslingd = await window.electron.getSetting('externalGoslingd');
-      setConfig(externalGoslingd);
-    };
     loadSettings();
   }, []);
 
@@ -132,8 +138,14 @@ export default function ExternalBackendSection() {
     setIsSaving(true);
     try {
       await window.electron.setSetting('externalGoslingd', newConfig);
+      setSaveError(null);
     } catch (error) {
       console.error('Failed to save external backend settings:', error);
+      setSaveError(intl.formatMessage(i18n.saveError));
+      // The field already shows newConfig optimistically; resync from the
+      // actually-persisted value so it doesn't keep displaying a change that
+      // was never saved.
+      await loadSettings();
     } finally {
       setIsSaving(false);
     }
@@ -180,6 +192,12 @@ export default function ExternalBackendSection() {
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-4 space-y-4 px-4">
+          {saveError && (
+            <p className="text-xs text-red-500 flex items-center gap-1">
+              <AlertCircle size={12} />
+              {saveError}
+            </p>
+          )}
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-text-primary text-xs">{intl.formatMessage(i18n.useExternalServer)}</h3>
