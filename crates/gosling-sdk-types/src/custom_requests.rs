@@ -1043,6 +1043,23 @@ pub enum ProviderSecretStorageDto {
     ProviderCache,
 }
 
+/// Wire-contract mirror of `gosling::providers::base::ProviderType`. Kept as an
+/// explicit typed enum (not the source enum reused directly, since this crate
+/// sits below `gosling` and can't depend on it) so the DTO boundary is
+/// serde/schema-checked instead of relying on the source enum's `Debug`
+/// output, which is not a stable wire contract. Deliberately has no
+/// `#[serde(rename_all = ...)]` so the wire values stay `Preferred` /
+/// `Builtin` / `Declarative` / `Custom`, matching the existing hand-maintained
+/// `ProviderType` union in `ui/desktop/src/types/providers.ts`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ProviderTypeDto {
+    Preferred,
+    #[default]
+    Builtin,
+    Declarative,
+    Custom,
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderSecretStatusDto {
@@ -1848,8 +1865,8 @@ pub struct ProviderInventoryEntryDto {
     pub default_model: String,
     /// Whether Gosling has enough configuration to use this provider.
     pub configured: bool,
-    /// Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
-    pub provider_type: String,
+    /// Provider classification.
+    pub provider_type: ProviderTypeDto,
     /// Whether this inventory entry represents an agent provider or a model provider.
     pub category: ProviderSetupCategoryDto,
     /// Required configuration keys and setup metadata.

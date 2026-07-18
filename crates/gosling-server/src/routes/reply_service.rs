@@ -19,6 +19,29 @@ use std::{
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+/// Why the reply loop stopped, threaded through to both the `Finish` event's
+/// `reason` and the completion telemetry's `exit_type` so a cancelled,
+/// disconnected, or errored turn is no longer indistinguishable from a normal
+/// completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReplyExitReason {
+    Normal,
+    Error,
+    Disconnected,
+    Cancelled,
+}
+
+impl ReplyExitReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            ReplyExitReason::Normal => "stop",
+            ReplyExitReason::Error => "error",
+            ReplyExitReason::Disconnected => "disconnected",
+            ReplyExitReason::Cancelled => "cancelled",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(tag = "type")]
 pub enum MessageEvent {
@@ -227,6 +250,10 @@ where
 
     let mut reply_progressed = false;
     let mut heartbeat = heartbeat_interval.map(tokio::time::interval);
+    // Every path out of the loop below is a `break` that assigns this first,
+    // so an initial value here would itself be an unused-assignments warning
+    // under -D warnings — the compiler can prove it's always set before use.
+    let exit_reason;
 
     loop {
         if let Some(heartbeat_interval) = heartbeat.as_mut() {
@@ -236,15 +263,17 @@ where
                         rollback_if_pending(state.session_manager(), &session_id, &mut rollback_state).await;
                     }
                     tracing::info!("Agent task cancelled for session {}", session_id);
+                    exit_reason = ReplyExitReason::Cancelled;
                     break;
                 }
                 _ = heartbeat_interval.tick() => {
                     if !sink.publish(MessageEvent::Ping).await {
+                        exit_reason = ReplyExitReason::Disconnected;
                         break;
                     }
                 }
                 response = timeout(Duration::from_millis(500), stream.next()) => {
-                    if handle_stream_result(
+                    if let Some(reason) = handle_stream_result(
                         response,
                         &state,
                         &session_id,
@@ -255,6 +284,7 @@ where
                     )
                     .await
                     {
+                        exit_reason = reason;
                         break;
                     }
                 }
@@ -266,10 +296,11 @@ where
                         rollback_if_pending(state.session_manager(), &session_id, &mut rollback_state).await;
                     }
                     tracing::info!("Agent task cancelled for session {}", session_id);
+                    exit_reason = ReplyExitReason::Cancelled;
                     break;
                 }
                 response = timeout(Duration::from_millis(500), stream.next()) => {
-                    if handle_stream_result(
+                    if let Some(reason) = handle_stream_result(
                         response,
                         &state,
                         &session_id,
@@ -280,6 +311,7 @@ where
                     )
                     .await
                     {
+                        exit_reason = reason;
                         break;
                     }
                 }
@@ -292,13 +324,14 @@ where
         &session_id,
         session_start,
         all_messages.len(),
+        exit_reason,
     )
     .await;
 
     let final_token_state = get_token_state(state.session_manager(), &session_id).await;
     let _ = sink
         .publish(MessageEvent::Finish {
-            reason: "stop".to_string(),
+            reason: exit_reason.as_str().to_string(),
             token_state: final_token_state,
         })
         .await;
@@ -312,7 +345,7 @@ async fn handle_stream_result<S, E>(
     rollback_state: &mut Option<ConversationOverrideRollback>,
     reply_progressed: &mut bool,
     sink: &mut S,
-) -> bool
+) -> Option<ReplyExitReason>
 where
     S: ReplyEventSink,
     E: Display,
@@ -335,31 +368,34 @@ where
             all_messages.push(message.clone());
             let token_state = get_token_state(state.session_manager(), session_id).await;
 
-            !sink
+            let published = sink
                 .publish(MessageEvent::Message {
                     message,
                     token_state,
                 })
-                .await
+                .await;
+            (!published).then_some(ReplyExitReason::Disconnected)
         }
-        Ok(Some(Ok(AgentEvent::Usage(_)))) => false,
+        Ok(Some(Ok(AgentEvent::Usage(_)))) => None,
         Ok(Some(Ok(AgentEvent::HistoryReplaced(new_messages)))) => {
             *reply_progressed = true;
             *all_messages = new_messages.clone();
-            !sink
+            let published = sink
                 .publish(MessageEvent::UpdateConversation {
                     conversation: new_messages,
                 })
-                .await
+                .await;
+            (!published).then_some(ReplyExitReason::Disconnected)
         }
         Ok(Some(Ok(AgentEvent::McpNotification((request_id, notification))))) => {
             *reply_progressed = true;
-            !sink
+            let published = sink
                 .publish(MessageEvent::Notification {
                     request_id,
                     message: notification,
                 })
-                .await
+                .await;
+            (!published).then_some(ReplyExitReason::Disconnected)
         }
         Ok(Some(Err(error))) => {
             if !*reply_progressed {
@@ -371,15 +407,15 @@ where
                     error: error.to_string(),
                 })
                 .await;
-            true
+            Some(ReplyExitReason::Error)
         }
         Ok(None) => {
             if !*reply_progressed {
                 rollback_if_pending(state.session_manager(), session_id, rollback_state).await;
             }
-            true
+            Some(ReplyExitReason::Normal)
         }
-        Err(_) => false,
+        Err(_) => None,
     }
 }
 
@@ -398,8 +434,10 @@ async fn log_session_completion(
     session_id: &str,
     session_start: Instant,
     fallback_message_count: usize,
+    exit_reason: ReplyExitReason,
 ) {
     let session_duration = session_start.elapsed();
+    let exit_type = exit_reason.as_str();
 
     if let Ok(session) = session_manager.get_session(session_id, true).await {
         let total_tokens = session.usage.total_tokens.unwrap_or(0);
@@ -407,7 +445,7 @@ async fn log_session_completion(
             monotonic_counter.gosling.session_completions = 1,
             session_type = "app",
             interface = "ui",
-            exit_type = "normal",
+            exit_type = exit_type,
             duration_ms = session_duration.as_millis() as u64,
             total_tokens = total_tokens,
             message_count = session.message_count,
@@ -434,7 +472,7 @@ async fn log_session_completion(
             monotonic_counter.gosling.session_completions = 1,
             session_type = "app",
             interface = "ui",
-            exit_type = "normal",
+            exit_type = exit_type,
             duration_ms = session_duration.as_millis() as u64,
             total_tokens = 0u64,
             message_count = fallback_message_count,

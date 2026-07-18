@@ -249,6 +249,28 @@ impl AgentManager {
                 extension_results: Vec::new(),
             });
         }
+        // Don't let the LRU evict a session whose agent still has a turn in
+        // flight: get_or_create_agent would then build a second agent for
+        // that same session_id from its last-persisted (stale) state while
+        // the evicted agent's turn is still running, and whichever one
+        // persists extension_data last silently clobbers the other's
+        // updates. Promote busy LRU-tail candidates (bounded by cache size,
+        // so this can't loop forever) so an idle entry gets evicted instead.
+        if sessions.len() >= sessions.cap().get() {
+            let mut candidates_checked = 0;
+            while candidates_checked < sessions.len() {
+                let Some((candidate_id, _)) = sessions.peek_lru() else {
+                    break;
+                };
+                let candidate_id = candidate_id.clone();
+                if !self.is_session_busy(&candidate_id).await {
+                    break;
+                }
+                sessions.promote(&candidate_id);
+                candidates_checked += 1;
+            }
+        }
+
         // `push` returns the LRU-evicted entry when the cache is at
         // capacity, which `put` does not surface.  We need the evicted
         // key so we can also drop its creation lock below, otherwise the
@@ -380,6 +402,7 @@ impl AgentManager {
 mod tests {
     use std::sync::Arc;
     use tempfile::TempDir;
+    use tokio_util::sync::CancellationToken;
 
     use test_case::test_case;
 
@@ -726,6 +749,46 @@ mod tests {
         );
         assert!(locks.contains_key("b"));
         assert!(locks.contains_key("c"));
+    }
+
+    #[tokio::test]
+    async fn test_lru_eviction_skips_a_busy_session() {
+        // "a" is the actual LRU tail (oldest), but it has a turn in flight
+        // (a registered cancel token). Evicting it here would let a later
+        // get_or_create_agent("a") build a second agent from "a"'s
+        // last-persisted state while the original is still running, and
+        // whichever one persists extension_data last would silently
+        // clobber the other's updates (CON-001). "a" must be promoted out
+        // of eviction position and "b" (idle) evicted instead.
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let agent_config = AgentConfig::new(
+            session_manager,
+            PermissionManager::instance(),
+            GoslingMode::default(),
+            false,
+            GoslingPlatform::GoslingDesktop,
+        );
+        let manager = AgentManager::new(agent_config, Some(2)).await.unwrap();
+
+        manager.get_or_create_agent("a".into()).await.unwrap();
+        manager.get_or_create_agent("b".into()).await.unwrap();
+        manager
+            .try_register_cancel_token("a", CancellationToken::new())
+            .await
+            .unwrap();
+
+        manager.get_or_create_agent("c".into()).await.unwrap();
+
+        assert!(
+            manager.has_session("a").await,
+            "busy session 'a' must not be evicted while its turn is in flight"
+        );
+        assert!(
+            !manager.has_session("b").await,
+            "idle session 'b' should be evicted instead of the busy one"
+        );
+        assert!(manager.has_session("c").await);
     }
 
     #[test_case(GoslingMode::Approve ; "approve")]

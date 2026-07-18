@@ -144,6 +144,10 @@ export default function UpdateSection() {
   const [autoDownloadForcedByEnv, setAutoDownloadForcedByEnv] = useState<boolean>(false);
   const progressTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProgressRef = React.useRef<number>(0); // Track last progress to prevent backward jumps
+  // checkForUpdates is async and its own closure over `updateInfo` goes stale
+  // if an updater event updates state while the IPC round-trip is pending;
+  // this ref always reflects the latest value so that check can't read stale data.
+  const isUpdateAvailableRef = React.useRef<boolean | undefined>(undefined);
 
   useEffect(() => {
     // Get current version on mount
@@ -153,6 +157,7 @@ export default function UpdateSection() {
     // Check if there's already an update state from the auto-check
     window.electron.getUpdateState().then((state) => {
       if (state) {
+        isUpdateAvailableRef.current = state.updateAvailable;
         setUpdateInfo((prev) => ({
           ...prev,
           isUpdateAvailable: state.updateAvailable,
@@ -186,6 +191,7 @@ export default function UpdateSection() {
 
         case 'update-available':
           setUpdateStatus('idle');
+          isUpdateAvailableRef.current = true;
           setUpdateInfo((prev) => ({
             ...prev,
             latestVersion: (event.data as UpdateEventData)?.version,
@@ -199,6 +205,7 @@ export default function UpdateSection() {
 
         case 'update-not-available':
           setUpdateStatus('idle');
+          isUpdateAvailableRef.current = false;
           setUpdateInfo((prev) => ({
             ...prev,
             isUpdateAvailable: false,
@@ -265,8 +272,10 @@ export default function UpdateSection() {
         throw new Error(result.error);
       }
 
-      // If we successfully checked and no update is available, show success
-      if (!result.error && updateInfo.isUpdateAvailable === false) {
+      // If we successfully checked and no update is available, show success.
+      // Read from the ref (not the `updateInfo` closure) so a concurrent
+      // updater event that resolved during the await above isn't missed.
+      if (!result.error && isUpdateAvailableRef.current === false) {
         setUpdateStatus('success');
         setTimeout(() => setUpdateStatus('idle'), 3000);
       }

@@ -36,13 +36,13 @@ pub async fn run(agent: &crate::agents::Agent, session_id: &str) -> anyhow::Resu
     );
 
     if let Some(path) = latest_server_log_path() {
-        if let Some(tail) = read_tail(&path, 50) {
+        if let Ok(tail) = read_tail(&path, 50) {
             prompt.push_str(&format!("\nRecent server log:\n```\n{}\n```\n", tail));
         }
     }
 
     if let Some(path) = latest_llm_log_path() {
-        if let Some(content) = read_capped(&path, 10_000) {
+        if let Ok(content) = read_capped(&path, 10_000) {
             prompt.push_str(&format!("\nLast LLM request log:\n```\n{}\n```\n", content));
         }
     }

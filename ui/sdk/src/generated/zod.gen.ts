@@ -733,6 +733,23 @@ export const zListProvidersRequest_unstable = z.object({
     providerIds: z.array(z.string()).optional().default([])
 });
 
+/**
+ * Wire-contract mirror of `gosling::providers::base::ProviderType`. Kept as an
+ * explicit typed enum (not the source enum reused directly, since this crate
+ * sits below `gosling` and can't depend on it) so the DTO boundary is
+ * serde/schema-checked instead of relying on the source enum's `Debug`
+ * output, which is not a stable wire contract. Deliberately has no
+ * `#[serde(rename_all = ...)]` so the wire values stay `Preferred` /
+ * `Builtin` / `Declarative` / `Custom`, matching the existing hand-maintained
+ * `ProviderType` union in `ui/desktop/src/types/providers.ts`.
+ */
+export const zProviderTypeDto = z.enum([
+    'Preferred',
+    'Builtin',
+    'Declarative',
+    'Custom'
+]);
+
 export const zProviderSetupCategoryDto = z.enum(['agent', 'model']);
 
 export const zProviderConfigKey = z.object({
@@ -778,7 +795,7 @@ export const zProviderInventoryEntryDto = z.object({
     description: z.string(),
     defaultModel: z.string(),
     configured: z.boolean(),
-    providerType: z.string(),
+    providerType: zProviderTypeDto,
     category: zProviderSetupCategoryDto,
     configKeys: z.array(zProviderConfigKey),
     setupSteps: z.array(z.string()),

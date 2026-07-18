@@ -119,15 +119,17 @@ Full inventory, skill disposition, and repair log:
 [`reports/2026-07-16-defect-audit-and-repair.md`](../reports/2026-07-16-defect-audit-and-repair.md).
 42 defects found across 12 audit lenses, grouped into locality-based repair
 stages. 22 repaired under `repair-defect-campaign` gates (patch, regression
-test, change review, commit per stage) across three passes; 20 remain, fully
-specified for a follow-up pass. Track per-stage status in that report rather
-than duplicating it here.
+test, change review, commit per stage) across three passes; the remaining 20
+were carried forward and repaired (13) or deferred with reasoning (5, plus
+the 3 already-deferred from this pass) by the 2026-07-18 follow-up campaign
+below. Track per-stage status in those reports rather than duplicating them
+here.
 
 Corroborates two previously-deferred, still-open findings from
 `reports/2026-07-10-audit-skills-pack-report.md`: the `/status` static-200
 health lie (there: FSR-SRV-001, here: OPS-001 — repaired in this pass) and
 the hardcoded `exit_type="normal"` telemetry (there: FSR-SRV-002, here:
-OPS-003 — not yet repaired, carried into the follow-up backlog). Correction:
+OPS-003 — repaired in the 2026-07-18 follow-up campaign below). Correction:
 this session's sandbox cannot build `gosling-server` either (`cargo build -p
 gosling-server` fails downloading `v8-goose`'s prebuilt V8 binary from a
 blocked GitHub-releases host) — the underlying `gosling` crate change
@@ -135,3 +137,13 @@ blocked GitHub-releases host) — the underlying `gosling` crate change
 `gosling-server` route handlers themselves are
 unverified by `cargo build`/`test`/`clippy` in this environment. Recommend
 CI confirm both before merge.
+
+## Audit and repair campaign — 2026-07-18
+
+Full disposition, architecture-invariant compliance check, and repair log:
+[`reports/2026-07-18-audit-repair-campaign.md`](../reports/2026-07-18-audit-repair-campaign.md).
+Repaired 13 of the 2026-07-16 campaign's 20 open defects (ORCH-003, CON-003,
+OPS-002, OPS-003, OPS-004, OPS-005, INV-001, INV-002, GUI-002, GUI-004,
+GUI-005, SEC-003, CON-001); deferred 5 with stated reasoning (ORCH-002,
+RES-002, RES-003, REC-001, REC-002), same sandbox build limitations as
+above for `gosling-server` and `ui/desktop`.

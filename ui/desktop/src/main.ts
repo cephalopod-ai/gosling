@@ -3126,7 +3126,8 @@ async function appMain() {
 
   ipcMain.handle('open-directory-in-explorer', async (_event, path: string) => {
     try {
-      const errorMessage = await shell.openPath(path);
+      const confinedPath = assertRendererFileAccess(path);
+      const errorMessage = await shell.openPath(confinedPath);
       return errorMessage === '';
     } catch (error) {
       console.error('Error opening directory in explorer:', error);

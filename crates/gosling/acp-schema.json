@@ -1648,8 +1648,8 @@
           "description": "Whether Gosling has enough configuration to use this provider."
         },
         "providerType": {
-          "type": "string",
-          "description": "Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`."
+          "$ref": "#/$defs/ProviderTypeDto",
+          "description": "Provider classification."
         },
         "category": {
           "$ref": "#/$defs/ProviderSetupCategoryDto",
@@ -1733,6 +1733,16 @@
         "stale"
       ],
       "description": "Provider inventory entry."
+    },
+    "ProviderTypeDto": {
+      "type": "string",
+      "enum": [
+        "Preferred",
+        "Builtin",
+        "Declarative",
+        "Custom"
+      ],
+      "description": "Wire-contract mirror of `gosling::providers::base::ProviderType`. Kept as an\nexplicit typed enum (not the source enum reused directly, since this crate\nsits below `gosling` and can't depend on it) so the DTO boundary is\nserde/schema-checked instead of relying on the source enum's `Debug`\noutput, which is not a stable wire contract. Deliberately has no\n`#[serde(rename_all = ...)]` so the wire values stay `Preferred` /\n`Builtin` / `Declarative` / `Custom`, matching the existing hand-maintained\n`ProviderType` union in `ui/desktop/src/types/providers.ts`."
     },
     "ProviderSetupCategoryDto": {
       "type": "string",
