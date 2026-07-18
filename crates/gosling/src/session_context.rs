@@ -3,6 +3,8 @@ use reqwest::header::{HeaderName, HeaderValue};
 pub const SESSION_ID_HEADER: &str = "agent-session-id";
 
 pub const TOOL_CALL_REQUEST_ID_HEADER: &str = "agent-tool-call-request-id";
+/// Stable idempotency key for MCP servers that opt into Gosling operation deduplication.
+pub const TOOL_OPERATION_ID_HEADER: &str = "agent-tool-operation-id";
 pub const WORKING_DIR_HEADER: &str = "agent-working-dir";
 
 tokio::task_local! {

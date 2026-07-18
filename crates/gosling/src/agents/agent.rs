@@ -55,7 +55,8 @@ use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::{
-    Session, SessionManager, SessionNameUpdate, SessionType, DEFAULT_SESSION_TAIL_LIMIT,
+    Session, SessionManager, SessionNameUpdate, SessionType, ToolOperationStart,
+    DEFAULT_SESSION_TAIL_LIMIT,
 };
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
@@ -78,6 +79,47 @@ const COMPACTION_THINKING_TEXT: &str = "gosling is compacting the conversation..
 const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
 const DEFAULT_FRONTEND_INSTRUCTIONS: &str = "The following tools are provided directly by the frontend and will be executed by the frontend when called.";
 const STREAM_CHECKPOINT_INTERVAL: Duration = Duration::from_millis(250);
+
+pub(super) struct ToolOperationGuard {
+    session_manager: Arc<SessionManager>,
+    operation_id: Option<String>,
+}
+
+impl ToolOperationGuard {
+    pub(super) fn new(session_manager: Arc<SessionManager>, operation_id: String) -> Self {
+        Self {
+            session_manager,
+            operation_id: Some(operation_id),
+        }
+    }
+
+    pub(super) fn disarm(&mut self) {
+        self.operation_id = None;
+    }
+}
+
+impl Drop for ToolOperationGuard {
+    fn drop(&mut self) {
+        let Some(operation_id) = self.operation_id.take() else {
+            return;
+        };
+        self.session_manager.release_tool_operation(&operation_id);
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let session_manager = self.session_manager.clone();
+            runtime.spawn(async move {
+                if let Err(error) = session_manager
+                    .mark_tool_operation_in_doubt(&operation_id)
+                    .await
+                {
+                    warn!(
+                        "Failed to mark abandoned tool operation {} in doubt: {}",
+                        operation_id, error
+                    );
+                }
+            });
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToolCategory {
@@ -796,7 +838,7 @@ impl Agent {
         for request in &permission_check_result.approved {
             if let Ok(tool_call) = request.tool_call.clone() {
                 let (req_id, tool_result) = self
-                    .dispatch_tool_call(
+                    .dispatch_conversation_tool_call(
                         tool_call,
                         request.id.clone(),
                         cancel_token.clone(),
@@ -1130,11 +1172,72 @@ impl Agent {
         cancellation_token: Option<CancellationToken>,
         session: &Session,
     ) -> (String, Result<ToolCallResult, ErrorData>) {
+        self.dispatch_tool_call_scoped(tool_call, request_id, cancellation_token, session, false)
+            .await
+    }
+
+    pub(crate) async fn dispatch_conversation_tool_call(
+        &self,
+        tool_call: CallToolRequestParams,
+        request_id: String,
+        cancellation_token: Option<CancellationToken>,
+        session: &Session,
+    ) -> (String, Result<ToolCallResult, ErrorData>) {
+        self.dispatch_tool_call_scoped(tool_call, request_id, cancellation_token, session, true)
+            .await
+    }
+
+    async fn dispatch_tool_call_scoped(
+        &self,
+        tool_call: CallToolRequestParams,
+        request_id: String,
+        cancellation_token: Option<CancellationToken>,
+        session: &Session,
+        conversation_bound: bool,
+    ) -> (String, Result<ToolCallResult, ErrorData>) {
         let input_summary = serde_json::json!({
             "tool": tool_call.name,
             "arguments": tool_call.arguments,
         });
         tracing::Span::current().record("input", tracing::field::display(&input_summary));
+
+        let operation_id = match self
+            .config
+            .session_manager
+            .begin_tool_operation(&session.id, &request_id, &tool_call, conversation_bound)
+            .await
+        {
+            Ok(ToolOperationStart::Execute { operation_id }) => operation_id,
+            Ok(ToolOperationStart::Replay { result, .. }) => {
+                return (request_id, Ok(ToolCallResult::from(result)));
+            }
+            Ok(ToolOperationStart::InDoubt { operation_id }) => {
+                return (
+                    request_id,
+                    Err(ErrorData::new(
+                        ErrorCode::INTERNAL_ERROR,
+                        "Tool execution was already durably started and its status is in doubt; Gosling will not dispatch it again automatically.".to_string(),
+                        Some(serde_json::json!({
+                            "tool_operation_id": operation_id,
+                            "status": "in_doubt",
+                            "retryable": false
+                        })),
+                    )),
+                );
+            }
+            Err(error) => {
+                return (
+                    request_id,
+                    Err(ErrorData::new(
+                        ErrorCode::INTERNAL_ERROR,
+                        format!("Could not durably begin tool operation: {error}"),
+                        None,
+                    )),
+                );
+            }
+        };
+        let mut operation_guard =
+            ToolOperationGuard::new(self.config.session_manager.clone(), operation_id.clone());
 
         if self
             .hook_manager
@@ -1155,17 +1258,31 @@ impl Agent {
                 .emit_blocking(crate::hooks::HookEvent::PreToolUse, ctx)
                 .await
             {
-                return (
-                    request_id,
-                    Err(ErrorData::new(
-                        ErrorCode::INTERNAL_ERROR,
-                        format!(
-                            "Tool call denied by policy hook `{plugin}`: {reason}. \
-                             Do not retry; this is a policy denial, not a transient failure."
-                        ),
-                        None,
-                    )),
+                let denial = ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!(
+                        "Tool call denied by policy hook `{plugin}`: {reason}. \
+                         Do not retry; this is a policy denial, not a transient failure."
+                    ),
+                    None,
                 );
+                if let Err(error) = self
+                    .config
+                    .session_manager
+                    .complete_tool_operation(&operation_id, &Err(denial.clone()))
+                    .await
+                {
+                    return (
+                        request_id,
+                        Err(ErrorData::new(
+                            ErrorCode::INTERNAL_ERROR,
+                            format!("Could not durably complete denied tool operation: {error}"),
+                            None,
+                        )),
+                    );
+                }
+                operation_guard.disarm();
+                return (request_id, Err(denial));
             }
         }
 
@@ -1189,7 +1306,8 @@ impl Agent {
             session.id.clone(),
             Some(session.working_dir.clone()),
             Some(request_id.clone()),
-        );
+        )
+        .with_tool_operation_id(operation_id.clone());
 
         debug!("WAITING_TOOL_START: {}", tool_call.name);
         let result: ToolCallResult = if self.is_frontend_tool(&tool_call.name).await {
@@ -1222,9 +1340,38 @@ impl Agent {
 
         debug!("WAITING_TOOL_END: {}", tool_call.name);
 
+        let result = self.with_post_tool_hook(result, &tool_call, session);
+        let session_manager = self.config.session_manager.clone();
+        let ToolCallResult {
+            result,
+            notification_stream,
+            action_required_stream,
+        } = result;
+        let durable_result = async move {
+            let terminal_result = result.await;
+            session_manager
+                .complete_tool_operation(&operation_id, &terminal_result)
+                .await
+                .map_err(|error| {
+                    ErrorData::new(
+                        ErrorCode::INTERNAL_ERROR,
+                        format!(
+                            "Tool finished but its terminal result could not be durably recorded: {error}. Its status is in doubt and it must not be retried automatically."
+                        ),
+                        None,
+                    )
+                })?;
+            operation_guard.disarm();
+            terminal_result
+        };
+
         (
             request_id,
-            Ok(self.with_post_tool_hook(result, &tool_call, session)),
+            Ok(ToolCallResult {
+                result: Box::new(durable_result.boxed()),
+                notification_stream,
+                action_required_stream,
+            }),
         )
     }
 
@@ -1568,6 +1715,9 @@ impl Agent {
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let session_manager = self.config.session_manager.clone();
+        session_manager
+            .recover_tool_operations(&session_config.id)
+            .await?;
 
         let message_text_for_trace = user_message.as_concat_text();
         tracing::Span::current().record("user_message", message_text_for_trace.as_str());
@@ -2382,12 +2532,91 @@ impl Agent {
                                     request_metadata.insert(request.id.clone(), request.metadata.clone());
                                 }
 
+                                let direct_thinking: Vec<MessageContent> = response
+                                    .content
+                                    .iter()
+                                    .filter(|content| {
+                                        matches!(
+                                            content,
+                                            MessageContent::Thinking(_)
+                                                | MessageContent::RedactedThinking(_)
+                                        )
+                                    })
+                                    .cloned()
+                                    .collect();
+                                if !direct_thinking.is_empty() {
+                                    let thinking_msg = Message::new(
+                                        response.role.clone(),
+                                        response.created,
+                                        direct_thinking.clone(),
+                                    )
+                                    .with_id(format!("msg_{}", Uuid::new_v4()));
+                                    session_manager
+                                        .upsert_message(&session_config.id, &thinking_msg)
+                                        .await?;
+                                    messages_to_add.push(thinking_msg);
+                                }
+                                let response_thinking = if direct_thinking.is_empty() {
+                                    messages_to_add
+                                        .messages()
+                                        .iter()
+                                        .rev()
+                                        .find(|message| {
+                                            message.role == response.role
+                                                && !message.content.is_empty()
+                                                && message.content.iter().all(|content| {
+                                                    matches!(
+                                                        content,
+                                                        MessageContent::Thinking(_)
+                                                            | MessageContent::RedactedThinking(_)
+                                                    )
+                                                })
+                                        })
+                                        .map(|message| message.content.clone())
+                                        .unwrap_or_default()
+                                } else {
+                                    direct_thinking
+                                };
+
+                                for request in frontend_requests.iter().chain(remaining_requests.iter()) {
+                                    let mut request_msg = Message::assistant()
+                                        .with_id(format!("msg_{}", Uuid::new_v4()));
+                                    for thinking in &response_thinking {
+                                        request_msg = request_msg.with_content(thinking.clone());
+                                    }
+                                    let history_tool_call = match &request.tool_call {
+                                        Ok(_) => request.tool_call.clone(),
+                                        Err(_) => Ok(CallToolRequestParams::new(
+                                            "unparseable_tool_call",
+                                        )
+                                        .with_arguments(serde_json::Map::new())),
+                                    };
+                                    request_msg = request_msg.with_tool_request_with_metadata(
+                                        request.id.clone(),
+                                        history_tool_call,
+                                        request.metadata.as_ref(),
+                                        request.tool_meta.clone(),
+                                    );
+                                    if let Some(response_placeholder) =
+                                        request_to_response_map.get(&request.id)
+                                    {
+                                        if request_msg.created > response_placeholder.created {
+                                            request_msg.created = response_placeholder.created;
+                                        }
+                                    }
+                                    session_manager
+                                        .upsert_message(&session_config.id, &request_msg)
+                                        .await?;
+                                    messages_to_add.push(request_msg);
+                                }
+
                                 for request in frontend_requests.iter() {
                                     let response_msg = request_to_response_map.get_mut(&request.id)
                                         .ok_or_else(|| anyhow::anyhow!("missing response entry for request {}", request.id))?;
                                     let mut frontend_tool_stream = self.handle_frontend_tool_request(
                                         request,
                                         response_msg,
+                                        &session,
                                     );
 
                                     while let Some(msg) = frontend_tool_stream.try_next().await? {
@@ -2488,6 +2717,7 @@ impl Agent {
 
                                     let mut combined = stream::select_all(with_id);
                                     let mut all_install_successful = true;
+                                    let mut tool_persistence_error = None;
 
                                     loop {
                                         if is_token_cancelled(&cancel_token) {
@@ -2535,7 +2765,18 @@ impl Agent {
                                                                 }
                                                                 if let Some(response) = request_to_response_map.get_mut(&request_id) {
                                                                     let metadata = request_metadata.get(&request_id).and_then(|m| m.as_ref());
-                                                                    response.add_tool_response_with_metadata(request_id, output, metadata);
+                                                                    response.add_tool_response_with_metadata(request_id.clone(), output, metadata);
+                                                                    if let Err(error) = session_manager
+                                                                        .persist_tool_operation_response(
+                                                                            &session_config.id,
+                                                                            &request_id,
+                                                                            response,
+                                                                        )
+                                                                        .await
+                                                                    {
+                                                                        tool_persistence_error = Some(error);
+                                                                        break;
+                                                                    }
                                                                 }
                                                             }
                                                             ToolStreamItem::Message(msg) => {
@@ -2551,6 +2792,10 @@ impl Agent {
                                         }
                                     }
 
+                                    if let Some(error) = tool_persistence_error {
+                                        Err(error)?;
+                                    }
+
                                     if all_install_successful && !enable_extension_request_ids.is_empty() {
                                         if let Err(e) = self.save_extension_state(&session_config).await {
                                             warn!("Failed to save extension state after runtime changes: {}", e);
@@ -2559,86 +2804,7 @@ impl Agent {
                                     }
                                 }
 
-                                // Preserve thinking/reasoning content from the original response.
-                                // Gemini (and other thinking models) require thinking to be echoed back.
-                                // Kimi/DeepSeek require reasoning_content on assistant tool call messages.
-                                let direct_thinking: Vec<MessageContent> = response
-                                    .content
-                                    .iter()
-                                    .filter(|c| {
-                                        matches!(
-                                            c,
-                                            MessageContent::Thinking(_)
-                                                | MessageContent::RedactedThinking(_)
-                                        )
-                                    })
-                                    .cloned()
-                                    .collect();
-                                if !direct_thinking.is_empty() {
-                                    let thinking_msg = Message::new(
-                                        response.role.clone(),
-                                        response.created,
-                                        direct_thinking.clone(),
-                                    )
-                                    .with_id(format!("msg_{}", Uuid::new_v4()));
-                                    messages_to_add.push(thinking_msg);
-                                }
-                                // When thinking arrived in an earlier stream chunk (stored as a
-                                // thinking-only message) and this chunk has only tool calls,
-                                // reuse that thinking so each split request_msg carries it.
-                                let response_thinking = if direct_thinking.is_empty() {
-                                    messages_to_add
-                                        .messages()
-                                        .iter()
-                                        .rev()
-                                        .find(|m| {
-                                            m.role == response.role
-                                                && !m.content.is_empty()
-                                                && m.content.iter().all(|c| {
-                                                    matches!(
-                                                        c,
-                                                        MessageContent::Thinking(_)
-                                                            | MessageContent::RedactedThinking(_)
-                                                    )
-                                                })
-                                        })
-                                        .map(|m| m.content.clone())
-                                        .unwrap_or_default()
-                                } else {
-                                    direct_thinking
-                                };
-
                                 for request in frontend_requests.iter().chain(remaining_requests.iter()) {
-                                    let mut request_msg = Message::assistant()
-                                        .with_id(format!("msg_{}", Uuid::new_v4()));
-
-                                    for thinking in &response_thinking {
-                                        request_msg = request_msg.with_content(thinking.clone());
-                                    }
-
-                                    // For an unparseable tool call (Err), store a valid
-                                    // placeholder Ok tool-call in history instead of the Err. This
-                                    // keeps the conversation well-formed through EVERY provider
-                                    // formatter's normal Ok path — so we don't have to special-case
-                                    // each formatter's Err arm — and preserves provider metadata
-                                    // (e.g. thought signatures), which is passed through below and
-                                    // copied by the Ok path. The actual parse error rides on the
-                                    // paired tool response.
-                                    let history_tool_call = match &request.tool_call {
-                                        Ok(_) => request.tool_call.clone(),
-                                        Err(_) => Ok(CallToolRequestParams::new(
-                                            "unparseable_tool_call",
-                                        )
-                                        .with_arguments(serde_json::Map::new())),
-                                    };
-                                    request_msg = request_msg
-                                        .with_tool_request_with_metadata(
-                                            request.id.clone(),
-                                            history_tool_call,
-                                            request.metadata.as_ref(),
-                                            request.tool_meta.clone(),
-                                        );
-
                                     let final_response = match &request.tool_call {
                                         Ok(_) => request_to_response_map
                                             .remove(&request.id)
@@ -2667,11 +2833,6 @@ impl Agent {
                                         }
                                     };
 
-                                    // Response placeholder is created before tools run, so clamp request to avoid inverted ordering.
-                                    if request_msg.created > final_response.created {
-                                        request_msg.created = final_response.created;
-                                    }
-                                    messages_to_add.push(request_msg);
                                     yield AgentEvent::Message(final_response.clone());
                                     messages_to_add.push(final_response);
                                 }
@@ -4681,6 +4842,83 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             "streamed assistant reply"
         );
         assert!(completed_messages.messages()[1].id.is_some());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn frontend_tool_execution_uses_the_durable_operation_ledger() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+        let permission_manager = Arc::new(PermissionManager::new(temp_dir.path().join("config")));
+        let agent = Agent::with_config(AgentConfig::new(
+            session_manager.clone(),
+            permission_manager,
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        ));
+        let session = session_manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Frontend ledger".to_string(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await?;
+        let tool_call = CallToolRequestParams::new("frontend__save_artifact")
+            .with_arguments(rmcp::object!({ "name": "report.md" }));
+        let request = ToolRequest {
+            id: "frontend-request-1".to_string(),
+            tool_call: Ok(tool_call.clone()),
+            metadata: None,
+            tool_meta: None,
+        };
+        session_manager
+            .add_message(
+                &session.id,
+                &Message::assistant()
+                    .with_generated_id()
+                    .with_tool_request(request.id.clone(), Ok(tool_call)),
+            )
+            .await?;
+        agent.frontend_tools.lock().await.insert(
+            "frontend__save_artifact".to_string(),
+            FrontendTool {
+                name: "frontend__save_artifact".to_string(),
+                tool: Tool::new(
+                    "frontend__save_artifact".to_string(),
+                    "Save an artifact".to_string(),
+                    rmcp::object!({ "type": "object" }),
+                ),
+            },
+        );
+        let terminal_result = Ok(CallToolResult::success(vec![Content::text("saved")]));
+        agent
+            .handle_tool_result(request.id.clone(), terminal_result.clone())
+            .await;
+
+        let mut response = Message::user().with_generated_id();
+        let events = agent
+            .handle_frontend_tool_request(&request, &mut response, &session)
+            .try_collect::<Vec<_>>()
+            .await?;
+        assert_eq!(events.len(), 1);
+
+        let reloaded = session_manager.get_session(&session.id, true).await?;
+        let conversation = reloaded.conversation.unwrap();
+        let responses = conversation
+            .messages()
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .filter_map(MessageContent::as_tool_response)
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].tool_result, terminal_result);
+        assert_eq!(
+            session_manager.recover_tool_operations(&session.id).await?,
+            0
+        );
 
         Ok(())
     }

@@ -244,6 +244,15 @@ async fn resume_agent(
     #[cfg(feature = "telemetry")]
     gosling::posthog::set_session_context("desktop", true);
 
+    state
+        .session_manager()
+        .recover_tool_operations(&payload.session_id)
+        .await
+        .map_err(|err| ErrorResponse {
+            message: format!("Failed to recover interrupted tool operations: {err}"),
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
+
     let session = state
         .session_manager()
         .get_session(&payload.session_id, true)

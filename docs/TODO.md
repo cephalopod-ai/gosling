@@ -141,11 +141,15 @@ post-freeze SDK request-shape defect found by verification. Only the audit
 checkpoint is synchronized to the remote. All repair and closeout commits are
 local until a separate push is authorized.
 
-- [ ] AUD-031: design a durable, versioned tool-operation ledger with stable
-  operation identities, in-doubt recovery, replay semantics, and external
-  idempotency-key propagation where supported. A request-before-dispatch
-  reorder is not sufficient to guarantee at-most-once side effects across a
-  process crash.
+- [x] AUD-031: sessions.db schema v23 adds a durable tool-operation ledger with
+  stable operation identities, explicit in-doubt recovery, terminal-result
+  replay, and MCP operation-id propagation for servers that support external
+  deduplication. Tool requests are checkpointed before dispatch and terminal
+  responses are linked back to the ledger transactionally.
+  Residual risk: Gosling cannot prove whether a non-idempotent external server
+  committed an operation before a transport or process failure. Such operations
+  remain visibly in doubt and require external verification; Gosling does not
+  retry them automatically.
 - [ ] Modularize the routed >=2000-line files in dedicated changes, preserving
   behavior and avoiding mixed repair/refactor commits:
   `crates/gosling/src/session/session_manager.rs`,

@@ -20,6 +20,7 @@ pub struct ToolCallContext {
     pub session_id: String,
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
+    pub tool_operation_id: Option<String>,
 }
 
 impl ToolCallContext {
@@ -32,7 +33,13 @@ impl ToolCallContext {
             session_id,
             working_dir,
             tool_call_request_id,
+            tool_operation_id: None,
         }
+    }
+
+    pub fn with_tool_operation_id(mut self, tool_operation_id: String) -> Self {
+        self.tool_operation_id = Some(tool_operation_id);
+        self
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {
@@ -58,7 +65,7 @@ impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
     }
 }
 
-use super::agent::{tool_stream, ToolStream};
+use super::agent::{tool_stream, ToolOperationGuard, ToolStream};
 use crate::agents::Agent;
 use crate::conversation::message::ToolRequest;
 use crate::session::Session;
@@ -138,7 +145,7 @@ impl Agent {
                 }
 
                 if confirmation.permission == Permission::AllowOnce || confirmation.permission == Permission::AlwaysAllow {
-                    let (req_id, tool_result) = self.dispatch_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session).await;
+                    let (req_id, tool_result) = self.dispatch_conversation_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session).await;
 
                     tool_futures.push((req_id, match tool_result {
                         Ok(result) => tool_stream(
@@ -182,11 +189,49 @@ impl Agent {
         &'a self,
         tool_request: &'a ToolRequest,
         message_tool_response: &'a mut Message,
+        session: &'a Session,
     ) -> BoxStream<'a, anyhow::Result<Message>> {
         try_stream! {
                 if let Ok(tool_call) = tool_request.tool_call.clone() {
                     if self.is_frontend_tool(&tool_call.name).await {
                         let expected_request_id = tool_request.id.clone();
+                        let operation_id = match self
+                            .config
+                            .session_manager
+                            .begin_tool_operation(
+                                &session.id,
+                                &expected_request_id,
+                                &tool_call,
+                                true,
+                            )
+                            .await?
+                        {
+                            crate::session::ToolOperationStart::Execute { operation_id } => operation_id,
+                            crate::session::ToolOperationStart::Replay { result, .. } => {
+                                message_tool_response.add_tool_response_with_metadata(
+                                    expected_request_id.clone(),
+                                    result,
+                                    tool_request.metadata.as_ref(),
+                                );
+                                self.config.session_manager
+                                    .persist_tool_operation_response(
+                                        &session.id,
+                                        &expected_request_id,
+                                        message_tool_response,
+                                    )
+                                    .await?;
+                                return;
+                            }
+                            crate::session::ToolOperationStart::InDoubt { operation_id } => {
+                                Err::<String, anyhow::Error>(anyhow::anyhow!(
+                                    "Frontend tool operation {operation_id} is in doubt and will not be dispatched again automatically"
+                                ))?
+                            }
+                        };
+                        let mut operation_guard = ToolOperationGuard::new(
+                            self.config.session_manager.clone(),
+                            operation_id.clone(),
+                        );
                         yield Message::assistant().with_frontend_tool_request(
                             expected_request_id.clone(),
                             Ok(tool_call.clone())
@@ -196,11 +241,26 @@ impl Agent {
                             .wait_for_frontend_tool_result(expected_request_id.clone())
                             .await
                         {
+                            self.config.session_manager
+                                .complete_tool_operation(&operation_id, &result)
+                                .await?;
                             message_tool_response.add_tool_response_with_metadata(
-                                expected_request_id,
+                                expected_request_id.clone(),
                                 result,
                                 tool_request.metadata.as_ref(),
                             );
+                            self.config.session_manager
+                                .persist_tool_operation_response(
+                                    &session.id,
+                                    &expected_request_id,
+                                    message_tool_response,
+                                )
+                                .await?;
+                            operation_guard.disarm();
+                        } else {
+                            Err(anyhow::anyhow!(
+                                "Frontend tool result channel closed after durable dispatch began; execution status is in doubt"
+                            ))?;
                         }
                     }
             }

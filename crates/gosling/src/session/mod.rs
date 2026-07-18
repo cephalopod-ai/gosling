@@ -21,6 +21,7 @@ pub use diagnostics::{
     DiagnosticsTextFile, SystemInfo,
 };
 pub use extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState, TodoState};
+pub(crate) use session_manager::ToolOperationStart;
 pub use session_manager::{
     Session, SessionInsights, SessionManager, SessionNameUpdate, SessionSummary,
     SessionSummaryFact, SessionSummaryStatus, SessionType, SessionUpdateBuilder, SessionWorkflow,

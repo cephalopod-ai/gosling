@@ -2,6 +2,7 @@ use crate::config::paths::Paths;
 use crate::config::GoslingMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType, TokenState};
 use crate::conversation::Conversation;
+use crate::mcp_utils::ToolResult;
 use crate::providers::base::Provider;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 use crate::session::session_naming::{
@@ -13,23 +14,25 @@ use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use gosling_providers::conversation::token_usage::Usage;
 use gosling_providers::model::ModelConfig;
-use rmcp::model::Role;
+use rmcp::model::{CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, Role};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Sqlite};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 22;
+pub const CURRENT_SCHEMA_VERSION: i32 = 23;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
 pub const DEFAULT_SESSION_TAIL_LIMIT: usize = 50;
 pub const MAX_SESSION_MESSAGE_PAGE_LIMIT: usize = 200;
+const TOOL_OPERATION_SCHEMA_VERSION: i32 = 1;
 
 #[derive(
     Debug,
@@ -443,6 +446,13 @@ pub struct SessionManager {
     storage: Arc<SessionStorage>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ToolOperationStart {
+    Execute { operation_id: String },
+    Replay { result: ToolResult<CallToolResult> },
+    InDoubt { operation_id: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SessionListCursor {
     pub(crate) sort_at: DateTime<Utc>,
@@ -659,6 +669,56 @@ impl SessionManager {
 
     pub async fn upsert_message(&self, id: &str, message: &Message) -> Result<()> {
         self.storage.upsert_message(id, message).await
+    }
+
+    pub(crate) async fn begin_tool_operation(
+        &self,
+        session_id: &str,
+        tool_request_id: &str,
+        tool_call: &CallToolRequestParams,
+        conversation_bound: bool,
+    ) -> Result<ToolOperationStart> {
+        self.storage
+            .begin_tool_operation(session_id, tool_request_id, tool_call, conversation_bound)
+            .await
+    }
+
+    pub(crate) async fn complete_tool_operation(
+        &self,
+        operation_id: &str,
+        result: &ToolResult<CallToolResult>,
+    ) -> Result<()> {
+        let completion = self
+            .storage
+            .complete_tool_operation(operation_id, result)
+            .await;
+        self.storage.release_tool_operation(operation_id);
+        completion
+    }
+
+    pub(crate) fn release_tool_operation(&self, operation_id: &str) {
+        self.storage.release_tool_operation(operation_id);
+    }
+
+    pub(crate) async fn mark_tool_operation_in_doubt(&self, operation_id: &str) -> Result<()> {
+        self.storage
+            .mark_tool_operation_in_doubt(operation_id)
+            .await
+    }
+
+    pub(crate) async fn persist_tool_operation_response(
+        &self,
+        session_id: &str,
+        tool_request_id: &str,
+        message: &Message,
+    ) -> Result<()> {
+        self.storage
+            .persist_tool_operation_response(session_id, tool_request_id, message)
+            .await
+    }
+
+    pub async fn recover_tool_operations(&self, session_id: &str) -> Result<usize> {
+        self.storage.recover_tool_operations(session_id).await
     }
 
     pub async fn add_model_switch_record(
@@ -888,6 +948,8 @@ pub struct SessionStorage {
     pool: Pool<Sqlite>,
     initialized: tokio::sync::OnceCell<()>,
     session_dir: PathBuf,
+    owner_id: String,
+    active_tool_operations: std::sync::Mutex<HashSet<String>>,
 }
 
 pub(crate) fn role_to_string(role: &Role) -> &'static str {
@@ -1116,6 +1178,8 @@ impl SessionStorage {
             pool: Self::create_pool(&db_path),
             initialized: tokio::sync::OnceCell::new(),
             session_dir,
+            owner_id: uuid::Uuid::new_v4().to_string(),
+            active_tool_operations: std::sync::Mutex::new(HashSet::new()),
         }
     }
 
@@ -1297,6 +1361,8 @@ impl SessionStorage {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id)")
             .execute(&mut *tx)
             .await?;
+
+        Self::create_tool_operations_schema(&mut tx).await?;
 
         sqlx::query(
             r#"
@@ -2221,11 +2287,43 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
+            23 => Self::create_tool_operations_schema(tx).await?,
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
         }
 
+        Ok(())
+    }
+
+    async fn create_tool_operations_schema(tx: &mut sqlx::Transaction<'_, Sqlite>) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS tool_operations (
+                operation_id TEXT PRIMARY KEY,
+                schema_version INTEGER NOT NULL DEFAULT 1 CHECK(schema_version = 1),
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                tool_request_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                request_digest TEXT NOT NULL,
+                conversation_bound BOOLEAN NOT NULL DEFAULT FALSE,
+                owner_id TEXT NOT NULL,
+                state TEXT NOT NULL CHECK(state IN ('started', 'completed', 'in_doubt')),
+                result_json TEXT,
+                response_message_id TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(session_id, tool_request_id)
+            )
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_tool_operations_session_state ON tool_operations(session_id, state)",
+        )
+        .execute(&mut **tx)
+        .await?;
         Ok(())
     }
 
@@ -2949,6 +3047,381 @@ impl SessionStorage {
         })
     }
 
+    async fn begin_tool_operation(
+        &self,
+        session_id: &str,
+        tool_request_id: &str,
+        tool_call: &CallToolRequestParams,
+        conversation_bound: bool,
+    ) -> Result<ToolOperationStart> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let request_digest = tool_operation_request_digest(tool_call)?;
+        let existing = sqlx::query_as::<_, (String, String, String, bool, String, Option<String>)>(
+            r#"
+            SELECT operation_id, tool_name, request_digest, conversation_bound, state, result_json
+            FROM tool_operations
+            WHERE session_id = ? AND tool_request_id = ?
+            "#,
+        )
+        .bind(session_id)
+        .bind(tool_request_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let outcome = if let Some((
+            operation_id,
+            stored_name,
+            stored_digest,
+            stored_conversation_bound,
+            state,
+            result_json,
+        )) = existing
+        {
+            if stored_name != tool_call.name.as_ref()
+                || stored_digest != request_digest
+                || stored_conversation_bound != conversation_bound
+            {
+                anyhow::bail!(
+                    "tool request id {tool_request_id} was already used with a different tool payload"
+                );
+            }
+            match state.as_str() {
+                "completed" => ToolOperationStart::Replay {
+                    result: deserialize_tool_operation_result(result_json.as_deref().ok_or_else(
+                        || anyhow::anyhow!("completed tool operation has no terminal result"),
+                    )?)?,
+                },
+                "started" | "in_doubt" => ToolOperationStart::InDoubt { operation_id },
+                other => anyhow::bail!("tool operation has invalid state {other}"),
+            }
+        } else {
+            if conversation_bound {
+                let checkpointed_content = sqlx::query_scalar::<_, String>(
+                    r#"
+                    SELECT tool_request.value
+                    FROM messages, json_each(messages.content_json) AS tool_request
+                    WHERE messages.session_id = ?
+                      AND json_extract(tool_request.value, '$.type') = 'toolRequest'
+                      AND json_extract(tool_request.value, '$.id') = ?
+                    LIMIT 1
+                    "#,
+                )
+                .bind(session_id)
+                .bind(tool_request_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                let checkpointed_content = checkpointed_content.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "tool request {tool_request_id} must be durably checkpointed before dispatch"
+                    )
+                })?;
+                let MessageContent::ToolRequest(request) =
+                    serde_json::from_str(&checkpointed_content)?
+                else {
+                    anyhow::bail!("checkpointed tool request is malformed");
+                };
+                let persisted_call = request.tool_call.map_err(|error| {
+                    anyhow::anyhow!(
+                        "checkpointed tool request {tool_request_id} is invalid: {error}"
+                    )
+                })?;
+                if persisted_call.name != tool_call.name
+                    || persisted_call.arguments != tool_call.arguments
+                {
+                    anyhow::bail!(
+                        "checkpointed tool request {tool_request_id} has a different tool payload"
+                    );
+                }
+            }
+            let operation_id = format!("toolop_{}", uuid::Uuid::new_v4());
+            sqlx::query(
+                r#"
+                INSERT INTO tool_operations (
+                    operation_id, schema_version, session_id, tool_request_id, tool_name, request_digest,
+                    conversation_bound, owner_id, state
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'started')
+                "#,
+            )
+            .bind(&operation_id)
+            .bind(TOOL_OPERATION_SCHEMA_VERSION)
+            .bind(session_id)
+            .bind(tool_request_id)
+            .bind(tool_call.name.as_ref())
+            .bind(request_digest)
+            .bind(conversation_bound)
+            .bind(&self.owner_id)
+            .execute(&mut *tx)
+            .await?;
+            ToolOperationStart::Execute { operation_id }
+        };
+
+        let active_operation_id = match &outcome {
+            ToolOperationStart::Execute { operation_id } => Some(operation_id.clone()),
+            _ => None,
+        };
+        if let Some(operation_id) = &active_operation_id {
+            self.active_tool_operations
+                .lock()
+                .expect("active tool operations mutex poisoned")
+                .insert(operation_id.clone());
+        }
+        if let Err(error) = tx.commit().await {
+            if let Some(operation_id) = &active_operation_id {
+                self.release_tool_operation(operation_id);
+            }
+            return Err(error.into());
+        }
+        Ok(outcome)
+    }
+
+    fn release_tool_operation(&self, operation_id: &str) {
+        self.active_tool_operations
+            .lock()
+            .expect("active tool operations mutex poisoned")
+            .remove(operation_id);
+    }
+
+    async fn mark_tool_operation_in_doubt(&self, operation_id: &str) -> Result<()> {
+        self.release_tool_operation(operation_id);
+        let result = Err(ErrorData::new(
+            ErrorCode::INTERNAL_ERROR,
+            "Tool execution ended without a durable terminal result. Its execution status is in doubt and it must not be retried automatically.".to_string(),
+            Some(serde_json::json!({
+                "tool_operation_id": operation_id,
+                "status": "in_doubt",
+                "retryable": false
+            })),
+        ));
+        let result_json = serialize_tool_operation_result(&result)?;
+        sqlx::query(
+            r#"
+            UPDATE tool_operations
+            SET state = 'in_doubt', result_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE operation_id = ? AND state = 'started'
+            "#,
+        )
+        .bind(result_json)
+        .bind(operation_id)
+        .execute(self.pool().await?)
+        .await?;
+        Ok(())
+    }
+
+    async fn complete_tool_operation(
+        &self,
+        operation_id: &str,
+        result: &ToolResult<CallToolResult>,
+    ) -> Result<()> {
+        let result_json = serialize_tool_operation_result(result)?;
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let updated = sqlx::query(
+            r#"
+            UPDATE tool_operations
+            SET state = 'completed', result_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE operation_id = ? AND state = 'started'
+            "#,
+        )
+        .bind(&result_json)
+        .bind(operation_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if updated.rows_affected() == 0 {
+            let existing = sqlx::query_as::<_, (String, Option<String>)>(
+                "SELECT state, result_json FROM tool_operations WHERE operation_id = ?",
+            )
+            .bind(operation_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            match existing {
+                Some((state, Some(stored))) if state == "completed" && stored == result_json => {}
+                Some((state, _)) => {
+                    anyhow::bail!("cannot complete tool operation in state {state}")
+                }
+                None => anyhow::bail!("tool operation {operation_id} does not exist"),
+            }
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn persist_tool_operation_response(
+        &self,
+        session_id: &str,
+        tool_request_id: &str,
+        message: &Message,
+    ) -> Result<()> {
+        let response_message_id = message
+            .id
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("tool response message must have a stable id"))?;
+        let has_response = message.content.iter().any(
+            |content| matches!(content, MessageContent::ToolResponse(response) if response.id == tool_request_id),
+        );
+        if !has_response {
+            anyhow::bail!("tool response message does not answer request {tool_request_id}");
+        }
+
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let state = sqlx::query_scalar::<_, String>(
+            "SELECT state FROM tool_operations WHERE session_id = ? AND tool_request_id = ?",
+        )
+        .bind(session_id)
+        .bind(tool_request_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("tool operation does not exist"))?;
+        if state != "completed" {
+            anyhow::bail!("cannot persist response for tool operation in state {state}");
+        }
+
+        Self::upsert_message_in_tx(&mut tx, session_id, message).await?;
+        sqlx::query(
+            r#"
+            UPDATE tool_operations
+            SET response_message_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE session_id = ? AND tool_request_id = ?
+            "#,
+        )
+        .bind(response_message_id)
+        .bind(session_id)
+        .bind(tool_request_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn recover_tool_operations(&self, session_id: &str) -> Result<usize> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let operations =
+            sqlx::query_as::<_, (String, String, String, String, String, Option<String>)>(
+                r#"
+            SELECT operation_id, tool_request_id, tool_name, owner_id, state, result_json
+            FROM tool_operations
+            WHERE session_id = ?
+              AND conversation_bound = TRUE
+              AND response_message_id IS NULL
+              AND state IN ('started', 'completed', 'in_doubt')
+            ORDER BY created_at, operation_id
+            "#,
+            )
+            .bind(session_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        if operations.is_empty() {
+            tx.commit().await?;
+            return Ok(0);
+        }
+
+        let stored_messages = sqlx::query_as::<_, (String, String)>(
+            "SELECT message_id, content_json FROM messages WHERE session_id = ? ORDER BY id",
+        )
+        .bind(session_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        let mut request_metadata_by_id = HashMap::new();
+        let mut response_message_id_by_request = HashMap::new();
+        for (message_id, content_json) in stored_messages {
+            let contents: Vec<MessageContent> = serde_json::from_str(&content_json)?;
+            for content in contents {
+                match content {
+                    MessageContent::ToolRequest(request) => {
+                        request_metadata_by_id.insert(request.id, request.metadata);
+                    }
+                    MessageContent::ToolResponse(response) => {
+                        response_message_id_by_request.insert(response.id, message_id.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut recovered = 0;
+        let active_operations = self
+            .active_tool_operations
+            .lock()
+            .expect("active tool operations mutex poisoned")
+            .clone();
+
+        for (operation_id, request_id, tool_name, owner_id, state, stored_result) in operations {
+            if owner_id == self.owner_id && active_operations.contains(&operation_id) {
+                continue;
+            }
+            let request_exists = request_metadata_by_id.contains_key(&request_id);
+            let request_metadata = request_metadata_by_id.remove(&request_id).flatten();
+            let existing_response_message_id = response_message_id_by_request.remove(&request_id);
+
+            if let Some(message_id) = existing_response_message_id {
+                sqlx::query(
+                    "UPDATE tool_operations SET response_message_id = ?, updated_at = CURRENT_TIMESTAMP WHERE operation_id = ?",
+                )
+                .bind(message_id)
+                .bind(&operation_id)
+                .execute(&mut *tx)
+                .await?;
+                recovered += 1;
+                continue;
+            }
+
+            if !request_exists {
+                let request = Message::assistant().with_generated_id().with_tool_request(
+                    request_id.clone(),
+                    Ok(CallToolRequestParams::new(tool_name)),
+                );
+                Self::upsert_message_in_tx(&mut tx, session_id, &request).await?;
+            }
+
+            let result = match state.as_str() {
+                "completed" => deserialize_tool_operation_result(
+                    stored_result.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!("completed tool operation has no terminal result")
+                    })?,
+                )?,
+                "started" | "in_doubt" => Err(ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    "Tool execution was interrupted after durable dispatch began. Its execution status is in doubt and it must not be retried automatically. Verify the external state before deciding how to proceed.".to_string(),
+                    Some(serde_json::json!({
+                        "tool_operation_id": operation_id,
+                        "status": "in_doubt",
+                        "retryable": false
+                    })),
+                )),
+                other => anyhow::bail!("tool operation has invalid state {other}"),
+            };
+            let result_json = serialize_tool_operation_result(&result)?;
+            let mut response = Message::user().with_generated_id();
+            response.add_tool_response_with_metadata(
+                request_id.clone(),
+                result,
+                request_metadata.as_ref(),
+            );
+            let response_message_id = response.id.clone().expect("generated message id");
+            Self::upsert_message_in_tx(&mut tx, session_id, &response).await?;
+            sqlx::query(
+                r#"
+                UPDATE tool_operations
+                SET state = CASE WHEN state = 'completed' THEN state ELSE 'in_doubt' END,
+                    result_json = ?, response_message_id = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE operation_id = ?
+                "#,
+            )
+            .bind(result_json)
+            .bind(response_message_id)
+            .bind(operation_id)
+            .execute(&mut *tx)
+            .await?;
+            recovered += 1;
+        }
+
+        tx.commit().await?;
+        Ok(recovered)
+    }
+
     async fn add_message(&self, session_id: &str, message: &Message) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -2993,6 +3466,17 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
+        Self::upsert_message_in_tx(&mut tx, session_id, message).await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn upsert_message_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+        message: &Message,
+    ) -> Result<()> {
         let role = role_to_string(&message.role);
         let content_json = serde_json::to_string(&message.content)?;
         let metadata_json = serde_json::to_string(&message.metadata)?;
@@ -3012,7 +3496,7 @@ impl SessionStorage {
             .bind(&metadata_json)
             .bind(session_id)
             .bind(message_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
             updated = result.rows_affected() > 0;
         }
@@ -3034,21 +3518,20 @@ impl SessionStorage {
             .bind(content_json)
             .bind(message.created)
             .bind(metadata_json)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
 
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
             .bind(session_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
 
         sqlx::query("UPDATE session_summaries SET status = 'stale', updated_at = datetime('now') WHERE session_id = ?")
             .bind(session_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
 
-        tx.commit().await?;
         Ok(())
     }
 
@@ -3755,6 +4238,23 @@ impl SessionStorage {
     }
 }
 
+fn serialize_tool_operation_result(result: &ToolResult<CallToolResult>) -> Result<String> {
+    serde_json::to_string(&MessageContent::tool_response("ledger", result.clone()))
+        .map_err(Into::into)
+}
+
+fn tool_operation_request_digest(tool_call: &CallToolRequestParams) -> Result<String> {
+    let digest = Sha256::digest(serde_json::to_vec(tool_call)?);
+    Ok(crate::utils::bytes_to_hex(digest))
+}
+
+fn deserialize_tool_operation_result(value: &str) -> Result<ToolResult<CallToolResult>> {
+    match serde_json::from_str::<MessageContent>(value)? {
+        MessageContent::ToolResponse(response) => Ok(response.tool_result),
+        _ => anyhow::bail!("tool operation result is malformed"),
+    }
+}
+
 fn has_orphaned_tool_responses(messages: &[Message]) -> bool {
     let request_ids = messages
         .iter()
@@ -4016,6 +4516,324 @@ mod tests {
         assert_eq!(messages.messages().len(), 1);
         assert_eq!(messages.messages()[0].id.as_deref(), Some("stream-reply"));
         assert_eq!(messages.messages()[0].as_concat_text(), "partial response");
+    }
+
+    #[tokio::test]
+    async fn tool_operation_ledger_prevents_redispatch_and_replays_terminal_result() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Tool ledger".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        const SECRET_SENTINEL: &str = "AUD031_LEDGER_SECRET_SENTINEL";
+        let tool_call = rmcp::model::CallToolRequestParams::new("write_file")
+            .with_arguments(rmcp::object!({ "path": "report.md", "content": SECRET_SENTINEL }));
+        let missing_checkpoint = sm
+            .begin_tool_operation(&session.id, "tool-request-1", &tool_call, true)
+            .await
+            .unwrap_err();
+        assert!(missing_checkpoint
+            .to_string()
+            .contains("must be durably checkpointed"));
+        sm.add_message(
+            &session.id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request("tool-request-1", Ok(tool_call.clone())),
+        )
+        .await
+        .unwrap();
+
+        let operation_id = match sm
+            .begin_tool_operation(&session.id, "tool-request-1", &tool_call, true)
+            .await
+            .unwrap()
+        {
+            ToolOperationStart::Execute { operation_id } => operation_id,
+            other => panic!("new operation should execute, got {other:?}"),
+        };
+        let persisted_identity = sqlx::query_as::<_, (String, String)>(
+            "SELECT tool_name, request_digest FROM tool_operations WHERE operation_id = ?",
+        )
+        .bind(&operation_id)
+        .fetch_one(sm.storage().pool().await.unwrap())
+        .await
+        .unwrap();
+        assert!(!format!("{persisted_identity:?}").contains(SECRET_SENTINEL));
+
+        assert!(matches!(
+            sm.begin_tool_operation(&session.id, "tool-request-1", &tool_call, true)
+                .await
+                .unwrap(),
+            ToolOperationStart::InDoubt { .. }
+        ));
+
+        let terminal_result = Ok(rmcp::model::CallToolResult::success(vec![
+            rmcp::model::Content::text("written"),
+        ]));
+        sm.complete_tool_operation(&operation_id, &terminal_result)
+            .await
+            .unwrap();
+
+        match sm
+            .begin_tool_operation(&session.id, "tool-request-1", &tool_call, true)
+            .await
+            .unwrap()
+        {
+            ToolOperationStart::Replay { result, .. } => assert_eq!(result, terminal_result),
+            other => panic!("completed operation should replay, got {other:?}"),
+        }
+
+        let changed_call = rmcp::model::CallToolRequestParams::new("write_file")
+            .with_arguments(rmcp::object!({ "path": "other.md", "content": SECRET_SENTINEL }));
+        let collision = sm
+            .begin_tool_operation(&session.id, "tool-request-1", &changed_call, true)
+            .await
+            .unwrap_err();
+        assert!(collision.to_string().contains("different tool payload"));
+    }
+
+    #[tokio::test]
+    async fn interrupted_tool_operation_recovers_as_visible_in_doubt_response() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Interrupted tool".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let tool_call = rmcp::model::CallToolRequestParams::new("send_email")
+            .with_arguments(rmcp::object!({ "recipient": "person@example.com" }));
+        sm.add_message(
+            &session.id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request("tool-request-2", Ok(tool_call.clone())),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            sm.begin_tool_operation(&session.id, "tool-request-2", &tool_call, true)
+                .await
+                .unwrap(),
+            ToolOperationStart::Execute { .. }
+        ));
+        assert_eq!(sm.recover_tool_operations(&session.id).await.unwrap(), 0);
+
+        let restarted = SessionManager::new(temp_dir.path().to_path_buf());
+        assert_eq!(
+            restarted
+                .recover_tool_operations(&session.id)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            restarted
+                .recover_tool_operations(&session.id)
+                .await
+                .unwrap(),
+            0
+        );
+
+        let reloaded = restarted.get_session(&session.id, true).await.unwrap();
+        let messages = reloaded.conversation.unwrap();
+        let responses = messages
+            .messages()
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .filter_map(MessageContent::as_tool_response)
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 1);
+        let error = responses[0]
+            .tool_result
+            .as_ref()
+            .expect_err("interrupted operation should recover as an error");
+        assert!(error.message.contains("execution status is in doubt"));
+        assert!(error.message.contains("must not be retried automatically"));
+
+        assert!(matches!(
+            restarted
+                .begin_tool_operation(&session.id, "tool-request-2", &tool_call, true)
+                .await
+                .unwrap(),
+            ToolOperationStart::InDoubt { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn abandoned_in_process_tool_operation_is_recoverable_without_redispatch() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Cancelled tool".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let tool_call = rmcp::model::CallToolRequestParams::new("publish_report");
+        sm.add_message(
+            &session.id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request("tool-request-cancelled", Ok(tool_call.clone())),
+        )
+        .await
+        .unwrap();
+        let operation_id = match sm
+            .begin_tool_operation(&session.id, "tool-request-cancelled", &tool_call, true)
+            .await
+            .unwrap()
+        {
+            ToolOperationStart::Execute { operation_id } => operation_id,
+            other => panic!("new operation should execute, got {other:?}"),
+        };
+
+        sm.release_tool_operation(&operation_id);
+        assert_eq!(sm.recover_tool_operations(&session.id).await.unwrap(), 1);
+        assert!(matches!(
+            sm.begin_tool_operation(&session.id, "tool-request-cancelled", &tool_call, true,)
+                .await
+                .unwrap(),
+            ToolOperationStart::InDoubt { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn completed_tool_operation_recovers_response_without_redispatch() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Completed tool".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let tool_call = rmcp::model::CallToolRequestParams::new("create_document");
+        sm.add_message(
+            &session.id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request("tool-request-3", Ok(tool_call.clone())),
+        )
+        .await
+        .unwrap();
+        let operation_id = match sm
+            .begin_tool_operation(&session.id, "tool-request-3", &tool_call, true)
+            .await
+            .unwrap()
+        {
+            ToolOperationStart::Execute { operation_id } => operation_id,
+            other => panic!("new operation should execute, got {other:?}"),
+        };
+        let terminal_result = Ok(rmcp::model::CallToolResult::success(vec![
+            rmcp::model::Content::text("created"),
+        ]));
+        sm.complete_tool_operation(&operation_id, &terminal_result)
+            .await
+            .unwrap();
+
+        let restarted = SessionManager::new(temp_dir.path().to_path_buf());
+        assert_eq!(
+            restarted
+                .recover_tool_operations(&session.id)
+                .await
+                .unwrap(),
+            1
+        );
+        let reloaded = restarted.get_session(&session.id, true).await.unwrap();
+        let conversation = reloaded.conversation.unwrap();
+        let response = conversation
+            .messages()
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .find_map(MessageContent::as_tool_response)
+            .expect("completed result should be restored to conversation");
+        assert_eq!(response.tool_result, terminal_result);
+    }
+
+    #[tokio::test]
+    async fn terminal_tool_result_and_conversation_response_are_persisted_idempotently() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Terminal tool response".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let tool_call = rmcp::model::CallToolRequestParams::new("export_file");
+        sm.add_message(
+            &session.id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request("tool-request-4", Ok(tool_call.clone())),
+        )
+        .await
+        .unwrap();
+        let operation_id = match sm
+            .begin_tool_operation(&session.id, "tool-request-4", &tool_call, true)
+            .await
+            .unwrap()
+        {
+            ToolOperationStart::Execute { operation_id } => operation_id,
+            other => panic!("new operation should execute, got {other:?}"),
+        };
+        let terminal_result = Ok(rmcp::model::CallToolResult::success(vec![
+            rmcp::model::Content::text("exported"),
+        ]));
+        sm.complete_tool_operation(&operation_id, &terminal_result)
+            .await
+            .unwrap();
+        let mut response = Message::user().with_id("tool-response-4");
+        response.add_tool_response_with_metadata("tool-request-4", terminal_result, None);
+
+        sm.persist_tool_operation_response(&session.id, "tool-request-4", &response)
+            .await
+            .unwrap();
+        sm.persist_tool_operation_response(&session.id, "tool-request-4", &response)
+            .await
+            .unwrap();
+
+        let restarted = SessionManager::new(temp_dir.path().to_path_buf());
+        assert_eq!(
+            restarted
+                .recover_tool_operations(&session.id)
+                .await
+                .unwrap(),
+            0
+        );
+        let reloaded = restarted.get_session(&session.id, true).await.unwrap();
+        let response_count = reloaded
+            .conversation
+            .unwrap()
+            .messages()
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .filter(|content| {
+                matches!(content, MessageContent::ToolResponse(response) if response.id == "tool-request-4")
+            })
+            .count();
+        assert_eq!(response_count, 1);
     }
 
     #[tokio::test]
@@ -5708,6 +6526,47 @@ mod tests {
         assert!(legacy.workspace_id.is_none());
         assert!(legacy.credential_profile_id.is_none());
         assert!(legacy.workspace_context.is_none());
+    }
+
+    #[tokio::test]
+    async fn tool_operation_ledger_migrates_from_schema_22() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query("DROP TABLE tool_operations")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 22")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage().pool().await.unwrap();
+        let table_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tool_operations')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert!(table_exists);
+        let schema_version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(schema_version, CURRENT_SCHEMA_VERSION);
     }
 
     #[tokio::test]

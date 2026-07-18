@@ -198,6 +198,11 @@ impl GoslingAcpAgent {
         let t_start = std::time::Instant::now();
         let load_options = compacted_load_options_from_meta(args.meta.as_ref())?;
 
+        self.session_manager
+            .recover_tool_operations(&session_id_str)
+            .await
+            .internal_err_ctx("Failed to recover interrupted tool operations")?;
+
         let mut session = self
             .session_manager
             .get_session(&session_id_str, !load_options.compacted)

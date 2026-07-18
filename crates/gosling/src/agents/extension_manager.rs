@@ -2060,11 +2060,14 @@ impl ExtensionManager {
         let resolved_tool = resolved;
         let should_hydrate_mcp_app = self.host_supports_mcp_apps();
         let read_cancellation_token = cancellation_token.clone();
-        let owned_ctx = ToolCallContext::new(
+        let mut owned_ctx = ToolCallContext::new(
             ctx.session_id.clone(),
             ctx.working_dir.clone(),
             ctx.tool_call_request_id.clone(),
         );
+        if let Some(operation_id) = &ctx.tool_operation_id {
+            owned_ctx = owned_ctx.with_tool_operation_id(operation_id.clone());
+        }
 
         let fut = async move {
             tracing::debug!(
