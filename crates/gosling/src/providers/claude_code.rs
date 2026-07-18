@@ -304,6 +304,7 @@ pub struct ClaudeCodeProvider {
     command: PathBuf,
     #[serde(skip)]
     name: String,
+    working_dir: PathBuf,
     /// Temp file holding MCP config JSON (auto-deleted on drop).
     #[serde(skip)]
     mcp_config_file: Option<NamedTempFile>,
@@ -375,6 +376,7 @@ impl ClaudeCodeProvider {
     fn build_stream_json_command(&self) -> Command {
         let mut cmd = Command::new(&self.command);
         configure_subprocess(&mut cmd);
+        cmd.current_dir(&self.working_dir);
         // Allow gosling to run inside a Claude Code session.
         cmd.env_remove("CLAUDECODE");
         cmd.arg("--input-format")
@@ -670,6 +672,18 @@ impl ProviderDef for ClaudeCodeProvider {
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,
+        tls_config: Option<crate::providers::api_client::TlsConfig>,
+    ) -> BoxFuture<'static, Result<Self::Provider>> {
+        Self::from_env_with_working_dir(
+            extensions,
+            crate::providers::base::current_working_dir(),
+            tls_config,
+        )
+    }
+
+    fn from_env_with_working_dir(
+        extensions: Vec<ExtensionConfig>,
+        working_dir: PathBuf,
         _tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(async move {
@@ -689,6 +703,7 @@ impl ProviderDef for ClaudeCodeProvider {
             Ok(Self {
                 command: resolved_command,
                 name: CLAUDE_CODE_PROVIDER_NAME.to_string(),
+                working_dir,
                 mcp_config_file,
                 cli_process: tokio::sync::OnceCell::new(),
                 pending_confirmations: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -705,6 +720,10 @@ impl Provider for ClaudeCodeProvider {
     }
 
     fn manages_own_context(&self) -> bool {
+        true
+    }
+
+    fn executes_tools_outside_gosling(&self) -> bool {
         true
     }
 
@@ -1384,11 +1403,23 @@ mod tests {
         ClaudeCodeProvider {
             command: PathBuf::from("claude"),
             name: "claude-code".to_string(),
+            working_dir: PathBuf::from("/tmp/claude-project"),
             mcp_config_file: None,
             cli_process: tokio::sync::OnceCell::new(),
             pending_confirmations: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             initial_mode: tokio::sync::Mutex::new(None),
         }
+    }
+
+    #[test]
+    fn command_uses_session_working_directory() {
+        assert_eq!(
+            make_provider()
+                .build_stream_json_command()
+                .as_std()
+                .get_current_dir(),
+            Some(PathBuf::from("/tmp/claude-project").as_path())
+        );
     }
 
     fn make_test_process(canned_stdout: &str) -> (CliProcess, tokio::io::DuplexStream) {

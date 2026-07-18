@@ -173,6 +173,38 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
   enter the ReadableStream queue per pull.
 - Change review: desktop boundary files, focused test helpers, and this log;
   generated API code and unrelated renderer behavior are untouched.
+- Commit: `1f9867b66`.
+
+### Stage 6 — provider execution and working-directory policy
+
+- Defects: AUD-005, AUD-006, AUD-007, AUD-008, and AUD-022 fixed.
+- Changes: working-directory findings remain approval-required in Auto mode;
+  path checks canonicalize existing targets and the nearest existing ancestor
+  for prospective targets before applying component-aware containment. The
+  provider contract now identifies backends that execute tools outside Gosling,
+  and restricted sessions reject those backends before compaction or inference.
+  Gemini maps supported modes to explicit approval modes and rejects Chat;
+  Cursor and Tagteam accept only their safely representable Auto mode and reject
+  every unsupported mode. Gemini, Cursor, Claude Code, Codex, and Tagteam now
+  retain the session working directory and apply it to every task command.
+- Regression guardrails: traversal, existing/missing symlink, dangling-link,
+  command-cwd, provider-mode matrix, and unsupported-mode tests were added.
+- Modularization: `agent.rs` remains >=2000 lines and routed. Claude Code and
+  Codex remain in the 1001-1999 band; edits stayed local, with Codex and Cursor
+  command-construction seams extracted to keep policy testable.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: contract/override/factory/current-dir coverage was
+  enumerated with `rg`; `git diff --check` passed. Rust tests/build/Clippy were
+  not executed under the repository's explicit authorization rule.
+- Adversarial review: verified mode changes are applied per resumed Gemini
+  invocation; unsupported headless approval modes fail before provider use;
+  provider configuration cannot bypass the restricted-session preflight;
+  additional working directories are canonicalized independently; stale invalid
+  roots cannot suppress a valid root; and absolute shell tokens use the same
+  canonical boundary as path arguments.
+- Change review: the provider capability trait, five command providers, the
+  working-directory inspector, the localized reply preflight, and this log;
+  ACP-backed provider mode negotiation and generated UI API code are untouched.
 - Commit: pending.
 
 ## Campaign closeout

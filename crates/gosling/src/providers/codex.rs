@@ -52,6 +52,7 @@ pub struct CodexProvider {
     command: PathBuf,
     #[serde(skip)]
     name: String,
+    working_dir: PathBuf,
     /// Whether to skip git repo check
     skip_git_check: bool,
     /// CLI config overrides for MCP servers
@@ -145,6 +146,16 @@ impl CodexProvider {
         Ok(())
     }
 
+    fn base_command(&self) -> Command {
+        let mut command = Command::new(&self.command);
+        configure_subprocess(&mut command);
+        command.current_dir(&self.working_dir);
+        if let Ok(path) = SearchPaths::builder().with_npm().path() {
+            command.env("PATH", path);
+        }
+        command
+    }
+
     /// Execute codex CLI command
     async fn execute_command(
         &self,
@@ -173,15 +184,7 @@ impl CodexProvider {
             println!("============================");
         }
 
-        let mut cmd = Command::new(&self.command);
-        configure_subprocess(&mut cmd);
-
-        // Propagate extended PATH so the codex subprocess can find Node.js
-        // and other dependencies (especially when launched from the desktop app
-        // where the inherited PATH is limited).
-        if let Ok(path) = SearchPaths::builder().with_npm().path() {
-            cmd.env("PATH", path);
-        }
+        let mut cmd = self.base_command();
 
         // Use 'exec' subcommand for non-interactive mode
         cmd.arg("exec");
@@ -697,6 +700,18 @@ impl ProviderDef for CodexProvider {
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,
+        tls_config: Option<crate::providers::api_client::TlsConfig>,
+    ) -> BoxFuture<'static, Result<Self::Provider>> {
+        Self::from_env_with_working_dir(
+            extensions,
+            crate::providers::base::current_working_dir(),
+            tls_config,
+        )
+    }
+
+    fn from_env_with_working_dir(
+        extensions: Vec<ExtensionConfig>,
+        working_dir: PathBuf,
         _tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(async move {
@@ -718,6 +733,7 @@ impl ProviderDef for CodexProvider {
             Ok(Self {
                 command: resolved_command,
                 name: CODEX_PROVIDER_NAME.to_string(),
+                working_dir,
                 skip_git_check,
                 mcp_config_overrides: codex_mcp_config_overrides(&resolved),
                 mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -730,6 +746,10 @@ impl ProviderDef for CodexProvider {
 impl Provider for CodexProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    fn executes_tools_outside_gosling(&self) -> bool {
+        true
     }
 
     async fn get_context_limit(&self, model_config: &ModelConfig) -> Result<usize, ProviderError> {
@@ -992,6 +1012,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1011,6 +1032,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1044,6 +1066,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1133,6 +1156,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1157,6 +1181,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1229,6 +1254,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1244,6 +1270,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1381,6 +1408,7 @@ mod tests {
         let provider = CodexProvider {
             command: PathBuf::from("codex"),
             name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
             skip_git_check: false,
             mcp_config_overrides: Vec::new(),
             mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
@@ -1425,5 +1453,21 @@ mod tests {
             .map(|a| a.to_str().unwrap())
             .collect();
         assert_eq!(args, expected);
+    }
+
+    #[test]
+    fn command_uses_session_working_directory() {
+        let provider = CodexProvider {
+            command: PathBuf::from("codex"),
+            name: "codex".to_string(),
+            working_dir: PathBuf::from("/tmp/codex-project"),
+            skip_git_check: false,
+            mcp_config_overrides: Vec::new(),
+            mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
+        };
+        assert_eq!(
+            provider.base_command().as_std().get_current_dir(),
+            Some(PathBuf::from("/tmp/codex-project").as_path())
+        );
     }
 }

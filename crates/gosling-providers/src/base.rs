@@ -711,6 +711,12 @@ pub trait Provider: Send + Sync {
         false
     }
 
+    /// Whether this provider can invoke tools without routing them through
+    /// Gosling's tool inspection and permission pipeline.
+    fn executes_tools_outside_gosling(&self) -> bool {
+        false
+    }
+
     /// Configure OAuth authentication for this provider
     ///
     /// This method is called when a provider has configuration keys marked with oauth_flow = true.

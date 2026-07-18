@@ -4,6 +4,7 @@ use rmcp::model::Role;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::RwLock;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
@@ -12,6 +13,7 @@ use super::base::{
 };
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::search_path::SearchPaths;
+use crate::config::GoslingMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::subprocess::configure_subprocess;
 use futures::future::BoxFuture;
@@ -32,11 +34,22 @@ pub struct CursorAgentProvider {
     command: PathBuf,
     #[serde(skip)]
     name: String,
+    working_dir: PathBuf,
+    #[serde(skip)]
+    gosling_mode: RwLock<GoslingMode>,
 }
 
 impl CursorAgentProvider {
     pub async fn from_env(
+        tls_config: Option<crate::providers::api_client::TlsConfig>,
+    ) -> Result<Self> {
+        Self::from_env_with_working_dir(tls_config, crate::providers::base::current_working_dir())
+            .await
+    }
+
+    async fn from_env_with_working_dir(
         _tls_config: Option<crate::providers::api_client::TlsConfig>,
+        working_dir: PathBuf,
     ) -> Result<Self> {
         let config = crate::config::Config::global();
         let command: String = config.get_cursor_agent_command().unwrap_or_default().into();
@@ -45,6 +58,8 @@ impl CursorAgentProvider {
         Ok(Self {
             command: resolved_command,
             name: CURSOR_AGENT_PROVIDER_NAME.to_string(),
+            working_dir,
+            gosling_mode: RwLock::new(config.get_gosling_mode().unwrap_or_default()),
         })
     }
 
@@ -52,6 +67,7 @@ impl CursorAgentProvider {
     async fn get_authentication_status(&self) -> bool {
         Command::new(&self.command)
             .arg("status")
+            .current_dir(&self.working_dir)
             .output()
             .await
             .ok()
@@ -177,6 +193,49 @@ impl CursorAgentProvider {
         Ok((response_message, usage))
     }
 
+    fn apply_permission_flags(
+        command: &mut Command,
+        mode: GoslingMode,
+    ) -> Result<(), ProviderError> {
+        match mode {
+            GoslingMode::Auto => {
+                command.arg("--force");
+                Ok(())
+            }
+            GoslingMode::SmartApprove | GoslingMode::Approve | GoslingMode::Chat => {
+                Err(ProviderError::ExecutionError(format!(
+                    "cursor-agent cannot route Gosling mode '{mode}' approvals in headless mode"
+                )))
+            }
+        }
+    }
+
+    fn build_command(&self, model: &ModelConfig, prompt: &str) -> Result<Command, ProviderError> {
+        let mut command = Command::new(&self.command);
+        configure_subprocess(&mut command);
+        command.current_dir(&self.working_dir);
+
+        if let Ok(path) = SearchPaths::builder().with_npm().path() {
+            command.env("PATH", path);
+        }
+
+        command
+            .arg("--model")
+            .arg(&model.model_name)
+            .arg("-p")
+            .arg(prompt)
+            .arg("--output-format")
+            .arg("json");
+
+        let gosling_mode = *self
+            .gosling_mode
+            .read()
+            .map_err(|_| ProviderError::RequestFailed("Cursor mode lock poisoned".to_string()))?;
+        Self::apply_permission_flags(&mut command, gosling_mode)?;
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        Ok(command)
+    }
+
     async fn execute_command(
         &self,
         model: &ModelConfig,
@@ -199,22 +258,7 @@ impl CursorAgentProvider {
             println!("================================");
         }
 
-        let mut cmd = Command::new(&self.command);
-        configure_subprocess(&mut cmd);
-
-        if let Ok(path) = SearchPaths::builder().with_npm().path() {
-            cmd.env("PATH", path);
-        }
-
-        cmd.arg("--model").arg(&model.model_name);
-
-        cmd.arg("-p")
-            .arg(&prompt)
-            .arg("--output-format")
-            .arg("json")
-            .arg("--force");
-
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut cmd = self.build_command(model, &prompt)?;
 
         let mut child = cmd
                 .spawn()
@@ -306,12 +350,38 @@ impl ProviderDef for CursorAgentProvider {
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(tls_config))
     }
+
+    fn from_env_with_working_dir(
+        _extensions: Vec<crate::config::ExtensionConfig>,
+        working_dir: PathBuf,
+        tls_config: Option<crate::providers::api_client::TlsConfig>,
+    ) -> BoxFuture<'static, Result<Self::Provider>> {
+        Box::pin(Self::from_env_with_working_dir(tls_config, working_dir))
+    }
 }
 
 #[async_trait]
 impl Provider for CursorAgentProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    fn executes_tools_outside_gosling(&self) -> bool {
+        true
+    }
+
+    async fn update_mode(&self, _session_id: &str, mode: GoslingMode) -> Result<(), ProviderError> {
+        if mode != GoslingMode::Auto {
+            return Err(ProviderError::ExecutionError(format!(
+                "cursor-agent cannot route Gosling mode '{mode}' approvals in headless mode"
+            )));
+        }
+        *self
+            .gosling_mode
+            .write()
+            .map_err(|_| ProviderError::RequestFailed("Cursor mode lock poisoned".to_string()))? =
+            mode;
+        Ok(())
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
@@ -360,5 +430,44 @@ impl Provider for CursorAgentProvider {
 
         let provider_usage = ProviderUsage::new(model_config.model_name.clone(), usage);
         Ok(stream_from_single_message(message, provider_usage))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permission_flags_are_mode_sensitive_and_fail_closed_for_non_auto_modes() {
+        for mode in [
+            GoslingMode::SmartApprove,
+            GoslingMode::Approve,
+            GoslingMode::Chat,
+        ] {
+            let mut command = Command::new("cursor-agent");
+            assert!(CursorAgentProvider::apply_permission_flags(&mut command, mode).is_err());
+            assert!(!command.as_std().get_args().any(|arg| arg == "--force"));
+        }
+
+        let mut automatic = Command::new("cursor-agent");
+        CursorAgentProvider::apply_permission_flags(&mut automatic, GoslingMode::Auto).unwrap();
+        assert!(automatic.as_std().get_args().any(|arg| arg == "--force"));
+    }
+
+    #[test]
+    fn command_uses_session_working_directory() {
+        let provider = CursorAgentProvider {
+            command: PathBuf::from("cursor-agent"),
+            name: CURSOR_AGENT_PROVIDER_NAME.to_string(),
+            working_dir: PathBuf::from("/tmp/cursor-project"),
+            gosling_mode: RwLock::new(GoslingMode::Auto),
+        };
+        let command = provider
+            .build_command(&ModelConfig::new("auto"), "prompt")
+            .unwrap();
+        assert_eq!(
+            command.as_std().get_current_dir(),
+            Some(PathBuf::from("/tmp/cursor-project").as_path())
+        );
     }
 }

@@ -1744,18 +1744,20 @@ impl Agent {
                 .get_session(&session_config.id, true)
                 .await?
         };
+        let provider = self.provider().await?;
+        if session.restrict_tools_to_working_dirs && provider.executes_tools_outside_gosling() {
+            anyhow::bail!(
+                "Provider '{}' executes tools outside Gosling's inspection pipeline and cannot be used while this session restricts tools to working directories",
+                provider.get_name()
+            );
+        }
         let conversation = session
             .conversation
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Session {} has no conversation", session_config.id))?;
 
-        let needs_auto_compact = check_if_compaction_needed(
-            self.provider().await?.as_ref(),
-            &conversation,
-            None,
-            &session,
-        )
-        .await?;
+        let needs_auto_compact =
+            check_if_compaction_needed(provider.as_ref(), &conversation, None, &session).await?;
 
         let conversation_to_compact = conversation.clone();
 
