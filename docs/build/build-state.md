@@ -22,7 +22,7 @@ accessible sidebar management, and regression coverage.
 |---|---|---|
 | 0 — Orientation | complete | `evidence/gate-0.md`, `audits/gate-0-audit.md` |
 | 1 — Intent and traceability | complete | `docs/INTENT.md`, `traceability-matrix.md`, `evidence/gate-1.md` |
-| 2 — Contracts and design | pending | — |
+| 2 — Contracts and design | complete | `docs/architecture.md`, ADR-0001–0005, `io-contract.md`, `execution-plan.md` |
 | 3 — Boundaries and harness | pending | — |
 | 4 — Backend vertical slice | pending | — |
 | 5 — Desktop vertical slice | pending | — |
@@ -46,6 +46,6 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-Begin Gate 2 by selecting the canonical DTO shapes, workspace-store and credential-scope
-contracts, DB v22 fields, ADRs, file plan, and acceptance-test commands. Preserve the
-Gate 0 findings as design constraints and the Gate 1 negative-space cases as required tests.
+Begin Gate 3 by adding canonical DTOs, workspace module/service boundaries, typed ACP
+dispatch scaffolding, and real-contract test harnesses. Preserve the Gate 2 ownership and
+error contracts; no renderer-local Workspace schema or direct handler/store reach-in.

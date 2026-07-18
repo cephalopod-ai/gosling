@@ -53,7 +53,7 @@ workspace and fails visibly if its credential profile must be relinked.
 | REQ-002 | P0 | Provide backend-owned versioned workspace persistence and active selection. | Workspace CRUD and active ID survive restart; writes use temp+fsync+rename and owner-only permissions; malformed records yield a recoverable error instead of crashing. |
 | REQ-003 | P0 | Model workspace general metadata canonically. | Stable UUID, schema version, name, optional description/icon, provider/model defaults, and created/updated/last-opened timestamps round-trip through one shared contract. |
 | REQ-004 | P0 | Support a primary working folder and additional source/reference folders. | Users can add, edit, relink, reveal, and remove references; kinds and read/read-write access round-trip; removal never touches the physical directory. |
-| REQ-005 | P0 | Support named product-output folders and product-type assignments. | Multiple outputs, one default, create-if-missing, and one-or-more supported product types round-trip; explicit confirmation is required before creating a missing folder. |
+| REQ-005 | P0 | Support named product-output folders and product-type assignments. | At least one output, exactly one default, create-if-missing, and one-or-more supported product types per output round-trip; explicit confirmation is required before creating a missing folder. |
 | REQ-006 | P0 | Validate and normalize workspace folders in the backend. | Missing/non-directory/inaccessible paths return actionable per-folder warnings; a missing primary folder blocks new sessions; optional missing folders do not crash the app. |
 | REQ-007 | P0 | Persist and switch the active workspace. | Selecting a workspace updates backend state, list/header indicators, and other open Desktop windows; restart restores it; switching does not restart the backend. |
 | REQ-008 | P0 | Pass an explicit workspace ID through every new-session entry path. | Hub, Pair route, launcher/shortcut, and shared create helper use the same request seam; the backend pins the requested valid workspace even if active selection changes while the request is in flight. |
@@ -127,4 +127,3 @@ Ordered cut list under pressure (first eligible cut first):
 4. REQ-022 workspace import (export remains committed for the sidebar action).
 
 P0 is never cut without user contact.
-
