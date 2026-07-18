@@ -65,6 +65,13 @@ pub fn is_token_cancelled(cancellation_token: &Option<CancellationToken>) -> boo
         .is_some_and(|t| t.is_cancelled())
 }
 
+pub async fn wait_for_cancellation(cancellation_token: &Option<CancellationToken>) {
+    match cancellation_token {
+        Some(token) => token.cancelled().await,
+        None => std::future::pending().await,
+    }
+}
+
 pub fn split_command_args(input: &str) -> anyhow::Result<Vec<String>> {
     let mut parts = Vec::new();
     let mut current = String::new();
@@ -226,5 +233,18 @@ mod tests {
     fn test_split_command_args_unmatched_quote() {
         assert!(split_command_args(r#""unmatched"#).is_err());
         assert!(split_command_args("'unmatched").is_err());
+    }
+
+    #[tokio::test]
+    async fn optional_cancellation_wait_wakes_when_cancelled() {
+        let token = CancellationToken::new();
+        let cancellation = Some(token.clone());
+        token.cancel();
+        tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            wait_for_cancellation(&cancellation),
+        )
+        .await
+        .unwrap();
     }
 }

@@ -17,7 +17,9 @@ use tokio::sync::OnceCell;
 #[cfg(not(windows))]
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
+use tokio_util::sync::CancellationToken;
 
+use super::process_tree::ProcessTreeGuard;
 use crate::subprocess::SubprocessExt;
 
 /// Check if the current process is running inside a Flatpak sandbox.
@@ -360,6 +362,16 @@ impl ShellTool {
         params: ShellParams,
         working_dir: Option<&std::path::Path>,
     ) -> CallToolResult {
+        self.shell_with_cwd_and_cancel(params, working_dir, CancellationToken::new())
+            .await
+    }
+
+    pub async fn shell_with_cwd_and_cancel(
+        &self,
+        params: ShellParams,
+        working_dir: Option<&std::path::Path>,
+        cancellation_token: CancellationToken,
+    ) -> CallToolResult {
         if params.command.trim().is_empty() {
             return Self::error_result("Command cannot be empty.", None);
         }
@@ -376,6 +388,7 @@ impl ShellTool {
             params.timeout_secs,
             working_dir,
             login_path_ref,
+            &cancellation_token,
         )
         .await
         {
@@ -517,6 +530,7 @@ async fn run_command(
     timeout_secs: Option<u64>,
     working_dir: Option<&std::path::Path>,
     login_path: Option<&str>,
+    cancellation_token: &CancellationToken,
 ) -> Result<ExecutionOutput, String> {
     let mut command = build_shell_command(command_line, working_dir, login_path);
 
@@ -527,10 +541,7 @@ async fn run_command(
     let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to spawn shell command: {}", error))?;
-    // `process_group(0)` in build_shell_command puts this child in a new
-    // process group whose id equals the child's own pid, so this doubles as
-    // the group id for cleanup below.
-    let child_pgid = child.id();
+    let mut process_tree = ProcessTreeGuard::new(child.id());
 
     let child_stdout = child
         .stdout
@@ -545,25 +556,47 @@ async fn run_command(
     let output_task = tokio::spawn(collect_tagged_lines(child_stdout, child_stderr, tx));
     let abort_handle = output_task.abort_handle();
 
-    let mut timed_out = false;
-    let exit_code = if let Some(timeout_secs) = timeout_secs.filter(|value| *value > 0) {
-        match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait()).await {
-            Ok(wait_result) => wait_result
-                .map_err(|error| format!("Failed waiting on shell command: {}", error))?
-                .code(),
-            Err(_) => {
-                timed_out = true;
-                let _ = child.start_kill();
-                let _ = child.wait().await;
-                None
-            }
+    enum Completion {
+        Exited(std::io::Result<std::process::ExitStatus>),
+        TimedOut,
+        Cancelled,
+    }
+
+    let completion = if let Some(timeout_secs) = timeout_secs.filter(|value| *value > 0) {
+        tokio::select! {
+            biased;
+            _ = cancellation_token.cancelled() => Completion::Cancelled,
+            result = child.wait() => Completion::Exited(result),
+            _ = tokio::time::sleep(Duration::from_secs(timeout_secs)) => Completion::TimedOut,
         }
     } else {
-        child
-            .wait()
-            .await
-            .map_err(|error| format!("Failed waiting on shell command: {}", error))?
-            .code()
+        tokio::select! {
+            biased;
+            _ = cancellation_token.cancelled() => Completion::Cancelled,
+            result = child.wait() => Completion::Exited(result),
+        }
+    };
+
+    let (exit_code, timed_out, cancelled) = match completion {
+        Completion::Exited(result) => (
+            result
+                .map_err(|error| format!("Failed waiting on shell command: {}", error))?
+                .code(),
+            false,
+            false,
+        ),
+        Completion::TimedOut => {
+            process_tree.terminate();
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            (None, true, false)
+        }
+        Completion::Cancelled => {
+            process_tree.terminate();
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            (None, false, true)
+        }
     };
 
     const OUTPUT_DRAIN_TIMEOUT_MILLIS: u64 = 500;
@@ -598,17 +631,11 @@ async fn run_command(
         lines.push(item);
     }
 
-    // The invoking shell has exited (naturally or via the timeout kill
-    // above), but a command it backgrounded with `&` is not tracked by
-    // `child` at all and does not receive that kill: it inherited the same
-    // process group id, so reap the whole group here rather than leaving
-    // background jobs to run unbounded after the tool call returns. This
-    // runs after output collection (rather than right after the shell
-    // exits) so a backgrounded command's own output — which races the
-    // group kill, since it is not sequenced after the foreground command
-    // at all — still has the same output-drain window to flush that it did
-    // before this cleanup existed.
-    kill_process_group(child_pgid);
+    process_tree.terminate();
+
+    if cancelled {
+        return Err("Command cancelled".to_string());
+    }
 
     Ok(ExecutionOutput {
         lines,
@@ -684,35 +711,13 @@ fn build_shell_command(
     // running orphaned.
     command.kill_on_drop(true);
     // Put the shell in its own process group (id == its own pid) so a
-    // command it backgrounds with `&` — which inherits this group rather
-    // than gaining its own — can be reaped as a group via kill_process_group,
+    // command it backgrounds with `&` inherits the guard's cleanup scope
     // instead of surviving as an untracked, unbounded orphan.
     #[cfg(unix)]
     command.process_group(0);
     command.set_no_window();
     command
 }
-
-/// Send SIGKILL to every process in `pgid`'s process group (Unix only), so a
-/// command backgrounded with `&` inside the shell tool does not outlive the
-/// tool call. `ESRCH` (nothing left in the group) is expected and ignored;
-/// this is best-effort cleanup, not a correctness-critical wait.
-#[cfg(unix)]
-fn kill_process_group(pgid: Option<u32>) {
-    let Some(pgid) = pgid else { return };
-    let Ok(pgid) = i32::try_from(pgid) else {
-        return;
-    };
-    // SAFETY: kill(2) with a negative pid targets the process group with
-    // that id rather than a single process; passing a plain integer has no
-    // memory-safety implications.
-    unsafe {
-        libc::kill(-pgid, libc::SIGKILL);
-    }
-}
-
-#[cfg(not(unix))]
-fn kill_process_group(_pgid: Option<u32>) {}
 
 /// Split tagged lines into (stdout, stderr, interleaved) strings.
 fn split_lines(lines: &[(bool, String)]) -> (String, String, String) {

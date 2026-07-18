@@ -216,7 +216,15 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             .await
             .map_err(|e| anyhow!("Failed to get reply from agent: {}", e))?;
 
-        while let Some(message_result) = stream.next().await {
+        loop {
+            let message_result = tokio::select! {
+                biased;
+                _ = crate::utils::wait_for_cancellation(&cancellation_check) => break,
+                message_result = stream.next() => message_result,
+            };
+            let Some(message_result) = message_result else {
+                break;
+            };
             match message_result {
                 Ok(AgentEvent::Message(msg)) => {
                     if let Some(ref callback) = on_message {

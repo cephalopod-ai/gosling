@@ -155,7 +155,6 @@ impl SessionEventBus {
         request_id: String,
     ) -> Result<CancellationToken, String> {
         let mut requests = self.active_requests.lock().await;
-        requests.retain(|_id, token| !token.is_cancelled());
         if !requests.is_empty() {
             return Err("Session already has an active request".into());
         }
@@ -307,6 +306,17 @@ mod tests {
         // Non-existent request
         let cancelled = bus.cancel_request("req-999").await;
         assert!(!cancelled);
+    }
+
+    #[tokio::test]
+    async fn cancelled_request_remains_active_until_task_cleanup() {
+        let bus = SessionEventBus::new();
+        let token = bus.register_request("req-1".to_string()).await;
+        token.cancel();
+
+        assert!(bus.try_register_request("req-2".to_string()).await.is_err());
+        bus.cleanup_request("req-1").await;
+        assert!(bus.try_register_request("req-2".to_string()).await.is_ok());
     }
 
     #[tokio::test]

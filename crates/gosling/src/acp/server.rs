@@ -2631,11 +2631,18 @@ impl GoslingAcpAgent {
         let mut chain_buffer: Vec<(String, String)> = Vec::new();
         let mut stream_error = None;
 
-        while let Some(event) = stream.next().await {
-            if cancel_token.is_cancelled() {
-                was_cancelled = true;
+        loop {
+            let event = tokio::select! {
+                biased;
+                _ = cancel_token.cancelled() => {
+                    was_cancelled = true;
+                    break;
+                }
+                event = stream.next() => event,
+            };
+            let Some(event) = event else {
                 break;
-            }
+            };
             event_count += 1;
             if !first_event_logged {
                 debug!(

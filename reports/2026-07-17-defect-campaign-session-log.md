@@ -205,6 +205,34 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
 - Change review: the provider capability trait, five command providers, the
   working-directory inspector, the localized reply preflight, and this log;
   ACP-backed provider mode negotiation and generated UI API code are untouched.
+- Commit: `ea69344aa`.
+
+### Stage 7 — cancellation ownership and process cleanup
+
+- Defects: AUD-014, AUD-015, and AUD-016 fixed.
+- Changes: canceling a server request no longer releases the per-session slot
+  until its task guard actually unwinds. ACP and subagent stream consumers now
+  select directly on cancellation instead of waiting indefinitely for another
+  event. Developer shell calls propagate the tool cancellation token, and a
+  dedicated process-tree guard terminates the isolated process group on normal
+  return, timeout, explicit cancellation, or dropped-future cleanup.
+- Regression guardrails: request registration covers the canceled-but-live
+  interval; optional cancellation waiting has a wakeup test; the extracted Unix
+  process-tree guard test covers a background descendant.
+- Modularization: process-tree ownership moved out of the 1001-1999-line shell
+  implementation into a focused guard module. The localized ACP loop remains in
+  `acp/server.rs`, which is still routed for dedicated modularization.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: `git diff --check` passed. Rust tests/build/Clippy were
+  not executed under the repository's explicit authorization rule.
+- Adversarial review: verified a canceled request cannot overlap its successor;
+  cancellation wins a ready-stream race; a missing optional subagent token does
+  not busy-loop; the process guard is created synchronously after spawn and
+  therefore runs if the tool future is dropped; explicit timeout/cancel cleanup
+  waits for the root child after terminating descendants.
+- Change review: request ownership, two stream loops, the optional-token helper,
+  developer shell cancellation plumbing, the extracted guard, and this log;
+  provider and session persistence behavior are untouched.
 - Commit: pending.
 
 ## Campaign closeout

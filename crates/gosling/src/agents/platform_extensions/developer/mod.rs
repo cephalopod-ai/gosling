@@ -1,5 +1,6 @@
 pub mod edit;
 pub mod image;
+mod process_tree;
 pub mod shell;
 pub mod tree;
 
@@ -192,12 +193,15 @@ impl McpClientTrait for DeveloperClient {
         ctx: &ToolCallContext,
         name: &str,
         arguments: Option<JsonObject>,
-        _cancel_token: CancellationToken,
+        cancel_token: CancellationToken,
     ) -> Result<CallToolResult, Error> {
         let working_dir = ctx.working_dir.as_deref();
         match name {
             "shell" => match Self::parse_args::<ShellParams>(arguments) {
-                Ok(params) => Ok(self.shell_tool.shell_with_cwd(params, working_dir).await),
+                Ok(params) => Ok(self
+                    .shell_tool
+                    .shell_with_cwd_and_cancel(params, working_dir, cancel_token)
+                    .await),
                 Err(error) => Ok(ShellTool::error_result(&format!("Error: {error}"), None)),
             },
             "write" => match Self::parse_args::<FileWriteParams>(arguments) {
