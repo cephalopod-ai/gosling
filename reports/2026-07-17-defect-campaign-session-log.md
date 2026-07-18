@@ -95,6 +95,27 @@ Agent/model: Codex / GPT-5 family. Repository: `cephalopod-ai/gosling`
   cannot bypass classification, and classifier failure tightens to approval.
 - Change review: three permission files plus this log; obsolete name heuristics
   and misleading cache comments removed.
+- Commit: `dac101bcf`.
+
+### Stage 3 — session import trust boundary
+
+- Defects: AUD-001 and AUD-002 fixed.
+- Changes: native import removes the versioned enabled-extension state before
+  persistence, preventing imported Stdio/InlinePython/builtin/platform configs
+  from becoming automatic resume-time authority. The working-directory
+  restriction flag is now applied explicitly during import.
+- Regression guardrail: the export/import round-trip fixture includes a Stdio
+  payload and safe Todo state; it asserts executable state is quarantined,
+  safe state survives, and the restriction remains enabled.
+- Modularization: `session_manager.rs` is >=2000 lines, so the patch is local
+  and the file remains routed for dedicated modularization.
+- Formatting: `source bin/activate-hermit && cargo fmt` passed.
+- Static verification: `git diff --check` passed; tests not executed by policy.
+- Adversarial review: verified all executable-capable imported variants share
+  the removed versioned key, non-executable extension state is preserved, and
+  trusted local config remains the fallback after quarantine.
+- Change review: two session files plus this log, no schema or unrelated import
+  behavior changed.
 - Commit: pending.
 
 ## Campaign closeout

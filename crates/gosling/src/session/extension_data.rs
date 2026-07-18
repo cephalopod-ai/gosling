@@ -38,6 +38,11 @@ impl ExtensionData {
         let key = format!("{}.{}", extension_name, version);
         self.extension_states.insert(key, state);
     }
+
+    pub fn remove_extension_state(&mut self, extension_name: &str, version: &str) -> Option<Value> {
+        let key = format!("{}.{}", extension_name, version);
+        self.extension_states.remove(&key)
+    }
 }
 
 /// Helper trait for extension-specific state management

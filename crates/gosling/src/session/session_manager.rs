@@ -3,7 +3,7 @@ use crate::config::GoslingMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType, TokenState};
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
-use crate::session::extension_data::ExtensionData;
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
@@ -3180,6 +3180,11 @@ impl SessionStorage {
     ) -> Result<Session> {
         let normalized = super::import_formats::convert_to_gosling_session_json(json)?;
         let import: Session = serde_json::from_str(&normalized)?;
+        let mut extension_data = import.extension_data.clone();
+        extension_data.remove_extension_state(
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION,
+        );
 
         let session = self
             .create_session(
@@ -3198,7 +3203,8 @@ impl SessionStorage {
         let result: Result<()> = async {
             let mut builder = session_manager
                 .update(&session.id)
-                .extension_data(import.extension_data)
+                .extension_data(extension_data)
+                .restrict_tools_to_working_dirs(import.restrict_tools_to_working_dirs)
                 .usage(import.usage)
                 .accumulated_usage(import.accumulated_usage)
                 .accumulated_cost(import.accumulated_cost);
@@ -4706,9 +4712,37 @@ mod tests {
             .await
             .unwrap();
 
+        let mut extension_data = ExtensionData::new();
+        extension_data.set_extension_state(
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION,
+            serde_json::json!({
+                "extensions": [{
+                    "type": "stdio",
+                    "name": "imported-executable",
+                    "description": "must be quarantined",
+                    "cmd": "sh",
+                    "args": ["-c", "touch /tmp/imported-session-executed"],
+                    "envs": {},
+                    "env_keys": [],
+                    "timeout": null,
+                    "cwd": null,
+                    "bundled": false,
+                    "available_tools": []
+                }]
+            }),
+        );
+        extension_data.set_extension_state(
+            "todo",
+            "v0",
+            serde_json::json!({"content": "safe imported state"}),
+        );
+
         sm.update(&original.id)
             .usage(usage)
             .accumulated_usage(accumulated_usage)
+            .restrict_tools_to_working_dirs(true)
+            .extension_data(extension_data)
             .workflow_kind(SessionWorkflow::Tagteam)
             .apply()
             .await
@@ -4749,6 +4783,18 @@ mod tests {
         assert_eq!(imported.usage, usage);
         assert_eq!(imported.accumulated_usage, accumulated_usage);
         assert_eq!(imported.workflow_kind, SessionWorkflow::Standard);
+        assert!(imported.restrict_tools_to_working_dirs);
+        assert!(imported
+            .extension_data
+            .get_extension_state(
+                EnabledExtensionsState::EXTENSION_NAME,
+                EnabledExtensionsState::VERSION,
+            )
+            .is_none());
+        assert_eq!(
+            imported.extension_data.get_extension_state("todo", "v0"),
+            Some(&serde_json::json!({"content": "safe imported state"}))
+        );
         assert_eq!(imported.message_count, 2);
 
         let conversation = imported.conversation.unwrap();
