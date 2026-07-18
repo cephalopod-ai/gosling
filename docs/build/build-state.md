@@ -23,7 +23,7 @@ accessible sidebar management, and regression coverage.
 | 0 — Orientation | complete | `evidence/gate-0.md`, `audits/gate-0-audit.md` |
 | 1 — Intent and traceability | complete | `docs/INTENT.md`, `traceability-matrix.md`, `evidence/gate-1.md` |
 | 2 — Contracts and design | complete | `docs/architecture.md`, ADR-0001–0005, `io-contract.md`, `execution-plan.md` |
-| 3 — Boundaries and harness | pending | — |
+| 3 — Boundaries and harness | complete | canonical SDK DTOs; `evidence/gate-3.md` |
 | 4 — Backend vertical slice | pending | — |
 | 5 — Desktop vertical slice | pending | — |
 | 6 — Audit and repair | pending | — |
@@ -46,6 +46,6 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-Begin Gate 3 by adding canonical DTOs, workspace module/service boundaries, typed ACP
-dispatch scaffolding, and real-contract test harnesses. Preserve the Gate 2 ownership and
-error contracts; no renderer-local Workspace schema or direct handler/store reach-in.
+Begin Gate 4 with the backend vertical slice: workspace store/service/validation,
+metadata-only credential lifecycle, strict Config scope, session schema v22, ACP handlers,
+session pin/resume/list metadata, prompt context, and schema generation.
