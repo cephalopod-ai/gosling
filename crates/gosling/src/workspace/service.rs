@@ -28,6 +28,7 @@ pub struct PreparedWorkspaceSession {
     pub working_folder: PathBuf,
     pub provider: Option<String>,
     pub model: Option<String>,
+    pub thinking_effort: Option<super::WorkspaceThinkingEffort>,
     pub credential_profile_id: Option<String>,
     pub credential_profile_name: Option<String>,
     pub credential_binding_id: Option<String>,
@@ -317,6 +318,7 @@ impl WorkspaceService {
                 .clone()
                 .or_else(|| profile.map(|profile| profile.provider_or_service_id.clone())),
             model: workspace.default_model.clone(),
+            thinking_effort: workspace.default_thinking_effort,
             credential_profile_id: profile.map(|profile| profile.id.clone()),
             credential_profile_name: profile.map(|profile| profile.name.clone()),
             credential_binding_id: binding.map(|binding| binding.id.clone()),
@@ -408,6 +410,7 @@ pub(super) fn workspace_from_mutation(
         default_credential_binding_id: mutation.default_credential_binding_id,
         default_provider: mutation.default_provider,
         default_model: mutation.default_model,
+        default_thinking_effort: mutation.default_thinking_effort,
         created_at,
         updated_at,
         last_opened_at,
@@ -612,7 +615,9 @@ mod tests {
     use super::*;
     use crate::config::GoslingMode;
     use crate::session::session_manager::{SessionManager, SessionType};
-    use crate::workspace::{ProductOutputFolder, ProductType, WorkspaceFolder};
+    use crate::workspace::{
+        ProductOutputFolder, ProductType, WorkspaceFolder, WorkspaceThinkingEffort,
+    };
 
     fn mutation(root: &Path) -> WorkspaceMutation {
         WorkspaceMutation {
@@ -698,6 +703,29 @@ mod tests {
             root.path == std::fs::canonicalize(&output).unwrap().to_string_lossy()
                 && root.access == WorkspaceFolderAccess::ReadWrite
         }));
+    }
+
+    #[tokio::test]
+    async fn prepared_session_pins_workspace_model_and_thinking_effort() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut workspace = mutation(root.path());
+        workspace.default_provider = Some("chatgpt_codex".into());
+        workspace.default_model = Some("gpt-5.6-terra".into());
+        workspace.default_thinking_effort = Some(WorkspaceThinkingEffort::Medium);
+        let workspace = service.create(workspace).await.unwrap();
+
+        let prepared = service.prepare_session(&workspace.id).unwrap();
+
+        assert_eq!(prepared.provider.as_deref(), Some("chatgpt_codex"));
+        assert_eq!(prepared.model.as_deref(), Some("gpt-5.6-terra"));
+        assert_eq!(
+            prepared.thinking_effort,
+            Some(WorkspaceThinkingEffort::Medium)
+        );
     }
 
     #[tokio::test]

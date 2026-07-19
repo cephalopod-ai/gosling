@@ -1822,6 +1822,14 @@
           ],
           "description": "Whether the model supports reasoning/extended thinking."
         },
+        "thinkingEfforts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceThinkingEffort"
+          },
+          "description": "Thinking-effort values accepted by this provider/model combination.",
+          "default": []
+        },
         "recommended": {
           "type": "boolean",
           "description": "Whether this model should appear in the compact recommended picker.",
@@ -1833,6 +1841,17 @@
         "name"
       ],
       "description": "A single model in provider inventory."
+    },
+    "WorkspaceThinkingEffort": {
+      "type": "string",
+      "enum": [
+        "off",
+        "low",
+        "medium",
+        "high",
+        "max",
+        "ultra"
+      ]
     },
     "ProviderSupportedModelsListRequest_unstable": {
       "type": "object",
@@ -4774,6 +4793,16 @@
             "null"
           ]
         },
+        "defaultThinkingEffort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceThinkingEffort"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "createdAt": {
           "type": "string"
         },
@@ -5075,6 +5104,16 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "defaultThinkingEffort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceThinkingEffort"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },

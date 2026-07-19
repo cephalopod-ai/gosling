@@ -18,6 +18,7 @@ export type {
   Workspace,
   WorkspaceFolder,
   WorkspaceMutation,
+  WorkspaceThinkingEffort,
   WorkspaceValidationReport,
   WorkspaceWithValidation,
 } from '@repo-makeover/gosling-sdk';
@@ -124,6 +125,7 @@ export function workspaceToMutation(workspace: Workspace): WorkspaceMutation {
     defaultCredentialBindingId: workspace.defaultCredentialBindingId,
     defaultProvider: workspace.defaultProvider,
     defaultModel: workspace.defaultModel,
+    defaultThinkingEffort: workspace.defaultThinkingEffort,
   };
 }
 

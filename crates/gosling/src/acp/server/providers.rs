@@ -46,6 +46,7 @@ fn provider_type_to_dto(provider_type: ProviderType) -> ProviderTypeDto {
 
 fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEntryDto {
     let stale = ProviderInventoryService::is_stale(&entry);
+    let provider_id = entry.provider_id.clone();
     ProviderInventoryEntryDto {
         provider_id: entry.provider_id,
         provider_name: entry.provider_name,
@@ -66,6 +67,11 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
             .models
             .into_iter()
             .map(|m| ProviderInventoryModelDto {
+                thinking_efforts: supported_workspace_thinking_efforts(
+                    &provider_id,
+                    &m.id,
+                    m.reasoning,
+                ),
                 id: m.id,
                 name: m.name,
                 family: m.family,
@@ -80,6 +86,33 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
         stale,
         model_selection_hint: entry.model_selection_hint,
     }
+}
+
+fn supported_workspace_thinking_efforts(
+    provider_id: &str,
+    model_id: &str,
+    reasoning: Option<bool>,
+) -> Vec<WorkspaceThinkingEffort> {
+    if reasoning != Some(true) {
+        return Vec::new();
+    }
+
+    let mut efforts = vec![
+        WorkspaceThinkingEffort::Off,
+        WorkspaceThinkingEffort::Low,
+        WorkspaceThinkingEffort::Medium,
+        WorkspaceThinkingEffort::High,
+        WorkspaceThinkingEffort::Max,
+    ];
+    let supports_ultra = match provider_id {
+        "chatgpt_codex" => false,
+        "codex" => matches!(model_id, "gpt-5.6-sol" | "gpt-5.6-terra"),
+        _ => true,
+    };
+    if supports_ultra {
+        efforts.push(WorkspaceThinkingEffort::Ultra);
+    }
+    efforts
 }
 
 fn provider_config_key_to_dto(key: crate::providers::base::ConfigKey) -> ProviderConfigKey {
@@ -1101,5 +1134,28 @@ mod tests {
                 serde_json::json!(expected)
             );
         }
+    }
+
+    #[test]
+    fn workspace_thinking_efforts_follow_model_capabilities() {
+        assert_eq!(
+            supported_workspace_thinking_efforts("chatgpt_codex", "gpt-5.6-terra", Some(true)),
+            vec![
+                WorkspaceThinkingEffort::Off,
+                WorkspaceThinkingEffort::Low,
+                WorkspaceThinkingEffort::Medium,
+                WorkspaceThinkingEffort::High,
+                WorkspaceThinkingEffort::Max,
+            ]
+        );
+        assert!(
+            supported_workspace_thinking_efforts("codex", "gpt-5.6-terra", Some(true))
+                .contains(&WorkspaceThinkingEffort::Ultra)
+        );
+        assert!(
+            !supported_workspace_thinking_efforts("codex", "gpt-5.6-luna", Some(true))
+                .contains(&WorkspaceThinkingEffort::Ultra)
+        );
+        assert!(supported_workspace_thinking_efforts("openai", "gpt-4o", Some(false)).is_empty());
     }
 }

@@ -1869,6 +1869,9 @@ pub struct ProviderInventoryModelDto {
     /// Whether the model supports reasoning/extended thinking.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
+    /// Thinking-effort values accepted by this provider/model combination.
+    #[serde(default)]
+    pub thinking_efforts: Vec<WorkspaceThinkingEffort>,
     /// Whether this model should appear in the compact recommended picker.
     #[serde(default)]
     pub recommended: bool,

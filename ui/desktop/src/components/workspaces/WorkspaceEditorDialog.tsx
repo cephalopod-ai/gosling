@@ -9,10 +9,14 @@ import type {
   Workspace,
   WorkspaceFolder,
   WorkspaceMutation,
+  WorkspaceThinkingEffort,
   WorkspaceValidationReport,
 } from '@repo-makeover/gosling-sdk';
+import { acpListProviderDetails, acpListProviderModels } from '../../acp/providers';
 import { acpCreateWorkspaceOutput, workspaceToMutation } from '../../acp/workspaces';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
+import type { ProviderDetails } from '../../types/providers';
+import { getDefaultWorkspaceWorkingDir } from '../../utils/workingDir';
 import { workspaceErrorMessage } from '../../utils/workspaceError';
 import { Button } from '../ui/button';
 import {
@@ -38,6 +42,15 @@ const PRODUCT_TYPES: ProductType[] = [
   'other',
 ];
 
+const DEFAULT_WORKSPACE_PROVIDER = 'chatgpt_codex';
+const DEFAULT_WORKSPACE_MODEL = 'gpt-5.6-terra';
+const DEFAULT_WORKSPACE_EFFORT: WorkspaceThinkingEffort = 'medium';
+
+interface WorkspaceModelOption {
+  id: string;
+  thinkingEfforts?: WorkspaceThinkingEffort[];
+}
+
 interface WorkspaceEditorDialogProps {
   open: boolean;
   workspace?: Workspace | null;
@@ -49,16 +62,14 @@ export function WorkspaceEditorDialog({
   workspace,
   onOpenChange,
 }: WorkspaceEditorDialogProps) {
-  const {
-    activeWorkspace,
-    credentialProfiles,
-    createWorkspace,
-    updateWorkspace,
-    validateWorkspace,
-  } = useWorkspace();
-  const [draft, setDraft] = useState<WorkspaceMutation>(() =>
-    createDraft(workspace, activeWorkspace?.workingFolder)
-  );
+  const { credentialProfiles, createWorkspace, updateWorkspace, validateWorkspace } =
+    useWorkspace();
+  const [draft, setDraft] = useState<WorkspaceMutation>(() => createDraft(workspace));
+  const [providers, setProviders] = useState<ProviderDetails[]>([]);
+  const [models, setModels] = useState<WorkspaceModelOption[]>([]);
+  const [providerCatalogError, setProviderCatalogError] = useState<string | null>(null);
+  const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [validation, setValidation] = useState<WorkspaceValidationReport | null>(null);
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -67,12 +78,100 @@ export function WorkspaceEditorDialog({
 
   useEffect(() => {
     if (open) {
-      setDraft(createDraft(workspace, activeWorkspace?.workingFolder));
+      setDraft(createDraft(workspace));
       setValidation(null);
       setValidating(false);
       setError(null);
     }
-  }, [activeWorkspace?.workingFolder, open, workspace]);
+  }, [open, workspace]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setProviderCatalogError(null);
+    void acpListProviderDetails()
+      .then((items) => {
+        if (cancelled) return;
+        setProviders(
+          [...items].sort(
+            (left, right) =>
+              Number(right.is_configured) - Number(left.is_configured) ||
+              left.metadata.display_name.localeCompare(right.metadata.display_name)
+          )
+        );
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setProviderCatalogError(workspaceErrorMessage(cause, 'Unable to load providers'));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    const providerId = draft.defaultProvider;
+    if (!open || !providerId) {
+      setModels([]);
+      setModelsLoading(false);
+      setModelCatalogError(null);
+      return;
+    }
+    let cancelled = false;
+    setModelsLoading(true);
+    setModelCatalogError(null);
+    void acpListProviderModels(providerId)
+      .then((items) => {
+        if (!cancelled) {
+          setModels(
+            items.map((item) => ({
+              id: item.id,
+              thinkingEfforts: item.thinkingEfforts,
+            }))
+          );
+        }
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setModels([]);
+          setModelCatalogError(workspaceErrorMessage(cause, 'Unable to load provider models'));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.defaultProvider, open]);
+
+  const effortOptions = useMemo(() => {
+    if (!draft.defaultModel) return [];
+    return models.find((model) => model.id === draft.defaultModel)?.thinkingEfforts ?? [];
+  }, [draft.defaultModel, models]);
+
+  useEffect(() => {
+    if (modelsLoading || !draft.defaultProvider || !draft.defaultModel || models.length === 0) {
+      return;
+    }
+    setDraft((current) => {
+      const selected = models.find((model) => model.id === current.defaultModel);
+      if (!selected) return current;
+      const supported = selected.thinkingEfforts ?? [];
+      const nextEffort =
+        supported.length === 0
+          ? null
+          : current.defaultThinkingEffort && supported.includes(current.defaultThinkingEffort)
+            ? current.defaultThinkingEffort
+            : supported.includes(DEFAULT_WORKSPACE_EFFORT)
+              ? DEFAULT_WORKSPACE_EFFORT
+              : supported[0];
+      return nextEffort === current.defaultThinkingEffort
+        ? current
+        : { ...current, defaultThinkingEffort: nextEffort };
+    });
+  }, [draft.defaultModel, draft.defaultProvider, models, modelsLoading]);
 
   const requiredIssue = useMemo(
     () => validation?.issues?.find((issue) => issue.severity === 'error'),
@@ -215,6 +314,27 @@ export function WorkspaceEditorDialog({
     }));
   }, []);
 
+  const addFolder = useCallback(
+    (kind: WorkspaceFolder['kind']) => {
+      void chooseDirectory((path) => {
+        setDraft((current) => ({
+          ...current,
+          folders: [
+            ...(current.folders ?? []),
+            {
+              id: uuidv7(),
+              label: kind === 'working' ? 'Working folder' : 'Reference',
+              path,
+              kind,
+              access: kind === 'working' ? 'read_write' : 'read',
+            },
+          ],
+        }));
+      });
+    },
+    [chooseDirectory]
+  );
+
   const setDefaultBinding = useCallback((id: string) => {
     setDraft((current) => ({
       ...current,
@@ -268,22 +388,108 @@ export function WorkspaceEditorDialog({
               </Field>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Default provider (optional)">
-                  <Input
+                  <select
+                    aria-label="Default provider (optional)"
                     value={draft.defaultProvider ?? ''}
                     onChange={(event) =>
-                      setDraft({ ...draft, defaultProvider: event.target.value || null })
+                      setDraft((current) => {
+                        const providerId = event.target.value || null;
+                        const selected = providers.find((item) => item.name === providerId);
+                        return {
+                          ...current,
+                          defaultProvider: providerId,
+                          defaultModel: providerId
+                            ? (selected?.metadata.default_model ?? null)
+                            : null,
+                          defaultThinkingEffort: providerId ? DEFAULT_WORKSPACE_EFFORT : null,
+                        };
+                      })
                     }
-                  />
+                    className="h-9 rounded-md border border-border-primary bg-background-primary px-3 text-sm"
+                  >
+                    <option value="">Use app default</option>
+                    {draft.defaultProvider &&
+                      !providers.some((provider) => provider.name === draft.defaultProvider) && (
+                        <option value={draft.defaultProvider}>{draft.defaultProvider}</option>
+                      )}
+                    {providers.map((provider) => (
+                      <option key={provider.name} value={provider.name}>
+                        {provider.metadata.display_name}
+                        {provider.is_configured ? '' : ' — setup required'}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label="Default model (optional)">
-                  <Input
+                  <select
+                    aria-label="Default model (optional)"
                     value={draft.defaultModel ?? ''}
                     onChange={(event) =>
-                      setDraft({ ...draft, defaultModel: event.target.value || null })
+                      setDraft((current) => ({
+                        ...current,
+                        defaultModel: event.target.value || null,
+                        defaultThinkingEffort: event.target.value ? DEFAULT_WORKSPACE_EFFORT : null,
+                      }))
                     }
-                  />
+                    disabled={!draft.defaultProvider || modelsLoading}
+                    className="h-9 rounded-md border border-border-primary bg-background-primary px-3 text-sm disabled:opacity-60"
+                  >
+                    <option value="">
+                      {modelsLoading ? 'Loading models…' : 'Use provider default'}
+                    </option>
+                    {draft.defaultModel &&
+                      !models.some((model) => model.id === draft.defaultModel) && (
+                        <option value={draft.defaultModel}>{draft.defaultModel}</option>
+                      )}
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.id}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
               </div>
+              <Field label="Default reasoning effort (optional)">
+                <select
+                  aria-label="Default reasoning effort (optional)"
+                  value={draft.defaultThinkingEffort ?? ''}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      defaultThinkingEffort:
+                        (event.target.value as WorkspaceThinkingEffort) || null,
+                    }))
+                  }
+                  disabled={
+                    !draft.defaultProvider ||
+                    !draft.defaultModel ||
+                    modelsLoading ||
+                    effortOptions.length === 0
+                  }
+                  className="h-9 w-full rounded-md border border-border-primary bg-background-primary px-3 text-sm disabled:opacity-60"
+                >
+                  <option value="">
+                    {effortOptions.length === 0
+                      ? 'Not available for this model'
+                      : 'Use app default'}
+                  </option>
+                  {effortOptions.map((effort) => (
+                    <option key={effort} value={effort}>
+                      {formatEffort(effort)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {providerCatalogError && (
+                <p role="status" className="text-xs text-amber-600">
+                  {providerCatalogError}
+                </p>
+              )}
+              {modelCatalogError && (
+                <p role="status" className="text-xs text-amber-600">
+                  {modelCatalogError}
+                </p>
+              )}
             </Section>
 
             <Section title="Credentials">
@@ -467,27 +673,14 @@ export function WorkspaceEditorDialog({
                   />
                 </div>
               ))}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    folders: [
-                      ...(current.folders ?? []),
-                      {
-                        id: uuidv7(),
-                        label: 'Reference',
-                        path: current.workingFolder,
-                        kind: 'reference',
-                        access: 'read',
-                      },
-                    ],
-                  }))
-                }
-              >
-                <Plus className="mr-1 size-4" /> Add source/reference folder
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => addFolder('working')}>
+                  <Plus className="mr-1 size-4" /> Add working folder
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => addFolder('reference')}>
+                  <Plus className="mr-1 size-4" /> Add source/reference folder
+                </Button>
+              </div>
             </Section>
 
             <Section title="Product outputs">
@@ -725,12 +918,9 @@ function PathField({
   );
 }
 
-function createDraft(
-  workspace?: Workspace | null,
-  fallbackWorkingFolder?: string
-): WorkspaceMutation {
+function createDraft(workspace?: Workspace | null): WorkspaceMutation {
   if (workspace) return workspaceToMutation(workspace);
-  const workingFolder = fallbackWorkingFolder || '/';
+  const workingFolder = getDefaultWorkspaceWorkingDir();
   return {
     name: '',
     description: null,
@@ -749,9 +939,15 @@ function createDraft(
     ],
     credentialBindings: [],
     defaultCredentialBindingId: null,
-    defaultProvider: null,
-    defaultModel: null,
+    defaultProvider: DEFAULT_WORKSPACE_PROVIDER,
+    defaultModel: DEFAULT_WORKSPACE_MODEL,
+    defaultThinkingEffort: DEFAULT_WORKSPACE_EFFORT,
   };
+}
+
+function formatEffort(effort: WorkspaceThinkingEffort): string {
+  if (effort === 'off') return 'Off';
+  return effort.charAt(0).toUpperCase() + effort.slice(1);
 }
 
 function joinPath(root: string, child: string): string {

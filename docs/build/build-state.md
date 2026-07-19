@@ -1,6 +1,6 @@
 # Workspaces build state
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 ## Objective
 
@@ -35,6 +35,7 @@ accessible sidebar management, and regression coverage.
 | Change                             | Status   | Exit evidence                                                                    |
 | ---------------------------------- | -------- | -------------------------------------------------------------------------------- |
 | PC-001 — universal artifact router | complete | `evidence/pc-001.md`, `audits/pc-001-artifact-router-audit.md`, REQ-025 verified |
+| PC-002 — workspace launch profiles | complete | `evidence/pc-002.md`, `audits/pc-002-workspace-launch-profiles-audit.md`, REQ-031–REQ-033 verified |
 
 ## Current decisions
 
@@ -52,9 +53,10 @@ accessible sidebar management, and regression coverage.
 
 ## Continuation point
 
-PC-001 is complete. All Gosling-owned Desktop artifact saves, exports, Outputs copies, and native
-downloads use the workspace-aware router. The implementation is validated and ready for a local
-checkpoint commit; remote synchronization remains outside this invocation.
+PC-002 is complete. Inventory-backed provider/model/effort defaults, `~/Work` drafts, explicit
+additional working folders, and the Hub new-chat workspace picker are acceptance-verified. The
+active workspace remains a persisted sidebar/filter preference; the Hub pins its visible selection
+to each new session without changing existing sessions or global credentials.
 
 ## Resume verification
 
@@ -63,3 +65,5 @@ checkpoint commit; remote synchronization remains outside this invocation.
 - Current-checkout verification passed: 26 workspace Rust tests, 479 Desktop tests, 6 SDK tests,
   Desktop/SDK typechecks, `cargo fmt --check`, and mandatory clippy.
 - The completed Gate 8 plan is adopted unchanged; no duplicate implementation is required.
+- PC-002 verification passed: 23 workspace Rust tests, 525 Desktop tests, 6 SDK tests, targeted
+  capability/session tests, Desktop/SDK typechecks, `cargo fmt --check`, and mandatory clippy.

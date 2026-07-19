@@ -2,7 +2,7 @@
 
 Statuses: planned → built → verified | deferred | cut. `verified` requires linked evidence.
 
-Last updated: PC-001 acceptance
+Last updated: PC-002 acceptance
 
 | REQ     | Pri | Requirement                            | Implementation                                                  | Verification                                                                                                                                                                                   | Evidence              | Status   |
 | ------- | --- | -------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------- |
@@ -36,6 +36,9 @@ Last updated: PC-001 acceptance
 | REQ-028 | P1  | Canonical SDK generation               | Rust schema/meta and generated UI SDK                           | JSON validation, SDK build/tests/typecheck, Desktop typecheck                                                                                                                                  | Gate 4/6/8            | verified |
 | REQ-029 | P0  | Gosling naming/backward compatibility  | Gosling paths/namespaces; nullable session columns              | negative naming search, migration and full regression suites                                                                                                                                   | Gate 4/7/8            | verified |
 | REQ-030 | P0  | Required validation/checks             | Gate 8 acceptance matrix                                        | build, 1,481 Rust tests, 479 Desktop tests, SDK/docs, fmt, clippy                                                                                                                              | Gate 8                | verified |
+| REQ-031 | P0  | Workspace provider/model/effort selectors | canonical workspace DTO; provider inventory; editor; new-session resolver | SDK round-trip, capability mapping, editor selection, and pinned model-config tests | PC-002 evidence/audit | verified |
+| REQ-032 | P0  | `~/Work` draft plus working folders    | main-process runtime config; editor folder flow                  | home-path draft and additional working-folder chooser tests | PC-002 evidence/audit | verified |
+| REQ-033 | P0  | Explicit new-chat workspace picker     | Hub selection state and shared create-session seam               | Hub selection/submission and non-mutation tests | PC-002 evidence/audit | verified |
 
 ## Deferred / cut log
 

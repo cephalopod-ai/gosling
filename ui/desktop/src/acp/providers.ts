@@ -97,6 +97,7 @@ export async function acpListProviderModels(providerId: string) {
       {
         contextLimit: model.contextLimit ?? undefined,
         reasoning: model.reasoning ?? undefined,
+        thinkingEfforts: model.thinkingEfforts ?? [],
       },
     ])
   );

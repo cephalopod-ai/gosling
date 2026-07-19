@@ -1112,6 +1112,7 @@ let appConfig = {
   GOSLING_DEFAULT_MODEL: defaultModel,
   GOSLING_PREDEFINED_MODELS: predefinedModels,
   GOSLING_PATH_ROOT: resolveGoslingPathRoot(),
+  GOSLING_HOME_DIR: os.homedir(),
   GOSLING_WORKING_DIR: '',
   // Start with the env-var override; the OS region locale is filled in after app.ready
   // (see updateLocaleFromSystem below) since getSystemLocale() cannot be called earlier.

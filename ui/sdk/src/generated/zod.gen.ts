@@ -765,6 +765,15 @@ export const zProviderConfigKey = z.object({
     primary: z.boolean().optional().default(false)
 });
 
+export const zWorkspaceThinkingEffort = z.enum([
+    'off',
+    'low',
+    'medium',
+    'high',
+    'max',
+    'ultra'
+]);
+
 /**
  * A single model in provider inventory.
  */
@@ -783,6 +792,7 @@ export const zProviderInventoryModelDto = z.object({
         z.boolean(),
         z.null()
     ]).optional(),
+    thinkingEfforts: z.array(zWorkspaceThinkingEffort).optional().default([]),
     recommended: z.boolean().optional().default(false)
 });
 
@@ -2074,6 +2084,10 @@ export const zWorkspace = z.object({
         z.string(),
         z.null()
     ]).optional(),
+    defaultThinkingEffort: z.union([
+        zWorkspaceThinkingEffort,
+        z.null()
+    ]).optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
     lastOpenedAt: z.string()
@@ -2156,6 +2170,10 @@ export const zWorkspaceMutation = z.object({
     ]).optional(),
     defaultModel: z.union([
         z.string(),
+        z.null()
+    ]).optional(),
+    defaultThinkingEffort: z.union([
+        zWorkspaceThinkingEffort,
         z.null()
     ]).optional()
 });

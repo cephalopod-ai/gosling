@@ -56,13 +56,21 @@ export default function Hub({
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
-  const { activeWorkspace } = useWorkspace();
+  const { workspaces, activeWorkspaceId, defaultWorkspaceId, loading, error } = useWorkspace();
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(
+    activeWorkspaceId ?? defaultWorkspaceId ?? ''
+  );
+  const selectedWorkspaceItem = useMemo(
+    () => workspaces.find((item) => item.workspace.id === selectedWorkspaceId),
+    [selectedWorkspaceId, workspaces]
+  );
+  const selectedWorkspace = selectedWorkspaceItem?.workspace;
   const [workingDir, setWorkingDir] = useState(
-    activeWorkspace?.workingFolder ?? getInitialWorkingDir()
+    selectedWorkspace?.workingFolder ?? getInitialWorkingDir()
   );
   const previousWorkspaceRef = useRef(
-    activeWorkspace
-      ? { id: activeWorkspace.id, workingFolder: activeWorkspace.workingFolder }
+    selectedWorkspace
+      ? { id: selectedWorkspace.id, workingFolder: selectedWorkspace.workingFolder }
       : undefined
   );
   const [isCreatingSession, setIsCreatingSession] = useState(false);
@@ -72,15 +80,24 @@ export default function Hub({
   const { time, meridiem, hour } = useClock();
 
   useEffect(() => {
-    if (activeWorkspace) {
+    setSelectedWorkspaceId((current) => {
+      if (workspaces.some((item) => item.workspace.id === current)) return current;
+      return activeWorkspaceId ?? defaultWorkspaceId ?? workspaces[0]?.workspace.id ?? '';
+    });
+  }, [activeWorkspaceId, defaultWorkspaceId, workspaces]);
+
+  useEffect(() => {
+    if (selectedWorkspace) {
       const previous = previousWorkspaceRef.current;
-      setWorkingDir((current) => reconcileWorkspaceWorkingDir(current, previous, activeWorkspace));
+      setWorkingDir((current) =>
+        reconcileWorkspaceWorkingDir(current, previous, selectedWorkspace)
+      );
       previousWorkspaceRef.current = {
-        id: activeWorkspace.id,
-        workingFolder: activeWorkspace.workingFolder,
+        id: selectedWorkspace.id,
+        workingFolder: selectedWorkspace.workingFolder,
       };
     }
-  }, [activeWorkspace?.id, activeWorkspace?.workingFolder]);
+  }, [selectedWorkspace]);
 
   const greeting = useMemo(() => {
     if (hour < 12) return intl.formatMessage(i18n.goodMorning);
@@ -107,7 +124,14 @@ export default function Hub({
 
   const handleSubmit = async (input: UserInput) => {
     const { msg: userMessage, images } = input;
-    if (!(images.length > 0 || userMessage.trim()) || isCreatingSession) return;
+    if (
+      !(images.length > 0 || userMessage.trim()) ||
+      isCreatingSession ||
+      !selectedWorkspace ||
+      !selectedWorkspaceItem.validation.validForSession
+    ) {
+      return;
+    }
 
     setIsCreatingSession(true);
 
@@ -117,8 +141,8 @@ export default function Hub({
         : [];
       const sessionOptions =
         selectedExtensions.length > 0
-          ? { extensionConfigs: selectedExtensions, workspaceId: activeWorkspace?.id }
-          : { allExtensions: extensionsList, workspaceId: activeWorkspace?.id };
+          ? { extensionConfigs: selectedExtensions, workspaceId: selectedWorkspace.id }
+          : { allExtensions: extensionsList, workspaceId: selectedWorkspace.id };
 
       const session = await createSession(workingDir, sessionOptions);
       setNextChatExtensionDraft(null);
@@ -151,6 +175,44 @@ export default function Hub({
           <span className="text-2xl font-light text-text-secondary">{meridiem}</span>
         </div>
         <p className="text-xl text-text-secondary mb-6">{greeting}</p>
+
+        <div className="mb-3 flex items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2">
+          <label htmlFor="new-chat-workspace" className="text-sm font-medium text-text-primary">
+            Workspace
+          </label>
+          <select
+            id="new-chat-workspace"
+            value={selectedWorkspaceId}
+            onChange={(event) => setSelectedWorkspaceId(event.target.value)}
+            disabled={loading || workspaces.length === 0}
+            className="min-w-0 flex-1 rounded-md border border-border-primary bg-background-primary px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {loading && <option value="">Loading workspaces…</option>}
+            {!loading && workspaces.length === 0 && (
+              <option value="">No workspace available</option>
+            )}
+            {workspaces.map((item) => (
+              <option
+                key={item.workspace.id}
+                value={item.workspace.id}
+                disabled={!item.validation.validForSession}
+              >
+                {item.workspace.name}
+                {item.validation.validForSession ? '' : ' — needs attention'}
+              </option>
+            ))}
+          </select>
+          {selectedWorkspace && (
+            <span className="max-w-56 truncate text-xs text-text-secondary" title={workingDir}>
+              {workingDir}
+            </span>
+          )}
+        </div>
+        {error && (
+          <p role="alert" className="mb-3 text-sm text-red-600">
+            {error}
+          </p>
+        )}
 
         <ChatInputCard>
           <ChatInput

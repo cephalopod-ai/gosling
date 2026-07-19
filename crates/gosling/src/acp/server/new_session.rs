@@ -9,6 +9,7 @@ use super::GoslingAcpAgent;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
 use agent_client_protocol::{Client, ConnectionTo};
 use gosling_providers::model::ModelConfig;
+use gosling_providers::thinking::ThinkingEffort;
 use std::collections::HashMap;
 use tracing::warn;
 
@@ -171,12 +172,16 @@ impl GoslingAcpAgent {
     ) -> Result<(String, ModelConfig), agent_client_protocol::Error> {
         if let Some(workspace) = workspace {
             if let Some(provider) = workspace.provider.clone() {
-                let model_config = if let Some(model) = workspace.model.as_deref() {
+                let mut model_config = if let Some(model) = workspace.model.as_deref() {
                     crate::model_config::model_config_from_user_config(&provider, model)
                         .invalid_params_err_ctx("Workspace model is invalid")?
                 } else {
                     super::resolve_provider_default_model_config(&provider).await?
                 };
+                if let Some(effort) = workspace.thinking_effort {
+                    model_config =
+                        model_config.with_thinking_effort(provider_thinking_effort(effort));
+                }
                 return Ok((provider, model_config));
             }
         }
@@ -241,6 +246,17 @@ impl GoslingAcpAgent {
     }
 }
 
+fn provider_thinking_effort(effort: crate::workspace::WorkspaceThinkingEffort) -> ThinkingEffort {
+    match effort {
+        crate::workspace::WorkspaceThinkingEffort::Off => ThinkingEffort::Off,
+        crate::workspace::WorkspaceThinkingEffort::Low => ThinkingEffort::Low,
+        crate::workspace::WorkspaceThinkingEffort::Medium => ThinkingEffort::Medium,
+        crate::workspace::WorkspaceThinkingEffort::High => ThinkingEffort::High,
+        crate::workspace::WorkspaceThinkingEffort::Max => ThinkingEffort::Max,
+        crate::workspace::WorkspaceThinkingEffort::Ultra => ThinkingEffort::Ultra,
+    }
+}
+
 fn meta_gosling_extensions(
     meta: Option<&Meta>,
 ) -> Result<Option<Vec<GoslingExtension>>, agent_client_protocol::Error> {
@@ -255,4 +271,22 @@ fn meta_gosling_extensions(
         .map_err(|e| {
             agent_client_protocol::Error::invalid_params().data(format!("enabledExtensions: {e}"))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace::WorkspaceThinkingEffort;
+
+    #[test]
+    fn workspace_thinking_effort_maps_without_global_state() {
+        assert_eq!(
+            provider_thinking_effort(WorkspaceThinkingEffort::Medium),
+            ThinkingEffort::Medium
+        );
+        assert_eq!(
+            provider_thinking_effort(WorkspaceThinkingEffort::Ultra),
+            ThinkingEffort::Ultra
+        );
+    }
 }

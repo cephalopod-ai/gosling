@@ -7,6 +7,18 @@ pub const WORKSPACE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum WorkspaceThinkingEffort {
+    Off,
+    Low,
+    #[default]
+    Medium,
+    High,
+    Max,
+    Ultra,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum WorkspaceFolderKind {
     #[default]
     Source,
@@ -160,6 +172,8 @@ pub struct Workspace {
     pub default_provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_thinking_effort: Option<WorkspaceThinkingEffort>,
     pub created_at: String,
     pub updated_at: String,
     pub last_opened_at: String,
@@ -185,6 +199,8 @@ pub struct WorkspaceMutation {
     pub default_provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_thinking_effort: Option<WorkspaceThinkingEffort>,
 }
 
 impl From<&Workspace> for WorkspaceMutation {
@@ -200,6 +216,7 @@ impl From<&Workspace> for WorkspaceMutation {
             default_credential_binding_id: workspace.default_credential_binding_id.clone(),
             default_provider: workspace.default_provider.clone(),
             default_model: workspace.default_model.clone(),
+            default_thinking_effort: workspace.default_thinking_effort,
         }
     }
 }
@@ -532,6 +549,9 @@ mod tests {
                 is_default: true,
                 create_if_missing: true,
             }],
+            default_provider: Some("chatgpt_codex".to_string()),
+            default_model: Some("gpt-5.6-terra".to_string()),
+            default_thinking_effort: Some(WorkspaceThinkingEffort::Medium),
             created_at: "2026-07-18T00:00:00Z".to_string(),
             updated_at: "2026-07-18T00:00:00Z".to_string(),
             last_opened_at: "2026-07-18T00:00:00Z".to_string(),
@@ -545,6 +565,7 @@ mod tests {
         let json = serde_json::to_string(&workspace).unwrap();
 
         assert_eq!(serde_json::from_str::<Workspace>(&json).unwrap(), workspace);
+        assert!(json.contains("\"defaultThinkingEffort\":\"medium\""));
     }
 
     #[test]
@@ -569,6 +590,10 @@ mod tests {
         let workspace = workspace_fixture();
 
         assert_eq!(WorkspaceMutation::from(&workspace).name, workspace.name);
+        assert_eq!(
+            WorkspaceMutation::from(&workspace).default_thinking_effort,
+            Some(WorkspaceThinkingEffort::Medium)
+        );
         assert_eq!(
             WorkspaceMutation::from(&workspace).product_output_folders,
             workspace.product_output_folders

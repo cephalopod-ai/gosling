@@ -1,0 +1,25 @@
+[
+  {
+    "id": "WFG-GOS-009",
+    "title": "A successful model request could erase a provider-list failure",
+    "domain": "Workflow-GUI",
+    "severity": "Low",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced and regression-tested",
+    "observed": "Independent provider and model inventory requests initially shared and cleared one error state.",
+    "expected_boundary": "Each failed inventory surface remains visible until that surface succeeds or the dialog closes.",
+    "failure_mechanism": "The model request cleared the provider request's error while the provider list remained unavailable.",
+    "impact": "The provider selector could appear empty without an actionable explanation.",
+    "disposition": "fixed",
+    "mitigation": {
+      "minimal_repair": "Keep provider and model inventory errors in separate state.",
+      "behavior_test": "Provider-list rejection remains visible while model loading succeeds."
+    },
+    "validation": [
+      "WorkspaceEditorDialog provider/model async regression",
+      "Desktop typecheck",
+      "full Desktop unit suite"
+    ],
+    "reviewed_by": ["codex-root"]
+  }
+]

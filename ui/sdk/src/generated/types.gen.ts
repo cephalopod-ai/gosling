@@ -981,10 +981,16 @@ export type ProviderInventoryModelDto = {
      */
     reasoning?: boolean | null;
     /**
+     * Thinking-effort values accepted by this provider/model combination.
+     */
+    thinkingEfforts?: Array<WorkspaceThinkingEffort>;
+    /**
      * Whether this model should appear in the compact recommended picker.
      */
     recommended?: boolean;
 };
+
+export type WorkspaceThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'max' | 'ultra';
 
 /**
  * List the raw model identifiers returned by a provider's live supported-models API.
@@ -2089,6 +2095,7 @@ export type Workspace = {
     defaultCredentialBindingId?: string | null;
     defaultProvider?: string | null;
     defaultModel?: string | null;
+    defaultThinkingEffort?: WorkspaceThinkingEffort | null;
     createdAt: string;
     updatedAt: string;
     lastOpenedAt: string;
@@ -2161,6 +2168,7 @@ export type WorkspaceMutation = {
     defaultCredentialBindingId?: string | null;
     defaultProvider?: string | null;
     defaultModel?: string | null;
+    defaultThinkingEffort?: WorkspaceThinkingEffort | null;
 };
 
 export type WorkspaceResponse_unstable = {
