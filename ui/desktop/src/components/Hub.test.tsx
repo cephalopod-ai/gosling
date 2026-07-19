@@ -15,8 +15,20 @@ vi.mock('./ChatInputCard', () => ({
   ChatInputCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock('./ChatInput', () => ({
-  default: ({ handleSubmit }: { handleSubmit(input: { msg: string; images: [] }): void }) => (
-    <button onClick={() => handleSubmit({ msg: 'Start the project', images: [] })}>
+  default: ({
+    handleSubmit,
+    submitDisabled,
+    submitDisabledReason,
+  }: {
+    handleSubmit(input: { msg: string; images: [] }): void;
+    submitDisabled?: boolean;
+    submitDisabledReason?: string;
+  }) => (
+    <button
+      disabled={submitDisabled}
+      title={submitDisabledReason}
+      onClick={() => handleSubmit({ msg: 'Start the project', images: [] })}
+    >
       Send message
     </button>
   ),
@@ -95,5 +107,27 @@ describe('Hub workspace selection', () => {
       'pair',
       expect.objectContaining({ resumeSessionId: 'session-personal' })
     );
+  });
+
+  it('blocks a session when the selected workspace primary folder is unavailable', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useWorkspace).mockReturnValue({
+      workspaces: [workspace('missing', 'Missing folder', '/missing', false)],
+      activeWorkspaceId: 'missing',
+      defaultWorkspaceId: 'missing',
+      loading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    const setView = vi.fn();
+    render(<Hub setView={setView} />, { wrapper: IntlTestWrapper });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('This workspace cannot start a session');
+    const send = screen.getByRole('button', { name: 'Send message' });
+    expect(send).toBeDisabled();
+    await user.click(send);
+
+    expect(createSession).not.toHaveBeenCalled();
+    expect(setView).not.toHaveBeenCalled();
   });
 });

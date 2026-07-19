@@ -65,6 +65,17 @@ export default function Hub({
     [selectedWorkspaceId, workspaces]
   );
   const selectedWorkspace = selectedWorkspaceItem?.workspace;
+  const workspaceStartIssue = useMemo(() => {
+    if (!selectedWorkspaceItem || selectedWorkspaceItem.validation.validForSession) {
+      return null;
+    }
+
+    return (
+      selectedWorkspaceItem.validation.issues?.find((issue) => issue.severity === 'error')
+        ?.message ??
+      'This workspace cannot start a session. Relink its primary folder or credential profile.'
+    );
+  }, [selectedWorkspaceItem]);
   const [workingDir, setWorkingDir] = useState(
     selectedWorkspace?.workingFolder ?? getInitialWorkingDir()
   );
@@ -213,6 +224,11 @@ export default function Hub({
             {error}
           </p>
         )}
+        {workspaceStartIssue && (
+          <p role="alert" className="mb-3 text-sm text-red-600">
+            {workspaceStartIssue}
+          </p>
+        )}
 
         <ChatInputCard>
           <ChatInput
@@ -231,6 +247,8 @@ export default function Hub({
             disableAnimation={false}
             onWorkingDirChange={setWorkingDir}
             inputRef={inputRef}
+            submitDisabled={Boolean(workspaceStartIssue)}
+            submitDisabledReason={workspaceStartIssue ?? undefined}
             nextChatExtensionDraft={draftForMenu}
             onNextChatExtensionDraftChange={handleNextChatExtensionDraftChange}
           />

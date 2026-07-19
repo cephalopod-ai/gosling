@@ -184,6 +184,8 @@ interface ChatInputProps {
   latestInference?: Message['metadata']['inference'] | null;
   nextChatExtensionDraft?: NextChatExtensionDraft;
   onNextChatExtensionDraftChange?: (draft: NextChatExtensionDraft) => void;
+  submitDisabled?: boolean;
+  submitDisabledReason?: string;
 }
 
 export default function ChatInput({
@@ -218,6 +220,8 @@ export default function ChatInput({
   latestInference,
   nextChatExtensionDraft,
   onNextChatExtensionDraftChange,
+  submitDisabled = false,
+  submitDisabledReason,
 }: ChatInputProps) {
   const [_value, setValue] = useState(initialValue);
   const [displayValue, setDisplayValue] = useState(initialValue); // For immediate visual feedback
@@ -1086,6 +1090,7 @@ export default function ChatInput({
 
   const canSubmit =
     !isLoading &&
+    !submitDisabled &&
     !queueProcessingBlocked &&
     (displayValue.trim() ||
       pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
@@ -1093,6 +1098,8 @@ export default function ChatInput({
 
   const performSubmit = useCallback(
     (text?: string) => {
+      if (submitDisabled) return;
+
       const imageData = convertImagesToImageData();
       const textToSend = appendDroppedFilePaths(text ?? displayValue.trim());
 
@@ -1138,6 +1145,7 @@ export default function ChatInput({
       lastInterruption,
       clearInputState,
       buildUserInput,
+      submitDisabled,
     ]
   );
 
@@ -1204,7 +1212,7 @@ export default function ChatInput({
 
   const onFormSubmit = (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
-    if (queueProcessingBlocked) {
+    if (submitDisabled || queueProcessingBlocked) {
       return;
     }
     if (isLoading && hasSubmittableContent) {
@@ -1328,6 +1336,7 @@ export default function ChatInput({
 
   const isSubmitButtonDisabled =
     !hasSubmittableContent ||
+    submitDisabled ||
     isAnyImageLoading ||
     isAnyDroppedFileLoading ||
     isRecording ||
@@ -1336,6 +1345,7 @@ export default function ChatInput({
     chatState === ChatState.RestartingAgent;
 
   const getSubmitButtonTooltip = (): string => {
+    if (submitDisabled && submitDisabledReason) return submitDisabledReason;
     if (queueProcessingBlocked) return intl.formatMessage(i18n.waitingForCancellation);
     if (isAnyImageLoading) return intl.formatMessage(i18n.waitingForImages);
     if (isAnyDroppedFileLoading) return intl.formatMessage(i18n.processingDroppedFiles);

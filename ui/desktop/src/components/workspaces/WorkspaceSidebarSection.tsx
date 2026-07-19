@@ -45,6 +45,7 @@ export function WorkspaceSidebarSection() {
   const [editor, setEditor] = useState<{ open: boolean; workspace?: Workspace | null }>({
     open: false,
   });
+  const [switchNotice, setSwitchNotice] = useState<string | null>(null);
 
   const toggleExpanded = useCallback(() => {
     setExpanded((current) => {
@@ -57,7 +58,9 @@ export function WorkspaceSidebarSection() {
     async (workspace: Workspace) => {
       try {
         await setActiveWorkspace(workspace.id);
-        toast.info(`New chats will use “${workspace.name}”. Open chats stay pinned.`);
+        const notice = `New chats will use “${workspace.name}”. Open chats stay pinned.`;
+        setSwitchNotice(notice);
+        toast.info(notice);
       } catch (cause) {
         toast.error(workspaceErrorMessage(cause, 'Unable to switch workspace'));
       }
@@ -141,53 +144,64 @@ export function WorkspaceSidebarSection() {
       </div>
 
       {expanded && (
-        <div id="workspace-list" role="list" className="mt-1 space-y-0.5 px-2">
-          <button
-            type="button"
-            onClick={() => setSessionWorkspaceFilterId(null)}
-            className={workspaceRowClass(sessionWorkspaceFilterId === null)}
-            aria-pressed={sessionWorkspaceFilterId === null}
-          >
-            <span className="flex size-5 items-center justify-center rounded bg-background-tertiary text-[10px]">
-              ∞
-            </span>
-            <span className="flex-1 truncate text-left">All workspaces</span>
-            {sessionWorkspaceFilterId === null && <Check className="size-3.5" />}
-          </button>
-
-          {loading ? (
-            <div className="px-3 py-2 text-xs text-text-secondary">Loading workspaces…</div>
-          ) : error ? (
-            <div role="alert" className="px-3 py-2 text-xs text-red-600">
-              {error}
+        <>
+          {switchNotice && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mx-2 mt-1 rounded-md bg-background-tertiary px-3 py-2 text-xs text-text-secondary"
+            >
+              {switchNotice}
             </div>
-          ) : workspaces.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-text-secondary">No workspaces available</div>
-          ) : (
-            workspaces.map((item) => (
-              <WorkspaceRow
-                key={item.workspace.id}
-                item={item}
-                active={item.workspace.id === activeWorkspaceId}
-                filtered={item.workspace.id === sessionWorkspaceFilterId}
-                isDefault={item.workspace.id === defaultWorkspaceId}
-                onOpen={() => void switchWorkspace(item.workspace)}
-                onFilter={() => setSessionWorkspaceFilterId(item.workspace.id)}
-                onEdit={() => setEditor({ open: true, workspace: item.workspace })}
-                onDuplicate={() => {
-                  void duplicateWorkspace(item.workspace.id)
-                    .then((duplicate) => toast.success(`Created “${duplicate.name}”.`))
-                    .catch((cause) =>
-                      toast.error(workspaceErrorMessage(cause, 'Unable to duplicate workspace'))
-                    );
-                }}
-                onReveal={() => void reveal(item.workspace)}
-                onExport={() => void exportMetadata(item.workspace)}
-                onDelete={() => void remove(item.workspace)}
-              />
-            ))
           )}
-        </div>
+          <div id="workspace-list" role="list" className="mt-1 space-y-0.5 px-2">
+            <button
+              type="button"
+              onClick={() => setSessionWorkspaceFilterId(null)}
+              className={workspaceRowClass(sessionWorkspaceFilterId === null)}
+              aria-pressed={sessionWorkspaceFilterId === null}
+            >
+              <span className="flex size-5 items-center justify-center rounded bg-background-tertiary text-[10px]">
+                ∞
+              </span>
+              <span className="flex-1 truncate text-left">All workspaces</span>
+              {sessionWorkspaceFilterId === null && <Check className="size-3.5" />}
+            </button>
+
+            {loading ? (
+              <div className="px-3 py-2 text-xs text-text-secondary">Loading workspaces…</div>
+            ) : error ? (
+              <div role="alert" className="px-3 py-2 text-xs text-red-600">
+                {error}
+              </div>
+            ) : workspaces.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-text-secondary">No workspaces available</div>
+            ) : (
+              workspaces.map((item) => (
+                <WorkspaceRow
+                  key={item.workspace.id}
+                  item={item}
+                  active={item.workspace.id === activeWorkspaceId}
+                  filtered={item.workspace.id === sessionWorkspaceFilterId}
+                  isDefault={item.workspace.id === defaultWorkspaceId}
+                  onOpen={() => void switchWorkspace(item.workspace)}
+                  onFilter={() => setSessionWorkspaceFilterId(item.workspace.id)}
+                  onEdit={() => setEditor({ open: true, workspace: item.workspace })}
+                  onDuplicate={() => {
+                    void duplicateWorkspace(item.workspace.id)
+                      .then((duplicate) => toast.success(`Created “${duplicate.name}”.`))
+                      .catch((cause) =>
+                        toast.error(workspaceErrorMessage(cause, 'Unable to duplicate workspace'))
+                      );
+                  }}
+                  onReveal={() => void reveal(item.workspace)}
+                  onExport={() => void exportMetadata(item.workspace)}
+                  onDelete={() => void remove(item.workspace)}
+                />
+              ))
+            )}
+          </div>
+        </>
       )}
 
       <WorkspaceEditorDialog

@@ -117,13 +117,17 @@ describe('WorkspaceSidebarSection', () => {
     expect(setSessionWorkspaceFilterId).toHaveBeenCalledWith(null);
   });
 
-  it('switches active workspace for future chats', () => {
+  it('switches active workspace for future chats and shows the pinned-session notice', async () => {
+    const user = userEvent.setup();
     setActiveWorkspace.mockResolvedValue(workspace);
     render(<WorkspaceSidebarSection />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Annual Meeting, active workspace' }));
+    await user.click(screen.getByRole('button', { name: 'Annual Meeting, active workspace' }));
 
     expect(setActiveWorkspace).toHaveBeenCalledWith('workspace-1');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'New chats will use “Annual Meeting”. Open chats stay pinned.'
+    );
   });
 
   it('exposes edit, duplicate, reveal, export, and delete actions', async () => {
