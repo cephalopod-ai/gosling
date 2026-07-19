@@ -469,6 +469,10 @@ impl Agent {
         }
     }
 
+    pub async fn shutdown(&self) {
+        self.extension_manager.shutdown().await;
+    }
+
     /// Emit a lifecycle hook event with no extra context. Useful for events
     /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
     #[cfg(test)]

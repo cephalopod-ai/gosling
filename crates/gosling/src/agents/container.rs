@@ -38,6 +38,8 @@ pub struct DockerExecProcess {
     argv: Vec<String>,
 }
 
+const DOCKER_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 impl DockerExecProcess {
     pub fn new(container: &Container, argv: Vec<String>) -> Self {
         Self {
@@ -56,32 +58,139 @@ impl DockerExecProcess {
             return;
         };
 
-        let result = tokio::process::Command::new("docker")
-            .arg("exec")
-            .arg(&self.container_id)
-            .arg("pkill")
-            .arg("-f")
-            .arg(&pattern)
-            .kill_on_drop(true)
-            .output()
-            .await;
+        let result = tokio::time::timeout(DOCKER_CLEANUP_TIMEOUT, async {
+            tokio::process::Command::new("docker")
+                .arg("exec")
+                .arg(&self.container_id)
+                .arg("pkill")
+                .arg("-f")
+                .arg(&pattern)
+                .kill_on_drop(true)
+                .output()
+                .await
+        })
+        .await;
 
         match result {
             // pkill: 0 = a process was matched and signaled, 1 = no process
             // matched (already exited). Both are the expected outcomes.
-            Ok(output) if output.status.success() || output.status.code() == Some(1) => {}
-            Ok(output) => tracing::debug!(
+            Ok(Ok(output)) if output.status.success() || output.status.code() == Some(1) => {}
+            Ok(Ok(output)) => tracing::debug!(
                 container = %self.container_id,
                 status = ?output.status,
                 stderr = %String::from_utf8_lossy(&output.stderr),
                 "docker exec pkill did not confirm the containerized process was cleaned up"
             ),
-            Err(error) => tracing::debug!(
+            Ok(Err(error)) => tracing::debug!(
                 container = %self.container_id,
                 %error,
                 "failed to run docker exec pkill to clean up containerized process"
             ),
+            Err(_) => tracing::warn!(
+                container = %self.container_id,
+                timeout_seconds = DOCKER_CLEANUP_TIMEOUT.as_secs(),
+                "timed out cleaning up containerized process"
+            ),
         }
+    }
+
+    /// Fallback for teardown paths where no async runtime is available. Normal
+    /// lifecycle code should call [`Self::kill`] and await it instead.
+    pub fn kill_blocking(&self) {
+        let Some(pattern) = kill_pattern(&self.argv) else {
+            return;
+        };
+
+        let mut command = std::process::Command::new("docker");
+        command
+            .arg("exec")
+            .arg(&self.container_id)
+            .arg("pkill")
+            .arg("-f")
+            .arg(pattern);
+
+        match run_command_bounded(command, DOCKER_CLEANUP_TIMEOUT) {
+            Ok(Some(status)) if status.success() || status.code() == Some(1) => {}
+            Ok(Some(status)) => tracing::debug!(
+                container = %self.container_id,
+                ?status,
+                "blocking docker exec pkill did not confirm cleanup"
+            ),
+            Ok(None) => tracing::warn!(
+                container = %self.container_id,
+                timeout_seconds = DOCKER_CLEANUP_TIMEOUT.as_secs(),
+                "blocking containerized-process cleanup timed out"
+            ),
+            Err(error) => tracing::debug!(
+                container = %self.container_id,
+                %error,
+                "failed to run blocking docker exec pkill"
+            ),
+        }
+    }
+}
+
+fn run_command_bounded(
+    mut command: std::process::Command,
+    timeout: std::time::Duration,
+) -> std::io::Result<Option<std::process::ExitStatus>> {
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut child = command.spawn()?;
+    let deadline = std::time::Instant::now() + timeout;
+
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(Some(status));
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(None);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct DockerTestContainerGuard {
+    name: Option<String>,
+}
+
+#[cfg(test)]
+impl DockerTestContainerGuard {
+    pub(crate) fn new(name: String) -> Self {
+        Self { name: Some(name) }
+    }
+
+    pub(crate) async fn cleanup(mut self) {
+        let name = self.name.as_ref().expect("container guard is armed");
+        let output = tokio::process::Command::new("docker")
+            .args(["rm", "-f", name])
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker rm");
+        assert!(
+            output.status.success(),
+            "failed to remove Docker test container: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        self.name.take();
+    }
+}
+
+#[cfg(test)]
+impl Drop for DockerTestContainerGuard {
+    fn drop(&mut self) {
+        let Some(name) = self.name.take() else {
+            return;
+        };
+        let mut command = std::process::Command::new("docker");
+        command.args(["rm", "-f", &name]);
+        let _ = run_command_bounded(command, DOCKER_CLEANUP_TIMEOUT);
     }
 }
 
@@ -223,23 +332,7 @@ mod tests {
             return;
         }
 
-        // Guarantee container cleanup even if an assertion below fails.
-        struct ContainerGuard(String);
-        impl Drop for ContainerGuard {
-            fn drop(&mut self) {
-                let name = self.0.clone();
-                if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    handle.spawn(async move {
-                        let _ = tokio::process::Command::new("docker")
-                            .args(["rm", "-f", &name])
-                            .kill_on_drop(true)
-                            .output()
-                            .await;
-                    });
-                }
-            }
-        }
-        let _guard = ContainerGuard(name.clone());
+        let guard = DockerTestContainerGuard::new(name.clone());
 
         let container = Container::new(name.clone());
 
@@ -301,6 +394,8 @@ mod tests {
             "true",
             "the shared container must not be stopped by killing one exec'd process"
         );
+
+        guard.cleanup().await;
     }
 
     /// `kill()` on a container that no longer exists must not panic or hang

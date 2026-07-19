@@ -28,6 +28,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
+#[cfg(test)]
+use super::container::DockerTestContainerGuard;
 use super::container::{Container, DockerExecProcess};
 use super::extension::{
     ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PlatformExtensionContext,
@@ -281,6 +283,12 @@ impl Extension {
     fn get_client(&self) -> McpClientBox {
         self.client.clone()
     }
+
+    async fn shutdown(mut self) {
+        if let Some(docker_process) = self.docker_process.take() {
+            docker_process.kill().await;
+        }
+    }
 }
 
 impl Drop for Extension {
@@ -288,16 +296,10 @@ impl Drop for Extension {
         let Some(docker_process) = self.docker_process.take() else {
             return;
         };
-        // Covers every teardown path uniformly: explicit removal
-        // (`remove_extension`), silent replacement when an extension is
-        // reconfigured (`extensions.insert` drops the old value), and the
-        // whole manager going away (e.g. agent eviction).
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
-        handle.spawn(async move {
-            docker_process.kill().await;
-        });
+        // Drop can run while Tokio is shutting down, so spawning here can
+        // silently abandon cleanup. Explicit lifecycle paths await shutdown;
+        // this bounded fallback covers eviction, panic, and runtime teardown.
+        docker_process.kill_blocking();
     }
 }
 
@@ -325,6 +327,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__gosling_tool_update_met
 /// Manages gosling extensions / MCP clients and their interactions
 pub struct ExtensionManager {
     extensions: Mutex<HashMap<String, Extension>>,
+    lifecycle_lock: Mutex<()>,
     runtime_blocked_extensions: Mutex<HashMap<String, ExtensionConfig>>,
     context: PlatformExtensionContext,
     provider: SharedProvider,
@@ -1031,6 +1034,7 @@ impl ExtensionManager {
     ) -> Self {
         Self {
             extensions: Mutex::new(HashMap::new()),
+            lifecycle_lock: Mutex::new(()),
             runtime_blocked_extensions: Mutex::new(HashMap::new()),
             context: PlatformExtensionContext {
                 extension_manager: None,
@@ -1097,14 +1101,35 @@ impl ExtensionManager {
         // restart if both match.
         let resolved_config = config.clone().resolve(Config::global()).await?;
 
-        if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
-            if existing.config == config && existing.resolved_config == resolved_config {
-                return Ok(());
+        let _lifecycle_guard = self.lifecycle_lock.lock().await;
+
+        let stopped_docker_extension = {
+            let mut extensions = self.extensions.lock().await;
+            if let Some(existing) = extensions.get(&sanitized_name) {
+                if existing.config == config && existing.resolved_config == resolved_config {
+                    return Ok(());
+                }
+                tracing::debug!(
+                    name = sanitized_name,
+                    "extension config changed, restarting with updated config"
+                );
             }
-            tracing::debug!(
-                name = sanitized_name,
-                "extension config changed, restarting with updated config"
-            );
+            if extensions
+                .get(&sanitized_name)
+                .is_some_and(|extension| extension.docker_process.is_some())
+            {
+                extensions.remove(&sanitized_name)
+            } else {
+                None
+            }
+        };
+        if let Some(stopped_docker_extension) = stopped_docker_extension {
+            // DockerExecProcess identifies the in-container process by argv,
+            // so two identical generations cannot overlap without cleanup
+            // risking both. Other transports stay live until replacement
+            // creation succeeds.
+            stopped_docker_extension.shutdown().await;
+            self.invalidate_tools_cache_and_bump_version().await;
         }
 
         let mut temp_dir = None;
@@ -1372,8 +1397,7 @@ impl ExtensionManager {
             .await
             .remove(&sanitized_name);
 
-        let mut extensions = self.extensions.lock().await;
-        extensions.insert(
+        let replaced = self.extensions.lock().await.insert(
             sanitized_name,
             Extension::new(
                 config,
@@ -1384,7 +1408,9 @@ impl ExtensionManager {
                 docker_process,
             ),
         );
-        drop(extensions);
+        if let Some(replaced) = replaced {
+            replaced.shutdown().await;
+        }
         self.invalidate_tools_cache_and_bump_version().await;
 
         Ok(())
@@ -1399,6 +1425,11 @@ impl ExtensionManager {
         temp_dir: Option<TempDir>,
     ) {
         let normalized = name_to_key(&name);
+        let _lifecycle_guard = self.lifecycle_lock.lock().await;
+        let replaced = self.extensions.lock().await.remove(&normalized);
+        if let Some(replaced) = replaced {
+            replaced.shutdown().await;
+        }
         self.extensions.lock().await.insert(
             normalized,
             Extension::new(config.clone(), config.clone(), client, info, temp_dir, None),
@@ -1424,13 +1455,31 @@ impl ExtensionManager {
     /// Get aggregated usage statistics
     pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
-        self.extensions.lock().await.remove(&sanitized_name);
+        let _lifecycle_guard = self.lifecycle_lock.lock().await;
+        let removed = self.extensions.lock().await.remove(&sanitized_name);
+        if let Some(removed) = removed {
+            removed.shutdown().await;
+        }
         self.runtime_blocked_extensions
             .lock()
             .await
             .remove(&sanitized_name);
         self.invalidate_tools_cache_and_bump_version().await;
         Ok(())
+    }
+
+    pub async fn shutdown(&self) {
+        let _lifecycle_guard = self.lifecycle_lock.lock().await;
+        let extensions = std::mem::take(&mut *self.extensions.lock().await);
+        self.runtime_blocked_extensions.lock().await.clear();
+
+        let mut shutdowns = FuturesUnordered::new();
+        for extension in extensions.into_values() {
+            shutdowns.push(extension.shutdown());
+        }
+        while shutdowns.next().await.is_some() {}
+
+        self.invalidate_tools_cache_and_bump_version().await;
     }
 
     pub async fn update_working_dirs(
@@ -2381,6 +2430,7 @@ mod tests {
             available_tools: Vec<String>,
             docker_process: Option<DockerExecProcess>,
         ) {
+            let _lifecycle_guard = self.lifecycle_lock.lock().await;
             let sanitized_name = name_to_key(&name);
             let config = ExtensionConfig::Builtin {
                 name: name.clone(),
@@ -2398,6 +2448,10 @@ mod tests {
                 None,
                 docker_process,
             );
+            let replaced = self.extensions.lock().await.remove(&sanitized_name);
+            if let Some(replaced) = replaced {
+                replaced.shutdown().await;
+            }
             self.extensions
                 .lock()
                 .await
@@ -3099,8 +3153,8 @@ mod tests {
     }
 
     /// RES-003: removing a Docker-backed extension must terminate the
-    /// process it started inside the container (Extension's Drop impl
-    /// invoking `DockerExecProcess::kill`), not just the local `docker exec`
+    /// process it started inside the container (the awaited extension
+    /// shutdown invoking `DockerExecProcess::kill`), not just the local `docker exec`
     /// client the extension's `client` field owns — and it must not stop
     /// the container itself, since other extensions/sessions may share it.
     /// Requires a real Docker daemon; skips (not fails) if unavailable so
@@ -3141,22 +3195,7 @@ mod tests {
             );
             return;
         }
-        struct ContainerGuard(String);
-        impl Drop for ContainerGuard {
-            fn drop(&mut self) {
-                let name = self.0.clone();
-                if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    handle.spawn(async move {
-                        let _ = tokio::process::Command::new("docker")
-                            .args(["rm", "-f", &name])
-                            .kill_on_drop(true)
-                            .output()
-                            .await;
-                    });
-                }
-            }
-        }
-        let _guard = ContainerGuard(container_name.clone());
+        let guard = DockerTestContainerGuard::new(container_name.clone());
 
         let argv = vec!["sleep".to_string(), "300".to_string()];
         let exec = tokio::process::Command::new("docker")
@@ -3191,10 +3230,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Extension::drop spawns the cleanup as a detached task; give it a
-        // moment to run.
-        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-
         let pgrep = tokio::process::Command::new("docker")
             .arg("exec")
             .arg(&container_name)
@@ -3221,6 +3256,82 @@ mod tests {
             "true",
             "removing one extension's process must not stop the shared container"
         );
+
+        let shutdown_argv = vec!["sleep".to_string(), "301".to_string()];
+        let exec = tokio::process::Command::new("docker")
+            .arg("exec")
+            .arg("-d")
+            .arg(&container_name)
+            .args(&shutdown_argv)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker exec for manager shutdown");
+        assert!(exec.status.success());
+        extension_manager
+            .add_mock_extension_with_docker_process(
+                "shutdown_ext".to_string(),
+                Arc::new(MockClient {}),
+                vec![],
+                Some(DockerExecProcess::new(&container, shutdown_argv)),
+            )
+            .await;
+
+        extension_manager.shutdown().await;
+
+        let pgrep = tokio::process::Command::new("docker")
+            .arg("exec")
+            .arg(&container_name)
+            .arg("pgrep")
+            .arg("-f")
+            .arg(r"sleep\s+301")
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to verify manager shutdown cleanup");
+        assert!(
+            !pgrep.status.success(),
+            "manager shutdown should drain Docker-backed extensions"
+        );
+
+        let drop_argv = vec!["sleep".to_string(), "302".to_string()];
+        let exec = tokio::process::Command::new("docker")
+            .arg("exec")
+            .arg("-d")
+            .arg(&container_name)
+            .args(&drop_argv)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to invoke docker exec for drop fallback");
+        assert!(exec.status.success());
+        extension_manager
+            .add_mock_extension_with_docker_process(
+                "drop_ext".to_string(),
+                Arc::new(MockClient {}),
+                vec![],
+                Some(DockerExecProcess::new(&container, drop_argv)),
+            )
+            .await;
+
+        drop(extension_manager);
+
+        let pgrep = tokio::process::Command::new("docker")
+            .arg("exec")
+            .arg(&container_name)
+            .arg("pgrep")
+            .arg("-f")
+            .arg(r"sleep\s+302")
+            .kill_on_drop(true)
+            .output()
+            .await
+            .expect("failed to verify drop fallback cleanup");
+        assert!(
+            !pgrep.status.success(),
+            "dropping a manager must clean up without a detached runtime task"
+        );
+
+        guard.cleanup().await;
     }
 
     #[tokio::test]

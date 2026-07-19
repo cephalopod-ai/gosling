@@ -172,8 +172,9 @@ impl AppState {
     }
 
     pub async fn shutdown(&self) {
-        self.shutdown.cancel();
         self.extension_loading_tasks.abort_all().await;
+        self.agent_manager.shutdown().await;
+        self.shutdown.cancel();
     }
 
     pub fn session_manager(&self) -> &SessionManager {

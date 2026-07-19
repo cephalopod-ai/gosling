@@ -43,6 +43,7 @@ pub struct AgentManager {
     /// `Arc<Mutex<()>>` stays alive as long as any caller still holds it,
     /// even after the HashMap entry is removed.
     creation_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    shutting_down: Arc<RwLock<bool>>,
 }
 
 impl AgentManager {
@@ -56,6 +57,7 @@ impl AgentManager {
             default_provider: Arc::new(RwLock::new(None)),
             cancel_tokens: Arc::new(RwLock::new(HashMap::new())),
             creation_locks: Arc::new(Mutex::new(HashMap::new())),
+            shutting_down: Arc::new(RwLock::new(false)),
         };
 
         Ok(manager)
@@ -107,6 +109,13 @@ impl AgentManager {
         session_id: String,
         runtime_context: RuntimeContext,
     ) -> Result<AgentManagerGetResult> {
+        // Keep the read guard for the whole creation path so shutdown's write
+        // guard cannot drain the cache while a new agent is still being built.
+        let shutting_down = self.shutting_down.read().await;
+        if *shutting_down {
+            anyhow::bail!("Agent manager is shutting down");
+        }
+
         // Fast path: agent already cached.
         {
             let mut sessions = self.sessions.write().await;
@@ -275,17 +284,17 @@ impl AgentManager {
         }
 
         // `push` returns the LRU-evicted entry when the cache is at
-        // capacity, which `put` does not surface.  We need the evicted
-        // key so we can also drop its creation lock below, otherwise the
-        // `creation_locks` HashMap would grow without bound in long-lived
-        // processes that churn through many sessions.
-        let evicted = sessions
-            .push(session_id.to_string(), agent.clone())
-            .map(|(k, _)| k);
+        // capacity, which `put` does not surface. We need the evicted entry
+        // both to prune its creation lock and to await extension cleanup when
+        // the cache owns the agent's final reference.
+        let evicted = sessions.push(session_id.to_string(), agent.clone());
         drop(sessions);
 
-        if let Some(evicted_id) = evicted {
+        if let Some((evicted_id, evicted_agent)) = evicted {
             self.prune_creation_lock(&evicted_id).await;
+            if Arc::strong_count(&evicted_agent) == 1 {
+                evicted_agent.shutdown().await;
+            }
         }
 
         Ok(AgentManagerGetResult {
@@ -320,10 +329,11 @@ impl AgentManager {
             token.cancel();
         }
         let mut sessions = self.sessions.write().await;
-        sessions
+        let agent = sessions
             .pop(session_id)
             .ok_or_else(|| anyhow::anyhow!("Session {} not found", session_id))?;
         drop(sessions);
+        agent.shutdown().await;
         // Best-effort prune of the per-session creation lock so the
         // HashMap doesn't grow unbounded.  Any caller still holding a
         // clone of the Arc keeps the underlying Mutex alive until it
@@ -338,13 +348,39 @@ impl AgentManager {
             token.cancel();
         }
         let mut sessions = self.sessions.write().await;
-        if sessions.pop(session_id).is_none() {
+        let Some(agent) = sessions.pop(session_id) else {
             return Ok(());
-        }
+        };
         drop(sessions);
+        agent.shutdown().await;
         self.prune_creation_lock(session_id).await;
         info!("Removed session {}", session_id);
         Ok(())
+    }
+
+    pub async fn shutdown(&self) {
+        let mut shutting_down = self.shutting_down.write().await;
+        if *shutting_down {
+            return;
+        }
+        *shutting_down = true;
+
+        let cancel_tokens = std::mem::take(&mut *self.cancel_tokens.write().await);
+        for token in cancel_tokens.into_values() {
+            token.cancel();
+        }
+
+        let agents = {
+            let mut sessions = self.sessions.write().await;
+            let mut agents = Vec::with_capacity(sessions.len());
+            while let Some((_, agent)) = sessions.pop_lru() {
+                agents.push(agent);
+            }
+            agents
+        };
+        self.creation_locks.lock().await.clear();
+
+        futures::future::join_all(agents.iter().map(|agent| agent.shutdown())).await;
     }
 
     pub async fn has_session(&self, session_id: &str) -> bool {
@@ -515,6 +551,31 @@ mod tests {
         manager.remove_session_if_loaded(&session).await.unwrap();
         assert!(!manager.has_session(&session).await);
         manager.remove_session_if_loaded(&session).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_cancels_work_and_drains_agents() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = create_test_manager(&temp_dir).await;
+        let session = String::from("shutdown-test");
+        let token = CancellationToken::new();
+
+        manager.get_or_create_agent(session.clone()).await.unwrap();
+        manager
+            .try_register_cancel_token(&session, token.clone())
+            .await
+            .unwrap();
+
+        manager.shutdown().await;
+
+        assert!(token.is_cancelled());
+        assert_eq!(manager.session_count().await, 0);
+        assert!(manager.cancel_tokens.read().await.is_empty());
+        assert!(manager.creation_locks.lock().await.is_empty());
+        assert!(manager
+            .get_or_create_agent("late-session".to_string())
+            .await
+            .is_err());
     }
 
     #[tokio::test]

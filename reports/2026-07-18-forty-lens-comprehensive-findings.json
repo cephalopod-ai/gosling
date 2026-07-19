@@ -1,0 +1,77 @@
+[
+  {
+    "id": "AUD-GOS-011",
+    "title": "Global static path resolution bypasses instance-specific data_dir configuration",
+    "domain": "Data-Integrity / Internal-API",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/config/paths.rs",
+        "lines": "1-89",
+        "symbol": "Paths",
+        "quote": "pub struct Paths;",
+        "note": "Resolves config, data, and state directories using global static helpers or a global environment variable."
+      },
+      {
+        "file": "crates/gosling/src/acp/server.rs",
+        "lines": "1038-1049",
+        "symbol": "AcpServer::new",
+        "quote": "// TODO: gosling reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.",
+        "note": "Indicates that the ACP server ignores its own data_dir option for global utilities."
+      }
+    ],
+    "observed": "Log directory setups, TLS credential keys, telemetry files, and client registries are calculated globally rather than respecting GoslingAcpAgentOptions.data_dir.",
+    "expected_boundary": "Every path lookup should dynamically resolve relative to the server instance context data_dir to prevent directory isolation failures.",
+    "failure_mechanism": "Calculators are static and cannot accept dynamic instance variables.",
+    "break_it_angle": "Start multiple ACP server instances concurrently with separate data directories; observe logs writing to the same default global location.",
+    "impact": "Shared telemetry, cert collisions, and log leakage across concurrent sandboxed server processes.",
+    "operational_impact": {
+      "blast_radius": "Single-System",
+      "side_effect_class": "file system writes",
+      "reversibility": "reversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "safe"
+    },
+    "adjacent": [
+      "Paths calculations are used globally in configuration module initialization"
+    ],
+    "mitigation": {
+      "patterns": [
+        "instance context passing",
+        "directory providers"
+      ],
+      "minimal_repair": "Replace global static Paths lookups inside long-lived server systems with context-relative paths.",
+      "local_guardrail": "Verify directory locations during instance startup to ensure no global home folder paths are evaluated.",
+      "behavior_test": "Multiple concurrently instantiated server test fixtures with unique data_dirs produce zero state side-effects in standard home paths."
+    },
+    "implementation_assessment": {
+      "complexity": "workflow_protocol",
+      "cost": "M",
+      "nominal_agent": "multi-agent",
+      "rationale": "Requires refactoring paths resolution references across multiple modules and passing configuration parameters down during instantiation.",
+      "cost_drivers": [
+        "refactoring static calls",
+        "test environment updates"
+      ]
+    },
+    "validation": [
+      "isolated concurrent server test cases"
+    ],
+    "non_goals": [
+      "modifying CLI strategy layout for local users"
+    ],
+    "patch_priority": 3,
+    "reviewed_by": [
+      "anti-gravity-auditor"
+    ],
+    "review_limits": "Limited to source review; telemetry installation checks were not ran.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "Paths helper functions do not accept runtime variables and explicitly fallback to strategies."
+    }
+  }
+]
