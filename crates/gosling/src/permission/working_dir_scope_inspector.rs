@@ -203,6 +203,20 @@ fn is_within_any(path: &Path, dirs: &[PathBuf]) -> Result<bool> {
 }
 
 fn resolve(value: &str, working_dir: &Path) -> PathBuf {
+    if let Ok(url) = url::Url::parse(value) {
+        if url.scheme() == "file" {
+            if let Ok(path) = url.to_file_path() {
+                return path;
+            }
+        }
+    }
+    for prefix in ["~/", "$HOME/", "${HOME}/"] {
+        if let Some(relative) = value.strip_prefix(prefix) {
+            if let Some(home) = dirs::home_dir() {
+                return home.join(relative);
+            }
+        }
+    }
     let path = Path::new(value);
     if path.is_absolute() {
         path.to_path_buf()
@@ -211,32 +225,139 @@ fn resolve(value: &str, working_dir: &Path) -> PathBuf {
     }
 }
 
+fn argument_key_tokens(key: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut token = String::new();
+    let mut previous_was_lowercase = false;
+    for character in key.chars() {
+        if !character.is_ascii_alphanumeric() {
+            if !token.is_empty() {
+                tokens.push(std::mem::take(&mut token));
+            }
+            previous_was_lowercase = false;
+            continue;
+        }
+        if character.is_ascii_uppercase() && previous_was_lowercase && !token.is_empty() {
+            tokens.push(std::mem::take(&mut token));
+        }
+        token.push(character.to_ascii_lowercase());
+        previous_was_lowercase = character.is_ascii_lowercase();
+    }
+    if !token.is_empty() {
+        tokens.push(token);
+    }
+    tokens
+}
+
+fn argument_key_has_path_semantics(key: &str) -> bool {
+    argument_key_tokens(key).iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "path"
+                | "paths"
+                | "file"
+                | "files"
+                | "filename"
+                | "filenames"
+                | "directory"
+                | "directories"
+                | "dir"
+                | "dirs"
+                | "folder"
+                | "folders"
+                | "root"
+                | "roots"
+                | "cwd"
+                | "uri"
+                | "uris"
+        )
+    })
+}
+
+fn argument_key_is_text_payload(key: &str) -> bool {
+    argument_key_tokens(key).iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "body" | "content" | "prompt" | "query" | "replacement" | "template" | "text"
+        )
+    })
+}
+
+fn looks_like_explicit_path(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    value.starts_with('/')
+        || value.starts_with("./")
+        || value.starts_with("../")
+        || value.starts_with("~/")
+        || value.starts_with("$HOME/")
+        || value.starts_with("${HOME}/")
+        || value.starts_with("file://")
+        || value.starts_with('\\')
+        || value.starts_with(".\\")
+        || value.starts_with("..\\")
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'/' | b'\\'))
+}
+
+fn path_from_shell_token(token: &str) -> Option<&str> {
+    let candidate = if token.starts_with('-') {
+        token.split_once('=')?.1
+    } else if let Some((_, value)) = token.split_once('=') {
+        if looks_like_explicit_path(value) {
+            value
+        } else {
+            token
+        }
+    } else {
+        token
+    };
+    let candidate = candidate.trim_start_matches(|character: char| {
+        character.is_ascii_digit() || matches!(character, '<' | '>' | '&')
+    });
+    looks_like_explicit_path(candidate).then_some(candidate)
+}
+
+fn collect_referenced_paths(
+    value: &serde_json::Value,
+    key: &str,
+    inherited_path_semantics: bool,
+    working_dir: &Path,
+    paths: &mut Vec<PathBuf>,
+) {
+    let path_semantics = inherited_path_semantics || argument_key_has_path_semantics(key);
+    match value {
+        serde_json::Value::String(value) => {
+            if path_semantics
+                || (!argument_key_is_text_payload(key) && looks_like_explicit_path(value))
+            {
+                paths.push(resolve(value, working_dir));
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                collect_referenced_paths(value, key, path_semantics, working_dir, paths);
+            }
+        }
+        serde_json::Value::Object(values) => {
+            for (nested_key, value) in values {
+                collect_referenced_paths(value, nested_key, false, working_dir, paths);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn referenced_paths(tool_call: &CallToolRequestParams, working_dir: &Path) -> Vec<PathBuf> {
     let Some(args) = tool_call.arguments.as_ref() else {
         return Vec::new();
     };
     let mut paths = Vec::new();
-    for key in [
-        "path",
-        "file",
-        "file_path",
-        "filePath",
-        "source_path",
-        "sourcePath",
-        "destination_path",
-        "destinationPath",
-    ] {
-        if let Some(value) = args.get(key).and_then(|value| value.as_str()) {
-            paths.push(resolve(value, working_dir));
+    for (key, value) in args {
+        if key != "command" {
+            collect_referenced_paths(value, key, false, working_dir, &mut paths);
         }
-    }
-    if let Some(values) = args.get("paths").and_then(|value| value.as_array()) {
-        paths.extend(
-            values
-                .iter()
-                .filter_map(|value| value.as_str())
-                .map(|value| resolve(value, working_dir)),
-        );
     }
     if let Some(command) = args.get("command").and_then(|value| value.as_str()) {
         let tokens = shell_words::split(command).unwrap_or_default();
@@ -244,13 +365,9 @@ fn referenced_paths(tool_call: &CallToolRequestParams, working_dir: &Path) -> Ve
             .split(|token| matches!(token.as_str(), "|" | "&&" | "||" | ";"))
             .filter(|segment| !segment.is_empty())
         {
-            for token in segment
-                .iter()
-                .skip(1)
-                .filter(|token| !token.starts_with('-'))
-            {
-                if token.starts_with('/') || token.starts_with("./") || token.starts_with("../") {
-                    paths.push(resolve(token, working_dir));
+            for token in segment.iter().skip(1) {
+                if let Some(path) = path_from_shell_token(token) {
+                    paths.push(resolve(path, working_dir));
                 }
             }
         }
@@ -484,6 +601,70 @@ mod tests {
         );
     }
 
+    #[test]
+    fn flags_nested_path_aliases_and_explicit_paths_under_unknown_keys() {
+        let root = tempfile::tempdir().unwrap();
+        let working_dir = root.path().join("project");
+        std::fs::create_dir(&working_dir).unwrap();
+        let outside = root.path().join("outside.txt");
+        let call = tool_call(
+            "third_party__export",
+            serde_json::from_value(serde_json::json!({
+                "options": {
+                    "outputFile": outside,
+                    "secondaryTarget": "../also-outside.txt"
+                }
+            }))
+            .unwrap(),
+        );
+
+        assert!(
+            out_of_scope_path(&call, &working_dir, std::slice::from_ref(&working_dir))
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn checks_arrays_under_path_semantic_keys() {
+        let root = tempfile::tempdir().unwrap();
+        let working_dir = root.path().join("project");
+        std::fs::create_dir(&working_dir).unwrap();
+        let call = tool_call(
+            "third_party__batch",
+            serde_json::from_value(serde_json::json!({
+                "input_files": ["inside.txt", "../outside.txt"]
+            }))
+            .unwrap(),
+        );
+
+        assert!(
+            out_of_scope_path(&call, &working_dir, std::slice::from_ref(&working_dir))
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn does_not_treat_text_payloads_as_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let working_dir = root.path().join("project");
+        std::fs::create_dir(&working_dir).unwrap();
+        let call = tool_call(
+            "developer__text_editor__write",
+            serde_json::from_value(serde_json::json!({
+                "path": "inside.txt",
+                "content": "/outside-looking prose"
+            }))
+            .unwrap(),
+        );
+
+        assert_eq!(
+            out_of_scope_path(&call, &working_dir, std::slice::from_ref(&working_dir)).unwrap(),
+            None
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn flags_existing_and_missing_paths_through_symlink_escape() {
@@ -575,6 +756,55 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    #[test]
+    fn flags_shell_home_expansion_outside_scope() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let call = tool_call(
+            "developer__shell",
+            json_args(&[("command", "cat ~/.ssh/id_rsa")]),
+        );
+
+        assert!(out_of_scope_path(
+            &call,
+            working_dir.path(),
+            std::slice::from_ref(&working_dir.path().to_path_buf())
+        )
+        .unwrap()
+        .is_some());
+    }
+
+    #[test]
+    fn flags_shell_option_and_redirection_paths_outside_scope() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let allowed = vec![working_dir.path().to_path_buf()];
+        for command in [
+            "tool --output=/etc/gosling-output",
+            "echo data >/etc/gosling-output",
+        ] {
+            let call = tool_call("developer__shell", json_args(&[("command", command)]));
+            assert!(out_of_scope_path(&call, working_dir.path(), &allowed)
+                .unwrap()
+                .is_some());
+        }
+    }
+
+    #[test]
+    fn flags_file_uri_outside_scope() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let call = tool_call(
+            "third_party__resource",
+            json_args(&[("resourceUri", "file:///etc/passwd")]),
+        );
+
+        assert!(out_of_scope_path(
+            &call,
+            working_dir.path(),
+            std::slice::from_ref(&working_dir.path().to_path_buf())
+        )
+        .unwrap()
+        .is_some());
     }
 
     #[test]

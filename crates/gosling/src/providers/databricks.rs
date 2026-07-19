@@ -341,22 +341,8 @@ impl DatabricksProvider {
                 urlencoding::encode(endpoint_name)
             ))
             .response_get()
-            .await
-            .map_err(|e| {
-                ProviderError::RequestFailed(format!(
-                    "Failed to fetch Databricks endpoint metadata: {}",
-                    e
-                ))
-            })?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let detail = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(format!(
-                "Failed to fetch Databricks endpoint metadata: {} {}",
-                status, detail
-            )));
-        }
+            .await?;
+        let response = handle_status(response).await?;
 
         let json: Value = response.json().await.map_err(|e| {
             ProviderError::RequestFailed(format!(
@@ -744,19 +730,8 @@ impl Provider for DatabricksProvider {
             .api_client
             .request("api/2.0/serving-endpoints")
             .response_get()
-            .await
-            .map_err(|e| {
-                ProviderError::RequestFailed(format!("Failed to fetch Databricks models: {}", e))
-            })?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let detail = response.text().await.unwrap_or_default();
-            return Err(ProviderError::RequestFailed(format!(
-                "Failed to fetch Databricks models: {} {}",
-                status, detail
-            )));
-        }
+            .await?;
+        let response = handle_status(response).await?;
 
         let json: Value = response.json().await.map_err(|e| {
             ProviderError::RequestFailed(format!("Failed to parse Databricks API response: {}", e))

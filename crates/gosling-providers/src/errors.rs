@@ -156,16 +156,27 @@ fn provider_error_from_reqwest(error: &reqwest::Error) -> ProviderError {
         return ProviderError::NetworkError(msg);
     }
 
-    let mut details = vec![];
     if let Some(status) = error.status() {
-        details.push(format!("status: {}", status));
+        let details = format!("Provider request returned HTTP {status}");
+        return match status {
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                ProviderError::Authentication(details)
+            }
+            StatusCode::PAYMENT_REQUIRED => ProviderError::CreditsExhausted {
+                details,
+                top_up_url: None,
+            },
+            StatusCode::PAYLOAD_TOO_LARGE => ProviderError::ContextLengthExceeded(details),
+            StatusCode::TOO_MANY_REQUESTS => ProviderError::RateLimitExceeded {
+                details,
+                retry_delay: None,
+            },
+            _ if status.is_server_error() => ProviderError::ServerError(details),
+            _ => ProviderError::RequestFailed(details),
+        };
     }
-    let msg = if details.is_empty() {
-        error.to_string()
-    } else {
-        format!("{} ({})", error, details.join(", "))
-    };
-    ProviderError::RequestFailed(msg)
+
+    ProviderError::RequestFailed(error.to_string())
 }
 
 impl From<anyhow::Error> for ProviderError {
@@ -186,6 +197,48 @@ impl From<reqwest::Error> for ProviderError {
 impl From<LogError> for ProviderError {
     fn from(value: LogError) -> Self {
         ProviderError::ExecutionError(value.to_string())
+    }
+}
+
+#[cfg(test)]
+mod reqwest_error_tests {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn classified_status(status: u16) -> ProviderError {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/status"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+        let error = reqwest::get(format!("{}/status", server.uri()))
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap_err();
+        error.into()
+    }
+
+    #[tokio::test]
+    async fn classifies_status_errors_from_reqwest() {
+        assert!(matches!(
+            classified_status(401).await,
+            ProviderError::Authentication(_)
+        ));
+        assert!(matches!(
+            classified_status(429).await,
+            ProviderError::RateLimitExceeded { .. }
+        ));
+        assert!(matches!(
+            classified_status(503).await,
+            ProviderError::ServerError(_)
+        ));
+        assert!(matches!(
+            classified_status(400).await,
+            ProviderError::RequestFailed(_)
+        ));
     }
 }
 

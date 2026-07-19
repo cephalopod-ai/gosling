@@ -77,6 +77,16 @@ export const isProtocolSafe = (url: string): boolean => {
   }
 };
 
+export const normalizeWebUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = new URL(value);
+    return WEB_PROTOCOLS.includes(parsed.protocol) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Extract the protocol from a URL string.
  */

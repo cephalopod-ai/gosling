@@ -410,19 +410,8 @@ impl Provider for DatabricksV2Provider {
                 path.push_str(&format!("&page_token={}", urlencoding::encode(token)));
             }
 
-            let response = self.api_client.response_get(&path).await.map_err(|e| {
-                ProviderError::RequestFailed(format!(
-                    "Failed to fetch Databricks AI Gateway endpoints: {e}"
-                ))
-            })?;
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let detail = response.text().await.unwrap_or_default();
-                return Err(ProviderError::RequestFailed(format!(
-                    "Failed to fetch Databricks AI Gateway endpoints: {status} {detail}"
-                )));
-            }
+            let response = self.api_client.response_get(&path).await?;
+            let response = handle_status(response).await?;
 
             let json: Value = response.json().await.map_err(|e| {
                 ProviderError::RequestFailed(format!(

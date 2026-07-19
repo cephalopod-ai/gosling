@@ -445,8 +445,7 @@ impl Provider for KimiCodeProvider {
             .bearer_auth(access_token)
             .headers(self.kimi_headers())
             .send()
-            .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+            .await?;
         let resp = handle_status(resp).await?;
 
         let parsed: ModelsResp = resp.json().await.map_err(|e| {

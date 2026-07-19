@@ -62,7 +62,7 @@ import {
 } from './utils/autoUpdater';
 import { UPDATES_ENABLED } from './updates';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
-import { isProtocolSafe, WEB_PROTOCOLS } from './utils/urlSecurity';
+import { isProtocolSafe, normalizeWebUrl } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
 import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
 import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifactRouter';
@@ -3219,27 +3219,15 @@ async function appMain() {
     }
   });
 
-  ipcMain.on('open-in-chrome', (_event, url) => {
+  ipcMain.on('open-in-chrome', async (_event, url: unknown) => {
     try {
-      // Validate URL
-      const parsedUrl = new URL(url);
-
-      // Only allow http and https protocols for browser URLs
-      if (!WEB_PROTOCOLS.includes(parsedUrl.protocol)) {
+      const webUrl = normalizeWebUrl(url);
+      if (!webUrl) {
         console.error('Invalid URL protocol. Only HTTP and HTTPS are allowed.');
         return;
       }
 
-      // On macOS, use the 'open' command with Chrome
-      if (process.platform === 'darwin') {
-        spawn('open', ['-a', 'Google Chrome', url]);
-      } else if (process.platform === 'win32') {
-        // On Windows, start is built-in command of cmd.exe
-        spawn('cmd.exe', ['/c', 'start', '', 'chrome', url]);
-      } else {
-        // On Linux, use xdg-open with chrome
-        spawn('xdg-open', [url]);
-      }
+      await shell.openExternal(webUrl);
     } catch (error) {
       console.error('Error opening URL in browser:', error);
     }

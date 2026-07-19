@@ -158,8 +158,6 @@ const OUTPUT_LIMIT_LINES: usize = 2000;
 pub const OUTPUT_LIMIT_BYTES: usize = 50_000;
 const OUTPUT_PREVIEW_LINES: usize = 50;
 
-const OUTPUT_SLOTS: usize = 8;
-
 /// Result of truncating command output.
 struct TruncateResult {
     /// The (possibly truncated) text to display.
@@ -400,14 +398,14 @@ impl ShellTool {
         let (raw_stdout, raw_stderr, interleaved) = split_lines(&execution.lines);
 
         let output_dir = self.output_dir.path();
-        let slot = self.call_index.fetch_add(1, Ordering::Relaxed) % OUTPUT_SLOTS;
+        let call_id = self.call_index.fetch_add(1, Ordering::Relaxed);
         let stdout_result = if raw_stdout.is_empty() {
             TruncateResult {
                 text: String::new(),
                 truncation: None,
             }
         } else {
-            match truncate_output(&raw_stdout, &format!("stdout-{slot}"), output_dir) {
+            match truncate_output(&raw_stdout, &format!("stdout-{call_id}"), output_dir) {
                 Ok(r) => r,
                 Err(error) => return Self::error_result(&error, None),
             }
@@ -418,7 +416,7 @@ impl ShellTool {
                 truncation: None,
             }
         } else {
-            match truncate_output(&raw_stderr, &format!("stderr-{slot}"), output_dir) {
+            match truncate_output(&raw_stderr, &format!("stderr-{call_id}"), output_dir) {
                 Ok(r) => r,
                 Err(error) => return Self::error_result(&error, None),
             }
@@ -433,11 +431,11 @@ impl ShellTool {
             output_collection_error: execution.output_collection_error.clone(),
         };
         let structured_content = serde_json::to_value(&shell_output).ok();
-        let render_result = match render_output(&interleaved, &format!("output-{slot}"), output_dir)
-        {
-            Ok(r) => r,
-            Err(error) => return Self::error_result(&error, None),
-        };
+        let render_result =
+            match render_output(&interleaved, &format!("output-{call_id}"), output_dir) {
+                Ok(r) => r,
+                Err(error) => return Self::error_result(&error, None),
+            };
         let mut rendered = render_result.text;
 
         // Collect truncation notices from stdout, stderr, and interleaved output.
@@ -1126,25 +1124,51 @@ mod tests {
     }
 
     #[test]
-    fn call_index_cycles_through_slots() {
+    fn call_index_remains_unique_beyond_the_previous_slot_limit() {
         let tool = ShellTool::new_for_test().unwrap();
-        for _cycle in 0..3 {
-            for expected in 0..OUTPUT_SLOTS {
-                let slot = tool.call_index.fetch_add(1, Ordering::Relaxed) % OUTPUT_SLOTS;
-                assert_eq!(slot, expected);
-            }
+        for expected in 0..32 {
+            let call_id = tool.call_index.fetch_add(1, Ordering::Relaxed);
+            assert_eq!(call_id, expected);
         }
     }
 
     #[test]
-    fn concurrent_calls_get_distinct_slots() {
+    fn prior_output_files_remain_stable_beyond_the_previous_slot_limit() {
         let tool = ShellTool::new_for_test().unwrap();
-        let mut slots: Vec<usize> = (0..OUTPUT_SLOTS)
-            .map(|_| tool.call_index.fetch_add(1, Ordering::Relaxed) % OUTPUT_SLOTS)
-            .collect();
-        slots.sort();
-        let expected: Vec<usize> = (0..OUTPUT_SLOTS).collect();
-        assert_eq!(slots, expected);
+        let mut outputs = Vec::new();
+        for expected in 0..32 {
+            let call_id = tool.call_index.fetch_add(1, Ordering::Relaxed);
+            let content = format!("full output for call {expected}");
+            let path = save_full_output(
+                &content,
+                &format!("stdout-{call_id}"),
+                tool.output_dir.path(),
+            )
+            .unwrap();
+            outputs.push((path, content));
+        }
+
+        for (path, content) in outputs {
+            assert_eq!(std::fs::read_to_string(path).unwrap(), content);
+        }
+    }
+
+    #[test]
+    fn concurrent_calls_allocate_distinct_output_ids() {
+        let tool = ShellTool::new_for_test().unwrap();
+        let mut call_ids = std::thread::scope(|scope| {
+            let handles = (0..32)
+                .map(|_| scope.spawn(|| tool.call_index.fetch_add(1, Ordering::Relaxed)))
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        call_ids.sort_unstable();
+        call_ids.dedup();
+
+        assert_eq!(call_ids.len(), 32);
     }
 
     #[cfg(not(windows))]

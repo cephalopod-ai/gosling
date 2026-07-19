@@ -661,6 +661,7 @@ impl Provider for GithubCopilotProvider {
         );
 
         let response = self.client.get(url).headers(headers).send().await?;
+        let response = handle_status(response).await?;
 
         let json: serde_json::Value = response.json().await?;
 

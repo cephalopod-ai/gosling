@@ -12,7 +12,7 @@ use super::base::{
     ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata,
     DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
-use super::openai_compatible::handle_response_openai_compat;
+use super::openai_compatible::{handle_response_openai_compat, handle_status};
 use super::retry::ProviderRetry;
 use super::utils::get_model;
 use crate::conversation::message::Message;
@@ -99,13 +99,7 @@ impl LiteLLMProvider {
 
     async fn fetch_models_from_api(&self) -> Result<Vec<ModelInfo>, ProviderError> {
         let response = self.api_client.request("model/info").response_get().await?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError::RequestFailed(format!(
-                "Models endpoint returned status: {}",
-                response.status()
-            )));
-        }
+        let response = handle_status(response).await?;
 
         let response_json: Value = response.json().await.map_err(|e| {
             ProviderError::RequestFailed(format!("Failed to parse models response: {}", e))

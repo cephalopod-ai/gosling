@@ -196,11 +196,7 @@ impl Provider for TetrateProvider {
 
     /// Fetch supported models from Tetrate Agent Router Service API
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        let response = self
-            .api_client
-            .response_get("v1/models")
-            .await
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        let response = self.api_client.response_get("v1/models").await?;
         let json = handle_response_openai_compat(response).await?;
 
         // Tetrate can return errors in 200 OK responses, so check explicitly

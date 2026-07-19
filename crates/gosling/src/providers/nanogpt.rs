@@ -123,13 +123,8 @@ impl Provider for NanoGptProvider {
             .api_client
             .request("models?detailed=true")
             .response_get()
-            .await
-            .map_err(|e| {
-                ProviderError::RequestFailed(format!(
-                    "Failed to fetch models from NanoGPT API: {}",
-                    e
-                ))
-            })?;
+            .await?;
+        let response = handle_status(response).await?;
 
         let json: serde_json::Value = response.json().await.map_err(|e| {
             ProviderError::RequestFailed(format!(
