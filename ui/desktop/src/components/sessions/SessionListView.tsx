@@ -4,12 +4,20 @@ import { toast } from 'react-toastify';
 import { defineMessages, useIntl } from '../../i18n';
 import { MainPanelLayout } from '../Layout/MainPanelLayout';
 import { Button } from '../ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { acpImportSession } from '../../acp/sessions';
 import { AppEvents } from '../../constants/events';
 import { errorMessage } from '../../utils/conversionUtils';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
+import { MAX_SESSION_IMPORT_BYTES } from '../../utils/sessionImport';
 import SessionListPane from './SessionListPane';
 
 const i18n = defineMessages({
@@ -26,8 +34,7 @@ const i18n = defineMessages({
   },
   importNostrDesc: {
     id: 'sessions.importNostr.description',
-    defaultMessage:
-      'Paste a Gosling Nostr share link to fetch, decrypt, and import the session.',
+    defaultMessage: 'Paste a Gosling Nostr share link to fetch, decrypt, and import the session.',
   },
   importNostrPlaceholder: {
     id: 'sessions.importNostr.placeholder',
@@ -41,6 +48,10 @@ const i18n = defineMessages({
   importFailed: {
     id: 'sessions.toast.importFailed',
     defaultMessage: 'Failed to import session: {error}',
+  },
+  selectWorkingDirectory: {
+    id: 'sessions.import.selectWorkingDirectory',
+    defaultMessage: 'Select a trusted working directory to finish importing the session.',
   },
   cancel: { id: 'sessions.cancel', defaultMessage: 'Cancel' },
   activeTab: { id: 'sessions.tab.active', defaultMessage: 'Active' },
@@ -63,7 +74,9 @@ const SessionListView: React.FC<SessionListViewProps> = ({
   const [showImportLinkModal, setShowImportLinkModal] = useState(false);
   const [nostrImportLink, setNostrImportLink] = useState('');
   const [isImportingNostr, setIsImportingNostr] = useState(false);
-  const [nostrEnabled] = useState(() => window.electron.getConfig().GOSLING_DISABLE_NOSTR_SHARING !== true);
+  const [nostrEnabled] = useState(
+    () => window.electron.getConfig().GOSLING_DISABLE_NOSTR_SHARING !== true
+  );
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -83,6 +96,13 @@ const SessionListView: React.FC<SessionListViewProps> = ({
     window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
   }, []);
 
+  const selectImportWorkingDirectory = useCallback(async (): Promise<string | null> => {
+    toast.info(intl.formatMessage(i18n.selectWorkingDirectory));
+    const result = await window.electron.directoryChooser();
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+  }, [intl]);
+
   const handleImportClick = useCallback(async () => {
     const native = window.electron?.selectImportSessionFile;
     if (typeof native === 'function') {
@@ -93,7 +113,9 @@ const SessionListView: React.FC<SessionListViewProps> = ({
           toast.error(intl.formatMessage(i18n.importFailed, { error: result.error }));
           return;
         }
-        await acpImportSession(result.contents, 'json');
+        const workingDir = await selectImportWorkingDirectory();
+        if (!workingDir) return;
+        await acpImportSession(result.contents, 'json', workingDir);
         toast.success(intl.formatMessage(i18n.importSuccess));
         notifySessionCreated();
       } catch (error) {
@@ -107,7 +129,7 @@ const SessionListView: React.FC<SessionListViewProps> = ({
     }
 
     fileInputRef.current?.click();
-  }, [intl, notifySessionCreated]);
+  }, [intl, notifySessionCreated, selectImportWorkingDirectory]);
 
   const handleImportSession = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,8 +137,13 @@ const SessionListView: React.FC<SessionListViewProps> = ({
       if (!file) return;
 
       try {
+        if (file.size > MAX_SESSION_IMPORT_BYTES) {
+          throw new Error('Session import exceeds the 16 MiB limit');
+        }
         const json = await file.text();
-        await acpImportSession(json, 'json');
+        const workingDir = await selectImportWorkingDirectory();
+        if (!workingDir) return;
+        await acpImportSession(json, 'json', workingDir);
         toast.success(intl.formatMessage(i18n.importSuccess));
         notifySessionCreated();
       } catch (error) {
@@ -131,7 +158,7 @@ const SessionListView: React.FC<SessionListViewProps> = ({
         }
       }
     },
-    [intl, notifySessionCreated]
+    [intl, notifySessionCreated, selectImportWorkingDirectory]
   );
 
   const handleImportNostrLink = useCallback(async () => {
@@ -140,7 +167,9 @@ const SessionListView: React.FC<SessionListViewProps> = ({
 
     setIsImportingNostr(true);
     try {
-      await acpImportSession(deeplink, 'nostr');
+      const workingDir = await selectImportWorkingDirectory();
+      if (!workingDir) return;
+      await acpImportSession(deeplink, 'nostr', workingDir);
       setNostrImportLink('');
       setShowImportLinkModal(false);
       toast.success(intl.formatMessage(i18n.importSuccess));
@@ -154,7 +183,7 @@ const SessionListView: React.FC<SessionListViewProps> = ({
     } finally {
       setIsImportingNostr(false);
     }
-  }, [intl, nostrImportLink, notifySessionCreated]);
+  }, [intl, nostrImportLink, notifySessionCreated, selectImportWorkingDirectory]);
 
   return (
     <>
@@ -195,12 +224,14 @@ const SessionListView: React.FC<SessionListViewProps> = ({
               <Tabs value={activeTab} onValueChange={handleTabChange}>
                 <TabsList>
                   <TabsTrigger value="active">{intl.formatMessage(i18n.activeTab)}</TabsTrigger>
-                  <TabsTrigger value="archived">
-                    {intl.formatMessage(i18n.archivedTab)}
-                  </TabsTrigger>
+                  <TabsTrigger value="archived">{intl.formatMessage(i18n.archivedTab)}</TabsTrigger>
                 </TabsList>
                 <div className="mt-6 flex-1 min-h-0">
-                  <TabsContent value="active" forceMount className={activeTab === 'active' ? '' : 'hidden'}>
+                  <TabsContent
+                    value="active"
+                    forceMount
+                    className={activeTab === 'active' ? '' : 'hidden'}
+                  >
                     <SessionListPane mode="active" onSelectSession={onSelectSession} />
                   </TabsContent>
                   <TabsContent
@@ -255,7 +286,9 @@ const SessionListView: React.FC<SessionListViewProps> = ({
               onClick={() => void handleImportNostrLink()}
               disabled={isImportingNostr || !nostrImportLink.trim()}
             >
-              {isImportingNostr ? intl.formatMessage(i18n.importing) : intl.formatMessage(i18n.importSession)}
+              {isImportingNostr
+                ? intl.formatMessage(i18n.importing)
+                : intl.formatMessage(i18n.importSession)}
             </Button>
           </DialogFooter>
         </DialogContent>

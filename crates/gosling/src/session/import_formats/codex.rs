@@ -29,11 +29,7 @@ use gosling_providers::conversation::token_usage::Usage;
 use gosling_providers::formats::openai_responses::{ResponseOutputItem, ResponsesApiResponse};
 
 pub fn convert(content: &str) -> Result<String> {
-    let lines: Vec<Value> = content
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .collect();
+    let lines = super::parse_json_lines(content, "Codex")?;
 
     if lines.is_empty() {
         return Err(anyhow!("Codex import: no parseable JSON lines"));
@@ -350,5 +346,12 @@ mod tests {
         let v: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["name"], "actual prompt");
         assert_eq!(v["message_count"], 2);
+    }
+
+    #[test]
+    fn rejects_a_malformed_middle_record() {
+        let jsonl = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"s\"}}\ninvalid\n{\"type\":\"response_item\",\"payload\":{}}";
+        let error = convert(jsonl).unwrap_err();
+        assert!(error.to_string().contains("line 2"));
     }
 }

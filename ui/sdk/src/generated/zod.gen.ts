@@ -1454,7 +1454,8 @@ export const zSessionImportSource = z.enum([
  */
 export const zImportSessionRequest_unstable = z.object({
     input: z.string(),
-    source: zSessionImportSource
+    source: zSessionImportSource,
+    workingDir: z.string()
 });
 
 /**

@@ -1,7 +1,7 @@
 use crate::error::{to_env_var, ConfigError};
 use config::{Config, Environment};
 use serde::Deserialize;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Settings {
@@ -16,10 +16,15 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn socket_addr(&self) -> SocketAddr {
-        format!("{}:{}", self.host, self.port)
-            .parse()
-            .expect("Failed to parse socket address")
+    pub fn socket_addr(&self) -> Result<SocketAddr, ConfigError> {
+        let host = self
+            .host
+            .parse::<IpAddr>()
+            .map_err(|source| ConfigError::InvalidHost {
+                host: self.host.clone(),
+                source,
+            })?;
+        Ok(SocketAddr::new(host, self.port))
     }
 
     pub fn new() -> Result<Self, ConfigError> {
@@ -47,7 +52,10 @@ impl Settings {
 
         // Handle missing field errors specially
         match result {
-            Ok(settings) => Ok(settings),
+            Ok(settings) => {
+                settings.socket_addr()?;
+                Ok(settings)
+            }
             Err(err) => {
                 tracing::debug!("Configuration error: {:?}", &err);
 
@@ -96,7 +104,36 @@ mod tests {
             tls_cert_path: None,
             tls_key_path: None,
         };
-        let addr = server_settings.socket_addr();
+        let addr = server_settings.socket_addr().unwrap();
         assert_eq!(addr.to_string(), "127.0.0.1:3000");
+    }
+
+    #[test]
+    fn test_ipv6_socket_addr_conversion() {
+        let server_settings = Settings {
+            host: "::1".to_string(),
+            port: 3000,
+            tls: true,
+            tls_cert_path: None,
+            tls_key_path: None,
+        };
+        let addr = server_settings.socket_addr().unwrap();
+        assert_eq!(addr.to_string(), "[::1]:3000");
+    }
+
+    #[test]
+    fn test_invalid_and_hostname_bind_addresses_return_typed_errors() {
+        for host in ["not-an-address", "localhost"] {
+            let server_settings = Settings {
+                host: host.to_string(),
+                port: 3000,
+                tls: true,
+                tls_cert_path: None,
+                tls_key_path: None,
+            };
+            let error = server_settings.socket_addr().unwrap_err();
+            assert!(matches!(error, ConfigError::InvalidHost { .. }));
+            assert!(error.to_string().contains("GOSLING_HOST"));
+        }
     }
 }

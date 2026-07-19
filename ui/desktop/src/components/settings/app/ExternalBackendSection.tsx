@@ -43,6 +43,10 @@ const i18n = defineMessages({
     id: 'externalBackendSection.secretKeyPlaceholder',
     defaultMessage: "Enter the server's secret key",
   },
+  secretKeyConfiguredPlaceholder: {
+    id: 'externalBackendSection.secretKeyConfiguredPlaceholder',
+    defaultMessage: 'Configured for this launch — enter a replacement',
+  },
   secretKeyHelp: {
     id: 'externalBackendSection.secretKeyHelp',
     defaultMessage:
@@ -142,10 +146,15 @@ export default function ExternalBackendSection() {
     setIsSaving(true);
     try {
       await window.electron.setSetting('externalGoslingd', newConfig);
-      lastSavedConfigRef.current = newConfig;
+      const safeConfig = {
+        ...newConfig,
+        secret: '',
+        secretConfigured: newConfig.secretConfigured || newConfig.secret.length > 0,
+      };
+      lastSavedConfigRef.current = safeConfig;
+      setConfig(safeConfig);
       setSaveError(null);
     } catch (error) {
-      console.error('Failed to save external backend settings:', error);
       // Persistence failed - revert the optimistic update so the fields
       // don't keep displaying a value that was never actually saved.
       setConfig(lastSavedConfigRef.current);
@@ -258,7 +267,11 @@ export default function ExternalBackendSection() {
                 <Input
                   id="external-secret"
                   type="password"
-                  placeholder={intl.formatMessage(i18n.secretKeyPlaceholder)}
+                  placeholder={intl.formatMessage(
+                    config.secretConfigured
+                      ? i18n.secretKeyConfiguredPlaceholder
+                      : i18n.secretKeyPlaceholder
+                  )}
                   value={config.secret}
                   onChange={(e) => updateField('secret', e.target.value)}
                   onBlur={() => saveConfig(config)}

@@ -514,6 +514,13 @@ enum SessionCommand {
 
         #[arg(long = "nostr", help = "Treat input as an encrypted Nostr share link")]
         nostr: bool,
+
+        #[arg(
+            long = "working-dir",
+            value_name = "DIR",
+            help = "Trusted working directory for the imported session (defaults to the current directory)"
+        )]
+        working_dir: Option<PathBuf>,
     },
     #[command(name = "diagnostics")]
     Diagnostics {
@@ -1365,8 +1372,12 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             )
             .await?;
         }
-        SessionCommand::Import { input, nostr } => {
-            crate::commands::session::handle_session_import(input, nostr).await?;
+        SessionCommand::Import {
+            input,
+            nostr,
+            working_dir,
+        } => {
+            crate::commands::session::handle_session_import(input, nostr, working_dir).await?;
         }
         SessionCommand::Diagnostics { identifier, output } => {
             let session_manager = SessionManager::instance();

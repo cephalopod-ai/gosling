@@ -19,13 +19,10 @@ use crate::conversation::Conversation;
 use gosling_providers::conversation::token_usage::Usage;
 
 pub fn convert(content: &str) -> Result<String> {
-    let mut lines = content.lines().filter(|l| !l.trim().is_empty());
-
-    let header: Value = match lines.next() {
-        Some(l) => serde_json::from_str(l)
-            .map_err(|e| anyhow!("Pi import: header is not valid JSON: {e}"))?,
-        None => return Err(anyhow!("Pi import: empty file")),
-    };
+    let mut lines = super::parse_json_lines(content, "Pi")?.into_iter();
+    let header = lines
+        .next()
+        .ok_or_else(|| anyhow!("Pi import: empty file"))?;
     if header.get("type").and_then(|v| v.as_str()) != Some("session") {
         return Err(anyhow!("Pi import: missing session header"));
     }
@@ -56,9 +53,7 @@ pub fn convert(content: &str) -> Result<String> {
     let mut last_ts: Option<DateTime<Utc>> = header_ts;
     let mut first_user_text: Option<String> = None;
 
-    let entries: Vec<Value> = lines
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .collect();
+    let entries: Vec<Value> = lines.collect();
 
     // Pi entries form a tree, but in practice the file is written in
     // chronological order and the linear view is what users expect on import.
@@ -375,5 +370,13 @@ mod tests {
         let v: Value = serde_json::from_str(&json).unwrap();
         let msgs = v["conversation"].as_array().unwrap();
         assert_eq!(msgs.len(), 3);
+    }
+
+    #[test]
+    fn rejects_a_malformed_middle_record() {
+        let jsonl =
+            "{\"type\":\"session\",\"version\":3}\ninvalid\n{\"type\":\"message\",\"message\":{}}";
+        let error = convert(jsonl).unwrap_err();
+        assert!(error.to_string().contains("line 2"));
     }
 }

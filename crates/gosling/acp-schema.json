@@ -3413,11 +3413,16 @@
         },
         "source": {
           "$ref": "#/$defs/SessionImportSource"
+        },
+        "workingDir": {
+          "type": "string",
+          "description": "Explicit user-selected directory that will become the imported\nsession's only initial filesystem authority root."
         }
       },
       "required": [
         "input",
-        "source"
+        "source",
+        "workingDir"
       ],
       "description": "Import a session from a JSON string or share link.",
       "x-side": "agent",

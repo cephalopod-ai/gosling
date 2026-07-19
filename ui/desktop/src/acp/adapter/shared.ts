@@ -22,6 +22,7 @@ export interface AdapterState {
 export interface GoslingMessageMeta {
   messageId?: string;
   created?: number;
+  importedUntrusted?: boolean;
   steer?: boolean;
 }
 
@@ -72,6 +73,7 @@ export function getGoslingMessageMeta(update: { _meta?: unknown }): GoslingMessa
   return {
     created: typeof gosling.created === 'number' ? gosling.created : undefined,
     messageId: typeof gosling.messageId === 'string' ? gosling.messageId : undefined,
+    importedUntrusted: gosling.importedUntrusted === true ? true : undefined,
     steer: gosling.steer === true ? true : undefined,
   };
 }
@@ -108,7 +110,9 @@ export function toolIdentity(update: ToolCall | ToolCallUpdate): ToolIdentity {
   return {
     toolName: typeof gosling.toolCall.toolName === 'string' ? gosling.toolCall.toolName : undefined,
     extensionName:
-      typeof gosling.toolCall.extensionName === 'string' ? gosling.toolCall.extensionName : undefined,
+      typeof gosling.toolCall.extensionName === 'string'
+        ? gosling.toolCall.extensionName
+        : undefined,
   };
 }
 

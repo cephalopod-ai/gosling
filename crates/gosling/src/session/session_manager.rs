@@ -430,8 +430,20 @@ impl<'a> SessionUpdateBuilder<'a> {
         credential_profile_id: Option<String>,
         credential_profile_name: Option<String>,
         credential_binding_id: Option<String>,
-        context: WorkspaceSessionContext,
+        mut context: WorkspaceSessionContext,
     ) -> Self {
+        let folder_policy = context.effective_folder_policy();
+        let primary = PathBuf::from(&context.primary_working_folder);
+        self.additional_working_dirs = Some(
+            folder_policy
+                .roots
+                .iter()
+                .map(|root| PathBuf::from(&root.path))
+                .filter(|path| path != &primary)
+                .collect(),
+        );
+        self.restrict_tools_to_working_dirs = Some(true);
+        context.folder_policy = folder_policy;
         self.workspace_id = Some(Some(workspace_id));
         self.workspace_name = Some(Some(workspace_name));
         self.credential_profile_id = Some(credential_profile_id);
@@ -782,9 +794,11 @@ impl SessionManager {
         &self,
         json: &str,
         session_type_override: Option<SessionType>,
+        working_dir: PathBuf,
+        transport: super::import_formats::SessionImportTransport,
     ) -> Result<Session> {
         self.storage
-            .import_session(self, json, session_type_override)
+            .import_session(self, json, session_type_override, working_dir, transport)
             .await
     }
 
@@ -1050,26 +1064,39 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             .flatten()
             .and_then(message_timestamp_to_datetime);
 
-        let additional_working_dirs = row
+        let mut additional_working_dirs = row
             .try_get::<String, _>("additional_working_dirs_json")
             .ok()
             .and_then(|json| serde_json::from_str::<Vec<PathBuf>>(&json).ok())
             .unwrap_or_default();
 
-        let restrict_tools_to_working_dirs = row
+        let mut restrict_tools_to_working_dirs = row
             .try_get("restrict_tools_to_working_dirs")
             .unwrap_or(false);
         let workflow_kind = row
             .try_get::<String, _>("workflow_kind")?
             .parse::<SessionWorkflow>()
             .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
-        let workspace_context = row
+        let mut workspace_context: Option<WorkspaceSessionContext> = row
             .try_get::<Option<String>, _>("workspace_context_json")
             .ok()
             .flatten()
             .map(|json| serde_json::from_str(&json))
             .transpose()
             .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
+
+        if let Some(context) = workspace_context.as_mut() {
+            let policy = context.effective_folder_policy();
+            let primary = PathBuf::from(&context.primary_working_folder);
+            additional_working_dirs = policy
+                .roots
+                .iter()
+                .map(|root| PathBuf::from(&root.path))
+                .filter(|path| path != &primary)
+                .collect();
+            restrict_tools_to_working_dirs = true;
+            context.folder_policy = policy;
+        }
 
         Ok(Session {
             id: row.try_get("id")?,
@@ -3870,21 +3897,47 @@ impl SessionStorage {
         session_manager: &SessionManager,
         json: &str,
         session_type_override: Option<SessionType>,
+        working_dir: PathBuf,
+        transport: super::import_formats::SessionImportTransport,
     ) -> Result<Session> {
+        let source_format = super::import_formats::detect_format(json);
         let normalized = super::import_formats::convert_to_gosling_session_json(json)?;
-        let import: Session = serde_json::from_str(&normalized)?;
+        let mut import: Session = serde_json::from_str(&normalized)?;
+        let effective_working_dir =
+            super::import_formats::validate_import_working_dir(&working_dir)?;
+        let original_working_dir = (!import.working_dir.as_os_str().is_empty())
+            .then(|| import.working_dir.to_string_lossy().to_string());
         let mut extension_data = import.extension_data.clone();
         extension_data.remove_extension_state(
             EnabledExtensionsState::EXTENSION_NAME,
             EnabledExtensionsState::VERSION,
         );
+        super::import_formats::SessionImportProvenance {
+            schema_version: 1,
+            transport,
+            source_format: source_format.label().to_string(),
+            original_working_dir,
+            effective_working_dir: effective_working_dir.to_string_lossy().to_string(),
+            imported_at: Utc::now(),
+            history_trusted: false,
+        }
+        .to_extension_data(&mut extension_data)?;
+
+        let imported_conversation = import.conversation.take().map(|conversation| {
+            Conversation::new_unvalidated(conversation.messages().iter().cloned().map(
+                |mut message| {
+                    message.metadata = message.metadata.with_imported_untrusted();
+                    message
+                },
+            ))
+        });
 
         let session = self
             .create_session(
-                import.working_dir.clone(),
+                effective_working_dir,
                 import.name.clone(),
                 session_type_override.unwrap_or(import.session_type),
-                import.gosling_mode,
+                GoslingMode::Approve,
             )
             .await?;
 
@@ -3897,14 +3950,10 @@ impl SessionStorage {
             let mut builder = session_manager
                 .update(&session.id)
                 .extension_data(extension_data)
-                .restrict_tools_to_working_dirs(import.restrict_tools_to_working_dirs)
+                .restrict_tools_to_working_dirs(true)
                 .usage(import.usage)
                 .accumulated_usage(import.accumulated_usage)
                 .accumulated_cost(import.accumulated_cost);
-
-            if !import.additional_working_dirs.is_empty() {
-                builder = builder.additional_working_dirs(import.additional_working_dirs.clone());
-            }
 
             if import.user_set_name {
                 builder = builder.user_provided_name(import.name.clone());
@@ -3912,7 +3961,7 @@ impl SessionStorage {
 
             builder.apply().await?;
 
-            if let Some(conversation) = import.conversation {
+            if let Some(conversation) = imported_conversation {
                 self.replace_conversation(&session.id, &conversation)
                     .await?;
             }
@@ -5857,15 +5906,38 @@ mod tests {
         .unwrap();
 
         let exported = sm.export_session(&original.id).await.unwrap();
-        let imported = sm.import_session(&exported, None).await.unwrap();
+        let imported = sm
+            .import_session(
+                &exported,
+                None,
+                temp_dir.path().to_path_buf(),
+                crate::session::import_formats::SessionImportTransport::Json,
+            )
+            .await
+            .unwrap();
 
         assert_ne!(imported.id, original.id);
         assert_eq!(imported.name, DESCRIPTION);
-        assert_eq!(imported.working_dir, PathBuf::from("/tmp/test"));
+        assert_eq!(
+            imported.working_dir,
+            temp_dir.path().canonicalize().unwrap()
+        );
         assert_eq!(imported.usage, usage);
         assert_eq!(imported.accumulated_usage, accumulated_usage);
         assert_eq!(imported.workflow_kind, SessionWorkflow::Standard);
         assert!(imported.restrict_tools_to_working_dirs);
+        assert!(imported.additional_working_dirs.is_empty());
+        assert_eq!(imported.gosling_mode, GoslingMode::Approve);
+        let provenance =
+            crate::session::import_formats::SessionImportProvenance::from_extension_data(
+                &imported.extension_data,
+            )
+            .unwrap();
+        assert_eq!(
+            provenance.original_working_dir.as_deref(),
+            Some("/tmp/test")
+        );
+        assert!(!provenance.history_trusted);
         assert!(imported
             .extension_data
             .get_extension_state(
@@ -5878,6 +5950,13 @@ mod tests {
             Some(&serde_json::json!({"content": "safe imported state"}))
         );
         assert_eq!(imported.message_count, 2);
+        assert!(imported
+            .conversation
+            .as_ref()
+            .unwrap()
+            .messages()
+            .iter()
+            .all(|message| message.metadata.imported_untrusted));
 
         let conversation = imported.conversation.unwrap();
         assert_eq!(conversation.messages().len(), 2);
@@ -6171,11 +6250,22 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
 
-        let imported = sm.import_session(OLD_FORMAT_JSON, None).await.unwrap();
+        let imported = sm
+            .import_session(
+                OLD_FORMAT_JSON,
+                None,
+                temp_dir.path().to_path_buf(),
+                crate::session::import_formats::SessionImportTransport::Json,
+            )
+            .await
+            .unwrap();
 
         assert_eq!(imported.name, "Old format session");
         assert!(imported.user_set_name);
-        assert_eq!(imported.working_dir, PathBuf::from("/tmp/test"));
+        assert_eq!(
+            imported.working_dir,
+            temp_dir.path().canonicalize().unwrap()
+        );
         assert_eq!(
             imported.usage,
             Usage::new(Some(300), Some(200), Some(500)).with_cache_tokens(Some(120), None)
@@ -6451,6 +6541,7 @@ mod tests {
             primary_working_folder: temp_dir.path().to_string_lossy().to_string(),
             folders: Vec::new(),
             product_output_folders: Vec::new(),
+            folder_policy: Default::default(),
         };
         sm.update(&session.id)
             .workspace_snapshot(
@@ -6466,12 +6557,15 @@ mod tests {
             .unwrap();
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
+        let mut pinned_context = context.clone();
+        pinned_context.folder_policy = context.effective_folder_policy();
         assert_eq!(reloaded.workspace_id.as_deref(), Some("workspace-id"));
-        assert_eq!(reloaded.workspace_context, Some(context.clone()));
+        assert_eq!(reloaded.workspace_context, Some(pinned_context.clone()));
+        assert!(reloaded.restrict_tools_to_working_dirs);
         let copied = sm.copy_session(&session.id, "copy".into()).await.unwrap();
         assert_eq!(copied.workspace_id, reloaded.workspace_id);
         assert_eq!(copied.credential_profile_id, reloaded.credential_profile_id);
-        assert_eq!(copied.workspace_context, Some(context));
+        assert_eq!(copied.workspace_context, Some(pinned_context));
 
         let database = std::fs::read(temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME)).unwrap();
         assert!(!String::from_utf8_lossy(&database).contains("GOSLING_SENTINEL_SECRET"));

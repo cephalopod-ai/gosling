@@ -1,0 +1,1035 @@
+[
+  {
+    "id": "AUD-GOS-001",
+    "title": "Local Secret Profiles are plaintext prompt material, not secure references",
+    "domain": "Security",
+    "severity": "High",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/utils/settings.ts",
+        "lines": "8-24,49-60",
+        "symbol": "ManagedSecretEntry / Settings",
+        "quote": "export interface ManagedSecretEntry { id: string; key: string; value: string; }",
+        "note": "Raw values are part of the ordinary Desktop settings contract."
+      },
+      {
+        "file": "ui/desktop/src/components/ChatInput.tsx",
+        "lines": "101-131,453-458",
+        "symbol": "buildCredentialContext / buildUserInput",
+        "quote": ".map((entry) => `${entry.key}=${entry.value}`)",
+        "note": "Selected values become assistant-only prompt text."
+      },
+      {
+        "file": "crates/gosling/src/agents/agent.rs",
+        "lines": "1722-1724,1773-1784,1889-1892",
+        "symbol": "Agent::reply",
+        "quote": "tracing::Span::current().record(\"user_message\", message_text_for_trace.as_str());",
+        "note": "The same message is traced, handed to prompt hooks, and durably persisted."
+      },
+      {
+        "file": "crates/gosling-providers/src/conversation/message.rs",
+        "lines": "794-804,943-948",
+        "symbol": "Message::agent_visible_content / Message::as_concat_text",
+        "quote": ".filter_map(|c| c.filter_for_audience(Role::Assistant))",
+        "note": "Assistant-audience content is retained for the provider, while trace/hook concatenation includes every text block."
+      }
+    ],
+    "observed": "Saved secret values live in settings.json and renderer state, are concatenated into an assistant-audience user message, are persisted in sessions.db, are recorded into tracing fields, are sent to prompt hooks, and remain visible to the model provider.",
+    "expected_boundary": "Renderer-facing credential profiles contain metadata only; raw values remain in Gosling secure storage and are resolved by a narrow backend operation without entering settings, messages, prompts, logs, traces, hooks, URLs, or renderer responses.",
+    "failure_mechanism": "The feature models credentials as ordinary application data and implements credential use by prompt concatenation instead of secure backend reference resolution.",
+    "break_it_angle": "Save a sentinel credential, select it for a chat, submit a message, and search settings, sessions.db, trace/hook payloads, and the provider request for the sentinel.",
+    "impact": "Third-party, VPS, API, or administrative credentials can escape to local plaintext stores, hooks, logs, and model providers; compromise can affect external systems and be irreversible.",
+    "operational_impact": {
+      "blast_radius": "Cross-system",
+      "side_effect_class": "external API",
+      "reversibility": "irreversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": [
+      "external backend bearer secret is also an ordinary settings value",
+      "assistant-only annotations hide content from the user but expose it to the provider",
+      "user-prompt hooks receive the concatenated secret text"
+    ],
+    "mitigation": {
+      "patterns": [
+        "secure reference resolution",
+        "metadata-only renderer contract",
+        "transactional secret migration",
+        "secret-free observability"
+      ],
+      "minimal_repair": "Remove raw values from renderer and settings contracts, migrate them to profile-specific identifiers in Gosling secure storage, and resolve references only in the backend operation that requires them.",
+      "local_guardrail": "Reject any credential-profile response or persisted record containing a raw secret value and redact assistant context before tracing or hooks.",
+      "behavior_test": "A sentinel secret is absent from settings, renderer responses/state snapshots, serialized messages, sessions.db, exports, traces, hook payloads, and provider prompt text."
+    },
+    "implementation_assessment": {
+      "complexity": "workflow_protocol",
+      "cost": "L",
+      "nominal_agent": "multi-agent",
+      "rationale": "The repair spans a secure-storage migration, IPC and React contracts, chat construction, observability, backend resolution, and compatibility behavior.",
+      "cost_drivers": [
+        "modules",
+        "tests",
+        "migrations",
+        "runtime_verification",
+        "docs"
+      ]
+    },
+    "validation": [
+      "sentinel non-disclosure tests across every persistence and IPC boundary",
+      "provider/hook/trace capture test proving no raw value is emitted",
+      "migration interruption and rollback tests",
+      "Desktop typecheck and unit tests",
+      "relevant Rust secure-storage tests"
+    ],
+    "non_goals": [
+      "replace Gosling's existing secure secret-storage abstraction",
+      "pre-populate stored secret values in the renderer"
+    ],
+    "patch_priority": 1,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "The deterministic source dataflow is confirmed; which optional trace and hook sinks are enabled in a particular installation was not observed at runtime.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "Raw value persistence, prompt concatenation, message persistence, trace recording, hook handoff, and provider audience filtering are explicit deterministic code paths."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Input-Output-Path",
+        "reason": "Secret values cross settings, renderer, message, tracing, hook, and provider output boundaries."
+      },
+      {
+        "secondary_lens": "Agent-Orchestration-Code",
+        "reason": "AOC-003 prompt leakage is a direct consequence of the credential transport design."
+      },
+      {
+        "secondary_lens": "Negative-Space",
+        "reason": "An audience annotation is incorrectly treated as a confidentiality boundary."
+      }
+    ]
+  },
+  {
+    "id": "AUD-GOS-002",
+    "title": "Renderer code can self-authorize an arbitrary filesystem root",
+    "domain": "Security",
+    "severity": "High",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/main.ts",
+        "lines": "241-258,1980-1984",
+        "symbol": "rendererFileRoots / add-recent-dir handler",
+        "quote": "for (const dir of loadRecentDirs()) { roots.add(path.resolve(dir)); }",
+        "note": "Every recent directory becomes an approved filesystem root."
+      },
+      {
+        "file": "ui/desktop/src/utils/recentDirs.ts",
+        "lines": "53-82",
+        "symbol": "addRecentDir",
+        "quote": "dirs.unshift(dir);",
+        "note": "The renderer-provided path needs only to be an existing non-symlink directory."
+      },
+      {
+        "file": "ui/desktop/src/preload.ts",
+        "lines": "217-229,368-370",
+        "symbol": "electron preload API",
+        "quote": "addRecentDir: (dir: string) => ipcRenderer.invoke('add-recent-dir', dir)",
+        "note": "The same renderer can request the root and use read/write/delete/list IPC."
+      }
+    ],
+    "observed": "A renderer can add any existing directory, including a filesystem or sensitive user root, to recent-dirs.json and immediately gain descendant read/write/delete/list authority through the canonical containment helper.",
+    "expected_boundary": "Only main-process chooser results or backend-validated workspace grants can create scoped per-window filesystem capabilities; recent history and settings remain non-authoritative data.",
+    "failure_mechanism": "The mutable recent-directory list and archive preference are used as an authorization root set, allowing an untrusted renderer to mint the authority checked by the sink.",
+    "break_it_angle": "Call addRecentDir for an existing sensitive directory and then invoke readFile, writeFile, or deleteFile on a descendant.",
+    "impact": "A renderer compromise can expand into arbitrary local filesystem access despite Node isolation and an otherwise correct canonical-root check.",
+    "operational_impact": {
+      "blast_radius": "Local",
+      "side_effect_class": "file",
+      "reversibility": "irreversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": [
+      "archiveFolder is another renderer-mutable approved root",
+      "recent-directory persistence is also non-atomic",
+      "context isolation reduces but does not remove renderer compromise risk"
+    ],
+    "mitigation": {
+      "patterns": [
+        "opaque scoped capability",
+        "authority derived in privileged process",
+        "per-window grant lifecycle"
+      ],
+      "minimal_repair": "Separate history from authority and issue opaque per-window directory grants only from an actual chooser result or backend-validated workspace.",
+      "local_guardrail": "Direct addRecentDir and set-setting calls must never alter the root set used by file IPC.",
+      "behavior_test": "A renderer-added existing directory remains denied until the main process issues a chooser/workspace grant, and the grant expires with its window/session."
+    },
+    "implementation_assessment": {
+      "complexity": "cross_process_coordination",
+      "cost": "M",
+      "nominal_agent": "codex",
+      "rationale": "The existing containment helper can remain, but root issuance must change across chooser, preload, window lifecycle, workspaces, and file handlers.",
+      "cost_drivers": [
+        "modules",
+        "tests",
+        "runtime_verification"
+      ]
+    },
+    "validation": [
+      "preload/main IPC contract tests for ungranted and granted paths",
+      "symlink and canonical traversal regressions",
+      "window-close and workspace-removal revocation tests",
+      "Desktop typecheck and unit tests"
+    ],
+    "non_goals": [
+      "replace canonicalizePotentialPath or assertPathWithinRoots",
+      "remove recent-directory UX"
+    ],
+    "patch_priority": 2,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "No renderer exploit or destructive filesystem operation was executed; the authority-bypass composition is deterministic in source.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The same renderer has explicit APIs to mutate the authoritative root list and consume privileged file operations."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Internal-API",
+        "reason": "The renderer-to-main seam drops the policy distinction between requested path data and an issued capability."
+      },
+      {
+        "secondary_lens": "Negative-Space",
+        "reason": "An alternate root-enrollment path bypasses the chooser-based safety assumption."
+      }
+    ]
+  },
+  {
+    "id": "AUD-GOS-003",
+    "title": "Workspace folder access is metadata-only and is not propagated into tool policy",
+    "domain": "State-Transition",
+    "severity": "High",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling-sdk-types/src/workspace.rs",
+        "lines": "17-23,109-127",
+        "symbol": "WorkspaceFolderAccess / WorkspaceFolder",
+        "quote": "pub enum WorkspaceFolderAccess { Read, ReadWrite }",
+        "note": "The public workspace model represents an enforceable-looking access distinction."
+      },
+      {
+        "file": "crates/gosling/src/workspace/service.rs",
+        "lines": "23-34,308-334",
+        "symbol": "PreparedWorkspaceSession / render_session_context",
+        "quote": "Reference read-only folders without modifying them.",
+        "note": "Folder access reaches the agent as prompt guidance, not as a prepared permission field."
+      },
+      {
+        "file": "crates/gosling/src/acp/server/new_session.rs",
+        "lines": "195-218",
+        "symbol": "apply_initial_session_config",
+        "quote": "builder = builder.workspace_snapshot(",
+        "note": "Session creation stores the snapshot but does not set additional working roots or restrictions."
+      },
+      {
+        "file": "crates/gosling/src/permission/working_dir_scope_inspector.rs",
+        "lines": "45-58",
+        "symbol": "WorkingDirScopeInspector::inspect",
+        "quote": "allowed_dirs.extend(session.additional_working_dirs.iter().cloned());",
+        "note": "The inspector knows only session working directories and is off unless the session flag is enabled."
+      }
+    ],
+    "observed": "Workspace folder access and output-root metadata is saved in the workspace snapshot and prompt, but not translated into Session.additional_working_dirs or a per-directory read/write authorization policy.",
+    "expected_boundary": "New sessions pin a canonical folder policy whose read-only and read-write roots are enforced by local tools and represented consistently to MCP roots; resume preserves that policy.",
+    "failure_mechanism": "The domain decision terminates at the prompt/snapshot seam instead of being propagated into session and permission state.",
+    "break_it_angle": "Mark a valuable reference folder Read and request a write; separately enable directory restriction with an external output folder and observe that it is absent from allowed roots.",
+    "impact": "Read-only reference data can be mutated and legitimate output/reference paths can be missing or rejected by consumers that rely on session working roots.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "irreversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": [
+      "working-directory restriction defaults to false",
+      "external providers may execute tools outside Gosling",
+      "Workspace UI displays a read/read-write designation that the backend does not enforce"
+    ],
+    "mitigation": {
+      "patterns": [
+        "policy propagation",
+        "pinned session authorization snapshot",
+        "canonical path capability model"
+      ],
+      "minimal_repair": "Add a canonical per-session folder-policy snapshot and translate workspace roots into read versus mutation permissions during new-session creation and resume.",
+      "local_guardrail": "Deny mutation in read-only roots and fail visibly when a provider or tool adapter cannot honor the pinned policy.",
+      "behavior_test": "Reads succeed and writes fail for read-only roots; configured outputs accept writes; symlink traversal fails; workspace switching does not mutate an existing session policy."
+    },
+    "implementation_assessment": {
+      "complexity": "workflow_protocol",
+      "cost": "L",
+      "nominal_agent": "multi-agent",
+      "rationale": "The change spans SDK types, session migration, ACP create/resume, permission inspection, MCP roots, and Desktop session presentation.",
+      "cost_drivers": [
+        "modules",
+        "tests",
+        "migrations",
+        "runtime_verification"
+      ]
+    },
+    "validation": [
+      "session creation and resume policy-pinning tests",
+      "read/read-write local tool tests",
+      "MCP root construction tests",
+      "canonical and symlink containment tests",
+      "Desktop workspace warning and session-header tests"
+    ],
+    "non_goals": [
+      "rely on prompt text as the enforcement mechanism",
+      "silently claim enforcement for an incapable external provider"
+    ],
+    "patch_priority": 3,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "No live tool call was executed; the absence of folder-policy propagation and the prompt-only access instruction are confirmed statically.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The prepared session, persistence update, Session model, and only working-directory inspector have no WorkspaceFolderAccess propagation path."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Internal-API",
+        "reason": "IAPI-015 applies because a policy decision is not propagated across the workspace-to-session seam."
+      },
+      {
+        "secondary_lens": "Workflow-GUI",
+        "reason": "The UI exposes an access designation that does not match backend enforcement."
+      },
+      {
+        "secondary_lens": "Agent-Orchestration-Code",
+        "reason": "The agent and its MCP clients receive a different authority model from the workspace role/context."
+      }
+    ]
+  },
+  {
+    "id": "AUD-GOS-004",
+    "title": "Delegated roles inherit the parent's complete extension surface by default",
+    "domain": "Security",
+    "severity": "High",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/agents/platform_extensions/summon.rs",
+        "lines": "93-109,454-470",
+        "symbol": "AgentMetadata / create_delegate_tool",
+        "quote": "description\": \"Extensions to enable. Omit to inherit all, empty array for none.\"",
+        "note": "Agent files cannot declare an enforceable capability policy and omission means full inheritance."
+      },
+      {
+        "file": "crates/gosling/src/agents/platform_extensions/summon.rs",
+        "lines": "1182-1206",
+        "symbol": "build_task_config",
+        "quote": "let mut extensions = EnabledExtensionsState::extensions_or_default(",
+        "note": "Narrowing occurs only when model-supplied params.extensions exists."
+      },
+      {
+        "file": "crates/gosling/src/agents/platform_extensions/summon.rs",
+        "lines": "1410-1431",
+        "symbol": "handle_async_delegate",
+        "quote": "GoslingMode::Auto,",
+        "note": "Delegated sessions always run unattended in Auto mode as SubAgent."
+      }
+    ],
+    "observed": "Reviewer, scout, or other prose role intent does not restrict authority; omitted model arguments give the child every extension enabled in the parent session.",
+    "expected_boundary": "Delegated role capabilities are explicit, deterministic, least-authority, intersected with parent authority, and enforced independently of model arguments and repo-authored prose.",
+    "failure_mechanism": "Full capability inheritance is the default state transition and narrowing is an optional model decision; agent metadata has no enforceable allowlist.",
+    "break_it_angle": "Create a repo-local reviewer agent that requests a mutation, delegate without extensions, and inspect the child's resolved extension surface.",
+    "impact": "A compromised prompt or role file can turn an apparently advisory child into an unattended actor with parent mutation, network, extension, or delegation capability.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "irreversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": [
+      "fail-closed inspectors deny unresolved approvals but do not reduce initial authority",
+      "repo-local .gosling, .agents, and .claude role files are discovered",
+      "known-open ORCH-002 / AOC-019 design decision"
+    ],
+    "mitigation": {
+      "patterns": [
+        "least-authority role policy",
+        "capability intersection",
+        "resolved-authority disclosure"
+      ],
+      "minimal_repair": "Add a versioned role capability policy and make legacy/inherit-all behavior an explicit user choice instead of the omission default.",
+      "local_guardrail": "The resolved child set must be the intersection of parent capability, role policy, and explicit user/model request; built-in advisory roles default to no mutation tools.",
+      "behavior_test": "Role-by-adapter-by-mode fake-agent tests prove an advisory role cannot mutate or widen scope and that unknown roles do not silently inherit all."
+    },
+    "implementation_assessment": {
+      "complexity": "governance_decision",
+      "cost": "L",
+      "nominal_agent": "human-owner",
+      "rationale": "Compatibility with existing agent files and the meaning of inherit-all require a product/security decision before protocol and test implementation.",
+      "cost_drivers": [
+        "modules",
+        "tests",
+        "docs",
+        "migrations",
+        "runtime_verification",
+        "operator_training"
+      ]
+    },
+    "validation": [
+      "fake-agent capability matrix tests",
+      "repo-local hostile agent-file regression",
+      "resolved capability display test",
+      "parent capability non-widening test",
+      "delegation cancellation and fail-closed inspector regressions"
+    ],
+    "non_goals": [
+      "allow a child to gain an extension absent from the parent",
+      "remove delegated agents"
+    ],
+    "patch_priority": 4,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "No live delegated tool execution was performed; constructed authority is explicit in the current source.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The schema, tool description, default extension construction, and Auto child creation deterministically establish the mismatch."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "State-Transition",
+        "reason": "The parent-to-child transition widens effective role authority by default."
+      },
+      {
+        "secondary_lens": "Negative-Space",
+        "reason": "Safety depends on an optional model field rather than an enforced default."
+      }
+    ]
+  },
+  {
+    "id": "AUD-GOS-005",
+    "title": "Foreign transcript import silently drops malformed JSONL records",
+    "domain": "Input-Output-Path",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/session/import_formats/claude_code.rs",
+        "lines": "18-27",
+        "symbol": "convert",
+        "quote": ".filter_map(|l| serde_json::from_str::<Value>(l).ok())",
+        "note": "Invalid lines are discarded unless every line is invalid."
+      },
+      {
+        "file": "crates/gosling/src/session/import_formats/codex.rs",
+        "lines": "31-40",
+        "symbol": "convert",
+        "quote": ".filter_map(|l| serde_json::from_str::<Value>(l).ok())",
+        "note": "The Codex converter repeats the same behavior."
+      },
+      {
+        "file": "crates/gosling/src/session/import_formats/pi.rs",
+        "lines": "59-61",
+        "symbol": "convert",
+        "quote": ".filter_map(|l| serde_json::from_str::<Value>(l).ok())",
+        "note": "Pi validates its header but silently drops malformed body records."
+      }
+    ],
+    "observed": "A valid-corrupt-valid transcript imports the surviving records with no skipped count, partial marker, or qualified success.",
+    "expected_boundary": "Strict import rejects every malformed nonblank record, or an explicitly chosen lenient mode reports exact omissions and persists partial provenance.",
+    "failure_mechanism": "filter_map(Result::ok) conflates malformed data with irrelevant or absent data.",
+    "break_it_angle": "Insert a malformed JSON line between two valid messages and import the transcript.",
+    "impact": "Users can resume an incomplete history while believing all messages, tool calls, and outputs were preserved.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "reversible",
+      "operator_visibility": "silent",
+      "rerun_safety": "safe"
+    },
+    "adjacent": [
+      "AUD-GOS-006 untrusted import provenance",
+      "AUD-GOS-009 unbounded import size",
+      "partial output presented complete"
+    ],
+    "mitigation": {
+      "patterns": [
+        "completeness accounting",
+        "strict-by-default parser",
+        "partial-result provenance"
+      ],
+      "minimal_repair": "Use a shared line parser that reports line-numbered errors and require explicit consent for a partial import.",
+      "local_guardrail": "Never emit an unqualified import success when any nonblank record failed to parse.",
+      "behavior_test": "A valid-corrupt-valid fixture fails strictly or returns a visible skipped=1 partial result."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "Three sibling converters can share one parsing result and feed the existing CLI/Desktop import status surfaces.",
+      "cost_drivers": [
+        "modules",
+        "tests"
+      ]
+    },
+    "validation": [
+      "corrupt-middle-line fixtures for Claude Code, Codex, and Pi",
+      "strict and explicit-lenient status tests",
+      "Desktop and CLI import message tests"
+    ],
+    "non_goals": [
+      "reject intentionally ignored but syntactically valid vendor event types"
+    ],
+    "patch_priority": 7,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "Converters were not executed; the silent discard behavior is a deterministic static property.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "Each converter explicitly discards parse errors and no omission signal is returned."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Workflow-GUI",
+        "reason": "The operator-facing import result presents partial persistence as complete success."
+      },
+      {
+        "secondary_lens": "Data-Integrity",
+        "reason": "Round-trip completeness and provenance are lost."
+      }
+    ]
+  },
+  {
+    "id": "AUD-GOS-006",
+    "title": "Imported sessions promote untrusted working directories and history to authority",
+    "domain": "Data-Integrity",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling/src/session/import_formats/pi.rs",
+        "lines": "33-37,194-215",
+        "symbol": "convert",
+        "quote": "let working_dir = if cwd.is_empty() {",
+        "note": "A transcript header controls the resulting working directory when nonempty."
+      },
+      {
+        "file": "crates/gosling/src/session/session_manager.rs",
+        "lines": "3873-3889,3915-3917",
+        "symbol": "SessionStorage::import_session",
+        "quote": "import.working_dir.clone(),",
+        "note": "The foreign path and conversation cross directly into canonical session creation and persistence."
+      }
+    ],
+    "observed": "Syntactically valid transcript-controlled cwd and history become a normal resumable session without a durable imported/untrusted provenance state or a user-selected effective directory.",
+    "expected_boundary": "Import validates and previews the canonical path, requires relinking/confirmation, and persists provenance that prevents foreign history from masquerading as locally authorized state.",
+    "failure_mechanism": "Format conversion is treated as trust conversion; parse success promotes foreign data directly to session authority.",
+    "break_it_angle": "Import a session whose cwd points to a sensitive local directory and whose history claims prior authorization, then resume it.",
+    "impact": "A crafted import can mis-scope later file/process operations and provide prompt-injection leverage over a resumed agent.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "compensatable",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": [
+      "AUD-GOS-005 silent record loss",
+      "AUD-GOS-009 import resource bound",
+      "foreign message provenance is not modeled"
+    ],
+    "mitigation": {
+      "patterns": [
+        "trust-preserving import",
+        "canonical path review",
+        "durable provenance"
+      ],
+      "minimal_repair": "Add an import review step with a user-selected effective directory and persist an imported-untrusted provenance marker on the session and messages.",
+      "local_guardrail": "Do not activate tools for a transcript-provided working directory until it is canonicalized, available, and explicitly accepted.",
+      "behavior_test": "A crafted cwd never becomes active without confirmation, and imported history remains visibly/protocol-level untrusted on resume."
+    },
+    "implementation_assessment": {
+      "complexity": "workflow_protocol",
+      "cost": "M",
+      "nominal_agent": "codex",
+      "rationale": "The repair crosses converter output, session persistence, ACP resume, and Desktop/CLI review UX.",
+      "cost_drivers": [
+        "modules",
+        "tests",
+        "migrations",
+        "docs"
+      ]
+    },
+    "validation": [
+      "crafted working-directory import tests",
+      "missing/moved directory relink tests",
+      "session provenance round-trip and resume tests",
+      "Desktop and CLI review-flow tests"
+    ],
+    "non_goals": [
+      "discard foreign history the user intentionally imports",
+      "silently replace cwd with the current process directory"
+    ],
+    "patch_priority": 8,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "The authority transition is confirmed; later tool impact requires the user to resume and the agent to act.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The converter-derived field is passed directly to canonical session creation and the conversation is persisted without a provenance field."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Input-Output-Path",
+        "reason": "Untrusted imported fields become operational paths and context."
+      },
+      {
+        "secondary_lens": "State-Transition",
+        "reason": "Foreign candidate data becomes canonical active session state without a trust gate."
+      }
+    ]
+  },
+  {
+    "id": "AUD-GOS-007",
+    "title": "The settings IPC erases every value contract except language",
+    "domain": "Architecture",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/preload.ts",
+        "lines": "287-293",
+        "symbol": "setSetting",
+        "quote": "setSetting: async <K extends SettingKey>(key: K, value: Settings[K])",
+        "note": "The renderer advertises a type-safe generic contract."
+      },
+      {
+        "file": "ui/desktop/src/main.ts",
+        "lines": "2036-2051",
+        "symbol": "set-setting handler",
+        "quote": "(settings as any)[key] = value;",
+        "note": "Main receives unknown, validates only the key and language, then persists any other shape."
+      }
+    ],
+    "observed": "Any allowlisted setting except language accepts a wrong primitive, malformed nested object, oversized collection, or attacker-shaped value and persists it as canonical settings state.",
+    "expected_boundary": "Per-key runtime schemas at the main-process IPC seam preserve the declared shape, bounds, and semantic constraints and return typed validation errors without changing disk.",
+    "failure_mechanism": "Compile-time TypeScript generics are erased at IPC and no equivalent runtime validation is re-established in the privileged process.",
+    "break_it_angle": "Send theme=42, keyboardShortcuts=oops, a malformed external backend object, or an oversized managedSecretProfiles value through set-setting and trigger/restart its consumer.",
+    "impact": "Durable settings corruption, startup/runtime failures, and attacker-controlled values in filesystem-root and backend-trust consumers.",
+    "operational_impact": {
+      "blast_radius": "Local",
+      "side_effect_class": "file",
+      "reversibility": "compensatable",
+      "operator_visibility": "silent",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": [
+      "AUD-GOS-002 archiveFolder authority",
+      "AUD-GOS-008 non-atomic settings write",
+      "nested object and collection size limits are absent"
+    ],
+    "mitigation": {
+      "patterns": [
+        "runtime schema at privilege boundary",
+        "fail-closed validation",
+        "bounded nested input"
+      ],
+      "minimal_repair": "Create a discriminated validator map for every SettingKey in main and reject invalid values before mutating the cached object or disk.",
+      "local_guardrail": "Return a typed validation error and leave the previous record byte-for-byte unchanged.",
+      "behavior_test": "Every key has valid, wrong-type, oversized, and prototype-shaped IPC fixtures; only valid fixtures persist."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "A central main-process validator map and table-driven tests can pin the existing contract without redesigning storage.",
+      "cost_drivers": [
+        "modules",
+        "tests"
+      ]
+    },
+    "validation": [
+      "table-driven runtime validation for every SettingKey",
+      "invalid input leaves settings file unchanged",
+      "Desktop typecheck and unit tests"
+    ],
+    "non_goals": [
+      "redesign the complete settings format",
+      "rely on renderer-side validation as the security boundary"
+    ],
+    "patch_priority": 5,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "Wrong-typed settings were not injected at runtime; the unvalidated assignment is deterministic.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "The main handler explicitly accepts unknown and validates only key membership and one key's value."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Data-Integrity",
+        "reason": "Invalid input becomes canonical durable settings state."
+      },
+      {
+        "secondary_lens": "Input-Output-Path",
+        "reason": "Malformed and unbounded renderer payloads cross into persistence and privileged consumers."
+      }
+    ]
+  },
+  {
+    "id": "AUD-GOS-008",
+    "title": "Desktop settings writes can tear and silently reset the whole profile",
+    "domain": "Reliability",
+    "severity": "Medium",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "ui/desktop/src/main.ts",
+        "lines": "375-382,2036-2051",
+        "symbol": "updateSettings / set-setting handler",
+        "quote": "fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));",
+        "note": "The canonical file is overwritten directly without temp, flush, rename, or restrictive mode."
+      },
+      {
+        "file": "ui/desktop/src/main.ts",
+        "lines": "214-234",
+        "symbol": "getSettings",
+        "quote": "console.error('Failed to read settings.json, using defaults:', err);",
+        "note": "Any parse/read failure is classified as a default profile."
+      },
+      {
+        "file": "ui/desktop/src/utils/recentDirs.ts",
+        "lines": "40-50,74-84",
+        "symbol": "loadRecentDirs / addRecentDir",
+        "quote": "fs.writeFileSync(RECENT_DIRS_FILE, JSON.stringify({ dirs }, null, 2));",
+        "note": "The related recent-directory authority record repeats the same persistence pattern."
+      }
+    ],
+    "observed": "Settings and recent-directory records are truncated/replaced directly; a malformed or interrupted record is logged and treated as empty/default on the next read.",
+    "expected_boundary": "Owner-only unique-temp write, file flush, atomic rename, directory sync, schema validation, previous-good/quarantine recovery, and a visible recovery message.",
+    "failure_mechanism": "The durable record is destroyed before its replacement is known durable, and the recovery path conflates corruption with absence.",
+    "break_it_angle": "Terminate the main process or inject an I/O fault during write, then relaunch and inspect whether the old profile is recovered or silently defaulted.",
+    "impact": "A single interruption can lose workflow-wide Desktop preferences, backend connection/trust configuration, archive state, and recent roots.",
+    "operational_impact": {
+      "blast_radius": "Workflow",
+      "side_effect_class": "file",
+      "reversibility": "compensatable",
+      "operator_visibility": "log-only",
+      "rerun_safety": "unsafe"
+    },
+    "adjacent": [
+      "AUD-GOS-001 stores high-value values in this fragile file",
+      "AUD-GOS-007 permits invalid values into the same canonical record",
+      "recent directories are both preferences and current authority roots"
+    ],
+    "mitigation": {
+      "patterns": [
+        "atomic file replace",
+        "owner-only permissions",
+        "previous-good recovery",
+        "fail-visible corruption"
+      ],
+      "minimal_repair": "Use one proven owner-only atomic JSON helper for settings and recent dirs, validate before rename, and recover/quarantine a malformed current file from a previous-good copy.",
+      "local_guardrail": "Never replace the current record until the complete validated temp is durable; never silently classify corruption as a first run.",
+      "behavior_test": "Fault injection at open/write/flush/rename leaves either old or new valid JSON and produces a visible recovery state."
+    },
+    "implementation_assessment": {
+      "complexity": "persistence_recovery",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "The repository already contains atomic persistence patterns; the Desktop needs a shared helper and failure-path tests.",
+      "cost_drivers": [
+        "modules",
+        "tests",
+        "runtime_verification"
+      ]
+    },
+    "validation": [
+      "fault-injection tests for every atomic-write phase",
+      "owner-only permission assertions on Unix",
+      "malformed-current previous-good recovery test",
+      "visible recovery notification test",
+      "Desktop typecheck and unit tests"
+    ],
+    "non_goals": [
+      "cloud-sync Desktop settings",
+      "treat console logging alone as operator recovery"
+    ],
+    "patch_priority": 6,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "No kill or disk-fault drill was run; the non-atomic replacement and default fallback are confirmed static properties.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "Direct canonical-file replacement lacks every atomic-write phase and the parse-error branch deterministically returns defaults."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Recovery-Idempotency",
+        "reason": "Crash recovery has neither atomic replacement nor previous-good rollback."
+      },
+      {
+        "secondary_lens": "Concurrency",
+        "reason": "CON-013 applies to the non-atomic whole-file output."
+      },
+      {
+        "secondary_lens": "Data-Integrity",
+        "reason": "A partial durable record becomes a silent all-default state."
+      }
+    ],
+    "failure_analysis": {
+      "item_or_workflow": "Desktop settings persistence and startup recovery",
+      "failure_mode": "Interrupted replacement leaves malformed JSON and startup resets to defaults",
+      "likely_cause": "Direct writeFileSync to the canonical record with no atomic replace or previous-good recovery",
+      "operational_phase": "normal_run",
+      "local_effect": "settings.json or recent-dirs.json is partial or empty",
+      "workflow_effect": "Desktop relaunches with lost preferences and connection/archive state",
+      "system_or_operator_effect": "Operator must rediscover and reconstruct configuration from memory",
+      "detection_method": "log",
+      "detection_latency": "delayed",
+      "operator_visible": false,
+      "compensating_provision": "Delete the corrupt file and re-enter settings; this does not recover the lost record"
+    },
+    "resilience_mapping": {
+      "phase": "recover",
+      "objective": [
+        "reconstitute",
+        "understand"
+      ],
+      "safe_state": "fail_rollback"
+    },
+    "criticality": {
+      "likelihood": "plausible",
+      "detectability": "logged"
+    },
+    "single_point_failure": {
+      "is_spf": "yes",
+      "missing_alternate": true,
+      "redundancy_or_fallback": "Defaults preserve application startup but not prior user state",
+      "required_owner_decision": null
+    }
+  },
+  {
+    "id": "AUD-GOS-009",
+    "title": "Session import materializes unbounded local and remote payloads",
+    "domain": "Input-Output-Path",
+    "severity": "Low",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling-cli/src/commands/session.rs",
+        "lines": "297-308",
+        "symbol": "handle_session_import",
+        "quote": "fs::read_to_string(&input)",
+        "note": "CLI materializes the complete caller-selected file."
+      },
+      {
+        "file": "ui/desktop/src/main.ts",
+        "lines": "2330-2349",
+        "symbol": "select-import-session-file handler",
+        "quote": "const contents = await fs.readFile(filePath, 'utf8');",
+        "note": "The Electron main process returns the complete file contents over IPC."
+      },
+      {
+        "file": "crates/gosling/src/session/nostr_share.rs",
+        "lines": "226-236",
+        "symbol": "import_session_json_from_deeplink_with",
+        "quote": "nip44::decrypt(&secret_key, &encryption_keys.public_key(), event.content)",
+        "note": "Remote event content is decrypted to a complete String without a local cap."
+      }
+    ],
+    "observed": "All import entrypoints allocate and parse the complete payload without an application-level byte budget.",
+    "expected_boundary": "A shared documented maximum is enforced before materialization for local files and before/while remote fetch and decrypt, with consistent CLI/Desktop errors.",
+    "failure_mechanism": "Caller- or relay-controlled payload size drives whole-buffer allocation in the CLI or Electron main process.",
+    "break_it_angle": "Select a multi-gigabyte JSONL file or fetch an oversized Nostr share event.",
+    "impact": "Memory pressure, responsiveness loss, or OOM on the local application process.",
+    "operational_impact": {
+      "blast_radius": "Local",
+      "side_effect_class": "process",
+      "reversibility": "reversible",
+      "operator_visibility": "UI-visible",
+      "rerun_safety": "safe"
+    },
+    "adjacent": [
+      "AUD-GOS-005 malformed-line handling",
+      "AUD-GOS-006 imported path and provenance",
+      "remote relay content is untrusted"
+    ],
+    "mitigation": {
+      "patterns": [
+        "resource budget",
+        "stat/read cap",
+        "bounded remote content"
+      ],
+      "minimal_repair": "Define one import byte limit and enforce it before file read, IPC transfer, remote decrypt, and JSON conversion.",
+      "local_guardrail": "Reject oversize input with an actionable error before allocating the complete payload.",
+      "behavior_test": "An input one byte over the cap fails consistently in CLI, Desktop, and Nostr paths without persistence."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "S",
+      "nominal_agent": "codex",
+      "rationale": "A shared constant and bounded readers can cover the three existing entrypoints with focused tests.",
+      "cost_drivers": [
+        "modules",
+        "tests"
+      ]
+    },
+    "validation": [
+      "at-limit and over-limit CLI tests",
+      "Desktop main-process import-size test",
+      "oversize Nostr fetch/decrypt test",
+      "memory-allocation observation for a boundary-size fixture"
+    ],
+    "non_goals": [
+      "introduce a streaming JSON parser in the minimal repair"
+    ],
+    "patch_priority": 9,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "Resource exhaustion was not reproduced; only the absence of an application-level bound is confirmed.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "All three complete-buffer reads are explicit and no preceding size check exists on their paths."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Reliability",
+        "reason": "REL-005 and REL-013 apply to process memory exhaustion from unbounded work."
+      },
+      {
+        "secondary_lens": "Security",
+        "reason": "The remote relay path is an untrusted resource-exhaustion input."
+      }
+    ]
+  },
+  {
+    "id": "AUD-GOS-010",
+    "title": "Invalid server host configuration panics during startup",
+    "domain": "Reliability",
+    "severity": "Low",
+    "confidence": "Confirmed",
+    "evidence_basis": "source-evidenced",
+    "evidence": [
+      {
+        "file": "crates/gosling-server/src/configuration.rs",
+        "lines": "19-27",
+        "symbol": "Settings::socket_addr / Settings::new",
+        "quote": ".expect(\"Failed to parse socket address\")",
+        "note": "Fallible operator configuration is asserted after a constructor that otherwise returns typed errors."
+      },
+      {
+        "file": "crates/gosling-server/src/commands/agent.rs",
+        "lines": "126-130",
+        "symbol": "run",
+        "quote": "let addr = settings.socket_addr();",
+        "note": "The panicking parse is reached on the server startup path."
+      }
+    ],
+    "observed": "An invalid GOSLING_HOST, including a hostname where numeric SocketAddr parsing is expected, reaches expect and terminates startup via panic.",
+    "expected_boundary": "Configuration construction validates or parses the bind address and returns an actionable typed error without panic/backtrace semantics.",
+    "failure_mechanism": "A fallible operator-input parse is encoded as an invariant after configuration deserialization.",
+    "break_it_angle": "Start gosling-server with GOSLING_HOST=not-an-address or localhost.",
+    "impact": "Local or service startup outage with poor recovery guidance.",
+    "operational_impact": {
+      "blast_radius": "Service",
+      "side_effect_class": "process",
+      "reversibility": "reversible",
+      "operator_visibility": "log-only",
+      "rerun_safety": "safe"
+    },
+    "adjacent": [
+      "panic hook prints a forced backtrace",
+      "host is represented as String despite SocketAddr-only consumption"
+    ],
+    "mitigation": {
+      "patterns": [
+        "typed configuration validation",
+        "actionable startup failure"
+      ],
+      "minimal_repair": "Return Result<SocketAddr> from socket_addr or deserialize host as IpAddr and surface the invalid environment variable through ConfigError.",
+      "local_guardrail": "No operator-controlled configuration parse on startup may call expect or unwrap.",
+      "behavior_test": "Invalid host and hostname cases exit with a typed message; valid IPv4 and IPv6 bind addresses still start parsing successfully."
+    },
+    "implementation_assessment": {
+      "complexity": "local_guardrail",
+      "cost": "XS",
+      "nominal_agent": "codex",
+      "rationale": "The repair changes one method signature and two callers plus focused configuration tests.",
+      "cost_drivers": [
+        "modules",
+        "tests"
+      ]
+    },
+    "validation": [
+      "configuration unit tests for invalid, IPv4, and IPv6 host values",
+      "startup command error propagation test",
+      "gosling-server formatting, tests, and Clippy when explicitly authorized"
+    ],
+    "non_goals": [
+      "add DNS resolution unless hostnames are intentionally supported"
+    ],
+    "patch_priority": 10,
+    "reviewed_by": [
+      "codex-root"
+    ],
+    "review_limits": "The invalid configuration was not launched; parse plus expect is a deterministic panic path.",
+    "confidence_calibration": {
+      "static_property_confirmed": true,
+      "runtime_manifestation_observed": false,
+      "confidence_ceiling_applied": "Confirmed",
+      "rationale": "SocketAddr::parse returns Err for invalid/non-numeric input and the code unconditionally calls expect."
+    },
+    "skill_escalation": [
+      {
+        "secondary_lens": "Negative-Space",
+        "reason": "A fragile default-config assumption converts an operator error into a startup panic."
+      }
+    ]
+  }
+]

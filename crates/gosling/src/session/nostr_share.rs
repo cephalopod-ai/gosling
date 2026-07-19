@@ -18,6 +18,15 @@ const DEFAULT_RELAYS: &[&str] = &[
     "wss://nos.lol",
     "wss://relay.nostr.band",
 ];
+const MAX_ENCRYPTED_SESSION_IMPORT_BYTES: usize =
+    crate::session::import_formats::MAX_SESSION_IMPORT_BYTES * 2;
+
+fn ensure_encrypted_payload_size(content: &str) -> Result<()> {
+    if content.len() > MAX_ENCRYPTED_SESSION_IMPORT_BYTES {
+        return Err(anyhow!("Encrypted session share exceeds the import limit"));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NostrShare {
@@ -152,6 +161,7 @@ pub async fn publish_session_json_with<P>(
 where
     P: NostrPublisher + Sync,
 {
+    crate::session::import_formats::ensure_import_payload_size(session_json)?;
     let relays = normalize_relays(relays);
     if relays.is_empty() {
         return Err(anyhow!("At least one Nostr relay is required"));
@@ -230,10 +240,13 @@ where
             u16::from(event.kind)
         ));
     }
+    ensure_encrypted_payload_size(&event.content)?;
 
     let secret_key = SecretKey::parse(&decryption_key)?;
     let encryption_keys = Keys::new(secret_key.clone());
-    nip44::decrypt(&secret_key, &encryption_keys.public_key(), event.content).map_err(Into::into)
+    let decrypted = nip44::decrypt(&secret_key, &encryption_keys.public_key(), event.content)?;
+    crate::session::import_formats::ensure_import_payload_size(&decrypted)?;
+    Ok(decrypted)
 }
 
 pub fn build_deeplink(nevent: &str, decryption_key: &str) -> String {
@@ -388,5 +401,11 @@ mod tests {
         assert!(!is_session_share_deeplink(
             "goose://sessions/nostr?nevent=abc&key=def"
         ));
+    }
+
+    #[test]
+    fn rejects_oversized_encrypted_share_content_before_decryption() {
+        let oversized = "x".repeat(MAX_ENCRYPTED_SESSION_IMPORT_BYTES + 1);
+        assert!(ensure_encrypted_payload_size(&oversized).is_err());
     }
 }

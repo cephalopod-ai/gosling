@@ -17,6 +17,7 @@ describe('ExternalBackendSection', () => {
       enabled: false,
       url: '',
       secret: '',
+      secretConfigured: false,
       certFingerprint: '',
     });
     mockedSetSetting.mockResolvedValue(undefined);
@@ -68,6 +69,7 @@ describe('ExternalBackendSection', () => {
       enabled: true,
       url: 'http://old.example.com',
       secret: '',
+      secretConfigured: false,
       certFingerprint: '',
     });
     mockedSetSetting.mockRejectedValueOnce(new Error('network down'));
@@ -106,5 +108,33 @@ describe('ExternalBackendSection', () => {
     await waitFor(() => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
+  });
+
+  it('never reloads a stored secret and clears replacement input after submit', async () => {
+    const user = userEvent.setup();
+    mockedGetSetting.mockResolvedValue({
+      enabled: true,
+      url: 'https://backend.example.com',
+      secret: '',
+      secretConfigured: true,
+      certFingerprint: '',
+    });
+    renderWithIntl(<ExternalBackendSection />);
+
+    const secretInput = await screen.findByLabelText('Secret Key');
+    expect(secretInput).toHaveAttribute(
+      'placeholder',
+      'Configured for this launch — enter a replacement'
+    );
+    await user.type(secretInput, 'SENTINEL_EXTERNAL_SECRET');
+    await user.tab();
+
+    await waitFor(() => {
+      expect(mockedSetSetting).toHaveBeenCalledWith(
+        'externalGoslingd',
+        expect.objectContaining({ secret: 'SENTINEL_EXTERNAL_SECRET' })
+      );
+    });
+    await waitFor(() => expect(secretInput).toHaveValue(''));
   });
 });

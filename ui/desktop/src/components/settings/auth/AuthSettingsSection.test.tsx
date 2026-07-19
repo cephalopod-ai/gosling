@@ -34,8 +34,6 @@ const mockedListProviderSecrets = vi.mocked(acpListProviderSecrets);
 const mockedDeleteProviderSecret = vi.mocked(acpDeleteProviderSecret);
 const mockedAcpAuthenticateProvider = vi.mocked(acpAuthenticateProvider);
 const mockedToast = vi.mocked(toast);
-const mockedGetSetting = vi.mocked(window.electron.getSetting);
-const mockedSetSetting = vi.mocked(window.electron.setSetting);
 
 const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
   render(ui, { wrapper: IntlTestWrapper, ...options });
@@ -61,8 +59,6 @@ describe('AuthSettingsSection', () => {
     mockedListProviderSecrets.mockResolvedValue([]);
     mockedDeleteProviderSecret.mockResolvedValue(undefined);
     mockedAcpAuthenticateProvider.mockResolvedValue(undefined);
-    mockedGetSetting.mockResolvedValue([]);
-    mockedSetSetting.mockResolvedValue(undefined);
   });
 
   it('renders an empty state when no credentials are stored', async () => {
@@ -132,84 +128,5 @@ describe('AuthSettingsSection', () => {
     expect(
       await screen.findByText('No locally stored provider credentials were found.')
     ).toBeInTheDocument();
-  });
-
-  it('adds a VPS secret profile and saves it to settings', async () => {
-    const user = userEvent.setup();
-
-    renderWithIntl(<AuthSettingsSection />);
-
-    expect(await screen.findByText('Local Secret Profiles')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'VPS server' }));
-
-    expect(await screen.findByDisplayValue('VPS Server')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('VPS_SERVER_URL')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('VPS_SERVER_LOGIN')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('VPS_SERVER_PASSWORD')).toBeInTheDocument();
-    expect(screen.getByText('Authentication + config')).toBeInTheDocument();
-    expect(
-      screen.getByDisplayValue('This is the password and login to manage the VPS server.')
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    await waitFor(() => {
-      expect(mockedSetSetting).toHaveBeenCalledWith(
-        'managedSecretProfiles',
-        expect.arrayContaining([
-          expect.objectContaining({
-            name: 'VPS Server',
-            template: 'vps',
-            useFor: 'both',
-            entries: expect.arrayContaining([
-              expect.objectContaining({ key: 'VPS_SERVER_URL' }),
-              expect.objectContaining({ key: 'VPS_SERVER_LOGIN' }),
-              expect.objectContaining({ key: 'VPS_SERVER_PASSWORD' }),
-            ]),
-          }),
-        ])
-      );
-    });
-  });
-
-  it('adds a Supabase project profile and saves it to settings', async () => {
-    const user = userEvent.setup();
-
-    renderWithIntl(<AuthSettingsSection />);
-
-    expect(await screen.findByText('Local Secret Profiles')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Supabase project' }));
-
-    expect(await screen.findByDisplayValue('Supabase Project')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('SUPABASE_PROJECT_URL')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('SUPABASE_PROJECT_REF')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('SUPABASE_ANON_KEY')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('SUPABASE_SERVICE_ROLE_KEY')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('SUPABASE_DB_PASSWORD')).toBeInTheDocument();
-    expect(screen.getByText('Authentication + config')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    await waitFor(() => {
-      expect(mockedSetSetting).toHaveBeenCalledWith(
-        'managedSecretProfiles',
-        expect.arrayContaining([
-          expect.objectContaining({
-            name: 'Supabase Project',
-            template: 'supabase',
-            useFor: 'both',
-            entries: expect.arrayContaining([
-              expect.objectContaining({ key: 'SUPABASE_PROJECT_URL' }),
-              expect.objectContaining({ key: 'SUPABASE_PROJECT_REF' }),
-              expect.objectContaining({ key: 'SUPABASE_ANON_KEY' }),
-              expect.objectContaining({ key: 'SUPABASE_SERVICE_ROLE_KEY' }),
-              expect.objectContaining({ key: 'SUPABASE_DB_PASSWORD' }),
-            ]),
-          }),
-        ])
-      );
-    });
   });
 });

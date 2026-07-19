@@ -252,6 +252,52 @@ pub struct WorkspaceSessionContext {
     #[serde(default)]
     pub folders: Vec<WorkspaceFolder>,
     pub product_output_folders: Vec<ProductOutputFolder>,
+    #[serde(default)]
+    pub folder_policy: WorkspaceFolderPolicy,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceFolderPolicy {
+    #[serde(default)]
+    pub roots: Vec<WorkspaceFolderPolicyRoot>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceFolderPolicyRoot {
+    pub path: String,
+    pub access: WorkspaceFolderAccess,
+}
+
+impl WorkspaceSessionContext {
+    pub fn effective_folder_policy(&self) -> WorkspaceFolderPolicy {
+        if !self.folder_policy.roots.is_empty() {
+            return self.folder_policy.clone();
+        }
+
+        let mut roots = BTreeMap::new();
+        roots.insert(
+            self.primary_working_folder.clone(),
+            WorkspaceFolderAccess::ReadWrite,
+        );
+        for folder in &self.folders {
+            let access = roots.entry(folder.path.clone()).or_insert(folder.access);
+            if folder.access == WorkspaceFolderAccess::ReadWrite {
+                *access = WorkspaceFolderAccess::ReadWrite;
+            }
+        }
+        for output in &self.product_output_folders {
+            roots.insert(output.path.clone(), WorkspaceFolderAccess::ReadWrite);
+        }
+
+        WorkspaceFolderPolicy {
+            roots: roots
+                .into_iter()
+                .map(|(path, access)| WorkspaceFolderPolicyRoot { path, access })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -527,5 +573,40 @@ mod tests {
             WorkspaceMutation::from(&workspace).product_output_folders,
             workspace.product_output_folders
         );
+    }
+
+    #[test]
+    fn legacy_session_context_derives_a_folder_policy() {
+        let context: WorkspaceSessionContext = serde_json::from_value(serde_json::json!({
+            "workspaceId": "workspace",
+            "workspaceName": "Project",
+            "primaryWorkingFolder": "/project",
+            "folders": [{
+                "id": "reference",
+                "label": "Reference",
+                "path": "/reference",
+                "kind": "reference",
+                "access": "read"
+            }],
+            "productOutputFolders": [{
+                "id": "output",
+                "label": "Output",
+                "path": "/output",
+                "productTypes": ["document"],
+                "isDefault": true,
+                "createIfMissing": false
+            }]
+        }))
+        .unwrap();
+
+        assert!(context.folder_policy.roots.is_empty());
+        let policy = context.effective_folder_policy();
+        assert_eq!(policy.roots.len(), 3);
+        assert!(policy.roots.iter().any(|root| {
+            root.path == "/reference" && root.access == WorkspaceFolderAccess::Read
+        }));
+        assert!(policy.roots.iter().any(|root| {
+            root.path == "/output" && root.access == WorkspaceFolderAccess::ReadWrite
+        }));
     }
 }

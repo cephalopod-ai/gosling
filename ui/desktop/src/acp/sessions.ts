@@ -28,6 +28,9 @@ interface GoslingSessionInfoMeta {
   goslingMode?: GoslingMode;
   workspaceId?: string;
   workspaceName?: string;
+  importedUntrusted?: boolean;
+  importSource?: string;
+  importOriginalWorkingDir?: string;
 }
 
 export const COMPACTED_SESSION_TAIL_LIMIT = 50;
@@ -58,6 +61,8 @@ export interface SessionListItem {
   userSetName?: boolean;
   workspaceId?: string;
   workspaceName?: string;
+  importedUntrusted?: boolean;
+  importSource?: string;
 }
 
 export interface SessionListPage {
@@ -71,6 +76,8 @@ export interface LoadSessionMeta {
   historyLoad?: HistoryLoadMeta;
   workspaceId?: string;
   workspaceName?: string;
+  importedUntrusted?: boolean;
+  importSource?: string;
 }
 
 export interface AcpLoadSessionResult {
@@ -89,6 +96,8 @@ function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
     historyLoad: isHistoryLoadMeta(meta.historyLoad) ? meta.historyLoad : undefined,
     workspaceId: typeof meta.workspaceId === 'string' ? meta.workspaceId : undefined,
     workspaceName: typeof meta.workspaceName === 'string' ? meta.workspaceName : undefined,
+    importedUntrusted: meta.importedUntrusted === true,
+    importSource: typeof meta.importSource === 'string' ? meta.importSource : undefined,
   };
 }
 
@@ -136,6 +145,9 @@ export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta =
     gosling_mode: meta.goslingMode,
     workspace_id: meta.workspaceId ?? loadMeta.workspaceId,
     workspace_name: meta.workspaceName ?? loadMeta.workspaceName,
+    imported_untrusted: meta.importedUntrusted ?? loadMeta.importedUntrusted,
+    import_source: meta.importSource ?? loadMeta.importSource,
+    import_original_working_dir: meta.importOriginalWorkingDir,
   };
 }
 
@@ -157,6 +169,8 @@ function sessionInfoToListItem(s: SessionInfo): SessionListItem {
     userSetName: meta.userSetName,
     workspaceId: meta.workspaceId,
     workspaceName: meta.workspaceName,
+    importedUntrusted: meta.importedUntrusted,
+    importSource: meta.importSource,
   };
 }
 
@@ -467,9 +481,13 @@ export async function acpExportSession(sessionId: string): Promise<string> {
   return response.data;
 }
 
-export async function acpImportSession(input: string, source: SessionImportSource): Promise<void> {
+export async function acpImportSession(
+  input: string,
+  source: SessionImportSource,
+  workingDir: string
+): Promise<void> {
   const client = await getAcpClient();
-  await client.gosling.sessionImport_unstable({ input, source });
+  await client.gosling.sessionImport_unstable({ input, source, workingDir });
 }
 
 export async function acpShareSessionNostr(sessionId: string, relays: string[]) {

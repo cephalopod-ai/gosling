@@ -97,6 +97,16 @@ struct AgentMetadata {
     description: Option<String>,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    capabilities: Option<DelegateCapabilityPolicy>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DelegateCapabilityPolicy {
+    version: u32,
+    #[serde(default)]
+    extensions: Vec<String>,
 }
 
 /// What a delegate runs: instructions/prompt for the subagent plus an
@@ -106,6 +116,93 @@ struct DelegateSpec {
     instructions: Option<String>,
     prompt: Option<String>,
     model: Option<String>,
+    role_extensions: Option<Vec<String>>,
+}
+
+fn validate_capability_policy(
+    policy: Option<DelegateCapabilityPolicy>,
+) -> Result<Vec<String>, String> {
+    let Some(policy) = policy else {
+        return Ok(Vec::new());
+    };
+    if policy.version != 1 {
+        return Err(format!(
+            "Unsupported delegate capability policy version {} (expected 1)",
+            policy.version
+        ));
+    }
+
+    let mut extensions = Vec::with_capacity(policy.extensions.len());
+    for name in policy.extensions {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Delegate capability policy contains an empty extension name".to_string());
+        }
+        if !extensions.iter().any(|existing| existing == name) {
+            extensions.push(name.to_string());
+        }
+    }
+    Ok(extensions)
+}
+
+fn resolve_delegate_extensions(
+    parent_extensions: Vec<crate::agents::ExtensionConfig>,
+    spec: &DelegateSpec,
+    requested_extensions: Option<&[String]>,
+) -> Result<Vec<crate::agents::ExtensionConfig>, String> {
+    let role_extensions = spec.role_extensions.as_deref();
+    let desired = match (role_extensions, requested_extensions) {
+        (Some(role), Some(requested)) => {
+            let denied: Vec<&str> = requested
+                .iter()
+                .filter(|name| !role.iter().any(|allowed| allowed == *name))
+                .map(String::as_str)
+                .collect();
+            if !denied.is_empty() {
+                return Err(format!(
+                    "Delegate requested extension(s) outside the role capability policy: {}",
+                    denied.join(", ")
+                ));
+            }
+            requested
+        }
+        (Some(role), None) => role,
+        (None, Some(requested)) => requested,
+        (None, None) => &[],
+    };
+
+    let available_names: Vec<String> = parent_extensions
+        .iter()
+        .map(crate::agents::ExtensionConfig::name)
+        .collect();
+    let unavailable: Vec<&str> = desired
+        .iter()
+        .filter(|name| !available_names.iter().any(|available| available == *name))
+        .map(String::as_str)
+        .collect();
+    if !unavailable.is_empty() {
+        return Err(format!(
+            "Delegate requested extension(s) unavailable in the parent session: {}",
+            unavailable.join(", ")
+        ));
+    }
+
+    Ok(parent_extensions
+        .into_iter()
+        .filter(|extension| desired.iter().any(|name| name == &extension.name()))
+        .collect())
+}
+
+fn delegate_authority_summary(extensions: &[crate::agents::ExtensionConfig]) -> String {
+    if extensions.is_empty() {
+        "none".to_string()
+    } else {
+        extensions
+            .iter()
+            .map(crate::agents::ExtensionConfig::name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
@@ -466,7 +563,7 @@ impl SummonClient {
                 "extensions": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Extensions to enable. Omit to inherit all, empty array for none."
+                    "description": "Extensions to enable. Ad-hoc delegates default to none. Source-based delegates are limited to the role's versioned capabilities policy; an explicit list can only narrow that policy."
                 },
                 "provider": {
                     "type": "string",
@@ -1168,6 +1265,7 @@ impl SummonClient {
             instructions: Some(source.content.clone()),
             prompt,
             model: metadata.model,
+            role_extensions: Some(validate_capability_policy(metadata.capabilities)?),
         })
     }
 
@@ -1179,31 +1277,13 @@ impl SummonClient {
     ) -> Result<TaskConfig, anyhow::Error> {
         let (provider, model_config) = self.resolve_provider(params, spec, session).await?;
 
-        let mut extensions = EnabledExtensionsState::extensions_or_default(
+        let parent_extensions = EnabledExtensionsState::extensions_or_default(
             Some(&session.extension_data),
             Config::global(),
         );
-
-        if let Some(filter) = &params.extensions {
-            if filter.is_empty() {
-                extensions = Vec::new();
-            } else {
-                let available_names: Vec<String> =
-                    extensions.iter().map(|ext| ext.name()).collect();
-                extensions.retain(|ext| filter.contains(&ext.name()));
-                let unmatched: Vec<&str> = filter
-                    .iter()
-                    .filter(|name| !available_names.iter().any(|n| n == *name))
-                    .map(String::as_str)
-                    .collect();
-                if !unmatched.is_empty() {
-                    warn!(
-                        "Delegate requested extensions not available in session: {:?}. Available: {:?}",
-                        unmatched, available_names
-                    );
-                }
-            }
-        }
+        let extensions =
+            resolve_delegate_extensions(parent_extensions, spec, params.extensions.as_deref())
+                .map_err(anyhow::Error::msg)?;
 
         let max_turns = params.max_turns.unwrap_or_else(|| self.resolve_max_turns());
 
@@ -1404,6 +1484,7 @@ impl SummonClient {
             .build_task_config(&params, &spec, &session)
             .await
             .map_err(|e| format!("Failed to build task config: {}", e))?;
+        let authority_summary = delegate_authority_summary(&task_config.extensions);
 
         let description = safe_truncate(&Self::get_task_description(&params), TASK_LABEL_BUDGET);
 
@@ -1491,8 +1572,9 @@ impl SummonClient {
 
         let content = vec![Content::text(format!(
             "Task {} started in background: \"{}\"\n\
+             Resolved delegate authority: extensions = {}.\n\
              Continue with other work. When you need the result, use load(source: \"{}\").",
-            task_id, description, task_id
+            task_id, description, authority_summary, task_id
         ))];
         Ok((content, task_id))
     }
@@ -1691,6 +1773,17 @@ mod tests {
         }
     }
 
+    fn test_extension(name: &str) -> crate::agents::ExtensionConfig {
+        crate::agents::ExtensionConfig::Builtin {
+            name: name.to_string(),
+            description: name.to_string(),
+            display_name: None,
+            timeout: None,
+            bundled: None,
+            available_tools: Vec::new(),
+        }
+    }
+
     #[test]
     fn test_agent_frontmatter_parsing() {
         let agent = r#"---
@@ -1701,6 +1794,99 @@ You review code."#;
         let source = parse_agent_content(agent, Path::new("")).unwrap();
         assert_eq!(source.name, "reviewer");
         assert!(source.description.contains("sonnet"));
+    }
+
+    #[test]
+    fn test_delegate_capability_policy_is_versioned_and_deduplicated() {
+        let extensions = validate_capability_policy(Some(DelegateCapabilityPolicy {
+            version: 1,
+            extensions: vec![
+                "developer".to_string(),
+                "memory".to_string(),
+                "developer".to_string(),
+            ],
+        }))
+        .unwrap();
+        assert_eq!(extensions, vec!["developer", "memory"]);
+
+        let error = validate_capability_policy(Some(DelegateCapabilityPolicy {
+            version: 2,
+            extensions: Vec::new(),
+        }))
+        .unwrap_err();
+        assert!(error.contains("version 2"));
+    }
+
+    #[test]
+    fn test_adhoc_delegate_defaults_to_no_extensions() {
+        let parent = vec![test_extension("developer"), test_extension("memory")];
+        let resolved = resolve_delegate_extensions(parent, &DelegateSpec::default(), None).unwrap();
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn test_source_delegate_is_bounded_by_role_and_explicit_request() {
+        let parent = vec![
+            test_extension("developer"),
+            test_extension("memory"),
+            test_extension("summon"),
+        ];
+        let spec = DelegateSpec {
+            role_extensions: Some(vec!["developer".to_string(), "memory".to_string()]),
+            ..Default::default()
+        };
+
+        let role_default = resolve_delegate_extensions(parent.clone(), &spec, None).unwrap();
+        assert_eq!(
+            role_default
+                .iter()
+                .map(|ext| ext.name())
+                .collect::<Vec<_>>(),
+            vec!["developer", "memory"]
+        );
+
+        let narrowed =
+            resolve_delegate_extensions(parent.clone(), &spec, Some(&["memory".to_string()]))
+                .unwrap();
+        assert_eq!(narrowed[0].name(), "memory");
+
+        let error =
+            resolve_delegate_extensions(parent, &spec, Some(&["summon".to_string()])).unwrap_err();
+        assert!(error.contains("outside the role capability policy"));
+    }
+
+    #[test]
+    fn test_delegate_extension_must_exist_in_parent_session() {
+        let error = resolve_delegate_extensions(
+            vec![test_extension("developer")],
+            &DelegateSpec::default(),
+            Some(&["memory".to_string()]),
+        )
+        .unwrap_err();
+        assert!(error.contains("unavailable in the parent session"));
+    }
+
+    #[tokio::test]
+    async fn test_legacy_source_without_capability_policy_gets_no_extensions() {
+        let temp_dir = TempDir::new().unwrap();
+        let agents = temp_dir.path().join(".gosling/agents");
+        fs::create_dir_all(&agents).unwrap();
+        fs::write(
+            agents.join("reviewer.md"),
+            "---\nname: reviewer\n---\nReview without tools.",
+        )
+        .unwrap();
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let params = DelegateParams {
+            source: Some("reviewer".to_string()),
+            ..Default::default()
+        };
+        let spec = client
+            .build_delegate_spec(&params, temp_dir.path())
+            .await
+            .unwrap();
+        assert_eq!(spec.role_extensions, Some(Vec::new()));
     }
 
     #[test]

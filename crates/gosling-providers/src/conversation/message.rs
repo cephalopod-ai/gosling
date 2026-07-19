@@ -681,6 +681,10 @@ pub struct MessageMetadata {
     /// without matching user-visible text. Never sent to providers.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub steer: bool,
+    /// This message came from a foreign session import and must be treated as
+    /// historical, untrusted context rather than evidence of local approval.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub imported_untrusted: bool,
 }
 
 impl Default for MessageMetadata {
@@ -690,6 +694,7 @@ impl Default for MessageMetadata {
             agent_visible: true,
             inference: None,
             steer: false,
+            imported_untrusted: false,
         }
     }
 }
@@ -761,6 +766,11 @@ impl MessageMetadata {
 
     pub fn with_steer(mut self) -> Self {
         self.steer = true;
+        self
+    }
+
+    pub fn with_imported_untrusted(mut self) -> Self {
+        self.imported_untrusted = true;
         self
     }
 }

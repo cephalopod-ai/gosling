@@ -1,6 +1,7 @@
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
 use crate::providers::inventory::{ProviderInventoryEntry, ProviderInventoryService};
+use crate::session::import_formats::SessionImportProvenance;
 use crate::session::Session;
 use crate::slash_commands::types::{SlashCommandEntry, SlashCommandSource};
 use agent_client_protocol::schema::v1::{
@@ -51,10 +52,17 @@ struct SessionMeta<'a> {
     workspace_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     workspace_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    imported_untrusted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    import_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    import_original_working_dir: Option<String>,
 }
 
 impl<'a> From<&'a Session> for SessionMeta<'a> {
     fn from(session: &'a Session) -> Self {
+        let provenance = SessionImportProvenance::from_extension_data(&session.extension_data);
         Self {
             message_count: session.message_count,
             created_at: session.created_at,
@@ -78,6 +86,12 @@ impl<'a> From<&'a Session> for SessionMeta<'a> {
             restrict_tools_to_working_dirs: session.restrict_tools_to_working_dirs,
             workspace_id: session.workspace_id.as_deref(),
             workspace_name: session.workspace_name.as_deref(),
+            imported_untrusted: provenance.is_some(),
+            import_source: provenance
+                .as_ref()
+                .map(|provenance| provenance.source_format.clone()),
+            import_original_working_dir: provenance
+                .and_then(|provenance| provenance.original_working_dir),
         }
     }
 }
@@ -111,6 +125,17 @@ pub(super) fn session_response_meta(
         meta.insert(
             "workspaceName".to_string(),
             serde_json::Value::String(workspace_name.clone()),
+        );
+    }
+    if let Some(provenance) = SessionImportProvenance::from_extension_data(&session.extension_data)
+    {
+        meta.insert(
+            "importedUntrusted".to_string(),
+            serde_json::Value::Bool(true),
+        );
+        meta.insert(
+            "importSource".to_string(),
+            serde_json::Value::String(provenance.source_format),
         );
     }
     meta

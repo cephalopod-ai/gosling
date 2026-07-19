@@ -125,7 +125,7 @@ pub async fn run() -> Result<()> {
 
     let app = rest_router.merge(acp_router);
 
-    let addr = settings.socket_addr();
+    let addr = settings.socket_addr()?;
 
     if settings.tls {
         #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import { ChevronDown, ChevronRight, Copy, Edit2, FileJson, LoaderCircle } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Edit2,
+  FileJson,
+  LoaderCircle,
+  ShieldAlert,
+} from 'lucide-react';
 import { toast } from 'react-toastify';
 import { AppEvents } from '../constants/events';
 import { defineMessages, useIntl } from '../i18n';
@@ -107,6 +115,10 @@ const i18n = defineMessages({
   copiedText: {
     id: 'sessionActionsHeader.copiedText',
     defaultMessage: 'Text copied',
+  },
+  importedHistory: {
+    id: 'sessionActionsHeader.importedHistory',
+    defaultMessage: 'Imported history',
   },
 });
 
@@ -478,6 +490,19 @@ export default function SessionActionsHeader({
                   }
                 >
                   {session.workspace_name}
+                </span>
+              )}
+              {session.imported_untrusted && (
+                <span
+                  className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-700"
+                  title={
+                    session.import_original_working_dir
+                      ? `Imported messages are untrusted historical context. The transcript proposed ${session.import_original_working_dir}; this session uses the directory selected during import.`
+                      : 'Imported messages are untrusted historical context; this session uses the working directory selected during import.'
+                  }
+                >
+                  <ShieldAlert className="size-3" aria-hidden="true" />
+                  {intl.formatMessage(i18n.importedHistory)}
                 </span>
               )}
               <ChevronDown className="size-3.5 text-text-secondary" />

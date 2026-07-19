@@ -22,6 +22,7 @@ impl GoslingAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
+        reject_workspace_folder_policy_mutation(&session)?;
 
         if path == session.working_dir {
             return Ok(EmptyResponse {});
@@ -130,6 +131,7 @@ impl GoslingAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
+        reject_workspace_folder_policy_mutation(&session)?;
 
         let mut additional_working_dirs = session.additional_working_dirs.clone();
         if path != session.working_dir && !additional_working_dirs.contains(&path) {
@@ -166,6 +168,7 @@ impl GoslingAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
+        reject_workspace_folder_policy_mutation(&session)?;
 
         let additional_working_dirs: Vec<_> = session
             .additional_working_dirs
@@ -188,13 +191,15 @@ impl GoslingAcpAgent {
         req: SetSessionWorkingDirRestrictionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        self.session_manager
+        let session = self
+            .session_manager
             .get_session(session_id, false)
             .await
             .map_err(|_| {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
+        reject_workspace_folder_policy_mutation(&session)?;
 
         self.session_manager
             .update(session_id)
@@ -311,18 +316,28 @@ impl GoslingAcpAgent {
             SessionImportSource::Json => false,
             SessionImportSource::Nostr => true,
         };
-        let (data, session_type) = if is_nostr {
+        let (data, session_type, transport) = if is_nostr {
             (
                 import_nostr_session_json(&req.input).await?,
                 Some(SessionType::User),
+                crate::session::import_formats::SessionImportTransport::Nostr,
             )
         } else {
-            (req.input, None)
+            (
+                req.input,
+                None,
+                crate::session::import_formats::SessionImportTransport::Json,
+            )
         };
 
         let session = self
             .session_manager
-            .import_session(&data, session_type)
+            .import_session(
+                &data,
+                session_type,
+                std::path::PathBuf::from(req.working_dir),
+                transport,
+            )
             .await
             .internal_err()?;
 
@@ -603,6 +618,17 @@ impl GoslingAcpAgent {
     }
 }
 
+fn reject_workspace_folder_policy_mutation(
+    session: &Session,
+) -> Result<(), agent_client_protocol::Error> {
+    if session.workspace_id.is_some() {
+        return Err(agent_client_protocol::Error::invalid_params().data(
+            "workspace session folder policy is pinned; edit the workspace and start a new session",
+        ));
+    }
+    Ok(())
+}
+
 fn is_nostr_session_link(input: &str) -> bool {
     #[cfg(feature = "nostr")]
     {
@@ -661,4 +687,17 @@ struct NostrSessionShare {
     nevent: String,
     event_id: String,
     relays: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_session_folder_policy_cannot_be_mutated_in_place() {
+        let mut session = Session::default();
+        assert!(reject_workspace_folder_policy_mutation(&session).is_ok());
+        session.workspace_id = Some("workspace".to_string());
+        assert!(reject_workspace_folder_policy_mutation(&session).is_err());
+    }
 }

@@ -169,6 +169,7 @@ export type InferenceMetadata = {
 export type MessageMetadata = {
   agentVisible: boolean;
   inference?: InferenceMetadata | null;
+  importedUntrusted?: boolean;
   steer?: boolean;
   userVisible: boolean;
 };

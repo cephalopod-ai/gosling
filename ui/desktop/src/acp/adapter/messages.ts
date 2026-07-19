@@ -53,6 +53,7 @@ export function applyContentChunk(
       content: [content],
       metadata: {
         ...DEFAULT_VISIBLE_MESSAGE_METADATA,
+        ...(goslingMeta.importedUntrusted ? { importedUntrusted: true } : {}),
         ...(goslingMeta.steer ? { steer: true } : {}),
       },
     });

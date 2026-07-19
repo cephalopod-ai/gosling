@@ -34,12 +34,21 @@ import { getOverrideOriginForRequest } from './requestOrigin';
 import { acpWebSocketUrlFromHttpBase, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde } from './utils/pathUtils';
 import { assertPathWithinRoots, canonicalizePotentialPath } from './utils/rendererFileAccess';
+import { writeJsonFileAtomicSync, readJsonFileWithRecoverySync } from './utils/atomicJsonStore';
+import { RendererDirectoryGrantRegistry } from './utils/rendererDirectoryGrants';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
 import { errorMessage, formatErrorForLogging } from './utils/conversionUtils';
+import { readBoundedSessionImportFile } from './utils/sessionImport';
 import type { LegacySettings, Settings, SettingKey } from './utils/settings';
-import { defaultSettings, getKeyboardShortcuts, resolveStoredSettings } from './utils/settings';
+import {
+  getKeyboardShortcuts,
+  isSettingKey,
+  isSettingValue,
+  resolveStoredSettings,
+  setSettingValue,
+} from './utils/settings';
 import * as crypto from 'crypto';
 import * as yaml from 'yaml';
 import windowStateKeeper from 'electron-window-state';
@@ -174,6 +183,10 @@ function translateMenuLabels(items: MenuItem[]): void {
 
 // Settings management
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+const RENDERER_DIRECTORY_GRANTS_FILE = path.join(
+  app.getPath('userData'),
+  'renderer-directory-grants.json'
+);
 const STARTUP_LOGS_DIR = path.join(app.getPath('userData'), 'logs', 'startup');
 const BACKEND_PROCESS_REGISTRY_PATH = path.join(app.getPath('userData'), 'backend-processes.json');
 const validLanguageSettings = new Set<Settings['language']>([
@@ -205,6 +218,14 @@ function isValidLanguageSetting(value: unknown): value is Settings['language'] {
 // HTTP response), and synchronous disk reads there jank the whole UI. All
 // writes go through updateSettings(), which invalidates the cache.
 let settingsCache: Settings | null = null;
+let externalBackendSecret = '';
+let legacySecretRemovalNoticePending = false;
+let externalSecretPersistenceNoticePending = false;
+let settingsRecoveryNoticePending = false;
+
+function isLegacySettings(value: unknown): value is LegacySettings {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function getSettings(): Settings {
   if (settingsCache) {
@@ -212,53 +233,68 @@ function getSettings(): Settings {
   }
 
   if (fsSync.existsSync(SETTINGS_FILE)) {
-    let stored: LegacySettings;
     try {
-      const data = fsSync.readFileSync(SETTINGS_FILE, 'utf8');
-      stored = JSON.parse(data) as LegacySettings;
+      const storedResult = readJsonFileWithRecoverySync(SETTINGS_FILE, isLegacySettings);
+      if (!storedResult) throw new Error('Settings file disappeared while loading');
+      const {
+        settings,
+        migratedLegacyExternalBackend,
+        removedLegacyManagedSecretProfiles,
+        removedPersistedExternalSecret,
+        legacyExternalBackendSecret,
+      } = resolveStoredSettings(storedResult.value);
+      externalBackendSecret ||= legacyExternalBackendSecret;
+      legacySecretRemovalNoticePending ||= removedLegacyManagedSecretProfiles;
+      externalSecretPersistenceNoticePending ||= removedPersistedExternalSecret;
+      settingsCache = settings;
+      settingsRecoveryNoticePending ||= storedResult.recoveredFromPrevious;
+      if (
+        storedResult.recoveredFromPrevious ||
+        migratedLegacyExternalBackend ||
+        removedLegacyManagedSecretProfiles ||
+        removedPersistedExternalSecret
+      ) {
+        writeJsonFileAtomicSync(SETTINGS_FILE, settings, { preservePrevious: false });
+      }
+      return settingsCache;
     } catch (err) {
       console.error('Failed to read settings.json, using defaults:', err);
-      return defaultSettings;
+      settingsRecoveryNoticePending = true;
+      settingsCache = resolveStoredSettings({}).settings;
+      return settingsCache;
     }
-    const { settings, migratedLegacyExternalBackend } = resolveStoredSettings(stored);
-    settingsCache = settings;
-    if (migratedLegacyExternalBackend) {
-      try {
-        fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-      } catch (err) {
-        console.error('Failed to persist migrated settings.json:', err);
-      }
-    }
-    return settingsCache;
   }
-  return defaultSettings;
+  settingsCache = resolveStoredSettings({}).settings;
+  return settingsCache;
 }
 
 function resolveRendererPath(filePath: string): string {
   return path.resolve(expandTilde(filePath));
 }
 
-function rendererFileRoots(): string[] {
-  const roots = new Set<string>();
-  roots.add(path.resolve(app.getPath('userData')));
-  for (const dir of loadRecentDirs()) {
-    roots.add(path.resolve(dir));
-  }
-
-  const archiveFolder = getSettings().archiveFolder;
-  if (archiveFolder) {
-    roots.add(resolveRendererPath(archiveFolder));
-  }
-
-  return [...roots];
+const rendererDirectoryGrants = new RendererDirectoryGrantRegistry(RENDERER_DIRECTORY_GRANTS_FILE);
+try {
+  rendererDirectoryGrants.load();
+} catch (error) {
+  console.error('Failed to load renderer directory grants; starting with no grants:', error);
 }
 
-async function assertRendererFileAccess(filePath: string): Promise<string> {
+function rendererFileRoots(webContentsId: number): string[] {
+  return rendererDirectoryGrants.rootsFor(webContentsId);
+}
+
+function firstGrantedRecentDirectory(webContentsId = 0): string | undefined {
+  return loadRecentDirs().find((dir) =>
+    rendererDirectoryGrants.isGrantedDirectory(webContentsId, dir)
+  );
+}
+
+async function assertRendererFileAccess(webContentsId: number, filePath: string): Promise<string> {
   const resolvedPath = resolveRendererPath(filePath);
-  return assertPathWithinRoots(resolvedPath, rendererFileRoots());
+  return assertPathWithinRoots(resolvedPath, rendererFileRoots(webContentsId));
 }
 
-const rendererArtifactFileGrants = new Set<string>();
+const rendererArtifactFileGrants = new Map<number, Set<string>>();
 const artifactRoutingRegistry = new ArtifactRoutingRegistry();
 const ARTIFACT_PRODUCT_TYPES = new Set([
   'code',
@@ -273,19 +309,21 @@ const ARTIFACT_PRODUCT_TYPES = new Set([
 ]);
 
 async function assertRendererArtifactFileAccess(
+  webContentsId: number,
   filePath: string,
   baseDirectory?: string
 ): Promise<string> {
   const candidate =
     baseDirectory && !path.isAbsolute(filePath) ? path.join(baseDirectory, filePath) : filePath;
   const resolvedPath = await canonicalizePotentialPath(resolveRendererPath(candidate));
-  if (rendererArtifactFileGrants.has(resolvedPath)) {
+  if (rendererArtifactFileGrants.get(webContentsId)?.has(resolvedPath)) {
     return resolvedPath;
   }
-  return assertRendererFileAccess(resolvedPath);
+  return assertRendererFileAccess(webContentsId, resolvedPath);
 }
 
 async function validateArtifactRoutingConfig(
+  webContentsId: number,
   config: ArtifactRoutingConfig
 ): Promise<ArtifactRoutingConfig | null> {
   if (
@@ -310,7 +348,7 @@ async function validateArtifactRoutingConfig(
       continue;
     }
     try {
-      const outputPath = await assertRendererFileAccess(output.path);
+      const outputPath = await assertRendererFileAccess(webContentsId, output.path);
       const stats = await fs.stat(outputPath);
       if (stats.isDirectory()) outputs.push({ ...output, path: outputPath });
     } catch {
@@ -376,7 +414,7 @@ function updateSettings(modifier: (settings: Settings) => void): void {
   const settings = getSettings();
   modifier(settings);
   try {
-    fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    writeJsonFileAtomicSync(SETTINGS_FILE, settings);
   } finally {
     settingsCache = null;
   }
@@ -769,19 +807,18 @@ async function createResumeChatWindow(parsedUrl: URL, dir?: string): Promise<boo
 async function handleProtocolUrl(url: string, parsedUrl: URL) {
   if (!url) return;
 
-  const recentDirs = loadRecentDirs();
-  const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+  const openDir = firstGrantedRecentDirectory();
 
   if (parsedUrl.hostname === 'new-session') {
     const prompt = parsedUrl.searchParams.get('prompt') || undefined;
     await createChat(app, {
-      dir: openDir || undefined,
+      dir: openDir,
       initialMessage: prompt,
       initialMessageNoAutoSubmit: prompt !== undefined,
     });
     return;
   } else if (parsedUrl.hostname === 'resume') {
-    await createResumeChatWindow(parsedUrl, openDir || undefined);
+    await createResumeChatWindow(parsedUrl, openDir);
     return;
   } else {
     const existingWindows = BrowserWindow.getAllWindows();
@@ -793,7 +830,7 @@ async function handleProtocolUrl(url: string, parsedUrl: URL) {
       }
       targetWindow.focus();
     } else {
-      targetWindow = await createChat(app, { dir: openDir || undefined });
+      targetWindow = await createChat(app, { dir: openDir });
     }
 
     if (!targetWindow) return;
@@ -831,8 +868,7 @@ app.on('open-url', async (_event, url) => {
 
     await app.whenReady();
 
-    const recentDirs = loadRecentDirs();
-    const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
+    const openDir = firstGrantedRecentDirectory();
 
     // Handle new-session URL by creating a fresh chat window
     if (parsedUrl.hostname === 'new-session') {
@@ -840,7 +876,7 @@ app.on('open-url', async (_event, url) => {
       openUrlHandledLaunch = true;
       const prompt = parsedUrl.searchParams.get('prompt') || undefined;
       await createChat(app, {
-        dir: openDir || undefined,
+        dir: openDir,
         initialMessage: prompt,
         initialMessageNoAutoSubmit: prompt !== undefined,
       });
@@ -849,7 +885,7 @@ app.on('open-url', async (_event, url) => {
 
     if (parsedUrl.hostname === 'resume') {
       log.info('[Main] Detected resume URL, creating session resume window');
-      openUrlHandledLaunch = await createResumeChatWindow(parsedUrl, openDir || undefined);
+      openUrlHandledLaunch = await createResumeChatWindow(parsedUrl, openDir);
       return;
     }
 
@@ -864,7 +900,7 @@ app.on('open-url', async (_event, url) => {
       }
     } else {
       openUrlHandledLaunch = true;
-      const newWindow = await createChat(app, { dir: openDir || undefined });
+      const newWindow = await createChat(app, { dir: openDir });
       if (!newWindow) return;
       queuePendingDeepLink(newWindow.id, url);
     }
@@ -916,6 +952,7 @@ async function handleFileOpen(filePath: string) {
 
     // Add to recent directories
     addRecentDir(targetDir);
+    rendererDirectoryGrants.grantSelectedPath(0, targetDir);
 
     // Create new window for the directory
     const newWindow = await createChat(app, { dir: targetDir });
@@ -1034,13 +1071,6 @@ const getExternalBackendFromEnv = (): ExternalBackend | null => {
   };
 };
 
-const getServerSecret = (settings: Settings): string => {
-  if (settings.externalGoslingd?.enabled && settings.externalGoslingd.secret) {
-    return settings.externalGoslingd.secret;
-  }
-  return GENERATED_SECRET;
-};
-
 const getActiveExternalBackend = (settings: Settings): ExternalBackend | null => {
   const envBackend = getExternalBackendFromEnv();
   if (envBackend) {
@@ -1048,10 +1078,15 @@ const getActiveExternalBackend = (settings: Settings): ExternalBackend | null =>
   }
 
   if (settings.externalGoslingd?.enabled && settings.externalGoslingd.url) {
+    if (!externalBackendSecret) {
+      throw new Error(
+        'Enter the external backend secret in Settings for this Gosling launch. It is intentionally not persisted in desktop settings.'
+      );
+    }
     return {
       source: 'settings',
       url: settings.externalGoslingd.url,
-      secret: getServerSecret(settings),
+      secret: externalBackendSecret,
       certFingerprint: settings.externalGoslingd.certFingerprint,
     };
   }
@@ -1421,6 +1456,7 @@ const createChat = async (
         partition: MAIN_WINDOW_SESSION_PARTITION,
       },
     });
+    rendererDirectoryGrants.grantSelectedPath(mainWindow.webContents.id, workingDir, false);
     installBackendCertificateVerifier(mainWindow.webContents.session);
     installArtifactDownloadRouter(
       mainWindow.webContents.session,
@@ -1538,6 +1574,8 @@ const createChat = async (
   const webContentsId = mainWindow.webContents.id;
   mainWindow.webContents.once('destroyed', () => {
     artifactRoutingRegistry.clear(webContentsId);
+    rendererArtifactFileGrants.delete(webContentsId);
+    rendererDirectoryGrants.clearTransient(webContentsId);
   });
   const url = getAppUrl();
 
@@ -1773,9 +1811,7 @@ const showWindow = async () => {
 
   if (windows.length === 0) {
     log.info('No windows are open, creating a new one...');
-    const recentDirs = loadRecentDirs();
-    const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-    await createChat(app, { dir: openDir || undefined });
+    await createChat(app, { dir: firstGrantedRecentDirectory() });
     return;
   }
 
@@ -1804,7 +1840,9 @@ const showWindow = async () => {
 };
 
 const buildRecentFilesMenu = () => {
-  const recentDirs = loadRecentDirs();
+  const recentDirs = loadRecentDirs().filter((dir) =>
+    rendererDirectoryGrants.isGrantedDirectory(0, dir)
+  );
   return recentDirs.map((dir) => ({
     label: dir,
     click: async () => {
@@ -1891,6 +1929,7 @@ const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
     }
 
     addRecentDir(dirToAdd);
+    rendererDirectoryGrants.grantSelectedPath(currentWindow?.webContents.id ?? 0, dirToAdd);
 
     await createChat(app, { dir: dirToAdd });
   }
@@ -1970,11 +2009,15 @@ ipcMain.handle(desktopCommandChannels.openExternal, async (_event, url: string) 
   await openExternalIfSafe(url);
 });
 
-ipcMain.handle('directory-chooser', async () => {
-  return dialog.showOpenDialog({
+ipcMain.handle('directory-chooser', async (event) => {
+  const result = await dialog.showOpenDialog({
     properties: ['openDirectory', 'createDirectory'],
     defaultPath: os.homedir(),
   });
+  if (!result.canceled && result.filePaths[0]) {
+    rendererDirectoryGrants.grantSelectedPath(event.sender.id, result.filePaths[0]);
+  }
+  return result;
 });
 
 ipcMain.handle('add-recent-dir', (_event, dir: string) => {
@@ -1987,68 +2030,62 @@ ipcMain.handle('list-recent-dirs', () => {
   return loadRecentDirs();
 });
 
-ipcMain.handle('list-git-worktree-dirs', async (_event, dir: string) => {
-  return await listGitWorktreeDirs(dir);
+ipcMain.handle('list-git-worktree-dirs', async (event, dir: string) => {
+  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
+  return await listGitWorktreeDirs(authorizedDir);
 });
 
-ipcMain.handle('get-setting', (_event, key: SettingKey) => {
-  const settings = getSettings();
+function rendererSettingValue(settings: Settings, key: SettingKey): Settings[SettingKey] {
+  if (key === 'externalGoslingd') {
+    return {
+      ...settings.externalGoslingd,
+      secret: '',
+      secretConfigured: externalBackendSecret.length > 0,
+    };
+  }
   return settings[key];
+}
+
+ipcMain.handle('get-setting', (_event, key: unknown) => {
+  if (!isSettingKey(key)) throw new Error('Invalid setting key');
+  const settings = getSettings();
+  return rendererSettingValue(settings, key);
 });
 
-// Valid setting keys for runtime validation
-const validSettingKeys: Set<SettingKey> = new Set([
-  'showMenuBarIcon',
-  'showDockIcon',
-  'enableWakelock',
-  'enableNotifications',
-  'spellcheckEnabled',
-  'archiveFolder',
-  'archivedSessionFiles',
-  'externalGoslingd',
-  'managedSecretProfiles',
-  'globalShortcut',
-  'keyboardShortcuts',
-  'theme',
-  'useSystemTheme',
-  'language',
-  'responseStyle',
-  'showPricing',
-  'seenAnnouncementIds',
-  'disableAutoDownload',
-]);
-
-ipcMain.handle('get-settings', (_event, keys: SettingKey[]) => {
+ipcMain.handle('get-settings', (_event, keys: unknown) => {
+  if (!Array.isArray(keys) || keys.length > 64 || !keys.every(isSettingKey)) {
+    throw new Error('Invalid settings key list');
+  }
   const settings = getSettings();
   const values: Record<string, unknown> = {};
 
   for (const key of keys) {
-    if (!validSettingKeys.has(key)) {
-      console.error(`Invalid setting key rejected: ${key}`);
-      continue;
-    }
-    values[key] = settings[key];
+    values[key] = rendererSettingValue(settings, key);
   }
 
   return values;
 });
 
-ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
-  // Validate key at runtime to prevent prototype pollution
-  if (!validSettingKeys.has(key)) {
-    console.error(`Invalid setting key rejected: ${key}`);
-    return;
-  }
+ipcMain.handle('set-setting', (_event, key: unknown, value: unknown) => {
+  if (!isSettingKey(key)) throw new Error('Invalid setting key');
 
-  if (key === 'language' && !isValidLanguageSetting(value)) {
-    console.error(`Invalid language setting rejected: ${String(value)}`);
-    return;
+  if (key === 'externalGoslingd') {
+    if (!isSettingValue('externalGoslingd', value)) throw new Error('Invalid setting value');
+    if (value.secret) externalBackendSecret = value.secret;
+    const persistedValue: Settings['externalGoslingd'] = {
+      ...value,
+      secret: '',
+      secretConfigured: externalBackendSecret.length > 0,
+    };
+    updateSettings((settings) => {
+      setSettingValue(settings, 'externalGoslingd', persistedValue);
+    });
+  } else {
+    if (!isSettingValue(key, value)) throw new Error('Invalid setting value');
+    updateSettings((settings) => {
+      setSettingValue(settings, key, value as Settings[typeof key]);
+    });
   }
-
-  const settings = getSettings();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (settings as any)[key] = value;
-  fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 
   if (key === 'language') {
     appConfig.GOSLING_LOCALE = getConfiguredGoslingLocale();
@@ -2060,7 +2097,7 @@ ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
   }
 
   if (key === 'disableAutoDownload') {
-    setAutoDownloadDisabled(value as boolean);
+    setAutoDownloadDisabled(value === true);
   }
 });
 
@@ -2276,7 +2313,7 @@ ipcMain.handle('get-is-fullscreen', (event) => {
 });
 
 // Add file/directory selection handler
-ipcMain.handle('select-file-or-directory', async (_event, defaultPath?: string) => {
+ipcMain.handle('select-file-or-directory', async (event, defaultPath?: string) => {
   const dialogOptions: OpenDialogOptions = {
     properties: process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'],
   };
@@ -2305,12 +2342,14 @@ ipcMain.handle('select-file-or-directory', async (_event, defaultPath?: string) 
   const result = (await dialog.showOpenDialog(dialogOptions)) as unknown as OpenDialogReturnValue;
 
   if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
+    const selectedPath = result.filePaths[0];
+    rendererDirectoryGrants.grantSelectedPath(event.sender.id, selectedPath);
+    return selectedPath;
   }
   return null;
 });
 
-ipcMain.handle('select-artifact-file', async (_event, defaultPath?: string) => {
+ipcMain.handle('select-artifact-file', async (event, defaultPath?: string) => {
   const result = await dialog.showOpenDialog({
     properties: ['openFile'],
     defaultPath: defaultPath ? expandTilde(defaultPath) : undefined,
@@ -2319,7 +2358,9 @@ ipcMain.handle('select-artifact-file', async (_event, defaultPath?: string) => {
     return null;
   }
   const selectedPath = await canonicalizePotentialPath(resolveRendererPath(result.filePaths[0]));
-  rendererArtifactFileGrants.add(selectedPath);
+  const grants = rendererArtifactFileGrants.get(event.sender.id) ?? new Set<string>();
+  grants.add(selectedPath);
+  rendererArtifactFileGrants.set(event.sender.id, grants);
   return selectedPath;
 });
 
@@ -2343,7 +2384,7 @@ ipcMain.handle('select-import-session-file', async () => {
   }
   const filePath = result.filePaths[0];
   try {
-    const contents = await fs.readFile(filePath, 'utf8');
+    const contents = await readBoundedSessionImportFile(filePath);
     return { filePath, contents };
   } catch (err) {
     return { filePath, contents: '', error: errorMessage(err) };
@@ -2407,9 +2448,9 @@ ipcMain.handle('check-ollama', async () => {
   }
 });
 
-ipcMain.handle('read-file', async (_event, filePath) => {
+ipcMain.handle('read-file', async (event, filePath) => {
   try {
-    const expandedPath = await assertRendererFileAccess(filePath);
+    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
     const buffer = await fs.readFile(expandedPath);
     return { file: buffer.toString('utf8'), filePath: expandedPath, error: null, found: true };
   } catch (error) {
@@ -2423,9 +2464,13 @@ ipcMain.handle('read-file', async (_event, filePath) => {
   }
 });
 
-ipcMain.handle('read-artifact-file', async (_event, filePath: string, baseDirectory?: string) => {
+ipcMain.handle('read-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
   try {
-    const resolvedPath = await assertRendererArtifactFileAccess(filePath, baseDirectory);
+    const resolvedPath = await assertRendererArtifactFileAccess(
+      event.sender.id,
+      filePath,
+      baseDirectory
+    );
     const stats = await fs.stat(resolvedPath);
     if (!stats.isFile()) {
       throw new Error('The selected output is not a file');
@@ -2466,19 +2511,27 @@ ipcMain.handle('read-artifact-file', async (_event, filePath: string, baseDirect
   }
 });
 
-ipcMain.handle('open-artifact-file', async (_event, filePath: string, baseDirectory?: string) => {
-  const resolvedPath = await assertRendererArtifactFileAccess(filePath, baseDirectory);
+ipcMain.handle('open-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
+  const resolvedPath = await assertRendererArtifactFileAccess(
+    event.sender.id,
+    filePath,
+    baseDirectory
+  );
   return (await shell.openPath(resolvedPath)) === '';
 });
 
-ipcMain.handle('reveal-artifact-file', async (_event, filePath: string, baseDirectory?: string) => {
-  const resolvedPath = await assertRendererArtifactFileAccess(filePath, baseDirectory);
+ipcMain.handle('reveal-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
+  const resolvedPath = await assertRendererArtifactFileAccess(
+    event.sender.id,
+    filePath,
+    baseDirectory
+  );
   shell.showItemInFolder(resolvedPath);
 });
 
-ipcMain.handle('write-file', async (_event, filePath, content) => {
+ipcMain.handle('write-file', async (event, filePath, content) => {
   try {
-    const expandedPath = await assertRendererFileAccess(filePath);
+    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
     await fs.writeFile(expandedPath, content, { encoding: 'utf8' });
     return true;
   } catch (error) {
@@ -2487,9 +2540,9 @@ ipcMain.handle('write-file', async (_event, filePath, content) => {
   }
 });
 
-ipcMain.handle('delete-file', async (_event, filePath) => {
+ipcMain.handle('delete-file', async (event, filePath) => {
   try {
-    const expandedPath = await assertRendererFileAccess(filePath);
+    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
     await fs.unlink(expandedPath);
     return true;
   } catch (error) {
@@ -2499,9 +2552,9 @@ ipcMain.handle('delete-file', async (_event, filePath) => {
 });
 
 // Enhanced file operations
-ipcMain.handle('ensure-directory', async (_event, dirPath) => {
+ipcMain.handle('ensure-directory', async (event, dirPath) => {
   try {
-    const expandedPath = await assertRendererFileAccess(dirPath);
+    const expandedPath = await assertRendererFileAccess(event.sender.id, dirPath);
     await fs.mkdir(expandedPath, { recursive: true });
     return true;
   } catch (error) {
@@ -2510,9 +2563,9 @@ ipcMain.handle('ensure-directory', async (_event, dirPath) => {
   }
 });
 
-ipcMain.handle('list-files', async (_event, dirPath, extension) => {
+ipcMain.handle('list-files', async (event, dirPath, extension) => {
   try {
-    const expandedPath = await assertRendererFileAccess(dirPath);
+    const expandedPath = await assertRendererFileAccess(event.sender.id, dirPath);
     const files = await fs.readdir(expandedPath);
     if (extension) {
       return files.filter((file) => file.endsWith(extension));
@@ -2528,9 +2581,10 @@ ipcMain.handle('show-message-box', async (_event, options) => {
   return dialog.showMessageBox(options);
 });
 
-ipcMain.handle('save-artifact', async (_event, request: ArtifactSaveRequest) => {
+ipcMain.handle('save-artifact', async (event, request: ArtifactSaveRequest) => {
   return saveArtifactWithDialog(request, {
-    resolveSource: assertRendererArtifactFileAccess,
+    resolveSource: (filePath, baseDirectory) =>
+      assertRendererArtifactFileAccess(event.sender.id, filePath, baseDirectory),
     showSaveDialog: (options) => dialog.showSaveDialog(options),
   });
 });
@@ -2538,7 +2592,9 @@ ipcMain.handle('save-artifact', async (_event, request: ArtifactSaveRequest) => 
 ipcMain.handle(
   'set-artifact-routing-config',
   async (event, config: ArtifactRoutingConfig | null): Promise<boolean> => {
-    return artifactRoutingRegistry.update(event.sender.id, config, validateArtifactRoutingConfig);
+    return artifactRoutingRegistry.update(event.sender.id, config, (candidate) =>
+      validateArtifactRoutingConfig(event.sender.id, candidate)
+    );
   }
 );
 
@@ -2555,8 +2611,7 @@ ipcMain.handle('get-allowed-extensions', async () => {
 });
 
 const createNewWindow = async (app: App, dir?: string | null) => {
-  const recentDirs = loadRecentDirs();
-  const openDir = dir || (recentDirs.length > 0 ? recentDirs[0] : undefined);
+  const openDir = dir || firstGrantedRecentDirectory();
   return await createChat(app, { dir: openDir });
 };
 
@@ -3012,39 +3067,48 @@ async function appMain() {
   });
 
   ipcMain.on(desktopCommandChannels.createChatWindow, (event, options = {}) => {
-    const { query, dir, resumeSessionId, viewType } = options;
+    void (async () => {
+      const { query, dir, resumeSessionId, viewType } = options;
+      const resolvedDir =
+        typeof dir === 'string' && dir.trim()
+          ? await assertRendererFileAccess(event.sender.id, dir)
+          : firstGrantedRecentDirectory(event.sender.id);
 
-    let resolvedDir = dir;
-    if (!resolvedDir?.trim()) {
-      const recentDirs = loadRecentDirs();
-      resolvedDir = recentDirs.length > 0 ? recentDirs[0] : undefined;
-    }
+      const isFromLauncher = query && !resumeSessionId && !viewType;
 
-    const isFromLauncher = query && !resumeSessionId && !viewType;
+      if (isFromLauncher) {
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const launcherWindowId = senderWindow?.id;
+        const allWindows = BrowserWindow.getAllWindows();
 
-    if (isFromLauncher) {
-      const senderWindow = BrowserWindow.fromWebContents(event.sender);
-      const launcherWindowId = senderWindow?.id;
-      const allWindows = BrowserWindow.getAllWindows();
+        const existingWindows = allWindows.filter(
+          (win) => !win.isDestroyed() && win.id !== launcherWindowId
+        );
 
-      const existingWindows = allWindows.filter(
-        (win) => !win.isDestroyed() && win.id !== launcherWindowId
-      );
-
-      if (existingWindows.length > 0) {
-        const targetWindow = existingWindows[0];
-        targetWindow.show();
-        targetWindow.focus();
-        targetWindow.webContents.send(rendererEventChannels.setInitialMessage, query);
-        return;
+        if (existingWindows.length > 0) {
+          const targetWindow = existingWindows[0];
+          targetWindow.show();
+          targetWindow.focus();
+          targetWindow.webContents.send(rendererEventChannels.setInitialMessage, query);
+          return;
+        }
       }
-    }
 
-    createChat(app, {
-      initialMessage: query,
-      dir: resolvedDir,
-      resumeSessionId,
-      viewType,
+      await createChat(app, {
+        initialMessage: query,
+        dir: resolvedDir,
+        resumeSessionId,
+        viewType,
+      });
+    })().catch((error) => {
+      log.warn('[Main] Rejected create-chat request:', errorMessage(error));
+      const senderWindow = BrowserWindow.fromWebContents(event.sender);
+      if (senderWindow && !senderWindow.isDestroyed()) {
+        senderWindow.webContents.send(
+          rendererEventChannels.fatalError,
+          'The selected working directory must be chosen or relinked before starting a chat.'
+        );
+      }
     });
   });
 
@@ -3196,9 +3260,9 @@ async function appMain() {
     event.returnValue = getConfiguredGoslingLocale();
   });
 
-  ipcMain.handle('open-directory-in-explorer', async (_event, directoryPath: string) => {
+  ipcMain.handle('open-directory-in-explorer', async (event, directoryPath: string) => {
     try {
-      const resolvedPath = await assertRendererFileAccess(directoryPath);
+      const resolvedPath = await assertRendererFileAccess(event.sender.id, directoryPath);
       const errorMessage = await shell.openPath(resolvedPath);
       return errorMessage === '';
     } catch (error) {
@@ -3211,6 +3275,38 @@ async function appMain() {
 app.whenReady().then(async () => {
   try {
     await appMain();
+    if (
+      legacySecretRemovalNoticePending ||
+      externalSecretPersistenceNoticePending ||
+      settingsRecoveryNoticePending
+    ) {
+      const details = [];
+      if (settingsRecoveryNoticePending) {
+        details.push(
+          'Desktop settings were malformed or interrupted. Gosling recovered the previous-good snapshot when available and otherwise loaded safe defaults.'
+        );
+      }
+      if (legacySecretRemovalNoticePending) {
+        details.push(
+          'Legacy Local Secret Profiles were removed because they stored values in plaintext and inserted them into model prompts. Configure provider or workspace credential profiles instead.'
+        );
+      }
+      if (externalSecretPersistenceNoticePending) {
+        details.push(
+          'The external backend secret was removed from settings.json. It remains available only for this launch and must be re-entered after restarting Gosling.'
+        );
+      }
+      await dialog.showMessageBox({
+        type: 'warning',
+        title: 'Credential security update',
+        message: 'Gosling removed insecure persisted credential data.',
+        detail: details.join('\n\n'),
+        buttons: ['OK'],
+      });
+      legacySecretRemovalNoticePending = false;
+      externalSecretPersistenceNoticePending = false;
+      settingsRecoveryNoticePending = false;
+    }
   } catch (error) {
     dialog.showErrorBox('Gosling Error', `Failed to create main window: ${error}`);
     app.quit();

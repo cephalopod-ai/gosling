@@ -897,6 +897,9 @@ pub struct ExportSessionResponse {
 pub struct ImportSessionRequest {
     pub input: String,
     pub source: SessionImportSource,
+    /// Explicit user-selected directory that will become the imported
+    /// session's only initial filesystem authority root.
+    pub working_dir: String,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

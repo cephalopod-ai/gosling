@@ -294,8 +294,13 @@ pub async fn handle_session_export(
     Ok(())
 }
 
-pub async fn handle_session_import(input: String, nostr: bool) -> Result<()> {
-    let json = if nostr || gosling::session::is_session_share_deeplink(&input) {
+pub async fn handle_session_import(
+    input: String,
+    nostr: bool,
+    working_dir: Option<PathBuf>,
+) -> Result<()> {
+    let is_nostr = nostr || gosling::session::is_session_share_deeplink(&input);
+    let json = if is_nostr {
         #[cfg(feature = "nostr")]
         {
             nostr_share::import_session_json_from_deeplink(&input).await?
@@ -303,9 +308,11 @@ pub async fn handle_session_import(input: String, nostr: bool) -> Result<()> {
         #[cfg(not(feature = "nostr"))]
         return Err(anyhow::anyhow!("gosling was not built with nostr support"));
     } else {
-        fs::read_to_string(&input)
-            .with_context(|| format!("Failed to read session import file: {input}"))?
+        gosling::session::import_formats::read_session_import_file(Path::new(&input))?
     };
+
+    let working_dir = working_dir.unwrap_or(std::env::current_dir()?);
+    let working_dir = gosling::session::import_formats::validate_import_working_dir(&working_dir)?;
 
     let format = gosling::session::import_formats::detect_format(&json);
     let label = match format {
@@ -315,10 +322,19 @@ pub async fn handle_session_import(input: String, nostr: bool) -> Result<()> {
         gosling::session::import_formats::ImportFormat::Pi => "Pi",
     };
     println!("Detected format: {}", label);
+    println!(
+        "Imported session working directory: {}",
+        working_dir.display()
+    );
 
     let session_manager = SessionManager::instance();
+    let transport = if is_nostr {
+        gosling::session::import_formats::SessionImportTransport::Nostr
+    } else {
+        gosling::session::import_formats::SessionImportTransport::CliFile
+    };
     let session = session_manager
-        .import_session(&json, Some(SessionType::User))
+        .import_session(&json, Some(SessionType::User), working_dir, transport)
         .await?;
 
     println!("Session imported:");

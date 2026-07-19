@@ -1513,6 +1513,11 @@ export type ExportSessionResponse_unstable = {
 export type ImportSessionRequest_unstable = {
     input: string;
     source: SessionImportSource;
+    /**
+     * Explicit user-selected directory that will become the imported
+     * session's only initial filesystem authority root.
+     */
+    workingDir: string;
 };
 
 export type SessionImportSource = 'auto' | 'json' | 'nostr';

@@ -158,10 +158,10 @@ local until a separate push is authorized.
   `crates/gosling/src/agents/extension_manager.rs`,
   `crates/gosling/src/agents/platform_extensions/summon.rs`, and
   `ui/desktop/src/main.ts`.
-- [ ] Run the added Rust regression suite, workspace build, and Clippy before
-  merge when explicitly authorized. This campaign ran required formatting and
-  UI verification, but repository policy reserved Cargo build/test/Clippy for
-  an explicit request.
+- [x] Run the added Rust regression suite, workspace build, and Clippy before
+  merge when explicitly authorized. The 2026-07-18 twelve-lens follow-up ran
+  the workspace build, serialized `gosling` library suite, related crate suites,
+  and all-target Clippy successfully.
 
 ## Defect-repair campaign — 2026-07-16
 
@@ -197,3 +197,23 @@ OPS-002, OPS-003, OPS-004, OPS-005, INV-001, INV-002, GUI-002, GUI-004,
 GUI-005, SEC-003, CON-001); deferred 5 with stated reasoning (ORCH-002,
 RES-002, RES-003, REC-001, REC-002), same sandbox build limitations as
 above for `gosling-server` and `ui/desktop`.
+
+## Twelve-lens audit and defect-repair campaign — 2026-07-18
+
+Audit report and machine-readable inventory:
+[`reports/2026-07-18-twelve-lens-agent-skills-audit.md`](../reports/2026-07-18-twelve-lens-agent-skills-audit.md)
+and
+[`reports/2026-07-18-twelve-lens-agent-skills-findings.json`](../reports/2026-07-18-twelve-lens-agent-skills-findings.json).
+Repair plan and execution evidence:
+[`reports/2026-07-18-twelve-lens-defect-campaign-plan.md`](../reports/2026-07-18-twelve-lens-defect-campaign-plan.md)
+and
+[`reports/2026-07-18-twelve-lens-defect-campaign-session-log.md`](../reports/2026-07-18-twelve-lens-defect-campaign-session-log.md).
+
+The catalog-driven audit froze 10 findings. All 10 were repaired: plaintext
+prompt secret profiles, renderer filesystem self-authorization, unenforced
+workspace folder access, delegated-role capability inheritance, lossy JSONL
+imports, imported transcript authority, unvalidated settings IPC, tear-prone
+Desktop JSON writes, unbounded import payloads, and invalid-host startup panic.
+The reports retain the full threat analysis, repair stages, regression proof,
+and the one upstream Nostr allocation limitation. No campaign commit or remote
+mutation was performed.

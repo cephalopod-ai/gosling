@@ -13,7 +13,6 @@ import { Button } from '../../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
 import { defineMessages, useIntl } from '../../../i18n';
-import ManagedSecretProfilesSection from './ManagedSecretProfilesSection';
 
 const i18n = defineMessages({
   title: {
@@ -288,8 +287,6 @@ export default function AuthSettingsSection() {
           )}
         </CardContent>
       </Card>
-
-      <ManagedSecretProfilesSection />
 
       <ConfirmationModal
         isOpen={!!secretToDelete}

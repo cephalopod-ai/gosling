@@ -54,6 +54,12 @@ pub struct SubagentRunParams {
 
 pub async fn run_subagent_task(params: SubagentRunParams) -> Result<String, anyhow::Error> {
     let return_last_only = params.return_last_only;
+    let resolved_extensions = params
+        .task_config
+        .extensions
+        .iter()
+        .map(crate::agents::ExtensionConfig::name)
+        .collect::<Vec<_>>();
     let (messages, final_output, failed_extensions) =
         get_agent_messages(params).await.map_err(|e| {
             ErrorData::new(
@@ -68,10 +74,17 @@ pub async fn run_subagent_task(params: SubagentRunParams) -> Result<String, anyh
         None => extract_response_text(&messages, return_last_only),
     };
 
-    Ok(prepend_extension_failure_warning(
-        response,
-        &failed_extensions,
-    ))
+    let response = prepend_extension_failure_warning(response, &failed_extensions);
+    Ok(prepend_resolved_authority(response, &resolved_extensions))
+}
+
+fn prepend_resolved_authority(response: String, extensions: &[String]) -> String {
+    let authority = if extensions.is_empty() {
+        "none".to_string()
+    } else {
+        extensions.join(", ")
+    };
+    format!("[Resolved delegate authority: extensions = {authority}]\n\n{response}")
 }
 
 /// Requested extensions the subagent couldn't load run with a silently
@@ -397,6 +410,21 @@ mod tests {
         assert!(
             response.ends_with("done"),
             "the original response text must still be present: {response}"
+        );
+    }
+
+    #[test]
+    fn resolved_authority_is_disclosed_for_empty_and_nonempty_extension_sets() {
+        assert_eq!(
+            super::prepend_resolved_authority("done".to_string(), &[]),
+            "[Resolved delegate authority: extensions = none]\n\ndone"
+        );
+        assert_eq!(
+            super::prepend_resolved_authority(
+                "done".to_string(),
+                &["developer".to_string(), "memory".to_string()],
+            ),
+            "[Resolved delegate authority: extensions = developer, memory]\n\ndone"
         );
     }
 }

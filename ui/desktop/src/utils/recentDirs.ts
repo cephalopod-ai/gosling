@@ -1,6 +1,7 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { app } from 'electron';
+import { readJsonFileWithRecoverySync, writeJsonFileAtomicSync } from './atomicJsonStore';
 
 const RECENT_DIRS_FILE = path.join(app.getPath('userData'), 'recent-dirs.json');
 const MAX_RECENT_DIRS = 10;
@@ -9,11 +10,21 @@ interface RecentDirs {
   dirs: string[];
 }
 
+function isRecentDirs(value: unknown): value is RecentDirs {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const dirs = (value as Record<string, unknown>).dirs;
+  return (
+    Array.isArray(dirs) &&
+    dirs.length <= MAX_RECENT_DIRS &&
+    dirs.every((dir) => typeof dir === 'string' && dir.length > 0 && dir.length <= 4096)
+  );
+}
+
 export function loadRecentDirs(): string[] {
   try {
-    if (fs.existsSync(RECENT_DIRS_FILE)) {
-      const data = fs.readFileSync(RECENT_DIRS_FILE, 'utf8');
-      const recentDirs: RecentDirs = JSON.parse(data);
+    const stored = readJsonFileWithRecoverySync(RECENT_DIRS_FILE, isRecentDirs);
+    if (stored) {
+      const recentDirs = stored.value;
 
       // Filter out invalid directories (nonexistent or not directories)
       const validDirs = recentDirs.dirs.filter((dir) => {
@@ -39,7 +50,7 @@ export function loadRecentDirs(): string[] {
 
       // Save the cleaned list back if it changed
       if (validDirs.length !== recentDirs.dirs.length) {
-        fs.writeFileSync(RECENT_DIRS_FILE, JSON.stringify({ dirs: validDirs }, null, 2));
+        writeJsonFileAtomicSync(RECENT_DIRS_FILE, { dirs: validDirs });
       }
 
       return validDirs;
@@ -79,7 +90,7 @@ export function addRecentDir(dir: string): void {
     // Keep only the most recent MAX_RECENT_DIRS
     dirs = dirs.slice(0, MAX_RECENT_DIRS);
 
-    fs.writeFileSync(RECENT_DIRS_FILE, JSON.stringify({ dirs }, null, 2));
+    writeJsonFileAtomicSync(RECENT_DIRS_FILE, { dirs });
   } catch (error) {
     console.error('Error saving recent directory:', error);
   }

@@ -373,7 +373,12 @@ export function AppInner() {
       nostrImportInFlight.current = link;
 
       try {
-        await importNostrSessionFromDeepLink(link);
+        const workingDirectory = await window.electron.directoryChooser();
+        if (workingDirectory.canceled || !workingDirectory.filePaths[0]) {
+          navigate('/sessions');
+          return;
+        }
+        await importNostrSessionFromDeepLink(link, workingDirectory.filePaths[0]);
         navigate('/sessions');
       } catch (error) {
         console.error('Unexpected error opening Nostr session share:', error);

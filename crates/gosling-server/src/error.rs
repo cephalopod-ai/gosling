@@ -4,6 +4,12 @@ use thiserror::Error;
 pub enum ConfigError {
     #[error("Missing required environment variable: {env_var}")]
     MissingEnvVar { env_var: String },
+    #[error("Invalid GOSLING_HOST '{host}': expected a numeric IPv4 or IPv6 address")]
+    InvalidHost {
+        host: String,
+        #[source]
+        source: std::net::AddrParseError,
+    },
     #[error("Configuration error: {0}")]
     Other(#[from] config::ConfigError),
 }

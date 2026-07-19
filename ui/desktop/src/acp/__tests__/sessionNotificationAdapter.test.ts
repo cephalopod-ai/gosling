@@ -145,6 +145,27 @@ describe('createAcpSessionNotificationAdapter', () => {
         expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'Hell' });
       });
 
+      it('preserves the protocol marker for imported untrusted history', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+        const messages = expectOnlyMessagesChange(
+          adapter,
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'user_message_chunk',
+              content: { type: 'text', text: 'historical prompt' },
+              _meta: {
+                gosling: {
+                  messageId: 'imported-1',
+                  importedUntrusted: true,
+                },
+              },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages[0].metadata.importedUntrusted).toBe(true);
+      });
+
       it('reconciles locally rendered steer text with server chunks', () => {
         const adapter = createAcpSessionNotificationAdapter([
           {

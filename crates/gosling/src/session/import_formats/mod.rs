@@ -12,16 +12,114 @@
 //! native [`Session`] JSON, then hand it off to the existing
 //! `SessionManager::import_session` pipeline.
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use gosling_providers::conversation::token_usage::Usage;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 use crate::conversation::Conversation;
+use crate::session::extension_data::{ExtensionData, ExtensionState};
 
 pub mod claude_code;
 pub mod codex;
 pub mod pi;
+
+pub const MAX_SESSION_IMPORT_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionImportTransport {
+    Json,
+    Nostr,
+    CliFile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionImportProvenance {
+    pub schema_version: u32,
+    pub transport: SessionImportTransport,
+    pub source_format: String,
+    pub original_working_dir: Option<String>,
+    pub effective_working_dir: String,
+    pub imported_at: DateTime<Utc>,
+    pub history_trusted: bool,
+}
+
+impl ExtensionState for SessionImportProvenance {
+    const EXTENSION_NAME: &'static str = "import_provenance";
+    const VERSION: &'static str = "v1";
+}
+
+impl SessionImportProvenance {
+    pub fn from_extension_data(extension_data: &ExtensionData) -> Option<Self> {
+        <Self as ExtensionState>::from_extension_data(extension_data)
+    }
+}
+
+pub fn ensure_import_payload_size(content: &str) -> Result<()> {
+    if content.len() > MAX_SESSION_IMPORT_BYTES {
+        bail!(
+            "Session import exceeds the {} MiB limit",
+            MAX_SESSION_IMPORT_BYTES / (1024 * 1024)
+        );
+    }
+    Ok(())
+}
+
+pub fn validate_import_working_dir(path: &Path) -> Result<PathBuf> {
+    if !path.is_absolute() {
+        bail!("Session import working directory must be an absolute path");
+    }
+    let canonical = std::fs::canonicalize(path).with_context(|| {
+        format!(
+            "Session import working directory is unavailable: {}",
+            path.display()
+        )
+    })?;
+    if !canonical.is_dir() {
+        bail!("Session import working directory is not a directory");
+    }
+    Ok(canonical)
+}
+
+pub fn read_session_import_file(path: &Path) -> Result<String> {
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("Failed to inspect session import file: {}", path.display()))?;
+    if metadata.len() > MAX_SESSION_IMPORT_BYTES as u64 {
+        bail!(
+            "Session import exceeds the {} MiB limit",
+            MAX_SESSION_IMPORT_BYTES / (1024 * 1024)
+        );
+    }
+
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    std::fs::File::open(path)
+        .with_context(|| format!("Failed to read session import file: {}", path.display()))?
+        .take((MAX_SESSION_IMPORT_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_SESSION_IMPORT_BYTES {
+        bail!(
+            "Session import exceeds the {} MiB limit",
+            MAX_SESSION_IMPORT_BYTES / (1024 * 1024)
+        );
+    }
+    String::from_utf8(bytes).context("Session import file is not valid UTF-8")
+}
+
+pub(crate) fn parse_json_lines(content: &str, format: &str) -> Result<Vec<Value>> {
+    content
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim().is_empty())
+        .map(|(index, line)| {
+            serde_json::from_str::<Value>(line)
+                .with_context(|| format!("{format} import: invalid JSON on line {}", index + 1))
+        })
+        .collect()
+}
 
 /// Session-level fields harvested from a foreign transcript, used to build
 /// the gosling-native session JSON handed to `SessionManager::import_session`.
@@ -77,6 +175,17 @@ pub enum ImportFormat {
     Codex,
     /// Pi-mono `.jsonl` transcript (first line is `{"type":"session",...}` header).
     Pi,
+}
+
+impl ImportFormat {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Gosling => "gosling",
+            Self::ClaudeCode => "claude_code",
+            Self::Codex => "codex",
+            Self::Pi => "pi",
+        }
+    }
 }
 
 /// Sniff the format of an import payload.
@@ -145,6 +254,7 @@ pub fn detect_format(content: &str) -> ImportFormat {
 
 /// Convert any supported foreign format to a gosling-native session JSON string.
 pub fn convert_to_gosling_session_json(content: &str) -> Result<String> {
+    ensure_import_payload_size(content)?;
     match detect_format(content) {
         ImportFormat::Gosling => Ok(upgrade_legacy_token_fields(content)),
         ImportFormat::ClaudeCode => claude_code::convert(content),
@@ -216,5 +326,46 @@ pub(crate) fn summarize_first_line(s: &str) -> String {
     } else {
         let truncated: String = line.chars().take(77).collect();
         format!("{}...", truncated)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import_payload_limit_accepts_boundary_and_rejects_one_byte_over() {
+        assert!(ensure_import_payload_size(&"x".repeat(MAX_SESSION_IMPORT_BYTES)).is_ok());
+        let error =
+            ensure_import_payload_size(&"x".repeat(MAX_SESSION_IMPORT_BYTES + 1)).unwrap_err();
+        assert!(error.to_string().contains("16 MiB"));
+    }
+
+    #[test]
+    fn strict_json_lines_reports_the_exact_malformed_line() {
+        let error = parse_json_lines("{\"ok\":1}\nnot-json\n{\"ok\":2}", "Test").unwrap_err();
+        assert!(error.to_string().contains("line 2"));
+    }
+
+    #[test]
+    fn import_working_directory_must_be_explicit_existing_and_absolute() {
+        assert!(validate_import_working_dir(Path::new("relative")).is_err());
+        let file = tempfile::NamedTempFile::new().unwrap();
+        assert!(validate_import_working_dir(file.path()).is_err());
+        let directory = tempfile::TempDir::new().unwrap();
+        assert_eq!(
+            validate_import_working_dir(directory.path()).unwrap(),
+            directory.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn bounded_file_reader_rejects_oversize_before_materialization() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        file.as_file()
+            .set_len((MAX_SESSION_IMPORT_BYTES + 1) as u64)
+            .unwrap();
+        let error = read_session_import_file(file.path()).unwrap_err();
+        assert!(error.to_string().contains("16 MiB"));
     }
 }
