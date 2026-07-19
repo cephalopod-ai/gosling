@@ -5,8 +5,8 @@ export type ClosableAcpStream = Stream & {
 };
 
 export const MAX_BUFFERED_ACP_MESSAGES = 1024;
-export const MAX_ACP_MESSAGE_CHARS = 1_000_000;
 export const MAX_BUFFERED_ACP_MESSAGE_CHARS = 8_000_000;
+export const MAX_ACP_MESSAGE_CHARS = MAX_BUFFERED_ACP_MESSAGE_CHARS;
 
 export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
   const ws = new window.WebSocket(wsUrl);
@@ -26,11 +26,11 @@ export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
     waiters.length = 0;
   };
 
-  function rejectOversizedPeer(): void {
+  function rejectOversizedPeer(errorMessage: string, closeReason: string): void {
     incoming.length = 0;
     bufferedChars = 0;
-    closeWaiters(new Error('ACP WebSocket receive buffer exceeded its limit'));
-    ws.close(1009, 'ACP receive buffer limit exceeded');
+    closeWaiters(new Error(errorMessage));
+    ws.close(1009, closeReason);
   }
 
   function pushMessage(message: unknown, encodedLength: number): void {
@@ -41,7 +41,10 @@ export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
       incoming.length >= MAX_BUFFERED_ACP_MESSAGES ||
       bufferedChars + encodedLength > MAX_BUFFERED_ACP_MESSAGE_CHARS
     ) {
-      rejectOversizedPeer();
+      rejectOversizedPeer(
+        'ACP WebSocket receive buffer exceeded its limit',
+        'ACP receive buffer limit exceeded'
+      );
       return;
     }
     incoming.push({ message, encodedLength });
@@ -68,7 +71,7 @@ export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
       return;
     }
     if (event.data.length > MAX_ACP_MESSAGE_CHARS) {
-      rejectOversizedPeer();
+      rejectOversizedPeer('ACP WebSocket message exceeded its limit', 'ACP message limit exceeded');
       return;
     }
     try {
