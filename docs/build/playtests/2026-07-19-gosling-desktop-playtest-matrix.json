@@ -1,0 +1,4050 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-19",
+  "cap": 500,
+  "generated_count": 500,
+  "execution_policy": "Only individually listed report cards are executed; matrix entries are not implicit passes.",
+  "dimensions": {
+    "workflow": [
+      "create-project",
+      "new-chat",
+      "archive-save",
+      "credentials",
+      "model-switch",
+      "artifact",
+      "queue-steer",
+      "workspace-load",
+      "recovery",
+      "security-boundary"
+    ],
+    "workspace_state": [
+      "default",
+      "valid-primary",
+      "multi-folder",
+      "optional-missing",
+      "required-missing"
+    ],
+    "provider_state": [
+      "configured-local",
+      "configured-alternate",
+      "setup-required",
+      "unavailable"
+    ],
+    "prompt_mode": [
+      "initial",
+      "queued",
+      "steered",
+      "resend",
+      "cancel"
+    ],
+    "artifact_kind": [
+      "document",
+      "image",
+      "presentation",
+      "download"
+    ]
+  },
+  "ordering": "workflow,workspace_state,provider_state,prompt_mode,artifact_kind (source order)",
+  "cases": [
+    {
+      "id": "PLY-M001",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M002",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M003",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M004",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M005",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M006",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M007",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M008",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M009",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M010",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M011",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M012",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M013",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M014",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M015",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M016",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M017",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M018",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M019",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M020",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M021",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M022",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M023",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M024",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M025",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M026",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M027",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M028",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M029",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M030",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M031",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M032",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M033",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M034",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M035",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M036",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M037",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M038",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M039",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M040",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M041",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M042",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M043",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M044",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M045",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M046",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M047",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M048",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M049",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M050",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M051",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M052",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M053",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M054",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M055",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M056",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M057",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M058",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M059",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M060",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M061",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M062",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M063",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M064",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M065",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M066",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M067",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M068",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M069",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M070",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M071",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M072",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M073",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M074",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M075",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M076",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M077",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M078",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M079",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M080",
+      "workflow": "create-project",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M081",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M082",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M083",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M084",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M085",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M086",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M087",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M088",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M089",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M090",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M091",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M092",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M093",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M094",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M095",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M096",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M097",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M098",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M099",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M100",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M101",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M102",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M103",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M104",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M105",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M106",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M107",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M108",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M109",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M110",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M111",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M112",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M113",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M114",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M115",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M116",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M117",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M118",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M119",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M120",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M121",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M122",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M123",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M124",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M125",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M126",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M127",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M128",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M129",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M130",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M131",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M132",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M133",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M134",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M135",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M136",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M137",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M138",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M139",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M140",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M141",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M142",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M143",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M144",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M145",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M146",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M147",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M148",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M149",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M150",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M151",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M152",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M153",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M154",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M155",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M156",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M157",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M158",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M159",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M160",
+      "workflow": "create-project",
+      "workspace_state": "valid-primary",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M161",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M162",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M163",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M164",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M165",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M166",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M167",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M168",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M169",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M170",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M171",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M172",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M173",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M174",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M175",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M176",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M177",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M178",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M179",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M180",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M181",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M182",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M183",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M184",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M185",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M186",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M187",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M188",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M189",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M190",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M191",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M192",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M193",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M194",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M195",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M196",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M197",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M198",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M199",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M200",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M201",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M202",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M203",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M204",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M205",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M206",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M207",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M208",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M209",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M210",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M211",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M212",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M213",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M214",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M215",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M216",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M217",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M218",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M219",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M220",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M221",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M222",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M223",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M224",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M225",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M226",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M227",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M228",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M229",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M230",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M231",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M232",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M233",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M234",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M235",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M236",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M237",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M238",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M239",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M240",
+      "workflow": "create-project",
+      "workspace_state": "multi-folder",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M241",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M242",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M243",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M244",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M245",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M246",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M247",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M248",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M249",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M250",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M251",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M252",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M253",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M254",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M255",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M256",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M257",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M258",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M259",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M260",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M261",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M262",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M263",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M264",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M265",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M266",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M267",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M268",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M269",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M270",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M271",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M272",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M273",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M274",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M275",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M276",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M277",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M278",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M279",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M280",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M281",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M282",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M283",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M284",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M285",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M286",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M287",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M288",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M289",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M290",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M291",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M292",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M293",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M294",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M295",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M296",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M297",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M298",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M299",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M300",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M301",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M302",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M303",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M304",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M305",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M306",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M307",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M308",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M309",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M310",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M311",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M312",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M313",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M314",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M315",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M316",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M317",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M318",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M319",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M320",
+      "workflow": "create-project",
+      "workspace_state": "optional-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M321",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M322",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M323",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M324",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M325",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M326",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M327",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M328",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M329",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M330",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M331",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M332",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M333",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M334",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M335",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M336",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M337",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M338",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M339",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M340",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M341",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M342",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M343",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M344",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M345",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M346",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M347",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M348",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M349",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M350",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M351",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M352",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M353",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M354",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M355",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M356",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M357",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M358",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M359",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M360",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M361",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M362",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M363",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M364",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M365",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M366",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M367",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M368",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M369",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M370",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M371",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M372",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M373",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M374",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M375",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M376",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M377",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M378",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M379",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M380",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M381",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M382",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M383",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M384",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M385",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M386",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M387",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M388",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M389",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M390",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M391",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M392",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M393",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M394",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M395",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M396",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M397",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M398",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M399",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M400",
+      "workflow": "create-project",
+      "workspace_state": "required-missing",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M401",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M402",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M403",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M404",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M405",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M406",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M407",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M408",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M409",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M410",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M411",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M412",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M413",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M414",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M415",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M416",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M417",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M418",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M419",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M420",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M421",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M422",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M423",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M424",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M425",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M426",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M427",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M428",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M429",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M430",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M431",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M432",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M433",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M434",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M435",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M436",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M437",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M438",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M439",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M440",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "configured-alternate",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M441",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M442",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M443",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M444",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M445",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M446",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M447",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M448",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M449",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M450",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M451",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M452",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M453",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M454",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M455",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M456",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M457",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M458",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M459",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M460",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "setup-required",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M461",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M462",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M463",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M464",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M465",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M466",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M467",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M468",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M469",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M470",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M471",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M472",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M473",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M474",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M475",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M476",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M477",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M478",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M479",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M480",
+      "workflow": "new-chat",
+      "workspace_state": "default",
+      "provider_state": "unavailable",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M481",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M482",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M483",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M484",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "initial",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M485",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M486",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M487",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M488",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "queued",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M489",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M490",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M491",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M492",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "steered",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M493",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M494",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M495",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M496",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "resend",
+      "artifact_kind": "download"
+    },
+    {
+      "id": "PLY-M497",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "document"
+    },
+    {
+      "id": "PLY-M498",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "image"
+    },
+    {
+      "id": "PLY-M499",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "presentation"
+    },
+    {
+      "id": "PLY-M500",
+      "workflow": "new-chat",
+      "workspace_state": "valid-primary",
+      "provider_state": "configured-local",
+      "prompt_mode": "cancel",
+      "artifact_kind": "download"
+    }
+  ]
+}

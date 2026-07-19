@@ -146,6 +146,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
           initial={false}
           animate={{ width: artifactWorkbench.isOpen ? artifactWorkbench.width : 0 }}
           transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+          style={{ zIndex: Z_INDEX.HEADER }}
           className="relative flex-shrink-0 overflow-hidden h-full p-2 pl-0"
         >
           <div style={{ width: artifactWorkbench.width }} className="h-full">

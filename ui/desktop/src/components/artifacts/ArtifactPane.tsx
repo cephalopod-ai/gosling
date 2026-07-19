@@ -59,6 +59,13 @@ interface PreviewData {
   truncated: boolean;
 }
 
+const ARTIFACT_ACCESS_RETRY_COUNT = 3;
+const ARTIFACT_ACCESS_RETRY_DELAY_MS = 100;
+
+function isRetryableArtifactAccessError(error: string | null): boolean {
+  return error?.includes('Renderer file access denied for path outside approved roots') ?? false;
+}
+
 function mimeTypeForTab(tab: ArtifactTab): string {
   if (tab.source.type === 'content') return tab.source.mimeType;
   switch (tab.kind) {
@@ -252,18 +259,29 @@ export function ArtifactPane() {
     const sourcePath = activeTab.source.path;
     const sourceBaseDirectory = activeTab.source.baseDirectory;
     setLoading(true);
-    window.electron
-      .readArtifactFile(sourcePath, sourceBaseDirectory)
-      .then((response) => {
+    const readPreview = async () => {
+      for (let attempt = 0; attempt <= ARTIFACT_ACCESS_RETRY_COUNT; attempt += 1) {
+        const response = await window.electron.readArtifactFile(sourcePath, sourceBaseDirectory);
         if (cancelled) return;
-        setPreview(response);
-        if (response.found && response.filePath !== sourcePath) {
-          resolveFilePath(activeTab.id, response.filePath);
+        if (
+          !isRetryableArtifactAccessError(response.error) ||
+          attempt === ARTIFACT_ACCESS_RETRY_COUNT
+        ) {
+          setPreview(response);
+          if (response.found && response.filePath !== sourcePath) {
+            resolveFilePath(activeTab.id, response.filePath);
+          }
+          return;
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, ARTIFACT_ACCESS_RETRY_DELAY_MS * (attempt + 1))
+        );
+      }
+    };
+    void readPreview().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -332,13 +350,14 @@ export function ArtifactPane() {
         className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize"
         onPointerDown={resizeFrom}
       />
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-primary px-2">
+      <div className="no-drag flex h-11 shrink-0 items-center gap-2 border-b border-border-primary px-2">
         <FileOutput className="h-4 w-4 text-text-secondary" />
         <span className="text-sm font-medium">{intl.formatMessage(i18n.outputs)}</span>
         <div className="ml-auto flex items-center gap-1">
           <Button
             variant="ghost"
             size="xs"
+            className="no-drag"
             onClick={() => void chooseFile()}
             title={intl.formatMessage(i18n.openFile)}
           >
@@ -347,6 +366,7 @@ export function ArtifactPane() {
           <Button
             variant="ghost"
             size="xs"
+            className="no-drag"
             onClick={() => setIsOpen(false)}
             title={intl.formatMessage(i18n.closePane)}
           >

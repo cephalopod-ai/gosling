@@ -20,11 +20,13 @@ missing-output confirmation, and the single renderer save call. Artifacts and ex
 pinned workspace ID; otherwise the active workspace supplies the default.
 
 Electron owns the actual save dialog, content write, full-file copy, source-path authorization,
-and native `will-download` placement. Renderer-provided native routing configurations are accepted
-only after every output directory passes Gosling's canonical approved-root check. Simultaneous
-downloads reserve collision-safe names. Async configuration validation publishes through a
-per-window revision guard, so an older workspace update cannot overwrite the newest route. A
-routing failure is sent back to the renderer and shown to the operator.
+and native `will-download` placement. Renderer-provided routing configurations are canonicalized
+and validated as existing directories; workspace output roots supplied by the backend workspace
+router become the only additional roots eligible for artifact reads, while direct generic file
+IPC remains limited to renderer directory grants. Simultaneous downloads reserve collision-safe
+names. Async configuration validation publishes through a per-window revision guard, so an older
+workspace update cannot overwrite the newest route. A routing failure is sent back to the
+renderer and shown to the operator.
 
 The router never moves an existing artifact. Save dialogs remain an intentional user override.
 Missing output folders are created only after explicit confirmation through the existing backend

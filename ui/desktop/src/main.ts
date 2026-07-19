@@ -69,6 +69,7 @@ import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifac
 import { installArtifactDownloadRouter } from './utils/artifactDownloads';
 import { ArtifactRoutingRegistry } from './utils/artifactRoutingRegistry';
 import { saveArtifactWithDialog } from './utils/artifactSave';
+import { assertArtifactFileAccess } from './utils/artifactFileAccess';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -313,13 +314,29 @@ async function assertRendererArtifactFileAccess(
   filePath: string,
   baseDirectory?: string
 ): Promise<string> {
-  const candidate =
-    baseDirectory && !path.isAbsolute(filePath) ? path.join(baseDirectory, filePath) : filePath;
-  const resolvedPath = await canonicalizePotentialPath(resolveRendererPath(candidate));
-  if (rendererArtifactFileGrants.get(webContentsId)?.has(resolvedPath)) {
-    return resolvedPath;
+  const routedOutputRoots =
+    artifactRoutingRegistry.get(webContentsId)?.outputs.map((output) => output.path) ?? [];
+  return assertArtifactFileAccess(
+    resolveRendererPath(filePath),
+    baseDirectory,
+    rendererFileRoots(webContentsId),
+    routedOutputRoots,
+    rendererArtifactFileGrants.get(webContentsId) ?? new Set<string>()
+  );
+}
+
+async function assertArtifactOutputRootAccess(
+  webContentsId: number,
+  outputPath: string
+): Promise<string> {
+  try {
+    return await assertRendererFileAccess(webContentsId, outputPath);
+  } catch (error) {
+    const canonicalPath = await canonicalizePotentialPath(resolveRendererPath(outputPath));
+    const stats = await fs.stat(canonicalPath);
+    if (!stats.isDirectory()) throw error;
+    return canonicalPath;
   }
-  return assertRendererFileAccess(webContentsId, resolvedPath);
 }
 
 async function validateArtifactRoutingConfig(
@@ -348,7 +365,7 @@ async function validateArtifactRoutingConfig(
       continue;
     }
     try {
-      const outputPath = await assertRendererFileAccess(webContentsId, output.path);
+      const outputPath = await assertArtifactOutputRootAccess(webContentsId, output.path);
       const stats = await fs.stat(outputPath);
       if (stats.isDirectory()) outputs.push({ ...output, path: outputPath });
     } catch {
