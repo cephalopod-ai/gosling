@@ -60,4 +60,6 @@ default.
 
 ## Status
 
-`completed_verified` pending the stage commit.
+`completed_verified`.
+
+Stage commit: `160b480a9` (`fix(desktop): close remaining workspace playtest findings`).
