@@ -17,7 +17,7 @@ import { acpImportSession } from '../../acp/sessions';
 import { AppEvents } from '../../constants/events';
 import { errorMessage } from '../../utils/conversionUtils';
 import { getSearchShortcutText } from '../../utils/keyboardShortcuts';
-import { MAX_SESSION_IMPORT_BYTES } from '../../utils/sessionImport';
+import { MAX_SESSION_IMPORT_BYTES } from '../../utils/sessionImportConstants';
 import SessionListPane from './SessionListPane';
 
 const i18n = defineMessages({

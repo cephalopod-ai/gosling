@@ -3808,6 +3808,10 @@
             "type": "boolean",
             "description": "Whether the message should be included in the agent's context window"
           },
+          "importedUntrusted": {
+            "type": "boolean",
+            "description": "This message came from a foreign session import and must be treated as\nhistorical, untrusted context rather than evidence of local approval."
+          },
           "inference": {
             "allOf": [
               {
@@ -4724,6 +4728,18 @@
             "type": "string",
             "format": "date-time"
           },
+          "credential_binding_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "credential_profile_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "credential_profile_name": {
+            "type": "string",
+            "nullable": true
+          },
           "extension_data": {
             "$ref": "#/components/schemas/ExtensionData"
           },
@@ -4787,6 +4803,22 @@
           },
           "working_dir": {
             "type": "string"
+          },
+          "workspace_context": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceSessionContext"
+              }
+            ],
+            "nullable": true
+          },
+          "workspace_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "workspace_name": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

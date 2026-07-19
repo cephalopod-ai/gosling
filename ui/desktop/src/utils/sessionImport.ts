@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import { TextDecoder } from 'node:util';
-
-export const MAX_SESSION_IMPORT_BYTES = 16 * 1024 * 1024;
+import { MAX_SESSION_IMPORT_BYTES } from './sessionImportConstants';
 
 export async function readBoundedSessionImportFile(
   filePath: string,

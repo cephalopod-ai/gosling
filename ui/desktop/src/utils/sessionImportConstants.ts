@@ -1,0 +1,1 @@
+export const MAX_SESSION_IMPORT_BYTES = 16 * 1024 * 1024;
