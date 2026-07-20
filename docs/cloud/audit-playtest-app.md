@@ -317,3 +317,13 @@ looks graceful (still simulation-reasoned — not run live):
 - Because build+provider are unavailable here, a follow-up pass **with a release binary and
   a configured (or mock) provider** is required to promote any finding to `Confirmed` and to
   cover categories 4/8/10 (persistence, relaunch, import/export) live.
+
+## PLAY-GSL repair campaign closure (2026-07-20)
+
+| Finding | Final disposition | Closure evidence |
+| --- | --- | --- |
+| `PLAY-GSL-001` | Repaired before this campaign and re-verified. | Commit `9ad58caf` routes unknown slash commands through local help and returns `InputResult::Retry`; `session::input::tests::test_unknown_slash_commands_are_not_messages` passed in the 229-test CLI regression suite. |
+| `PLAY-GSL-002` | Repaired. | Commit `832767e2a` replaces the stdin `expect` with propagated `anyhow` errors. Tests cover valid stdin, invalid UTF-8, and underlying reader failures. A rebuilt binary returned exit code 1 with a normal error and no panic for invalid UTF-8. |
+| `PLAY-GSL-003` | Closed as verified not a current defect; no source change warranted. | `load_extensions` owns each temporary `Arc<Agent>` clone in a `JoinSet` task and drains every task with `join_next` before `Arc::try_unwrap`. Extension registration receives `&self`, not the outer `Arc<Agent>`, so no clone can escape through the current API. |
+
+Campaign result: all `PLAY-GSL-*` records are closed with implementation or verification evidence. The repair plan and command ledger are in `reports/2026-07-20-play-gsl-defect-campaign-plan.md` and `reports/2026-07-20-play-gsl-defect-campaign-session-log.md`.
