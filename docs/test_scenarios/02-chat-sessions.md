@@ -9,11 +9,11 @@ persistence, isolation, and slash commands.
 ### CH-01 — First message to first response (primary happy path)
 - Goal: one message in, one useful agent response out, on CLI and/or Desktop.
 - Category: happy path
-- Preconditions: provider configured (LC-01); disposable project cwd.
+- Preconditions: provider configured (LC-01); disposable project cwd containing known marker files `alpha.txt` and `beta.txt` and no other `.txt` files.
 - Steps:
-  1. CLI: `gosling session` → send `List the files in the current working directory in a short bullet list.`
-  2. Desktop (if available): new chat in the same directory; same prompt.
-- Expected: message appears; streaming/progressive output where designed; session reaches a completed/idle state; tools (if used) show status; response is grounded in the cwd.
+  1. CLI: `gosling session` → send `List every .txt filename in the current working directory, one per line.`
+  2. Desktop: open a separate new chat in the same directory and send the same prompt; record this as a separate surface result.
+- Expected: message appears once; any tool status reaches a terminal state; the response includes `alpha.txt` and `beta.txt` and does not invent a third `.txt` file; session reaches completed/idle within the deadline.
 - Observe: is it clear which provider/model answered? Does the session get a sensible title in the list?
 - Variations: follow-up that depends on the first answer; confirm context is retained.
 
@@ -23,12 +23,12 @@ persistence, isolation, and slash commands.
 - Preconditions: an open session (CLI or Desktop).
 - Steps / Variations (each is a send attempt):
   1. Empty message; whitespace-only message.
-  2. Very long message (thousands of characters, e.g. a pasted log).
+  2. A generated 16 KiB ASCII message with unique markers at byte 1 and the end.
   3. Emoji, accented text, non-Latin scripts (`日本語`, `العربية`), RTL text.
   4. Markdown/HTML-ish text (`<script>alert(1)</script>`, backticks, `# heading`) — rendering check, not an exploit.
   5. Multi-line input with newlines; paste with trailing whitespace.
   6. Rapid double-send of the same text.
-- Expected: empty/whitespace sends are prevented or harmless; long input neither freezes nor truncates silently without feedback; unicode round-trips into history; markup renders inert; double-send does not duplicate the user turn or fork two agent runs for one intent.
+- Expected: empty/whitespace sends create no turn; both long-input markers persist in reopened history or an explicit size limit rejects the send before billing; unicode round-trips byte-for-byte; markup renders inert; double-send creates at most one accepted user turn or clearly reports two intentionally accepted turns.
 - Observe: Desktop markdown rendering of user vs assistant content; CLI wrap/scroll behavior.
 
 ### CH-03 — Interrupt mid-run then continue
@@ -36,10 +36,10 @@ persistence, isolation, and slash commands.
 - Category: interruption
 - Preconditions: session able to start a long task (tooling or long generation).
 - Steps:
-  1. Send a deliberately long task (`Count slowly from 1 to 200, narrating each number on its own line.` or a recursive file walk).
+  1. Start a task proven during setup to remain active for at least 30 seconds, preferably a controllable delayed MCP fixture rather than relying on prompt wording.
   2. Interrupt (Ctrl-C in CLI per product norms; Desktop stop control).
   3. Observe session state; send `Say READY` as a new turn.
-- Expected: work stops promptly; session lands in a clear stopped/idle state (not forever "running"); session remains usable; follow-up produces `READY` without requiring a brand-new session unless documented.
+- Expected: provider/tool cancellation is observable; work stops within 10 seconds; session lands in a clear stopped/idle state; no output from the cancelled operation appears after terminal state; follow-up produces `READY` without a new session unless documented.
 - Variations: interrupt twice quickly; navigate away mid-stream on Desktop and return; close the Desktop window mid-stream and reopen the session.
 
 ### CH-04 — Session persistence across relaunch
@@ -72,6 +72,6 @@ persistence, isolation, and slash commands.
   1. Run `/help` (and any documented help surface).
   2. Exercise a few real commands: `/model`, `/mode`, `/skills`, `/clear` or `/compact` as documented — prefer non-destructive first.
   3. Type a typo that looks like a command: `/halp`, `/eixt`, `/moel`.
-- Expected: help lists real commands; real commands do what docs say; unknown `/…` tokens either give an "unknown command" hint **or** are documented as forwarded to the model — silent billable mis-routes without feedback are a Medium+ finding (known static suspicion: unknown slash → model prompt).
+- Expected: help lists real commands; real commands do what current help says; unknown `/…` tokens either give an "unknown command" hint or are explicitly shown as a model-bound message before submission; no silent billable reroute.
 - Observe: does plain `exit`/`quit` without slash leave the session? Can the user send the word "exit" to the model if needed?
 - Variations: `/prompt` with missing args; empty `/`.

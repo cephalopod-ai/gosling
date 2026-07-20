@@ -22,7 +22,7 @@ enable/use, add, fail-closed, and remove — CLI and Desktop where both exist.
 - Category: happy path / files
 - Preconditions: a **test** MCP server (local stdio fixture or disposable HTTP MCP). Prefer something you own. No production SaaS tokens unless sandbox.
 - Steps:
-  1. CLI: `gosling mcp add …` / `gosling session --with-extension '…'` / `--with-streamable-http-extension 'http://…'` as documented — or Desktop install UI.
+  1. For stdio, run `gosling mcp install playtest --cmd '<fixture command>'`; for a session-only stdio or HTTP server use `--with-extension` or `--with-streamable-http-extension` respectively. Use Desktop's install UI as a separate surface result.
   2. `gosling mcp list` (or Extensions view) shows it enabled.
   3. In session, ask the agent to use a simple tool from that server.
 - Expected: extension appears in list; tool discovery succeeds; one successful tool round-trip; config persists after relaunch.

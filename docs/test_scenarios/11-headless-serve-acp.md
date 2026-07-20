@@ -20,13 +20,13 @@ backend talk to gosling. They must fail legibly and shut down cleanly.
 ### HS-02 — `gosling serve` lifecycle
 - Goal: ACP HTTP/WebSocket server starts, serves, and stops without orphaning.
 - Category: happy path / recovery
-- Preconditions: free local port; disposable home; know default bind from `--help`.
+- Preconditions: free local port; disposable home; a generated test-only `GOSLING_SERVER__SECRET_KEY`; know default bind from `--help`.
 - Steps:
-  1. Start `gosling serve` with an explicit port (e.g. high ephemeral port).
-  2. Hit a documented health/ready endpoint or open Desktop against it if that is the product path; otherwise use a minimal WebSocket/HTTP probe from docs.
+  1. Start `gosling serve` with an explicit high port and the test secret in its environment.
+  2. Connect a minimal documented ACP client using the correct `X-Secret-Key`, initialize, and create a session.
   3. Start a second serve on the **same** port.
   4. Stop the first (Ctrl-C / SIGTERM); confirm port is released; restart once.
-- Expected: first start binds and logs the URL/port; second start fails with port-in-use clarity; graceful stop leaves no listener; restart works.
+- Expected: first start binds and logs the URL/port without logging the secret; authenticated initialization succeeds; second start fails with port-in-use clarity; graceful stop leaves no listener; restart works.
 - Observe: auth/allowlist on serve if documented — unauthenticated probe should fail closed when auth is on.
 - Variations: `GOSLING_SANDBOX=true` Desktop path is separate; do not conflate with CLI serve unless docs say they share code.
 

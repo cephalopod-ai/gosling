@@ -2,8 +2,8 @@
 
 Nothing else matters if a new operator cannot get from a clean install to a
 working agent. These scenarios confirm configure, health checks, and
-config-file tolerance. Run these first under a disposable config home
-(`XDG_CONFIG_HOME` / `XDG_DATA_HOME` pointed at a temp tree).
+config-file tolerance. Run these first with `GOSLING_PATH_ROOT` pointed at a
+new disposable absolute directory.
 
 ---
 
@@ -16,7 +16,7 @@ config-file tolerance. Run these first under a disposable config home
   2. `gosling configure` — set provider + model; complete any auth prompts.
   3. From a disposable project directory: `gosling session` (or Desktop launch + new chat).
   4. Send: `Reply with exactly the word PONG and nothing else.`
-- Expected: configure succeeds without stack traces; session starts; response contains `PONG` (or clearly streams then completes); no hang with a forever-spinning "running" state.
+- Expected: configure exits successfully without stack traces; session starts; the completed assistant text is exactly `PONG` after trimming line endings; the run reaches idle within the execution-contract deadline.
 - Observe: does configure tell the operator what to do next? Does `gosling info` show the provider that actually answered? Are missing engines hidden rather than shown broken?
 - Variations: Desktop path via `just run-ui` / installed app if available; second `gosling configure` (idempotency — must not clobber secrets silently).
 
@@ -27,7 +27,7 @@ config-file tolerance. Run these first under a disposable config home
 - Steps:
   1. Run `gosling` / `gosling session` with no prior configure.
   2. On Desktop (if in scope), open the app and walk onboarding without completing provider setup, then cancel/back where possible.
-  3. Run `gosling info` and `gosling doctor` (or `info --check` if that is the surface).
+  3. Run `gosling info`, `gosling info --check`, and `gosling doctor`.
 - Expected: unconfigured state is explicit and actionable ("run gosling configure" / provider picker), not a raw panic, empty hang, or opaque network error.
 - Observe: does doctor/info distinguish "not configured" from "configured but unreachable"?
 - Variations: set `GOSLING_PROVIDER` to a nonsense name via env and re-run — named failure preferred.
@@ -37,8 +37,8 @@ config-file tolerance. Run these first under a disposable config home
 - Category: happy path / error clarity
 - Preconditions: LC-01 completed once; disposable home still in use.
 - Steps:
-  1. `gosling info` and `gosling info -v` / verbose if available.
-  2. `gosling doctor` (or documented health check).
+  1. Run `gosling info`, `gosling info -v`, and `gosling info --check`; record each exit code and stdout/stderr separately.
+  2. Run `gosling doctor` and record its exit code.
   3. Break the active provider temporarily (revoke key, stop Ollama, or set a bad env override); re-run doctor/info; restore.
 - Expected: healthy run lists version, config path, session storage, and enabled extensions truthfully; broken provider produces a clear fail signal; exit codes distinguish success from failure.
 - Observe: does verbose mode leak secrets to the terminal? (secrets in stdout = finding.)
@@ -49,7 +49,7 @@ config-file tolerance. Run these first under a disposable config home
 - Category: invalid input / boundary / recovery
 - Preconditions: gateway/CLI stopped relative to edits; back up the disposable config first.
 - Steps:
-  1. Make a benign valid edit (e.g. change `GOSLING_TEMPERATURE` or CLI theme); start a session; confirm the edit is reflected or at least does not break boot.
+  1. Make a benign valid edit to a key advertised by the current build (for example `GOSLING_CLI_SHOW_COST`); start a session and confirm the value is reflected by its documented behavior.
   2. Introduce a YAML syntax error (bad indent); attempt `gosling session` / Desktop launch.
   3. Restore valid YAML but with an unknown key and a wrong-typed value (string where number expected); start again.
 - Expected: valid edits take effect or are clearly ignored with defaults; broken YAML produces an error naming the file/problem — not silent overwrite of the user's file and not an opaque crash; unknown/wrong-typed keys are ignored or reported, never state-corrupting.

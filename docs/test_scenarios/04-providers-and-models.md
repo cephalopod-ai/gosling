@@ -12,8 +12,8 @@ billable model should agree. Prefer cheap/local models for thrash scenarios.
 - Steps:
   1. `gosling configure` → Configure Providers → pick provider → enter creds → pick model.
   2. `gosling info -v` (or Settings → Models on Desktop) and confirm selection.
-  3. Start a session; ask `Which model are you?` and compare to configuration.
-- Expected: selection persists across relaunch; session uses the configured pair; failure to fetch model list is legible.
+  3. Start a session and capture the provider/model identifier from gosling's run metadata, a controlled provider fixture, or provider-side request log. Asking the model which model it is may be recorded only as a non-authoritative observation.
+- Expected: selection persists across relaunch; request evidence names the configured provider/model pair; displayed metadata agrees with request evidence; failure to fetch a model list has a bounded, actionable error.
 - Observe: Desktop onboarding vs CLI configure stay consistent for the same home.
 - Variations: Tetrate/OpenRouter style multi-model routers if credentials exist; else Not executed — environment unavailable.
 

@@ -15,7 +15,7 @@ install exists, spot-check the same commands for drift.
 - Steps:
   1. `gosling` with no arguments (configured vs unconfigured homes — note both).
   2. `gosling --help`; `gosling --version`.
-  3. `--help` on major subcommands: `session`, `run`, `configure`, `info`, `doctor`, `mcp`, `acp`, `serve`, `skills`, `plugin`, `term`, `update`, `completion`.
+  3. `--help` on every advertised subcommand: `configure`, `info`, `doctor`, `mcp`, `acp`, `serve`, `session`, `project`, `projects`, `run`, `skills`, `plugin`, `update`, `term`, `tui`, `completion`, and `review`.
 - Expected: every advertised command has help; help matches behavior (spot-check two); exit code 0 for help/version; no panic on help.
 - Variations: `gosling session` with no subcommand — usage or interactive start per design, not a crash.
 

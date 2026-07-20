@@ -47,11 +47,12 @@ navigation, and load/stress seams.
 
 ## Safety rails (binding for every pass)
 
-- Prefer a **disposable config + data home**. On macOS/Linux, point
-  `XDG_CONFIG_HOME` and `XDG_DATA_HOME` (and any documented gosling data
-  overrides) at a temp directory so `config.yaml`, sessions, workspaces, and
-  secrets never touch an operator's live `~/.config/gosling`. Never playtest
-  against production credentials or customer workspaces.
+- Use a **disposable gosling root**. Set `GOSLING_PATH_ROOT` to a newly created
+  absolute temp directory so config, data, sessions, workspaces, and secrets
+  cannot touch the operator's live installation. `XDG_CONFIG_HOME` and
+  `XDG_DATA_HOME` alone are not a complete isolation guarantee on every
+  platform. Never playtest against production credentials or customer
+  workspaces.
 - Use test/sandbox LLM credentials only. Prefer the cheapest path available
   (local Ollama, free-tier router, or a throwaway key with a spend cap).
 - No real personal data. No malicious payloads or exploitation — invalid
@@ -63,11 +64,54 @@ navigation, and load/stress seams.
   afterward.
 - Stress cards: stop if the host is unsafe (thermal, disk &lt; 1 GiB free).
 
+## Execution contract (binding for every card)
+
+The condensed cards stay readable by sharing these requirements. A result is
+not a Pass unless all applicable rules below are satisfied.
+
+1. **Record the baseline.** Capture commit/build identifier, `gosling
+   --version`, OS/architecture, surface and version (CLI, TUI, or Desktop),
+   provider/model, permission mode, `GOSLING_PATH_ROOT`, and scenario ID.
+2. **Start from declared state.** Unless a card explicitly names a dependency,
+   give it a clean disposable root and fixture directory. Record any reused
+   state. Never let an earlier card's leftovers create an accidental pass.
+3. **Use deterministic fixtures.** Seed files, session markers, mock providers,
+   MCP fixtures, ports, and expected hashes before the run. A model's claim
+   about its own identity, cwd, tool call, or saved file is not evidence;
+   corroborate it with UI metadata, protocol capture, or filesystem state.
+4. **Test each surface separately.** When a card names CLI, TUI, and Desktop,
+   record a separate result for each applicable surface. Success on one surface
+   does not imply success on another.
+5. **Apply default deadlines.** Unless the card overrides them, require local
+   UI/CLI feedback within 10 seconds, extension/server startup within 30
+   seconds, cancellation within 10 seconds, and a provider-backed turn within
+   120 seconds. Record elapsed time. Environment-caused slowness may be Blocked;
+   an unexplained spinner or missed cancellation is Fail.
+6. **Assert observable outcomes.** Record exit code, stdout and stderr
+   separately for commands; before/after file hashes for persistence or
+   mutation; process/port state for lifecycle cards; and screenshots plus
+   renderer/backend logs for Desktop failures. Redact credentials before
+   attaching evidence.
+7. **Pass atomically.** Every statement under Expected is an assertion. If one
+   fails, the card fails. Run Variations as separately labeled subcases; an
+   unexecuted variation does not fail the base card unless the pass scope made
+   it required.
+8. **Use statuses consistently.** Blocked means a prerequisite outside the app
+   prevented execution and includes the blocker. Not applicable means the
+   feature is absent by design on that build/surface and includes evidence.
+   Not executed means no attempt was made. Only runtime evidence can be marked
+   Confirmed.
+9. **Preserve failure artifacts.** On failure, stop mutating the fixture until
+   logs, config, session IDs, exact input, screenshots, and relevant files are
+   captured. Retry from a cloned fixture, not by repairing the evidence in
+   place.
+
 ## How to run a pass
 
 1. **Environment** (source checkout):
    ```bash
    source bin/activate-hermit
+   export GOSLING_PATH_ROOT="$(mktemp -d)"
    cargo build -p gosling-cli
    # optional Desktop:
    # just run-ui   # or ui/desktop docs
@@ -111,7 +155,7 @@ technical help) · **Medium** (secondary workflow fails, unclear errors,
 stuck UI, non-persisting settings) · **Low** (confusing label, glitch,
 awkward navigation) · **Note** (observation or product question).
 
-## Files (50 scenarios)
+## Files (110 scenarios)
 
 | File | Surface | Cards | Core question |
 |---|---|---|---|
@@ -127,6 +171,12 @@ awkward navigation) · **Note** (observation or product question).
 | [`10-settings-config-navigation.md`](10-settings-config-navigation.md) | Settings, config.yaml, sidebar | ST-01–03 | Do settings persist and screens agree? |
 | [`11-headless-serve-acp.md`](11-headless-serve-acp.md) | `run`, `serve`, `acp` | HS-01–03 | Do non-interactive and server surfaces stay coherent? |
 | [`12-stress-and-adversarial.md`](12-stress-and-adversarial.md) | load, races, recovery under pain | SX-01–09 | Does gosling stay coherent when the operator is impatient? |
+| [`13-advanced-cli-and-sessions.md`](13-advanced-cli-and-sessions.md) | resume, fork, edit, diagnostics, term, TUI, review | AC-01–10 | Are advanced CLI workflows deterministic and scriptable? |
+| [`14-desktop-ux-and-integration.md`](14-desktop-ux-and-integration.md) | onboarding, windows, keyboard, artifacts, backend | DT-01–10 | Does Desktop behave like a durable native application? |
+| [`15-context-and-filesystem.md`](15-context-and-filesystem.md) | hints, instructions, roots, stdin, runtime gates | CX-01–10 | Is context scoped, explainable, and isolated? |
+| [`16-provider-and-network-resilience.md`](16-provider-and-network-resilience.md) | limits, disconnects, OAuth, metadata, cost | PN-01–10 | Do provider failures recover without lying or losing state? |
+| [`17-acp-server-and-protocol.md`](17-acp-server-and-protocol.md) | auth, origins, TLS, framing, cancellation | AP-01–10 | Are ACP transports secure, bounded, and interoperable? |
+| [`18-state-extension-and-permission-depth.md`](18-state-extension-and-permission-depth.md) | state integrity, migrations, MCP, plugins, approvals | SI-01–10 | Do cross-cutting state and safety boundaries hold under change? |
 
 ### Suggested pass shapes
 
@@ -136,7 +186,7 @@ awkward navigation) · **Note** (observation or product question).
 | Core product | 01 → 05, 08, 10 | Chat, workspaces, providers, MCP, perms, settings |
 | Resilience | 04, 07, 11 | Model honesty, session portability, headless/serve |
 | Stress | 12 (after green smoke) | Concurrency, bloat, restart-under-load, env seams |
-| Full library | 01 → 12 numeric order | Release or major-regression playtest (**50 cards**) |
+| Full library | 01 → 18 numeric order | Release or major-regression playtest (**110 cards**) |
 
 ## Required coverage checklist
 
@@ -159,8 +209,16 @@ scenario (or an explicit not-applicable/blocked note):
 - [ ] Permission / approval boundary
 - [ ] Concurrency or load stress
 - [ ] Headless or server surface (`run` / `serve` / ACP)
+- [ ] Session resume, fork, external edit, and diagnostics
+- [ ] Terminal integration, TUI launch, and review dry-run
+- [ ] Keyboard-only Desktop operation and narrow-window layout
+- [ ] Artifact preview and workbench persistence
+- [ ] Project instruction/context hierarchy and ignored-file boundary
+- [ ] Provider rate-limit, timeout, disconnect, and context exhaustion
+- [ ] Server authentication, Origin validation, TLS, and protocol framing
+- [ ] Config/session migration from a previous supported release
 
-## Scenario index (50)
+## Scenario index (110)
 
 | ID | File | Name |
 |---|---|---|
@@ -214,3 +272,63 @@ scenario (or an explicit not-applicable/blocked note):
 | SX-07 | 12 | Workspace switch race during artifact save |
 | SX-08 | 12 | Config thrash + concurrent CLI invocations |
 | SX-09 | 12 | Cross-surface consistency after chaos |
+| AC-01 | 13 | Resume selection by recency, name, and ID |
+| AC-02 | 13 | Fork creates an independent history |
+| AC-03 | 13 | External-editor resume and failure handling |
+| AC-04 | 13 | Session diagnostics artifact |
+| AC-05 | 13 | Session list filters, ordering, and JSON |
+| AC-06 | 13 | Recent project discovery and launch |
+| AC-07 | 13 | Terminal shell initialization is non-destructive |
+| AC-08 | 13 | Terminal session identity and isolation |
+| AC-09 | 13 | TUI resolution, launch, and dependency failure |
+| AC-10 | 13 | Review dry-run discovery and scoping |
+| DT-01 | 14 | Onboarding interruption and resume |
+| DT-02 | 14 | Window close versus application quit |
+| DT-03 | 14 | Keyboard-only navigation and focus |
+| DT-04 | 14 | Shortcut rebinding, conflicts, and persistence |
+| DT-05 | 14 | Narrow window, resize, and long-content layout |
+| DT-06 | 14 | Artifact preview type matrix |
+| DT-07 | 14 | Artifact workbench state across navigation and relaunch |
+| DT-08 | 14 | Archive and restore session lifecycle |
+| DT-09 | 14 | External backend authentication and reconnect |
+| DT-10 | 14 | Native notifications and denied permission |
+| CX-01 | 15 | Root `AGENTS.md` instruction loading |
+| CX-02 | 15 | Nested context loads only when scoped |
+| CX-03 | 15 | Custom context filenames and ordering |
+| CX-04 | 15 | Ignored and sensitive files stay out of context |
+| CX-05 | 15 | Persistent instructions refresh between turns |
+| CX-06 | 15 | `GOSLING_PATH_ROOT` provides complete isolation |
+| CX-07 | 15 | `--no-session` leaves no resumable history |
+| CX-08 | 15 | Instruction file and stdin boundaries |
+| CX-09 | 15 | Code-execution runtime disable gate |
+| CX-10 | 15 | One-shot system prompt remains scoped |
+| PN-01 | 16 | Rate-limit response and retry recovery |
+| PN-02 | 16 | Network disconnect during streaming |
+| PN-03 | 16 | Slow provider timeout and cancellation |
+| PN-04 | 16 | Context-window exhaustion and compaction |
+| PN-05 | 16 | Empty and malformed provider responses |
+| PN-06 | 16 | Provider/model override precedence |
+| PN-07 | 16 | Model-list failure and custom model ID |
+| PN-08 | 16 | Local provider stops and restarts |
+| PN-09 | 16 | OAuth expiry, refresh, and user cancellation |
+| PN-10 | 16 | Usage, cost, and statistics consistency |
+| AP-01 | 17 | Authenticated serve startup requirement |
+| AP-02 | 17 | Missing, wrong, and correct shared secret |
+| AP-03 | 17 | Origin allowlist replacement semantics |
+| AP-04 | 17 | TLS certificate/key validation |
+| AP-05 | 17 | Stdio framing and stdout cleanliness |
+| AP-06 | 17 | Invalid ACP messages preserve the connection |
+| AP-07 | 17 | Concurrent ACP session isolation |
+| AP-08 | 17 | ACP cancellation reaches a terminal state |
+| AP-09 | 17 | Server termination during an active request |
+| AP-10 | 17 | Protocol version and capability negotiation |
+| SI-01 | 18 | Duplicate workspace identity and rename |
+| SI-02 | 18 | Delete workspace with pinned sessions |
+| SI-03 | 18 | Symlinked workspace and reference-folder boundaries |
+| SI-04 | 18 | Export format matrix, overwrite, and permissions |
+| SI-05 | 18 | Imported-session working-directory trust boundary |
+| SI-06 | 18 | Upgrade migration from a prior supported release |
+| SI-07 | 18 | Duplicate MCP install and command environment |
+| SI-08 | 18 | MCP secret storage and redaction |
+| SI-09 | 18 | Malformed skill/plugin and interrupted update |
+| SI-10 | 18 | Approval scope, persistence, and competing clients |

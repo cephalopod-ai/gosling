@@ -23,7 +23,7 @@ CLI and mark pure UI cards Not executed.
 - Category: navigation / empty state
 - Preconditions: Desktop running.
 - Steps:
-  1. Visit Home, Chat, Extensions, Skills (if present), Settings tabs (App, Chat, Providers, etc.), Session History, Workspaces.
+  1. Visit the current chat, Extensions, Skills, Session History, Workspaces, and every visible Settings tab (Models, Chat, Extensions, Prompts, Keyboard, Auth, and App where enabled).
   2. Toggle sidebar open/closed; switch style list/tile; try overlay mode.
   3. Open a second window; navigate independently; close one window mid-chat in the other.
 - Expected: no blank panels, infinite spinners, or unhandled exception overlays; unknown internal routes fail soft; multi-window does not corrupt the other's session state.
