@@ -492,6 +492,14 @@ export default function SessionActionsHeader({
                   {session.workspace_name}
                 </span>
               )}
+              {session.credential_profile_name && (
+                <span
+                  className="max-w-36 truncate rounded-full bg-background-tertiary px-1.5 py-0.5 text-[10px] text-text-secondary"
+                  title={`Credential: ${session.credential_profile_name}`}
+                >
+                  {session.credential_profile_name}
+                </span>
+              )}
               {session.imported_untrusted && (
                 <span
                   className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-700"

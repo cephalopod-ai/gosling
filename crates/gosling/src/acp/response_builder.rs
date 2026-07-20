@@ -52,6 +52,10 @@ struct SessionMeta<'a> {
     workspace_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     workspace_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    credential_profile_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    credential_profile_name: Option<&'a str>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     imported_untrusted: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,6 +90,8 @@ impl<'a> From<&'a Session> for SessionMeta<'a> {
             restrict_tools_to_working_dirs: session.restrict_tools_to_working_dirs,
             workspace_id: session.workspace_id.as_deref(),
             workspace_name: session.workspace_name.as_deref(),
+            credential_profile_id: session.credential_profile_id.as_deref(),
+            credential_profile_name: session.credential_profile_name.as_deref(),
             imported_untrusted: provenance.is_some(),
             import_source: provenance
                 .as_ref()

@@ -28,6 +28,8 @@ interface GoslingSessionInfoMeta {
   goslingMode?: GoslingMode;
   workspaceId?: string;
   workspaceName?: string;
+  credentialProfileId?: string;
+  credentialProfileName?: string;
   importedUntrusted?: boolean;
   importSource?: string;
   importOriginalWorkingDir?: string;
@@ -145,6 +147,8 @@ export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta =
     gosling_mode: meta.goslingMode,
     workspace_id: meta.workspaceId ?? loadMeta.workspaceId,
     workspace_name: meta.workspaceName ?? loadMeta.workspaceName,
+    credential_profile_id: meta.credentialProfileId,
+    credential_profile_name: meta.credentialProfileName,
     imported_untrusted: meta.importedUntrusted ?? loadMeta.importedUntrusted,
     import_source: meta.importSource ?? loadMeta.importSource,
     import_original_working_dir: meta.importOriginalWorkingDir,

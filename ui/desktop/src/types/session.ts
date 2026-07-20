@@ -50,6 +50,8 @@ export type Session = {
   working_dir: string;
   workspace_id?: string | null;
   workspace_name?: string | null;
+  credential_profile_id?: string | null;
+  credential_profile_name?: string | null;
   imported_untrusted?: boolean;
   import_source?: string;
   import_original_working_dir?: string;
