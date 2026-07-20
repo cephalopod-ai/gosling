@@ -316,9 +316,11 @@ async function assertRendererArtifactFileAccess(
 ): Promise<string> {
   const routedOutputRoots =
     artifactRoutingRegistry.get(webContentsId)?.outputs.map((output) => output.path) ?? [];
+  const expandedPath = expandTilde(filePath);
+  const candidatePath = path.isAbsolute(expandedPath) ? resolveRendererPath(filePath) : filePath;
   return assertArtifactFileAccess(
-    resolveRendererPath(filePath),
-    baseDirectory,
+    candidatePath,
+    baseDirectory ? resolveRendererPath(baseDirectory) : undefined,
     rendererFileRoots(webContentsId),
     routedOutputRoots,
     rendererArtifactFileGrants.get(webContentsId) ?? new Set<string>()

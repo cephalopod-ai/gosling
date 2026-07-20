@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import ImagePreview from './ImagePreview';
 import { formatMessageTimestamp } from '../utils/timeUtils';
 import MarkdownContent from './MarkdownContent';
@@ -21,6 +21,7 @@ import ElicitationRequest from './ElicitationRequest';
 import MessageCopyLink from './MessageCopyLink';
 import { cn } from '../utils';
 import { ArtifactMessageLinks } from './artifacts/ArtifactMessageLinks';
+import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
 
 interface GoslingMessageProps {
   sessionId: string;
@@ -58,6 +59,11 @@ function GoslingMessage({
   submitElicitationResponse,
 }: GoslingMessageProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const { openFile } = useArtifactWorkbench();
+  const handleLocalFileLink = useCallback(
+    (path: string) => openFile(path, workingDirectory, workspaceId),
+    [openFile, workingDirectory, workspaceId]
+  );
 
   const { textContent: displayText, imagePaths } = getTextAndImageContent(message);
   const thinkingContent = getThinkingContent(message);
@@ -103,7 +109,7 @@ function GoslingMessage({
           <div className="flex flex-col group">
             {displayText.trim() && (
               <div ref={contentRef} className="w-full">
-                <MarkdownContent content={displayText} />
+                <MarkdownContent content={displayText} onLocalFileLink={handleLocalFileLink} />
                 {!isStreaming && (
                   <ArtifactMessageLinks
                     content={displayText}

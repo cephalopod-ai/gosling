@@ -60,6 +60,9 @@ impl ProviderDef for ClaudeAcpProvider {
                 .with_npm()
                 .resolve(CLAUDE_ACP_BINARY)?;
             let gosling_mode = config.get_gosling_mode().unwrap_or_default();
+            let model = config
+                .get_gosling_model()
+                .unwrap_or_else(|_| ACP_CURRENT_MODEL.to_string());
 
             let mode_mapping = HashMap::from([
                 // Closest to "autonomous": bypassPermissions skips confirmations.
@@ -81,8 +84,12 @@ impl ProviderDef for ClaudeAcpProvider {
                 work_dir: working_dir,
                 mcp_servers: extension_configs_to_mcp_servers(&extensions),
                 session_mode_id: Some(mode_mapping[&gosling_mode].clone()),
-                session_config_options: vec![],
-                model_config_option_id: None,
+                session_config_options: if model == ACP_CURRENT_MODEL {
+                    vec![]
+                } else {
+                    vec![("model".to_string(), model)]
+                },
+                model_config_option_id: Some("model".to_string()),
                 mode_mapping,
                 notification_callback: None,
             };

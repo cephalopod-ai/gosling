@@ -314,6 +314,7 @@ pub struct Agent {
     pub(super) provider: SharedProvider,
     pub config: AgentConfig,
     pub(super) current_gosling_mode: Mutex<GoslingMode>,
+    pub(super) gosling_mode_changes: tokio::sync::watch::Sender<GoslingMode>,
     state_transition: Mutex<()>,
 
     pub extension_manager: Arc<ExtensionManager>,
@@ -409,6 +410,7 @@ impl Agent {
 
         let gosling_platform = config.gosling_platform.clone();
         let initial_mode = config.gosling_mode;
+        let (gosling_mode_changes, _) = tokio::sync::watch::channel(initial_mode);
         let explicit_mcp_host_info = config.mcp_host_info.clone();
         let mcpui = explicit_mcp_host_info
             .as_ref()
@@ -435,6 +437,7 @@ impl Agent {
             provider: provider.clone(),
             config,
             current_gosling_mode: Mutex::new(initial_mode),
+            gosling_mode_changes,
             state_transition: Mutex::new(()),
             extension_manager: Arc::new(ExtensionManager::new(
                 provider.clone(),
@@ -3283,6 +3286,7 @@ impl Agent {
         }
 
         *current_mode = mode;
+        let _ = self.gosling_mode_changes.send(mode);
         Ok(())
     }
 

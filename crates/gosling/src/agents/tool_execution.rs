@@ -12,6 +12,7 @@ use crate::config::permission::PermissionLevel;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
 use crate::permission::Permission;
+use crate::permission::permission_confirmation::PrincipalType;
 use rmcp::model::{Content, ServerNotification};
 
 /// Context passed through the tool call dispatch chain.
@@ -113,7 +114,10 @@ impl Agent {
                         }
                     });
 
+                let mut mode_changes = self.gosling_mode_changes.subscribe();
                 let confirmation_rx = self.tool_confirmation_router.register(request.id.clone()).await;
+                let auto_approve = self.gosling_mode().await == crate::config::GoslingMode::Auto
+                    && security_message.is_none();
 
                 let action_required_msg = Message::assistant()
                     .with_action_required(
@@ -123,10 +127,32 @@ impl Agent {
                         security_message,
                     )
                     .user_only();
-                yield action_required_msg;
+                if !auto_approve {
+                    yield action_required_msg;
+                }
 
-                let confirmation = confirmation_rx.await
-                    .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?;
+                let confirmation = if auto_approve {
+                    PermissionConfirmation {
+                        principal_type: PrincipalType::Tool,
+                        permission: Permission::AllowOnce,
+                    }
+                } else {
+                    let mut confirmation_rx = confirmation_rx;
+                    loop {
+                        tokio::select! {
+                            confirmation = &mut confirmation_rx => break confirmation
+                                .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?,
+                            changed = mode_changes.changed(), if security_message.is_none() => {
+                                if changed.is_ok() && *mode_changes.borrow() == crate::config::GoslingMode::Auto {
+                                    break PermissionConfirmation {
+                                        principal_type: PrincipalType::Tool,
+                                        permission: Permission::AllowOnce,
+                                    };
+                                }
+                            }
+                        }
+                    }
+                };
 
                 if let Some(finding_id) = get_security_finding_id_from_results(&request.id, inspection_results) {
                     let action = match confirmation.permission {

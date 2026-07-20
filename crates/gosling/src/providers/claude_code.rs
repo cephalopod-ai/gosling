@@ -980,6 +980,26 @@ impl Provider for ClaudeCodeProvider {
                                     }) = serde_json::from_str::<IncomingControlRequest>(trimmed) {
                                         tracing::debug!(raw = %parsed, "can_use_tool control_request received");
 
+                                        let mode = (*self.initial_mode.lock().await)
+                                            .unwrap_or_else(|| Config::global().get_gosling_mode().unwrap_or_default());
+                                        if mode == GoslingMode::Auto {
+                                            let resp = ControlResponse::success(
+                                                request_id,
+                                                PermissionResponse::Allow {
+                                                    updated_input: input,
+                                                    tool_use_id,
+                                                },
+                                            );
+                                            let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
+                                                ProviderError::RequestFailed(format!("Failed to serialize automatic permission response: {e}"))
+                                            })?;
+                                            resp_str.push('\n');
+                                            process.stdin.write_all(resp_str.as_bytes()).await.map_err(|e| {
+                                                ProviderError::RequestFailed(format!("Failed to write automatic permission response: {e}"))
+                                            })?;
+                                            continue;
+                                        }
+
                                         let (tx, rx) = oneshot::channel();
                                         pending_confirmations.lock().await.insert(request_id.clone(), tx);
 

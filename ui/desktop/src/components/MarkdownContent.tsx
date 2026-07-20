@@ -32,6 +32,7 @@ import { wrapHTMLInCodeBlock } from '../utils/htmlSecurity';
 import { isProtocolSafe, getProtocol, BLOCKED_PROTOCOLS } from '../utils/urlSecurity';
 import { ConfirmationModal } from './ui/ConfirmationModal';
 import { defineMessages, useIntl } from '../i18n';
+import { artifactKindFromPath, localFilePathFromUri } from './artifacts/artifactUtils';
 
 const i18n = defineMessages({
   copyCode: {
@@ -75,6 +76,7 @@ interface CodeProps extends React.ClassAttributes<HTMLElement>, React.HTMLAttrib
 interface MarkdownContentProps {
   content: string;
   className?: string;
+  onLocalFileLink?: (path: string) => void;
 }
 
 // Memoized CodeBlock component to prevent re-rendering when props haven't changed
@@ -201,6 +203,7 @@ const customUrlTransform = (url: string): string => {
 const MarkdownContent = memo(function MarkdownContent({
   content,
   className = '',
+  onLocalFileLink,
 }: MarkdownContentProps) {
   const intl = useIntl();
   const [processedContent, setProcessedContent] = useState(content);
@@ -281,6 +284,12 @@ const MarkdownContent = memo(function MarkdownContent({
                     e.preventDefault();
                     e.stopPropagation();
                     if (!props.href) return;
+
+                    const localPath = localFilePathFromUri(props.href);
+                    if (localPath && artifactKindFromPath(localPath) !== 'unknown') {
+                      onLocalFileLink?.(localPath);
+                      return;
+                    }
 
                     if (isProtocolSafe(props.href)) {
                       window.electron.openExternal(props.href);
