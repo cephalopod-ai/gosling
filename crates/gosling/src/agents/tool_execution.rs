@@ -12,6 +12,7 @@ use crate::config::permission::PermissionLevel;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
 use crate::permission::Permission;
+use crate::permission::PermissionConfirmation;
 use crate::permission::permission_confirmation::PrincipalType;
 use rmcp::model::{Content, ServerNotification};
 
@@ -131,28 +132,32 @@ impl Agent {
                     yield action_required_msg;
                 }
 
-                let confirmation = if auto_approve {
-                    PermissionConfirmation {
+                let confirmation: Result<crate::permission::PermissionConfirmation, _> = if auto_approve {
+                    Ok(PermissionConfirmation {
                         principal_type: PrincipalType::Tool,
                         permission: Permission::AllowOnce,
-                    }
+                    })
                 } else {
                     let mut confirmation_rx = confirmation_rx;
                     loop {
                         tokio::select! {
-                            confirmation = &mut confirmation_rx => break confirmation
-                                .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?,
+                            confirmation = &mut confirmation_rx => {
+                                break Ok(
+                                    confirmation
+                                        .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?
+                                );
+                            }
                             changed = mode_changes.changed(), if security_message.is_none() => {
                                 if changed.is_ok() && *mode_changes.borrow() == crate::config::GoslingMode::Auto {
-                                    break PermissionConfirmation {
+                                    break Ok(PermissionConfirmation {
                                         principal_type: PrincipalType::Tool,
                                         permission: Permission::AllowOnce,
-                                    };
+                                    });
                                 }
                             }
                         }
                     }
-                };
+                }?;
 
                 if let Some(finding_id) = get_security_finding_id_from_results(&request.id, inspection_results) {
                     let action = match confirmation.permission {
