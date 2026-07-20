@@ -253,7 +253,16 @@ export function AppInner() {
         if (existingIndex !== -1) {
           // Session exists - move to end of LRU list (most recently used)
           const existing = prev[existingIndex];
-          return [...prev.slice(0, existingIndex), ...prev.slice(existingIndex + 1), existing];
+          const updatedExisting = {
+            ...existing,
+            ...(initialMessage ? { initialMessage } : {}),
+            ...(noAutoSubmit !== undefined ? { noAutoSubmit } : {}),
+          };
+          return [
+            ...prev.slice(0, existingIndex),
+            ...prev.slice(existingIndex + 1),
+            updatedExisting,
+          ];
         }
 
         // New session - add to end with LRU eviction if needed

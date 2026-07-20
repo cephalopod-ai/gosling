@@ -69,9 +69,10 @@ export function useAutoSubmit({
       return;
     }
 
-    // Scenario 1: New session with initial message from Hub
-    // Hub always creates new sessions, so message_count will be 0
-    if (initialMessage && session.message_count === 0 && messages.length === 0) {
+    // Scenario 1: New session with initial message from Hub. The hydrated
+    // session metadata can include setup activity, so the message store is
+    // the source of truth for whether the conversation has started.
+    if (!shouldStartAgent && initialMessage && messages.length === 0) {
       hasAutoSubmittedRef.current = true;
       handleSubmit(initialMessage);
       clearInitialMessage();
