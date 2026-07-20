@@ -1542,12 +1542,19 @@ async fn log_session_completion(
 }
 
 fn parse_run_input(input_opts: &InputOptions) -> Result<Option<InputConfig>> {
+    parse_run_input_from_reader(input_opts, &mut std::io::stdin())
+}
+
+fn parse_run_input_from_reader(
+    input_opts: &InputOptions,
+    stdin: &mut impl Read,
+) -> Result<Option<InputConfig>> {
     match (&input_opts.instructions, &input_opts.input_text) {
         (Some(file), _) if file == "-" => {
             let mut contents = String::new();
-            std::io::stdin()
-                .read_to_string(&mut contents)
-                .expect("Failed to read from stdin");
+            stdin.read_to_string(&mut contents).map_err(|error| {
+                anyhow::anyhow!("Failed to read instructions from stdin: {error}")
+            })?;
             Ok(Some(InputConfig {
                 contents: Some(contents),
                 additional_system_prompt: input_opts.system.clone(),
@@ -1896,6 +1903,69 @@ pub async fn cli() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_input_preserves_valid_stdin() {
+        let input_options = InputOptions {
+            instructions: Some("-".to_string()),
+            system: Some("system marker".to_string()),
+            ..Default::default()
+        };
+        let mut stdin = std::io::Cursor::new(b"line one\nline two\n");
+
+        let input = parse_run_input_from_reader(&input_options, &mut stdin)
+            .expect("valid stdin should parse")
+            .expect("stdin should produce an input config");
+
+        assert_eq!(input.contents.as_deref(), Some("line one\nline two\n"));
+        assert_eq!(
+            input.additional_system_prompt.as_deref(),
+            Some("system marker")
+        );
+    }
+
+    #[test]
+    fn run_input_rejects_invalid_utf8_without_panicking() {
+        let input_options = InputOptions {
+            instructions: Some("-".to_string()),
+            ..Default::default()
+        };
+        let mut stdin = std::io::Cursor::new([0xff, 0xfe]);
+
+        let result = parse_run_input_from_reader(&input_options, &mut stdin);
+        let Err(error) = result else {
+            panic!("invalid UTF-8 stdin should return an error");
+        };
+
+        let message = error.to_string();
+        assert!(message.contains("Failed to read instructions from stdin"));
+        assert!(message.contains("valid UTF-8"));
+    }
+
+    #[test]
+    fn run_input_propagates_stdin_io_errors() {
+        struct FailingReader;
+
+        impl std::io::Read for FailingReader {
+            fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("fixture read failure"))
+            }
+        }
+
+        let input_options = InputOptions {
+            instructions: Some("-".to_string()),
+            ..Default::default()
+        };
+
+        let result = parse_run_input_from_reader(&input_options, &mut FailingReader);
+        let Err(error) = result else {
+            panic!("stdin I/O failures should return an error");
+        };
+
+        let message = error.to_string();
+        assert!(message.contains("Failed to read instructions from stdin"));
+        assert!(message.contains("fixture read failure"));
+    }
 
     #[test]
     fn completion_command_accepts_nushell_alias() {
