@@ -58,6 +58,10 @@ Severity: Medium
 Confidence: Likely
 Evidence basis: simulation-reasoned
 Domain: Workflow-GUI
+Repair status: Repaired on 2026-07-20. Inline input parsing now converts unknown
+slash commands to a local `Retry` after printing an actionable `/help` hint;
+regression coverage includes typos, invalid command prefixes, arguments, and
+leading whitespace.
 
 Evidence:
 - `crates/gosling-cli/src/session/input.rs:182-187` — `match handle_slash_command(&input) { Some(result) => Ok(result), None => Ok(InputResult::Message(input.trim().to_string())) }`

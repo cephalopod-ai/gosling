@@ -11,9 +11,9 @@ use std::path::PathBuf;
 use crate::config::permission::PermissionLevel;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
+use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::Permission;
 use crate::permission::PermissionConfirmation;
-use crate::permission::permission_confirmation::PrincipalType;
 use rmcp::model::{Content, ServerNotification};
 
 /// Context passed through the tool call dispatch chain.

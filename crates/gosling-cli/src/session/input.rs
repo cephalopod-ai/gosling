@@ -163,26 +163,29 @@ pub fn get_input(
         editor.add_history_entry(input.as_str())?;
     }
 
-    // Handle non-slash commands first
-    if !input.starts_with('/') {
-        let trimmed = input.trim();
-        if trimmed.is_empty()
-            || trimmed.eq_ignore_ascii_case("exit")
-            || trimmed.eq_ignore_ascii_case("quit")
-        {
-            return Ok(if trimmed.is_empty() {
-                InputResult::Retry
-            } else {
-                InputResult::Exit
-            });
+    Ok(parse_inline_input(&input))
+}
+
+fn parse_inline_input(input: &str) -> InputResult {
+    let trimmed = input.trim();
+
+    if !trimmed.starts_with('/') {
+        if trimmed.is_empty() {
+            return InputResult::Retry;
         }
-        return Ok(InputResult::Message(trimmed.to_string()));
+        if trimmed.eq_ignore_ascii_case("exit") || trimmed.eq_ignore_ascii_case("quit") {
+            return InputResult::Exit;
+        }
+        return InputResult::Message(trimmed.to_string());
     }
 
-    // Handle slash commands
-    match handle_slash_command(&input) {
-        Some(result) => Ok(result),
-        None => Ok(InputResult::Message(input.trim().to_string())),
+    match handle_slash_command(trimmed) {
+        Some(result) => result,
+        None => {
+            let command = trimmed.split_whitespace().next().unwrap_or(trimmed);
+            println!("Unknown command: {command}. Type /help to list available commands.");
+            InputResult::Retry
+        }
     }
 }
 
@@ -503,6 +506,27 @@ mod tests {
 
         // Test unknown commands
         assert!(handle_slash_command("/unknown").is_none());
+    }
+
+    #[test]
+    fn test_unknown_slash_commands_are_not_messages() {
+        for input in [
+            "/unknown",
+            "/halp",
+            "/promptxyz",
+            "/editfoo",
+            "  /moel gpt-4o  ",
+        ] {
+            assert!(matches!(parse_inline_input(input), InputResult::Retry));
+        }
+    }
+
+    #[test]
+    fn test_regular_input_remains_a_message() {
+        let InputResult::Message(message) = parse_inline_input("  explain /tmp/example  ") else {
+            panic!("Expected Message");
+        };
+        assert_eq!(message, "explain /tmp/example");
     }
 
     #[test]
