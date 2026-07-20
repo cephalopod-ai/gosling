@@ -178,6 +178,8 @@ impl GoslingAcpAgent {
                 } else {
                     super::resolve_provider_default_model_config(&provider).await?
                 };
+                self.validate_model_for_provider(&provider, &model_config.model_name)
+                    .await?;
                 if let Some(effort) = workspace.thinking_effort {
                     model_config =
                         model_config.with_thinking_effort(provider_thinking_effort(effort));
@@ -185,14 +187,15 @@ impl GoslingAcpAgent {
                 return Ok((provider, model_config));
             }
         }
-        let provider = match meta_string(meta, "provider")? {
-            Some(provider) => provider,
-            None => {
-                return super::resolve_default_provider_model_config(config);
+        let (provider, model_config) = match meta_string(meta, "provider")? {
+            Some(provider) => {
+                let model_config = super::resolve_provider_default_model_config(&provider).await?;
+                (provider, model_config)
             }
+            None => super::resolve_default_provider_model_config(config)?,
         };
-
-        let model_config = super::resolve_provider_default_model_config(&provider).await?;
+        self.validate_model_for_provider(&provider, &model_config.model_name)
+            .await?;
 
         Ok((provider, model_config))
     }

@@ -67,6 +67,7 @@ export function WorkspaceEditorDialog({
   const [draft, setDraft] = useState<WorkspaceMutation>(() => createDraft(workspace));
   const [providers, setProviders] = useState<ProviderDetails[]>([]);
   const [models, setModels] = useState<WorkspaceModelOption[]>([]);
+  const [modelsProviderId, setModelsProviderId] = useState<string | null>(null);
   const [providerCatalogError, setProviderCatalogError] = useState<string | null>(null);
   const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -114,11 +115,14 @@ export function WorkspaceEditorDialog({
     const providerId = draft.defaultProvider;
     if (!open || !providerId) {
       setModels([]);
+      setModelsProviderId(null);
       setModelsLoading(false);
       setModelCatalogError(null);
       return;
     }
     let cancelled = false;
+    setModels([]);
+    setModelsProviderId(null);
     setModelsLoading(true);
     setModelCatalogError(null);
     void acpListProviderModels(providerId)
@@ -130,6 +134,7 @@ export function WorkspaceEditorDialog({
               thinkingEfforts: item.thinkingEfforts,
             }))
           );
+          setModelsProviderId(providerId);
         }
       })
       .catch((cause) => {
@@ -146,13 +151,22 @@ export function WorkspaceEditorDialog({
     };
   }, [draft.defaultProvider, open]);
 
+  const modelsMatchSelectedProvider =
+    Boolean(draft.defaultProvider) && modelsProviderId === draft.defaultProvider;
+
   const effortOptions = useMemo(() => {
-    if (!draft.defaultModel) return [];
+    if (!modelsMatchSelectedProvider || !draft.defaultModel) return [];
     return models.find((model) => model.id === draft.defaultModel)?.thinkingEfforts ?? [];
-  }, [draft.defaultModel, models]);
+  }, [draft.defaultModel, models, modelsMatchSelectedProvider]);
 
   useEffect(() => {
-    if (modelsLoading || !draft.defaultProvider || !draft.defaultModel || models.length === 0) {
+    if (
+      modelsLoading ||
+      !modelsMatchSelectedProvider ||
+      !draft.defaultProvider ||
+      !draft.defaultModel ||
+      models.length === 0
+    ) {
       return;
     }
     setDraft((current) => {
@@ -171,7 +185,13 @@ export function WorkspaceEditorDialog({
         ? current
         : { ...current, defaultThinkingEffort: nextEffort };
     });
-  }, [draft.defaultModel, draft.defaultProvider, models, modelsLoading]);
+  }, [
+    draft.defaultModel,
+    draft.defaultProvider,
+    models,
+    modelsLoading,
+    modelsMatchSelectedProvider,
+  ]);
 
   const requiredIssue = useMemo(
     () => validation?.issues?.find((issue) => issue.severity === 'error'),
@@ -391,7 +411,11 @@ export function WorkspaceEditorDialog({
                   <select
                     aria-label="Default provider (optional)"
                     value={draft.defaultProvider ?? ''}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      setModels([]);
+                      setModelsProviderId(null);
+                      setModelsLoading(Boolean(event.target.value));
+                      setModelCatalogError(null);
                       setDraft((current) => {
                         const providerId = event.target.value || null;
                         const selected = providers.find((item) => item.name === providerId);
@@ -403,8 +427,8 @@ export function WorkspaceEditorDialog({
                             : null,
                           defaultThinkingEffort: providerId ? DEFAULT_WORKSPACE_EFFORT : null,
                         };
-                      })
-                    }
+                      });
+                    }}
                     className="h-9 rounded-md border border-border-primary bg-background-primary px-3 text-sm"
                   >
                     <option value="">Use app default</option>
@@ -431,13 +455,16 @@ export function WorkspaceEditorDialog({
                         defaultThinkingEffort: event.target.value ? DEFAULT_WORKSPACE_EFFORT : null,
                       }))
                     }
-                    disabled={!draft.defaultProvider || modelsLoading}
+                    disabled={
+                      !draft.defaultProvider || modelsLoading || !modelsMatchSelectedProvider
+                    }
                     className="h-9 rounded-md border border-border-primary bg-background-primary px-3 text-sm disabled:opacity-60"
                   >
                     <option value="">
                       {modelsLoading ? 'Loading models…' : 'Use provider default'}
                     </option>
-                    {draft.defaultModel &&
+                    {modelsMatchSelectedProvider &&
+                      draft.defaultModel &&
                       !models.some((model) => model.id === draft.defaultModel) && (
                         <option value={draft.defaultModel}>{draft.defaultModel}</option>
                       )}

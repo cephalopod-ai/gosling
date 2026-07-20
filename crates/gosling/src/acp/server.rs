@@ -2926,6 +2926,8 @@ impl GoslingAcpAgent {
             .model_config_for_session(session_id)
             .await
             .internal_err_ctx("Failed to resolve model config")?;
+        self.validate_model_for_provider(&provider_name, model_id)
+            .await?;
         let model_config =
             crate::model_config::model_config_from_user_config_with_session_settings(
                 &provider_name,
@@ -3076,6 +3078,8 @@ impl GoslingAcpAgent {
             current_model
         };
         let model = model_name.unwrap_or(&default_model);
+        self.validate_model_for_provider(&resolved_provider_name, model)
+            .await?;
         let model_config =
             crate::model_config::model_config_from_user_config_with_session_settings(
                 &resolved_provider_name,
@@ -3092,6 +3096,30 @@ impl GoslingAcpAgent {
             .internal_err_ctx("Failed to recreate provider")?;
 
         // provider_name is already updated on the session by the agent's update_provider call.
+        Ok(())
+    }
+
+    async fn validate_model_for_provider(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let entry = self
+            .provider_inventory
+            .entry_for_provider(provider_id)
+            .await
+            .internal_err_ctx("Failed to read provider inventory")?
+            .ok_or_else(|| {
+                agent_client_protocol::Error::invalid_params()
+                    .data(format!("Unknown provider: {provider_id}"))
+            })?;
+        let model_exists = entry.default_model == model_id
+            || entry.models.iter().any(|model| model.id == model_id);
+        if !model_exists {
+            return Err(agent_client_protocol::Error::invalid_params().data(format!(
+                "Model '{model_id}' is not available for provider '{provider_id}'"
+            )));
+        }
         Ok(())
     }
 

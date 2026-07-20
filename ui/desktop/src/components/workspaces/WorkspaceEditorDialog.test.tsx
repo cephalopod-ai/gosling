@@ -200,6 +200,44 @@ describe('WorkspaceEditorDialog', () => {
     expect(screen.getByLabelText('Default reasoning effort (optional)')).toHaveValue('');
   });
 
+  it('does not retain models from the previous provider while the new catalog loads', async () => {
+    const user = userEvent.setup();
+    let resolveLocalModels:
+      | ((models: Awaited<ReturnType<typeof acpListProviderModels>>) => void)
+      | undefined;
+    vi.mocked(acpListProviderModels).mockImplementation((providerId) => {
+      if (providerId === 'chatgpt_codex') {
+        return Promise.resolve([
+          {
+            id: 'gpt-5.6-terra',
+            reasoning: true,
+            thinkingEfforts: ['off', 'low', 'medium', 'high', 'max'],
+          },
+        ]);
+      }
+      return new Promise((resolve) => {
+        resolveLocalModels = resolve;
+      });
+    });
+
+    render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    await screen.findByRole('option', { name: 'gpt-5.6-terra' });
+    await user.selectOptions(screen.getByLabelText('Default provider (optional)'), 'local_fast');
+
+    const modelSelect = screen.getByLabelText('Default model (optional)');
+    expect(modelSelect).toBeDisabled();
+    expect(screen.queryByRole('option', { name: 'gpt-5.6-terra' })).not.toBeInTheDocument();
+
+    expect(resolveLocalModels).toBeDefined();
+    resolveLocalModels!([{ id: 'fast-model', reasoning: false, thinkingEfforts: [] }]);
+    expect(await screen.findByRole('option', { name: 'fast-model' })).toBeInTheDocument();
+    expect(modelSelect).not.toBeDisabled();
+    expect(modelSelect).toHaveValue('fast-model');
+  });
+
   it('keeps a provider-list failure visible when model loading succeeds', async () => {
     vi.mocked(acpListProviderDetails).mockRejectedValueOnce(new Error('inventory unavailable'));
 

@@ -14,7 +14,6 @@ import { ExtensionInstallModal } from './components/ExtensionInstallModal';
 import { toast, ToastContainer } from 'react-toastify';
 import AnnouncementModal from './components/AnnouncementModal';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
-import { createSession } from './sessions';
 
 import { ChatType } from './types/chat';
 import Hub from './components/Hub';
@@ -24,6 +23,10 @@ interface PairRouteState {
   resumeSessionId?: string;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+}
+
+interface NewChatRouteState {
+  initialMessage?: UserInput;
 }
 import SettingsView, { SettingsViewOptions } from './components/settings/SettingsView';
 import SessionsView from './components/sessions/SessionsView';
@@ -48,7 +51,7 @@ import { getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
-import { WorkspaceProvider, useWorkspace } from './contexts/WorkspaceContext';
+import { WorkspaceProvider } from './contexts/WorkspaceContext';
 
 function PageViewTracker() {
   usePageViewTracking();
@@ -58,7 +61,10 @@ function PageViewTracker() {
 // Route Components
 const HubRouteWrapper = () => {
   const setView = useNavigation();
-  return <Hub setView={setView} />;
+  const location = useLocation();
+  const routeState =
+    (location.state as NewChatRouteState) || (window.history.state as NewChatRouteState) || {};
+  return <Hub setView={setView} initialMessage={routeState.initialMessage} />;
 };
 
 const PairRouteWrapper = ({
@@ -69,65 +75,22 @@ const PairRouteWrapper = ({
     initialMessage?: UserInput;
     noAutoSubmit?: boolean;
   }>;
-  setActiveSessions: (
-    sessions: Array<{ sessionId: string; initialMessage?: UserInput; noAutoSubmit?: boolean }>
-  ) => void;
 }) => {
-  const { extensionsList } = useConfig();
-  const { activeWorkspace } = useWorkspace();
+  const navigate = useNavigate();
   const location = useLocation();
   const routeState =
     (location.state as PairRouteState) || (window.history.state as PairRouteState) || {};
-  const [searchParams, setSearchParams] = useSearchParams();
-  const isCreatingSessionRef = useRef(false);
+  const [searchParams] = useSearchParams();
 
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
 
-  // Create session if we have an initialMessage but no sessionId
   useEffect(() => {
-    if (initialMessage && !resumeSessionId && !isCreatingSessionRef.current) {
-      isCreatingSessionRef.current = true;
-
-      (async () => {
-        try {
-          const newSession = await createSession(
-            activeWorkspace?.workingFolder ?? getInitialWorkingDir(),
-            {
-              allExtensions: extensionsList,
-              workspaceId: activeWorkspace?.id,
-            }
-          );
-
-          window.dispatchEvent(
-            new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-              detail: {
-                sessionId: newSession.id,
-                initialMessage,
-                noAutoSubmit,
-              },
-            })
-          );
-
-          setSearchParams((prev) => {
-            prev.set('resumeSessionId', newSession.id);
-            return prev;
-          });
-        } catch (error) {
-          console.error('Failed to create session:', error);
-          trackErrorWithContext(error, {
-            component: 'PairRouteWrapper',
-            action: 'create_session',
-            recoverable: true,
-          });
-        } finally {
-          isCreatingSessionRef.current = false;
-        }
-      })();
+    if (initialMessage && !resumeSessionId) {
+      navigate('/', { replace: true, state: { initialMessage } });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialMessage, resumeSessionId, setSearchParams, extensionsList, activeWorkspace]);
+  }, [initialMessage, navigate, resumeSessionId]);
 
   // Add resumed session to active sessions if not already there
   useEffect(() => {
@@ -520,14 +483,11 @@ export function AppInner() {
   useEffect(() => {
     const handleSetInitialMessage = async (_event: IpcRendererEvent, ...args: unknown[]) => {
       const initialMessage = args[0] as string;
-      const options = (args[1] as { noAutoSubmit?: boolean } | undefined) || {};
-
       if (initialMessage && !isProcessingRef.current) {
         isProcessingRef.current = true;
-        navigate('/pair', {
+        navigate('/', {
           state: {
             initialMessage: { msg: initialMessage, images: [] },
-            noAutoSubmit: options.noAutoSubmit,
           },
         });
         setTimeout(() => {
@@ -581,15 +541,7 @@ export function AppInner() {
               }
             >
               <Route index element={<HubRouteWrapper />} />
-              <Route
-                path="pair"
-                element={
-                  <PairRouteWrapper
-                    activeSessions={activeSessions}
-                    setActiveSessions={setActiveSessions}
-                  />
-                }
-              />
+              <Route path="pair" element={<PairRouteWrapper activeSessions={activeSessions} />} />
               <Route path="settings" element={<SettingsRoute />} />
               <Route
                 path="extensions"

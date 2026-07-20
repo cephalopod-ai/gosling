@@ -51,15 +51,15 @@ function useClock(): { time: string; meridiem: string; hour: number } {
 
 export default function Hub({
   setView,
+  initialMessage,
 }: {
   setView: (view: View, viewOptions?: ViewOptions) => void;
+  initialMessage?: UserInput;
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
-  const { workspaces, activeWorkspaceId, defaultWorkspaceId, loading, error } = useWorkspace();
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(
-    activeWorkspaceId ?? defaultWorkspaceId ?? ''
-  );
+  const { workspaces, loading, error } = useWorkspace();
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
   const selectedWorkspaceItem = useMemo(
     () => workspaces.find((item) => item.workspace.id === selectedWorkspaceId),
     [selectedWorkspaceId, workspaces]
@@ -76,6 +76,10 @@ export default function Hub({
       'This workspace cannot start a session. Relink its primary folder or credential profile.'
     );
   }, [selectedWorkspaceItem]);
+  const workspaceSelectionRequired = !loading && !selectedWorkspace;
+  const submitDisabledReason =
+    workspaceStartIssue ??
+    (workspaceSelectionRequired ? 'Choose a workspace before starting a chat.' : undefined);
   const [workingDir, setWorkingDir] = useState(
     selectedWorkspace?.workingFolder ?? getInitialWorkingDir()
   );
@@ -92,10 +96,10 @@ export default function Hub({
 
   useEffect(() => {
     setSelectedWorkspaceId((current) => {
-      if (workspaces.some((item) => item.workspace.id === current)) return current;
-      return activeWorkspaceId ?? defaultWorkspaceId ?? workspaces[0]?.workspace.id ?? '';
+      if (!current || workspaces.some((item) => item.workspace.id === current)) return current;
+      return '';
     });
-  }, [activeWorkspaceId, defaultWorkspaceId, workspaces]);
+  }, [workspaces]);
 
   useEffect(() => {
     if (selectedWorkspace) {
@@ -202,6 +206,7 @@ export default function Hub({
             {!loading && workspaces.length === 0 && (
               <option value="">No workspace available</option>
             )}
+            {!loading && workspaces.length > 0 && <option value="">Choose a workspace…</option>}
             {workspaces.map((item) => (
               <option
                 key={item.workspace.id}
@@ -236,7 +241,7 @@ export default function Hub({
             handleSubmit={handleSubmit}
             chatState={isCreatingSession ? ChatState.LoadingConversation : ChatState.Idle}
             onStop={() => {}}
-            initialValue=""
+            initialValue={initialMessage?.msg ?? ''}
             setView={setView}
             totalTokens={0}
             accumulatedInputTokens={0}
@@ -247,8 +252,8 @@ export default function Hub({
             disableAnimation={false}
             onWorkingDirChange={setWorkingDir}
             inputRef={inputRef}
-            submitDisabled={Boolean(workspaceStartIssue)}
-            submitDisabledReason={workspaceStartIssue ?? undefined}
+            submitDisabled={Boolean(submitDisabledReason)}
+            submitDisabledReason={submitDisabledReason}
             nextChatExtensionDraft={draftForMenu}
             onNextChatExtensionDraftChange={handleNextChatExtensionDraftChange}
           />

@@ -17,16 +17,19 @@ vi.mock('./ChatInputCard', () => ({
 vi.mock('./ChatInput', () => ({
   default: ({
     handleSubmit,
+    initialValue,
     submitDisabled,
     submitDisabledReason,
   }: {
     handleSubmit(input: { msg: string; images: [] }): void;
+    initialValue?: string;
     submitDisabled?: boolean;
     submitDisabledReason?: string;
   }) => (
     <button
       disabled={submitDisabled}
       title={submitDisabledReason}
+      data-initial-value={initialValue}
       onClick={() => handleSubmit({ msg: 'Start the project', images: [] })}
     >
       Send message
@@ -84,13 +87,14 @@ describe('Hub workspace selection', () => {
     vi.mocked(createSession).mockResolvedValue({ id: 'session-personal' } as never);
   });
 
-  it('creates the chat with the workspace explicitly selected in the Hub', async () => {
+  it('requires a workspace choice instead of inheriting the active workspace', async () => {
     const user = userEvent.setup();
     const setView = vi.fn();
     render(<Hub setView={setView} />, { wrapper: IntlTestWrapper });
 
-    expect(screen.getByLabelText('Workspace')).toHaveValue('default');
+    expect(screen.getByLabelText('Workspace')).toHaveValue('');
     expect(screen.getByRole('option', { name: 'Missing folder — needs attention' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
 
     await user.selectOptions(screen.getByLabelText('Workspace'), 'personal');
     expect(screen.getByTitle('/Users/tester/Personal')).toBeInTheDocument();
@@ -109,7 +113,7 @@ describe('Hub workspace selection', () => {
     );
   });
 
-  it('blocks a session when the selected workspace primary folder is unavailable', async () => {
+  it('does not allow a workspace with an unavailable primary folder', async () => {
     const user = userEvent.setup();
     vi.mocked(useWorkspace).mockReturnValue({
       workspaces: [workspace('missing', 'Missing folder', '/missing', false)],
@@ -122,12 +126,25 @@ describe('Hub workspace selection', () => {
     const setView = vi.fn();
     render(<Hub setView={setView} />, { wrapper: IntlTestWrapper });
 
-    expect(screen.getByRole('alert')).toHaveTextContent('This workspace cannot start a session');
+    expect(screen.getByLabelText('Workspace')).toHaveValue('');
+    expect(screen.getByRole('option', { name: 'Missing folder — needs attention' })).toBeDisabled();
     const send = screen.getByRole('button', { name: 'Send message' });
     expect(send).toBeDisabled();
     await user.click(send);
 
     expect(createSession).not.toHaveBeenCalled();
     expect(setView).not.toHaveBeenCalled();
+  });
+
+  it('keeps a launcher prompt in the new-chat draft until a workspace is chosen', () => {
+    render(<Hub setView={vi.fn()} initialMessage={{ msg: 'Review this project', images: [] }} />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    expect(screen.getByRole('button', { name: 'Send message' })).toHaveAttribute(
+      'data-initial-value',
+      'Review this project'
+    );
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   });
 });

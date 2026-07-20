@@ -35,6 +35,8 @@ impl GoslingAcpAgent {
         &self,
         request: WorkspaceCreateRequest,
     ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        self.validate_workspace_provider_model(&request.workspace)
+            .await?;
         let workspace = self
             .workspace_service
             .create(request.workspace)
@@ -47,6 +49,8 @@ impl GoslingAcpAgent {
         &self,
         request: WorkspaceUpdateRequest,
     ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        self.validate_workspace_provider_model(&request.workspace)
+            .await?;
         let workspace = self
             .workspace_service
             .update(&request.workspace_id, request.workspace)
@@ -59,6 +63,12 @@ impl GoslingAcpAgent {
         &self,
         request: WorkspaceDuplicateRequest,
     ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        let source = self
+            .workspace_service
+            .get(&request.workspace_id)
+            .invalid_params_err()?;
+        self.validate_workspace_provider_model(&WorkspaceMutation::from(&source))
+            .await?;
         let workspace = self
             .workspace_service
             .duplicate(&request.workspace_id)
@@ -98,6 +108,8 @@ impl GoslingAcpAgent {
         &self,
         request: WorkspaceValidateRequest,
     ) -> Result<WorkspaceValidationResponse, agent_client_protocol::Error> {
+        self.validate_workspace_provider_model(&request.workspace)
+            .await?;
         let validation = self
             .workspace_service
             .validate(&request.workspace)
@@ -120,12 +132,30 @@ impl GoslingAcpAgent {
         &self,
         request: WorkspaceImportRequest,
     ) -> Result<WorkspaceResponse, agent_client_protocol::Error> {
+        let imported: crate::workspace::Workspace = serde_json::from_str(&request.document)
+            .invalid_params_err_ctx("Invalid workspace import")?;
+        self.validate_workspace_provider_model(&WorkspaceMutation::from(&imported))
+            .await?;
         let workspace = self
             .workspace_service
             .import(&request.document)
             .await
             .invalid_params_err()?;
         self.workspace_response(workspace).await
+    }
+
+    async fn validate_workspace_provider_model(
+        &self,
+        workspace: &WorkspaceMutation,
+    ) -> Result<(), agent_client_protocol::Error> {
+        if let (Some(provider_id), Some(model_id)) = (
+            workspace.default_provider.as_deref(),
+            workspace.default_model.as_deref(),
+        ) {
+            self.validate_model_for_provider(provider_id, model_id)
+                .await?;
+        }
+        Ok(())
     }
 
     pub(super) async fn on_workspace_create_output_folder(

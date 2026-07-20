@@ -732,6 +732,73 @@ fn test_new_session_cleans_up_when_config_fails() {
 }
 
 #[test]
+fn test_workspace_rejects_model_from_another_provider_before_session_activation() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let work_dir = tempfile::tempdir().unwrap();
+        let workspace_dir = data_root.path().join("workspaces");
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        std::fs::write(
+            workspace_dir.join("workspaces.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": 1,
+                "active_workspace_id": "workspace-1",
+                "default_workspace_id": "workspace-1",
+                "migration_completed": true,
+                "templates_materialized": true,
+                "workspaces": [{
+                    "id": "workspace-1",
+                    "schemaVersion": 1,
+                    "name": "Invalid provider model pair",
+                    "workingFolder": work_dir.path(),
+                    "productOutputFolders": [{
+                        "id": "output",
+                        "label": "Outputs",
+                        "path": work_dir.path(),
+                        "productTypes": ["document"],
+                        "isDefault": true,
+                        "createIfMissing": false
+                    }],
+                    "credentialBindings": [],
+                    "defaultProvider": "chatgpt_codex",
+                    "defaultModel": "claude-opus-4-8",
+                    "createdAt": "2026-07-20T00:00:00Z",
+                    "updatedAt": "2026-07-20T00:00:00Z",
+                    "lastOpenedAt": "2026-07-20T00:00:00Z"
+                }],
+                "credential_profiles": [],
+                "distribution_profile_secret_fields": {},
+                "workspace_profile_required_secret_fields": {},
+                "pending_secret_deletions": []
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "workspaceId".to_string(),
+            serde_json::Value::String("workspace-1".to_string()),
+        );
+
+        let error: anyhow::Error = conn
+            .cx()
+            .send_request(NewSessionRequest::new(work_dir.path()).meta(meta))
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+
+        assert_invalid_params(error);
+        let sessions = SessionManager::new(data_root.path().to_path_buf())
+            .list_all_sessions()
+            .await
+            .unwrap();
+        assert!(sessions.is_empty());
+    });
+}
+
+#[test]
 fn test_model_set() {
     run_test(async { run_model_set::<AcpServerConnection>().await });
 }
