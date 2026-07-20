@@ -817,7 +817,11 @@ impl Provider for ClaudeCodeProvider {
         let model_name = model_config.model_name.clone();
         let message_id = uuid::Uuid::new_v4().to_string();
         let pending_confirmations = Arc::clone(&self.pending_confirmations);
-        let initial_mode = Arc::clone(&self.initial_mode);
+        let stream_initial_mode = self
+            .initial_mode
+            .lock()
+            .await
+            .unwrap_or_else(|| Config::global().get_gosling_mode().unwrap_or_default());
 
         Ok(Box::pin(try_stream! {
             // Single lock acquisition covers write-to-stdin and read-from-stdout,
@@ -981,8 +985,7 @@ impl Provider for ClaudeCodeProvider {
                                     }) = serde_json::from_str::<IncomingControlRequest>(trimmed) {
                                         tracing::debug!(raw = %parsed, "can_use_tool control_request received");
 
-                                        let mode = (*initial_mode.lock().await)
-                                            .unwrap_or_else(|| Config::global().get_gosling_mode().unwrap_or_default());
+                                        let mode = stream_initial_mode;
                                         if mode == GoslingMode::Auto {
                                             let resp = ControlResponse::success(
                                                 request_id,
