@@ -267,7 +267,42 @@ export function WorkspaceEditorDialog({
       if (report.validForSession) {
         toast.success(workspace ? 'Workspace saved.' : 'Workspace created.');
       } else {
-        toast.warning('Workspace saved with warnings. Resolve them before starting a new chat.');
+        const warnings = (report.issues ?? []).filter((issue) => issue.severity === 'warning');
+        const errors = (report.issues ?? []).filter((issue) => issue.severity === 'error');
+        const issuesLabel = errors.length > 0 ? 'issues' : 'warnings';
+        const detailLabel = errors.length > 0 ? 'issues' : 'them';
+
+        toast.warning(
+          <div className="space-y-1">
+            <p>Workspace saved with {issuesLabel}. Resolve {detailLabel} before starting a new chat.</p>
+            {warnings.length > 0 ? (
+              <>
+                <p className="font-medium">Warnings:</p>
+                <ul className="list-disc space-y-1 pl-4">
+                  {warnings.map((issue, index) => (
+                    <li
+                      key={`${issue.code}-${issue.targetId ?? issue.path ?? 'warning'}-${index}`}
+                    >
+                      {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {errors.length > 0 ? (
+              <>
+                <p className="font-medium">Errors:</p>
+                <ul className="list-disc space-y-1 pl-4">
+                  {errors.map((issue, index) => (
+                    <li key={`${issue.code}-${issue.targetId ?? issue.path ?? 'error'}-${index}`}>
+                      {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </div>
+        );
       }
       onOpenChange(false);
     } catch (cause) {
