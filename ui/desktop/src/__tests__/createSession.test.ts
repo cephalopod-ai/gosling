@@ -111,4 +111,20 @@ describe('createSession ACP session extensions', () => {
 
     expect(mockedCreateAcpSession).toHaveBeenCalledWith('/workspace/project', [], 'workspace-id');
   });
+
+  it('passes explicit workspace launch overrides without updating the workspace', async () => {
+    await createSession('/workspace/project', {
+      allExtensions: [],
+      workspaceId: 'workspace-id',
+      workspaceWorkingDir: '/workspace/project/feature',
+      workspaceCredentialProfileId: 'profile-id',
+      workspaceAdditionalFolders: ['/workspace/reference'],
+    });
+
+    expect(mockedCreateAcpSession).toHaveBeenCalledWith('/workspace/project', [], 'workspace-id', {
+      workingDir: '/workspace/project/feature',
+      credentialProfileId: 'profile-id',
+      additionalFolders: ['/workspace/reference'],
+    });
+  });
 });

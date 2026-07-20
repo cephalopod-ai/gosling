@@ -58,8 +58,11 @@ export default function Hub({
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
-  const { workspaces, loading, error } = useWorkspace();
+  const { workspaces, credentialProfiles, loading, error } = useWorkspace();
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
+  const [selectedCredentialProfileId, setSelectedCredentialProfileId] = useState('');
+  const [additionalWorkspaceFolders, setAdditionalWorkspaceFolders] = useState<string[]>([]);
+  const [isChoosingAdditionalFolder, setIsChoosingAdditionalFolder] = useState(false);
   const selectedWorkspaceItem = useMemo(
     () => workspaces.find((item) => item.workspace.id === selectedWorkspaceId),
     [selectedWorkspaceId, workspaces]
@@ -101,6 +104,19 @@ export default function Hub({
     });
   }, [workspaces]);
 
+  const handleWorkspaceChange = useCallback(
+    (workspaceId: string) => {
+      const workspace = workspaces.find((item) => item.workspace.id === workspaceId)?.workspace;
+      setSelectedWorkspaceId(workspaceId);
+      setSelectedCredentialProfileId('');
+      setAdditionalWorkspaceFolders([]);
+      if (workspace) {
+        setWorkingDir(workspace.workingFolder);
+      }
+    },
+    [workspaces]
+  );
+
   useEffect(() => {
     if (selectedWorkspace) {
       const previous = previousWorkspaceRef.current;
@@ -137,6 +153,26 @@ export default function Hub({
     setNextChatExtensionDraft(draft);
   }, []);
 
+  const handleWorkingDirChange = useCallback((directory: string) => {
+    setWorkingDir(directory);
+    setAdditionalWorkspaceFolders((folders) => folders.filter((folder) => folder !== directory));
+  }, []);
+
+  const addAdditionalWorkspaceFolder = useCallback(async () => {
+    if (isChoosingAdditionalFolder) return;
+    setIsChoosingAdditionalFolder(true);
+    try {
+      const result = await window.electron.directoryChooser();
+      const folder = result.canceled ? undefined : result.filePaths[0];
+      if (!folder || folder === workingDir) return;
+      setAdditionalWorkspaceFolders((folders) =>
+        folders.includes(folder) ? folders : [...folders, folder]
+      );
+    } finally {
+      setIsChoosingAdditionalFolder(false);
+    }
+  }, [isChoosingAdditionalFolder, workingDir]);
+
   const handleSubmit = async (input: UserInput) => {
     const { msg: userMessage, images } = input;
     if (
@@ -156,8 +192,28 @@ export default function Hub({
         : [];
       const sessionOptions =
         selectedExtensions.length > 0
-          ? { extensionConfigs: selectedExtensions, workspaceId: selectedWorkspace.id }
-          : { allExtensions: extensionsList, workspaceId: selectedWorkspace.id };
+          ? {
+              extensionConfigs: selectedExtensions,
+              workspaceId: selectedWorkspace.id,
+              workspaceWorkingDir: workingDir,
+              ...(selectedCredentialProfileId
+                ? { workspaceCredentialProfileId: selectedCredentialProfileId }
+                : {}),
+              ...(additionalWorkspaceFolders.length
+                ? { workspaceAdditionalFolders: additionalWorkspaceFolders }
+                : {}),
+            }
+          : {
+              allExtensions: extensionsList,
+              workspaceId: selectedWorkspace.id,
+              workspaceWorkingDir: workingDir,
+              ...(selectedCredentialProfileId
+                ? { workspaceCredentialProfileId: selectedCredentialProfileId }
+                : {}),
+              ...(additionalWorkspaceFolders.length
+                ? { workspaceAdditionalFolders: additionalWorkspaceFolders }
+                : {}),
+            };
 
       const session = await createSession(workingDir, sessionOptions);
       setNextChatExtensionDraft(null);
@@ -198,7 +254,7 @@ export default function Hub({
           <select
             id="new-chat-workspace"
             value={selectedWorkspaceId}
-            onChange={(event) => setSelectedWorkspaceId(event.target.value)}
+            onChange={(event) => handleWorkspaceChange(event.target.value)}
             disabled={loading || workspaces.length === 0}
             className="min-w-0 flex-1 rounded-md border border-border-primary bg-background-primary px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -224,6 +280,80 @@ export default function Hub({
             </span>
           )}
         </div>
+        {selectedWorkspace && (
+          <div className="mb-3 grid gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <label
+                htmlFor="new-chat-credential-profile"
+                className="mb-1 block text-sm font-medium text-text-primary"
+              >
+                Credential
+              </label>
+              <select
+                id="new-chat-credential-profile"
+                value={selectedCredentialProfileId}
+                onChange={(event) => setSelectedCredentialProfileId(event.target.value)}
+                className="w-full rounded-md border border-border-primary bg-background-primary px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">Use workspace default</option>
+                {credentialProfiles.map((profile) => (
+                  <option
+                    key={profile.id}
+                    value={profile.id}
+                    disabled={profile.status !== 'configured'}
+                  >
+                    {profile.name}
+                    {profile.status === 'configured' ? '' : ' — needs attention'}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-text-secondary">
+                This choice applies only to this new chat.
+              </p>
+            </div>
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-text-primary">Additional folders</span>
+                <button
+                  type="button"
+                  onClick={() => void addAdditionalWorkspaceFolder()}
+                  disabled={isChoosingAdditionalFolder}
+                  className="rounded-md border border-border-primary px-2 py-1 text-xs text-text-primary hover:bg-background-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isChoosingAdditionalFolder ? 'Choosing…' : 'Add folder'}
+                </button>
+              </div>
+              {additionalWorkspaceFolders.length === 0 ? (
+                <p className="text-xs text-text-secondary">No additional session folders.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {additionalWorkspaceFolders.map((folder) => (
+                    <li
+                      key={folder}
+                      className="flex items-center gap-2 text-xs text-text-secondary"
+                    >
+                      <span className="min-w-0 flex-1 truncate" title={folder}>
+                        {folder}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove additional folder ${folder}`}
+                        onClick={() =>
+                          setAdditionalWorkspaceFolders((folders) =>
+                            folders.filter((item) => item !== folder)
+                          )
+                        }
+                        className="text-text-secondary hover:text-text-primary"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
         {error && (
           <p role="alert" className="mb-3 text-sm text-red-600">
             {error}
@@ -250,7 +380,7 @@ export default function Hub({
             onFilesProcessed={() => {}}
             messages={[]}
             disableAnimation={false}
-            onWorkingDirChange={setWorkingDir}
+            onWorkingDirChange={handleWorkingDirChange}
             inputRef={inputRef}
             submitDisabled={Boolean(submitDisabledReason)}
             submitDisabledReason={submitDisabledReason}

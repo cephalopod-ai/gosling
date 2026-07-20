@@ -27,6 +27,7 @@ import {
   acpTruncateSessionConversation,
   isAcpSessionLoadInFlight,
   sessionInfoToSession,
+  type AcpWorkspaceLaunchOptions,
 } from './sessions';
 
 export interface AcpLoadSessionOptions {
@@ -46,7 +47,8 @@ export interface AcpChatSessionController {
   createSession(
     cwd: string,
     goslingExtensions: GoslingExtension[],
-    workspaceId?: string
+    workspaceId?: string,
+    workspaceLaunchOptions?: AcpWorkspaceLaunchOptions
   ): Promise<Session>;
   loadSession(sessionId: string, options?: AcpLoadSessionOptions): Promise<boolean>;
   submitMessage(
@@ -108,9 +110,15 @@ async function forkSessionWithEditedMessage(
 async function createSession(
   cwd: string,
   goslingExtensions: GoslingExtension[],
-  workspaceId?: string
+  workspaceId?: string,
+  workspaceLaunchOptions?: AcpWorkspaceLaunchOptions
 ): Promise<Session> {
-  const { sessionId, sessionInfo, meta } = await acpNewSession(cwd, goslingExtensions, workspaceId);
+  const { sessionId, sessionInfo, meta } = await acpNewSession(
+    cwd,
+    goslingExtensions,
+    workspaceId,
+    workspaceLaunchOptions
+  );
   const session = sessionInfoToSession(sessionInfo, meta);
   const connectionGeneration = getAcpConnectionGeneration();
   if (connectionGeneration === null) {

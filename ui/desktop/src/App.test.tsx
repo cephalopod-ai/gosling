@@ -284,4 +284,29 @@ describe('App Component - Brand New State', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith('/');
   });
+
+  it('keeps a launcher prompt in the new-chat flow until its workspace is chosen', async () => {
+    mockElectron.getConfig.mockReturnValue({
+      GOSLING_DEFAULT_PROVIDER: 'openai',
+      GOSLING_DEFAULT_MODEL: 'gpt-4',
+      GOSLING_ALLOWLIST_WARNING: false,
+    });
+
+    render(<AppInner />, { wrapper: AppInnerTestWrapper });
+
+    await waitFor(() => {
+      expect(mockElectron.reactReady).toHaveBeenCalled();
+    });
+
+    const initialMessageHandler = mockElectron.on.mock.calls.find(
+      ([channel]) => channel === 'set-initial-message'
+    )?.[1];
+    expect(initialMessageHandler).toBeDefined();
+
+    await initialMessageHandler?.({} as any, 'Inspect this workspace');
+
+    expect(mockNavigate).toHaveBeenCalledWith('/', {
+      state: { initialMessage: { msg: 'Inspect this workspace', images: [] } },
+    });
+  });
 });

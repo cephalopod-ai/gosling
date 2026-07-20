@@ -352,10 +352,17 @@ export interface AcpNewSessionResult {
   meta: LoadSessionMeta;
 }
 
+export interface AcpWorkspaceLaunchOptions {
+  workingDir?: string;
+  credentialProfileId?: string;
+  additionalFolders?: string[];
+}
+
 export async function acpNewSession(
   cwd: string,
   goslingExtensions: GoslingExtension[],
-  workspaceId?: string
+  workspaceId?: string,
+  workspaceLaunchOptions?: AcpWorkspaceLaunchOptions
 ): Promise<AcpNewSessionResult> {
   const client = await getAcpClient();
   const meta: Record<string, unknown> = { client: 'gosling-desktop' };
@@ -364,6 +371,15 @@ export async function acpNewSession(
   }
   if (workspaceId) {
     meta.workspaceId = workspaceId;
+  }
+  if (workspaceLaunchOptions?.workingDir) {
+    meta.workspaceWorkingDir = workspaceLaunchOptions.workingDir;
+  }
+  if (workspaceLaunchOptions?.credentialProfileId) {
+    meta.workspaceCredentialProfileId = workspaceLaunchOptions.credentialProfileId;
+  }
+  if (workspaceLaunchOptions?.additionalFolders?.length) {
+    meta.workspaceAdditionalFolders = workspaceLaunchOptions.additionalFolders;
   }
   const request: NewSessionRequest = { cwd, mcpServers: [], _meta: meta };
   const response = await client.newSession(request);

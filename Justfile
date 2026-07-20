@@ -10,19 +10,22 @@ check-everything:
     @echo "  → Formatting Rust code..."
     cargo fmt --all
     @echo "  → Running clippy linting..."
-    cargo clippy --all-targets -- -D warnings
+    ./scripts/with-rusty-v8-cache.sh cargo clippy --all-targets -- -D warnings
     @echo "  → Checking UI code formatting..."
     cd ui/desktop && pnpm run lint:check
     @echo ""
     @echo "✅ All style checks passed!"
 
 # Default release command
+prepare-v8:
+    @./scripts/with-rusty-v8-cache.sh --prepare
+
 release-binary:
     @echo "Building release version..."
-    cargo build --release -p gosling-cli --bin gosling
+    ./scripts/with-rusty-v8-cache.sh cargo build --release -p gosling-cli --bin gosling
     @just copy-binary
     @echo "Generating OpenAPI schema..."
-    cargo run -p gosling-server --bin generate_schema
+    ./scripts/with-rusty-v8-cache.sh cargo run -p gosling-server --bin generate_schema
 
 # Build Windows executable on a Windows host
 [unix]
@@ -37,7 +40,7 @@ release-windows:
 # Build for Intel Mac
 release-intel:
     @echo "Building release version for Intel Mac..."
-    cargo build --release --target x86_64-apple-darwin
+    ./scripts/with-rusty-v8-cache.sh cargo build --release --target x86_64-apple-darwin
     @just copy-binary-intel
 
 copy-binary BUILD_MODE="release":
@@ -127,10 +130,10 @@ debug-ui-main-process:
 package-ui:
     @just release-binary
     @echo "Packaging desktop app..."
-    cd ui/desktop && pnpm install && pnpm run package
+    cd "{{justfile_directory()}}/ui/desktop" && pnpm install && pnpm run package
     @echo "Signing with entitlements..."
-    codesign --force --deep --sign - --entitlements ui/desktop/entitlements.plist ui/desktop/out/Gosling-darwin-arm64/Gosling.app
-    @echo "Done! Launch with: open ui/desktop/out/Gosling-darwin-arm64/Gosling.app"
+    codesign --force --deep --sign - --entitlements "{{justfile_directory()}}/ui/desktop/entitlements.plist" "{{justfile_directory()}}/ui/desktop/out/Gosling-darwin-arm64/Gosling.app"
+    @echo "Done! Launch with: open {{justfile_directory()}}/ui/desktop/out/Gosling-darwin-arm64/Gosling.app"
 
 # Run UI with latest (Windows version)
 run-ui-windows:
@@ -223,7 +226,7 @@ make-ui-intel:
 # Run UI with debug build
 run-dev:
     @echo "Building development version..."
-    cargo build
+    ./scripts/with-rusty-v8-cache.sh cargo build
     @just copy-binary debug
     @echo "Running UI..."
     cd ui/desktop && pnpm run start-gui

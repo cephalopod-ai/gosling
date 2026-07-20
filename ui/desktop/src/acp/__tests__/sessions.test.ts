@@ -80,6 +80,38 @@ describe('ACP sessions', () => {
     expect(result.meta).toMatchObject({ workspaceId: 'workspace-1', workspaceName: 'Project' });
   });
 
+  it('sends explicit workspace launch overrides in ACP new-session metadata', async () => {
+    const client = {
+      newSession: vi.fn().mockResolvedValue({
+        sessionId: 'session-1',
+      }),
+      gosling: {
+        sessionInfo_unstable: vi.fn().mockResolvedValue({ session: sessionInfo() }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    await acpNewSession('/workspace/project', [], 'workspace-1', {
+      workingDir: '/workspace/project/feature',
+      credentialProfileId: 'profile-1',
+      additionalFolders: ['/workspace/reference'],
+    });
+
+    expect(client.newSession).toHaveBeenCalledWith({
+      cwd: '/workspace/project',
+      mcpServers: [],
+      _meta: {
+        client: 'gosling-desktop',
+        workspaceId: 'workspace-1',
+        workspaceWorkingDir: '/workspace/project/feature',
+        workspaceCredentialProfileId: 'profile-1',
+        workspaceAdditionalFolders: ['/workspace/reference'],
+      },
+    });
+  });
+
   it('returns session info refreshed after loading the ACP session', async () => {
     const loadedSessionInfo = sessionInfo({
       _meta: {

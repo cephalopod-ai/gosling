@@ -38,6 +38,18 @@ vi.mock('./ChatInput', () => ({
 }));
 
 const setActiveWorkspace = vi.fn();
+const configuredCredentialProfile = {
+  id: 'profile-personal',
+  name: 'Personal API key',
+  providerOrServiceId: 'openai',
+  authKind: 'config_fields',
+  configuredSecretFields: ['OPENAI_API_KEY'],
+  nonSecretFields: {},
+  status: 'configured',
+  source: 'workspace_secure_storage',
+  createdAt: '2026-07-19T00:00:00Z',
+  updatedAt: '2026-07-19T00:00:00Z',
+};
 
 function workspace(id: string, name: string, workingFolder: string, validForSession = true) {
   return {
@@ -80,6 +92,7 @@ describe('Hub workspace selection', () => {
       ],
       activeWorkspaceId: 'default',
       defaultWorkspaceId: 'default',
+      credentialProfiles: [configuredCredentialProfile],
       loading: false,
       error: null,
       setActiveWorkspace,
@@ -104,6 +117,7 @@ describe('Hub workspace selection', () => {
       expect(createSession).toHaveBeenCalledWith('/Users/tester/Personal', {
         allExtensions: [],
         workspaceId: 'personal',
+        workspaceWorkingDir: '/Users/tester/Personal',
       })
     );
     expect(setActiveWorkspace).not.toHaveBeenCalled();
@@ -119,6 +133,7 @@ describe('Hub workspace selection', () => {
       workspaces: [workspace('missing', 'Missing folder', '/missing', false)],
       activeWorkspaceId: 'missing',
       defaultWorkspaceId: 'missing',
+      credentialProfiles: [],
       loading: false,
       error: null,
     } as unknown as ReturnType<typeof useWorkspace>);
@@ -146,5 +161,53 @@ describe('Hub workspace selection', () => {
       'Review this project'
     );
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  });
+
+  it('uses an explicitly selected credential only for the new chat', async () => {
+    const user = userEvent.setup();
+    render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'personal');
+    await user.selectOptions(screen.getByLabelText('Credential'), 'profile-personal');
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('/Users/tester/Personal', {
+        allExtensions: [],
+        workspaceId: 'personal',
+        workspaceWorkingDir: '/Users/tester/Personal',
+        workspaceCredentialProfileId: 'profile-personal',
+      })
+    );
+    expect(setActiveWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('clears draft credentials and folders when the workspace changes', async () => {
+    const user = userEvent.setup();
+    Object.assign(window.electron, {
+      directoryChooser: vi.fn().mockResolvedValue({
+        canceled: false,
+        filePaths: ['/Users/tester/Shared'],
+      }),
+    });
+    render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'default');
+    await user.selectOptions(screen.getByLabelText('Credential'), 'profile-personal');
+    await user.click(screen.getByRole('button', { name: 'Add folder' }));
+    await screen.findByTitle('/Users/tester/Shared');
+
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'personal');
+    expect(screen.getByLabelText('Credential')).toHaveValue('');
+    expect(screen.queryByTitle('/Users/tester/Shared')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('/Users/tester/Personal', {
+        allExtensions: [],
+        workspaceId: 'personal',
+        workspaceWorkingDir: '/Users/tester/Personal',
+      })
+    );
   });
 });

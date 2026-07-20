@@ -43,6 +43,9 @@ interface CreateSessionOptions {
   extensionConfigs?: ExtensionConfig[];
   allExtensions?: FixedExtensionEntry[];
   workspaceId?: string;
+  workspaceWorkingDir?: string;
+  workspaceCredentialProfileId?: string;
+  workspaceAdditionalFolders?: string[];
 }
 
 function selectedExtensionConfigs(options?: CreateSessionOptions): ExtensionConfig[] {
@@ -71,6 +74,25 @@ async function createAcpSession(
           .filter((entry) => selectedNames.has(goslingExtensionName(entry.extension)))
           .map((entry) => entry.extension)
       : [];
+  const workspaceLaunchOptions = options?.workspaceId
+    ? {
+        ...(options.workspaceWorkingDir ? { workingDir: options.workspaceWorkingDir } : {}),
+        ...(options.workspaceCredentialProfileId
+          ? { credentialProfileId: options.workspaceCredentialProfileId }
+          : {}),
+        ...(options.workspaceAdditionalFolders?.length
+          ? { additionalFolders: options.workspaceAdditionalFolders }
+          : {}),
+      }
+    : undefined;
+  if (workspaceLaunchOptions && Object.keys(workspaceLaunchOptions).length > 0) {
+    return acpChatSessionController.createSession(
+      workingDir,
+      goslingExtensions,
+      options?.workspaceId,
+      workspaceLaunchOptions
+    );
+  }
   return acpChatSessionController.createSession(
     workingDir,
     goslingExtensions,

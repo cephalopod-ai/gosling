@@ -3,7 +3,7 @@ use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
 use crate::session::{ExtensionData, Session, SessionType};
-use crate::workspace::PreparedWorkspaceSession;
+use crate::workspace::{PreparedWorkspaceSession, WorkspaceSessionLaunchOverrides};
 
 use super::GoslingAcpAgent;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
@@ -11,6 +11,7 @@ use agent_client_protocol::{Client, ConnectionTo};
 use gosling_providers::model::ModelConfig;
 use gosling_providers::thinking::ThinkingEffort;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use tracing::warn;
 
 struct InitialSessionConfig {
@@ -30,11 +31,19 @@ impl GoslingAcpAgent {
         let config = Config::global();
         let project_id = meta_string(args.meta.as_ref(), "projectId")?;
         let workspace_id = meta_string(args.meta.as_ref(), "workspaceId")?;
-        let workspace = workspace_id
-            .as_deref()
-            .map(|workspace_id| self.workspace_service.prepare_session(workspace_id))
-            .transpose()
-            .invalid_params_err_ctx("Workspace is unavailable")?;
+        let workspace_overrides = workspace_launch_overrides(args.meta.as_ref())?;
+        let workspace = match workspace_id.as_deref() {
+            Some(workspace_id) => Some(
+                self.workspace_service
+                    .prepare_session_with_overrides(workspace_id, &workspace_overrides)
+                    .invalid_params_err_ctx("Workspace is unavailable")?,
+            ),
+            None if !workspace_overrides.is_empty() => {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("workspace launch overrides require workspaceId"));
+            }
+            None => None,
+        };
         let effective_cwd = workspace
             .as_ref()
             .map(|workspace| workspace.working_folder.clone())
@@ -276,6 +285,32 @@ fn meta_gosling_extensions(
         })
 }
 
+fn workspace_launch_overrides(
+    meta: Option<&Meta>,
+) -> Result<WorkspaceSessionLaunchOverrides, agent_client_protocol::Error> {
+    let additional_folders = match meta.and_then(|value| value.get("workspaceAdditionalFolders")) {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value.as_str().map(PathBuf::from).ok_or_else(|| {
+                    agent_client_protocol::Error::invalid_params()
+                        .data("workspaceAdditionalFolders must contain only strings")
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("workspaceAdditionalFolders must be an array"));
+        }
+    };
+    Ok(WorkspaceSessionLaunchOverrides {
+        working_folder: meta_string(meta, "workspaceWorkingDir")?.map(PathBuf::from),
+        additional_folders,
+        credential_profile_id: meta_string(meta, "workspaceCredentialProfileId")?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,5 +326,51 @@ mod tests {
             provider_thinking_effort(WorkspaceThinkingEffort::Ultra),
             ThinkingEffort::Ultra
         );
+    }
+
+    #[test]
+    fn workspace_launch_overrides_accept_explicit_session_scope() {
+        let meta = serde_json::Map::from_iter([
+            (
+                "workspaceWorkingDir".to_string(),
+                serde_json::Value::String("/workspace/feature".into()),
+            ),
+            (
+                "workspaceCredentialProfileId".to_string(),
+                serde_json::Value::String("profile-1".into()),
+            ),
+            (
+                "workspaceAdditionalFolders".to_string(),
+                serde_json::json!(["/workspace/reference", "/workspace/design"]),
+            ),
+        ]);
+
+        let overrides = workspace_launch_overrides(Some(&meta)).unwrap();
+
+        assert_eq!(
+            overrides.working_folder,
+            Some(PathBuf::from("/workspace/feature"))
+        );
+        assert_eq!(
+            overrides.credential_profile_id.as_deref(),
+            Some("profile-1")
+        );
+        assert_eq!(
+            overrides.additional_folders,
+            vec![
+                PathBuf::from("/workspace/reference"),
+                PathBuf::from("/workspace/design"),
+            ]
+        );
+    }
+
+    #[test]
+    fn workspace_launch_overrides_reject_non_string_folder_values() {
+        let meta = serde_json::Map::from_iter([(
+            "workspaceAdditionalFolders".to_string(),
+            serde_json::json!(["/workspace/reference", 42]),
+        )]);
+
+        assert!(workspace_launch_overrides(Some(&meta)).is_err());
     }
 }
