@@ -27,6 +27,7 @@ import {
 } from '../utils/nextChatExtensions';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { reconcileWorkspaceWorkingDir } from '../utils/workspaceWorkingDir';
+import { useModelAndProvider } from './ModelAndProviderContext';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -58,6 +59,7 @@ export default function Hub({
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
+  const { currentModel, currentProvider } = useModelAndProvider();
   const { workspaces, credentialProfiles, loading, error } = useWorkspace();
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
   const [selectedCredentialProfileId, setSelectedCredentialProfileId] = useState('');
@@ -196,6 +198,8 @@ export default function Hub({
               extensionConfigs: selectedExtensions,
               workspaceId: selectedWorkspace.id,
               workspaceWorkingDir: workingDir,
+              ...(currentProvider ? { provider: currentProvider } : {}),
+              ...(currentModel ? { model: currentModel } : {}),
               ...(selectedCredentialProfileId
                 ? { workspaceCredentialProfileId: selectedCredentialProfileId }
                 : {}),
@@ -207,6 +211,8 @@ export default function Hub({
               allExtensions: extensionsList,
               workspaceId: selectedWorkspace.id,
               workspaceWorkingDir: workingDir,
+              ...(currentProvider ? { provider: currentProvider } : {}),
+              ...(currentModel ? { model: currentModel } : {}),
               ...(selectedCredentialProfileId
                 ? { workspaceCredentialProfileId: selectedCredentialProfileId }
                 : {}),

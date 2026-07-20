@@ -360,6 +360,8 @@ export interface AcpWorkspaceLaunchOptions {
   workingDir?: string;
   credentialProfileId?: string;
   additionalFolders?: string[];
+  provider?: string;
+  model?: string;
 }
 
 export async function acpNewSession(
@@ -384,6 +386,12 @@ export async function acpNewSession(
   }
   if (workspaceLaunchOptions?.additionalFolders?.length) {
     meta.workspaceAdditionalFolders = workspaceLaunchOptions.additionalFolders;
+  }
+  if (workspaceLaunchOptions?.provider) {
+    meta.provider = workspaceLaunchOptions.provider;
+  }
+  if (workspaceLaunchOptions?.model) {
+    meta.model = workspaceLaunchOptions.model;
   }
   const request: NewSessionRequest = { cwd, mcpServers: [], _meta: meta };
   const response = await client.newSession(request);

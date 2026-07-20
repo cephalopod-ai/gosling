@@ -179,6 +179,23 @@ impl GoslingAcpAgent {
         meta: Option<&Meta>,
         workspace: Option<&PreparedWorkspaceSession>,
     ) -> Result<(String, ModelConfig), agent_client_protocol::Error> {
+        if let Some(provider) = meta_string(meta, "provider")? {
+            let mut model_config = if let Some(model) = meta_string(meta, "model")? {
+                crate::model_config::model_config_from_user_config(&provider, &model)
+                    .invalid_params_err_ctx("Selected model is invalid")?
+            } else {
+                super::resolve_provider_default_model_config(&provider).await?
+            };
+            self.validate_model_for_provider(&provider, &model_config.model_name)
+                .await?;
+            if let Some(workspace) = workspace {
+                if let Some(effort) = workspace.thinking_effort {
+                    model_config =
+                        model_config.with_thinking_effort(provider_thinking_effort(effort));
+                }
+            }
+            return Ok((provider, model_config));
+        }
         if let Some(workspace) = workspace {
             if let Some(provider) = workspace.provider.clone() {
                 let mut model_config = if let Some(model) = workspace.model.as_deref() {

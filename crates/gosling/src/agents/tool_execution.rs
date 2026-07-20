@@ -124,7 +124,7 @@ impl Agent {
                         request.id.clone(),
                         tool_call.name.to_string().clone(),
                         tool_call.arguments.clone().unwrap_or_default(),
-                        security_message,
+                        security_message.clone(),
                     )
                     .user_only();
                 if !auto_approve {

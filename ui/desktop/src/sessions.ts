@@ -46,6 +46,8 @@ interface CreateSessionOptions {
   workspaceWorkingDir?: string;
   workspaceCredentialProfileId?: string;
   workspaceAdditionalFolders?: string[];
+  provider?: string;
+  model?: string;
 }
 
 function selectedExtensionConfigs(options?: CreateSessionOptions): ExtensionConfig[] {
@@ -83,6 +85,8 @@ async function createAcpSession(
         ...(options.workspaceAdditionalFolders?.length
           ? { additionalFolders: options.workspaceAdditionalFolders }
           : {}),
+        ...(options.provider ? { provider: options.provider } : {}),
+        ...(options.model ? { model: options.model } : {}),
       }
     : undefined;
   if (workspaceLaunchOptions && Object.keys(workspaceLaunchOptions).length > 0) {
