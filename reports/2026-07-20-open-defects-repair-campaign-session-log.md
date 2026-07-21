@@ -52,3 +52,22 @@ just check-acp-schema
 The final known source defect was repaired with mutation-depth and generation tracking. Cache invalidation now occurs at both mutation boundaries, an older in-flight read cannot repopulate the cache, and a read superseded by invalidation retries against the current generation.
 
 Campaign source status: `complete`. Overall status remains `completed_with_partial_verification` until the recorded formatter, build, test, lint, and schema commands are authorized and executed.
+
+## Stage 5 - Final execution verification
+
+Status: `complete`
+
+- `cargo fmt --all` completed successfully.
+- Runtime-path and instance-identity focused tests passed.
+- `cargo test -p gosling --lib` passed: 1,533 tests.
+- `cargo test -p gosling-server` passed: 31 library tests and 3 TLS integration tests.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Desktop typecheck passed.
+- Desktop Vitest passed: 80 files and 547 tests.
+- Desktop ESLint passed with zero warnings.
+- i18n synchronization tests passed: 21 tests; 15 locale catalogs validate with 1,034 messages each.
+- `just check-acp-schema` passed and reported no schema or generated TypeScript drift.
+
+Failures exposed during verification were repaired before the final green run: ACP runtime-path field placement, stale config singleton/imports, provider mutation wrapper syntax, credential selector fixtures, scroll observer stubs, Claude permission test mode determinism, Docker executable lookup stability, parent-PID file-read timing, hook dependencies, DOM lint types, and stale i18n catalogs.
+
+No open defect remains in the frozen campaign inventory. Feature backlog, release execution, broad modularization, external Giles behavior, and manual macOS Keychain validation remain outside defect closure.

@@ -91,7 +91,7 @@ export function useNavigationSessions() {
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
     }
-  }, [sessionWorkspaceFilterId]);
+  }, [sessionFilter]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -153,7 +153,7 @@ export function useNavigationSessions() {
       window.removeEventListener(AppEvents.SESSION_CREATED, handleSessionCreated);
       pollingTimeouts.forEach(clearTimeout);
     };
-  }, [sessionWorkspaceFilterId]);
+  }, [sessionFilter]);
 
   useEffect(() => {
     let fetchVersion = 0;
@@ -222,7 +222,7 @@ export function useNavigationSessions() {
       window.removeEventListener(AppEvents.SESSION_UNARCHIVED, handleSessionUnarchived);
       window.removeEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
     };
-  }, [fetchSessions]);
+  }, [fetchSessions, sessionFilter]);
 
   const handleNavClick = useCallback(
     (path: string) => {

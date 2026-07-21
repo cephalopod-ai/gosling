@@ -1472,6 +1472,7 @@ mod tests {
         let canned_stdout = canned_lines.join("\n");
         let (process, stdin_reader) = make_test_process(&canned_stdout);
         let provider = make_provider();
+        *provider.initial_mode.lock().await = Some(GoslingMode::Approve);
         let process_arc = Arc::new(tokio::sync::Mutex::new(process));
         provider.cli_process.set(process_arc).unwrap();
 
@@ -1584,8 +1585,12 @@ mod tests {
             r#"{"type":"result","result":"Done","usage":{"input_tokens":10,"output_tokens":5}}"#,
         ]).await;
 
-        let (first_msg, _) = stream.next().await.unwrap().unwrap();
-        let first_msg = first_msg.unwrap();
+        let first_msg = loop {
+            let (message, _) = stream.next().await.unwrap().unwrap();
+            if let Some(message) = message {
+                break message;
+            }
+        };
         let ar = first_msg
             .content
             .iter()
@@ -1637,9 +1642,13 @@ mod tests {
 
         let pending = Arc::clone(&provider.pending_confirmations);
 
-        let (first_msg, _) = stream.next().await.unwrap().unwrap();
+        let first_msg = loop {
+            let (message, _) = stream.next().await.unwrap().unwrap();
+            if let Some(message) = message {
+                break message;
+            }
+        };
         assert!(first_msg
-            .unwrap()
             .content
             .iter()
             .any(|c| c.as_action_required().is_some()));

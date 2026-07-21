@@ -180,3 +180,7 @@ of the broken wrapper.
 The later campaign repairs the ACP runtime path boundary identified by GEM-005, removes the recorded Desktop `no-undef` and unstable-hook-dependency debt, coalesces provider inventory startup requests, and makes `check-acp-schema` independent of the caller's working directory.
 
 Status: `completed_with_partial_verification`. Static source repair and regression coverage were recorded, but builds, tests, lint, formatting, schema generation, and Git operations were not run because they were outside this campaign's authorization.
+
+## Final verification supersession - 2026-07-20
+
+The follow-on campaign is complete. Rust formatting/tests/clippy, Desktop typecheck/tests/lint/i18n, and the caller-independent ACP schema wrapper all pass. No open defect remains from GEM-005 or the frozen open-defect inventory; Git publication was not part of this verification.

@@ -169,3 +169,7 @@ A superseding source review found that current source already satisfies the defe
 - RES-003: container cleanup includes in-container process termination and regression coverage.
 
 These records are closed by superseding reconciliation; their historical text is retained. This campaign did not rerun tests.
+
+## Final verification supersession - 2026-07-20
+
+The later open-defect campaign completed the previously deferred execution pass. Rust formatting, 1,533 Gosling library tests, 34 gosling-server/TLS tests, workspace clippy, Desktop typecheck, 547 Desktop tests, ESLint, i18n validation, and ACP schema consistency all pass. The earlier statement that tests were not rerun remains historical context and is superseded by this evidence.

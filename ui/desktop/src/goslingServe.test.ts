@@ -32,7 +32,10 @@ function makeExecutable(filePath: string, contents: string): string {
 async function waitForFileLines(filePath: string): Promise<string[]> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     if (fs.existsSync(filePath)) {
-      return fs.readFileSync(filePath, 'utf8').trim().split('\n');
+      const contents = fs.readFileSync(filePath, 'utf8').trim();
+      if (contents) {
+        return contents.split('\n');
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }

@@ -1,4 +1,3 @@
-use crate::config::paths::RuntimePaths;
 use crate::acp::custom_notifications::*;
 use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
@@ -19,6 +18,7 @@ use crate::agents::{
 use crate::config::base::CONFIG_YAML_NAME;
 use crate::config::extensions::{get_enabled_extensions_with_config, is_builtin_disabled_by_user};
 use crate::config::paths::Paths;
+use crate::config::paths::RuntimePaths;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GoslingMode};
 use crate::conversation::message::{
@@ -205,7 +205,6 @@ struct ToolChain {
 }
 
 pub struct GoslingAcpAgentOptions {
-    runtime_paths: RuntimePaths,
     pub state_dir: PathBuf,
     pub provider_factory: AcpProviderFactory,
     pub builtins: Vec<String>,
@@ -217,6 +216,7 @@ pub struct GoslingAcpAgentOptions {
 }
 
 pub struct GoslingAcpAgent {
+    runtime_paths: RuntimePaths,
     sessions: Arc<Mutex<HashMap<String, GoslingAcpSession>>>,
     active_prompt_runs: Arc<Mutex<HashMap<String, ActivePromptRun>>>,
     closed_session_ids: Arc<Mutex<HashSet<String>>>,
@@ -1053,60 +1053,60 @@ impl GoslingAcpAgent {
         let agent_runtime_paths = runtime_paths.clone();
 
         Paths::scope(runtime_paths, async move {
-        let default_working_folder = std::env::var_os("GOSLING_WORKING_DIR")
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .or_else(|| std::env::current_dir().ok())
-            .unwrap_or_else(|| PathBuf::from("/"));
-        let workspace_service = Arc::new(
-            WorkspaceService::initialize(&options.data_dir, &default_working_folder).await?,
-        );
-        let session_manager = Arc::new(SessionManager::new(options.data_dir));
+            let default_working_folder = std::env::var_os("GOSLING_WORKING_DIR")
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .or_else(|| std::env::current_dir().ok())
+                .unwrap_or_else(|| PathBuf::from("/"));
+            let workspace_service = Arc::new(
+                WorkspaceService::initialize(&options.data_dir, &default_working_folder).await?,
+            );
+            let session_manager = Arc::new(SessionManager::new(options.data_dir));
 
-        // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
-        let storage_clone = session_manager.storage().clone();
-        tokio::spawn(async move {
-            let _ = storage_clone.pool().await;
-        });
+            // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
+            let storage_clone = session_manager.storage().clone();
+            tokio::spawn(async move {
+                let _ = storage_clone.pool().await;
+            });
 
-        let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
-        let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
-        let config = Config::global();
-        let agent_config = AgentConfig::new(
-            Arc::clone(&session_manager),
-            Arc::clone(&permission_manager),
-            config.get_gosling_mode().unwrap_or_default(),
-            options.disable_session_naming,
-            options.gosling_platform.clone(),
-        )
-        .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime())
-        .with_workspace_service(Arc::clone(&workspace_service));
-        let agent_manager = Arc::new(AgentManager::new(agent_config, None).await?);
+            let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
+            let provider_inventory =
+                ProviderInventoryService::new(session_manager.storage().clone());
+            let config = Config::global();
+            let agent_config = AgentConfig::new(
+                Arc::clone(&session_manager),
+                Arc::clone(&permission_manager),
+                config.get_gosling_mode().unwrap_or_default(),
+                options.disable_session_naming,
+                options.gosling_platform.clone(),
+            )
+            .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime())
+            .with_workspace_service(Arc::clone(&workspace_service));
+            let agent_manager = Arc::new(AgentManager::new(agent_config, None).await?);
 
-        Ok(Self {
+            Ok(Self {
                 runtime_paths: agent_runtime_paths,
-            sessions: Arc::new(Mutex::new(HashMap::new())),
-            active_prompt_runs: Arc::new(Mutex::new(HashMap::new())),
-            closed_session_ids: Arc::new(Mutex::new(HashSet::new())),
-            agent_manager,
-            provider_factory: options.provider_factory,
-            builtins: options.builtins,
-            client_fs_capabilities: OnceCell::new(),
-            client_terminal: OnceCell::new(),
-            client_mcp_host_info: OnceCell::new(),
-            client_supports_acp_elicitation: OnceCell::new(),
-            client_supports_gosling_custom_notifications: OnceCell::new(),
-            use_login_shell_path: OnceCell::new(),
-            client_cx: OnceCell::new(),
-            config_dir: options.config_dir,
-            session_manager,
-            permission_manager,
-            disable_session_naming: options.disable_session_naming,
-            provider_inventory,
-            additional_source_roots: options.additional_source_roots,
-            workspace_service,
-        })
-    
+                sessions: Arc::new(Mutex::new(HashMap::new())),
+                active_prompt_runs: Arc::new(Mutex::new(HashMap::new())),
+                closed_session_ids: Arc::new(Mutex::new(HashSet::new())),
+                agent_manager,
+                provider_factory: options.provider_factory,
+                builtins: options.builtins,
+                client_fs_capabilities: OnceCell::new(),
+                client_terminal: OnceCell::new(),
+                client_mcp_host_info: OnceCell::new(),
+                client_supports_acp_elicitation: OnceCell::new(),
+                client_supports_gosling_custom_notifications: OnceCell::new(),
+                use_login_shell_path: OnceCell::new(),
+                client_cx: OnceCell::new(),
+                config_dir: options.config_dir,
+                session_manager,
+                permission_manager,
+                disable_session_naming: options.disable_session_naming,
+                provider_inventory,
+                additional_source_roots: options.additional_source_roots,
+                workspace_service,
+            })
         })
         .await
     }
@@ -3326,6 +3326,7 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
     let server = crate::acp::server_factory::AcpServer::new(
         crate::acp::server_factory::AcpServerFactoryConfig {
             builtins,
+            state_dir: Paths::state_dir(),
             data_dir: Paths::data_dir(),
             config_dir: Paths::config_dir(),
             gosling_platform: GoslingPlatform::GoslingCli,

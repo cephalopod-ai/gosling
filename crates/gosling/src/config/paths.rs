@@ -40,19 +40,19 @@ impl Paths {
     pub fn config_dir() -> PathBuf {
         RUNTIME_PATHS
             .try_with(|paths| paths.config_dir.clone())
-            .unwrap_or_else(|_| { Self::get_dir(DirType::Config) })
+            .unwrap_or_else(|_| Self::get_dir(DirType::Config))
     }
 
     pub fn data_dir() -> PathBuf {
         RUNTIME_PATHS
             .try_with(|paths| paths.data_dir.clone())
-            .unwrap_or_else(|_| { Self::get_dir(DirType::Data) })
+            .unwrap_or_else(|_| Self::get_dir(DirType::Data))
     }
 
     pub fn state_dir() -> PathBuf {
         RUNTIME_PATHS
             .try_with(|paths| paths.state_dir.clone())
-            .unwrap_or_else(|_| { Self::get_dir(DirType::State) })
+            .unwrap_or_else(|_| Self::get_dir(DirType::State))
     }
 
     pub fn plugins_dir() -> PathBuf {
@@ -92,7 +92,6 @@ enum DirType {
     Agents,
     AgentsHome,
 }
-
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePaths {
@@ -146,18 +145,10 @@ mod runtime_paths_tests {
 
         let (first_observed, second_observed) = tokio::join!(
             Paths::scope(first_paths.clone(), async {
-                (
-                    Paths::config_dir(),
-                    Paths::data_dir(),
-                    Paths::state_dir(),
-                )
+                (Paths::config_dir(), Paths::data_dir(), Paths::state_dir())
             }),
             Paths::scope(second_paths.clone(), async {
-                (
-                    Paths::config_dir(),
-                    Paths::data_dir(),
-                    Paths::state_dir(),
-                )
+                (Paths::config_dir(), Paths::data_dir(), Paths::state_dir())
             }),
         );
 

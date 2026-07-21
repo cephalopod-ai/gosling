@@ -1919,3 +1919,9 @@ Status: source repair complete; execution verification deferred because this cam
 ### 37.1 Provider-cache race closure (2026-07-20)
 
 The final known source defect from the campaign is repaired. Provider mutations now establish explicit begin/end boundaries, each invalidation advances a generation, superseded reads retry, and reads completed during active mutation are not cached. Campaign source status is complete; execution verification remains pending.
+
+### 37.2 Final campaign verification (2026-07-20)
+
+Status: complete.
+
+The full Rust library/server test lanes, workspace clippy, Desktop typecheck/test/lint/i18n lanes, and ACP schema consistency gate are green. Verification-discovered fixture, concurrency, environment, and generated-catalog defects were repaired and rerun. No defect remains open in the frozen campaign inventory.

@@ -6,8 +6,8 @@ import { ScrollArea, type ScrollAreaHandle } from './scroll-area';
 class TestResizeObserver {
   static instances: TestResizeObserver[] = [];
 
-  readonly observe = vi.fn<(target: Element) => void>();
-  readonly unobserve = vi.fn<(target: Element) => void>();
+  readonly observe = vi.fn<(target: unknown) => void>();
+  readonly unobserve = vi.fn<(target: unknown) => void>();
   readonly disconnect = vi.fn<() => void>();
 
   constructor(private readonly callback: ConstructorParameters<typeof window.ResizeObserver>[0]) {
@@ -22,7 +22,7 @@ class TestResizeObserver {
 describe('ScrollArea auto-follow', () => {
   beforeEach(() => {
     TestResizeObserver.instances = [];
-    vi.stubGlobal('window.ResizeObserver', TestResizeObserver);
+    vi.stubGlobal('ResizeObserver', TestResizeObserver);
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       callback(0);
       return 1;
@@ -60,7 +60,7 @@ describe('ScrollArea auto-follow', () => {
         },
       },
     });
-    const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+    const scrollTo = vi.fn(({ top }: { top?: number }) => {
       scrollTop = Math.min(Number(top), scrollHeight - clientHeight);
     });
     viewport.scrollTo = scrollTo as unknown as typeof viewport.scrollTo;

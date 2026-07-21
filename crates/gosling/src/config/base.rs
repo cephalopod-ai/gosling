@@ -4,7 +4,6 @@ use fs2::FileExt;
 use gosling_providers::thinking::ThinkingEffort;
 #[cfg(feature = "system-keyring")]
 use keyring::Entry;
-use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_yaml::Mapping;
@@ -279,9 +278,6 @@ fn stamp_file(path: &Path) -> FileStamp {
     }
 }
 
-// Global instance
-static GLOBAL_CONFIG: OnceCell<Config> = OnceCell::new();
-
 fn system_config_path() -> PathBuf {
     #[cfg(unix)]
     {
@@ -536,18 +532,14 @@ impl Config {
     /// if it hasn't been initialized yet.
     pub fn global() -> &'static Config {
         static CONFIGS_BY_PATH: std::sync::LazyLock<
-            std::sync::Mutex<
-                std::collections::HashMap<std::path::PathBuf, &'static Config>,
-            >,
-        > = std::sync::LazyLock::new(|| {
-            std::sync::Mutex::new(std::collections::HashMap::new())
-        });
+            std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, &'static Config>>,
+        > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
         let config_dir = Paths::config_dir();
         let mut configs = CONFIGS_BY_PATH
             .lock()
             .expect("global config path map lock poisoned");
-        *configs.entry(config_dir).or_insert_with(|| {
+        configs.entry(config_dir).or_insert_with(|| {
             let config: &'static Config = Box::leak(Box::new(Config::default()));
             config
         })

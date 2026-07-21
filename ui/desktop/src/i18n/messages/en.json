@@ -203,17 +203,8 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Gosling finished the task."
   },
-  "chatInput.addCredential": {
-    "defaultMessage": "Add credential profile"
-  },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
-  },
-  "chatInput.credentials": {
-    "defaultMessage": "Credentials"
-  },
-  "chatInput.credentialsEmpty": {
-    "defaultMessage": "No saved credential profiles yet. Add them in Settings -> Auth."
   },
   "chatInput.dictationError": {
     "defaultMessage": "Dictation Error"
@@ -403,6 +394,36 @@
   },
   "costTracker.totalSessionCost": {
     "defaultMessage": "Total session cost: {cost}"
+  },
+  "credentialProfileSelector.availableProfiles": {
+    "defaultMessage": "Available credential profiles"
+  },
+  "credentialProfileSelector.credentialForChat": {
+    "defaultMessage": "Credential for this chat"
+  },
+  "credentialProfileSelector.manageProfiles": {
+    "defaultMessage": "Manage credential profiles"
+  },
+  "credentialProfileSelector.missingProfile": {
+    "defaultMessage": "Profile unavailable"
+  },
+  "credentialProfileSelector.newChats": {
+    "defaultMessage": "New chats"
+  },
+  "credentialProfileSelector.noProfile": {
+    "defaultMessage": "No credential"
+  },
+  "credentialProfileSelector.noProfilePinned": {
+    "defaultMessage": "No credential profile is pinned"
+  },
+  "credentialProfileSelector.pinned": {
+    "defaultMessage": "Pinned"
+  },
+  "credentialProfileSelector.pinnedExplanation": {
+    "defaultMessage": "Credentials are pinned when a chat starts. Start a new chat to use another profile."
+  },
+  "credentialProfileSelector.tooltip": {
+    "defaultMessage": "Credential for this chat: {profile}"
   },
   "creditsExhaustedNotification.addCredits": {
     "defaultMessage": "Add credits"
@@ -947,6 +968,9 @@
   "externalBackendSection.secretKey": {
     "defaultMessage": "Secret Key"
   },
+  "externalBackendSection.secretKeyConfiguredPlaceholder": {
+    "defaultMessage": "Configured for this launch — enter a replacement"
+  },
   "externalBackendSection.secretKeyHelp": {
     "defaultMessage": "The secret key configured on the external backend (GOSLING_SERVER__SECRET_KEY)."
   },
@@ -1324,105 +1348,6 @@
   },
   "loadingGosling.waiting": {
     "defaultMessage": "gosling is waiting…"
-  },
-  "managedSecrets.addProfile": {
-    "defaultMessage": "Add profile"
-  },
-  "managedSecrets.addVariable": {
-    "defaultMessage": "Add variable"
-  },
-  "managedSecrets.customName": {
-    "defaultMessage": "Custom Project"
-  },
-  "managedSecrets.customNote": {
-    "defaultMessage": ""
-  },
-  "managedSecrets.customTemplate": {
-    "defaultMessage": "Custom profile"
-  },
-  "managedSecrets.deleteProfile": {
-    "defaultMessage": "Delete profile"
-  },
-  "managedSecrets.description": {
-    "defaultMessage": "Store repo-style secrets locally for websites and projects you manage. These values stay on this device in gosling settings and are not synced."
-  },
-  "managedSecrets.empty": {
-    "defaultMessage": "No local secret profiles yet. Add a custom profile or start from a VPS or Supabase template."
-  },
-  "managedSecrets.failedToLoad": {
-    "defaultMessage": "Failed to load local secret profiles"
-  },
-  "managedSecrets.failedToSave": {
-    "defaultMessage": "Failed to save local secret profiles: {error}"
-  },
-  "managedSecrets.loading": {
-    "defaultMessage": "Loading local secret profiles..."
-  },
-  "managedSecrets.note": {
-    "defaultMessage": "Note from user"
-  },
-  "managedSecrets.profileName": {
-    "defaultMessage": "Profile name"
-  },
-  "managedSecrets.profileSaved": {
-    "defaultMessage": "Local secret profiles saved"
-  },
-  "managedSecrets.profiles": {
-    "defaultMessage": "Profiles"
-  },
-  "managedSecrets.save": {
-    "defaultMessage": "Save"
-  },
-  "managedSecrets.saved": {
-    "defaultMessage": "Saved"
-  },
-  "managedSecrets.saving": {
-    "defaultMessage": "Saving changes..."
-  },
-  "managedSecrets.supabaseName": {
-    "defaultMessage": "Supabase Project"
-  },
-  "managedSecrets.supabaseNote": {
-    "defaultMessage": "Project configuration and admin credentials for managing this Supabase project."
-  },
-  "managedSecrets.supabaseTemplate": {
-    "defaultMessage": "Supabase project"
-  },
-  "managedSecrets.title": {
-    "defaultMessage": "Local Secret Profiles"
-  },
-  "managedSecrets.unsaved": {
-    "defaultMessage": "Unsaved changes"
-  },
-  "managedSecrets.useFor": {
-    "defaultMessage": "Use for"
-  },
-  "managedSecrets.useForAuthentication": {
-    "defaultMessage": "Authentication"
-  },
-  "managedSecrets.useForBoth": {
-    "defaultMessage": "Authentication + config"
-  },
-  "managedSecrets.useForConfig": {
-    "defaultMessage": "Project config"
-  },
-  "managedSecrets.variableName": {
-    "defaultMessage": "Variable name"
-  },
-  "managedSecrets.variableValue": {
-    "defaultMessage": "Secret value"
-  },
-  "managedSecrets.vpsName": {
-    "defaultMessage": "VPS Server"
-  },
-  "managedSecrets.vpsNote": {
-    "defaultMessage": "This is the password and login to manage the VPS server."
-  },
-  "managedSecrets.vpsTemplate": {
-    "defaultMessage": "VPS server"
-  },
-  "managedSecrets.website": {
-    "defaultMessage": "Website or service"
   },
   "markdownContent.cancel": {
     "defaultMessage": "Cancel"
@@ -2264,6 +2189,9 @@
   "sessionActionsHeader.fullTextTitle": {
     "defaultMessage": "Text value"
   },
+  "sessionActionsHeader.importedHistory": {
+    "defaultMessage": "Imported history"
+  },
   "sessionActionsHeader.jsonFailed": {
     "defaultMessage": "Failed to load session JSON: {error}"
   },
@@ -2416,6 +2344,9 @@
   },
   "sessions.import": {
     "defaultMessage": "Import Session"
+  },
+  "sessions.import.selectWorkingDirectory": {
+    "defaultMessage": "Select a trusted working directory to finish importing the session."
   },
   "sessions.importNostr": {
     "defaultMessage": "Import Link"

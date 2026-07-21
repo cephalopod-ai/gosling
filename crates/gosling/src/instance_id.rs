@@ -1,13 +1,9 @@
 use crate::config::paths::Paths;
-use once_cell::sync::Lazy;
-use std::fs;
 use uuid::Uuid;
 
 static INSTANCE_IDS_BY_STATE_PATH: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, String>>,
-> = std::sync::LazyLock::new(|| {
-    std::sync::Mutex::new(std::collections::HashMap::new())
-});
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 pub fn get_instance_id() -> String {
     let state_dir = Paths::state_dir();

@@ -246,3 +246,10 @@ mutation was performed.
 - [x] Mutation epochs invalidate provider inventory at both mutation boundaries.
 - [x] Reads superseded by an invalidation retry against the current generation.
 - [x] Reads completing during a mutation cannot repopulate the shared cache.
+
+### Open-defect campaign verification closure (2026-07-20)
+
+- [x] Rust formatting, library tests, server tests, and workspace clippy are green.
+- [x] Desktop typecheck, 547 tests, ESLint, and i18n validation are green.
+- [x] ACP schema generation and generated TypeScript consistency are green.
+- [x] Credential selector, chat scrolling, parent supervision, Claude permissions, and container cleanup regression cards pass.

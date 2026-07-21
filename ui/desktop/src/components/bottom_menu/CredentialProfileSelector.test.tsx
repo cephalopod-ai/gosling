@@ -23,6 +23,7 @@ const profiles = [
     configuredSecretFields: ['OPENAI_API_KEY'],
     nonSecretFields: {},
     status: 'configured' as const,
+    source: 'workspace_secure_storage' as const,
     createdAt: '2026-07-20T00:00:00Z',
     updatedAt: '2026-07-20T00:00:00Z',
   },
@@ -34,6 +35,7 @@ const profiles = [
     configuredSecretFields: ['ANTHROPIC_API_KEY'],
     nonSecretFields: {},
     status: 'configured' as const,
+    source: 'workspace_secure_storage' as const,
     createdAt: '2026-07-20T00:00:00Z',
     updatedAt: '2026-07-20T00:00:00Z',
   },
@@ -41,6 +43,14 @@ const profiles = [
 
 describe('CredentialProfileSelector', () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    );
     vi.mocked(useWorkspace).mockReturnValue({
       workspaces: [],
       activeWorkspace: null,
@@ -76,12 +86,18 @@ describe('CredentialProfileSelector', () => {
 
     await user.click(screen.getByRole('button', { name: 'Credential for this chat: Team OpenAI' }));
 
-    expect(screen.getAllByText('Team OpenAI')).toHaveLength(2);
+    expect(screen.getAllByText('Team OpenAI')).toHaveLength(3);
     expect(screen.getByText('Personal Anthropic')).toBeInTheDocument();
-    expect(screen.getByText('Start a new chat to use another profile.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Credentials are pinned when a chat starts. Start a new chat to use another profile.'
+      )
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('menuitem', { name: 'Manage credential profiles' }));
-    expect(screen.getByRole('dialog', { name: '' })).toHaveTextContent('Credential profile manager');
+    expect(screen.getByRole('dialog', { name: '' })).toHaveTextContent(
+      'Credential profile manager'
+    );
   });
 
   it('keeps the saved profile name visible when the pinned profile is unavailable', async () => {

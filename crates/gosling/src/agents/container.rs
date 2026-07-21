@@ -30,6 +30,7 @@ impl Container {
 /// still be using.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DockerExecProcess {
+    docker_executable: std::path::PathBuf,
     container_id: String,
     /// The argv passed to `docker exec` after the container id — i.e. the
     /// command line the process has inside the container. Used to identify
@@ -43,6 +44,20 @@ const DOCKER_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 impl DockerExecProcess {
     pub fn new(container: &Container, argv: Vec<String>) -> Self {
         Self {
+            docker_executable: "docker".into(),
+            container_id: container.id().to_string(),
+            argv,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_with_executable(
+        container: &Container,
+        argv: Vec<String>,
+        docker_executable: std::path::PathBuf,
+    ) -> Self {
+        Self {
+            docker_executable,
             container_id: container.id().to_string(),
             argv,
         }
@@ -59,7 +74,7 @@ impl DockerExecProcess {
         };
 
         let result = tokio::time::timeout(DOCKER_CLEANUP_TIMEOUT, async {
-            tokio::process::Command::new("docker")
+            tokio::process::Command::new(&self.docker_executable)
                 .arg("exec")
                 .arg(&self.container_id)
                 .arg("pkill")
@@ -101,7 +116,7 @@ impl DockerExecProcess {
             return;
         };
 
-        let mut command = std::process::Command::new("docker");
+        let mut command = std::process::Command::new(&self.docker_executable);
         command
             .arg("exec")
             .arg(&self.container_id)
@@ -156,18 +171,29 @@ fn run_command_bounded(
 
 #[cfg(test)]
 pub(crate) struct DockerTestContainerGuard {
+    docker_executable: std::path::PathBuf,
     name: Option<String>,
 }
 
 #[cfg(test)]
 impl DockerTestContainerGuard {
     pub(crate) fn new(name: String) -> Self {
-        Self { name: Some(name) }
+        Self {
+            docker_executable: "docker".into(),
+            name: Some(name),
+        }
+    }
+
+    fn new_with_executable(name: String, docker_executable: std::path::PathBuf) -> Self {
+        Self {
+            docker_executable,
+            name: Some(name),
+        }
     }
 
     pub(crate) async fn cleanup(mut self) {
         let name = self.name.as_ref().expect("container guard is armed");
-        let output = tokio::process::Command::new("docker")
+        let output = tokio::process::Command::new(&self.docker_executable)
             .args(["rm", "-f", name])
             .kill_on_drop(true)
             .output()
@@ -188,7 +214,7 @@ impl Drop for DockerTestContainerGuard {
         let Some(name) = self.name.take() else {
             return;
         };
-        let mut command = std::process::Command::new("docker");
+        let mut command = std::process::Command::new(&self.docker_executable);
         command.args(["rm", "-f", &name]);
         let _ = run_command_bounded(command, DOCKER_CLEANUP_TIMEOUT);
     }
@@ -262,8 +288,20 @@ mod tests {
     /// Returns `false` (and lets callers skip) rather than panicking when
     /// Docker isn't installed or the daemon isn't reachable, so this test
     /// doesn't fail CI environments without Docker.
-    async fn docker_available() -> bool {
-        tokio::process::Command::new("docker")
+    fn resolve_docker_executable() -> Option<std::path::PathBuf> {
+        let path = std::env::var_os("PATH")?;
+        let executable = if cfg!(windows) {
+            "docker.exe"
+        } else {
+            "docker"
+        };
+        std::env::split_paths(&path)
+            .map(|directory| directory.join(executable))
+            .find(|candidate| candidate.is_file())
+    }
+
+    async fn docker_available(docker_executable: &std::path::Path) -> bool {
+        tokio::process::Command::new(docker_executable)
             .arg("info")
             .kill_on_drop(true)
             .output()
@@ -272,8 +310,12 @@ mod tests {
             .unwrap_or(false)
     }
 
-    async fn docker_exec_matches(container_id: &str, pattern: &str) -> bool {
-        tokio::process::Command::new("docker")
+    async fn docker_exec_matches(
+        docker_executable: &std::path::Path,
+        container_id: &str,
+        pattern: &str,
+    ) -> bool {
+        tokio::process::Command::new(docker_executable)
             .arg("exec")
             .arg(container_id)
             .arg("pgrep")
@@ -292,7 +334,11 @@ mod tests {
     /// terminates it without stopping the container).
     #[tokio::test]
     async fn kill_terminates_exec_process_without_stopping_container() {
-        if !docker_available().await {
+        let Some(docker_executable) = resolve_docker_executable() else {
+            eprintln!("skipping: docker is not installed in this environment");
+            return;
+        };
+        if !docker_available(&docker_executable).await {
             eprintln!("skipping: docker is not available in this environment");
             return;
         }
@@ -308,7 +354,7 @@ mod tests {
         // this test can't distinguish "the exec'd process was killed" from
         // "the container's main process was killed", which is the exact
         // distinction the fix is responsible for preserving.
-        let run = tokio::process::Command::new("docker")
+        let run = tokio::process::Command::new(&docker_executable)
             .args([
                 "run",
                 "-d",
@@ -332,13 +378,14 @@ mod tests {
             return;
         }
 
-        let guard = DockerTestContainerGuard::new(name.clone());
+        let guard =
+            DockerTestContainerGuard::new_with_executable(name.clone(), docker_executable.clone());
 
         let container = Container::new(name.clone());
 
         // Start the process the same way the extension manager does: a local
         // `docker exec` client attached to the container.
-        let mut exec_child = tokio::process::Command::new("docker")
+        let mut exec_child = tokio::process::Command::new(&docker_executable)
             .arg("exec")
             .arg("-i")
             .arg(&name)
@@ -352,7 +399,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(500)).await;
         let pattern = kill_pattern(&["sleep".to_string(), "300".to_string()]).unwrap();
         assert!(
-            docker_exec_matches(&name, &pattern).await,
+            docker_exec_matches(&docker_executable, &name, &pattern).await,
             "expected the exec'd sleep process to be running inside the container"
         );
 
@@ -366,24 +413,27 @@ mod tests {
         let _ = exec_child.wait().await;
         tokio::time::sleep(Duration::from_millis(500)).await;
         assert!(
-            docker_exec_matches(&name, &pattern).await,
+            docker_exec_matches(&docker_executable, &name, &pattern).await,
             "defect not reproduced: killing the local docker exec client should not \
              have terminated the process inside the container"
         );
 
         // Apply the fix: explicitly target the in-container process.
-        let docker_process =
-            DockerExecProcess::new(&container, vec!["sleep".to_string(), "300".to_string()]);
+        let docker_process = DockerExecProcess::new_with_executable(
+            &container,
+            vec!["sleep".to_string(), "300".to_string()],
+            docker_executable.clone(),
+        );
         docker_process.kill().await;
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert!(
-            !docker_exec_matches(&name, &pattern).await,
+            !docker_exec_matches(&docker_executable, &name, &pattern).await,
             "DockerExecProcess::kill should have terminated the process inside the container"
         );
 
         // The container itself must still be running — other extensions in
         // the same session may depend on it.
-        let inspect = tokio::process::Command::new("docker")
+        let inspect = tokio::process::Command::new(&docker_executable)
             .args(["inspect", "-f", "{{.State.Running}}", &name])
             .kill_on_drop(true)
             .output()
@@ -403,7 +453,11 @@ mod tests {
     /// removed by whatever created it.
     #[tokio::test]
     async fn kill_is_a_noop_when_container_is_gone() {
-        if !docker_available().await {
+        let Some(docker_executable) = resolve_docker_executable() else {
+            eprintln!("skipping: docker is not installed in this environment");
+            return;
+        };
+        if !docker_available(&docker_executable).await {
             eprintln!("skipping: docker is not available in this environment");
             return;
         }
