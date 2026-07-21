@@ -239,3 +239,10 @@ mutation was performed.
 - [ ] Session Handoff and expanded Tagteam remain feature backlog items, not open defects.
 - [ ] Giles's internal uniqueness-constraint failure remains external tool debt.
 - [ ] Release execution remains maintainer-owned.
+
+
+### Provider inventory concurrency closure (2026-07-20)
+
+- [x] Mutation epochs invalidate provider inventory at both mutation boundaries.
+- [x] Reads superseded by an invalidation retry against the current generation.
+- [x] Reads completing during a mutation cannot repopulate the shared cache.

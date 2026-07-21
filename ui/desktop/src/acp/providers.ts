@@ -46,31 +46,55 @@ function updateRequestToCreate(
   };
 }
 
-let providerDetailsCache: Awaited<Promise<ProviderDetails[]>> | undefined;
-let providerDetailsInFlight: Promise<ProviderDetails[]> | undefined;
+let providerDetailsCache:
+  | Awaited<ReturnType<typeof fetchProviderDetails>>
+  | undefined;
+let providerDetailsInFlight:
+  | ReturnType<typeof fetchProviderDetails>
+  | undefined;
+let providerDetailsGeneration = 0;
+let providerDetailsMutationDepth = 0;
 
 export function invalidateProviderDetailsCache(): void {
+  providerDetailsGeneration += 1;
   providerDetailsCache = undefined;
+  providerDetailsInFlight = undefined;
+}
+
+function beginProviderDetailsMutation(): void {
+  providerDetailsMutationDepth += 1;
+  invalidateProviderDetailsCache();
+}
+
+function endProviderDetailsMutation(): void {
+  providerDetailsMutationDepth -= 1;
+  invalidateProviderDetailsCache();
 }
 
 export async function acpListProviderDetails(
   forceRefresh = false,
-): Promise<ProviderDetails[]> {
+): ReturnType<typeof fetchProviderDetails> {
   if (forceRefresh) {
     invalidateProviderDetailsCache();
   }
-  if (providerDetailsCache) {
+  if (providerDetailsMutationDepth === 0 && providerDetailsCache) {
     return providerDetailsCache;
   }
   if (providerDetailsInFlight) {
     return providerDetailsInFlight;
   }
 
+  const generation = providerDetailsGeneration;
   const request = fetchProviderDetails();
   providerDetailsInFlight = request;
   try {
     const providers = await request;
-    providerDetailsCache = providers;
+    if (generation !== providerDetailsGeneration) {
+      return acpListProviderDetails();
+    }
+    if (providerDetailsMutationDepth === 0) {
+      providerDetailsCache = providers;
+    }
     return providers;
   } finally {
     if (providerDetailsInFlight === request) {
@@ -175,7 +199,12 @@ export async function acpGetCustomProvider(
 export async function acpCreateCustomProviderFromRequest(
   request: UpdateCustomProviderRequest
 ): Promise<{
-  invalidateProviderDetailsCache(); provider_name: string }> {
+  beginProviderDetailsMutation();
+  try {   provider_name: string 
+  } finally {
+    endProviderDetailsMutation();
+  }
+}> {
   const client = await getAcpClient();
   const response = await client.gosling.providersCustomCreate_unstable(
     updateRequestToCreate(request)
@@ -187,18 +216,28 @@ export async function acpUpdateCustomProviderFromRequest(
   providerId: string,
   request: UpdateCustomProviderRequest
 ): Promise<void> {
-  invalidateProviderDetailsCache();
-  const client = await getAcpClient();
-  await client.gosling.providersCustomUpdate_unstable({
-    providerId,
-    ...updateRequestToCreate(request),
-  });
+  beginProviderDetailsMutation();
+  try {
+    const client = await getAcpClient();
+    await client.gosling.providersCustomUpdate_unstable({
+      providerId,
+      ...updateRequestToCreate(request),
+    });
+
+  } finally {
+    endProviderDetailsMutation();
+  }
 }
 
 export async function acpDeleteCustomProvider(providerId: string) {
-  invalidateProviderDetailsCache();
-  const client = await getAcpClient();
-  return client.gosling.providersCustomDelete_unstable({ providerId });
+  beginProviderDetailsMutation();
+  try {
+    const client = await getAcpClient();
+    return client.gosling.providersCustomDelete_unstable({ providerId });
+
+  } finally {
+    endProviderDetailsMutation();
+  }
 }
 
 export async function acpReadProviderConfig(providerId: string) {
@@ -208,24 +247,39 @@ export async function acpReadProviderConfig(providerId: string) {
 }
 
 export async function acpDeleteProviderConfig(providerId: string) {
-  invalidateProviderDetailsCache();
-  const client = await getAcpClient();
-  return client.gosling.providersConfigDelete_unstable({ providerId });
+  beginProviderDetailsMutation();
+  try {
+    const client = await getAcpClient();
+    return client.gosling.providersConfigDelete_unstable({ providerId });
+
+  } finally {
+    endProviderDetailsMutation();
+  }
 }
 
 export async function acpSaveProviderConfig(
   providerId: string,
   fields: {
-  invalidateProviderDetailsCache(); key: string; value: string }[]
+  beginProviderDetailsMutation();
+  try {   key: string; value: string 
+  } finally {
+    endProviderDetailsMutation();
+  }
+}[]
 ): Promise<void> {
   const client = await getAcpClient();
   await client.gosling.providersConfigSave_unstable({ providerId, fields });
 }
 
 export async function acpAuthenticateProvider(providerId: string): Promise<void> {
-  invalidateProviderDetailsCache();
-  const client = await getAcpClient();
-  await client.gosling.providersConfigAuthenticate_unstable({ providerId });
+  beginProviderDetailsMutation();
+  try {
+    const client = await getAcpClient();
+    await client.gosling.providersConfigAuthenticate_unstable({ providerId });
+
+  } finally {
+    endProviderDetailsMutation();
+  }
 }
 
 export async function acpListProviderSecrets(): Promise<ProviderSecretDto[]> {
@@ -235,9 +289,14 @@ export async function acpListProviderSecrets(): Promise<ProviderSecretDto[]> {
 }
 
 export async function acpDeleteProviderSecret(id: string): Promise<void> {
-  invalidateProviderDetailsCache();
-  const client = await getAcpClient();
-  await client.gosling.providersSecretsDelete_unstable({ id });
+  beginProviderDetailsMutation();
+  try {
+    const client = await getAcpClient();
+    await client.gosling.providersSecretsDelete_unstable({ id });
+
+  } finally {
+    endProviderDetailsMutation();
+  }
 }
 
 export async function acpGetCanonicalModelInfo(

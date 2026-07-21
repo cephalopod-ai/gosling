@@ -1914,3 +1914,8 @@ Status: source repair complete; execution verification deferred because this cam
 - The bounded ACP response policy remains intentional fail-closed behavior; streaming/pagination is future API work.
 - Session Handoff, Tagteam expansion, CLI usage reporting, release execution, and broad modularization are feature/maintenance backlog rather than defects.
 - Giles's uniqueness-constraint crash and macOS Keychain authorization are external/manual validation constraints.
+
+
+### 37.1 Provider-cache race closure (2026-07-20)
+
+The final known source defect from the campaign is repaired. Provider mutations now establish explicit begin/end boundaries, each invalidation advances a generation, superseded reads retry, and reads completed during active mutation are not cached. Campaign source status is complete; execution verification remains pending.

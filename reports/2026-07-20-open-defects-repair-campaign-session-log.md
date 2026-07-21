@@ -45,3 +45,10 @@ just check-acp-schema
 - Session Handoff, Tagteam expansion, CLI usage reporting, release execution, and broad modularization remain non-defect backlog.
 - Giles's uniqueness-constraint crash is external tool debt.
 - macOS Keychain authorization remains manual integration validation.
+
+
+## Stage 4 - Provider-cache race closure
+
+The final known source defect was repaired with mutation-depth and generation tracking. Cache invalidation now occurs at both mutation boundaries, an older in-flight read cannot repopulate the cache, and a read superseded by invalidation retries against the current generation.
+
+Campaign source status: `complete`. Overall status remains `completed_with_partial_verification` until the recorded formatter, build, test, lint, and schema commands are authorized and executed.

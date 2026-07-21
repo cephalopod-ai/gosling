@@ -81,3 +81,8 @@ new ad-hoc development signature. Current status: `completed_with_partial_verifi
 ## Provider inventory residual update - 2026-07-20
 
 Redundant and concurrent provider-inventory startup requests are source-repaired with cache/in-flight coalescing and mutation invalidation. Provider pagination or metadata-only transport remains future API work. The 8,000,000-character ACP response ceiling remains intentional fail-closed behavior.
+
+
+### Provider inventory concurrency closure - 2026-07-20
+
+The remaining cache race is source-closed: mutation boundaries advance the inventory generation, superseded in-flight reads retry, and active-mutation reads are not cached. Execution verification remains pending.
