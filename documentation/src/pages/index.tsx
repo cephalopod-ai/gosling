@@ -41,8 +41,8 @@ function HeroSection() {
           </div>
           <div className={styles.statDivider} />
           <div className={styles.stat}>
-            <span className={styles.statNumber}>500+</span>
-            <span className={styles.statLabel}>Contributors</span>
+            <span className={styles.statNumber}>Independent</span>
+            <span className={styles.statLabel}>Maintenance</span>
           </div>
           <div className={styles.statDivider} />
           <div className={styles.stat}>

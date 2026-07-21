@@ -137,6 +137,7 @@ See [BUILDING_LINUX.md](BUILDING_LINUX.md), [BUILDING_DOCKER.md](BUILDING_DOCKER
 - [Documentation source](documentation/) — the gosling docs site
 - [Custom Distributions](CUSTOM_DISTROS.md) — build your own distro with preconfigured providers, extensions, and branding
 - [Contributing](CONTRIBUTING.md)
+- [Contributors and upstream attribution](CONTRIBUTORS.md)
 
 ## Upstream compatibility notes
 
