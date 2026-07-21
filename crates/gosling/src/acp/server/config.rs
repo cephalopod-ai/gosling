@@ -215,13 +215,8 @@ impl GoslingAcpAgent {
         }
 
         if let Some(model_id) = model_id.as_deref() {
-            let model_exists = entry.default_model == model_id
-                || entry.models.iter().any(|model| model.id == model_id);
-            if !model_exists {
-                return Err(agent_client_protocol::Error::invalid_params().data(format!(
-                    "Model '{model_id}' is not available for provider '{provider_id}'"
-                )));
-            }
+            self.validate_model_for_provider(&provider_id, model_id)
+                .await?;
         }
 
         let config = self.config()?;

@@ -30,8 +30,8 @@ Status: in progress
 
 | Group | Findings | Status | Commit | Evidence |
 | --- | --- | --- | --- | --- |
-| A | GSL-PLAY-001, GSL-PLAY-008 | verified | pending local commit | `pnpm --dir ui/desktop exec vitest run src/components/Hub.test.tsx src/components/onboarding/OnboardingGuard.test.tsx` (9 passed); Desktop typecheck passed |
-| B | GSL-PLAY-002, GSL-PLAY-011 | pending | | |
+| A | GSL-PLAY-001, GSL-PLAY-008 | verified | `3dce5e6bb` | `pnpm --dir ui/desktop exec vitest run src/components/Hub.test.tsx src/components/onboarding/OnboardingGuard.test.tsx` (9 passed); Desktop typecheck passed |
+| B | GSL-PLAY-002, GSL-PLAY-011 | verified | pending local commit | `cargo test -p gosling acp::server::tests::` (71 passed); formatter passed |
 | C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | pending | | |
 | D | GSL-PLAY-004 | pending | | |
 | E | GSL-PLAY-006, GSL-PLAY-007, GSL-PLAY-013, GSL-PLAY-014 | pending | | |
@@ -47,3 +47,11 @@ Pending group repairs, adversarial review, full regression, Clippy, source-recor
 - Moved clear/history side effects behind asynchronous submit acceptance in `ChatInput`, preserving the entire draft on a rejected session creation.
 - Confirmed onboarding rejects unavailable explicit models and empty live inventories instead of persisting a known-bad default.
 - Routed a Desktop GUI replay of failed new-chat submission to the final campaign gate because there is no existing dedicated ChatInput component harness.
+
+## Group B adversarial review
+
+- Kept static provider inventory as the fast validation path and consulted the live provider only for otherwise unknown models.
+- Reused the shared model validator for defaults-save so onboarding and session creation cannot disagree about a dynamic model.
+- Moved protocol negotiation into a directly tested helper and reject the schema's legacy/string fallback version before accepting client capabilities.
+- Tested both EOF detection and the race that terminates an otherwise pending ACP connection.
+- Routed installed-Ollama `qwen2.5:latest` and end-to-end stdio replay to the final live gate.

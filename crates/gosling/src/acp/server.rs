@@ -56,6 +56,7 @@ use agent_client_protocol::schema::v1::{
     TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
     ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
 };
+use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::util::MatchDispatchFrom;
 use agent_client_protocol::{
     Agent as SacpAgent, ByteStreams, Client, ConnectionTo, Dispatch, HandleDispatchFrom, Handled,
@@ -63,8 +64,10 @@ use agent_client_protocol::{
 };
 use anyhow::Result;
 use fs_err as fs;
-use futures::future::{BoxFuture, FutureExt};
+use futures::channel::oneshot;
+use futures::future::{select, BoxFuture, Either, FutureExt};
 use futures::stream::{self, StreamExt};
+use futures::AsyncRead;
 use rmcp::model::{
     AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
 };
@@ -72,7 +75,9 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use tokio::sync::{Mutex, OnceCell};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 use tokio_util::sync::CancellationToken;
@@ -2348,6 +2353,8 @@ impl GoslingAcpAgent {
     ) -> Result<InitializeResponse, agent_client_protocol::Error> {
         debug!(?args, "initialize request");
 
+        let protocol_version = negotiate_protocol_version(args.protocol_version)?;
+
         let _ = self
             .client_fs_capabilities
             .set(args.client_capabilities.fs.clone());
@@ -2385,7 +2392,7 @@ impl GoslingAcpAgent {
             )
             .mcp_capabilities(McpCapabilities::new().http(true))
             .meta(None);
-        Ok(InitializeResponse::new(args.protocol_version)
+        Ok(InitializeResponse::new(protocol_version)
             .agent_info(Implementation::new("gosling", env!("CARGO_PKG_VERSION")))
             .agent_capabilities(capabilities)
             .auth_methods(vec![AuthMethod::Agent(
@@ -3115,7 +3122,19 @@ impl GoslingAcpAgent {
             })?;
         let model_exists = entry.default_model == model_id
             || entry.models.iter().any(|model| model.id == model_id);
-        if !model_exists {
+        if model_exists {
+            return Ok(());
+        }
+
+        let provider = self
+            .create_provider(provider_id, Vec::new(), None)
+            .await
+            .internal_err_ctx("Failed to initialize provider for model validation")?;
+        let supported_models = provider
+            .fetch_supported_models()
+            .await
+            .internal_err_ctx("Failed to fetch provider models for validation")?;
+        if !supported_models.iter().any(|model| model == model_id) {
             return Err(agent_client_protocol::Error::invalid_params().data(format!(
                 "Model '{model_id}' is not available for provider '{provider_id}'"
             )));
@@ -3169,6 +3188,63 @@ pub struct GoslingAcpHandler {
     pub agent: Arc<GoslingAcpAgent>,
 }
 
+fn negotiate_protocol_version(
+    requested: ProtocolVersion,
+) -> Result<ProtocolVersion, agent_client_protocol::Error> {
+    if requested != ProtocolVersion::LATEST {
+        return Err(agent_client_protocol::Error::invalid_params().data(format!(
+            "Unsupported ACP protocol version {requested}; expected {}",
+            ProtocolVersion::LATEST
+        )));
+    }
+    Ok(ProtocolVersion::LATEST)
+}
+
+struct EofAwareReader<R> {
+    inner: R,
+    eof_sender: Option<oneshot::Sender<()>>,
+}
+
+impl<R> EofAwareReader<R> {
+    fn new(inner: R, eof_sender: oneshot::Sender<()>) -> Self {
+        Self {
+            inner,
+            eof_sender: Some(eof_sender),
+        }
+    }
+}
+
+impl<R: AsyncRead + Unpin> AsyncRead for EofAwareReader<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buffer: &mut [u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let result = Pin::new(&mut self.inner).poll_read(cx, buffer);
+        if matches!(result, Poll::Ready(Ok(0))) {
+            if let Some(sender) = self.eof_sender.take() {
+                let _ = sender.send(());
+            }
+        }
+        result
+    }
+}
+
+async fn finish_connection_on_eof<F>(
+    connection: F,
+    eof_receiver: oneshot::Receiver<()>,
+) -> Result<()>
+where
+    F: std::future::Future<Output = Result<(), agent_client_protocol::Error>>,
+{
+    match select(Box::pin(connection), Box::pin(eof_receiver)).await {
+        Either::Left((result, _)) => result?,
+        Either::Right((Ok(()), _)) => {}
+        Either::Right((Err(_), connection)) => connection.await?,
+    }
+    Ok(())
+}
+
 pub fn serve<R, W>(
     agent: Arc<GoslingAcpAgent>,
     read: R,
@@ -3180,15 +3256,16 @@ where
 {
     Box::pin(async move {
         let handler = GoslingAcpHandler { agent };
+        let (eof_sender, eof_receiver) = oneshot::channel();
+        let read = EofAwareReader::new(read, eof_sender);
 
-        SacpAgent
+        let connection = SacpAgent
             .builder()
             .name("gosling-acp")
             .with_handler(handler)
-            .connect_to(ByteStreams::new(write, read))
-            .await?;
+            .connect_to(ByteStreams::new(write, read));
 
-        Ok(())
+        finish_connection_on_eof(connection, eof_receiver).await
     })
 }
 
@@ -4348,6 +4425,43 @@ print(\"hello, world\")
         assert!(!extract_client_supports_gosling_custom_notifications(
             gosling_client_capabilities.as_ref()
         ));
+    }
+
+    #[test]
+    fn protocol_negotiation_accepts_latest_and_rejects_legacy_fallback() {
+        assert_eq!(
+            negotiate_protocol_version(ProtocolVersion::LATEST).unwrap(),
+            ProtocolVersion::V1
+        );
+        let error = negotiate_protocol_version(ProtocolVersion::V0).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("Unsupported ACP protocol version 0"));
+    }
+
+    #[tokio::test]
+    async fn eof_aware_reader_notifies_when_input_closes() {
+        let (sender, receiver) = oneshot::channel();
+        let mut reader = EofAwareReader::new(futures::io::Cursor::new(Vec::<u8>::new()), sender);
+        let mut buffer = [0_u8; 1];
+
+        let read = futures::AsyncReadExt::read(&mut reader, &mut buffer)
+            .await
+            .expect("EOF read should succeed");
+
+        assert_eq!(read, 0);
+        receiver.await.expect("EOF notification should be sent");
+    }
+
+    #[tokio::test]
+    async fn input_eof_terminates_a_pending_connection() {
+        let (sender, receiver) = oneshot::channel();
+        sender.send(()).unwrap();
+        let connection = futures::future::pending::<Result<(), agent_client_protocol::Error>>();
+
+        finish_connection_on_eof(connection, receiver)
+            .await
+            .expect("EOF should terminate the pending connection");
     }
 
     #[test]
