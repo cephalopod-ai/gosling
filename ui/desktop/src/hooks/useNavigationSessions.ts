@@ -17,6 +17,20 @@ export function createWorkspaceSessionFilter(workspaceId: string | null) {
   return workspaceId ? { workspaceId } : undefined;
 }
 
+export function matchesWorkspaceSessionFilter(
+  session: Pick<SessionListItem, 'workspaceId'>,
+  workspaceId: string | null
+): boolean {
+  return workspaceId === null || session.workspaceId === workspaceId;
+}
+
+function filterSessionsForWorkspace(
+  sessions: SessionListItem[],
+  workspaceId: string | null
+): SessionListItem[] {
+  return sessions.filter((session) => matchesWorkspaceSessionFilter(session, workspaceId));
+}
+
 export function prependUnique(
   prev: SessionListItem[],
   session: SessionListItem
@@ -27,12 +41,19 @@ export function prependUnique(
 
 function mergeWithEmptyLocals(
   prev: SessionListItem[],
-  listed: SessionListItem[]
+  listed: SessionListItem[],
+  workspaceId: string | null
 ): SessionListItem[] {
   const emptyLocals = prev.filter(
-    (local) => local.messageCount === 0 && !listed.some((s) => s.id === local.id)
+    (local) =>
+      local.messageCount === 0 &&
+      matchesWorkspaceSessionFilter(local, workspaceId) &&
+      !listed.some((s) => s.id === local.id)
   );
-  return [...emptyLocals, ...listed].slice(0, MAX_RECENT_SESSIONS);
+  return [
+    ...emptyLocals,
+    ...filterSessionsForWorkspace(listed, workspaceId),
+  ].slice(0, MAX_RECENT_SESSIONS);
 }
 
 export function activeSessionsOnly(sessions: SessionListItem[]): SessionListItem[] {
@@ -87,26 +108,36 @@ export function useNavigationSessions() {
       const sessions = activeSessionsOnly(
         await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active', sessionFilter)
       );
-      setRecentSessions(sessions);
+      setRecentSessions(filterSessionsForWorkspace(sessions, sessionWorkspaceFilterId));
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
     }
-  }, [sessionFilter]);
+  }, [sessionFilter, sessionWorkspaceFilterId]);
 
   useEffect(() => {
     if (!activeSessionId) return;
     if (recentSessions.some((s) => s.id === activeSessionId)) return;
 
+    let canceled = false;
+
     acpGetSessionListItem(activeSessionId)
       .then((item) => {
-        if (!item.archivedAt) {
+        if (
+          !canceled &&
+          !item.archivedAt &&
+          matchesWorkspaceSessionFilter(item, sessionWorkspaceFilterId)
+        ) {
           setRecentSessions((prev) => prependUnique(prev, item));
         }
       })
       .catch((error) => {
         console.error('Failed to fetch active session:', error);
       });
-  }, [activeSessionId, recentSessions]);
+
+    return () => {
+      canceled = true;
+    };
+  }, [activeSessionId, recentSessions, sessionWorkspaceFilterId]);
 
   useEffect(() => {
     let pollingTimeouts: ReturnType<typeof setTimeout>[] = [];
@@ -115,7 +146,10 @@ export function useNavigationSessions() {
     const handleSessionCreated = (event: Event) => {
       const { session } = (event as CustomEvent<{ session?: Session }>).detail || {};
       if (session) {
-        setRecentSessions((prev) => prependUnique(prev, sessionToListItem(session)));
+        const item = sessionToListItem(session);
+        if (matchesWorkspaceSessionFilter(item, sessionWorkspaceFilterId)) {
+          setRecentSessions((prev) => prependUnique(prev, item));
+        }
       }
 
       if (isPolling) return;
@@ -132,7 +166,9 @@ export function useNavigationSessions() {
           const listed = activeSessionsOnly(
             await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active', sessionFilter)
           );
-          setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed));
+          setRecentSessions((prev) =>
+            mergeWithEmptyLocals(prev, listed, sessionWorkspaceFilterId)
+          );
         } catch (error) {
           console.error('Failed to poll sessions:', error);
         }
@@ -153,7 +189,7 @@ export function useNavigationSessions() {
       window.removeEventListener(AppEvents.SESSION_CREATED, handleSessionCreated);
       pollingTimeouts.forEach(clearTimeout);
     };
-  }, [sessionFilter]);
+  }, [sessionFilter, sessionWorkspaceFilterId]);
 
   useEffect(() => {
     let fetchVersion = 0;
@@ -171,7 +207,10 @@ export function useNavigationSessions() {
         .then((sessions) => {
           if (version !== fetchVersion) return;
           setRecentSessions(
-            activeSessionsOnly(sessions).filter((session) => session.id !== sessionId)
+            filterSessionsForWorkspace(
+              activeSessionsOnly(sessions).filter((session) => session.id !== sessionId),
+              sessionWorkspaceFilterId
+            )
           );
         })
         .catch((error) => console.error('Failed to fetch sessions:', error));
@@ -205,7 +244,7 @@ export function useNavigationSessions() {
       const { session } = (event as CustomEvent<{ sessionId: string; session?: SessionListItem }>)
         .detail;
 
-      if (session) {
+      if (session && matchesWorkspaceSessionFilter(session, sessionWorkspaceFilterId)) {
         setRecentSessions((prev) => prependUnique(prev, session));
       }
       void fetchSessions();
@@ -222,7 +261,7 @@ export function useNavigationSessions() {
       window.removeEventListener(AppEvents.SESSION_UNARCHIVED, handleSessionUnarchived);
       window.removeEventListener(AppEvents.SESSION_RENAMED, handleSessionRenamed);
     };
-  }, [fetchSessions, sessionFilter]);
+  }, [fetchSessions, sessionFilter, sessionWorkspaceFilterId]);
 
   const handleNavClick = useCallback(
     (path: string) => {
