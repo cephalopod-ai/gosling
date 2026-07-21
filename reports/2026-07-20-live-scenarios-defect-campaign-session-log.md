@@ -1,7 +1,7 @@
 # Live Scenarios Defect Campaign Session Log
 
 Date: 2026-07-20
-Status: repair and verification complete; authorized integration to `main` pending
+Status: complete; merged to `main` and synchronized with `origin/main`
 
 ## Gate 0: repository and baseline
 
@@ -104,3 +104,10 @@ Status: repair and verification complete; authorized integration to `main` pendi
 - Kept renderer-originated window requests on the sender-validating IPC path and routed the native menu directly to the existing window factory.
 - Repackaged and reinstalled the signed `arm64` app, then replayed the exact menu action and confirmed two healthy native windows.
 - Closed the test windows, reopened the real installed app with prior session state intact, and confirmed `Cmd+Q` terminated Electron and embedded `gosling serve` children in under one second.
+
+## Integration closure
+
+- Fetched `origin/main` and confirmed it was an exact ancestor of the campaign with no remote-only commits.
+- Fast-forwarded local `main` from `4b3bb44d4` through campaign closure `dc7904de9` without conflicts.
+- Pushed the integrated campaign to GitHub `origin/main` successfully.
+- Retained the final integration-status update as documentation only; no product code changed after the final regression gate.
