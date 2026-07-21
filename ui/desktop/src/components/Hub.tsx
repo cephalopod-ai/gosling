@@ -94,6 +94,7 @@ export default function Hub({
       : undefined
   );
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [sessionCreationError, setSessionCreationError] = useState<string | null>(null);
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
     useState<NextChatExtensionDraft | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -183,9 +184,10 @@ export default function Hub({
       !selectedWorkspace ||
       !selectedWorkspaceItem.validation.validForSession
     ) {
-      return;
+      return false;
     }
 
+    setSessionCreationError(null);
     setIsCreatingSession(true);
 
     try {
@@ -236,9 +238,13 @@ export default function Hub({
         resumeSessionId: session.id,
         initialMessage: { msg: userMessage, images },
       });
+      return true;
     } catch (error) {
       console.error('Failed to create session:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      setSessionCreationError(`Could not start the chat: ${detail}`);
       setIsCreatingSession(false);
+      return false;
     }
   };
 
@@ -363,6 +369,11 @@ export default function Hub({
         {error && (
           <p role="alert" className="mb-3 text-sm text-red-600">
             {error}
+          </p>
+        )}
+        {sessionCreationError && (
+          <p role="alert" className="mb-3 text-sm text-red-600">
+            {sessionCreationError}
           </p>
         )}
         {workspaceStartIssue && (

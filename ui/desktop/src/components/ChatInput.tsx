@@ -154,7 +154,7 @@ const i18n = defineMessages({
 
 interface ChatInputProps {
   sessionId: string | null;
-  handleSubmit: (input: UserInput) => void;
+  handleSubmit: (input: UserInput) => boolean | void | Promise<boolean | void>;
   chatState: ChatState;
   onStop?: () => void;
   onSteerQueuedMessage?: (input: UserInput) => Promise<boolean>;
@@ -1097,13 +1097,18 @@ export default function ChatInput({
       allDroppedFiles.some((file) => !file.error && !file.isLoading));
 
   const performSubmit = useCallback(
-    (text?: string) => {
+    async (text?: string) => {
       if (submitDisabled) return;
 
       const imageData = convertImagesToImageData();
       const textToSend = appendDroppedFilePaths(text ?? displayValue.trim());
 
       if (textToSend || imageData.length > 0) {
+        const accepted = await handleSubmit(buildUserInput(textToSend, imageData));
+        if (accepted === false) {
+          return;
+        }
+
         // Store original message in history
         if (displayValue.trim()) {
           LocalMessageStorage.addMessage(displayValue);
@@ -1115,8 +1120,6 @@ export default function ChatInput({
             LocalMessageStorage.addMessage(droppedFilePaths.join(' '));
           }
         }
-
-        handleSubmit(buildUserInput(textToSend, imageData));
 
         // Auto-resume queue after sending a NON-interruption message (if it was paused due to interruption)
         if (

@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useModelAndProvider } from '../ModelAndProviderContext';
-import { acpListProviderDetails, acpReadDefaults, acpSaveDefaults } from '../../acp/providers';
+import {
+  acpListProviderDetails,
+  acpListProviderModels,
+  acpReadDefaults,
+  acpSaveDefaults,
+} from '../../acp/providers';
 import { Gosling } from '../icons';
 import { Button } from '../ui/button';
 import ProviderSelector from './ProviderSelector';
@@ -38,6 +43,20 @@ const i18n = defineMessages({
 
 interface OnboardingGuardProps {
   children: React.ReactNode;
+}
+
+export function resolveOnboardingModel(
+  requestedModel: string | undefined,
+  declaredDefault: string | null | undefined,
+  availableModels: Array<{ id: string }>,
+): string | null {
+  if (requestedModel) {
+    return availableModels.some((model) => model.id === requestedModel) ? requestedModel : null;
+  }
+  if (declaredDefault && availableModels.some((model) => model.id === declaredDefault)) {
+    return declaredDefault;
+  }
+  return availableModels[0]?.id ?? null;
 }
 
 export default function OnboardingGuard({ children }: OnboardingGuardProps) {
@@ -110,7 +129,15 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
     trackOnboardingProviderSelected({ provider: providerName });
     const providers = await acpListProviderDetails();
     const matchedProvider = providers.find((p) => p.name === providerName);
-    const resolvedModel = modelId ?? matchedProvider?.metadata.default_model ?? null;
+    const availableModels = await acpListProviderModels(providerName);
+    const resolvedModel = resolveOnboardingModel(
+      modelId,
+      matchedProvider?.metadata.default_model,
+      availableModels,
+    );
+    if (!resolvedModel) {
+      throw new Error(`Provider ${providerName} does not have the requested model available`);
+    }
     await acpSaveDefaults(providerName, resolvedModel);
     setConfiguredModel(resolvedModel);
     await refreshCurrentModelAndProvider();

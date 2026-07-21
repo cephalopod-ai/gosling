@@ -37,6 +37,10 @@ vi.mock('./ChatInput', () => ({
   ),
 }));
 
+vi.mock('./ModelAndProviderContext', () => ({
+  useModelAndProvider: () => ({ currentModel: null, currentProvider: null }),
+}));
+
 const setActiveWorkspace = vi.fn();
 const configuredCredentialProfile = {
   id: 'profile-personal',
