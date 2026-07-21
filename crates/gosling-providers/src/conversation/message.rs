@@ -685,6 +685,9 @@ pub struct MessageMetadata {
     /// historical, untrusted context rather than evidence of local approval.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub imported_untrusted: bool,
+    /// A user-visible failure that must still terminate non-interactive clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_error: Option<String>,
 }
 
 impl Default for MessageMetadata {
@@ -695,6 +698,7 @@ impl Default for MessageMetadata {
             inference: None,
             steer: false,
             imported_untrusted: false,
+            terminal_error: None,
         }
     }
 }
@@ -1045,6 +1049,11 @@ impl Message {
     pub fn with_visibility(mut self, user_visible: bool, agent_visible: bool) -> Self {
         self.metadata.user_visible = user_visible;
         self.metadata.agent_visible = agent_visible;
+        self
+    }
+
+    pub fn with_terminal_error(mut self, error: impl Into<String>) -> Self {
+        self.metadata.terminal_error = Some(error.into());
         self
     }
 

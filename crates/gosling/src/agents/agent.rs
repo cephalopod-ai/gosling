@@ -2857,12 +2857,12 @@ impl Agent {
 
                             if compaction_attempts >= 2 {
                                 error!("Context limit exceeded after compaction - prompt too large");
-                                yield AgentEvent::Message(
-                                    Message::assistant().with_system_notification(
-                                        SystemNotificationType::InlineMessage,
-                                        "Unable to continue: Context limit still exceeded after compaction. Try using a shorter message, a model with a larger context window, or start a new session."
-                                    )
-                                );
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    "Unable to continue: Context limit still exceeded after compaction. Try using a shorter message, a model with a larger context window, or start a new session."
+                                ).with_terminal_error("Context limit still exceeded after compaction")
+                            );
                                 break;
                             }
 
@@ -2896,7 +2896,7 @@ impl Agent {
                                     yield AgentEvent::Message(
                                         Message::assistant().with_text(
                                             format!("Ran into this error trying to compact: {e}.\n\nPlease try again or create a new session")
-                                        )
+                                        ).with_terminal_error(e.to_string())
                                     );
                                     break;
                                 }
@@ -2922,7 +2922,7 @@ impl Agent {
                                     SystemNotificationType::CreditsExhausted,
                                     user_msg,
                                     notification_data,
-                                )
+                                ).with_terminal_error(provider_err.to_string())
                             );
                             break;
                         }
@@ -2932,9 +2932,11 @@ impl Agent {
                             error!("Error: {}", provider_err);
 
                             let category = category.as_deref().map(|c| format!("\n\nCategory: {c}")).unwrap_or_default();
-                            yield AgentEvent::Message(Message::assistant().with_text(format!(
-                                "The provider refused this request.\n\n{details}{category}\n\nPlease start a new session to continue — resending this conversation is likely to be refused again."
-                            )));
+                            yield AgentEvent::Message(
+                                Message::assistant().with_text(format!(
+                                    "The provider refused this request.\n\n{details}{category}\n\nPlease start a new session to continue — resending this conversation is likely to be refused again."
+                                )).with_terminal_error(provider_err.to_string())
+                            );
                             // A refusal is terminal: skip goal/grind nudges,
                             // which would resend the same refused conversation.
                             exit_chat = true;
@@ -2947,7 +2949,7 @@ impl Agent {
                             yield AgentEvent::Message(
                                 Message::assistant().with_text(
                                     format!("{provider_err}\n\nPlease resend your message to try again.")
-                                )
+                                ).with_terminal_error(provider_err.to_string())
                             );
                             break;
                         }
@@ -2958,7 +2960,7 @@ impl Agent {
                             yield AgentEvent::Message(
                                 Message::assistant().with_text(
                                     format!("Ran into this error: {provider_err}.\n\nPlease retry if you think this is a transient or recoverable error.")
-                                )
+                                ).with_terminal_error(provider_err.to_string())
                             );
                             break;
                         }

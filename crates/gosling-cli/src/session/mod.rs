@@ -1187,6 +1187,9 @@ impl CliSession {
                 result = stream.next() => {
                     match result {
                         Some(Ok(AgentEvent::Message(message))) => {
+                            if !interactive && terminal_error.is_none() {
+                                terminal_error = terminal_error_reason(&message);
+                            }
                             execution_limit_reached |= execution_limit_reason(&message);
                             if first_token_at.is_none() && message_has_text(&message) {
                                 first_token_at = Some(Instant::now());
@@ -1777,6 +1780,10 @@ fn message_has_text(message: &Message) -> bool {
     message.content.iter().any(
         |content| matches!(content, MessageContent::Text(text) if !text.text.trim().is_empty()),
     )
+}
+
+fn terminal_error_reason(message: &Message) -> Option<String> {
+    message.metadata.terminal_error.clone()
 }
 
 fn execution_limit_reason(message: &Message) -> bool {
@@ -2563,6 +2570,20 @@ mod tests {
     }
 
     #[test]
+    fn terminal_error_reason_requires_explicit_message_metadata() {
+        let marked = Message::assistant()
+            .with_text("Request failed")
+            .with_terminal_error("provider unavailable");
+        let unmarked = Message::assistant().with_text("provider unavailable");
+
+        assert_eq!(
+            terminal_error_reason(&marked).as_deref(),
+            Some("provider unavailable")
+        );
+        assert_eq!(terminal_error_reason(&unmarked), None);
+    }
+
+    #[test]
     fn remove_local_turn_removes_only_the_interrupted_suffix() {
         let before = Message::assistant().with_text("before").with_id("before");
         let interrupted = Message::user()
@@ -2573,7 +2594,7 @@ mod tests {
             Conversation::new_unvalidated(vec![before.clone(), interrupted, partial]);
 
         assert!(remove_local_turn(&mut conversation, "interrupted"));
-        assert_eq!(conversation.messages(), &[before.clone()]);
+        assert_eq!(conversation.messages(), std::slice::from_ref(&before));
         assert!(!remove_local_turn(&mut conversation, "missing"));
         assert_eq!(conversation.messages(), &[before]);
     }
