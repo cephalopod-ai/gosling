@@ -274,7 +274,7 @@ If you encounter issues:
 
 1. Check the [Cloudflare MCP Server repository](https://github.com/cloudflare/mcp-server-cloudflare) for documentation
 2. Review [Cloudflare API documentation](https://developers.cloudflare.com/api/)
-3. Join our [Discord community](https://discord.gg/gosling-oss) for support
+3. Ask for support in [GitHub Discussions](https://github.com/repo-makeover/gosling/discussions)
 4. Check [Cloudflare Community](https://community.cloudflare.com/) for platform-specific help
 
 ## Next Steps

@@ -45,7 +45,7 @@ function UpcomingEventsSection() {
       
       {/* Call to Action */}
       <p className="italic text-textStandard">
-        Have ideas for future events? Reach out to the team on <Link href="https://discord.gg/gosling-oss">Discord</Link>. 
+        Have ideas for future events? Start a thread in <Link href="https://github.com/repo-makeover/gosling/discussions">GitHub Discussions</Link>. 
         You may also add this calendar to yours via{' '}
         <Link href="https://calendar.google.com/calendar/embed?src=c_b2b8367dac536ebf757b2745fcc5fbff2099f6c574bc13f83d16423db2dd5535%40group.calendar.google.com&ctz=America%2FNew_York">
           this link
@@ -129,8 +129,8 @@ function CommunityAllStarsSection() {
           </div>
           <div className="text-sm">
             Want to be a Community All Star? Just start contributing on{' '}
-            <Link href="https://github.com/repo-makeover/gosling">GitHub</Link>, helping others on{' '}
-            <Link href="https://discord.gg/gosling-oss">Discord</Link>, or share your 
+            <Link href="https://github.com/repo-makeover/gosling">GitHub</Link>, helping others in{' '}
+            <Link href="https://github.com/repo-makeover/gosling/discussions">GitHub Discussions</Link>, or share your 
             gosling projects with the community! You can check out the{' '}
             <Link href="https://github.com/repo-makeover/gosling/blob/main/CONTRIBUTING.md">contributing guide</Link>{' '}
             for more tips.

@@ -451,7 +451,7 @@ The key is treating gosling as a planning partner, not just a code generator. Gi
 
 - Try this approach with your own complex setup challenges
 - Experiment with different types of planning prompts
-- Share your planning successes with the [gosling community](https://discord.gg/gosling-oss)
+- Share your planning examples in [GitHub Discussions](https://github.com/repo-makeover/gosling/discussions)
 - Explore how planning integrates with [Subagents](/docs/guides/context-engineering/subagents) for even more sophisticated workflows
 
 Remember, the goal is to get the right approach, in the right order, with the right safeguards. That's what makes the difference between a quick fix and a robust, maintainable solution.

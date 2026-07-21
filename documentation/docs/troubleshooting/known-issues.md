@@ -7,7 +7,7 @@ description: Comprehensive troubleshooting guide for common gosling problems wit
 gosling, like any system, may run into occasional issues. This guide provides solutions for common problems.
 
 :::tip Need help with an issue not listed here?
-Our [Discord community](https://discord.gg/gosling-oss) is here to help! For the fastest support, consider generating a [diagnostic report](/docs/troubleshooting/diagnostics-and-reporting) - it helps us understand your setup quickly.
+Start a [GitHub Discussion](https://github.com/repo-makeover/gosling/discussions) for help. Consider generating a [diagnostic report](/docs/troubleshooting/diagnostics-and-reporting) first so maintainers can understand your setup.
 :::
 
 ### gosling Edits Files
@@ -503,7 +503,7 @@ gosling Desktop uses **"shims"** (packaged versions of `npx` and `uvx`) that aut
 ---
 ### Need Further Help? 
 
-Still running into issues? We're here to help! Join our [Discord Community][discord] where the gosling team and community members are happy to assist.
+Still running into issues? Start a [GitHub Discussion][discussions] with the reproduction details.
 
 :::tip
 If you can share a [diagnostic report](/docs/troubleshooting/diagnostics-and-reporting#diagnostics-system) along with your question, it helps us understand your setup and provide more targeted solutions.
@@ -513,7 +513,7 @@ If you can share a [diagnostic report](/docs/troubleshooting/diagnostics-and-rep
 
 [handling-rate-limits]: /docs/guides/handling-llm-rate-limits-with-gosling
 [installation]: /docs/getting-started/installation
-[discord]: https://discord.gg/gosling-oss
+[discussions]: https://github.com/repo-makeover/gosling/discussions
 [goslinghints]: /docs/guides/context-engineering/using-goslinghints
 [configure-llm-provider]: /docs/getting-started/providers
 [extensions-directory]: /extensions

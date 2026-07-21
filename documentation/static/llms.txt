@@ -71,7 +71,7 @@ Project-specific hints can be added via `.goslinghints` and/or `AGENTS.md` files
 
 - Website: https://gosling-docs.ai/
 - GitHub: https://github.com/repo-makeover/gosling
-- Discord: https://discord.gg/gosling-oss
+- GitHub Discussions: https://github.com/repo-makeover/gosling/discussions
 - Extensions Registry: https://gosling-docs.ai/extensions/
 - Blog: https://gosling-docs.ai/blog/
 

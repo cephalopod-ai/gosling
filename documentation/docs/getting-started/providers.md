@@ -1527,7 +1527,7 @@ Reasoning output can be useful for understanding how the model arrived at its an
 
 ---
 
-If you have any questions or need help with a specific provider, feel free to reach out to us on [Discord](https://discord.gg/gosling-oss) or on the [gosling repo](https://github.com/repo-makeover/gosling).
+If you have questions or need help with a specific provider, start a [GitHub Discussion](https://github.com/repo-makeover/gosling/discussions) or open a reproducible issue in the [gosling repository](https://github.com/repo-makeover/gosling/issues).
 
 
 [providers]: /docs/getting-started/providers

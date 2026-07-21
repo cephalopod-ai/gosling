@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
-  - name: gosling Discord discussion
-    url: https://discord.gg/gosling-oss
+  - name: gosling GitHub Discussions
+    url: https://github.com/repo-makeover/gosling/discussions
     about: Please ask and answer questions here.
   - name: Report a security vulnerability
     url: https://github.com/repo-makeover/gosling/security/policy

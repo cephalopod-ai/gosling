@@ -461,11 +461,6 @@ const config: Config = {
         },
 
         {
-          href: "https://discord.gg/gosling-oss",
-          label: "Discord",
-          position: "right",
-        },
-        {
           href: "https://github.com/repo-makeover/gosling",
           label: "GitHub",
           position: "right",
@@ -495,8 +490,8 @@ const config: Config = {
               to: "community",
             },
             {
-              label: "Discord",
-              href: "https://discord.gg/gosling-oss",
+              label: "GitHub Discussions",
+              href: "https://github.com/repo-makeover/gosling/discussions",
             },
             {
               label: "YouTube",

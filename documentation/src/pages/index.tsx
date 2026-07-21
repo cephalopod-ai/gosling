@@ -229,12 +229,12 @@ function CommunitySection() {
         </p>
         <div className={styles.communityGrid}>
           <a
-            href="https://discord.gg/gosling-oss"
+            href="https://github.com/repo-makeover/gosling/discussions"
             target="_blank"
             rel="noopener"
             className={styles.communityCard}
           >
-            <h3>💬 Discord</h3>
+            <h3>💬 GitHub Discussions</h3>
             <p>
               Ask questions, share what you've built, get help from the
               community.

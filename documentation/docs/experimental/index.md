@@ -46,9 +46,9 @@ The list of experimental features may change as gosling development progresses. 
       link="https://github.com/repo-makeover/gosling/issues"
     />
     <Card 
-      title="Discord Community"
-      description="Join our community to discuss experimental features, share feedback, and connect with other users."
-      link="https://discord.gg/gosling-oss"
+      title="GitHub Discussions"
+      description="Discuss experimental features, share feedback, and connect with other users."
+      link="https://github.com/repo-makeover/gosling/discussions"
     />
   </div>
 </div>
