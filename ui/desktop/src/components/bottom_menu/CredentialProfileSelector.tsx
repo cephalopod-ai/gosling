@@ -106,7 +106,7 @@ export function CredentialProfileSelector({
               </DropdownMenuTrigger>
             </TooltipTrigger>
             <DropdownMenuContent
-              className="w-80"
+              className="z-[300] w-80"
               side={surface === 'header' ? 'bottom' : 'top'}
               align={surface === 'header' ? 'end' : 'start'}
             >

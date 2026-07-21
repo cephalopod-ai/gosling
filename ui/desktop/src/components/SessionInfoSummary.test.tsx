@@ -34,9 +34,14 @@ const session: Session = {
 
 describe('SessionInfoSummary', () => {
   it('uses the workspace as its label and reveals concise chat metadata', () => {
-    render(<SessionInfoSummary session={session} onSessionChange={vi.fn()} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Chat information for Cephalopod-AI' }));
+    const onCollapse = vi.fn();
+    render(
+      <SessionInfoSummary
+        session={session}
+        onSessionChange={vi.fn()}
+        onCollapse={onCollapse}
+      />
+    );
 
     expect(screen.getByRole('region', { name: 'Chat information' })).toBeInTheDocument();
     expect(screen.getByText('Team OpenAI')).toBeInTheDocument();
@@ -46,5 +51,8 @@ describe('SessionInfoSummary', () => {
     expect(screen.getByText('Autonomous')).toBeInTheDocument();
     expect(screen.getByText('12.5K')).toBeInTheDocument();
     expect(screen.getByText('$1.23')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse chat information' }));
+    expect(onCollapse).toHaveBeenCalledOnce();
   });
 });

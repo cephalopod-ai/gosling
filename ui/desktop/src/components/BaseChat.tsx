@@ -30,6 +30,8 @@ import { Gosling } from './icons';
 import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
 import SessionInfoSummary from './SessionInfoSummary';
+import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
+import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
 import { useArtifactRouter } from '../contexts/ArtifactRouterContext';
 
@@ -458,8 +460,17 @@ export default function BaseChat({
                 </span>
               </a>
               <EnvironmentBadge className="translate-y-px" />
+              <WorkingDirectoriesMenu
+                session={session}
+                onSessionChange={updateSession}
+                compact
+              />
+              <CredentialProfileSelector
+                credentialProfileId={session?.credential_profile_id}
+                credentialProfileName={session?.credential_profile_name}
+                surface="header"
+              />
             </div>
-            <SessionInfoSummary session={session} onSessionChange={updateSession} />
           </div>
 
           <SessionActionsHeader session={session} onSessionChange={updateSession} />
@@ -606,6 +617,15 @@ export default function BaseChat({
             sessionLoaded={sessionLoaded}
             workingDir={session?.working_dir}
             onWorkingDirChange={handleWorkingDirChange}
+            renderChatInfo={(close) => (
+              <SessionInfoSummary
+                session={session}
+                onSessionChange={updateSession}
+                liveTotalTokens={tokenState?.totalTokens}
+                liveAccumulatedCost={tokenState?.accumulatedCost}
+                onCollapse={close}
+              />
+            )}
             goslingMode={session?.gosling_mode}
             onGoslingModeChange={handleGoslingModeChange}
             latestInference={latestInference}

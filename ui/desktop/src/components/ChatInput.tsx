@@ -174,6 +174,7 @@ interface ChatInputProps {
   initialPrompt?: string;
   append?: (message: Message) => void;
   onWorkingDirChange?: (newDir: string) => Promise<void> | void;
+  renderChatInfo?: (close: () => void) => React.ReactNode;
   inputRef?: React.RefObject<HTMLTextAreaElement | null>;
   sessionModel?: string | null;
   sessionProvider?: string | null;
@@ -210,6 +211,7 @@ export default function ChatInput({
   initialPrompt,
   append: _append,
   onWorkingDirChange,
+  renderChatInfo,
   inputRef,
   sessionModel,
   sessionProvider,
@@ -1696,6 +1698,7 @@ export default function ChatInput({
               await onWorkingDirChange?.(newDir);
               setWorkingDirOverride(newDir);
             }}
+            renderChatInfo={sessionId ? renderChatInfo : undefined}
           />
         )}
 

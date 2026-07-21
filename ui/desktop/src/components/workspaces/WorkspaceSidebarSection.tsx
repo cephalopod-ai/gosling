@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   FolderOpen,
@@ -143,7 +142,6 @@ export function WorkspaceSidebarSection({ onNewChat }: WorkspaceSidebarSectionPr
                 ∞
               </span>
               <span className="flex-1 truncate text-left">All workspaces</span>
-              {sessionWorkspaceFilterId === null && <Check className="size-3.5" />}
             </button>
 
             {loading ? (
@@ -243,7 +241,6 @@ function WorkspaceRow({
             <TriangleAlert className="size-3.5 text-amber-600" aria-hidden="true" />
           </span>
         )}
-        {filtered && <Check className="size-3.5" aria-hidden="true" />}
       </button>
       <div className="-ml-14 flex items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <button

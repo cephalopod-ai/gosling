@@ -220,7 +220,7 @@ export default function WorkingDirectoriesMenu({
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <DropdownMenuContent className="w-80" side="bottom" align="end">
+          <DropdownMenuContent className="z-[300] w-80" side="bottom" align="end">
             <DropdownMenuLabel>{intl.formatMessage(i18n.workingDirectories)}</DropdownMenuLabel>
             <DropdownMenuItem disabled>
               <Folder className="mr-2 h-4 w-4" />
