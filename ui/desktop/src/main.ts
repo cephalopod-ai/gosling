@@ -2905,7 +2905,7 @@ async function appMain() {
           label: menuT('New Chat Window'),
           accelerator: shortcuts.newChatWindow,
           click() {
-            ipcMain.emit(desktopCommandChannels.createChatWindow);
+            void createNewWindow(app);
           },
         })
       );
