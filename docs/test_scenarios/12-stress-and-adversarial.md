@@ -89,7 +89,7 @@ Run only after a green smoke (01 → 02 → 09).
 - Preconditions: Desktop; ≥2 workspaces with different export/output folders; a saveable artifact in a session pinned to workspace A.
 - Steps:
   1. Begin Save a copy / export / native download from the A-pinned session.
-  2. While the dialog or save is in flight, spam-switch active workspace A ↔ B.
+  2. While the dialog or save is in flight, rapidly alternate the workspace chat filter A ↔ B.
   3. Complete the save; inspect the filesystem destination.
   4. Repeat with workspace B deleted mid-save if safe (disposable only).
 - Expected: file lands in A's product path (pinned), not B's; deleted pin fails with relink/warning — never silent success into the wrong tree; slower validation of an old selection cannot override a newer one (docs: ordered switches).

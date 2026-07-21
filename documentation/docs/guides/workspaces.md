@@ -24,16 +24,17 @@ A workspace is a repeatable environment for new chats. It can define:
 gosling creates a usable `Default` workspace automatically. Existing sessions remain valid and do
 not need to be migrated manually.
 
-## Switch or filter workspaces
+## Start or filter workspace chats
 
 Open the sidebar and expand **Workspaces**.
 
-- Click a workspace row to make it active. New chats use its defaults.
-- Double-click a row, or choose **Show its chats** from its menu, to filter the existing chat list.
+- Click a workspace row, or choose **Show its chats** from its menu, to filter the existing chat list.
+- Choose the `+` action next to a workspace, or **New chat in this workspace** from its menu, to open New Chat with that workspace preselected.
+- The global **New Chat** action leaves the workspace selector unselected so you can choose explicitly.
 - Choose **All workspaces** to see sessions across every workspace.
 
-Switching workspaces does not move or restart the chat currently on screen. The chat header shows
-the session's pinned workspace and calls out when new chats use a different active workspace.
+Filtering workspaces does not move or restart the chat currently on screen and does not change
+future-chat defaults. The chat header continues to show the session's pinned workspace.
 
 ## Create a workspace
 

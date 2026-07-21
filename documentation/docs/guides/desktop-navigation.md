@@ -10,7 +10,7 @@ import { PanelLeft, Menu } from 'lucide-react';
 Sidebar customization is available only in gosling Desktop.
 :::
 
-The sidebar is how you navigate between pages in gosling Desktop: Home, Chat, Extensions, and Settings. It also contains the [Workspaces](/docs/guides/workspaces) section for choosing new-chat defaults and filtering sessions. You can customize its appearance, position, and behavior to fit the way you work.
+The sidebar is how you navigate between pages in gosling Desktop: Home, Chat, Extensions, and Settings. It also contains the [Workspaces](/docs/guides/workspaces) section for filtering sessions and starting a new chat with a specific workspace preselected. You can customize its appearance, position, and behavior to fit the way you work.
 
 To access these settings:
 
@@ -74,5 +74,5 @@ Show or hide the sidebar without opening Settings:
 
 The sidebar's open/closed state is remembered across sessions.
 
-The Workspaces section has its own expand/collapse preference. Hiding that section does not change
-the active workspace or any session's pinned workspace.
+The Workspaces section has its own expand/collapse preference. Hiding or filtering that section
+does not change the New Chat selection or any session's pinned workspace.

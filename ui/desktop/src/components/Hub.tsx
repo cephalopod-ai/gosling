@@ -53,15 +53,17 @@ function useClock(): { time: string; meridiem: string; hour: number } {
 export default function Hub({
   setView,
   initialMessage,
+  initialWorkspaceId,
 }: {
   setView: (view: View, viewOptions?: ViewOptions) => void;
   initialMessage?: UserInput;
+  initialWorkspaceId?: string;
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
   const { currentModel, currentProvider } = useModelAndProvider();
   const { workspaces, credentialProfiles, loading, error } = useWorkspace();
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(initialWorkspaceId ?? '');
   const [selectedCredentialProfileId, setSelectedCredentialProfileId] = useState('');
   const [additionalWorkspaceFolders, setAdditionalWorkspaceFolders] = useState<string[]>([]);
   const [isChoosingAdditionalFolder, setIsChoosingAdditionalFolder] = useState(false);

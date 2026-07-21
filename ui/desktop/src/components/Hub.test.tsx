@@ -167,6 +167,14 @@ describe('Hub workspace selection', () => {
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   });
 
+  it('preselects only the workspace supplied by a sidebar new-chat action', () => {
+    render(<Hub setView={vi.fn()} initialWorkspaceId="personal" />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    expect(screen.getByLabelText('Workspace')).toHaveValue('personal');
+  });
+
   it('uses an explicitly selected credential only for the new chat', async () => {
     const user = userEvent.setup();
     render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });

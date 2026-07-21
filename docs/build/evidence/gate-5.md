@@ -6,8 +6,8 @@ Date: 2026-07-18
 
 - Backend-owned `WorkspaceContext` with typed generated SDK calls, loading/error state, CRUD,
   validation, credential-profile metadata, harmless filter preference, and multi-window refetch.
-- Sidebar Workspaces section with persisted collapse preference, All/workspace chat filtering,
-  active and warning states, create/edit/duplicate/reveal/export/delete actions, confirmations,
+- Sidebar Workspaces section with persisted collapse preference, exact All/workspace chat filtering,
+  per-workspace new-chat actions, warning states, create/edit/duplicate/reveal/export/delete actions, confirmations,
   keyboard-reachable Radix menus, focus styles, and accessible names.
 - Workspace editor for general metadata, primary/additional folders, read/read-write access,
   credential bindings, multiple product outputs/types, exactly one default output, explicit output

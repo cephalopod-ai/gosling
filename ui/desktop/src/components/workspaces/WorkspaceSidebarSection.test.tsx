@@ -50,6 +50,7 @@ describe('WorkspaceSidebarSection', () => {
   const duplicateWorkspace = vi.fn();
   const deleteWorkspace = vi.fn();
   const saveArtifact = vi.fn();
+  const startNewChat = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,19 +97,19 @@ describe('WorkspaceSidebarSection', () => {
   });
 
   it('renders the active workspace and its actionable warning accessibly', () => {
-    render(<WorkspaceSidebarSection />);
+    render(<WorkspaceSidebarSection onNewChat={startNewChat} />);
 
     expect(screen.getByText('Workspaces')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Annual Meeting, active workspace' })
-    ).toHaveAttribute('aria-current', 'true');
+      screen.getByRole('button', { name: 'Annual Meeting, chat filter active' })
+    ).toHaveAttribute('aria-pressed', 'true');
     expect(
       screen.getByLabelText('Workspace needs attention: Relink the primary folder')
     ).toBeInTheDocument();
   });
 
   it('opens the create workflow and supports the all-workspaces session filter', () => {
-    render(<WorkspaceSidebarSection />);
+    render(<WorkspaceSidebarSection onNewChat={startNewChat} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Add workspace' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Workspace editor');
@@ -117,25 +118,28 @@ describe('WorkspaceSidebarSection', () => {
     expect(setSessionWorkspaceFilterId).toHaveBeenCalledWith(null);
   });
 
-  it('switches active workspace for future chats and shows the pinned-session notice', async () => {
+  it('filters chats on row click and starts a workspace-preselected chat only from its add action', async () => {
     const user = userEvent.setup();
-    setActiveWorkspace.mockResolvedValue(workspace);
-    render(<WorkspaceSidebarSection />);
+    render(<WorkspaceSidebarSection onNewChat={startNewChat} />);
 
-    await user.click(screen.getByRole('button', { name: 'Annual Meeting, active workspace' }));
-
-    expect(setActiveWorkspace).toHaveBeenCalledWith('workspace-1');
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'New chats will use “Annual Meeting”. Open chats stay pinned.'
+    await user.click(
+      screen.getByRole('button', { name: 'Annual Meeting, chat filter active' })
     );
+
+    expect(setSessionWorkspaceFilterId).toHaveBeenCalledWith('workspace-1');
+    expect(setActiveWorkspace).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'New chat in Annual Meeting' }));
+    expect(startNewChat).toHaveBeenCalledWith('workspace-1');
   });
 
   it('exposes edit, duplicate, reveal, export, and delete actions', async () => {
     const user = userEvent.setup();
     duplicateWorkspace.mockResolvedValue(workspace);
-    render(<WorkspaceSidebarSection />);
+    render(<WorkspaceSidebarSection onNewChat={startNewChat} />);
 
     await user.click(screen.getByRole('button', { name: 'Actions for Annual Meeting' }));
+    expect(screen.getByRole('menuitem', { name: 'New chat in this workspace' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Reveal primary folder' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Export metadata' })).toBeInTheDocument();
@@ -156,7 +160,7 @@ describe('WorkspaceSidebarSection', () => {
       showMessageBox: vi.fn().mockResolvedValue({ response: 1 }),
     });
     deleteWorkspace.mockResolvedValue(undefined);
-    render(<WorkspaceSidebarSection />);
+    render(<WorkspaceSidebarSection onNewChat={startNewChat} />);
 
     await user.click(screen.getByRole('button', { name: 'Actions for Annual Meeting' }));
     await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
@@ -173,7 +177,7 @@ describe('WorkspaceSidebarSection', () => {
     const user = userEvent.setup();
     vi.mocked(acpExportWorkspace).mockResolvedValue('{"schemaVersion":1}\n');
     saveArtifact.mockResolvedValue({ canceled: false });
-    render(<WorkspaceSidebarSection />);
+    render(<WorkspaceSidebarSection onNewChat={startNewChat} />);
 
     await user.click(screen.getByRole('button', { name: 'Actions for Annual Meeting' }));
     await user.click(screen.getByRole('menuitem', { name: 'Export metadata' }));

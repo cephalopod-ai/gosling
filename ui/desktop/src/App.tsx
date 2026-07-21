@@ -27,6 +27,7 @@ interface PairRouteState {
 
 interface NewChatRouteState {
   initialMessage?: UserInput;
+  initialWorkspaceId?: string;
 }
 import SettingsView, { SettingsViewOptions } from './components/settings/SettingsView';
 import SessionsView from './components/sessions/SessionsView';
@@ -64,7 +65,14 @@ const HubRouteWrapper = () => {
   const location = useLocation();
   const routeState =
     (location.state as NewChatRouteState) || (window.history.state as NewChatRouteState) || {};
-  return <Hub setView={setView} initialMessage={routeState.initialMessage} />;
+  return (
+    <Hub
+      key={location.key}
+      setView={setView}
+      initialMessage={routeState.initialMessage}
+      initialWorkspaceId={routeState.initialWorkspaceId}
+    />
+  );
 };
 
 const PairRouteWrapper = ({

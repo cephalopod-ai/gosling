@@ -270,8 +270,8 @@ Search allows you to find specific content within sessions or find specific sess
     gosling Desktop allows you to switch between multiple chat sessions in the same window. You can start a task in one session, switch to another to do some work, and return to the first session when the task is completed. 
 
     Each new Desktop session pins its workspace, effective working folder, and non-secret output
-    context. Changing the active workspace affects future chats only; resuming a session restores
-    its pinned workspace behavior.
+    context. Clicking a workspace in the sidebar filters the chat list only; use that workspace's
+    new-chat action to preselect it. Resuming a session restores its pinned workspace behavior.
 
     Your most recent sessions (up to 10) are available in the sidebar for quick access:
 

@@ -25,11 +25,14 @@ import { WorkspaceEditorDialog } from './WorkspaceEditorDialog';
 
 const COLLAPSED_KEY = 'workspaces_sidebar_collapsed';
 
-export function WorkspaceSidebarSection() {
+interface WorkspaceSidebarSectionProps {
+  onNewChat(workspaceId: string): void;
+}
+
+export function WorkspaceSidebarSection({ onNewChat }: WorkspaceSidebarSectionProps) {
   const { saveArtifact } = useArtifactRouter();
   const {
     workspaces,
-    activeWorkspaceId,
     defaultWorkspaceId,
     sessionWorkspaceFilterId,
     setSessionWorkspaceFilterId,
@@ -37,7 +40,6 @@ export function WorkspaceSidebarSection() {
     error,
     duplicateWorkspace,
     deleteWorkspace,
-    setActiveWorkspace,
   } = useWorkspace();
   const [expanded, setExpanded] = useState(
     () => window.localStorage.getItem(COLLAPSED_KEY) !== 'true'
@@ -45,7 +47,6 @@ export function WorkspaceSidebarSection() {
   const [editor, setEditor] = useState<{ open: boolean; workspace?: Workspace | null }>({
     open: false,
   });
-  const [switchNotice, setSwitchNotice] = useState<string | null>(null);
 
   const toggleExpanded = useCallback(() => {
     setExpanded((current) => {
@@ -53,20 +54,6 @@ export function WorkspaceSidebarSection() {
       return !current;
     });
   }, []);
-
-  const switchWorkspace = useCallback(
-    async (workspace: Workspace) => {
-      try {
-        await setActiveWorkspace(workspace.id);
-        const notice = `New chats will use “${workspace.name}”. Open chats stay pinned.`;
-        setSwitchNotice(notice);
-        toast.info(notice);
-      } catch (cause) {
-        toast.error(workspaceErrorMessage(cause, 'Unable to switch workspace'));
-      }
-    },
-    [setActiveWorkspace]
-  );
 
   const reveal = useCallback(async (workspace: Workspace) => {
     try {
@@ -145,15 +132,6 @@ export function WorkspaceSidebarSection() {
 
       {expanded && (
         <>
-          {switchNotice && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="mx-2 mt-1 rounded-md bg-background-tertiary px-3 py-2 text-xs text-text-secondary"
-            >
-              {switchNotice}
-            </div>
-          )}
           <div id="workspace-list" role="list" className="mt-1 space-y-0.5 px-2">
             <button
               type="button"
@@ -181,11 +159,10 @@ export function WorkspaceSidebarSection() {
                 <WorkspaceRow
                   key={item.workspace.id}
                   item={item}
-                  active={item.workspace.id === activeWorkspaceId}
                   filtered={item.workspace.id === sessionWorkspaceFilterId}
                   isDefault={item.workspace.id === defaultWorkspaceId}
-                  onOpen={() => void switchWorkspace(item.workspace)}
                   onFilter={() => setSessionWorkspaceFilterId(item.workspace.id)}
+                  onNewChat={() => onNewChat(item.workspace.id)}
                   onEdit={() => setEditor({ open: true, workspace: item.workspace })}
                   onDuplicate={() => {
                     void duplicateWorkspace(item.workspace.id)
@@ -215,11 +192,10 @@ export function WorkspaceSidebarSection() {
 
 function WorkspaceRow({
   item,
-  active,
   filtered,
   isDefault,
-  onOpen,
   onFilter,
+  onNewChat,
   onEdit,
   onDuplicate,
   onReveal,
@@ -227,11 +203,10 @@ function WorkspaceRow({
   onDelete,
 }: {
   item: WorkspaceWithValidation;
-  active: boolean;
   filtered: boolean;
   isDefault: boolean;
-  onOpen(): void;
   onFilter(): void;
+  onNewChat(): void;
   onEdit(): void;
   onDuplicate(): void;
   onReveal(): void;
@@ -245,11 +220,10 @@ function WorkspaceRow({
     <div role="listitem" className="group flex items-center">
       <button
         type="button"
-        onClick={onOpen}
-        onDoubleClick={onFilter}
+        onClick={onFilter}
         className={workspaceRowClass(filtered)}
-        aria-current={active ? 'true' : undefined}
-        aria-label={`${workspace.name}${active ? ', active workspace' : ''}`}
+        aria-pressed={filtered}
+        aria-label={`${workspace.name}${filtered ? ', chat filter active' : ''}`}
       >
         <span className="flex size-5 items-center justify-center rounded bg-background-tertiary text-[10px] font-semibold uppercase">
           {(workspace.icon || workspace.name).slice(0, 2)}
@@ -269,36 +243,49 @@ function WorkspaceRow({
             <TriangleAlert className="size-3.5 text-amber-600" aria-hidden="true" />
           </span>
         )}
-        {active && <span className="size-1.5 rounded-full bg-green-500" aria-hidden="true" />}
+        {filtered && <Check className="size-3.5" aria-hidden="true" />}
       </button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="-ml-7 rounded-full p-1 text-text-secondary opacity-0 hover:bg-background-secondary focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100"
-            aria-label={`Actions for ${workspace.name}`}
-          >
-            <MoreHorizontal className="size-4" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onSelect={onOpen}>Open / switch</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onFilter}>Show its chats</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onDuplicate}>Duplicate</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onReveal}>
-            <FolderOpen className="size-4" /> Reveal primary folder
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onExport}>Export metadata</DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={onDelete}
-            disabled={isDefault}
-            className="text-red-600 focus:text-red-600"
-          >
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="-ml-14 flex items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <button
+          type="button"
+          className="rounded-full p-1 text-text-secondary hover:bg-background-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
+          onClick={(event) => {
+            event.stopPropagation();
+            onNewChat();
+          }}
+          aria-label={`New chat in ${workspace.name}`}
+        >
+          <Plus className="size-4" />
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="rounded-full p-1 text-text-secondary hover:bg-background-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
+              aria-label={`Actions for ${workspace.name}`}
+            >
+              <MoreHorizontal className="size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onSelect={onNewChat}>New chat in this workspace</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onFilter}>Show its chats</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onDuplicate}>Duplicate</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onReveal}>
+              <FolderOpen className="size-4" /> Reveal primary folder
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onExport}>Export metadata</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={onDelete}
+              disabled={isDefault}
+              className="text-red-600 focus:text-red-600"
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   );
 }

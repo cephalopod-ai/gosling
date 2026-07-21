@@ -446,7 +446,9 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
       </div>
 
       <div className="mt-3 max-h-[45%] overflow-y-auto">
-        <WorkspaceSidebarSection />
+        <WorkspaceSidebarSection
+          onNewChat={(workspaceId) => navigate('/', { state: { initialWorkspaceId: workspaceId } })}
+        />
       </div>
 
       {/* Chats section — takes remaining vertical space */}

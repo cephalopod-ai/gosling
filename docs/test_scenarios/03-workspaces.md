@@ -14,11 +14,12 @@ Desktop is unavailable.
 - Steps:
   1. Sidebar → Workspaces → Add workspace; name it `Playtest Alpha`.
   2. Set primary working folder to disposable dir A; save after Validate.
-  3. Activate the workspace; start a new chat; ask `What is your working directory?`
-  4. Switch active workspace back to Default; confirm the open chat still shows the pinned workspace for Alpha.
-- Expected: validation catches missing primary folder before save; new chat pins Alpha; header shows pinned workspace; switching active workspace does not rewrite the open chat's pin.
-- Observe: "new chats use a different active workspace" callout when pins diverge.
-- Variations: double-click workspace to filter chats; **All workspaces** shows both.
+  3. Click the workspace row; confirm the Chats list contains only Alpha sessions and the global **New Chat** workspace selector remains unselected.
+  4. Use the `+` action next to Alpha; confirm New Chat opens with Alpha preselected; ask `What is your working directory?`
+  5. Click another workspace row; confirm the open chat still shows the pinned Alpha workspace.
+- Expected: validation catches a missing primary folder before save; row clicks filter chats without changing future-chat defaults; only the row-level new-chat action preselects Alpha; the created chat pins Alpha and its header remains truthful.
+- Observe: **All workspaces** restores the unfiltered chat list without changing the New Chat selector.
+- Variations: use **Show its chats** and **New chat in this workspace** from the row menu; they match the direct row and `+` actions.
 
 ### WS-02 — Credential profile bind and secret non-echo
 - Goal: secrets stay out of the renderer and logs; bind/unbind is explicit.
@@ -29,7 +30,7 @@ Desktop is unavailable.
   2. Confirm UI shows configured/metadata only — never the raw secret after save.
   3. Bind the profile to a workspace; start a chat that needs the provider.
   4. In the active chat composer, open the credential control; confirm it names the pinned profile, lists other profiles as new-chat choices, and opens Manage credential profiles.
-  5. Switch the active workspace and reopen the composer control; confirm the active chat still names its original pinned profile.
+  5. Select another workspace chat filter and reopen the composer control; confirm the active chat still names its original pinned profile.
   6. Edit the profile (should show "Configured — enter a replacement"); cancel without saving; confirm secret fields clear.
 - Expected: the active-chat credential control is always present (compact key icon at narrow widths), shows the pinned profile truthfully, and provides direct manager access; no secret appears in UI, clipboard side-effects, or routine logs; missing profile remains named as unavailable and fails closed with relink, not a silent substitute of another profile.
 - Observe: keyring vs `secrets.yaml` fallback messaging if keyring is disabled.
@@ -54,7 +55,7 @@ Desktop is unavailable.
 - Steps:
   1. Produce or obtain an artifact in chat (e.g. ask agent to write a short markdown doc, or export session).
   2. Use **Save a copy** / export / native download paths available in the UI.
-  3. Switch active workspace mid-flight; save again from the original session.
+  3. Select another workspace chat filter mid-flight; save again from the original session.
 - Expected: saves go to the **pinned** session workspace destinations by product type; collision-safe names; unavailable/deleted pin does not silently redirect to another workspace; native download failure shows a warning rather than a false success.
 - Observe: router never moves the original generated file — copies only.
 - Variations: missing output folder with "Allow explicit creation if missing" — confirm before create.

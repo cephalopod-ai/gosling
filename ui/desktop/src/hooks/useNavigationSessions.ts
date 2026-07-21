@@ -13,6 +13,10 @@ import { useWorkspace } from '../contexts/WorkspaceContext';
 
 const MAX_RECENT_SESSIONS = 25;
 
+export function createWorkspaceSessionFilter(workspaceId: string | null) {
+  return workspaceId ? { workspaceId } : undefined;
+}
+
 export function prependUnique(
   prev: SessionListItem[],
   session: SessionListItem
@@ -59,13 +63,8 @@ export function useNavigationSessions() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const chatContext = useChatContext();
-  const { sessionWorkspaceFilterId, defaultWorkspaceId } = useWorkspace();
-  const sessionFilter = sessionWorkspaceFilterId
-    ? {
-        workspaceId: sessionWorkspaceFilterId,
-        includeUnassigned: sessionWorkspaceFilterId === defaultWorkspaceId,
-      }
-    : undefined;
+  const { sessionWorkspaceFilterId } = useWorkspace();
+  const sessionFilter = createWorkspaceSessionFilter(sessionWorkspaceFilterId);
 
   const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
   const lastSessionIdRef = useRef<string | null>(null);
@@ -89,7 +88,7 @@ export function useNavigationSessions() {
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
     }
-  }, [defaultWorkspaceId, sessionWorkspaceFilterId]);
+  }, [sessionWorkspaceFilterId]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -151,7 +150,7 @@ export function useNavigationSessions() {
       window.removeEventListener(AppEvents.SESSION_CREATED, handleSessionCreated);
       pollingTimeouts.forEach(clearTimeout);
     };
-  }, [defaultWorkspaceId, sessionWorkspaceFilterId]);
+  }, [sessionWorkspaceFilterId]);
 
   useEffect(() => {
     let fetchVersion = 0;
