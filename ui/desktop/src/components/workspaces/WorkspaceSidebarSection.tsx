@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -46,6 +46,17 @@ export function WorkspaceSidebarSection({ onNewChat }: WorkspaceSidebarSectionPr
   const [editor, setEditor] = useState<{ open: boolean; workspace?: Workspace | null }>({
     open: false,
   });
+  const [warningsExpanded, setWarningsExpanded] = useState(false);
+  const workspaceWarnings = useMemo(
+    () =>
+      workspaces.flatMap((item) =>
+        (item.validation.issues ?? []).map((issue) => ({
+          workspace: item.workspace,
+          message: issue.message,
+        }))
+      ),
+    [workspaces]
+  );
 
   const toggleExpanded = useCallback(() => {
     setExpanded((current) => {
@@ -176,6 +187,50 @@ export function WorkspaceSidebarSection({ onNewChat }: WorkspaceSidebarSectionPr
               ))
             )}
           </div>
+
+          {workspaceWarnings.length > 0 && (
+            <div className="mx-2 mt-2 overflow-hidden rounded-lg border border-amber-500/30 bg-amber-500/5">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-xs text-amber-700 transition-colors hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500"
+                onClick={() => setWarningsExpanded((current) => !current)}
+                aria-expanded={warningsExpanded}
+                aria-controls="workspace-warnings"
+              >
+                {warningsExpanded ? (
+                  <ChevronDown className="size-3" aria-hidden="true" />
+                ) : (
+                  <ChevronRight className="size-3" aria-hidden="true" />
+                )}
+                <TriangleAlert className="size-3.5" aria-hidden="true" />
+                <span className="font-medium">Warnings</span>
+                <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] tabular-nums">
+                  {workspaceWarnings.length}
+                </span>
+              </button>
+              {warningsExpanded && (
+                <div id="workspace-warnings" role="list" className="border-t border-amber-500/20">
+                  {workspaceWarnings.map((warning, index) => (
+                    <button
+                      key={`${warning.workspace.id}-${index}`}
+                      type="button"
+                      role="listitem"
+                      className="block w-full border-b border-amber-500/15 px-2 py-2 text-left last:border-b-0 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-amber-500"
+                      onClick={() => setEditor({ open: true, workspace: warning.workspace })}
+                      title={`Edit ${warning.workspace.name}`}
+                    >
+                      <span className="block truncate text-xs font-medium text-text-primary">
+                        {warning.workspace.name}
+                      </span>
+                      <span className="mt-0.5 block text-[10px] leading-snug text-text-secondary">
+                        {warning.message}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, FolderDot, FolderOpen, GitBranch, Plus } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/Tooltip';
 import {
@@ -69,6 +70,23 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
   const [worktreeDirs, setWorktreeDirs] = useState<string[]>([]);
   const refreshVersionRef = useRef(0);
+  const chatInfoTriggerRef = useRef<HTMLButtonElement>(null);
+  const chatInfoPanelRef = useRef<HTMLDivElement>(null);
+  const [chatInfoPosition, setChatInfoPosition] = useState<{
+    left: number;
+    bottom: number;
+  } | null>(null);
+
+  const updateChatInfoPosition = useCallback(() => {
+    const trigger = chatInfoTriggerRef.current;
+    if (!trigger) return;
+
+    const bounds = trigger.getBoundingClientRect();
+    setChatInfoPosition({
+      left: Math.max(16, Math.min(bounds.left, window.innerWidth - 356)),
+      bottom: window.innerHeight - bounds.top + 4,
+    });
+  }, []);
 
   const refreshMenuData = useCallback(async () => {
     const version = ++refreshVersionRef.current;
@@ -93,6 +111,38 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
 
     void refreshMenuData();
   }, [isMenuOpen, refreshMenuData, renderChatInfo]);
+
+  useEffect(() => {
+    if (!isMenuOpen || !renderChatInfo) return;
+
+    updateChatInfoPosition();
+
+    const dismissOnPointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof window.Node)) return;
+      if (
+        !chatInfoTriggerRef.current?.contains(target) &&
+        !chatInfoPanelRef.current?.contains(target)
+      ) {
+        setIsMenuOpen(false);
+      }
+    };
+    const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setIsMenuOpen(false);
+    };
+
+    window.document.addEventListener('pointerdown', dismissOnPointerDown);
+    window.document.addEventListener('keydown', dismissOnEscape);
+    window.addEventListener('resize', updateChatInfoPosition);
+    window.addEventListener('scroll', updateChatInfoPosition, true);
+
+    return () => {
+      window.document.removeEventListener('pointerdown', dismissOnPointerDown);
+      window.document.removeEventListener('keydown', dismissOnEscape);
+      window.removeEventListener('resize', updateChatInfoPosition);
+      window.removeEventListener('scroll', updateChatInfoPosition, true);
+    };
+  }, [isMenuOpen, renderChatInfo, updateChatInfoPosition]);
 
   const applyDirectoryChange = async (newDir: string) => {
     window.electron.addRecentDir(newDir);
@@ -168,6 +218,57 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
     () => recentDirs.filter((dir) => dir && dir !== workingDir),
     [recentDirs, workingDir]
   );
+
+  if (renderChatInfo) {
+    return (
+      <TooltipProvider>
+        <Tooltip
+          open={isTooltipOpen && !isDirectoryChooserOpen && !isMenuOpen}
+          onOpenChange={(open) => {
+            if (!isDirectoryChooserOpen && !isMenuOpen) setIsTooltipOpen(open);
+          }}
+        >
+          <TooltipTrigger asChild>
+            <button
+              ref={chatInfoTriggerRef}
+              type="button"
+              className={`z-[100] ${isDirectoryChooserOpen ? 'opacity-50' : 'hover:cursor-pointer hover:text-text-primary'} text-text-primary/70 text-xs flex items-center transition-colors pl-1 [&>svg]:size-4 ${className}`}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || isDirectoryChooserOpen) {
+                  void handleDirectoryClick(event);
+                  return;
+                }
+                setIsMenuOpen((open) => !open);
+              }}
+              disabled={isDirectoryChooserOpen}
+              aria-label={`Open chat information for ${workingDir.replace(/\/+$/, '').split('/').pop() || workingDir}`}
+              aria-expanded={isMenuOpen}
+              aria-controls={isMenuOpen ? 'chat-info-panel' : undefined}
+            >
+              <FolderDot className="mr-1" size={16} />
+              <div className="max-w-[200px] truncate">
+                {workingDir.replace(/\/+$/, '').split('/').pop() || workingDir}
+              </div>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Chat info · {workingDir}</TooltipContent>
+        </Tooltip>
+        {isMenuOpen &&
+          chatInfoPosition &&
+          createPortal(
+            <div
+              id="chat-info-panel"
+              ref={chatInfoPanelRef}
+              className="fixed z-[200] w-max max-w-[calc(100vw-2rem)]"
+              style={{ left: chatInfoPosition.left, bottom: chatInfoPosition.bottom }}
+            >
+              {renderChatInfo(() => setIsMenuOpen(false))}
+            </div>,
+            window.document.body
+          )}
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>
