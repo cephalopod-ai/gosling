@@ -173,3 +173,10 @@ of the broken wrapper.
   Tetrate, Databricks v1/v2, GitHub Copilot, and Kimi adapters under
   `crates/gosling/src/providers/`.
 - Campaign evidence: this session log and its plan.
+
+
+## Superseding open-defect repair campaign - 2026-07-20
+
+The later campaign repairs the ACP runtime path boundary identified by GEM-005, removes the recorded Desktop `no-undef` and unstable-hook-dependency debt, coalesces provider inventory startup requests, and makes `check-acp-schema` independent of the caller's working directory.
+
+Status: `completed_with_partial_verification`. Static source repair and regression coverage were recorded, but builds, tests, lint, formatting, schema generation, and Git operations were not run because they were outside this campaign's authorization.

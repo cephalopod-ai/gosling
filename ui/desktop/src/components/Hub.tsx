@@ -148,10 +148,10 @@ export default function Hub({
 
   // rAF is more reliable than autoFocus across async render boundaries.
   useEffect(() => {
-    const frameId = requestAnimationFrame(() => {
+    const frameId = window.requestAnimationFrame(() => {
       inputRef.current?.focus();
     });
-    return () => cancelAnimationFrame(frameId);
+    return () => window.cancelAnimationFrame(frameId);
   }, []);
 
   const handleNextChatExtensionDraftChange = useCallback((draft: NextChatExtensionDraft) => {

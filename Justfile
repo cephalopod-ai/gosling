@@ -162,7 +162,7 @@ check-acp-schema: generate-acp-types
     #!/usr/bin/env bash
     set -e
     echo "🔍 Checking ACP schema and generated types are up-to-date..."
-    if ! git diff --exit-code crates/gosling/acp-schema.json crates/gosling/acp-meta.json ui/sdk/src/generated/; then
+    if ! git -C "{{justfile_directory()}}" diff --exit-code crates/gosling/acp-schema.json crates/gosling/acp-meta.json ui/sdk/src/generated/; then
       echo ""
       echo "❌ ACP generated files are out of date!"
       echo ""
@@ -174,19 +174,19 @@ check-acp-schema: generate-acp-types
 # Generate ACP JSON schema from Rust types
 generate-acp-schema:
     @echo "Generating ACP schema..."
-    cd crates/gosling && cargo run --features code-mode,aws-providers,telemetry,otel,rustls-tls,system-keyring --bin generate-acp-schema
+    cd "{{justfile_directory()}}/crates/gosling" && cargo run --features code-mode,aws-providers,telemetry,otel,rustls-tls,system-keyring --bin generate-acp-schema
     @echo "ACP schema generated: crates/gosling/acp-schema.json, crates/gosling/acp-meta.json"
 
 # Generate ACP TypeScript types from JSON schema (requires generate-acp-schema first)
 generate-acp-types: generate-acp-schema
     @echo "Generating ACP TypeScript types..."
-    cd ui/sdk && npx tsx generate-schema.ts
+    cd "{{justfile_directory()}}/ui/sdk" && npx tsx generate-schema.ts
     @echo "ACP TypeScript types generated in ui/sdk/src/generated/"
 
 # Build SDK TypeScript package (schema + types + compile)
 build-sdk: generate-acp-types
     @echo "Compiling ACP TypeScript..."
-    cd ui/sdk && pnpm run build:ts
+    cd "{{justfile_directory()}}/ui/sdk" && pnpm run build:ts
     @echo "ACP package built."
 
 # Generate manpages for the CLI

@@ -109,6 +109,7 @@ pub async fn run() -> Result<()> {
     // registration and the desktop platform identity.
     let acp_server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins: vec!["developer".to_string()],
+        state_dir: Paths::state_dir(),
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
         gosling_platform: GoslingPlatform::GoslingDesktop,

@@ -150,3 +150,8 @@ Recommended remediation:
 - Make logger, cert managers, and telemetry tools query directory paths from the active instance context rather than static global functions.
 
 Implementation assessment: **M**, `workflow_protocol`, nominal owner `multi-agent`. Non-goal: rewriting strategy code for local standard CLI runs.
+
+
+### AUD-GOS-011 closure update - 2026-07-20
+
+Source repair now scopes ACP configuration, data, state, identity, and request execution to explicit task-local runtime paths. Process-wide configuration and identity caches are keyed by those paths. This supersedes the original open disposition. Execution verification was not run in this campaign.

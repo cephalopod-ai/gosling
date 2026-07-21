@@ -1,3 +1,4 @@
+use crate::config::paths::{Paths, RuntimePaths};
 use crate::acp::server::{AcpProviderFactory, GoslingAcpAgent, GoslingAcpAgentOptions};
 use crate::agents::GoslingPlatform;
 use crate::source_roots::SourceRoot;
@@ -6,6 +7,7 @@ use std::sync::Arc;
 use tracing::info;
 
 pub struct AcpServerFactoryConfig {
+    pub state_dir: PathBuf,
     pub builtins: Vec<String>,
     pub data_dir: std::path::PathBuf,
     pub config_dir: std::path::PathBuf,
@@ -23,6 +25,7 @@ impl AcpServer {
     }
 
     pub async fn create_agent(&self) -> Result<Arc<GoslingAcpAgent>> {
+        Paths::scope(self.runtime_paths(), async {
         let config = crate::config::Config::global();
         let disable_session_naming = config.get_gosling_disable_session_naming().unwrap_or(false);
 
@@ -46,6 +49,7 @@ impl AcpServer {
         let agent = GoslingAcpAgent::new(GoslingAcpAgentOptions {
             provider_factory,
             builtins: self.config.builtins.clone(),
+            state_dir: self.config.state_dir.clone(),
             data_dir: self.config.data_dir.clone(),
             config_dir: self.config.config_dir.clone(),
             disable_session_naming,
@@ -56,5 +60,19 @@ impl AcpServer {
         info!("Created new ACP agent");
 
         Ok(Arc::new(agent))
+    
+        })
+        .await
+    }
+}
+
+
+impl AcpServer {
+    pub fn runtime_paths(&self) -> RuntimePaths {
+        RuntimePaths::new(
+            self.config.config_dir.clone(),
+            self.config.data_dir.clone(),
+            self.config.state_dir.clone(),
+        )
     }
 }

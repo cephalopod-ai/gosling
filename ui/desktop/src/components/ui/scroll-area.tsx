@@ -138,7 +138,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
         isFollowing &&
         !userScrolledUpRef.current
       ) {
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
           if (viewportRef.current && !userScrolledUpRef.current) {
             scrollToBottom('auto');
           }
@@ -153,9 +153,9 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
         return;
       }
 
-      const observer = new ResizeObserver(() => {
+      const observer = new window.ResizeObserver(() => {
         if (isFollowing && !userScrolledUpRef.current) {
-          requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
             if (viewportRef.current && !userScrolledUpRef.current) {
               scrollToBottom('auto');
             }

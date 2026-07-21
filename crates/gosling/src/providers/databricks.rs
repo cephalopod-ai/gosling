@@ -190,7 +190,7 @@ impl DatabricksProvider {
             .get_param::<bool>("GOSLING_DATABRICKS_CLIENT_REQUEST_ID")
             .unwrap_or(false);
         if enabled {
-            Some(get_instance_id().to_string())
+            Some(get_instance_id())
         } else {
             None
         }

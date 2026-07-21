@@ -76,3 +76,8 @@ new ad-hoc development signature. Current status: `completed_with_partial_verifi
   reduce startup CPU, memory, and transport traffic, but is a separate API/performance change.
 - A future valid response above 8,000,000 characters will still fail closed and should be addressed
   through pagination or streaming, not by making the transport unbounded.
+
+
+## Provider inventory residual update - 2026-07-20
+
+Redundant and concurrent provider-inventory startup requests are source-repaired with cache/in-flight coalescing and mutation invalidation. Provider pagination or metadata-only transport remains future API work. The 8,000,000-character ACP response ceiling remains intentional fail-closed behavior.

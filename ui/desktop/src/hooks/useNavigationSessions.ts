@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useChatContext } from '../contexts/ChatContext';
 import { getSessionDisplayName } from '../sessions';
@@ -64,7 +64,10 @@ export function useNavigationSessions() {
   const [searchParams] = useSearchParams();
   const chatContext = useChatContext();
   const { sessionWorkspaceFilterId } = useWorkspace();
-  const sessionFilter = createWorkspaceSessionFilter(sessionWorkspaceFilterId);
+  const sessionFilter = useMemo(
+    () => createWorkspaceSessionFilter(sessionWorkspaceFilterId),
+    [sessionWorkspaceFilterId]
+  );
 
   const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
   const lastSessionIdRef = useRef<string | null>(null);

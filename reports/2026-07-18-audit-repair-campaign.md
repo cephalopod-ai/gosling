@@ -156,3 +156,16 @@ All 7 invariants in `.architecture/invariants.yaml` currently hold:
 - `docs/TODO.md`'s existing items (TODO-001 through TODO-010, per the
   2026-07-10 report) are unrelated to this campaign's touched files and were
   left as-is.
+
+
+## Deferred-record reconciliation - 2026-07-20
+
+A superseding source review found that current source already satisfies the deferred records below:
+
+- ORCH-002: delegate capability policy is versioned and source-requested extensions are constrained by policy.
+- REC-001: tool operations enter the durable ledger before side effects, in-doubt operations are not redispatched, and terminal results are persisted idempotently.
+- REC-002: legacy import completion is tracked separately from schema version and failed imports remain retryable.
+- RES-002: parent-process supervision is wired through `GOSLING_SERVER__PARENT_PID`.
+- RES-003: container cleanup includes in-container process termination and regression coverage.
+
+These records are closed by superseding reconciliation; their historical text is retained. This campaign did not rerun tests.

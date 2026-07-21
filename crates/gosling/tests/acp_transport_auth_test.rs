@@ -17,6 +17,7 @@ fn test_router(require_token: bool, dir: &tempfile::TempDir) -> Router {
 fn test_acp_router(dir: &tempfile::TempDir) -> Router {
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins: vec![],
+        state_dir: dir.path().join("state"),
         data_dir: dir.path().join("data"),
         config_dir: dir.path().join("config"),
         gosling_platform: GoslingPlatform::GoslingCli,
@@ -28,6 +29,7 @@ fn test_acp_router(dir: &tempfile::TempDir) -> Router {
 fn test_authenticated_acp_router(dir: &tempfile::TempDir) -> Router {
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins: vec![],
+        state_dir: dir.path().join("state"),
         data_dir: dir.path().join("data"),
         config_dir: dir.path().join("config"),
         gosling_platform: GoslingPlatform::GoslingCli,
@@ -43,6 +45,7 @@ fn test_router_with_origins(
 ) -> Router {
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins: vec![],
+        state_dir: dir.path().join("state"),
         data_dir: dir.path().join("data"),
         config_dir: dir.path().join("config"),
         gosling_platform: GoslingPlatform::GoslingCli,

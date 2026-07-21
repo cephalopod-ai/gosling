@@ -38,15 +38,21 @@ impl Paths {
     }
 
     pub fn config_dir() -> PathBuf {
-        Self::get_dir(DirType::Config)
+        RUNTIME_PATHS
+            .try_with(|paths| paths.config_dir.clone())
+            .unwrap_or_else(|_| { Self::get_dir(DirType::Config) })
     }
 
     pub fn data_dir() -> PathBuf {
-        Self::get_dir(DirType::Data)
+        RUNTIME_PATHS
+            .try_with(|paths| paths.data_dir.clone())
+            .unwrap_or_else(|_| { Self::get_dir(DirType::Data) })
     }
 
     pub fn state_dir() -> PathBuf {
-        Self::get_dir(DirType::State)
+        RUNTIME_PATHS
+            .try_with(|paths| paths.state_dir.clone())
+            .unwrap_or_else(|_| { Self::get_dir(DirType::State) })
     }
 
     pub fn plugins_dir() -> PathBuf {
@@ -85,4 +91,91 @@ enum DirType {
     Plugins,
     Agents,
     AgentsHome,
+}
+
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePaths {
+    pub config_dir: PathBuf,
+    pub data_dir: PathBuf,
+    pub state_dir: PathBuf,
+}
+
+impl RuntimePaths {
+    pub fn new(config_dir: PathBuf, data_dir: PathBuf, state_dir: PathBuf) -> Self {
+        Self {
+            config_dir,
+            data_dir,
+            state_dir,
+        }
+    }
+}
+
+tokio::task_local! {
+    static RUNTIME_PATHS: RuntimePaths;
+}
+
+impl Paths {
+    pub async fn scope<F>(runtime_paths: RuntimePaths, future: F) -> F::Output
+    where
+        F: std::future::Future,
+    {
+        RUNTIME_PATHS.scope(runtime_paths, future).await
+    }
+}
+
+#[cfg(test)]
+mod runtime_paths_tests {
+    use super::{Paths, RuntimePaths};
+
+    #[tokio::test]
+    async fn runtime_paths_are_isolated_between_concurrent_tasks() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+
+        let first_paths = RuntimePaths::new(
+            first.path().join("config"),
+            first.path().join("data"),
+            first.path().join("state"),
+        );
+        let second_paths = RuntimePaths::new(
+            second.path().join("config"),
+            second.path().join("data"),
+            second.path().join("state"),
+        );
+
+        let (first_observed, second_observed) = tokio::join!(
+            Paths::scope(first_paths.clone(), async {
+                (
+                    Paths::config_dir(),
+                    Paths::data_dir(),
+                    Paths::state_dir(),
+                )
+            }),
+            Paths::scope(second_paths.clone(), async {
+                (
+                    Paths::config_dir(),
+                    Paths::data_dir(),
+                    Paths::state_dir(),
+                )
+            }),
+        );
+
+        assert_eq!(
+            first_observed,
+            (
+                first_paths.config_dir,
+                first_paths.data_dir,
+                first_paths.state_dir,
+            )
+        );
+        assert_eq!(
+            second_observed,
+            (
+                second_paths.config_dir,
+                second_paths.data_dir,
+                second_paths.state_dir,
+            )
+        );
+    }
 }

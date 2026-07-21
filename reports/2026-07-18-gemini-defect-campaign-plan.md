@@ -95,3 +95,8 @@ and falsely claim isolation while provider/configuration state still leaks.
 Completed as recorded in
 [`2026-07-18-gemini-defect-campaign-session-log.md`](2026-07-18-gemini-defect-campaign-session-log.md).
 The routed residual is not claimed as repaired.
+
+
+## Superseding GEM-005 disposition - 2026-07-20
+
+GEM-005 is source-repaired by explicit ACP runtime path scoping, path-keyed configuration and identity caches, Desktop browser-global/hook cleanup, provider-inventory request coalescing, and a caller-independent ACP schema recipe. Historical planning text remains unchanged. Execution verification was not authorized for this campaign.

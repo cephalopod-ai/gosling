@@ -1,3 +1,4 @@
+use crate::config::paths::RuntimePaths;
 use crate::acp::custom_notifications::*;
 use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
@@ -204,6 +205,8 @@ struct ToolChain {
 }
 
 pub struct GoslingAcpAgentOptions {
+    runtime_paths: RuntimePaths,
+    pub state_dir: PathBuf,
     pub provider_factory: AcpProviderFactory,
     pub builtins: Vec<String>,
     pub data_dir: std::path::PathBuf,
@@ -1042,6 +1045,14 @@ impl GoslingAcpAgent {
 
     // TODO: gosling reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
     pub async fn new(options: GoslingAcpAgentOptions) -> Result<Self> {
+        let runtime_paths = RuntimePaths::new(
+            options.config_dir.clone(),
+            options.data_dir.clone(),
+            options.state_dir.clone(),
+        );
+        let agent_runtime_paths = runtime_paths.clone();
+
+        Paths::scope(runtime_paths, async move {
         let default_working_folder = std::env::var_os("GOSLING_WORKING_DIR")
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
@@ -1073,6 +1084,7 @@ impl GoslingAcpAgent {
         let agent_manager = Arc::new(AgentManager::new(agent_config, None).await?);
 
         Ok(Self {
+                runtime_paths: agent_runtime_paths,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             active_prompt_runs: Arc::new(Mutex::new(HashMap::new())),
             closed_session_ids: Arc::new(Mutex::new(HashSet::new())),
@@ -1094,6 +1106,9 @@ impl GoslingAcpAgent {
             additional_source_roots: options.additional_source_roots,
             workspace_service,
         })
+    
+        })
+        .await
     }
 
     fn config(&self) -> Result<&'static Config, agent_client_protocol::Error> {
@@ -3254,7 +3269,8 @@ where
     R: futures::AsyncRead + Unpin + Send + 'static,
     W: futures::AsyncWrite + Unpin + Send + 'static,
 {
-    Box::pin(async move {
+    let runtime_paths = agent.runtime_paths.clone();
+    Box::pin(Paths::scope(runtime_paths, async move {
         let handler = GoslingAcpHandler { agent };
         let (eof_sender, eof_receiver) = oneshot::channel();
         let read = EofAwareReader::new(read, eof_sender);
@@ -3266,7 +3282,7 @@ where
             .connect_to(ByteStreams::new(write, read));
 
         finish_connection_on_eof(connection, eof_receiver).await
-    })
+    }))
 }
 
 /// A lazily-initialized agent connection used by the HTTP/WebSocket transport.

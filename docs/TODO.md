@@ -13,7 +13,7 @@
 - [ ] Keep the chat view pinned to the bottom while a new user input is typed
   and while new content is appended, so the most recent chat item remains
   visible instead of the scroll position jumping to the middle of the window.
-- [ ] Make chat persistence incremental and crash-resilient: store each user
+- [x] Make chat persistence incremental and crash-resilient: store each user
   message as soon as Enter is submitted, and store assistant output as it is
   written to the chat window, so an abrupt Gosling exit does not erase the last
   chat item.
@@ -225,3 +225,17 @@ Desktop JSON writes, unbounded import payloads, and invalid-host startup panic.
 The reports retain the full threat analysis, repair stages, regression proof,
 and the one upstream Nostr allocation limitation. No campaign commit or remote
 mutation was performed.
+
+
+## Open-defect campaign reconciliation (2026-07-20)
+
+- [x] Chat auto-follow remains enabled while the user is at the bottom and pauses after upward user scrolling.
+- [x] Interrupted chat/tool operations are durably recorded and recovered without redispatching an in-doubt side effect.
+- [x] ACP runtime config, data, state, identity, and request execution are scoped to the server instance rather than the process default.
+- [x] Desktop browser-global lint debt and unstable workspace-filter hook dependencies are repaired.
+- [x] Provider inventory startup reads are cached and concurrent reads are coalesced; mutations invalidate the cache.
+- [x] The ACP schema check resolves repository paths from the Justfile location.
+- [ ] CLI usage reporting remains a feature backlog item, not an open defect.
+- [ ] Session Handoff and expanded Tagteam remain feature backlog items, not open defects.
+- [ ] Giles's internal uniqueness-constraint failure remains external tool debt.
+- [ ] Release execution remains maintainer-owned.

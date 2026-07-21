@@ -3,14 +3,14 @@ import { fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ScrollArea, type ScrollAreaHandle } from './scroll-area';
 
-class TestResizeObserver implements ResizeObserver {
+class TestResizeObserver {
   static instances: TestResizeObserver[] = [];
 
   readonly observe = vi.fn<(target: Element) => void>();
   readonly unobserve = vi.fn<(target: Element) => void>();
   readonly disconnect = vi.fn<() => void>();
 
-  constructor(private readonly callback: ResizeObserverCallback) {
+  constructor(private readonly callback: ConstructorParameters<typeof window.ResizeObserver>[0]) {
     TestResizeObserver.instances.push(this);
   }
 
@@ -22,7 +22,7 @@ class TestResizeObserver implements ResizeObserver {
 describe('ScrollArea auto-follow', () => {
   beforeEach(() => {
     TestResizeObserver.instances = [];
-    vi.stubGlobal('ResizeObserver', TestResizeObserver);
+    vi.stubGlobal('window.ResizeObserver', TestResizeObserver);
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       callback(0);
       return 1;

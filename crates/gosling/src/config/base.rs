@@ -535,7 +535,22 @@ impl Config {
     /// This will initialize the configuration with the default path (~/.config/gosling/config.yaml)
     /// if it hasn't been initialized yet.
     pub fn global() -> &'static Config {
-        GLOBAL_CONFIG.get_or_init(Config::default)
+        static CONFIGS_BY_PATH: std::sync::LazyLock<
+            std::sync::Mutex<
+                std::collections::HashMap<std::path::PathBuf, &'static Config>,
+            >,
+        > = std::sync::LazyLock::new(|| {
+            std::sync::Mutex::new(std::collections::HashMap::new())
+        });
+
+        let config_dir = Paths::config_dir();
+        let mut configs = CONFIGS_BY_PATH
+            .lock()
+            .expect("global config path map lock poisoned");
+        *configs.entry(config_dir).or_insert_with(|| {
+            let config: &'static Config = Box::leak(Box::new(Config::default()));
+            config
+        })
     }
 
     /// Create a new configuration instance with custom paths

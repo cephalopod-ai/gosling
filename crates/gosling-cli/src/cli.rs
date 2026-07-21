@@ -1243,6 +1243,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
 
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
+        state_dir: Paths::state_dir(),
         data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
         gosling_platform: platform.into(),

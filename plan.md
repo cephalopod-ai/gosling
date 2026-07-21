@@ -1899,3 +1899,18 @@ If work resumes after the Stage 1 governance and Auto/workflow cleanup, the next
 8. Record any strategy change in Section 34 before expanding scope.
 
 The next planned security phase is Phase 4: investigate alert `#65` and produce the dependency-to-lockfile-to-artifact mapping before changing any dependency. The three retired workflows are no longer follow-up items. Keep remaining non-container PinnedDependencies alerts and optional Stage 2 independent-review governance explicit and separate.
+
+
+## 37. Open-defect repair campaign closure (2026-07-20)
+
+Status: source repair complete; execution verification deferred because this campaign did not authorize builds or tests.
+
+- ACP agents now bind configuration, data, state, instance identity, and request execution to task-local runtime paths.
+- Global configuration and instance identity caches are keyed by their active scoped paths.
+- Desktop browser globals are explicit and workspace session filters are referentially stable.
+- Provider inventory reads are cached/coalesced and mutation paths invalidate stale inventory.
+- `check-acp-schema` resolves from `justfile_directory()` instead of the caller's working directory.
+- Previously deferred records ORCH-002, REC-001, REC-002, RES-002, and RES-003 are reconciled as already satisfied by current source.
+- The bounded ACP response policy remains intentional fail-closed behavior; streaming/pagination is future API work.
+- Session Handoff, Tagteam expansion, CLI usage reporting, release execution, and broad modularization are feature/maintenance backlog rather than defects.
+- Giles's uniqueness-constraint crash and macOS Keychain authorization are external/manual validation constraints.

@@ -72,7 +72,7 @@ export default function ProviderSettings({
   // This function will be passed to ProviderGrid for manual refreshes after config changes
   const refreshProviders = useCallback(async () => {
     if (initialLoadDone.current) {
-      const result = await acpListProviderDetails();
+      const result = await acpListProviderDetails(true);
       if (result) setProviders(result);
     }
   }, []);

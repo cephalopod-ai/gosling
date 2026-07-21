@@ -16,7 +16,7 @@ class MockWebSocket extends window.EventTarget {
   }
 
   receive(message: unknown): void {
-    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+    this.dispatchEvent(new window.MessageEvent('message', { data: JSON.stringify(message) }));
   }
 }
 
@@ -58,7 +58,7 @@ describe('createWebSocketStream', () => {
     createWebSocketStream('ws://127.0.0.1:64027/acp');
 
     MockWebSocket.instance.dispatchEvent(
-      new MessageEvent('message', { data: ' '.repeat(MAX_ACP_MESSAGE_CHARS + 1) })
+      new window.MessageEvent('message', { data: ' '.repeat(MAX_ACP_MESSAGE_CHARS + 1) })
     );
 
     expect(MockWebSocket.instance.close).toHaveBeenCalledWith(1009, 'ACP message limit exceeded');
