@@ -3824,6 +3824,11 @@
             "type": "boolean",
             "description": "Whether this message is a steer injected into an active run. UI-only:\nsurfaced as `_meta.gosling.steer` so clients can mark the steer boundary\nwithout matching user-visible text. Never sent to providers."
           },
+          "terminalError": {
+            "type": "string",
+            "description": "A user-visible failure that must still terminate non-interactive clients.",
+            "nullable": true
+          },
           "userVisible": {
             "type": "boolean",
             "description": "Whether the message should be visible to the user in the UI"
