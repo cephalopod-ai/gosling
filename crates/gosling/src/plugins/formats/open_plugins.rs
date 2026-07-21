@@ -1,8 +1,8 @@
 //! Open Plugins format adapter (<https://open-plugins.com>).
 
 use crate::plugins::{
-    copy_dir_all, write_install_metadata, FormatNotSupported, ImportedSkill, PluginFormat,
-    PluginInstall, PluginInstallOptions,
+    copy_dir_all, validated_skill_name, write_install_metadata, FormatNotSupported, ImportedSkill,
+    PluginFormat, PluginInstall, PluginInstallOptions,
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -441,13 +441,7 @@ fn collect_skill_candidate(
     }
 
     let raw = fs::read_to_string(&skill_file)?;
-    let name = extract_skill_name(&raw).unwrap_or_else(|| {
-        skill_dir
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("unnamed")
-            .to_string()
-    });
+    let name = validated_skill_name(&raw, &skill_file)?;
     let relative_directory = skill_dir.strip_prefix(plugin_dir)?.to_path_buf();
 
     skills.push(SkillCandidate {
@@ -456,12 +450,6 @@ fn collect_skill_candidate(
     });
 
     Ok(())
-}
-
-fn extract_skill_name(raw: &str) -> Option<String> {
-    let (metadata, _): (crate::skills::SkillFrontmatter, String) =
-        crate::sources::parse_frontmatter(raw).ok()??;
-    metadata.name.filter(|name| !name.is_empty())
 }
 
 fn rewrite_skill_name(skill_file: &Path, name: &str) -> Result<()> {
@@ -718,6 +706,35 @@ mod tests {
         .unwrap_err();
 
         assert!(err.to_string().contains("must stay within the plugin"));
+    }
+
+    #[test]
+    fn rejects_skills_without_required_frontmatter_before_installing() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::create_dir_all(repo.path().join(".plugin")).unwrap();
+        fs::write(
+            repo.path().join(".plugin/plugin.json"),
+            r#"{"name":"bad-plugin","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let skill_dir = repo.path().join("skills").join("broken");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(skill_dir.join("SKILL.md"), "Run a broken skill.").unwrap();
+
+        let error = install_from_manifest(
+            "https://example.invalid/bad-plugin.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("missing required YAML frontmatter"));
+        assert!(!install_root.path().join("bad-plugin").exists());
     }
 
     #[test]

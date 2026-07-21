@@ -391,6 +391,63 @@ fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(in crate::plugins) fn validated_skill_name(raw: &str, skill_file: &Path) -> Result<String> {
+    let (metadata, _): (crate::skills::SkillFrontmatter, String) =
+        crate::sources::parse_frontmatter(raw)
+            .map_err(|error| {
+                anyhow!(
+                    "Invalid skill frontmatter at {}: {error}",
+                    skill_file.display()
+                )
+            })?
+            .ok_or_else(|| {
+                anyhow!(
+                    "Skill at {} is missing required YAML frontmatter",
+                    skill_file.display()
+                )
+            })?;
+    let name = metadata
+        .name
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "Skill at {} is missing a required name",
+                skill_file.display()
+            )
+        })?;
+    if metadata.description.trim().is_empty() {
+        bail!(
+            "Skill at {} is missing a required description",
+            skill_file.display()
+        );
+    }
+    if name.contains('/') {
+        bail!(
+            "Skill name '{}' at {} must not contain '/'",
+            name,
+            skill_file.display()
+        );
+    }
+    Ok(name)
+}
+
+#[cfg(test)]
+mod skill_validation_tests {
+    use super::*;
+
+    #[test]
+    fn skill_validation_requires_description_and_normalizes_name() {
+        let path = Path::new("skills/audit/SKILL.md");
+        let valid = "---\nname: ' audit '\ndescription: Audit code\n---\nRun audit.";
+        assert_eq!(validated_skill_name(valid, path).unwrap(), "audit");
+
+        let missing_description = "---\nname: audit\ndescription: '  '\n---\nRun audit.";
+        let error = validated_skill_name(missing_description, path).unwrap_err();
+        assert!(error.to_string().contains("missing a required description"));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

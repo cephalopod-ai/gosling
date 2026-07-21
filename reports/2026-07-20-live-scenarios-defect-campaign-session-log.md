@@ -34,8 +34,8 @@ Status: in progress
 | B | GSL-PLAY-002, GSL-PLAY-011 | verified | `2338d7e85` | `cargo test -p gosling acp::server::tests::` (71 passed); formatter passed; live Ollama replay remains in the final gate |
 | C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | verified | `e1b7ded64`, `564b62e07` | `cargo test -p gosling-cli --lib` (231 passed); formatter passed |
 | D | GSL-PLAY-004 | verified | `cc441aa27` | `cargo test -p gosling-cli --lib` (232 passed); formatter passed; live Ctrl-C replay remains in the final gate |
-| E | GSL-PLAY-006, GSL-PLAY-007, GSL-PLAY-013, GSL-PLAY-014 | verified | pending local commit | Targeted config, hints, doctor, serve-warning, and session-name tests passed; formatter passed |
-| F | GSL-PLAY-010 | pending | | |
+| E | GSL-PLAY-006, GSL-PLAY-007, GSL-PLAY-013, GSL-PLAY-014 | verified | `4b4ac51b8` | Targeted config, hints, doctor, serve-warning, and session-name tests passed; formatter passed |
+| F | GSL-PLAY-010 | verified | pending local commit | `cargo test -p gosling --lib plugins::formats::` (11 passed); shared validator regression passed; formatter passed |
 
 ## Final gates
 
@@ -78,3 +78,10 @@ Pending group repairs, adversarial review, full regression, Clippy, source-recor
 - Replace model-backed interactive doctor behavior with a finite local system/config report that exits.
 - Print the unauthenticated warning only when no server secret is active, before binding the listener.
 - Reject empty and whitespace-only names in `SessionManager::create_session`, before any CLI, Desktop, ACP, import, or terminal caller can persist them.
+
+## Group F adversarial review
+
+- Validate every discovered plugin skill before the installer copies the checkout, preventing partial installation for malformed metadata.
+- Require parseable YAML frontmatter, a normalized nonblank name, a nonblank description, and a discovery-safe name without `/`.
+- Apply the same validator to Gemini and Open Plugins, including custom skill roots.
+- Confirm malformed installation leaves no destination directory and valid neighboring format behavior remains intact.
