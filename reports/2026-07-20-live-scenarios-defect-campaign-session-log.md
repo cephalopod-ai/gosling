@@ -32,8 +32,8 @@ Status: in progress
 | --- | --- | --- | --- | --- |
 | A | GSL-PLAY-001, GSL-PLAY-008 | verified | `3dce5e6bb` | `pnpm --dir ui/desktop exec vitest run src/components/Hub.test.tsx src/components/onboarding/OnboardingGuard.test.tsx` (9 passed); Desktop typecheck passed |
 | B | GSL-PLAY-002, GSL-PLAY-011 | verified | `2338d7e85` | `cargo test -p gosling acp::server::tests::` (71 passed); formatter passed; live Ollama replay remains in the final gate |
-| C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | verified | `e1b7ded64` plus pending cleanup | `cargo test -p gosling-cli --lib` (231 passed); formatter passed |
-| D | GSL-PLAY-004 | pending | | |
+| C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | verified | `e1b7ded64`, `564b62e07` | `cargo test -p gosling-cli --lib` (231 passed); formatter passed |
+| D | GSL-PLAY-004 | verified | pending local commit | `cargo test -p gosling-cli --lib` (232 passed); formatter passed; live Ctrl-C replay remains in the final gate |
 | E | GSL-PLAY-006, GSL-PLAY-007, GSL-PLAY-013, GSL-PLAY-014 | pending | | |
 | F | GSL-PLAY-010 | pending | | |
 
@@ -63,3 +63,10 @@ Pending group repairs, adversarial review, full regression, Clippy, source-recor
 - Reject empty and whitespace-only instructions before session/provider creation.
 - Persist an authoritative execution-limit notice after repetition or turn-budget exhaustion and return non-success so a model completion claim cannot become the terminal contract.
 - Restricted repetition detection to user-role tool responses and max-turn detection to assistant-role notices to avoid phrase-based false positives in arbitrary prose.
+
+## Group D adversarial review
+
+- Generate a stable ID for the user turn before `Agent::reply` persists it.
+- Truncate persistent conversation state from that exact ID and remove only the matching local suffix, avoiding same-timestamp collateral deletion.
+- Preserve the pre-interruption history and emit a neutral prompt so the next user message becomes the sole active instruction.
+- Suppress interruption prompt rendering in JSON modes so hard-error cleanup cannot pollute machine-readable stdout.

@@ -1140,10 +1140,18 @@ impl CliSession {
             compacted_context: false,
             tail_limit: None,
         };
-        let user_message = self
-            .messages
-            .last()
-            .ok_or_else(|| anyhow::anyhow!("No user message"))?;
+        let user_message = {
+            let mut message = self
+                .messages
+                .pop()
+                .ok_or_else(|| anyhow::anyhow!("No user message"))?;
+            if message.id.is_none() {
+                message = message.with_generated_id();
+            }
+            self.messages.push(message.clone());
+            message
+        };
+        let turn_message_id = user_message.id.clone();
 
         let cancel_token_interrupt = cancel_token.clone();
         let handle = tokio::spawn(async move {
@@ -1156,7 +1164,7 @@ impl CliSession {
         let mut stream = self
             .agent
             .reply(
-                user_message.clone(),
+                user_message,
                 session_config.clone(),
                 Some(cancel_token.clone()),
             )
@@ -1329,7 +1337,10 @@ impl CliSession {
                             terminal_error = Some(e.to_string());
                             cancel_token_clone.cancel();
                             drop(stream);
-                            if let Err(e) = self.handle_interrupted_messages(false).await {
+                            if let Err(e) = self
+                                .handle_interrupted_messages(false, turn_message_id.as_deref())
+                                .await
+                            {
                                 eprintln!("Error handling interruption: {}", e);
                             } else if !is_stream_json_mode {
                                 output::render_error(
@@ -1346,7 +1357,10 @@ impl CliSession {
                 }
                 _ = cancel_token_clone.cancelled() => {
                     drop(stream);
-                    if let Err(e) = self.handle_interrupted_messages(true).await {
+                    if let Err(e) = self
+                        .handle_interrupted_messages(true, turn_message_id.as_deref())
+                        .await
+                    {
                         eprintln!("Error handling interruption: {}", e);
                     }
                     break;
@@ -1458,10 +1472,31 @@ impl CliSession {
         }
     }
 
-    async fn handle_interrupted_messages(&mut self, interrupt: bool) -> Result<()> {
+    async fn handle_interrupted_messages(
+        &mut self,
+        interrupt: bool,
+        turn_message_id: Option<&str>,
+    ) -> Result<()> {
         if interrupt {
             let mut cache = self.completion_cache.write().unwrap();
             cache.hint_status = HintStatus::Interrupted;
+        }
+
+        if let Some(message_id) = turn_message_id {
+            self.agent
+                .config
+                .session_manager
+                .truncate_conversation_from_message(&self.session_id, message_id)
+                .await?;
+            remove_local_turn(&mut self.messages, message_id);
+
+            let assistant_msg =
+                Message::assistant().with_text("Yes — what would you like me to do?");
+            self.push_message(assistant_msg.clone());
+            if self.output_format == "text" {
+                output::render_message(&assistant_msg, self.debug);
+            }
+            return Ok(());
         }
 
         let tool_requests = self
@@ -1503,25 +1538,31 @@ impl CliSession {
             }
             self.push_message(response_message);
             self.push_message(Message::assistant().with_text(interrupt_prompt));
-            output::render_message(
-                &Message::assistant().with_text(interrupt_prompt),
-                self.debug,
-            );
+            if self.output_format == "text" {
+                output::render_message(
+                    &Message::assistant().with_text(interrupt_prompt),
+                    self.debug,
+                );
+            }
         } else if let Some(last_msg) = self.messages.last() {
             if last_msg.role == rmcp::model::Role::User {
                 match last_msg.content.first() {
                     Some(MessageContent::ToolResponse(_)) => {
                         self.push_message(Message::assistant().with_text(interrupt_prompt));
-                        output::render_message(
-                            &Message::assistant().with_text(interrupt_prompt),
-                            self.debug,
-                        );
+                        if self.output_format == "text" {
+                            output::render_message(
+                                &Message::assistant().with_text(interrupt_prompt),
+                                self.debug,
+                            );
+                        }
                     }
                     Some(_) => {
                         self.messages.pop();
                         let assistant_msg = Message::assistant().with_text(interrupt_prompt);
                         self.push_message(assistant_msg.clone());
-                        output::render_message(&assistant_msg, self.debug);
+                        if self.output_format == "text" {
+                            output::render_message(&assistant_msg, self.debug);
+                        }
                     }
                     None => {
                         // Empty message content — nothing to do, just continue gracefully
@@ -1743,6 +1784,21 @@ fn execution_limit_reason(message: &Message) -> bool {
     (message.role == rmcp::model::Role::User && text.contains("has exceeded maximum repetitions"))
         || (message.role == rmcp::model::Role::Assistant
             && text.contains("reached the maximum number of actions"))
+}
+
+fn remove_local_turn(conversation: &mut Conversation, message_id: &str) -> bool {
+    let Some(index) = conversation
+        .messages()
+        .iter()
+        .position(|message| message.id.as_deref() == Some(message_id))
+    else {
+        return false;
+    };
+
+    while conversation.messages().len() > index {
+        conversation.pop();
+    }
+    true
 }
 
 fn print_run_stats(
@@ -2504,6 +2560,22 @@ mod tests {
         assert!(!execution_limit_reason(
             &Message::assistant().with_text("All requested work completed")
         ));
+    }
+
+    #[test]
+    fn remove_local_turn_removes_only_the_interrupted_suffix() {
+        let before = Message::assistant().with_text("before").with_id("before");
+        let interrupted = Message::user()
+            .with_text("long request")
+            .with_id("interrupted");
+        let partial = Message::assistant().with_text("partial").with_id("partial");
+        let mut conversation =
+            Conversation::new_unvalidated(vec![before.clone(), interrupted, partial]);
+
+        assert!(remove_local_turn(&mut conversation, "interrupted"));
+        assert_eq!(conversation.messages(), &[before.clone()]);
+        assert!(!remove_local_turn(&mut conversation, "missing"));
+        assert_eq!(conversation.messages(), &[before]);
     }
 
     #[test_case(
