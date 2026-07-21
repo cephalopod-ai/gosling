@@ -5,6 +5,7 @@ import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 import { defineMessages, useIntl } from '../i18n';
 import { acpRemoveSessionWorkingDir } from '../acp/sessions';
 import type { Session } from '../types/session';
+import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
 
 const i18n = defineMessages({
   collapse: {
@@ -111,6 +112,12 @@ export default function WorkingDirectoriesSummary({
           showCount={false}
         />
       </div>
+
+      <CredentialProfileSelector
+        credentialProfileId={session?.credential_profile_id}
+        credentialProfileName={session?.credential_profile_name}
+        surface="header"
+      />
 
       {isExpanded && (
         <div className="flex w-full flex-col gap-1.5 rounded-2xl border border-border-primary bg-background-secondary/70 p-2">

@@ -604,8 +604,6 @@ export default function BaseChat({
             sessionModel={sessionModel}
             sessionProvider={sessionProvider}
             sessionLoaded={sessionLoaded}
-            sessionCredentialProfileId={session?.credential_profile_id}
-            sessionCredentialProfileName={session?.credential_profile_name}
             workingDir={session?.working_dir}
             onWorkingDirChange={handleWorkingDirChange}
             goslingMode={session?.gosling_mode}

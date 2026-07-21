@@ -13,7 +13,6 @@ import { DirSwitcher } from './bottom_menu/DirSwitcher';
 import { ModeSwitcher } from './bottom_menu/ModeSwitcher';
 import ModelsBottomBar from './settings/models/bottom_bar/ModelsBottomBar';
 import { BottomMenuExtensionSelection } from './bottom_menu/BottomMenuExtensionSelection';
-import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
 import { cn } from '../utils';
 import { AlertType, useAlerts } from './alerts';
 import { useModelAndProvider } from './ModelAndProviderContext';
@@ -179,8 +178,6 @@ interface ChatInputProps {
   sessionModel?: string | null;
   sessionProvider?: string | null;
   sessionLoaded?: boolean;
-  sessionCredentialProfileId?: string | null;
-  sessionCredentialProfileName?: string | null;
   workingDir?: string | null;
   goslingMode?: GoslingMode;
   onGoslingModeChange?: (newMode: GoslingMode) => Promise<void> | void;
@@ -217,8 +214,6 @@ export default function ChatInput({
   sessionModel,
   sessionProvider,
   sessionLoaded,
-  sessionCredentialProfileId,
-  sessionCredentialProfileName,
   workingDir,
   goslingMode,
   onGoslingModeChange,
@@ -1690,14 +1685,6 @@ export default function ChatInput({
             />
           </div>
         </Tooltip>
-
-        {sessionId && (
-          <CredentialProfileSelector
-            credentialProfileId={sessionCredentialProfileId}
-            credentialProfileName={sessionCredentialProfileName}
-            compact={isBottomBarNarrow}
-          />
-        )}
 
         {/* Left: working directory (leaf folder name only) */}
         {!isBottomBarNarrow && (

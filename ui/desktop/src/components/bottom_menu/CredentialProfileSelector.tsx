@@ -4,6 +4,7 @@ import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { defineMessages, useIntl } from '../../i18n';
 import { CredentialProfileManagerDialog } from '../workspaces/CredentialProfileManagerDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/Tooltip';
+import { cn } from '../../utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,12 +61,14 @@ interface CredentialProfileSelectorProps {
   credentialProfileId?: string | null;
   credentialProfileName?: string | null;
   compact?: boolean;
+  surface?: 'composer' | 'header';
 }
 
 export function CredentialProfileSelector({
   credentialProfileId,
   credentialProfileName,
   compact = false,
+  surface = 'composer',
 }: CredentialProfileSelectorProps) {
   const intl = useIntl();
   const { credentialProfiles } = useWorkspace();
@@ -87,7 +90,12 @@ export function CredentialProfileSelector({
                 <button
                   type="button"
                   aria-label={tooltip}
-                  className="z-[100] flex max-w-[170px] items-center pl-1 text-xs text-text-primary/70 transition-colors hover:cursor-pointer hover:text-text-primary [&>svg]:size-4"
+                  className={cn(
+                    'z-[100] flex max-w-[220px] items-center text-xs text-text-primary/70 transition-colors hover:cursor-pointer hover:text-text-primary [&>svg]:size-4',
+                    surface === 'header'
+                      ? 'no-drag rounded-full border border-border-primary bg-background-secondary px-2 py-1 hover:bg-background-tertiary'
+                      : 'pl-1'
+                  )}
                 >
                   <KeyRound className={compact ? '' : 'mr-1'} />
                   {!compact && <span className="truncate">{displayName}</span>}
@@ -97,7 +105,11 @@ export function CredentialProfileSelector({
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
-            <DropdownMenuContent className="w-80" side="top" align="start">
+            <DropdownMenuContent
+              className="w-80"
+              side={surface === 'header' ? 'bottom' : 'top'}
+              align={surface === 'header' ? 'end' : 'start'}
+            >
               <DropdownMenuLabel>{intl.formatMessage(i18n.credentialForChat)}</DropdownMenuLabel>
               <div className="flex items-center gap-2 rounded-md px-2 py-2 text-sm">
                 {missingProfile ? (
