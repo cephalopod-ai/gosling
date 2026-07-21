@@ -28,8 +28,10 @@ Desktop is unavailable.
   1. Manage credential profiles → New profile for a test provider; enter a secret; save.
   2. Confirm UI shows configured/metadata only — never the raw secret after save.
   3. Bind the profile to a workspace; start a chat that needs the provider.
-  4. Edit the profile (should show "Configured — enter a replacement"); cancel without saving; confirm secret fields clear.
-- Expected: no secret in UI, clipboard side-effects, or routine logs; missing profile fails closed with relink, not a silent substitute of another profile.
+  4. In the active chat composer, open the credential control; confirm it names the pinned profile, lists other profiles as new-chat choices, and opens Manage credential profiles.
+  5. Switch the active workspace and reopen the composer control; confirm the active chat still names its original pinned profile.
+  6. Edit the profile (should show "Configured — enter a replacement"); cancel without saving; confirm secret fields clear.
+- Expected: the active-chat credential control is always present (compact key icon at narrow widths), shows the pinned profile truthfully, and provides direct manager access; no secret appears in UI, clipboard side-effects, or routine logs; missing profile remains named as unavailable and fails closed with relink, not a silent substitute of another profile.
 - Observe: keyring vs `secrets.yaml` fallback messaging if keyring is disabled.
 - Variations: delete a profile still referenced by a workspace — confirmation + visible relink-required state.
 
