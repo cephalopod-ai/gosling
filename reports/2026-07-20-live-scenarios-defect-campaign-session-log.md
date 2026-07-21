@@ -1,7 +1,7 @@
 # Live Scenarios Defect Campaign Session Log
 
 Date: 2026-07-20
-Status: in progress
+Status: repair and verification complete; authorized integration to `main` pending
 
 ## Gate 0: repository and baseline
 
@@ -32,14 +32,25 @@ Status: in progress
 | --- | --- | --- | --- | --- |
 | A | GSL-PLAY-001, GSL-PLAY-008 | verified | `3dce5e6bb` | `pnpm --dir ui/desktop exec vitest run src/components/Hub.test.tsx src/components/onboarding/OnboardingGuard.test.tsx` (9 passed); Desktop typecheck passed |
 | B | GSL-PLAY-002, GSL-PLAY-011 | verified | `2338d7e85` | `cargo test -p gosling acp::server::tests::` (71 passed); formatter passed; live Ollama replay remains in the final gate |
-| C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | verified | `e1b7ded64`, `564b62e07` | `cargo test -p gosling-cli --lib` (231 passed); formatter passed |
+| C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | verified | `e1b7ded64`, `564b62e07`, `100368130` | `cargo test -p gosling-cli --lib` (235 passed); live Ollama 404 exited 1 with valid JSON `error` metadata; live successful Ollama JSON run exited 0 |
 | D | GSL-PLAY-004 | verified | `cc441aa27` | `cargo test -p gosling-cli --lib` (232 passed); formatter passed; live Ctrl-C replay remains in the final gate |
 | E | GSL-PLAY-006, GSL-PLAY-007, GSL-PLAY-013, GSL-PLAY-014 | verified | `4b4ac51b8` | Targeted config, hints, doctor, serve-warning, and session-name tests passed; formatter passed |
-| F | GSL-PLAY-010 | verified | pending local commit | `cargo test -p gosling --lib plugins::formats::` (11 passed); shared validator regression passed; formatter passed |
+| F | GSL-PLAY-010 | verified | `b89d5d269` | `cargo test -p gosling --lib plugins::formats::` (11 passed); shared validator regression passed; formatter passed |
+| G | GSL-PLAY-015 | verified | `66309eac7` | Installed Apple Silicon Electron replay: `File -> New Chat Window` created two healthy windows; close/reopen and `Cmd+Q` lifecycle passed |
 
 ## Final gates
 
-Pending group repairs, adversarial review, full regression, Clippy, source-record closure, and final campaign closure.
+- `cargo fmt --all -- --check`: passed.
+- `cargo test -p gosling-cli --lib`: 235 passed.
+- `cargo test -p gosling --lib`: 1528 passed; the same four Gate 0 environment-sensitive tests failed, with no new failures.
+- `cargo clippy --all-targets -- -D warnings`: passed.
+- Desktop typecheck: passed.
+- Desktop Vitest: 78 files and 542 tests passed.
+- Text UI TypeScript build: passed.
+- Live CLI: empty input, finite doctor, empty session name, unauthenticated warning, provider error status, successful Ollama JSON, ACP version rejection/acceptance, and EOF shutdown passed.
+- Native package: Electron Forge produced, signed, and installed an `arm64` app at `/Applications/Gosling.app`.
+- Live Desktop: onboarding advance, fullscreen/window restore, multi-window creation, close/reopen persistence, and bounded quit passed.
+- Source report closure: completed with per-finding commit and evidence mapping.
 
 ## Group A adversarial review
 
@@ -85,3 +96,11 @@ Pending group repairs, adversarial review, full regression, Clippy, source-recor
 - Require parseable YAML frontmatter, a normalized nonblank name, a nonblank description, and a discovery-safe name without `/`.
 - Apply the same validator to Gemini and Open Plugins, including custom skill roots.
 - Confirm malformed installation leaves no destination directory and valid neighboring format behavior remains intact.
+
+## Group G adversarial review
+
+- Reproduced `File -> New Chat Window` against the installed package and captured the renderer failure `Cannot read properties of undefined (reading 'sender')`.
+- Traced the failure to a native menu callback synthesizing an IPC event without an Electron sender.
+- Kept renderer-originated window requests on the sender-validating IPC path and routed the native menu directly to the existing window factory.
+- Repackaged and reinstalled the signed `arm64` app, then replayed the exact menu action and confirmed two healthy native windows.
+- Closed the test windows, reopened the real installed app with prior session state intact, and confirmed `Cmd+Q` terminated Electron and embedded `gosling serve` children in under one second.

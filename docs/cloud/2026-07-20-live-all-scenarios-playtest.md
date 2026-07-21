@@ -354,3 +354,54 @@ Residual risk is highest in the blocked Desktop/ACP cascades. Fix and retest
 GSL-PLAY-001 and GSL-PLAY-002 first; doing so unlocks most of the currently blocked
 cards. Then retest GSL-PLAY-003 and GSL-PLAY-004 before treating Gosling as safe for
 headless automation or interruption-heavy interactive work.
+
+## Repair campaign closure - 2026-07-20
+
+This section supersedes the original residual-risk recommendation above while
+preserving the initial report and 110-card ledger as historical evidence. All 14
+original findings were repaired. A fifteenth finding was discovered during the
+required installed-Desktop windowing replay and repaired in the same campaign.
+
+### GSL-PLAY-015 - Native New Chat Window crashes the renderer
+
+- Severity: High
+- Surface: installed macOS Electron Desktop
+- Reproduction: launch the signed Apple Silicon package, choose `File -> New Chat
+  Window`, and observe `Cannot read properties of undefined (reading 'sender')`.
+- Cause: the native menu synthesized `ipcMain.emit(createChatWindow)` without an
+  Electron IPC event, while the renderer IPC handler requires `event.sender`.
+- Repair: native menu actions now invoke the existing window factory directly;
+  renderer-originated requests retain sender-based directory authorization.
+- Verification: the repackaged installed app created two healthy windows, closed one
+  without affecting the other, reopened persisted state, and terminated Electron plus
+  the embedded backend within one second on `Cmd+Q`.
+
+| Finding | Closure | Repair commits | Verification |
+| --- | --- | --- | --- |
+| GSL-PLAY-001 | Repaired | `3dce5e6bb` | Desktop Hub/Onboarding component suite; full 542-test Desktop suite |
+| GSL-PLAY-002 | Repaired | `2338d7e85` | 71 ACP server tests; live installed Ollama model accepted |
+| GSL-PLAY-003 | Repaired | `e1b7ded64`, `564b62e07`, `100368130` | Live Ollama 404 exited 1 with valid JSON `error` metadata; CLI suite passed |
+| GSL-PLAY-004 | Repaired | `cc441aa27` | Interrupted-turn persistence regression and full 235-test CLI suite |
+| GSL-PLAY-005 | Repaired | `e1b7ded64`, `564b62e07` | JSON/banner regressions and live valid JSON replay |
+| GSL-PLAY-006 | Repaired | `4b4ac51b8` | Malformed config/context-key regressions and CLI suite |
+| GSL-PLAY-007 | Repaired | `4b4ac51b8` | Live finite local `gosling doctor` exited 0 |
+| GSL-PLAY-008 | Repaired | `3dce5e6bb` | Onboarding live-inventory tests; installed onboarding UI remained operable |
+| GSL-PLAY-009 | Repaired | `e1b7ded64`, `564b62e07` | Live whitespace input rejected before provider with exit 1 |
+| GSL-PLAY-010 | Repaired | `b89d5d269` | 11 plugin-format tests plus shared malformed-metadata regression |
+| GSL-PLAY-011 | Repaired | `2338d7e85` | Live ACP v0 rejection, v1 acceptance, and EOF shutdown; ACP suite passed |
+| GSL-PLAY-012 | Repaired | `e1b7ded64`, `564b62e07` | Budget disclosure regressions and full CLI suite |
+| GSL-PLAY-013 | Repaired | `4b4ac51b8` | Live warning appeared before invalid bind and process exited nonzero |
+| GSL-PLAY-014 | Repaired | `4b4ac51b8` | Live blank session name rejected with exit 1; storage regression passed |
+| GSL-PLAY-015 | Repaired | `66309eac7` | Installed signed `arm64` package multi-window and lifecycle replay |
+
+Final regression passed formatter, all-target Clippy with warnings denied, all 235 CLI
+library tests, all 542 Desktop tests, Desktop typecheck, and the text UI build. The core
+library result was 1528 passed and the same four Gate 0 environment-sensitive failures:
+
+- `agents::container::tests::kill_terminates_exec_process_without_stopping_container`
+- `providers::claude_code::tests::test_can_use_tool::allow`
+- `providers::claude_code::tests::test_can_use_tool::deny`
+- `providers::claude_code::tests::test_can_use_tool_cancel_on_drop`
+
+No new core failure was introduced. Campaign execution details are recorded in
+`reports/2026-07-20-live-scenarios-defect-campaign-session-log.md`.
