@@ -31,8 +31,8 @@ Status: in progress
 | Group | Findings | Status | Commit | Evidence |
 | --- | --- | --- | --- | --- |
 | A | GSL-PLAY-001, GSL-PLAY-008 | verified | `3dce5e6bb` | `pnpm --dir ui/desktop exec vitest run src/components/Hub.test.tsx src/components/onboarding/OnboardingGuard.test.tsx` (9 passed); Desktop typecheck passed |
-| B | GSL-PLAY-002, GSL-PLAY-011 | verified | pending local commit | `cargo test -p gosling acp::server::tests::` (71 passed); formatter passed |
-| C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | pending | | |
+| B | GSL-PLAY-002, GSL-PLAY-011 | verified | `2338d7e85` | `cargo test -p gosling acp::server::tests::` (71 passed); formatter passed; live Ollama replay remains in the final gate |
+| C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | verified | `e1b7ded64` plus pending cleanup | `cargo test -p gosling-cli --lib` (231 passed); formatter passed |
 | D | GSL-PLAY-004 | pending | | |
 | E | GSL-PLAY-006, GSL-PLAY-007, GSL-PLAY-013, GSL-PLAY-014 | pending | | |
 | F | GSL-PLAY-010 | pending | | |
@@ -55,3 +55,11 @@ Pending group repairs, adversarial review, full regression, Clippy, source-recor
 - Moved protocol negotiation into a directly tested helper and reject the schema's legacy/string fallback version before accepting client capabilities.
 - Tested both EOF detection and the race that terminates an otherwise pending ACP connection.
 - Routed installed-Ollama `qwen2.5:latest` and end-to-end stdio replay to the final live gate.
+
+## Group C adversarial review
+
+- Confirmed terminal agent errors set JSON status to `error`, suppress stream completion, and propagate a nonzero process result.
+- Confirmed JSON and stream-JSON suppress the human session banner while text output remains unchanged.
+- Reject empty and whitespace-only instructions before session/provider creation.
+- Persist an authoritative execution-limit notice after repetition or turn-budget exhaustion and return non-success so a model completion claim cannot become the terminal contract.
+- Restricted repetition detection to user-role tool responses and max-turn detection to assistant-role notices to avoid phrase-based false positives in arbitrary prose.

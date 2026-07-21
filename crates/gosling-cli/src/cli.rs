@@ -1555,10 +1555,10 @@ fn parse_run_input_from_reader(
             stdin.read_to_string(&mut contents).map_err(|error| {
                 anyhow::anyhow!("Failed to read instructions from stdin: {error}")
             })?;
-            Ok(Some(InputConfig {
+            Some(InputConfig {
                 contents: Some(contents),
                 additional_system_prompt: input_opts.system.clone(),
-            }))
+            })
         }
         (Some(file), _) => {
             let contents = std::fs::read_to_string(file).unwrap_or_else(|err| {
@@ -1568,20 +1568,20 @@ fn parse_run_input_from_reader(
                 );
                 std::process::exit(1);
             });
-            Ok(Some(InputConfig {
+            Some(InputConfig {
                 contents: Some(contents),
                 additional_system_prompt: input_opts.system.clone(),
-            }))
+            })
         }
-        (_, Some(text)) => Ok(Some(InputConfig {
+        (_, Some(text)) => Some(InputConfig {
             contents: Some(text.clone()),
             additional_system_prompt: input_opts.system.clone(),
-        })),
+        }),
         _ => {
             eprintln!("Error: Must provide either --instructions (-i) or --text (-t). Use -i - for stdin.");
             std::process::exit(1);
         }
-    }?;
+    };
 
     if input
         .as_ref()

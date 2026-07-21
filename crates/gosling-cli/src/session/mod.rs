@@ -1325,7 +1325,7 @@ impl CliSession {
                             self.messages = updated_conversation;
                         }
                         Some(Err(e)) => {
-                            handle_agent_error(&e, is_stream_json_mode);
+                            handle_agent_error(&e, is_json_mode, is_stream_json_mode);
                             terminal_error = Some(e.to_string());
                             cancel_token_clone.cancel();
                             drop(stream);
@@ -1368,7 +1368,7 @@ impl CliSession {
                 .await;
             if is_stream_json_mode {
                 emit_stream_event(&StreamEvent::Message { message: notice });
-                handle_agent_error(&anyhow::anyhow!(notice_text), true);
+                handle_agent_error(&anyhow::anyhow!(notice_text), false, true);
             } else if !is_json_mode {
                 output::render_message(&notice, self.debug);
             }
@@ -1740,8 +1740,9 @@ fn message_has_text(message: &Message) -> bool {
 
 fn execution_limit_reason(message: &Message) -> bool {
     let text = message.as_concat_text();
-    text.contains("has exceeded maximum repetitions")
-        || text.contains("reached the maximum number of actions")
+    (message.role == rmcp::model::Role::User && text.contains("has exceeded maximum repetitions"))
+        || (message.role == rmcp::model::Role::Assistant
+            && text.contains("reached the maximum number of actions"))
 }
 
 fn print_run_stats(
@@ -2166,7 +2167,7 @@ fn log_tool_metrics(message: &Message, messages: &Conversation) {
 }
 
 /// Handle and display an agent error
-fn handle_agent_error(e: &anyhow::Error, is_stream_json_mode: bool) {
+fn handle_agent_error(e: &anyhow::Error, is_json_mode: bool, is_stream_json_mode: bool) {
     let error_msg = e.to_string();
 
     if is_stream_json_mode {
@@ -2184,7 +2185,7 @@ fn handle_agent_error(e: &anyhow::Error, is_stream_json_mode: bool) {
         })
         .unwrap_or(false)
     {
-        if !is_stream_json_mode {
+        if !is_json_mode && !is_stream_json_mode {
             output::render_text(
                 "Compaction requested. Should have happened in the agent!",
                 Some(Color::Yellow),
@@ -2496,6 +2497,9 @@ mod tests {
         ));
         assert!(execution_limit_reason(&Message::assistant().with_text(
             "I've reached the maximum number of actions I can do without user input."
+        )));
+        assert!(!execution_limit_reason(&Message::assistant().with_text(
+            "The phrase 'has exceeded maximum repetitions' may appear in documentation."
         )));
         assert!(!execution_limit_reason(
             &Message::assistant().with_text("All requested work completed")
