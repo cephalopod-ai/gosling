@@ -9,6 +9,7 @@ use anyhow::Result;
 use gosling_providers::conversation::token_usage::ProviderUsage;
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
+use gosling_providers::retry::{retry_operation, RetryConfig};
 use indoc::indoc;
 use rmcp::model::Role;
 use serde::Serialize;
@@ -358,14 +359,21 @@ async fn do_compact(
             .with_text("Please summarize the conversation history provided in the system prompt.");
         let summarization_request = vec![user_message];
 
-        match crate::model_config::complete_fast(
-            provider,
-            model_config,
-            session_id,
-            &system_prompt,
-            &summarization_request,
-            &[],
-        )
+        // The retry wraps the whole request/response round trip rather than just the
+        // connection handshake: compaction is a one-shot summarization call with no
+        // partial output already shown to the user, so re-issuing it after a transient
+        // network or stream-decode failure (which provider streaming's own retry doesn't
+        // cover once the response body starts arriving) is safe.
+        match retry_operation(&RetryConfig::default(), || {
+            crate::model_config::complete_fast(
+                provider,
+                model_config,
+                session_id,
+                &system_prompt,
+                &summarization_request,
+                &[],
+            )
+        })
         .await
         {
             Ok((mut response, mut provider_usage)) => {
@@ -665,6 +673,7 @@ mod tests {
         message: Message,
         config: ModelConfig,
         max_tool_responses: Option<usize>,
+        remaining_transient_failures: std::sync::atomic::AtomicUsize,
     }
 
     impl MockProvider {
@@ -682,11 +691,17 @@ mod tests {
                     reasoning: None,
                 },
                 max_tool_responses: None,
+                remaining_transient_failures: std::sync::atomic::AtomicUsize::new(0),
             }
         }
 
         fn with_max_tool_responses(mut self, max: usize) -> Self {
             self.max_tool_responses = Some(max);
+            self
+        }
+
+        fn with_transient_failures(mut self, count: usize) -> Self {
+            self.remaining_transient_failures = std::sync::atomic::AtomicUsize::new(count);
             self
         }
     }
@@ -704,6 +719,20 @@ mod tests {
             messages: &[Message],
             _tools: &[Tool],
         ) -> Result<MessageStream, ProviderError> {
+            if self
+                .remaining_transient_failures
+                .fetch_update(
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                    |remaining| remaining.checked_sub(1),
+                )
+                .is_ok()
+            {
+                return Err(ProviderError::NetworkError(
+                    "Stream decode error: error decoding response body".to_string(),
+                ));
+            }
+
             // If max_tool_responses is set, fail if we have too many
             if let Some(max) = self.max_tool_responses {
                 let tool_response_count = messages
@@ -768,6 +797,33 @@ mod tests {
 
         let _ = Conversation::new(agent_conversation)
             .expect("compaction should produce a valid conversation");
+    }
+
+    #[tokio::test]
+    async fn test_compact_retries_transient_network_error() {
+        // Regression test: a mid-stream network/decode failure during compaction
+        // (e.g. "Stream decode error: error decoding response body") used to abort
+        // the whole turn immediately with no retry. It should now be retried like
+        // any other transient provider error.
+        let response_message = Message::assistant().with_text("<mock summary>");
+        let provider = MockProvider::new(response_message, 1000).with_transient_failures(2);
+        let conversation = Conversation::new_unvalidated(vec![Message::user().with_text("hi")]);
+        let model_config = provider.config.clone();
+
+        let result = compact_messages(
+            &provider,
+            &model_config,
+            "test-session-id",
+            &conversation,
+            false,
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Compaction should recover from transient network errors via retry: {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]
