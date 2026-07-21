@@ -1549,7 +1549,7 @@ fn parse_run_input_from_reader(
     input_opts: &InputOptions,
     stdin: &mut impl Read,
 ) -> Result<Option<InputConfig>> {
-    match (&input_opts.instructions, &input_opts.input_text) {
+    let input: Option<InputConfig> = match (&input_opts.instructions, &input_opts.input_text) {
         (Some(file), _) if file == "-" => {
             let mut contents = String::new();
             stdin.read_to_string(&mut contents).map_err(|error| {
@@ -1581,7 +1581,17 @@ fn parse_run_input_from_reader(
             eprintln!("Error: Must provide either --instructions (-i) or --text (-t). Use -i - for stdin.");
             std::process::exit(1);
         }
+    }?;
+
+    if input
+        .as_ref()
+        .and_then(|input| input.contents.as_deref())
+        .is_some_and(|contents| contents.trim().is_empty())
+    {
+        anyhow::bail!("Instructions must not be empty");
     }
+
+    Ok(input)
 }
 
 async fn handle_run_command(
@@ -1940,6 +1950,21 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("Failed to read instructions from stdin"));
         assert!(message.contains("valid UTF-8"));
+    }
+
+    #[test]
+    fn run_input_rejects_empty_and_whitespace_only_instructions() {
+        for contents in ["", "  \n\t"] {
+            let input_options = InputOptions {
+                instructions: Some("-".to_string()),
+                ..Default::default()
+            };
+            let mut stdin = std::io::Cursor::new(contents.as_bytes());
+
+            let error = parse_run_input_from_reader(&input_options, &mut stdin).unwrap_err();
+
+            assert_eq!(error.to_string(), "Instructions must not be empty");
+        }
     }
 
     #[test]

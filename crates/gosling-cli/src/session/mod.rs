@@ -1170,6 +1170,8 @@ impl CliSession {
         let run_started = Instant::now();
         let mut first_token_at: Option<Instant> = None;
         let mut last_usage: Option<ProviderUsage> = None;
+        let mut terminal_error: Option<String> = None;
+        let mut execution_limit_reached = false;
 
         use futures::StreamExt;
         loop {
@@ -1177,6 +1179,7 @@ impl CliSession {
                 result = stream.next() => {
                     match result {
                         Some(Ok(AgentEvent::Message(message))) => {
+                            execution_limit_reached |= execution_limit_reason(&message);
                             if first_token_at.is_none() && message_has_text(&message) {
                                 first_token_at = Some(Instant::now());
                             }
@@ -1323,6 +1326,7 @@ impl CliSession {
                         }
                         Some(Err(e)) => {
                             handle_agent_error(&e, is_stream_json_mode);
+                            terminal_error = Some(e.to_string());
                             cancel_token_clone.cancel();
                             drop(stream);
                             if let Err(e) = self.handle_interrupted_messages(false).await {
@@ -1350,6 +1354,27 @@ impl CliSession {
             }
         }
 
+        if terminal_error.is_none() && execution_limit_reached {
+            let notice_text = "Execution stopped before all requested work completed because an action or repetition limit was reached. Some requested operations did not run; do not treat earlier completion claims as authoritative.";
+            let notice = Message::assistant()
+                .with_text(notice_text)
+                .with_generated_id();
+            self.messages.push(notice.clone());
+            let _ = self
+                .agent
+                .config
+                .session_manager
+                .add_message(&self.session_id, &notice)
+                .await;
+            if is_stream_json_mode {
+                emit_stream_event(&StreamEvent::Message { message: notice });
+                handle_agent_error(&anyhow::anyhow!(notice_text), true);
+            } else if !is_json_mode {
+                output::render_message(&notice, self.debug);
+            }
+            terminal_error = Some(notice_text.to_string());
+        }
+
         if !is_json_mode && !is_stream_json_mode {
             output::flush_markdown_buffer_current_theme(&mut markdown_buffer);
         }
@@ -1375,13 +1400,21 @@ impl CliSession {
                         .accumulated_usage
                         .output_tokens
                         .or(session.usage.output_tokens),
-                    status: "completed".to_string(),
+                    status: if terminal_error.is_some() {
+                        "error".to_string()
+                    } else {
+                        "completed".to_string()
+                    },
                 },
                 Err(_) => JsonMetadata {
                     total_tokens: None,
                     input_tokens: None,
                     output_tokens: None,
-                    status: "completed".to_string(),
+                    status: if terminal_error.is_some() {
+                        "error".to_string()
+                    } else {
+                        "completed".to_string()
+                    },
                 },
             };
             let json_output = JsonOutput {
@@ -1405,11 +1438,13 @@ impl CliSession {
                 ),
                 None => (None, None, None),
             };
-            emit_stream_event(&StreamEvent::Complete {
-                total_tokens,
-                input_tokens,
-                output_tokens,
-            });
+            if terminal_error.is_none() {
+                emit_stream_event(&StreamEvent::Complete {
+                    total_tokens,
+                    input_tokens,
+                    output_tokens,
+                });
+            }
         } else {
             println!();
             if self.stats {
@@ -1417,7 +1452,10 @@ impl CliSession {
             }
         }
 
-        Ok(())
+        match terminal_error {
+            Some(error) => Err(anyhow::anyhow!(error)),
+            None => Ok(()),
+        }
     }
 
     async fn handle_interrupted_messages(&mut self, interrupt: bool) -> Result<()> {
@@ -1698,6 +1736,12 @@ fn message_has_text(message: &Message) -> bool {
     message.content.iter().any(
         |content| matches!(content, MessageContent::Text(text) if !text.text.trim().is_empty()),
     )
+}
+
+fn execution_limit_reason(message: &Message) -> bool {
+    let text = message.as_concat_text();
+    text.contains("has exceeded maximum repetitions")
+        || text.contains("reached the maximum number of actions")
 }
 
 fn print_run_stats(
@@ -2443,6 +2487,19 @@ mod tests {
     #[test]
     fn test_split_command_args_unmatched_quote() {
         assert!(gosling::utils::split_command_args(r#""unmatched"#).is_err());
+    }
+
+    #[test]
+    fn execution_limit_reason_detects_repetition_and_turn_budgets() {
+        assert!(execution_limit_reason(
+            &Message::user().with_text("Tool 'shell' has exceeded maximum repetitions")
+        ));
+        assert!(execution_limit_reason(&Message::assistant().with_text(
+            "I've reached the maximum number of actions I can do without user input."
+        )));
+        assert!(!execution_limit_reason(
+            &Message::assistant().with_text("All requested work completed")
+        ));
     }
 
     #[test_case(

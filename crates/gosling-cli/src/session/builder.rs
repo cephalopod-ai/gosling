@@ -652,7 +652,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     configure_session_prompts(&session, config, &session_config, &session_id).await;
 
-    if !session_config.quiet {
+    if !session_config.quiet && session_config.output_format == "text" {
         output::display_session_info(
             session_config.resume,
             &effective_provider_name,
