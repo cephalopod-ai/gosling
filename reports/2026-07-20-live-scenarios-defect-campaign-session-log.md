@@ -33,8 +33,8 @@ Status: in progress
 | A | GSL-PLAY-001, GSL-PLAY-008 | verified | `3dce5e6bb` | `pnpm --dir ui/desktop exec vitest run src/components/Hub.test.tsx src/components/onboarding/OnboardingGuard.test.tsx` (9 passed); Desktop typecheck passed |
 | B | GSL-PLAY-002, GSL-PLAY-011 | verified | `2338d7e85` | `cargo test -p gosling acp::server::tests::` (71 passed); formatter passed; live Ollama replay remains in the final gate |
 | C | GSL-PLAY-003, GSL-PLAY-005, GSL-PLAY-009, GSL-PLAY-012 | verified | `e1b7ded64`, `564b62e07` | `cargo test -p gosling-cli --lib` (231 passed); formatter passed |
-| D | GSL-PLAY-004 | verified | pending local commit | `cargo test -p gosling-cli --lib` (232 passed); formatter passed; live Ctrl-C replay remains in the final gate |
-| E | GSL-PLAY-006, GSL-PLAY-007, GSL-PLAY-013, GSL-PLAY-014 | pending | | |
+| D | GSL-PLAY-004 | verified | `cc441aa27` | `cargo test -p gosling-cli --lib` (232 passed); formatter passed; live Ctrl-C replay remains in the final gate |
+| E | GSL-PLAY-006, GSL-PLAY-007, GSL-PLAY-013, GSL-PLAY-014 | verified | pending local commit | Targeted config, hints, doctor, serve-warning, and session-name tests passed; formatter passed |
 | F | GSL-PLAY-010 | pending | | |
 
 ## Final gates
@@ -70,3 +70,11 @@ Pending group repairs, adversarial review, full regression, Clippy, source-recor
 - Truncate persistent conversation state from that exact ID and remove only the matching local suffix, avoiding same-timestamp collateral deletion.
 - Preserve the pre-interruption history and emit a neutral prompt so the next user message becomes the sole active instruction.
 - Suppress interruption prompt rendering in JSON modes so hard-error cleanup cannot pollute machine-readable stdout.
+
+## Group E adversarial review
+
+- Keep missing optional context configuration silent while naming malformed `CONTEXT_FILE_NAMES` and the documented fallback.
+- Preserve malformed config files on disk and surface their exact path/parse error through stderr before continuing without that layer.
+- Replace model-backed interactive doctor behavior with a finite local system/config report that exits.
+- Print the unauthenticated warning only when no server secret is active, before binding the listener.
+- Reject empty and whitespace-only names in `SessionManager::create_session`, before any CLI, Desktop, ACP, import, or terminal caller can persist them.

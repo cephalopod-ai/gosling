@@ -34,6 +34,23 @@ pub const DEFAULT_SESSION_TAIL_LIMIT: usize = 50;
 pub const MAX_SESSION_MESSAGE_PAGE_LIMIT: usize = 200;
 const TOOL_OPERATION_SCHEMA_VERSION: i32 = 1;
 
+fn validate_session_name(name: &str) -> Result<()> {
+    anyhow::ensure!(!name.trim().is_empty(), "Session name must not be empty");
+    Ok(())
+}
+
+#[cfg(test)]
+mod session_name_validation_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_empty_and_whitespace_only_session_names() {
+        assert!(validate_session_name("").is_err());
+        assert!(validate_session_name("  \n\t").is_err());
+        assert!(validate_session_name("CLI Session").is_ok());
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -586,6 +603,7 @@ impl SessionManager {
         session_type: SessionType,
         gosling_mode: GoslingMode,
     ) -> Result<Session> {
+        validate_session_name(&name)?;
         self.storage
             .create_session(working_dir, name, session_type, gosling_mode)
             .await

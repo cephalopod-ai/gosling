@@ -1188,6 +1188,20 @@ struct ServeCommandArgs {
     allowed_origins: Vec<String>,
 }
 
+const DANGEROUS_UNAUTHENTICATED_WARNING: &str =
+    "WARNING: ACP authentication is disabled. Any client that can reach this server may invoke agent capabilities.";
+
+#[cfg(test)]
+mod serve_warning_tests {
+    use super::DANGEROUS_UNAUTHENTICATED_WARNING;
+
+    #[test]
+    fn dangerous_serve_warning_names_authentication_and_reachability() {
+        assert!(DANGEROUS_UNAUTHENTICATED_WARNING.contains("authentication is disabled"));
+        assert!(DANGEROUS_UNAUTHENTICATED_WARNING.contains("Any client"));
+    }
+}
+
 async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     use axum::http::HeaderValue;
     use gosling::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
@@ -1245,6 +1259,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         );
     }
     if dangerously_unauthenticated && !require_token {
+        eprintln!("{DANGEROUS_UNAUTHENTICATED_WARNING}");
         warn!(
             "{GOSLING_SERVER_SECRET_KEY_ENV} is not set and --dangerously-unauthenticated was passed; the ACP endpoint will accept unauthenticated connections"
         );

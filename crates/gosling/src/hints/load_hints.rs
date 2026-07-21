@@ -10,17 +10,26 @@ use crate::hints::import_files::read_referenced_files;
 pub const GOSLING_HINTS_FILENAME: &str = ".goslinghints";
 pub const AGENTS_MD_FILENAME: &str = "AGENTS.md";
 
-pub fn get_context_filenames() -> Vec<String> {
-    use crate::config::Config;
+fn default_context_filenames() -> Vec<String> {
+    vec![
+        GOSLING_HINTS_FILENAME.to_string(),
+        AGENTS_MD_FILENAME.to_string(),
+    ]
+}
 
-    Config::global()
-        .get_param::<Vec<String>>("CONTEXT_FILE_NAMES")
-        .unwrap_or_else(|_| {
-            vec![
-                GOSLING_HINTS_FILENAME.to_string(),
-                AGENTS_MD_FILENAME.to_string(),
-            ]
-        })
+pub fn get_context_filenames() -> Vec<String> {
+    use crate::config::{Config, ConfigError};
+
+    match Config::global().get_param::<Vec<String>>("CONTEXT_FILE_NAMES") {
+        Ok(filenames) => filenames,
+        Err(ConfigError::NotFound(_)) => default_context_filenames(),
+        Err(error) => {
+            eprintln!(
+                "Warning: Invalid CONTEXT_FILE_NAMES: {error}. Falling back to .goslinghints and AGENTS.md."
+            );
+            default_context_filenames()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -332,6 +341,16 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
         let builder = GitignoreBuilder::new(temp_dir.path());
         builder.build().expect("failed to build gitignore")
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn malformed_context_file_names_use_documented_defaults() {
+        std::env::set_var("CONTEXT_FILE_NAMES", "not-json");
+        let filenames = get_context_filenames();
+        std::env::remove_var("CONTEXT_FILE_NAMES");
+
+        assert_eq!(filenames, default_context_filenames());
     }
 
     #[test]

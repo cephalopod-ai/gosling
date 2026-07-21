@@ -688,6 +688,11 @@ impl Config {
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load config {:?}: {}. Skipping.", path, e);
+                    eprintln!(
+                        "Warning: Failed to load config '{}': {}. Falling back without this file.",
+                        path.display(),
+                        e
+                    );
                 }
             }
         }
