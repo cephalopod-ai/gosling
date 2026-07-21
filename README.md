@@ -20,7 +20,7 @@ gosling works with 15+ providers — Anthropic, OpenAI, Google, Ollama, OpenRout
 
 ## Provenance
 
-gosling **v0.0.6** is a fork of [goose](https://github.com/aaif-goose/goose) **v1.38**, the open source AI agent from the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation. All credit for the underlying agent framework goes to the goose project and its contributors. gosling is licensed under the same Apache 2.0 license and is not endorsed by or affiliated with the goose project or AAIF.
+gosling is an independently maintained descendant of [goose](https://github.com/aaif-goose/goose) **v1.38**, the open source AI agent from the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation. The inherited framework and commit history remain credited to the goose project and its contributors. gosling is licensed under Apache 2.0 and is not endorsed by or affiliated with goose, AAIF, or the Linux Foundation. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for the independent-fork boundary and attribution details.
 
 ## Vision
 
@@ -28,7 +28,7 @@ gosling aims to be a **lighter version of goose**: the same trusted agent core w
 
 ## Footprint & performance vs. goose
 
-Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), same host, matched Cargo feature flags (`code-mode` excluded from both — its `v8-goose` static-lib download is blocked by this environment's network policy, symmetrically for both builds). v0.0.6 preserves the same lightweight direction while adding reliability and security hardening; rerun these measurements before publishing new v0.0.6 performance deltas.
+Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), on the same host with matched Cargo feature flags. `code-mode` was excluded from both because this environment blocked the `v8-goose` static-library download. These are historical baseline measurements, not v1.0.0 benchmark claims; rerun them before publishing current performance deltas.
 
 | | goose | gosling | Δ |
 |---|---|---|---|
@@ -57,7 +57,7 @@ In addition to footprint reduction, Gosling implements several targeted performa
 
 ### Key Security Hardening
 
-Comparing `gosling` v0.0.6 against `goose` v1.41.0, Gosling implements several safety and security hardening improvements:
+Relative to the inherited baseline, gosling implements several safety and security hardening improvements:
 
 * **Fail-Closed Tool Inspection**: In upstream, if a tool inspector encountered an error (e.g., timeout, network issue, or internal error), it logged the error and allowed the loop to continue. Because the permission baseline in auto-approval mode is `Allow`, a failing safety inspector would silently let tools execute ungated. Gosling fixes this by synthesizing a `RequireApproval` safety action when a tool inspector fails, forcing execution to halt for manual human approval.
 * **Confined MCP Cache & Memory Tool Paths (Directory Traversal Hardening)**: 
@@ -83,17 +83,16 @@ Comparing `gosling` v0.0.6 against `goose` v1.41.0, Gosling implements several s
 | **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
 | **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in memory/cache extensions. |
 
-## What's new in gosling v0.0.6
+## What's included in gosling v1.0.0
 
-- **Desktop startup and shutdown hardening** — Gosling Desktop records backend processes it launches, checks for stale desktop backend processes on startup, and performs a closeout cleanup on quit so orphaned `gosling serve --platform desktop` processes do not survive app restarts.
-- **Single-instance desktop behavior** — macOS now participates in the same single-instance lock behavior as other platforms; second launches route protocol URLs or focus the existing window instead of creating competing desktop sessions.
-- **Packaged desktop connectivity fix** — the packaged app's static Content Security Policy now allows loopback HTTP and WebSocket connections needed for the local ACP backend.
-- **Local summarizer and memory path** — added the local LLM summarizer worker, durable file-backed facts, per-backend summarizer routing, and compacted session resume paging.
-- **Code execution runtime controls** — exposed code execution runtime configuration through CLI and desktop settings, including the V8 runtime path.
-- **MCP app proxy and ACP updates** — expanded MCP app proxy routes, custom ACP request support, generated SDK/OpenAPI types, and proxy rendering behavior.
-- **Goose compatibility docs and adapters** — added deterministic Goose compatibility support for documentation skills and catalog normalization.
-- **Security hardening** — tightened default permissions, made tool inspection fail closed, added safer plugin clone handling, bounded provider auth HTTP clients, clamped Google retry delays, and made secret writes atomic.
-- **Audit and repair records** — added cloud/audit documentation covering security, reliability, performance, dataflow, workflow, lifecycle, and repair-campaign findings.
+- **Workspace-aware Desktop chats** - workspace rows filter the chat list without changing the default for future chats. Starting a chat from a workspace action preselects that workspace, while the global New Chat flow keeps workspace choice explicit.
+- **Credential profiles in chat** - the chat composer exposes the credential-profile selector and manager, shows a session's pinned profile, and keeps missing-profile failures visible instead of silently choosing another credential.
+- **Desktop lifecycle and windowing reliability** - startup, shutdown, backend cleanup, single-instance behavior, packaged loopback connectivity, and native multi-window actions have dedicated repair and replay evidence.
+- **Session and CLI correctness** - persisted interrupted turns, provider failures, machine-readable output, malformed configuration, doctor behavior, empty-input rejection, and ACP lifecycle handling were repaired through the 2026-07-20 playtest campaign.
+- **Context and memory** - local summarization, durable file-backed facts, backend-specific routing, compacted-session resume paging, and bounded handoff design support longer-running work.
+- **Security hardening** - tool inspection fails closed, secret and session storage use restricted permissions, sensitive writes are atomic, provider clients are bounded, and plugin/cache/path handling rejects unsafe inputs.
+- **ACP, MCP, and provider integration** - custom ACP requests, MCP app proxy routes, generated SDK/OpenAPI surfaces, external extensions, and subscription-backed provider adapters remain part of the supported integration model.
+- **Independent project stewardship** - release, contributor, provenance, architecture, test-scenario, audit, and user-manual surfaces now identify gosling's independent maintenance boundary without erasing inherited authorship.
 
 ## What's new since the fork
 
@@ -104,7 +103,7 @@ Comparing `gosling` v0.0.6 against `goose` v1.41.0, Gosling implements several s
   - its own `gosling://` deep-link scheme (goose keeps `goose://`)
   - its own app identity (`Gosling.app` / `Gosling.exe` / `Gosling` packages) and updater feed
   - single-instance behavior is preserved per app: one running Goose and one running Gosling, each guarded by its own instance lock
-- **Provenance in the app** — Help → About shows that this is Gosling v0.0.6, a fork of goose v1.38.
+- **Provenance in the app** - Help > About identifies gosling and its goose v1.38 lineage.
 
 ## Tagteam provider
 
@@ -120,9 +119,44 @@ gosling run --provider tagteam --model <profile> --text "..."
 
 `tagteam` and the underlying vendor CLIs must be installed and authenticated separately; gosling does not handle that setup.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Desktop[Electron Desktop] --> ACP[ACP and local server]
+    CLI[CLI and text UI] --> Core[gosling agent core]
+    ACP --> Core
+    Core --> Providers[Cloud, local, and ACP providers]
+    Core --> MCP[MCP extensions and apps]
+    Core --> State[(Sessions, workspaces, config)]
+    State --> Secrets[OS keyring or protected fallback]
+```
+
+The Rust core owns agent execution, provider contracts, permissions, session persistence, and MCP integration. Electron and terminal interfaces use those shared contracts rather than maintaining separate agent behavior. See the [architecture overview](docs/architecture.md) and [documentation architecture section](documentation/docs/gosling-architecture/) for deeper design material.
+
+## Release validation status
+
+The [2026-07-20 live playtest](docs/cloud/2026-07-20-live-all-scenarios-playtest.md) executed all 110 scenario cards. Its initial result was 46 pass, 32 fail, and 32 blocked; the appended repair closure records focused regression evidence for all 15 findings, including an installed Apple Silicon Desktop windowing replay. The initial ledger was not rewritten as a 110-card post-repair pass.
+
+Before publishing v1.0.0, the release owner must complete the [release checklist](RELEASE_CHECKLIST.md), including the full build, test, Clippy, packaged-GUI, and version-alignment gates. Documentation preparation alone is not release validation.
+
+## Known limits
+
+- Local model runtimes are not bundled; use a supported provider or a separately managed local provider such as Ollama.
+- Workspace management and credential profiles are currently Desktop features; the CLI uses its working directory and global provider configuration.
+- `tagteam` and vendor subscription CLIs require separate installation and authentication.
+- Official Homebrew formula and cask distribution are not currently documented as available.
+- Historical audit and playtest records describe the exact revision and environment they tested; they are evidence, not evergreen claims about every later build.
+
 ## Get started
 
-Build the desktop app or CLI from source:
+Install a published build from the [latest GitHub release](https://github.com/repo-makeover/gosling/releases/latest), or follow the [installation manual](documentation/docs/getting-started/installation.md). After installation, confirm the artifact you received:
+
+```bash
+gosling --version
+```
+
+To build the desktop app or CLI from source:
 
 ```bash
 source bin/activate-hermit
@@ -134,8 +168,11 @@ See [BUILDING_LINUX.md](BUILDING_LINUX.md), [BUILDING_DOCKER.md](BUILDING_DOCKER
 
 ## Quick links
 
-- [Documentation source](documentation/) — the gosling docs site
-- [Custom Distributions](CUSTOM_DISTROS.md) — build your own distro with preconfigured providers, extensions, and branding
+- [Documentation index](documentation/INDEX.md) - user manuals, architecture, publishing, and stewardship
+- [v1.0.0 release notes](documentation/docs/release-notes/v1.0.0.md)
+- [Release process](RELEASE.md) and [release checklist](RELEASE_CHECKLIST.md)
+- [Known issues](documentation/docs/troubleshooting/known-issues.md)
+- [Custom Distributions](CUSTOM_DISTROS.md) - build your own distro with preconfigured providers, extensions, and branding
 - [Contributing](CONTRIBUTING.md)
 - [Contributors and upstream attribution](CONTRIBUTORS.md)
 

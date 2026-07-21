@@ -13,6 +13,12 @@ import LinuxDesktopInstallButtons from '@site/src/components/LinuxDesktopInstall
 
 The gosling CLI and desktop apps are under active and continuous development. To get the newest features and fixes, you should periodically update your gosling client using the following instructions.
 
+:::info Updating to v1.0.0
+Read the [v1.0.0 release notes](/docs/release-notes/v1.0.0) before updating. After the update, run `gosling --version` for the CLI and check **Help > About** in Desktop. The `stable` channel is authoritative only after the v1.0.0 tag, artifacts, and release workflow have been published successfully.
+:::
+
+gosling uses its own config, data, session database, keyring service, deep-link scheme, and app identity. Updating gosling must not overwrite or migrate an installed goose application implicitly.
+
 <Tabs>
   <TabItem value="mac" label="macOS" default>
     <Tabs groupId="interface">

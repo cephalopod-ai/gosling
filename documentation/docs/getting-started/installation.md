@@ -13,6 +13,18 @@ import { PanelLeft } from 'lucide-react';
 
 # Install gosling
 
+:::info v1.0.0 release identity
+This manual is prepared for v1.0.0. The GitHub release, downloaded artifact, and `gosling --version` output are authoritative; do not assume a download is v1.0.0 before the tag and release assets are published.
+:::
+
+After installing the CLI, verify its version:
+
+```sh
+gosling --version
+```
+
+For Desktop, verify **Help > About** and the downloaded artifact's operating-system and architecture label. On Apple Silicon, use the arm64 macOS artifact and complete the signed/notarized Gatekeeper check before treating the installation as release-valid.
+
 <Tabs>
   <TabItem value="mac" label="macOS" default>
     Choose to install the Desktop and/or CLI version of gosling:

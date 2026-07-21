@@ -1,70 +1,61 @@
 # Making a Release
 
-You'll generally create one of two release types: a regular feature release (minor version bump like 1.20) or a bug-fixing patch release (patch version bump like 1.20.1). 
-
-gosling uses GitHub actions to automate the release process. The actual releases are triggered by tags.
+gosling releases are built and published by GitHub Actions from version tags. Preparing documentation or pushing a release branch does not publish a release.
 
 ## Current release target
 
-The current release target is **v0.0.6**.
+The current release target is **v1.0.0**.
 
 Release theme:
-- Desktop startup, shutdown, and backend process cleanup hardening
-- Packaged desktop local ACP connectivity fixes
-- Local summarizer, memory, and compacted-session resume improvements
-- Code execution runtime configuration
-- MCP app proxy, ACP, and generated SDK/OpenAPI updates
-- Goose compatibility documentation and adapters
-- Security hardening around permissions, tool inspection, plugin clone handling, providers, and secret writes
 
-Before tagging v0.0.6, keep these version surfaces aligned:
-- `Cargo.toml` workspace package version
-- workspace package entries in `Cargo.lock`
-- `ui/desktop/package.json`
-- `ui/desktop/openapi.json` `info.version`
-- root README and docs release notes
+- independent, release-ready product identity and attribution;
+- workspace-scoped Desktop chats and secure credential profiles;
+- Desktop startup, shutdown, packaged connectivity, and native windowing reliability;
+- session, CLI, ACP, MCP, context, and memory hardening;
+- security improvements around permissions, secrets, paths, plugins, providers, and workflows;
+- a rigorous scenario-card, audit, repair, and documentation evidence trail.
 
-## Minor version releases
+The user-facing summary is in [the v1.0.0 release notes](documentation/docs/release-notes/v1.0.0.md). The maintainer gate is [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
 
-These are typically done once per week. The process has two automated phases:
+## Required version alignment
 
-1. **Version bump PR** — An [action](https://github.com/repo-makeover/gosling/actions/workflows/minor-release.yaml) runs every Tuesday (or can be triggered manually) that creates a PR to bump the version on `main`. Review and merge this PR.
+Before tagging `v1.0.0`, update and review every version-bearing surface, including:
 
-2. **Release branch + PR** — When the version bump PR merges, automation creates a `release/<version>` branch from `main` and opens a release PR with a QA checklist.
+- `Cargo.toml` workspace package version;
+- workspace package entries in `Cargo.lock`;
+- `ui/desktop/package.json` and the applicable pnpm lockfile entries;
+- `ui/desktop/openapi.json` `info.version` and generated SDK metadata;
+- packaged Desktop metadata and About/version output;
+- README and documentation release notes.
 
-From there:
-- Test locally if you can (`just run-ui`)
-- Cherry-pick any last-minute fixes into the release branch if needed
-- Download and test the .zip from the release PR
-- When ready, follow the instructions on the release PR to tag and release
+At the 2026-07-20 documentation-preparation pass, the Rust workspace and Desktop package still reported `0.1.0`. Do not create `v1.0.0` until the checklist confirms all runtime and package surfaces report `1.0.0`.
 
-To trigger the release, find [the corresponding PR](https://github.com/repo-makeover/gosling/pulls?q=is%3Apr+%22chore%28release%29%22+author%3Aapp%2Fgithub-actions+) and follow the instructions in the PR description.
+## Automated release path
 
-## Patch version releases
+1. Run the [minor release workflow](https://github.com/repo-makeover/gosling/actions/workflows/minor-release.yaml) manually, or use its scheduled version-bump PR, if it matches the intended target.
+2. Review and merge the version-bump PR into `main`.
+3. Use the generated `release/<version>` branch and release PR for QA and release-only corrections.
+4. Complete every required item in `RELEASE_CHECKLIST.md`, including installed artifacts on supported platforms.
+5. Create and push the final `v1.0.0` tag only from the reviewed release commit.
+6. Confirm `release.yml` completes and the GitHub release contains the expected signed artifacts, checksums, install scripts, and notes.
+7. Perform the post-release checks before promoting updater behavior or announcing availability.
 
-When a minor release is tagged, automation immediately creates the next patch release branch (e.g. `release/1.25.1` from `release/1.25.0`) with the version already bumped and a release PR open. Cherry-pick fixes into this branch, then tag when ready.
+`release.yml` is currently tag-limited to `v1.*` releases. The previously inherited automatic patch-branch creation and tag-triggered release-PR cleanup workflows were intentionally retired. Patch releases therefore require an explicit reviewed branch/PR and tag; do not rely on an automatic next-patch branch.
 
-To trigger the release, find [the corresponding PR](https://github.com/repo-makeover/gosling/pulls?q=is%3Apr+%22chore%28release%29%22+%22%28patch%29%22+author%3Aapp%2Fgithub-actions+) and follow the instructions in the PR description.
+## Tagging
 
-## High level release flow:
+Use the exact reviewed release commit. Replace `<release-commit>` only after the checklist is complete:
 
+```bash
+git tag -a v1.0.0 <release-commit> -m "gosling v1.0.0"
+git push origin v1.0.0
 ```
-minor-release (cron/manual)
-  │
-  ▼
-version-bump PR → main (merge this)
-  │
-  ▼ (on merge)
-release/<V> branch created from main
-release PR opened (for QA, cherry-picks, testing)
-  │
-  ▼ (when ready)
-git tag v<V> origin/release/<V> && git push origin v<V>
-  │
-  ├─► release PR auto-closed (no merge needed)
-  ├─► release.yml builds & publishes
-  └─► patch release/<V+1> branch + PR auto-created
-        │
-        ▼ (cherry-pick fixes, then when ready)
-        git tag v<V+1> origin/release/<V+1> && git push origin v<V+1>
-```
+
+Do not move or recreate a published tag to repair an artifact. Fix forward with a new patch version.
+
+## Release boundary
+
+- Documentation may be merged before the tag, but install links continue to resolve to the latest published artifact.
+- Historical audit and release notes remain point-in-time evidence and are not rewritten to make a release look green.
+- A successful source test suite is not a substitute for installed Desktop, signing, updater, and clean-machine checks.
+- The release owner, not documentation automation, approves signing, tagging, publication, and announcement.

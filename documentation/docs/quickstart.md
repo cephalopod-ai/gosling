@@ -17,6 +17,10 @@ import { PanelLeft } from 'lucide-react';
 
 # gosling in 5 minutes
 
+:::info v1.0.0 manual
+This quickstart targets the gosling v1.0.0 product surface. Until the v1.0.0 GitHub tag and artifacts are published, download controls and the `stable` install path may still resolve to the previously published release. Confirm an installed build with `gosling --version`.
+:::
+
 gosling is an extensible open source AI agent that enhances your software development by automating coding tasks. 
 
 This quick tutorial will guide you through:

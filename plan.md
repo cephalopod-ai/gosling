@@ -1,8 +1,16 @@
 # Gosling Continuity and Security Remediation Master Plan
 
-Status: Active; Session Handoff proposed; Security Phases 1–3 implemented and targeted checks complete
+Status: Active; v1.0.0 documentation prepared; release version bump, validation, tag, and publication remain maintainer-owned; Session Handoff proposed; Security Phases 1–3 implemented and targeted checks complete
 Scope: Gosling core, session persistence, providers, ACP server, Desktop, build and test automation, dependency integrity, and repository governance  
 Primary outcomes: Switching providers or models preserves enough verified session state to continue safely without asking the replacement model to rediscover prior work, and Gosling's delivery paths do not execute mutable remote installers or unpinned provider packages.
+
+## 0. v1.0.0 documentation and release boundary
+
+- Release-facing documentation targets `v1.0.0`: the README, release notes, release process, release checklist, installation/update manuals, documentation inventory, and TODO ledger are aligned.
+- At the 2026-07-20 stewardship pass, the Rust workspace and Desktop manifests still reported `0.1.0`. The release owner must update every version surface to `1.0.0`, keep lockfiles/generated metadata aligned, and review the resulting diff before tagging.
+- The historical v0.0.6 note, audit reports, scenario ledgers, and command evidence remain immutable point-in-time records. Current documents link to them without rewriting their results.
+- Documentation preparation does not claim a published release, a green release workflow, a complete post-repair 110-card replay, or closure of the proposed Session Handoff and later security phases.
+- Release execution is intentionally out of this documentation task: no branch, tag, GitHub release, package publication, updater promotion, build, test, or signing action is performed here.
 
 ## 1. Goals
 

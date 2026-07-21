@@ -1,5 +1,13 @@
 # TODO
 
+## v1.0.0 release readiness - 2026-07-20
+
+- [x] Prepare the README, release notes, release process, release checklist, user-manual entry points, documentation index, inventory, and stewardship status for v1.0.0.
+- [x] Preserve the historical v0.0.6 note and audit/playtest evidence as point-in-time records.
+- [ ] Change all source, lockfile, generated API, Desktop package, About, and runtime version surfaces from `0.1.0` to `1.0.0` in a dedicated reviewed release change.
+- [ ] Complete every source, documentation, packaged-GUI, signing, checksum, scenario, and clean-install gate in `RELEASE_CHECKLIST.md`.
+- [ ] Tag, publish, verify, and announce v1.0.0. These actions remain maintainer-owned and were not performed by documentation stewardship.
+
 ## Chat reliability and CLI usage backlog — 2026-07-17
 
 - [ ] Keep the chat view pinned to the bottom while a new user input is typed

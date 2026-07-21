@@ -36,6 +36,11 @@ Open the sidebar and expand **Workspaces**.
 Filtering workspaces does not move or restart the chat currently on screen and does not change
 future-chat defaults. The chat header continues to show the session's pinned workspace.
 
+The chat composer also exposes a credential-profile control. In New Chat, use it to choose from
+available profiles or open **Manage credential profiles**. In an existing chat, it identifies the
+pinned profile and keeps a deleted or unavailable profile visible as a relink problem; it does not
+silently switch the session to another account.
+
 ## Create a workspace
 
 1. Select **Add workspace** next to the Workspaces heading.
