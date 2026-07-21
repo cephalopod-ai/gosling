@@ -29,7 +29,7 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Gosling } from './icons';
 import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
-import WorkingDirectoriesSummary from './WorkingDirectoriesSummary';
+import SessionInfoSummary from './SessionInfoSummary';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
 import { useArtifactRouter } from '../contexts/ArtifactRouterContext';
 
@@ -459,7 +459,7 @@ export default function BaseChat({
               </a>
               <EnvironmentBadge className="translate-y-px" />
             </div>
-            <WorkingDirectoriesSummary session={session} onSessionChange={updateSession} />
+            <SessionInfoSummary session={session} onSessionChange={updateSession} />
           </div>
 
           <SessionActionsHeader session={session} onSessionChange={updateSession} />
