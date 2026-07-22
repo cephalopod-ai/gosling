@@ -2975,18 +2975,6 @@
   "workingDirectoriesMenu.workingDirectories": {
     "defaultMessage": "Working Directories"
   },
-  "workingDirectoriesSummary.collapse": {
-    "defaultMessage": "Collapse working directories"
-  },
-  "workingDirectoriesSummary.expand": {
-    "defaultMessage": "Expand working directories"
-  },
-  "workingDirectoriesSummary.failedToRemove": {
-    "defaultMessage": "Failed to remove working directory"
-  },
-  "workingDirectoriesSummary.removeDirectory": {
-    "defaultMessage": "Remove working directory"
-  },
   "modeSwitcher.failedToUpdateMode": {
     "defaultMessage": "Failed to update session mode"
   },
@@ -3100,5 +3088,8 @@
   },
   "sessions.import.selectWorkingDirectory": {
     "defaultMessage": "Select a trusted working directory to finish importing the session."
+  },
+  "workingDirectoriesMenu.restrictToggleDescriptionWorkspace": {
+    "defaultMessage": "On by default for workspaces. While on, providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked because Gosling can’t scope them to these directories. Turn off to use them."
   }
 }

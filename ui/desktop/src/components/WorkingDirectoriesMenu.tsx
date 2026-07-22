@@ -73,6 +73,11 @@ const i18n = defineMessages({
     defaultMessage:
       'Off by default. When on, actions outside the directories above need your approval, with an explanation of what and why.',
   },
+  restrictToggleDescriptionWorkspace: {
+    id: 'workingDirectoriesMenu.restrictToggleDescriptionWorkspace',
+    defaultMessage:
+      'On by default for workspaces. While on, providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked because Gosling can’t scope them to these directories. Turn off to use them.',
+  },
   failedToUpdateRestriction: {
     id: 'workingDirectoriesMenu.failedToUpdateRestriction',
     defaultMessage: 'Failed to update working directory restriction',
@@ -289,7 +294,11 @@ export default function WorkingDirectoriesMenu({
                   />
                 </div>
                 <p className="text-[11px] leading-snug text-text-secondary mt-0.5">
-                  {intl.formatMessage(i18n.restrictToggleDescription)}
+                  {intl.formatMessage(
+                    session.workspace_id
+                      ? i18n.restrictToggleDescriptionWorkspace
+                      : i18n.restrictToggleDescription
+                  )}
                 </p>
               </div>
             </div>

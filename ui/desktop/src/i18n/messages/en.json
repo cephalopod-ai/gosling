@@ -3083,22 +3083,13 @@
   "workingDirectoriesMenu.restrictToggleDescription": {
     "defaultMessage": "Off by default. When on, actions outside the directories above need your approval, with an explanation of what and why."
   },
+  "workingDirectoriesMenu.restrictToggleDescriptionWorkspace": {
+    "defaultMessage": "On by default for workspaces. While on, providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked because Gosling can’t scope them to these directories. Turn off to use them."
+  },
   "workingDirectoriesMenu.restrictToggleLabel": {
     "defaultMessage": "Restrict tools to working directories"
   },
   "workingDirectoriesMenu.workingDirectories": {
     "defaultMessage": "Working Directories"
-  },
-  "workingDirectoriesSummary.collapse": {
-    "defaultMessage": "Collapse working directories"
-  },
-  "workingDirectoriesSummary.expand": {
-    "defaultMessage": "Expand working directories"
-  },
-  "workingDirectoriesSummary.failedToRemove": {
-    "defaultMessage": "Failed to remove working directory"
-  },
-  "workingDirectoriesSummary.removeDirectory": {
-    "defaultMessage": "Remove working directory"
   }
 }
