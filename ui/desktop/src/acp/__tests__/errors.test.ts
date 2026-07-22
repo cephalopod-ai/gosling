@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isAcpConnectionClosedError, parseAcpCreditsExhaustedError } from '../errors';
+import {
+  describeAcpError,
+  isAcpConnectionClosedError,
+  parseAcpCreditsExhaustedError,
+} from '../errors';
 
 describe('parseAcpCreditsExhaustedError', () => {
   it('parses structured ACP credits exhausted errors', () => {
@@ -44,6 +48,38 @@ describe('parseAcpCreditsExhaustedError', () => {
         },
       })
     ).toBeNull();
+  });
+});
+
+describe('describeAcpError', () => {
+  it('appends string data from Rust-side internal errors', () => {
+    expect(
+      describeAcpError({
+        code: -32603,
+        message: 'Internal error',
+        data: 'provider config missing an api key',
+      })
+    ).toBe('Internal error: provider config missing an api key');
+  });
+
+  it('appends structured data as JSON', () => {
+    expect(
+      describeAcpError({
+        code: -32603,
+        message: 'Internal error',
+        data: { reason: 'provider_error' },
+      })
+    ).toBe('Internal error: {"reason":"provider_error"}');
+  });
+
+  it('returns the bare message when there is no data', () => {
+    expect(describeAcpError({ code: -32601, message: 'Method not found' })).toBe(
+      'Method not found'
+    );
+  });
+
+  it('falls back to a plain Error message', () => {
+    expect(describeAcpError(new Error('ACP connection closed'))).toBe('ACP connection closed');
   });
 });
 

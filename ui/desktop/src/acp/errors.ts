@@ -7,16 +7,42 @@ const CREDITS_EXHAUSTED_REASON = 'credits_exhausted';
 
 export function parseAcpCreditsExhaustedError(error: unknown): AcpCreditsExhaustedError | null {
   const jsonRpcError = asAcpJsonRpcError(error);
-  if (jsonRpcError?.data?.reason !== CREDITS_EXHAUSTED_REASON) {
+  if (!jsonRpcError) {
     return null;
   }
 
-  const url = typeof jsonRpcError.data.url === 'string' ? jsonRpcError.data.url : undefined;
+  const { data } = jsonRpcError;
+  if (!isRecord(data) || data.reason !== CREDITS_EXHAUSTED_REASON) {
+    return null;
+  }
+
+  const url = typeof data.url === 'string' ? data.url : undefined;
 
   return {
     message: jsonRpcError.message,
     ...(url ? { url } : {}),
   };
+}
+
+/**
+ * Renders an ACP JSON-RPC error the way the Rust `Display for Error` impl does:
+ * the message, plus the `data` payload (often the real underlying cause, e.g. an
+ * anyhow error string) when present. Without this, generic errors like "Internal
+ * error" reach the UI with no way to tell what actually failed.
+ */
+export function describeAcpError(error: unknown): string {
+  const jsonRpcError = asAcpJsonRpcError(error);
+  if (!jsonRpcError) {
+    return asErrorMessage(error);
+  }
+
+  const { message, data } = jsonRpcError;
+  if (data === undefined || data === null) {
+    return message;
+  }
+
+  const detail = typeof data === 'string' ? data : JSON.stringify(data);
+  return detail && detail !== message ? `${message}: ${detail}` : message;
 }
 
 export function isAcpConnectionClosedError(error: unknown): boolean {
@@ -28,7 +54,7 @@ export function isAcpConnectionClosedError(error: unknown): boolean {
 
 interface AcpJsonRpcError {
   message: string;
-  data: Record<string, unknown>;
+  data?: unknown;
 }
 
 function asAcpJsonRpcError(error: unknown): AcpJsonRpcError | null {
@@ -37,7 +63,7 @@ function asAcpJsonRpcError(error: unknown): AcpJsonRpcError | null {
   }
 
   const candidate = isRecord(error.error) ? error.error : error;
-  if (typeof candidate.message !== 'string' || !isRecord(candidate.data)) {
+  if (typeof candidate.message !== 'string') {
     return null;
   }
 

@@ -3,7 +3,6 @@ import type { GoslingExtension } from '@repo-makeover/gosling-sdk';
 import { AppEvents } from '../constants/events';
 import { ChatState } from '../types/chatState';
 import type { Session } from '../types/session';
-import { errorMessage } from '../utils/conversionUtils';
 import { showExtensionLoadResults } from '../utils/extensionErrorUtils';
 import { createUserMessage, getPendingToolConfirmationIds, type Message } from '../types/message';
 import {
@@ -13,6 +12,7 @@ import {
 } from './chatSessionStore';
 import { cancelAcpElicitationRequestsForSession } from './elicitationRequests';
 import {
+  describeAcpError,
   isAcpConnectionClosedError,
   parseAcpCreditsExhaustedError,
   type AcpCreditsExhaustedError,
@@ -185,7 +185,7 @@ async function loadSession(
     return true;
   } catch (error) {
     console.error('Failed to load ACP session:', error);
-    acpChatSessionActions.failSessionLoad(sessionId, errorMessage(error));
+    acpChatSessionActions.failSessionLoad(sessionId, describeAcpError(error));
     return false;
   }
 }
@@ -236,8 +236,9 @@ async function submitMessage(
       return;
     }
 
+    console.error('Failed to submit ACP prompt:', error);
     const submitError = {
-      message: 'Submit error: ' + errorMessage(error),
+      message: 'Submit error: ' + describeAcpError(error),
       connectionLost: isAcpConnectionClosedError(error),
     };
     if (
