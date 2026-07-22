@@ -1088,7 +1088,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             .and_then(|json| serde_json::from_str::<Vec<PathBuf>>(&json).ok())
             .unwrap_or_default();
 
-        let mut restrict_tools_to_working_dirs = row
+        let restrict_tools_to_working_dirs = row
             .try_get("restrict_tools_to_working_dirs")
             .unwrap_or(false);
         let workflow_kind = row
@@ -1112,7 +1112,11 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .map(|root| PathBuf::from(&root.path))
                 .filter(|path| path != &primary)
                 .collect();
-            restrict_tools_to_working_dirs = true;
+            // `restrict_tools_to_working_dirs` comes from the stored column, which
+            // workspace_snapshot seeds to true. Respecting it here (rather than
+            // forcing true) lets a user opt out per-chat to run providers that
+            // manage their own tools; the workspace folder-policy checks in
+            // WorkingDirScopeInspector still apply because workspace_context is set.
             context.folder_policy = policy;
         }
 
@@ -6587,6 +6591,58 @@ mod tests {
 
         let database = std::fs::read(temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME)).unwrap();
         assert!(!String::from_utf8_lossy(&database).contains("GOSLING_SENTINEL_SECRET"));
+    }
+
+    #[tokio::test]
+    async fn workspace_session_restriction_opt_out_survives_reload() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "workspace session".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let context = WorkspaceSessionContext {
+            workspace_id: "workspace-id".into(),
+            workspace_name: "Project".into(),
+            primary_working_folder: temp_dir.path().to_string_lossy().to_string(),
+            folders: Vec::new(),
+            product_output_folders: Vec::new(),
+            folder_policy: Default::default(),
+        };
+        sm.update(&session.id)
+            .workspace_snapshot(
+                "workspace-id".into(),
+                "Project".into(),
+                None,
+                None,
+                None,
+                context.clone(),
+            )
+            .apply()
+            .await
+            .unwrap();
+
+        // Workspaces are restricted by default.
+        let restricted = sm.get_session(&session.id, false).await.unwrap();
+        assert!(restricted.restrict_tools_to_working_dirs);
+
+        // Opting out per-chat must persist through reload rather than being forced
+        // back on for workspace sessions (regression: the loader used to hard-set it).
+        sm.update(&session.id)
+            .restrict_tools_to_working_dirs(false)
+            .apply()
+            .await
+            .unwrap();
+        let opted_out = sm.get_session(&session.id, false).await.unwrap();
+        assert!(!opted_out.restrict_tools_to_working_dirs);
+        // The workspace binding and folder policy remain intact after opting out.
+        assert_eq!(opted_out.workspace_id.as_deref(), Some("workspace-id"));
+        assert!(opted_out.workspace_context.is_some());
     }
 
     #[tokio::test]

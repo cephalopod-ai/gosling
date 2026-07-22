@@ -191,15 +191,19 @@ impl GoslingAcpAgent {
         req: SetSessionWorkingDirRestrictionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let session = self
-            .session_manager
+        // The working-directory *set* stays pinned for workspace sessions (see the
+        // other endpoints), but the restriction flag is intentionally togglable:
+        // turning it off is the opt-in that lets providers which run their own
+        // tools (Claude Code CLI, Codex CLI, …) be used in a workspace. The
+        // workspace folder-policy inspector still enforces the boundary for any
+        // tool Gosling routes through its own pipeline.
+        self.session_manager
             .get_session(session_id, false)
             .await
             .map_err(|_| {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
-        reject_workspace_folder_policy_mutation(&session)?;
 
         self.session_manager
             .update(session_id)
