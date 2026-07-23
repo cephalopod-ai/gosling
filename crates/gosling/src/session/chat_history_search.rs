@@ -227,7 +227,7 @@ impl<'a> ChatHistorySearch<'a> {
         content_vec
             .into_iter()
             .filter_map(|content| match content {
-                MessageContent::Text(tc) => Some(tc.text),
+                MessageContent::Text(tc) => Some(tc.raw.text),
                 MessageContent::ToolRequest(tr) => {
                     Some(format!("[Tool: {}]", tr.to_readable_string()))
                 }
