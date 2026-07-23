@@ -76,7 +76,7 @@ const i18n = defineMessages({
   restrictToggleDescriptionWorkspace: {
     id: 'workingDirectoriesMenu.restrictToggleDescriptionWorkspace',
     defaultMessage:
-      'On by default for workspaces. While on, providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked because Gosling can’t scope them to these directories. Turn off to use them.',
+      'Off by default. While on, providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked because Gosling can’t scope them to these directories, and other actions outside the directories above need your approval. The workspace folder policy is enforced either way.',
   },
   failedToUpdateRestriction: {
     id: 'workingDirectoriesMenu.failedToUpdateRestriction',

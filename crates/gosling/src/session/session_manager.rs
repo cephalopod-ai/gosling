@@ -459,7 +459,10 @@ impl<'a> SessionUpdateBuilder<'a> {
                 .filter(|path| path != &primary)
                 .collect(),
         );
-        self.restrict_tools_to_working_dirs = Some(true);
+        // The restriction flag is left to the stored column default (off / opt-in):
+        // the WorkingDirScopeInspector still enforces this workspace's folder policy
+        // because workspace_context is set, so scoping holds without pre-blocking
+        // providers that run their own tools (Claude Code CLI, Codex CLI, …).
         context.folder_policy = folder_policy;
         self.workspace_id = Some(Some(workspace_id));
         self.workspace_name = Some(Some(workspace_name));
@@ -1113,9 +1116,9 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .filter(|path| path != &primary)
                 .collect();
             // `restrict_tools_to_working_dirs` comes from the stored column, which
-            // workspace_snapshot seeds to true. Respecting it here (rather than
-            // forcing true) lets a user opt out per-chat to run providers that
-            // manage their own tools; the workspace folder-policy checks in
+            // defaults off (opt-in). Respecting it here (rather than forcing a value)
+            // lets a user opt in per-chat while providers that manage their own tools
+            // stay usable by default; the workspace folder-policy checks in
             // WorkingDirScopeInspector still apply because workspace_context is set.
             context.folder_policy = policy;
         }
@@ -4024,7 +4027,8 @@ impl SessionStorage {
         let result: Result<()> = async {
             let mut builder = session_manager
                 .update(&new_session.id)
-                .extension_data(original_session.extension_data);
+                .extension_data(original_session.extension_data)
+                .restrict_tools_to_working_dirs(original_session.restrict_tools_to_working_dirs);
 
             if !original_session.additional_working_dirs.is_empty() {
                 builder = builder.additional_working_dirs(original_session.additional_working_dirs);
@@ -6583,8 +6587,12 @@ mod tests {
         pinned_context.folder_policy = context.effective_folder_policy();
         assert_eq!(reloaded.workspace_id.as_deref(), Some("workspace-id"));
         assert_eq!(reloaded.workspace_context, Some(pinned_context.clone()));
-        assert!(reloaded.restrict_tools_to_working_dirs);
+        assert!(!reloaded.restrict_tools_to_working_dirs);
         let copied = sm.copy_session(&session.id, "copy".into()).await.unwrap();
+        assert_eq!(
+            copied.restrict_tools_to_working_dirs,
+            reloaded.restrict_tools_to_working_dirs
+        );
         assert_eq!(copied.workspace_id, reloaded.workspace_id);
         assert_eq!(copied.credential_profile_id, reloaded.credential_profile_id);
         assert_eq!(copied.workspace_context, Some(pinned_context));
@@ -6594,7 +6602,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workspace_session_restriction_opt_out_survives_reload() {
+    async fn workspace_session_restriction_defaults_off_and_opt_in_survives_reload() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
         let session = sm
@@ -6627,22 +6635,23 @@ mod tests {
             .await
             .unwrap();
 
-        // Workspaces are restricted by default.
-        let restricted = sm.get_session(&session.id, false).await.unwrap();
-        assert!(restricted.restrict_tools_to_working_dirs);
+        // Workspaces are unrestricted by default (opt-in), so providers that run
+        // their own tools stay usable without a per-chat toggle.
+        let unrestricted = sm.get_session(&session.id, false).await.unwrap();
+        assert!(!unrestricted.restrict_tools_to_working_dirs);
 
-        // Opting out per-chat must persist through reload rather than being forced
-        // back on for workspace sessions (regression: the loader used to hard-set it).
+        // Opting in per-chat must persist through reload rather than being forced
+        // back off for workspace sessions (the loader must respect the stored column).
         sm.update(&session.id)
-            .restrict_tools_to_working_dirs(false)
+            .restrict_tools_to_working_dirs(true)
             .apply()
             .await
             .unwrap();
-        let opted_out = sm.get_session(&session.id, false).await.unwrap();
-        assert!(!opted_out.restrict_tools_to_working_dirs);
-        // The workspace binding and folder policy remain intact after opting out.
-        assert_eq!(opted_out.workspace_id.as_deref(), Some("workspace-id"));
-        assert!(opted_out.workspace_context.is_some());
+        let opted_in = sm.get_session(&session.id, false).await.unwrap();
+        assert!(opted_in.restrict_tools_to_working_dirs);
+        // The workspace binding and folder policy remain intact after opting in.
+        assert_eq!(opted_in.workspace_id.as_deref(), Some("workspace-id"));
+        assert!(opted_in.workspace_context.is_some());
     }
 
     #[tokio::test]

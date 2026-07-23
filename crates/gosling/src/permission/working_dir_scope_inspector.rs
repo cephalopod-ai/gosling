@@ -947,7 +947,9 @@ mod tests {
             .get_session(&session.id, false)
             .await
             .unwrap();
-        assert!(reloaded.restrict_tools_to_working_dirs);
+        // Workspace folder policy is enforced above via workspace_context, not the
+        // opt-in restriction flag, which now defaults off for workspace sessions.
+        assert!(!reloaded.restrict_tools_to_working_dirs);
         assert!(reloaded.additional_working_dirs.contains(&reference));
         assert!(reloaded.additional_working_dirs.contains(&output));
     }
