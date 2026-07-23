@@ -3,7 +3,7 @@ use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, QueryBuilder, Sqlite};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize)]
@@ -190,7 +190,8 @@ impl<'a> ChatHistorySearch<'a> {
     }
 
     fn process_rows(&self, rows: Vec<SqlQueryRow>) -> HashMap<String, SessionMessageGroup> {
-        let mut session_messages: HashMap<String, SessionMessageGroup> = HashMap::new();
+        let mut session_messages: HashMap<String, SessionMessageGroup> =
+            HashMap::with_capacity(rows.len());
 
         for (
             session_id,
@@ -206,15 +207,15 @@ impl<'a> ChatHistorySearch<'a> {
                 let text_parts = Self::extract_text_content(content_vec);
 
                 if !text_parts.is_empty() {
-                    let entry = session_messages.entry(session_id.clone()).or_insert((
-                        session_description.clone(),
-                        session_working_dir.clone(),
-                        session_created_at,
-                        Vec::new(),
-                    ));
-                    entry
-                        .3
-                        .push((role.clone(), text_parts.join("\n"), timestamp));
+                    let entry = session_messages.entry(session_id).or_insert_with(|| {
+                        (
+                            session_description,
+                            session_working_dir,
+                            session_created_at,
+                            Vec::new(),
+                        )
+                    });
+                    entry.3.push((role, text_parts.join("\n"), timestamp));
                 }
             }
         }
@@ -226,12 +227,12 @@ impl<'a> ChatHistorySearch<'a> {
         content_vec
             .into_iter()
             .filter_map(|content| match content {
-                MessageContent::Text(ref tc) => Some(tc.text.clone()),
-                MessageContent::ToolRequest(ref tr) => {
+                MessageContent::Text(tc) => Some(tc.text),
+                MessageContent::ToolRequest(tr) => {
                     Some(format!("[Tool: {}]", tr.to_readable_string()))
                 }
                 MessageContent::ToolResponse(_) => Some("[Tool Response]".to_string()),
-                MessageContent::Thinking(ref t) => Some(format!("[Thinking: {}]", t.thinking)),
+                MessageContent::Thinking(t) => Some(format!("[Thinking: {}]", t.thinking)),
                 _ => None,
             })
             .collect()
@@ -241,17 +242,31 @@ impl<'a> ChatHistorySearch<'a> {
         &self,
         session_messages: &HashMap<String, SessionMessageGroup>,
     ) -> Result<HashMap<String, usize>> {
-        let mut session_totals: HashMap<String, usize> = HashMap::new();
-        for session_id in session_messages.keys() {
-            let count: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE session_id = ?")
-                    .bind(session_id)
-                    .fetch_one(self.pool)
-                    .await
-                    .unwrap_or(0);
-            session_totals.insert(session_id.clone(), count as usize);
+        if session_messages.is_empty() {
+            return Ok(HashMap::new());
         }
-        Ok(session_totals)
+
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT session_id, COUNT(*) FROM messages WHERE session_id IN (",
+        );
+        {
+            let mut session_ids = query.separated(", ");
+            for session_id in session_messages.keys() {
+                session_ids.push_bind(session_id);
+            }
+        }
+        query.push(") GROUP BY session_id");
+
+        let totals = query
+            .build_query_as::<(String, i64)>()
+            .fetch_all(self.pool)
+            .await
+            .unwrap_or_default();
+
+        Ok(totals
+            .into_iter()
+            .map(|(session_id, count)| (session_id, count as usize))
+            .collect())
     }
 
     fn convert_to_results(

@@ -45,7 +45,7 @@ impl XlsxTool {
     }
 
     pub fn list_worksheets(&self) -> Result<Vec<WorksheetInfo>> {
-        let mut worksheets = Vec::new();
+        let mut worksheets = Vec::with_capacity(self.workbook.get_sheet_collection().len());
         for (index, worksheet) in self.workbook.get_sheet_collection().iter().enumerate() {
             let (column_count, row_count) = self.get_worksheet_dimensions(worksheet)?;
             worksheets.push(WorksheetInfo {
@@ -72,26 +72,14 @@ impl XlsxTool {
     }
 
     fn get_worksheet_dimensions(&self, worksheet: &Worksheet) -> Result<(usize, usize)> {
-        // Returns (column_count, row_count) for the worksheet
-        let mut max_col = 0;
-        let mut max_row = 0;
-
-        // Iterate through all rows
-        for row_num in 1..=worksheet.get_highest_row() {
-            for col_num in 1..=worksheet.get_highest_column() {
-                if let Some(cell) = worksheet.get_cell((col_num, row_num)) {
-                    let coord = cell.get_coordinate();
-                    max_col = max_col.max(*coord.get_col_num() as usize);
-                    max_row = max_row.max(*coord.get_row_num() as usize);
-                }
-            }
-        }
-
-        Ok((max_col, max_row))
+        Ok((
+            worksheet.get_highest_column() as usize,
+            worksheet.get_highest_row() as usize,
+        ))
     }
 
     pub fn get_column_names(&self, worksheet: &Worksheet) -> Result<Vec<String>> {
-        let mut names = Vec::new();
+        let mut names = Vec::with_capacity(worksheet.get_highest_column() as usize);
         for col_num in 1..=worksheet.get_highest_column() {
             if let Some(cell) = worksheet.get_cell((col_num, 1)) {
                 names.push(cell.get_value().into_owned());
@@ -120,11 +108,11 @@ impl XlsxTool {
             limit for a single get_range call. Narrow the range or read it in smaller pieces."
         );
 
-        let mut values = Vec::new();
+        let mut values = Vec::with_capacity(row_count as usize);
 
         // Iterate through rows first, then columns
         for row_idx in start_row..=end_row {
-            let mut row_values = Vec::new();
+            let mut row_values = Vec::with_capacity(col_count as usize);
             for col_idx in start_col..=end_col {
                 let cell_value = if let Some(cell) = worksheet.get_cell((col_idx, row_idx)) {
                     CellValue {
@@ -187,22 +175,20 @@ impl XlsxTool {
     ) -> Result<Vec<(u32, u32)>> {
         // Returns a vector of (row, column) coordinates where matches are found
         let mut matches = Vec::new();
-        let search_text = if !case_sensitive {
-            search_text.to_lowercase()
-        } else {
-            search_text.to_string()
-        };
+        let normalized_search_text = (!case_sensitive).then(|| search_text.to_lowercase());
 
         for row_num in 1..=worksheet.get_highest_row() {
             for col_num in 1..=worksheet.get_highest_column() {
                 if let Some(cell) = worksheet.get_cell((col_num, row_num)) {
-                    let cell_value = if !case_sensitive {
-                        cell.get_value().to_lowercase()
+                    let is_match = if let Some(normalized_search_text) = &normalized_search_text {
+                        cell.get_value()
+                            .to_lowercase()
+                            .contains(normalized_search_text)
                     } else {
-                        cell.get_value().to_string()
+                        cell.get_value().contains(search_text)
                     };
 
-                    if cell_value.contains(&search_text) {
+                    if is_match {
                         let coord = cell.get_coordinate();
                         matches.push((*coord.get_row_num(), *coord.get_col_num()));
                     }

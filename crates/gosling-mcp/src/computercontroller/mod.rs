@@ -1792,24 +1792,24 @@ async fn ensure_public_http_url(raw: &str) -> Result<(), String> {
     }
     let port = url.port_or_known_default().unwrap_or(443);
     let host_owned = host.to_string();
-    let addrs = tokio::task::spawn_blocking(move || {
+    let (resolved, disallowed_address) = tokio::task::spawn_blocking(move || {
         use std::net::ToSocketAddrs;
-        (host_owned.as_str(), port)
-            .to_socket_addrs()
-            .map(|iter| iter.collect::<Vec<std::net::SocketAddr>>())
+        let mut resolved = false;
+        for address in (host_owned.as_str(), port).to_socket_addrs()? {
+            resolved = true;
+            if is_disallowed_ip(address.ip()) {
+                return Ok::<_, std::io::Error>((resolved, Some(address.ip())));
+            }
+        }
+        Ok((resolved, None))
     })
     .await
     .map_err(|e| format!("DNS resolver task failed: {e}"))?
     .map_err(|e| format!("failed to resolve host '{host}': {e}"))?;
-    let mut resolved = false;
-    for addr in addrs {
-        resolved = true;
-        if is_disallowed_ip(addr.ip()) {
-            return Err(format!(
-                "refusing to fetch from non-public address {} (host '{host}')",
-                addr.ip()
-            ));
-        }
+    if let Some(address) = disallowed_address {
+        return Err(format!(
+            "refusing to fetch from non-public address {address} (host '{host}')"
+        ));
     }
     if !resolved {
         return Err(format!("host '{host}' did not resolve"));

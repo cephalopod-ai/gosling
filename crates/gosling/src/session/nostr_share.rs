@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -286,10 +286,11 @@ pub fn parse_deeplink(deeplink: &str) -> Result<ParsedShareLink> {
 }
 
 fn normalize_relays(relays: Vec<String>) -> Vec<String> {
-    let mut normalized = Vec::new();
+    let mut normalized = Vec::with_capacity(relays.len());
+    let mut seen = HashSet::with_capacity(relays.len());
     for relay in relays {
         let relay = relay.trim();
-        if relay.is_empty() || normalized.iter().any(|existing| existing == relay) {
+        if relay.is_empty() || !seen.insert(relay.to_string()) {
             continue;
         }
         normalized.push(relay.to_string());
