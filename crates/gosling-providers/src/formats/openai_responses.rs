@@ -272,6 +272,30 @@ fn is_known_responses_stream_event_type(event_type: &str) -> bool {
     )
 }
 
+/// Errors delivered as stream events (rather than HTTP statuses) still need
+/// transient/permanent classification so the retry layer treats an in-band
+/// `server_error` like a 5xx instead of a permanent request failure.
+fn classify_stream_error(context: &str, error: &Value) -> ProviderError {
+    let details = format!("{context}: {error:?}");
+    let marker = |needle: &str| {
+        [error.get("type"), error.get("code")]
+            .iter()
+            .flatten()
+            .filter_map(|value| value.as_str())
+            .any(|value| value.contains(needle))
+    };
+    if marker("server_error") {
+        ProviderError::ServerError(details)
+    } else if marker("rate_limit") {
+        ProviderError::RateLimitExceeded {
+            details,
+            retry_delay: None,
+        }
+    } else {
+        ProviderError::RequestFailed(details)
+    }
+}
+
 fn parse_responses_stream_event(data_line: &str) -> anyhow::Result<Option<ResponsesStreamEvent>> {
     let raw_event: Value = serde_json::from_str(data_line).map_err(|e| {
         ProviderError::stream_decode_error(format!(
@@ -934,17 +958,11 @@ where
                 }
 
                 ResponsesStreamEvent::ResponseFailed { error, .. } => {
-                    Err::<(), ProviderError>(ProviderError::RequestFailed(format!(
-                        "Responses API failed: {:?}",
-                        error
-                    )))?;
+                    Err::<(), ProviderError>(classify_stream_error("Responses API failed", &error))?;
                 }
 
                 ResponsesStreamEvent::Error { error } => {
-                    Err::<(), ProviderError>(ProviderError::RequestFailed(format!(
-                        "Responses API error: {:?}",
-                        error
-                    )))?;
+                    Err::<(), ProviderError>(classify_stream_error("Responses API error", &error))?;
                 }
 
                 _ => {
@@ -1277,6 +1295,38 @@ mod tests {
             .contains("Responses API error"));
 
         Ok(())
+    }
+
+    #[test]
+    fn classify_stream_error_marks_server_error_transient() {
+        let error = serde_json::json!({
+            "type": "server_error",
+            "code": "server_error",
+            "message": "An error occurred while processing your request.",
+            "param": null,
+        });
+        assert!(matches!(
+            classify_stream_error("Responses API error", &error),
+            ProviderError::ServerError(details) if details.contains("Responses API error")
+        ));
+    }
+
+    #[test]
+    fn classify_stream_error_marks_rate_limit_transient() {
+        let error = serde_json::json!({"type": "rate_limit_exceeded", "message": "slow down"});
+        assert!(matches!(
+            classify_stream_error("Responses API failed", &error),
+            ProviderError::RateLimitExceeded { .. }
+        ));
+    }
+
+    #[test]
+    fn classify_stream_error_defaults_to_request_failed() {
+        let error = serde_json::json!({"type": "invalid_request_error", "message": "bad input"});
+        assert!(matches!(
+            classify_stream_error("Responses API error", &error),
+            ProviderError::RequestFailed(details) if details.contains("invalid_request_error")
+        ));
     }
 
     #[test]

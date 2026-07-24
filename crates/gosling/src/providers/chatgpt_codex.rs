@@ -2,8 +2,8 @@ use crate::config::paths::Paths;
 use crate::conversation::message::{Message, MessageContent};
 use crate::providers::api_client::{AuthProvider, RequestBuilderDecorator};
 use crate::providers::base::{
-    ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata,
-    DEFAULT_PROVIDER_TIMEOUT_SECS,
+    await_stream_start, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
+    ProviderMetadata, DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
 use crate::providers::openai_compatible::handle_status;
 use crate::providers::retry::ProviderRetry;
@@ -1106,30 +1106,34 @@ impl Provider for ChatGptCodexProvider {
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
         payload["stream"] = serde_json::Value::Bool(true);
 
-        let response = self
-            .with_retry(|| async {
-                let payload_clone = payload.clone();
-                self.post_streaming(&model_config.model_name, &payload_clone)
-                    .await
-            })
-            .await?;
+        // The retry wraps request setup AND the first stream event: transient
+        // failures the Responses API reports as an in-band `error`/
+        // `response.failed` event (rather than an HTTP status) arrive at
+        // stream start and would otherwise escape retry.
+        self.with_retry(|| async {
+            let response = self
+                .post_streaming(&model_config.model_name, &payload)
+                .await?;
 
-        let stream = response.bytes_stream().map_err(io::Error::other);
+            let stream = response.bytes_stream().map_err(io::Error::other);
 
-        Ok(Box::pin(try_stream! {
-            let stream_reader = StreamReader::new(stream);
-            let framed = FramedRead::new(stream_reader, LinesCodec::new()).map_err(anyhow::Error::from);
+            let message_stream: MessageStream = Box::pin(try_stream! {
+                let stream_reader = StreamReader::new(stream);
+                let framed = FramedRead::new(stream_reader, LinesCodec::new()).map_err(anyhow::Error::from);
 
-            let message_stream = responses_api_to_streaming_message(framed);
-            pin!(message_stream);
-            while let Some(message) = message_stream.next().await {
-                let (message, usage) = message.map_err(|e| {
-                    e.downcast::<ProviderError>()
-                        .unwrap_or_else(ProviderError::stream_decode_error)
-                })?;
-                yield (message, usage);
-            }
-        }))
+                let message_stream = responses_api_to_streaming_message(framed);
+                pin!(message_stream);
+                while let Some(message) = message_stream.next().await {
+                    let (message, usage) = message.map_err(|e| {
+                        e.downcast::<ProviderError>()
+                            .unwrap_or_else(ProviderError::stream_decode_error)
+                    })?;
+                    yield (message, usage);
+                }
+            });
+            await_stream_start(message_stream).await
+        })
+        .await
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {

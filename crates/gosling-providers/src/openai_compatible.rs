@@ -13,7 +13,7 @@ use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::io::StreamReader;
 
 use super::api_client::ApiClient;
-use super::base::{stream_from_single_message, MessageStream, Provider};
+use super::base::{await_stream_start, stream_from_single_message, MessageStream, Provider};
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use crate::errors::ProviderError;
@@ -116,25 +116,48 @@ impl Provider for OpenAiCompatibleProvider {
             tools,
             self.supports_streaming,
         )?;
-        let mut log = start_log(model_config, &payload)?;
-
         let completions_path = format!("{}chat/completions", self.completions_prefix);
-        let response = self
-            .with_retry(|| async {
-                let resp = self
-                    .api_client
-                    .response_post(&completions_path, &payload)
-                    .await?;
-                handle_status(resp).await
-            })
-            .await
-            .inspect_err(|e| {
-                let _ = log.error(e);
-            })?;
 
         if self.supports_streaming {
-            stream_openai_compat(response, log)
+            // The retry wraps request setup AND the first stream event:
+            // transient failures reported as an in-band SSE `error` chunk
+            // (rather than an HTTP status) arrive at stream start and would
+            // otherwise escape retry.
+            self.with_retry(|| async {
+                let mut log = start_log(model_config, &payload)?;
+                let result = async {
+                    let resp = self
+                        .api_client
+                        .response_post(&completions_path, &payload)
+                        .await?;
+                    handle_status(resp).await
+                }
+                .await;
+                let response = match result {
+                    Ok(response) => response,
+                    Err(error) => {
+                        let _ = log.error(&error);
+                        return Err(error);
+                    }
+                };
+                await_stream_start(stream_openai_compat(response, log)?).await
+            })
+            .await
         } else {
+            let mut log = start_log(model_config, &payload)?;
+
+            let response = self
+                .with_retry(|| async {
+                    let resp = self
+                        .api_client
+                        .response_post(&completions_path, &payload)
+                        .await?;
+                    handle_status(resp).await
+                })
+                .await
+                .inspect_err(|e| {
+                    let _ = log.error(e);
+                })?;
             let json: serde_json::Value = response.json().await.map_err(|e| {
                 ProviderError::RequestFailed(format!("Failed to parse JSON: {}", e))
             })?;

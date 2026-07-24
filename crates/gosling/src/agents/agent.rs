@@ -1711,6 +1711,21 @@ impl Agent {
         false
     }
 
+    /// Pre-flight for paths that reach the provider. Must run before the user
+    /// message is persisted: bailing after `add_message` leaves a stray copy in
+    /// the conversation that gets replayed to the provider once a later submit
+    /// succeeds.
+    async fn ensure_provider_ready(&self, restrict_to_working_dirs: bool) -> Result<()> {
+        let provider = self.provider().await?;
+        if restrict_to_working_dirs && provider.executes_tools_outside_gosling() {
+            anyhow::bail!(
+                "Provider '{}' runs tools outside Gosling's inspection pipeline, so it can't be used while this session restricts tools to working directories. Turn off \"Restrict tools to working directories\" for this session to allow it.",
+                provider.get_name()
+            );
+        }
+        Ok(())
+    }
+
     #[instrument(
         skip(self, user_message, session_config, cancel_token),
         fields(user_message, trace_input, session.id = %session_config.id)
@@ -1815,6 +1830,8 @@ impl Agent {
                 // user prompt. Record the command and its confirmation as
                 // user-visible only, then inject an agent-visible kickoff and
                 // fall through into the reply loop.
+                self.ensure_provider_ready(session.restrict_tools_to_working_dirs)
+                    .await?;
                 session_manager
                     .add_message(
                         &session_config.id,
@@ -1880,6 +1897,8 @@ impl Agent {
                 }));
             }
             Ok(Some(resolved_message)) => {
+                self.ensure_provider_ready(session.restrict_tools_to_working_dirs)
+                    .await?;
                 session_manager
                     .add_message(
                         &session_config.id,
@@ -1894,6 +1913,8 @@ impl Agent {
                     .await?;
             }
             Ok(None) => {
+                self.ensure_provider_ready(session.restrict_tools_to_working_dirs)
+                    .await?;
                 session_manager
                     .add_message(&session_config.id, &user_message)
                     .await?;
@@ -1914,12 +1935,6 @@ impl Agent {
                 .await?
         };
         let provider = self.provider().await?;
-        if session.restrict_tools_to_working_dirs && provider.executes_tools_outside_gosling() {
-            anyhow::bail!(
-                "Provider '{}' runs tools outside Gosling's inspection pipeline, so it can't be used while this session restricts tools to working directories. Turn off \"Restrict tools to working directories\" for this session to allow it.",
-                provider.get_name()
-            );
-        }
         let conversation = session
             .conversation
             .clone()

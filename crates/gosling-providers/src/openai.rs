@@ -24,7 +24,7 @@ use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::base::{MessageStream, ProviderDescriptor};
+use crate::base::{await_stream_start, MessageStream, ProviderDescriptor};
 use crate::model::ModelConfig;
 use rmcp::model::Tool;
 
@@ -658,33 +658,49 @@ impl Provider for OpenAiProvider {
         if self.should_use_responses_api_for_provider(&model_config.model_name) {
             let mut payload = create_responses_request(model_config, system, messages, tools)?;
             payload["stream"] = serde_json::Value::Bool(self.supports_streaming);
-
-            let mut log = start_log(model_config, &payload)?;
-
-            let response = self
-                .with_retry(|| async {
-                    let payload_clone = payload.clone();
-                    let resp = self
-                        .api_client
-                        .response_post(
-                            &Self::map_base_path(
-                                &self.base_path,
-                                "responses",
-                                OPEN_AI_DEFAULT_RESPONSES_PATH,
-                            ),
-                            &payload_clone,
-                        )
-                        .await?;
-                    handle_status(resp).await
-                })
-                .await
-                .inspect_err(|e| {
-                    let _ = log.error(e);
-                })?;
+            let responses_path =
+                Self::map_base_path(&self.base_path, "responses", OPEN_AI_DEFAULT_RESPONSES_PATH);
 
             if self.supports_streaming {
-                stream_responses_compat(response, log)
+                // The retry wraps request setup AND the first stream event:
+                // transient failures the Responses API reports as an in-band
+                // `error`/`response.failed` event (rather than an HTTP status)
+                // arrive at stream start and would otherwise escape retry.
+                self.with_retry(|| async {
+                    let mut log = start_log(model_config, &payload)?;
+                    let result = async {
+                        let resp = self
+                            .api_client
+                            .response_post(&responses_path, &payload)
+                            .await?;
+                        handle_status(resp).await
+                    }
+                    .await;
+                    let response = match result {
+                        Ok(response) => response,
+                        Err(error) => {
+                            let _ = log.error(&error);
+                            return Err(error);
+                        }
+                    };
+                    await_stream_start(stream_responses_compat(response, log)?).await
+                })
+                .await
             } else {
+                let mut log = start_log(model_config, &payload)?;
+
+                let response = self
+                    .with_retry(|| async {
+                        let resp = self
+                            .api_client
+                            .response_post(&responses_path, &payload)
+                            .await?;
+                        handle_status(resp).await
+                    })
+                    .await
+                    .inspect_err(|e| {
+                        let _ = log.error(e);
+                    })?;
                 let json: serde_json::Value = response.json().await.map_err(|e| {
                     ProviderError::RequestFailed(format!("Failed to parse JSON: {}", e))
                 })?;
@@ -721,24 +737,43 @@ impl Provider for OpenAiProvider {
                 },
             )?;
             let payload = self.sanitize_request_for_compat(payload);
-            let mut log = start_log(model_config, &payload)?;
-
-            let response = self
-                .with_retry(|| async {
-                    let resp = self
-                        .api_client
-                        .response_post(&self.base_path, &payload)
-                        .await?;
-                    handle_status(resp).await
-                })
-                .await
-                .inspect_err(|e| {
-                    let _ = log.error(e);
-                })?;
 
             if self.supports_streaming {
-                stream_openai_compat(response, log)
+                self.with_retry(|| async {
+                    let mut log = start_log(model_config, &payload)?;
+                    let result = async {
+                        let resp = self
+                            .api_client
+                            .response_post(&self.base_path, &payload)
+                            .await?;
+                        handle_status(resp).await
+                    }
+                    .await;
+                    let response = match result {
+                        Ok(response) => response,
+                        Err(error) => {
+                            let _ = log.error(&error);
+                            return Err(error);
+                        }
+                    };
+                    await_stream_start(stream_openai_compat(response, log)?).await
+                })
+                .await
             } else {
+                let mut log = start_log(model_config, &payload)?;
+
+                let response = self
+                    .with_retry(|| async {
+                        let resp = self
+                            .api_client
+                            .response_post(&self.base_path, &payload)
+                            .await?;
+                        handle_status(resp).await
+                    })
+                    .await
+                    .inspect_err(|e| {
+                        let _ = log.error(e);
+                    })?;
                 let json: serde_json::Value = response.json().await.map_err(|e| {
                     ProviderError::RequestFailed(format!("Failed to parse JSON: {}", e))
                 })?;

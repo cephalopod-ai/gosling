@@ -557,6 +557,18 @@ pub fn stream_from_single_message(message: Message, usage: ProviderUsage) -> Mes
     Box::pin(stream)
 }
 
+/// Await the stream's first item so a failure at stream start — e.g. an SSE
+/// `error` event sent instead of any content — surfaces as an `Err` from this
+/// call, where a `with_retry` wrapper can re-issue the whole request. On
+/// success the item is reattached, so callers see an identical stream.
+pub async fn await_stream_start(mut stream: MessageStream) -> Result<MessageStream, ProviderError> {
+    use futures::StreamExt;
+    match stream.next().await {
+        Some(Err(error)) => Err(error),
+        first => Ok(Box::pin(futures::stream::iter(first).chain(stream))),
+    }
+}
+
 /// Durable-file convention for a self-managing backend (a provider whose
 /// [`Provider::manages_own_context`] is true), keyed off its provider name:
 /// Claude Code reads `CLAUDE.md`; other agent CLIs (Codex, Amp, Copilot,
@@ -765,6 +777,48 @@ pub trait Provider: Send + Sync {
 mod tests {
     use super::*;
     use test_case::test_case;
+
+    #[tokio::test]
+    async fn await_stream_start_surfaces_first_item_error() {
+        use futures::stream;
+        let stream: MessageStream = Box::pin(stream::once(async {
+            Err(ProviderError::ServerError("boom".into()))
+        }));
+        let result = await_stream_start(stream).await;
+        assert!(matches!(result, Err(ProviderError::ServerError(_))));
+    }
+
+    #[tokio::test]
+    async fn await_stream_start_preserves_items_and_order() {
+        use futures::{stream, StreamExt};
+        let message = Message::new(
+            rmcp::model::Role::Assistant,
+            chrono::Utc::now().timestamp(),
+            vec![MessageContent::text("hello")],
+        );
+        let stream: MessageStream = Box::pin(stream::iter(vec![
+            Ok((Some(message), None)),
+            Err(ProviderError::ServerError("late failure".into())),
+        ]));
+        let mut resumed = await_stream_start(stream).await.unwrap();
+
+        let first = resumed.next().await.unwrap().unwrap();
+        assert_eq!(first.0.unwrap().as_concat_text(), "hello");
+        // Errors after the first item still flow through instead of retrying.
+        assert!(matches!(
+            resumed.next().await,
+            Some(Err(ProviderError::ServerError(_)))
+        ));
+        assert!(resumed.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn await_stream_start_passes_through_empty_stream() {
+        use futures::{stream, StreamExt};
+        let stream: MessageStream = Box::pin(stream::empty());
+        let mut resumed = await_stream_start(stream).await.unwrap();
+        assert!(resumed.next().await.is_none());
+    }
 
     #[test]
     fn durable_memory_file_maps_claude_to_claude_md_and_rest_to_agents_md() {
