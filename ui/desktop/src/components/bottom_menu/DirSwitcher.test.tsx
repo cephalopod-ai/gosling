@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { IntlTestWrapper } from '../../i18n/test-utils';
 import { DirSwitcher } from './DirSwitcher';
 

@@ -26,7 +26,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 23;
+pub const CURRENT_SCHEMA_VERSION: i32 = 24;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -2340,6 +2340,18 @@ impl SessionStorage {
                 .await?;
             }
             23 => Self::create_tool_operations_schema(tx).await?,
+            24 => {
+                // The restriction flag became opt-in (default off). Builds
+                // before this version force-seeded it on for every workspace
+                // session, so clear it exactly there. Non-workspace sessions
+                // keep their value: any `true` on those was a deliberate
+                // per-chat opt-in or an untrusted import.
+                sqlx::query(
+                    "UPDATE sessions SET restrict_tools_to_working_dirs = FALSE WHERE workspace_id IS NOT NULL",
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -6652,6 +6664,78 @@ mod tests {
         // The workspace binding and folder policy remain intact after opting in.
         assert_eq!(opted_in.workspace_id.as_deref(), Some("workspace-id"));
         assert!(opted_in.workspace_context.is_some());
+    }
+
+    #[tokio::test]
+    async fn migration_24_clears_force_seeded_workspace_restriction_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let workspace_session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "workspace session".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let context = WorkspaceSessionContext {
+            workspace_id: "workspace-id".into(),
+            workspace_name: "Project".into(),
+            primary_working_folder: temp_dir.path().to_string_lossy().to_string(),
+            folders: Vec::new(),
+            product_output_folders: Vec::new(),
+            folder_policy: Default::default(),
+        };
+        sm.update(&workspace_session.id)
+            .workspace_snapshot(
+                "workspace-id".into(),
+                "Project".into(),
+                None,
+                None,
+                None,
+                context,
+            )
+            .restrict_tools_to_working_dirs(true)
+            .apply()
+            .await
+            .unwrap();
+        let plain_session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "plain session".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        sm.update(&plain_session.id)
+            .restrict_tools_to_working_dirs(true)
+            .apply()
+            .await
+            .unwrap();
+        drop(sm);
+
+        // Rewind the schema version so reopening replays migration 24 against
+        // data shaped like a pre-24 install (workspace restriction forced on).
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let pool = SqlitePoolOptions::new()
+            .connect_with(SqliteConnectOptions::new().filename(&db_path))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 23 WHERE version >= 24")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let workspace_reloaded = sm.get_session(&workspace_session.id, false).await.unwrap();
+        assert!(!workspace_reloaded.restrict_tools_to_working_dirs);
+        assert!(workspace_reloaded.workspace_context.is_some());
+        // A deliberate opt-in on a non-workspace chat survives the migration.
+        let plain_reloaded = sm.get_session(&plain_session.id, false).await.unwrap();
+        assert!(plain_reloaded.restrict_tools_to_working_dirs);
     }
 
     #[tokio::test]

@@ -285,11 +285,6 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
                 className={`z-[100] ${isDirectoryChooserOpen ? 'opacity-50' : 'hover:cursor-pointer hover:text-text-primary'} text-text-primary/70 text-xs flex items-center transition-colors pl-1 [&>svg]:size-4 ${className}`}
                 onClick={handleDirectoryClick}
                 disabled={isDirectoryChooserOpen}
-                aria-label={
-                  renderChatInfo
-                    ? `Open chat information for ${workingDir.replace(/\/+$/, '').split('/').pop() || workingDir}`
-                    : undefined
-                }
               >
                 <FolderDot className="mr-1" size={16} />
                 <div className="max-w-[200px] truncate">
@@ -298,20 +293,8 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <DropdownMenuContent
-            className={
-              renderChatInfo
-                ? 'z-[200] w-auto border-0 bg-transparent p-0 shadow-none'
-                : 'w-80'
-            }
-            side="top"
-            align="start"
-          >
-            {renderChatInfo ? (
-              renderChatInfo(() => setIsMenuOpen(false))
-            ) : (
-              <>
-                <DropdownMenuLabel>{intl.formatMessage(i18n.currentDirectory)}</DropdownMenuLabel>
+          <DropdownMenuContent className="w-80" side="top" align="start">
+            <DropdownMenuLabel>{intl.formatMessage(i18n.currentDirectory)}</DropdownMenuLabel>
             <DropdownMenuItem
               onSelect={() => void window.electron.openDirectoryInExplorer(workingDir)}
             >
@@ -366,13 +349,9 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
               <FolderOpen className="mr-2 h-4 w-4" />
               <span>{intl.formatMessage(i18n.openInFinder)}</span>
             </DropdownMenuItem>
-              </>
-            )}
           </DropdownMenuContent>
         </DropdownMenu>
-        <TooltipContent side="top">
-          {renderChatInfo ? `Chat info · ${workingDir}` : workingDir}
-        </TooltipContent>
+        <TooltipContent side="top">{workingDir}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

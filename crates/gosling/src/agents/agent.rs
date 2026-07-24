@@ -1719,7 +1719,7 @@ impl Agent {
         let provider = self.provider().await?;
         if restrict_to_working_dirs && provider.executes_tools_outside_gosling() {
             anyhow::bail!(
-                "Provider '{}' runs tools outside Gosling's inspection pipeline, so it can't be used while this session restricts tools to working directories. Turn off \"Restrict tools to working directories\" for this session to allow it.",
+                "Provider '{}' runs tools outside Gosling's inspection pipeline, so it can't be used while this session restricts tools to working directories. Turn off \"Restrict tools to working directories\" for this session to allow it — the toggle is in the working-directories menu (folder icon in the chat's top-right corner).",
                 provider.get_name()
             );
         }

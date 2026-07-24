@@ -1,7 +1,10 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Folder, ShieldAlert, X } from 'lucide-react';
+import { toast } from 'react-toastify';
+import { acpSetWorkingDirRestriction } from '../acp/sessions';
 import type { Session } from '../types/session';
 import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
+import { Switch } from './ui/switch';
 import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 
 interface SessionInfoSummaryProps {
@@ -65,6 +68,25 @@ export default function SessionInfoSummary({
         ? [session.working_dir, ...(session.additional_working_dirs ?? [])]
         : [],
     [session?.working_dir, session?.additional_working_dirs]
+  );
+
+  const toggleRestriction = useCallback(
+    async (restrict: boolean) => {
+      if (!session) return;
+      const previous = session.restrict_tools_to_working_dirs ?? false;
+      onSessionChange((current) => ({ ...current, restrict_tools_to_working_dirs: restrict }));
+      try {
+        await acpSetWorkingDirRestriction(session.id, restrict);
+      } catch (error) {
+        console.error('[SessionInfoSummary] Failed to update restriction:', error);
+        toast.error('Failed to update working directory restriction');
+        onSessionChange((current) => ({
+          ...current,
+          restrict_tools_to_working_dirs: previous,
+        }));
+      }
+    },
+    [session, onSessionChange]
   );
 
   if (!session) return null;
@@ -163,11 +185,17 @@ export default function SessionInfoSummary({
 
         <div className="flex items-start gap-2 rounded-lg bg-background-primary/70 px-2 py-2 text-[11px] text-text-secondary">
           <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            {session.restrict_tools_to_working_dirs
-              ? 'Tools are restricted to the listed directories.'
-              : 'Actions outside the listed directories require approval.'}
-          </span>
+          <div className="flex flex-1 items-center justify-between gap-2">
+            <span>
+              {session.restrict_tools_to_working_dirs
+                ? 'Tools are restricted to the listed directories. Providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked while this is on.'
+                : 'Tools are not restricted to the listed directories.'}
+            </span>
+            <Switch
+              checked={session.restrict_tools_to_working_dirs ?? false}
+              onCheckedChange={(checked) => void toggleRestriction(checked)}
+            />
+          </div>
         </div>
       </div>
     </section>
