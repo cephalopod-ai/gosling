@@ -360,6 +360,7 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-opus-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-4.7" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),
+        "anthropic/claude-opus-5" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
         _ => None,

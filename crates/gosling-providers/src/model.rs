@@ -676,6 +676,9 @@ mod tests {
             ]);
 
             // API model ids use dashed versions; the canonical ids use dots.
+            let config = ModelConfig::new("claude-opus-5").with_canonical_limits("anthropic");
+            assert_eq!(config.context_limit(), 1_000_000);
+
             let config = ModelConfig::new("claude-opus-4-8").with_canonical_limits("anthropic");
             assert_eq!(config.context_limit(), 1_000_000);
 

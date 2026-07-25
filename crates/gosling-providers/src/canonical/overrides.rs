@@ -53,6 +53,12 @@ const ANTHROPIC_CONTRACTS: &[AnthropicContract] = &[
         thinking_mode: Some(ThinkingMode::Adaptive),
     },
     AnthropicContract {
+        model: "claude-opus-5",
+        context: 1_000_000,
+        output: 128_000,
+        thinking_mode: Some(ThinkingMode::Adaptive),
+    },
+    AnthropicContract {
         model: "claude-sonnet-4.5",
         context: 200_000,
         output: 64_000,
@@ -72,7 +78,59 @@ const ANTHROPIC_CONTRACTS: &[AnthropicContract] = &[
     },
 ];
 
+/// Models Anthropic ships that the upstream catalog snapshot may not carry yet.
+/// Registered only when absent, so a refreshed snapshot always wins; the
+/// contract loop below then applies the curated limits and thinking mode.
+/// Without this a just-released model resolves to no canonical entry at all and
+/// silently falls back to the generic context limit.
+fn pending_anthropic_models() -> Vec<(&'static str, CanonicalModel)> {
+    vec![(
+        "claude-opus-5",
+        frontier_opus("claude-opus-5", "Claude Opus 5", "2026-05-31", "2026-07-15"),
+    )]
+}
+
+/// Shape of a current-generation Opus entry: `temperature` is rejected by the
+/// API for this tier (a non-default value earns a 400), and pricing follows the
+/// 5/25 per-Mtok Opus rates that 4.6 through 4.8 already carry.
+fn frontier_opus(id: &str, name: &str, knowledge: &str, release_date: &str) -> CanonicalModel {
+    CanonicalModel {
+        id: format!("anthropic/{id}"),
+        name: name.to_string(),
+        family: Some("claude-opus".to_string()),
+        attachment: Some(true),
+        reasoning: Some(true),
+        thinking_mode: Some(ThinkingMode::Adaptive),
+        tool_call: true,
+        temperature: Some(false),
+        knowledge: Some(knowledge.to_string()),
+        release_date: Some(release_date.to_string()),
+        last_updated: Some(release_date.to_string()),
+        modalities: Modalities {
+            input: vec![Modality::Text, Modality::Image, Modality::Pdf],
+            output: vec![Modality::Text],
+        },
+        open_weights: Some(false),
+        cost: Pricing {
+            input: Some(5.0),
+            output: Some(25.0),
+            cache_read: Some(0.5),
+            cache_write: Some(6.25),
+        },
+        limit: Limit {
+            context: 1_000_000,
+            output: Some(128_000),
+        },
+    }
+}
+
 pub fn apply_curated_model_contracts(registry: &mut CanonicalModelRegistry) {
+    for (model_name, model) in pending_anthropic_models() {
+        if registry.get("anthropic", model_name).is_none() {
+            registry.register("anthropic", model_name, model);
+        }
+    }
+
     for contract in ANTHROPIC_CONTRACTS {
         if let Some(model) = registry.get_mut("anthropic", contract.model) {
             model.reasoning = Some(true);
@@ -216,6 +274,53 @@ mod tests {
     }
 
     #[test]
+    fn registers_models_the_upstream_snapshot_has_not_published() {
+        let mut registry = CanonicalModelRegistry::new();
+        apply_curated_model_contracts(&mut registry);
+
+        let opus_5 = registry.get_active("anthropic", "claude-opus-5").unwrap();
+        assert_eq!(opus_5.limit.context, 1_000_000);
+        assert_eq!(opus_5.limit.output, Some(128_000));
+        assert_eq!(opus_5.thinking_mode, Some(ThinkingMode::Adaptive));
+        // The API rejects a non-default temperature for this tier, and Opus
+        // prices at 5/25 per Mtok — not the retired 15/75 of claude-opus-4.
+        assert_eq!(opus_5.temperature, Some(false));
+        assert_eq!(opus_5.cost.input, Some(5.0));
+        assert_eq!(opus_5.cost.output, Some(25.0));
+        assert_eq!(opus_5.cost.cache_read, Some(0.5));
+        assert_eq!(opus_5.cost.cache_write, Some(6.25));
+    }
+
+    /// The stub must not drift from the shipped entries of the same tier.
+    #[test]
+    fn pending_opus_matches_the_bundled_opus_4_8_contract() {
+        let bundled = CanonicalModelRegistry::bundled().unwrap();
+        let opus_4_8 = bundled.get("anthropic", "claude-opus-4.8").unwrap();
+        let stub = frontier_opus("claude-opus-5", "Claude Opus 5", "2026-05-31", "2026-07-15");
+
+        assert_eq!(stub.temperature, opus_4_8.temperature);
+        assert_eq!(stub.cost.input, opus_4_8.cost.input);
+        assert_eq!(stub.cost.output, opus_4_8.cost.output);
+        assert_eq!(stub.cost.cache_read, opus_4_8.cost.cache_read);
+        assert_eq!(stub.cost.cache_write, opus_4_8.cost.cache_write);
+    }
+
+    #[test]
+    fn a_published_snapshot_entry_wins_over_the_pending_stub() {
+        let mut registry = CanonicalModelRegistry::new();
+        let mut published = current_model("claude-opus-5");
+        published.name = "Claude Opus 5 (from snapshot)".to_string();
+        registry.register("anthropic", "claude-opus-5", published);
+
+        apply_curated_model_contracts(&mut registry);
+
+        let opus_5 = registry.get_active("anthropic", "claude-opus-5").unwrap();
+        assert_eq!(opus_5.name, "Claude Opus 5 (from snapshot)");
+        // The contract loop still corrects limits on the snapshot entry.
+        assert_eq!(opus_5.limit.context, 1_000_000);
+    }
+
+    #[test]
     fn retired_models_resolve_without_becoming_recommendations() {
         let mut registry = CanonicalModelRegistry::new();
         registry.register(
@@ -238,8 +343,14 @@ mod tests {
         assert!(registry
             .get_active("anthropic", "claude-3.5-sonnet")
             .is_none());
-        assert!(registry.get_all_models_for_provider("anthropic").is_empty());
-        assert_eq!(registry.count(), 0);
+        // Retiring a model removes it from the active set entirely; the only
+        // active entries left are the pending frontier models registered above.
+        let active: Vec<String> = registry
+            .get_all_models_for_provider("anthropic")
+            .into_iter()
+            .map(|model| model.id)
+            .collect();
+        assert_eq!(active, vec!["anthropic/claude-opus-5".to_string()]);
 
         let file = tempfile::NamedTempFile::new().unwrap();
         registry.to_file(file.path()).unwrap();
