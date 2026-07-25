@@ -90,6 +90,9 @@ fn pending_anthropic_models() -> Vec<(&'static str, CanonicalModel)> {
     )]
 }
 
+/// Shape of a current-generation Opus entry: `temperature` is rejected by the
+/// API for this tier (a non-default value earns a 400), and pricing follows the
+/// 5/25 per-Mtok Opus rates that 4.6 through 4.8 already carry.
 fn frontier_opus(id: &str, name: &str, knowledge: &str, release_date: &str) -> CanonicalModel {
     CanonicalModel {
         id: format!("anthropic/{id}"),
@@ -99,7 +102,7 @@ fn frontier_opus(id: &str, name: &str, knowledge: &str, release_date: &str) -> C
         reasoning: Some(true),
         thinking_mode: Some(ThinkingMode::Adaptive),
         tool_call: true,
-        temperature: Some(true),
+        temperature: Some(false),
         knowledge: Some(knowledge.to_string()),
         release_date: Some(release_date.to_string()),
         last_updated: Some(release_date.to_string()),
@@ -109,10 +112,10 @@ fn frontier_opus(id: &str, name: &str, knowledge: &str, release_date: &str) -> C
         },
         open_weights: Some(false),
         cost: Pricing {
-            input: Some(15.0),
-            output: Some(75.0),
-            cache_read: Some(1.5),
-            cache_write: Some(18.75),
+            input: Some(5.0),
+            output: Some(25.0),
+            cache_read: Some(0.5),
+            cache_write: Some(6.25),
         },
         limit: Limit {
             context: 1_000_000,
@@ -279,6 +282,27 @@ mod tests {
         assert_eq!(opus_5.limit.context, 1_000_000);
         assert_eq!(opus_5.limit.output, Some(128_000));
         assert_eq!(opus_5.thinking_mode, Some(ThinkingMode::Adaptive));
+        // The API rejects a non-default temperature for this tier, and Opus
+        // prices at 5/25 per Mtok — not the retired 15/75 of claude-opus-4.
+        assert_eq!(opus_5.temperature, Some(false));
+        assert_eq!(opus_5.cost.input, Some(5.0));
+        assert_eq!(opus_5.cost.output, Some(25.0));
+        assert_eq!(opus_5.cost.cache_read, Some(0.5));
+        assert_eq!(opus_5.cost.cache_write, Some(6.25));
+    }
+
+    /// The stub must not drift from the shipped entries of the same tier.
+    #[test]
+    fn pending_opus_matches_the_bundled_opus_4_8_contract() {
+        let bundled = CanonicalModelRegistry::bundled().unwrap();
+        let opus_4_8 = bundled.get("anthropic", "claude-opus-4.8").unwrap();
+        let stub = frontier_opus("claude-opus-5", "Claude Opus 5", "2026-05-31", "2026-07-15");
+
+        assert_eq!(stub.temperature, opus_4_8.temperature);
+        assert_eq!(stub.cost.input, opus_4_8.cost.input);
+        assert_eq!(stub.cost.output, opus_4_8.cost.output);
+        assert_eq!(stub.cost.cache_read, opus_4_8.cost.cache_read);
+        assert_eq!(stub.cost.cache_write, opus_4_8.cost.cache_write);
     }
 
     #[test]
