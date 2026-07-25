@@ -53,6 +53,12 @@ const ANTHROPIC_CONTRACTS: &[AnthropicContract] = &[
         thinking_mode: Some(ThinkingMode::Adaptive),
     },
     AnthropicContract {
+        model: "claude-opus-5",
+        context: 1_000_000,
+        output: 128_000,
+        thinking_mode: Some(ThinkingMode::Adaptive),
+    },
+    AnthropicContract {
         model: "claude-sonnet-4.5",
         context: 200_000,
         output: 64_000,
@@ -72,7 +78,56 @@ const ANTHROPIC_CONTRACTS: &[AnthropicContract] = &[
     },
 ];
 
+/// Models Anthropic ships that the upstream catalog snapshot may not carry yet.
+/// Registered only when absent, so a refreshed snapshot always wins; the
+/// contract loop below then applies the curated limits and thinking mode.
+/// Without this a just-released model resolves to no canonical entry at all and
+/// silently falls back to the generic context limit.
+fn pending_anthropic_models() -> Vec<(&'static str, CanonicalModel)> {
+    vec![(
+        "claude-opus-5",
+        frontier_opus("claude-opus-5", "Claude Opus 5", "2026-05-31", "2026-07-15"),
+    )]
+}
+
+fn frontier_opus(id: &str, name: &str, knowledge: &str, release_date: &str) -> CanonicalModel {
+    CanonicalModel {
+        id: format!("anthropic/{id}"),
+        name: name.to_string(),
+        family: Some("claude-opus".to_string()),
+        attachment: Some(true),
+        reasoning: Some(true),
+        thinking_mode: Some(ThinkingMode::Adaptive),
+        tool_call: true,
+        temperature: Some(true),
+        knowledge: Some(knowledge.to_string()),
+        release_date: Some(release_date.to_string()),
+        last_updated: Some(release_date.to_string()),
+        modalities: Modalities {
+            input: vec![Modality::Text, Modality::Image, Modality::Pdf],
+            output: vec![Modality::Text],
+        },
+        open_weights: Some(false),
+        cost: Pricing {
+            input: Some(15.0),
+            output: Some(75.0),
+            cache_read: Some(1.5),
+            cache_write: Some(18.75),
+        },
+        limit: Limit {
+            context: 1_000_000,
+            output: Some(128_000),
+        },
+    }
+}
+
 pub fn apply_curated_model_contracts(registry: &mut CanonicalModelRegistry) {
+    for (model_name, model) in pending_anthropic_models() {
+        if registry.get("anthropic", model_name).is_none() {
+            registry.register("anthropic", model_name, model);
+        }
+    }
+
     for contract in ANTHROPIC_CONTRACTS {
         if let Some(model) = registry.get_mut("anthropic", contract.model) {
             model.reasoning = Some(true);
@@ -216,6 +271,32 @@ mod tests {
     }
 
     #[test]
+    fn registers_models_the_upstream_snapshot_has_not_published() {
+        let mut registry = CanonicalModelRegistry::new();
+        apply_curated_model_contracts(&mut registry);
+
+        let opus_5 = registry.get_active("anthropic", "claude-opus-5").unwrap();
+        assert_eq!(opus_5.limit.context, 1_000_000);
+        assert_eq!(opus_5.limit.output, Some(128_000));
+        assert_eq!(opus_5.thinking_mode, Some(ThinkingMode::Adaptive));
+    }
+
+    #[test]
+    fn a_published_snapshot_entry_wins_over_the_pending_stub() {
+        let mut registry = CanonicalModelRegistry::new();
+        let mut published = current_model("claude-opus-5");
+        published.name = "Claude Opus 5 (from snapshot)".to_string();
+        registry.register("anthropic", "claude-opus-5", published);
+
+        apply_curated_model_contracts(&mut registry);
+
+        let opus_5 = registry.get_active("anthropic", "claude-opus-5").unwrap();
+        assert_eq!(opus_5.name, "Claude Opus 5 (from snapshot)");
+        // The contract loop still corrects limits on the snapshot entry.
+        assert_eq!(opus_5.limit.context, 1_000_000);
+    }
+
+    #[test]
     fn retired_models_resolve_without_becoming_recommendations() {
         let mut registry = CanonicalModelRegistry::new();
         registry.register(
@@ -238,8 +319,14 @@ mod tests {
         assert!(registry
             .get_active("anthropic", "claude-3.5-sonnet")
             .is_none());
-        assert!(registry.get_all_models_for_provider("anthropic").is_empty());
-        assert_eq!(registry.count(), 0);
+        // Retiring a model removes it from the active set entirely; the only
+        // active entries left are the pending frontier models registered above.
+        let active: Vec<String> = registry
+            .get_all_models_for_provider("anthropic")
+            .into_iter()
+            .map(|model| model.id)
+            .collect();
+        assert_eq!(active, vec!["anthropic/claude-opus-5".to_string()]);
 
         let file = tempfile::NamedTempFile::new().unwrap();
         registry.to_file(file.path()).unwrap();

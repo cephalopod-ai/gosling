@@ -1740,6 +1740,10 @@ mod tests {
             ThinkingType::Adaptive
         );
         assert_eq!(
+            thinking_type(&cfg_with_effort("claude-opus-5", "high")),
+            ThinkingType::Adaptive
+        );
+        assert_eq!(
             thinking_type(&cfg_with_effort("claude-opus-4-8", "high")),
             ThinkingType::Adaptive
         );

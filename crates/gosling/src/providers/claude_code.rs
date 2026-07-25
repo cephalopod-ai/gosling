@@ -39,6 +39,7 @@ pub const CLAUDE_CODE_DEFAULT_MODEL: &str = "default";
 pub const CLAUDE_CODE_DOC_URL: &str = "https://code.claude.com/docs/en/setup";
 const CLAUDE_CODE_KNOWN_MODELS: &[&str] = &[
     // Latest Claude family releases available in Anthropic's model overview.
+    "claude-opus-5",
     "claude-fable-5",
     "claude-opus-4-8",
     "claude-sonnet-5",
