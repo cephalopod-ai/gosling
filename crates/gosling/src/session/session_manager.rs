@@ -26,13 +26,27 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 24;
+pub const CURRENT_SCHEMA_VERSION: i32 = 25;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
 pub const DEFAULT_SESSION_TAIL_LIMIT: usize = 50;
 pub const MAX_SESSION_MESSAGE_PAGE_LIMIT: usize = 200;
 const TOOL_OPERATION_SCHEMA_VERSION: i32 = 1;
+
+/// Result of importing a local transcript file. Identical content and a
+/// changed source path are both prevented from creating a duplicate full
+/// transcript; callers get the original session instead.
+#[derive(Debug, Clone)]
+pub enum SessionFileImportResult {
+    Imported(Session),
+    AlreadyImported(Session),
+    /// The same canonical source file was imported before, but its content
+    /// fingerprint has changed. Refuse to ingest the whole transcript again:
+    /// that would duplicate all of the earlier messages. A future explicit
+    /// refresh operation can merge new source records by their durable IDs.
+    SourceChanged(Session),
+}
 
 fn validate_session_name(name: &str) -> Result<()> {
     anyhow::ensure!(!name.trim().is_empty(), "Session name must not be empty");
@@ -657,6 +671,21 @@ impl SessionManager {
             .await
     }
 
+    /// Return a bounded chronological window around a specific durable
+    /// message. Recall uses this to hydrate one relevant hit without loading
+    /// the whole session transcript.
+    pub async fn get_session_message_window(
+        &self,
+        id: &str,
+        message_id: &str,
+        before: usize,
+        after: usize,
+    ) -> Result<Vec<Message>> {
+        self.storage
+            .get_session_message_window(id, message_id, before, after)
+            .await
+    }
+
     pub async fn search_session_messages(
         &self,
         id: &str,
@@ -819,8 +848,65 @@ impl SessionManager {
         transport: super::import_formats::SessionImportTransport,
     ) -> Result<Session> {
         self.storage
-            .import_session(self, json, session_type_override, working_dir, transport)
+            .import_session(
+                self,
+                json,
+                session_type_override,
+                working_dir,
+                transport,
+                None,
+            )
             .await
+    }
+
+    /// Import a transcript file once, retaining an untrusted source label and
+    /// content fingerprint in the session provenance. This is deliberately a
+    /// file-only convenience API: JSON and Nostr imports preserve their
+    /// existing behavior and do not acquire a misleading local source path.
+    pub async fn import_session_file(
+        &self,
+        path: &Path,
+        session_type_override: Option<SessionType>,
+        working_dir: PathBuf,
+    ) -> Result<SessionFileImportResult> {
+        let source_path = fs::canonicalize(path)?;
+        let source_path_string = source_path.to_string_lossy().to_string();
+        let json = super::import_formats::read_session_import_file(&source_path)?;
+        let source_sha256 = Sha256::digest(json.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+
+        for session in self.list_all_sessions().await? {
+            let Some(provenance) =
+                super::import_formats::SessionImportProvenance::from_extension_data(
+                    &session.extension_data,
+                )
+            else {
+                continue;
+            };
+
+            if provenance.source_sha256.as_deref() == Some(&source_sha256) {
+                return Ok(SessionFileImportResult::AlreadyImported(session));
+            }
+
+            if provenance.source_path.as_deref() == Some(source_path_string.as_str()) {
+                return Ok(SessionFileImportResult::SourceChanged(session));
+            }
+        }
+
+        let session = self
+            .storage
+            .import_session(
+                self,
+                &json,
+                session_type_override,
+                working_dir,
+                super::import_formats::SessionImportTransport::CliFile,
+                Some((&source_path, source_sha256)),
+            )
+            .await?;
+        Ok(SessionFileImportResult::Imported(session))
     }
 
     pub async fn copy_session(&self, session_id: &str, new_name: String) -> Result<Session> {
@@ -1413,6 +1499,8 @@ impl SessionStorage {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id)")
             .execute(&mut *tx)
             .await?;
+
+        Self::create_message_search_schema(&mut tx).await?;
 
         Self::create_tool_operations_schema(&mut tx).await?;
 
@@ -2352,11 +2440,108 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
+            25 => Self::create_message_search_schema(tx).await?,
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
         }
 
+        Ok(())
+    }
+
+    /// A rebuildable full-text projection of text-only message content.
+    ///
+    /// It is intentionally independent from the conversation source of truth:
+    /// `messages` remains durable, while this index can always be recreated
+    /// from `content_json`. The triggers make writes and edits visible to
+    /// recall immediately, without paying the JSON scan cost on every search.
+    async fn create_message_search_schema(tx: &mut sqlx::Transaction<'_, Sqlite>) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE VIRTUAL TABLE IF NOT EXISTS message_search USING fts5(
+                text,
+                session_id UNINDEXED,
+                message_id UNINDEXED,
+                role UNINDEXED,
+                tokenize = 'unicode61 remove_diacritics 2'
+            )
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TRIGGER IF NOT EXISTS messages_search_after_insert
+            AFTER INSERT ON messages BEGIN
+                INSERT INTO message_search(rowid, text, session_id, message_id, role)
+                SELECT
+                    NEW.id,
+                    COALESCE((
+                        SELECT group_concat(json_extract(value, '$.text'), ' ')
+                        FROM json_each(NEW.content_json)
+                        WHERE json_extract(value, '$.type') = 'text'
+                    ), ''),
+                    NEW.session_id,
+                    COALESCE(NEW.message_id, ''),
+                    NEW.role;
+            END
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            r#"
+            CREATE TRIGGER IF NOT EXISTS messages_search_after_delete
+            AFTER DELETE ON messages BEGIN
+                DELETE FROM message_search WHERE rowid = OLD.id;
+            END
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            r#"
+            CREATE TRIGGER IF NOT EXISTS messages_search_after_update
+            AFTER UPDATE OF content_json, session_id, message_id, role ON messages BEGIN
+                DELETE FROM message_search WHERE rowid = OLD.id;
+                INSERT INTO message_search(rowid, text, session_id, message_id, role)
+                SELECT
+                    NEW.id,
+                    COALESCE((
+                        SELECT group_concat(json_extract(value, '$.text'), ' ')
+                        FROM json_each(NEW.content_json)
+                        WHERE json_extract(value, '$.type') = 'text'
+                    ), ''),
+                    NEW.session_id,
+                    COALESCE(NEW.message_id, ''),
+                    NEW.role;
+            END
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        // `INSERT OR IGNORE` keeps this idempotent for freshly-created
+        // databases, where the insert trigger has already indexed any rows.
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO message_search(rowid, text, session_id, message_id, role)
+            SELECT
+                m.id,
+                COALESCE((
+                    SELECT group_concat(json_extract(value, '$.text'), ' ')
+                    FROM json_each(m.content_json)
+                    WHERE json_extract(value, '$.type') = 'text'
+                ), ''),
+                m.session_id,
+                COALESCE(m.message_id, ''),
+                m.role
+            FROM messages m
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
         Ok(())
     }
 
@@ -2855,6 +3040,65 @@ impl SessionStorage {
                 Self::row_to_message(role, content_json, created, metadata_json, message_id)?
             {
                 messages.push((row_id, message));
+            }
+        }
+        Ok(messages)
+    }
+
+    async fn get_session_message_window(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        before: usize,
+        after: usize,
+    ) -> Result<Vec<Message>> {
+        let pool = self.pool().await?;
+        let Some((center_row_id,)) = sqlx::query_as::<_, (i64,)>(
+            "SELECT id FROM messages WHERE session_id = ? AND message_id = ? ORDER BY id LIMIT 1",
+        )
+        .bind(session_id)
+        .bind(message_id)
+        .fetch_optional(pool)
+        .await?
+        else {
+            return Ok(Vec::new());
+        };
+
+        let before = before.min(MAX_SESSION_MESSAGE_PAGE_LIMIT.saturating_sub(1));
+        let after = after.min(MAX_SESSION_MESSAGE_PAGE_LIMIT.saturating_sub(1));
+        let mut leading =
+            sqlx::query_as::<_, (i64, String, String, i64, Option<String>, Option<String>)>(
+                "SELECT id, role, content_json, created_timestamp, metadata_json, message_id \
+             FROM messages WHERE session_id = ? AND id <= ? ORDER BY id DESC LIMIT ?",
+            )
+            .bind(session_id)
+            .bind(center_row_id)
+            .bind((before + 1) as i64)
+            .fetch_all(pool)
+            .await?;
+        leading.reverse();
+        let trailing =
+            sqlx::query_as::<_, (i64, String, String, i64, Option<String>, Option<String>)>(
+                "SELECT id, role, content_json, created_timestamp, metadata_json, message_id \
+             FROM messages WHERE session_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
+            )
+            .bind(session_id)
+            .bind(center_row_id)
+            .bind(after as i64)
+            .fetch_all(pool)
+            .await?;
+        leading.extend(trailing);
+
+        let mut messages = Vec::with_capacity(leading.len());
+        for (_row_id, role, content_json, created, metadata_json, stored_message_id) in leading {
+            if let Some(message) = Self::row_to_message(
+                role,
+                content_json,
+                created,
+                metadata_json,
+                stored_message_id,
+            )? {
+                messages.push(message);
             }
         }
         Ok(messages)
@@ -3936,6 +4180,7 @@ impl SessionStorage {
         session_type_override: Option<SessionType>,
         working_dir: PathBuf,
         transport: super::import_formats::SessionImportTransport,
+        source_file: Option<(&Path, String)>,
     ) -> Result<Session> {
         let source_format = super::import_formats::detect_format(json);
         let normalized = super::import_formats::convert_to_gosling_session_json(json)?;
@@ -3957,6 +4202,10 @@ impl SessionStorage {
             effective_working_dir: effective_working_dir.to_string_lossy().to_string(),
             imported_at: Utc::now(),
             history_trusted: false,
+            source_path: source_file
+                .as_ref()
+                .map(|(path, _)| path.to_string_lossy().to_string()),
+            source_sha256: source_file.map(|(_, sha256)| sha256),
         }
         .to_extension_data(&mut extension_data)?;
 
@@ -5247,7 +5496,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_search_chat_history_preserves_message_limited_behavior() {
+    async fn test_search_chat_history_uses_relevance_ranked_text_projection() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
 
@@ -5263,7 +5512,7 @@ mod tests {
         )
         .await;
 
-        let newer_noise = create_search_session(
+        let _newer_noise = create_search_session(
             &sm,
             "Newer noise",
             SessionType::User,
@@ -5279,13 +5528,134 @@ mod tests {
         .await;
 
         let results = sm
-            .search_chat_history("Acme", Some(2), None, None, None, vec![SessionType::User])
+            .search_chat_history(
+                "Acme John Doe",
+                Some(2),
+                None,
+                None,
+                None,
+                vec![SessionType::User],
+            )
             .await
             .unwrap();
 
         assert_eq!(results.results.len(), 1);
-        assert_eq!(results.results[0].session_id, newer_noise);
-        assert_eq!(results.results[0].messages.len(), 2);
+        assert_eq!(results.results[0].session_id, _older_target);
+        assert_eq!(results.results[0].messages.len(), 1);
+        assert_eq!(results.results[0].messages[0].role, "user");
+        assert!(results.results[0].messages[0].message_id.is_some());
+        assert!(results.results[0].messages[0].content.contains("Acme"));
+    }
+
+    #[tokio::test]
+    async fn chat_recall_message_window_hydrates_only_neighboring_messages() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/search-test"),
+                "Window target".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        for text in [
+            "before one",
+            "before two",
+            "recall needle",
+            "after one",
+            "after two",
+        ] {
+            sm.add_message(&session.id, &Message::user().with_text(text))
+                .await
+                .unwrap();
+        }
+
+        let hit = sm
+            .search_chat_history("needle", Some(1), None, None, None, vec![SessionType::User])
+            .await
+            .unwrap()
+            .results
+            .pop()
+            .unwrap()
+            .messages
+            .pop()
+            .unwrap();
+        let window = sm
+            .get_session_message_window(&session.id, hit.message_id.as_deref().unwrap(), 1, 1)
+            .await
+            .unwrap();
+        let texts: Vec<&str> = window
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .filter_map(MessageContent::as_text)
+            .collect();
+        assert_eq!(texts, ["before two", "recall needle", "after one"]);
+    }
+
+    #[tokio::test]
+    async fn migration_25_backfills_existing_messages_into_chat_recall_index() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/search-test"),
+                "Migration target".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        sm.add_message(
+            &session.id,
+            &Message::user().with_text("unique migration recall needle"),
+        )
+        .await
+        .unwrap();
+        drop(sm);
+
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let pool = SqlitePoolOptions::new()
+            .connect_with(SqliteConnectOptions::new().filename(&db_path))
+            .await
+            .unwrap();
+        sqlx::query("DROP TRIGGER messages_search_after_insert")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TRIGGER messages_search_after_delete")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TRIGGER messages_search_after_update")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TABLE message_search")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 24")
+            .execute(&pool)
+            .await
+            .unwrap();
+        drop(pool);
+
+        let upgraded = SessionManager::new(temp_dir.path().to_path_buf());
+        let results = upgraded
+            .search_chat_history(
+                "unique migration needle",
+                Some(1),
+                None,
+                None,
+                None,
+                vec![SessionType::User],
+            )
+            .await
+            .unwrap();
+        assert_eq!(results.total_matches, 1);
+        assert_eq!(results.results[0].session_id, session.id);
     }
 
     async fn expected_session_list_ids(sm: &SessionManager, session_ids: &[String]) -> Vec<String> {
@@ -6312,6 +6682,78 @@ mod tests {
             imported.accumulated_usage,
             Usage::new(Some(600), Some(400), Some(1000))
         );
+    }
+
+    #[tokio::test]
+    async fn file_import_is_idempotent_and_records_untrusted_source_provenance() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("history.json");
+        fs::write(
+            &source,
+            r#"{
+                "id": "20240101_1",
+                "name": "Imported history",
+                "working_dir": "/tmp/test",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "extension_data": {},
+                "message_count": 0
+            }"#,
+        )
+        .unwrap();
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let imported = sm
+            .import_session_file(&source, None, temp_dir.path().to_path_buf())
+            .await
+            .unwrap();
+        let SessionFileImportResult::Imported(imported) = imported else {
+            panic!("first file import must create a session");
+        };
+        let provenance =
+            crate::session::import_formats::SessionImportProvenance::from_extension_data(
+                &imported.extension_data,
+            )
+            .unwrap();
+        let canonical_source = source.canonicalize().unwrap().to_string_lossy().to_string();
+        assert_eq!(
+            provenance.source_path.as_deref(),
+            Some(canonical_source.as_str())
+        );
+        assert!(provenance.source_sha256.is_some());
+        assert!(!provenance.history_trusted);
+
+        let repeated = sm
+            .import_session_file(&source, None, temp_dir.path().to_path_buf())
+            .await
+            .unwrap();
+        let SessionFileImportResult::AlreadyImported(repeated) = repeated else {
+            panic!("replaying the same file must not duplicate the session");
+        };
+        assert_eq!(repeated.id, imported.id);
+
+        fs::write(
+            &source,
+            r#"{
+                "id": "20240101_1",
+                "name": "Imported history with a later write",
+                "working_dir": "/tmp/test",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:01Z",
+                "extension_data": {},
+                "message_count": 0
+            }"#,
+        )
+        .unwrap();
+        let changed = sm
+            .import_session_file(&source, None, temp_dir.path().to_path_buf())
+            .await
+            .unwrap();
+        let SessionFileImportResult::SourceChanged(changed) = changed else {
+            panic!("a changed source must not duplicate the earlier transcript");
+        };
+        assert_eq!(changed.id, imported.id);
+        assert_eq!(sm.list_all_sessions().await.unwrap().len(), 1);
     }
 
     #[tokio::test]

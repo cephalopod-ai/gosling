@@ -46,6 +46,14 @@ pub struct SessionImportProvenance {
     pub effective_working_dir: String,
     pub imported_at: DateTime<Utc>,
     pub history_trusted: bool,
+    /// Canonical source file when this import originated from a local file.
+    /// Older imports and network transports intentionally leave this absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
+    /// SHA-256 of the source payload. This lets file imports be replay-safe
+    /// without treating an imported transcript as trusted session state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_sha256: Option<String>,
 }
 
 impl ExtensionState for SessionImportProvenance {

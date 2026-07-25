@@ -15,15 +15,28 @@ use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "chatrecall";
 
+fn truncate_recall_text(text: &str, max_chars: usize) -> String {
+    let mut chars = text.chars();
+    let truncated: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{truncated}\n[…truncated; search again for another hit if more detail is needed]")
+    } else {
+        truncated
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 struct ChatRecallParams {
-    /// Search keywords. Use multiple related terms/synonyms (e.g., 'database postgres sql'). Mutually exclusive with session_id.
+    /// Search keywords. Use distinctive terms from the remembered discussion. Mutually exclusive with session_id.
     #[serde(skip_serializing_if = "Option::is_none")]
     query: Option<String>,
-    /// Session ID to load. Returns first/last 3 messages. Mutually exclusive with query.
+    /// Session ID to load. Combine with message_id to hydrate context around an exact search hit.
     #[serde(skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
-    /// Max results (default: 10, max: 50). Search mode only.
+    /// Exact message ID returned by search. Requires session_id; returns a bounded context window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_id: Option<String>,
+    /// Max results (default: 8, max: 20). Search mode only.
     #[serde(skip_serializing_if = "Option::is_none")]
     limit: Option<i64>,
     /// ISO 8601 date (e.g., '2025-10-01T00:00:00Z'). Search mode only.
@@ -49,11 +62,11 @@ impl ChatRecallClient {
             .with_instructions(indoc! {r#"
                 Chat Recall
 
-                Search past conversations and load session summaries when the user expects some memory or context.
+                Search past conversations and hydrate only the relevant context when the user expects some memory or context.
 
                 Two modes:
-                - Search mode: Use query with keywords/synonyms to find relevant messages
-                - Load mode: Use session_id to get first and last messages of a specific session
+                - Search mode: Use query to find relevance-ranked, bounded text snippets
+                - Context mode: Use the returned session_id and message_id to get a small window around that exact hit
             "#}.to_string());
 
         Ok(Self { info, context })
@@ -78,69 +91,61 @@ impl ChatRecallClient {
             .get("session_id")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let target_message_id = arguments
+            .get("message_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
 
         if let Some(sid) = target_session_id {
-            // LOAD MODE: Get session summary (first and last few messages)
-            match self.context.session_manager.get_session(&sid, true).await {
+            // CONTEXT MODE: Load a bounded window rather than an entire
+            // transcript. The old first/last sampling missed the useful middle
+            // of long chats and could hand the model megabytes of text.
+            match self.context.session_manager.get_session(&sid, false).await {
                 Ok(loaded_session) => {
-                    let conversation = loaded_session.conversation.as_ref();
+                    let (msgs, context_label) = if let Some(message_id) = &target_message_id {
+                        (
+                            self.context
+                                .session_manager
+                                .get_session_message_window(&sid, message_id, 3, 3)
+                                .await
+                                .map_err(|e| format!("Failed to load message context: {e}"))?,
+                            format!("Context around message {message_id}"),
+                        )
+                    } else {
+                        let page = self
+                            .context
+                            .session_manager
+                            .get_session_tail_page(&sid, 6)
+                            .await
+                            .map_err(|e| format!("Failed to load session tail: {e}"))?;
+                        (page.messages, "Most recent message context".to_string())
+                    };
 
-                    if conversation.is_none() {
+                    if msgs.is_empty() {
                         return Ok(vec![Content::text(format!(
-                            "Session {} has no conversation.",
-                            sid
-                        ))]);
-                    }
-
-                    let msgs = conversation.unwrap().messages();
-                    let total = msgs.len();
-
-                    if total == 0 {
-                        return Ok(vec![Content::text(format!(
-                            "Session {} has no messages.",
+                            "Session {} has no matching messages.",
                             sid
                         ))]);
                     }
 
                     let mut output = format!(
-                        "Session: {} (ID: {})\nWorking Dir: {}\nTotal Messages: {}\n\n",
+                        "Session: {} (ID: {})\nWorking Dir: {}\n{} ({} message(s))\n\n",
                         loaded_session.name,
                         sid,
                         loaded_session.working_dir.display(),
-                        total
+                        context_label,
+                        msgs.len(),
                     );
-
-                    let first_count = std::cmp::min(3, total);
-                    output.push_str("--- First Few Messages ---\n\n");
-                    for (idx, msg) in msgs.iter().take(first_count).enumerate() {
-                        output.push_str(&format!("{}. [{:?}] ", idx + 1, msg.role));
-                        for content in &msg.content {
-                            if let Some(text) = content.as_text() {
-                                output.push_str(text);
-                                output.push('\n');
-                            }
-                        }
-                        output.push('\n');
-                    }
-
-                    if total > first_count {
-                        output.push_str("--- Last Few Messages ---\n\n");
-                        let last_count = std::cmp::min(3, total);
-                        let skip_count = total.saturating_sub(last_count);
-                        for (idx, msg) in msgs.iter().skip(skip_count).enumerate() {
-                            output.push_str(&format!(
-                                "{}. [{:?}] ",
-                                skip_count + idx + 1,
-                                msg.role
-                            ));
-                            for content in &msg.content {
-                                if let Some(text) = content.as_text() {
-                                    output.push_str(text);
-                                    output.push('\n');
-                                }
-                            }
-                            output.push('\n');
-                        }
+                    for (idx, msg) in msgs.iter().enumerate() {
+                        output.push_str(&format!("{}. [{:?}]\n", idx + 1, msg.role));
+                        let text = msg
+                            .content
+                            .iter()
+                            .filter_map(|content| content.as_text())
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        output.push_str(&truncate_recall_text(&text, 2_000));
+                        output.push_str("\n\n");
                     }
 
                     Ok(vec![Content::text(output)])
@@ -159,8 +164,8 @@ impl ChatRecallClient {
                 .get("limit")
                 .and_then(|v| v.as_i64())
                 .map(|l| l as usize)
-                .unwrap_or(10)
-                .min(50);
+                .unwrap_or(8)
+                .clamp(1, 20);
 
             let after_date = arguments
                 .get("after_date")
@@ -201,7 +206,7 @@ impl ChatRecallClient {
                         );
                         for (idx, result) in results.results.iter().enumerate() {
                             output.push_str(&format!(
-                                "{}. Session: {} (ID: {})\n   Working Dir: {}\n   Last Activity: {}\n   Showing {} of {} total message(s) in session:\n\n",
+                                "{}. Session: {} (ID: {})\n   Working Dir: {}\n   Last Activity: {}\n   {} matching hit(s); {} total message(s). Use this session ID plus a hit's message ID to load bounded context.\n\n",
                                 idx + 1,
                                 result.session_description,
                                 result.session_id,
@@ -217,12 +222,15 @@ impl ChatRecallClient {
                                     idx + 1,
                                     msg_idx + 1,
                                     message.role,
-                                    message
-                                        .content
-                                        .lines()
-                                        .map(|line| format!("   {}", line))
-                                        .collect::<Vec<_>>()
-                                        .join("\n")
+                                    format!(
+                                        "Message ID: {}\n{}",
+                                        message.message_id.as_deref().unwrap_or("unavailable"),
+                                        message.content
+                                    )
+                                    .lines()
+                                    .map(|line| format!("   {}", line))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
                                 ));
                             }
                         }
@@ -248,10 +256,10 @@ impl ChatRecallClient {
         vec![Tool::new(
             "chatrecall".to_string(),
             indoc! {r#"
-                Search past chat or load session summaries. Use when it is clear user expects some memory or context.
+                Search past chat, then load bounded context around an exact hit. Use when it is clear the user expects memory or context.
 
-                search mode (query): Use multiple keywords/synonyms. Returns messages grouped by session, ordered by recency. Supports date filters.
-                load mode (session_id): Returns first/last 3 messages of a session.
+                search mode (query): Returns relevance-ranked text snippets grouped by session. Supports date filters.
+                context mode (session_id + message_id): Returns up to three text messages before and after that hit. Session-only mode returns a six-message tail.
             "#}
             .to_string(),
             input_schema,

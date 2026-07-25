@@ -308,37 +308,52 @@ pub async fn handle_session_import(
         #[cfg(not(feature = "nostr"))]
         return Err(anyhow::anyhow!("gosling was not built with nostr support"));
     } else {
-        gosling::session::import_formats::read_session_import_file(Path::new(&input))?
+        String::new()
     };
 
     let working_dir = working_dir.unwrap_or(std::env::current_dir()?);
     let working_dir = gosling::session::import_formats::validate_import_working_dir(&working_dir)?;
 
-    let format = gosling::session::import_formats::detect_format(&json);
-    let label = match format {
-        gosling::session::import_formats::ImportFormat::Gosling => "gosling",
-        gosling::session::import_formats::ImportFormat::ClaudeCode => "Claude Code",
-        gosling::session::import_formats::ImportFormat::Codex => "Codex",
-        gosling::session::import_formats::ImportFormat::Pi => "Pi",
-    };
-    println!("Detected format: {}", label);
     println!(
         "Imported session working directory: {}",
         working_dir.display()
     );
 
     let session_manager = SessionManager::instance();
-    let transport = if is_nostr {
-        gosling::session::import_formats::SessionImportTransport::Nostr
+    if is_nostr {
+        let format = gosling::session::import_formats::detect_format(&json);
+        println!("Detected format: {}", format.label());
+        let session = session_manager
+            .import_session(
+                &json,
+                Some(SessionType::User),
+                working_dir,
+                gosling::session::import_formats::SessionImportTransport::Nostr,
+            )
+            .await?;
+        println!("Session imported:");
+        println!("{} - {}", session.id, session.name);
     } else {
-        gosling::session::import_formats::SessionImportTransport::CliFile
-    };
-    let session = session_manager
-        .import_session(&json, Some(SessionType::User), working_dir, transport)
-        .await?;
-
-    println!("Session imported:");
-    println!("{} - {}", session.id, session.name);
+        let result = session_manager
+            .import_session_file(Path::new(&input), Some(SessionType::User), working_dir)
+            .await?;
+        match result {
+            gosling::session::session_manager::SessionFileImportResult::Imported(session) => {
+                println!("Session imported:");
+                println!("{} - {}", session.id, session.name);
+            }
+            gosling::session::session_manager::SessionFileImportResult::AlreadyImported(
+                session,
+            ) => {
+                println!("Session already imported from this exact source:");
+                println!("{} - {}", session.id, session.name);
+            }
+            gosling::session::session_manager::SessionFileImportResult::SourceChanged(session) => {
+                println!("Source file changed after its first import; skipped to prevent duplicate transcript history:");
+                println!("{} - {}", session.id, session.name);
+            }
+        }
+    }
 
     Ok(())
 }
