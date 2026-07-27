@@ -19,7 +19,13 @@ use rmcp::{
     tool, tool_handler, tool_router, RoleServer, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, sync::Mutex};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+    sync::Mutex,
+};
 use tokio::process::Command;
 
 #[cfg(target_os = "macos")]
@@ -602,7 +608,7 @@ impl ComputerControllerServer {
             tool_router,
             cache_dir,
             active_resources: Arc::new(Mutex::new(HashMap::new())),
-            http_client: Client::builder().user_agent("gosling/1.0").build().unwrap(),
+            http_client: build_web_scrape_client(),
             instructions,
             system_automation,
             #[cfg(target_os = "macos")]
@@ -715,6 +721,9 @@ impl ComputerControllerServer {
                 None,
             ));
         }
+        if let Some(len) = response.content_length() {
+            check_web_scrape_size(len)?;
+        }
 
         // Process based on save_as parameter
         let (content, extension, mime_type) = match save_as {
@@ -757,6 +766,7 @@ impl ComputerControllerServer {
                 (bytes.to_vec(), "bin", "application/octet-stream")
             }
         };
+        check_web_scrape_size(content.len() as u64)?;
 
         // Save to cache
         let cache_path = self.save_to_cache(&content, "web", extension).await?;
@@ -1297,12 +1307,12 @@ impl ComputerControllerServer {
         params: Parameters<XlsxToolParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let params = params.0;
-        let path = &params.path;
+        let path = resolve_document_path(&params.path)?;
         let operation = params.operation;
 
         match operation {
             XlsxOperation::ListWorksheets => {
-                let xlsx = xlsx_tool::XlsxTool::new(path)
+                let xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 let worksheets = xlsx
                     .list_worksheets()
@@ -1313,7 +1323,7 @@ impl ComputerControllerServer {
                 ))]))
             }
             XlsxOperation::GetColumns => {
-                let xlsx = xlsx_tool::XlsxTool::new(path)
+                let xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 let worksheet = if let Some(name) = &params.worksheet {
                     xlsx.get_worksheet_by_name(name).map_err(|e| {
@@ -1341,7 +1351,7 @@ impl ComputerControllerServer {
                     )
                 })?;
 
-                let xlsx = xlsx_tool::XlsxTool::new(path)
+                let xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 let worksheet = if let Some(name) = &params.worksheet {
                     xlsx.get_worksheet_by_name(name).map_err(|e| {
@@ -1371,7 +1381,7 @@ impl ComputerControllerServer {
 
                 let case_sensitive = params.case_sensitive;
 
-                let xlsx = xlsx_tool::XlsxTool::new(path)
+                let xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 let worksheet = if let Some(name) = &params.worksheet {
                     xlsx.get_worksheet_by_name(name).map_err(|e| {
@@ -1415,11 +1425,11 @@ impl ComputerControllerServer {
 
                 let worksheet_name = params.worksheet.as_deref().unwrap_or("Sheet1");
 
-                let mut xlsx = xlsx_tool::XlsxTool::new(path)
+                let mut xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 xlsx.update_cell(worksheet_name, row as u32, col as u32, value)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                xlsx.save(path)
+                xlsx.save(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "Updated cell ({}, {}) to '{}' in worksheet '{}'",
@@ -1427,9 +1437,9 @@ impl ComputerControllerServer {
                 ))]))
             }
             XlsxOperation::Save => {
-                let xlsx = xlsx_tool::XlsxTool::new(path)
+                let xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                xlsx.save(path)
+                xlsx.save(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 Ok(CallToolResult::success(vec![Content::text(
                     "File saved successfully.",
@@ -1452,7 +1462,7 @@ impl ComputerControllerServer {
                     )
                 })?;
 
-                let xlsx = xlsx_tool::XlsxTool::new(path)
+                let xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 let worksheet = if let Some(name) = &params.worksheet {
                     xlsx.get_worksheet_by_name(name).map_err(|e| {
@@ -1496,7 +1506,7 @@ impl ComputerControllerServer {
         params: Parameters<DocxToolParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let params = params.0;
-        let path = &params.path;
+        let path = resolve_document_path(&params.path)?;
         let operation = params.operation;
 
         // Convert enum to string for the existing implementation
@@ -1512,7 +1522,7 @@ impl ComputerControllerServer {
             .map(|p| serde_json::to_value(p).unwrap_or(serde_json::Value::Null));
 
         let result = crate::computercontroller::docx_tool::docx_tool(
-            path,
+            &path.to_string_lossy(),
             operation_str,
             params.content.as_deref(),
             json_params.as_ref(),
@@ -1540,7 +1550,7 @@ impl ComputerControllerServer {
         params: Parameters<PdfToolParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let params = params.0;
-        let path = &params.path;
+        let path = resolve_document_path(&params.path)?;
         let operation = params.operation;
 
         // Convert enum to string for the existing implementation
@@ -1549,10 +1559,13 @@ impl ComputerControllerServer {
             PdfOperation::ExtractImages => "extract_images",
         };
 
-        let result =
-            crate::computercontroller::pdf_tool::pdf_tool(path, operation_str, &self.cache_dir)
-                .await
-                .map_err(|e| ErrorData::new(e.code, e.message, e.data))?;
+        let result = crate::computercontroller::pdf_tool::pdf_tool(
+            &path.to_string_lossy(),
+            operation_str,
+            &self.cache_dir,
+        )
+        .await
+        .map_err(|e| ErrorData::new(e.code, e.message, e.data))?;
 
         Ok(CallToolResult::success(result))
     }
@@ -1770,10 +1783,115 @@ impl ServerHandler for ComputerControllerServer {
     }
 }
 
+/// `web_scrape`'s default response size cap (MCP-031): applied after the
+/// body is buffered, mirroring the byte-length check `developer/image.rs`
+/// applies to downloaded images. Not a true streaming cap - see
+/// `web_scrape`'s doc comment on the reqwest `.text()`/`.bytes()` calls.
+const MAX_WEB_SCRAPE_BYTES: u64 = 25 * 1024 * 1024;
+const WEB_SCRAPE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Builds the `web_scrape` HTTP client with a bounded timeout and a redirect
+/// policy that re-applies the same private/loopback/link-local IP-literal
+/// check `ensure_public_http_url` does for the initial URL (MCP-031). This
+/// closes the redirect-based SSRF bypass: the pre-flight check alone only
+/// validated the URL the model supplied, not any hop a `3xx` response later
+/// pointed the client at (e.g. straight to cloud metadata at
+/// `169.254.169.254`).
+fn build_web_scrape_client() -> Client {
+    Client::builder()
+        .user_agent("gosling/1.0")
+        .timeout(WEB_SCRAPE_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 10 {
+                attempt.error("too many redirects")
+            } else if redirect_target_is_private(attempt.url()) {
+                attempt.error("refusing to follow redirect to a non-public address")
+            } else {
+                attempt.follow()
+            }
+        }))
+        .build()
+        .unwrap()
+}
+
+/// Resolve a user/LLM-supplied document path (`xlsx_tool`/`docx_tool`/
+/// `pdf_tool`, including `docx_tool`'s `image_path`) and confine it to the
+/// gosling process's current working directory - the project the user
+/// opened - the same standard `resolve_cached_file_path` already applies to
+/// `self.cache_dir` for the `cache` tool (SEC-GSL-102). Unlike the cache
+/// tool's files, a document path may not exist yet (`docx_tool`'s
+/// `save`/`update_doc`), so this canonicalizes the nearest existing ancestor
+/// and re-appends the remaining, not-yet-created components rather than
+/// requiring the full path to already exist.
+pub(crate) fn resolve_document_path(raw: &str) -> Result<PathBuf, ErrorData> {
+    let invalid = |msg: String| ErrorData::new(ErrorCode::INVALID_PARAMS, msg, None);
+
+    let root = std::env::current_dir()
+        .map_err(|e| invalid(format!("failed to resolve working directory: {e}")))?;
+    let root = fs::canonicalize(&root).unwrap_or(root);
+
+    let candidate = Path::new(raw);
+    let joined = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        root.join(candidate)
+    };
+
+    let mut existing = joined.clone();
+    let mut remainder: Vec<std::ffi::OsString> = Vec::new();
+    while !existing.exists() {
+        let Some(name) = existing.file_name() else {
+            break;
+        };
+        remainder.push(name.to_os_string());
+        if !existing.pop() {
+            break;
+        }
+    }
+
+    let canonical_existing =
+        fs::canonicalize(&existing).map_err(|e| invalid(format!("invalid path '{raw}': {e}")))?;
+    let mut resolved = canonical_existing;
+    for part in remainder.into_iter().rev() {
+        resolved.push(part);
+    }
+
+    if !resolved.starts_with(&root) {
+        return Err(invalid(format!(
+            "path '{raw}' is outside the working directory ({}); document tools are confined \
+             to the project you opened",
+            root.display()
+        )));
+    }
+
+    Ok(resolved)
+}
+
+fn check_web_scrape_size(len: u64) -> Result<(), ErrorData> {
+    if len > MAX_WEB_SCRAPE_BYTES {
+        Err(ErrorData::new(
+            ErrorCode::INVALID_PARAMS,
+            format!("response is too large: {len} bytes exceeds {MAX_WEB_SCRAPE_BYTES} byte limit"),
+            None,
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn redirect_target_is_private(url: &Url) -> bool {
+    url.host_str()
+        .and_then(|h| h.parse::<std::net::IpAddr>().ok())
+        .map(is_disallowed_ip)
+        .unwrap_or(false)
+}
+
 /// SSRF guard for model/tool-supplied fetch URLs: require an http(s) scheme and
 /// reject any host that resolves to a non-public address. This is a pre-flight
-/// check; a residual DNS-rebinding / redirect gap remains and would need
-/// connection-time IP pinning to fully close.
+/// check; a residual DNS-rebinding gap remains (re-resolving a hostname target
+/// on each redirect hop would need connection-time IP pinning to fully close)
+/// - the redirect policy on `build_web_scrape_client`'s client covers the
+/// cheaper, more common IP-literal-redirect bypass.
 async fn ensure_public_http_url(raw: &str) -> Result<(), String> {
     let url = Url::parse(raw).map_err(|e| format!("invalid URL: {e}"))?;
     match url.scheme() {
@@ -1885,6 +2003,35 @@ mod ssrf_tests {
             .is_err());
         assert!(ensure_public_http_url("not a url").await.is_err());
     }
+
+    // MCP-031 regression: the pre-flight check alone only validates the URL
+    // the model supplied, not any hop a redirect response later points at.
+    #[test]
+    fn redirect_target_is_private_blocks_ip_literal_redirects() {
+        for url in [
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1:9999/",
+            "http://10.0.0.5/",
+        ] {
+            assert!(
+                super::redirect_target_is_private(&super::Url::parse(url).unwrap()),
+                "{url} should be treated as a private redirect target"
+            );
+        }
+    }
+
+    #[test]
+    fn redirect_target_is_private_allows_public_ip_literal() {
+        assert!(!super::redirect_target_is_private(
+            &super::Url::parse("http://8.8.8.8/").unwrap()
+        ));
+    }
+
+    #[test]
+    fn check_web_scrape_size_rejects_over_cap() {
+        assert!(super::check_web_scrape_size(super::MAX_WEB_SCRAPE_BYTES + 1).is_err());
+        assert!(super::check_web_scrape_size(1024).is_ok());
+    }
 }
 
 #[cfg(test)]
@@ -1900,5 +2047,46 @@ mod cache_path_tests {
             first, second,
             "two calls in the same wall-clock second must not produce the same cache path"
         );
+    }
+}
+
+// SEC-GSL-102 regression: xlsx_tool/docx_tool/pdf_tool must confine
+// model/tool-supplied paths to the working directory, mirroring the
+// containment `resolve_cached_file_path` already applies to `cache_dir`.
+// `cargo test` runs each package's test binary with its current directory
+// set to that package's manifest directory, so `CARGO_MANIFEST_DIR` is a
+// stable "in-root" reference point here.
+#[cfg(test)]
+mod document_path_tests {
+    use super::resolve_document_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn allows_a_path_inside_the_working_directory() {
+        let in_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let resolved = resolve_document_path(in_root.to_str().unwrap()).unwrap();
+        assert_eq!(resolved, in_root.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn allows_a_not_yet_created_file_inside_the_working_directory() {
+        let in_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("does-not-exist-yet")
+            .join("new_file.docx");
+        let resolved = resolve_document_path(in_root.to_str().unwrap());
+        assert!(
+            resolved.is_ok(),
+            "a not-yet-created path under the working directory should resolve: {resolved:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_an_absolute_path_outside_the_working_directory() {
+        assert!(resolve_document_path("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn rejects_a_relative_traversal_outside_the_working_directory() {
+        assert!(resolve_document_path("../../../../etc/passwd").is_err());
     }
 }

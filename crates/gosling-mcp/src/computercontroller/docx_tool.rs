@@ -369,10 +369,13 @@ fn do_insert_structured(
 }
 
 fn load_image_as_png(image_path: &str) -> Result<Vec<u8>, ErrorData> {
-    let image_data = fs::read(image_path)
+    // SEC-GSL-102: `image_path` is model/tool-supplied, same as `path` above -
+    // confine it to the working directory before reading.
+    let image_path = crate::computercontroller::resolve_document_path(image_path)?;
+    let image_data = fs::read(&image_path)
         .map_err(|e| docx_error(format!("Failed to read image file: {}", e)))?;
 
-    let extension = std::path::Path::new(image_path)
+    let extension = image_path
         .extension()
         .and_then(|e| e.to_str())
         .ok_or_else(|| docx_error("Invalid image file extension"))?
