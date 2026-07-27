@@ -2,6 +2,7 @@ use crate::routes::errors::ErrorResponse;
 use crate::routes::reply_service::{
     log_session_start, run_reply_task, MessageEvent, ReplyEventSink, ReplyTaskConfig,
 };
+use crate::session_event_bus::RequestGuard;
 use crate::state::AppState;
 #[cfg(test)]
 use axum::http::StatusCode;
@@ -127,16 +128,36 @@ pub async fn reply(
 
     let session_id = request.session_id.clone();
 
+    // CON-GOS-100/REL-GOS-012: this legacy endpoint used to spawn a reply task
+    // with no per-session single-flight guard at all, unlike the newer
+    // `/sessions/{id}/reply`. Two concurrent requests for the same session
+    // (a client retry, two tabs) ran unserialized turns against the same
+    // conversation, including a lost-update race on accumulated usage/cost
+    // (CON-GOS-101). Registering with the same per-session bus the newer
+    // route uses closes the gap for both entry points at once and, as a
+    // side effect, makes this endpoint's turn reachable from
+    // `POST /sessions/{id}/cancel` too.
+    let bus = state.get_or_create_event_bus(&session_id).await;
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let cancel_token = bus
+        .try_register_request(request_id.clone())
+        .await
+        .map_err(|_| {
+            ErrorResponse::bad_request("Session already has an active request. Cancel it first.")
+        })?;
+
     let (tx, rx) = mpsc::channel(100);
     let stream = ReceiverStream::new(rx);
-    let cancel_token = CancellationToken::new();
 
     let user_message = request.user_message;
     let override_conversation = request.override_conversation;
 
     let task_cancel = cancel_token.clone();
+    let task_bus = bus.clone();
+    let task_request_id = request_id.clone();
 
     drop(tokio::spawn(async move {
+        let mut guard = RequestGuard::new(task_bus.clone(), task_request_id.clone());
         let mut sink = SseReplySink {
             tx: tx.clone(),
             cancel_token: cancel_token.clone(),
@@ -154,6 +175,9 @@ pub async fn reply(
             &mut sink,
         )
         .await;
+
+        guard.disarm();
+        task_bus.cleanup_request(&task_request_id).await;
     }));
     Ok(SseResponse::new(stream))
 }
@@ -231,6 +255,40 @@ mod tests {
             let response = app.oneshot(request).await.unwrap();
 
             assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        // CON-GOS-100/REL-GOS-012 regression: the legacy `/reply` endpoint
+        // must not spawn a second concurrent reply task for a session that
+        // already has one active, matching `/sessions/{id}/reply`'s guard.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn test_reply_rejected_when_session_has_active_request() {
+            let state = AppState::new(true).await.unwrap();
+            let bus = state
+                .get_or_create_event_bus("concurrent-reply-session")
+                .await;
+            let _token = bus
+                .try_register_request("existing-request".to_string())
+                .await
+                .unwrap();
+
+            let app = routes(state);
+            let request = Request::builder()
+                .uri("/reply")
+                .method("POST")
+                .header("content-type", "application/json")
+                .header("x-secret-key", "test-secret")
+                .body(Body::from(
+                    serde_json::to_string(&ChatRequest {
+                        user_message: Message::user().with_text("test message"),
+                        override_conversation: None,
+                        session_id: "concurrent-reply-session".to_string(),
+                    })
+                    .unwrap(),
+                ))
+                .unwrap();
+
+            let response = app.oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         }
 
         #[tokio::test(flavor = "multi_thread")]

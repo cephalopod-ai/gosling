@@ -2,6 +2,28 @@ use lopdf::{content::Content as PdfContent, Document, Object};
 use rmcp::model::{Content, ErrorCode, ErrorData};
 use std::{fs, path::Path};
 
+/// Reduce a PDF-internal XObject dictionary key to a safe basename fragment
+/// before it is joined into an output path (SEC-GSL-103). The PDF being
+/// processed may be attacker-crafted, so `name` cannot be trusted to be free
+/// of path separators or `..` sequences.
+fn sanitize_pdf_object_name(name: &[u8]) -> String {
+    let sanitized: String = String::from_utf8_lossy(name)
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "obj".to_string()
+    } else {
+        sanitized
+    }
+}
+
 pub async fn pdf_tool(
     path: &str,
     operation: &str,
@@ -305,11 +327,17 @@ pub async fn pdf_tool(
 
                                     // Get the image data
                                     if let Ok(data) = stream.get_plain_content() {
+                                        // SEC-GSL-103: `name` is a PDF-internal
+                                        // XObject dictionary key from the (possibly
+                                        // attacker-crafted) document being parsed;
+                                        // reduce it to a safe basename before it
+                                        // reaches the output path join so an
+                                        // embedded `/`/`..` can't escape `cache_dir`.
                                         let image_path = cache_dir.join(format!(
                                             "page{}_obj{}_{}{}",
                                             page_num,
                                             xobject_id.0,
-                                            String::from_utf8_lossy(name),
+                                            sanitize_pdf_object_name(name),
                                             extension
                                         ));
 
@@ -363,6 +391,18 @@ pub async fn pdf_tool(
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    // SEC-GSL-103 regression: a PDF-internal XObject name must not be able to
+    // escape the cache directory via `/` or `..` when joined into the
+    // extracted-image output path.
+    #[test]
+    fn sanitize_pdf_object_name_strips_path_separators_and_traversal() {
+        let sanitized = sanitize_pdf_object_name(b"../../../../tmp/evil");
+        assert!(!sanitized.contains('/'), "got: {sanitized}");
+        assert!(!sanitized.contains(".."), "got: {sanitized}");
+        assert_eq!(sanitize_pdf_object_name(b"Im1"), "Im1");
+        assert_eq!(sanitize_pdf_object_name(b""), "obj");
+    }
 
     #[tokio::test]
     async fn test_pdf_text_extraction() {

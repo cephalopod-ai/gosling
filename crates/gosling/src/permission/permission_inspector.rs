@@ -126,59 +126,71 @@ impl ToolInspector for PermissionInspector {
             if let Ok(tool_call) = &request.tool_call {
                 let tool_name = &tool_call.name;
 
-                let action = match gosling_mode {
-                    GoslingMode::Chat => continue,
-                    GoslingMode::Auto => InspectionAction::Allow,
-                    GoslingMode::Approve | GoslingMode::SmartApprove => {
-                        // 1. Check user-defined permission first
-                        if let Some(level) = permission_manager.get_user_permission(tool_name) {
-                            match level {
-                                PermissionLevel::AlwaysAllow => InspectionAction::Allow,
-                                PermissionLevel::NeverAllow => InspectionAction::Deny,
-                                PermissionLevel::AskBefore => {
-                                    InspectionAction::RequireApproval(None)
-                                }
-                            }
-                        } else if tool_name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
+                if gosling_mode == GoslingMode::Chat {
+                    continue;
+                }
+
+                // An explicit user permission for this specific tool must hold in
+                // every mode, including Auto. Auto is used unconditionally for
+                // subagents (AOC-ORCH-001) regardless of the delegating session's
+                // own mode, so skipping this check for Auto silently bypassed any
+                // NeverAllow/AlwaysAllow the user had configured. Auto has nothing
+                // that can answer an approval prompt, so an explicit AskBefore
+                // degrades to Deny rather than being silently dropped.
+                let (action, reason) =
+                    if let Some(level) = permission_manager.get_user_permission(tool_name) {
+                        match level {
+                            PermissionLevel::AlwaysAllow => (
+                                InspectionAction::Allow,
+                                "User permission allows this tool".to_string(),
+                            ),
+                            PermissionLevel::NeverAllow => (
+                                InspectionAction::Deny,
+                                "User permission denies this tool".to_string(),
+                            ),
+                            PermissionLevel::AskBefore if gosling_mode == GoslingMode::Auto => (
+                                InspectionAction::Deny,
+                                "Auto mode cannot prompt for approval; user permission requires \
+                             approval for this tool, so it is denied"
+                                    .to_string(),
+                            ),
+                            PermissionLevel::AskBefore => (
+                                InspectionAction::RequireApproval(None),
+                                "Tool requires user approval".to_string(),
+                            ),
+                        }
+                    } else if gosling_mode == GoslingMode::Auto {
+                        (
+                            InspectionAction::Allow,
+                            "Auto mode - all tools approved".to_string(),
+                        )
+                    } else if tool_name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
+                        (
                             InspectionAction::RequireApproval(Some(
                                 "Extension management requires approval for security".to_string(),
-                            ))
-                        } else if gosling_mode == GoslingMode::SmartApprove
-                            && permission_manager.get_smart_approve_permission(tool_name)
-                                == Some(PermissionLevel::NeverAllow)
-                        {
-                            InspectionAction::Deny
-                        } else if gosling_mode == GoslingMode::SmartApprove
-                            && permission_manager.get_smart_approve_permission(tool_name)
-                                != Some(PermissionLevel::AskBefore)
-                        {
-                            llm_detect_candidates.push(request);
-                            continue;
-                        } else {
-                            InspectionAction::RequireApproval(None)
-                        }
-                    }
-                };
-
-                let reason = match &action {
-                    InspectionAction::Allow => {
-                        if gosling_mode == GoslingMode::Auto {
-                            "Auto mode - all tools approved".to_string()
-                        } else if gosling_mode == GoslingMode::SmartApprove {
-                            "SmartApprove classified this call as read-only".to_string()
-                        } else {
-                            "User permission allows this tool".to_string()
-                        }
-                    }
-                    InspectionAction::Deny => "User permission denies this tool".to_string(),
-                    InspectionAction::RequireApproval(_) => {
-                        if tool_name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
-                            "Extension management requires user approval".to_string()
-                        } else {
-                            "Tool requires user approval".to_string()
-                        }
-                    }
-                };
+                            )),
+                            "Extension management requires user approval".to_string(),
+                        )
+                    } else if gosling_mode == GoslingMode::SmartApprove
+                        && permission_manager.get_smart_approve_permission(tool_name)
+                            == Some(PermissionLevel::NeverAllow)
+                    {
+                        (
+                            InspectionAction::Deny,
+                            "User permission denies this tool".to_string(),
+                        )
+                    } else if gosling_mode == GoslingMode::SmartApprove
+                        && permission_manager.get_smart_approve_permission(tool_name)
+                            != Some(PermissionLevel::AskBefore)
+                    {
+                        llm_detect_candidates.push(request);
+                        continue;
+                    } else {
+                        (
+                            InspectionAction::RequireApproval(None),
+                            "Tool requires user approval".to_string(),
+                        )
+                    };
 
                 results.push(InspectionResult {
                     tool_request_id: request.id.clone(),
@@ -290,6 +302,94 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(results[0].action, expected);
+    }
+
+    // AOC-ORCH-001 regression: subagents run in `GoslingMode::Auto`
+    // unconditionally, so a user's explicit `NeverAllow`/`AskBefore` policy for
+    // a tool must still be honored there rather than being bypassed by Auto's
+    // "allow everything" shortcut.
+    #[tokio::test]
+    async fn auto_mode_denies_a_tool_the_user_marked_never_allow() {
+        let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
+        pm.update_user_permission("developer__shell", PermissionLevel::NeverAllow);
+        let inspector = new_inspector(pm);
+
+        let req = ToolRequest {
+            id: "req".into(),
+            tool_call: Ok(
+                CallToolRequestParams::new("developer__shell").with_arguments(object!({}))
+            ),
+            metadata: None,
+            tool_meta: None,
+        };
+        let results = inspector
+            .inspect(
+                gosling_test_support::TEST_SESSION_ID,
+                &[req],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(results[0].action, InspectionAction::Deny);
+    }
+
+    #[tokio::test]
+    async fn auto_mode_denies_rather_than_hangs_on_ask_before() {
+        let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
+        pm.update_user_permission("developer__shell", PermissionLevel::AskBefore);
+        let inspector = new_inspector(pm);
+
+        let req = ToolRequest {
+            id: "req".into(),
+            tool_call: Ok(
+                CallToolRequestParams::new("developer__shell").with_arguments(object!({}))
+            ),
+            metadata: None,
+            tool_meta: None,
+        };
+        let results = inspector
+            .inspect(
+                gosling_test_support::TEST_SESSION_ID,
+                &[req],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        // Auto mode has nothing that can answer an approval prompt, so this
+        // must not become `RequireApproval` (which would hang forever) or
+        // `Allow` (which would silently bypass the user's policy).
+        assert_eq!(results[0].action, InspectionAction::Deny);
+    }
+
+    #[tokio::test]
+    async fn auto_mode_still_allows_a_tool_the_user_marked_always_allow() {
+        let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
+        pm.update_user_permission("developer__shell", PermissionLevel::AlwaysAllow);
+        let inspector = new_inspector(pm);
+
+        let req = ToolRequest {
+            id: "req".into(),
+            tool_call: Ok(
+                CallToolRequestParams::new("developer__shell").with_arguments(object!({}))
+            ),
+            metadata: None,
+            tool_meta: None,
+        };
+        let results = inspector
+            .inspect(
+                gosling_test_support::TEST_SESSION_ID,
+                &[req],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(results[0].action, InspectionAction::Allow);
     }
 
     // A malicious server can give a destructive tool a benign name and declare

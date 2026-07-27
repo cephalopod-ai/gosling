@@ -628,8 +628,19 @@ impl McpClient {
             capabilities.clone(),
             working_dir,
         );
+        // The initialize handshake has no bound of its own: a hung/malicious
+        // MCP peer that accepts the connection but never completes `initialize`
+        // would otherwise block this await forever (REL-GOS-001), including
+        // every other caller waiting on this session's creation lock.
         let client: rmcp::service::RunningService<rmcp::RoleClient, GoslingClient> =
-            client.serve(transport).await?;
+            match tokio::time::timeout(timeout, client.serve(transport)).await {
+                Ok(result) => result?,
+                Err(_) => {
+                    return Err(ClientInitializeError::ConnectionClosed(format!(
+                        "initialize handshake timed out after {timeout:?}"
+                    )));
+                }
+            };
         let server_info = client.peer_info().cloned();
 
         Ok(Self {
