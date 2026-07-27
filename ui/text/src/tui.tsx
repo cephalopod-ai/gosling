@@ -38,6 +38,7 @@ import {
   renderQueuedMessages,
 } from "./components/ContentRenderers.js";
 import { Header } from "./components/Header.js";
+import { PermissionPrompt } from "./components/PermissionPrompt.js";
 import { Rule } from "./components/Rule.js";
 import { ToolCallExpanded } from "./components/ToolCallExpanded.js";
 import type { ToolCallInfo } from "./toolcall.js";
@@ -539,6 +540,14 @@ function App({
     | { screen: "extensions" }
     | { screen: "diff"; content: string; truncated: boolean };
   const [overlay, setOverlay] = useState<Overlay | null>(null);
+  // ARC-GOS-001: a pending `session/request_permission` call the human has
+  // not yet answered. Resolved only from PermissionPrompt's onRespond, so
+  // no tool call the permission pipeline flagged for confirmation can
+  // proceed without a real keypress.
+  const [pendingPermission, setPendingPermission] = useState<{
+    request: RequestPermissionRequest;
+    resolve: (response: RequestPermissionResponse) => void;
+  } | null>(null);
 
   const clientRef = useRef<GoslingClient | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -772,16 +781,16 @@ function App({
 
         const client = new GoslingClient(
           () => ({
+            // ARC-GOS-001: relay the request to the human instead of
+            // deciding on their behalf. The promise only resolves once
+            // PermissionPrompt calls the stored `resolve` from a real
+            // keypress (see the pendingPermission render branch below).
             requestPermission: async (
               params: RequestPermissionRequest,
             ): Promise<RequestPermissionResponse> => {
-              const optionId = params.options?.[0]?.optionId ?? "approve";
-              return {
-                outcome: {
-                  outcome: "selected",
-                  optionId,
-                },
-              };
+              return new Promise<RequestPermissionResponse>((resolve) => {
+                setPendingPermission({ request: params, resolve });
+              });
             },
             sessionUpdate: async (params: SessionNotification) => {
               const update = params.update;
@@ -1144,7 +1153,7 @@ function App({
         return;
       }
     },
-    { isActive: !needsOnboarding && !overlay },
+    { isActive: !needsOnboarding && !overlay && !pendingPermission },
   );
 
   if (needsOnboarding && clientRef.current) {
@@ -1155,6 +1164,28 @@ function App({
           width={safeTermWidth}
           height={safeTermHeight}
           onComplete={handleOnboardingComplete}
+        />
+      </Box>
+    );
+  }
+
+  if (pendingPermission) {
+    const pending = pendingPermission;
+    return (
+      <Box
+        flexDirection="column"
+        width={safeTermWidth}
+        height={safeTermHeight}
+        justifyContent="center"
+        alignItems="center"
+      >
+        <PermissionPrompt
+          request={pending.request}
+          width={Math.min(safeTermWidth - 4, 72)}
+          onRespond={(response) => {
+            setPendingPermission(null);
+            pending.resolve(response);
+          }}
         />
       </Box>
     );
@@ -1308,32 +1339,72 @@ const cli = meow(
   Options
     --server, -s  Server URL (default: auto-launch bundled server)
     --text, -t    Send a single prompt and exit
+    --yes, -y     Auto-approve tool permission requests in --text mode
+                  (--text mode has no interactive prompt; without this flag,
+                  a permission request is declined rather than run)
 `,
   {
     importMeta: import.meta,
     flags: {
       server: { type: "string", shortFlag: "s" },
       text: { type: "string", shortFlag: "t" },
+      yes: { type: "boolean", shortFlag: "y", default: false },
     },
   },
 );
 
 let serverProcess: ReturnType<typeof spawn> | null = null;
 
-async function runTextMode(serverConnection: Stream | string, prompt: string) {
+async function runTextMode(
+  serverConnection: Stream | string,
+  prompt: string,
+  autoApprove: boolean,
+) {
   try {
     const client = new GoslingClient(
       () => ({
+        // ARC-GOS-001: --text mode has no interactive terminal loop to
+        // relay a permission decision through, so it must never silently
+        // pick options[0] (deterministically "allow always" - see
+        // acp/server.rs). Auto-approval is only ever performed when the
+        // user explicitly opted in via --yes, and even then the
+        // least-privileged affirmative option is used, never "allow
+        // always". Without --yes, a permission request is declined rather
+        // than hanging or silently running.
         requestPermission: async (
           params: RequestPermissionRequest,
         ): Promise<RequestPermissionResponse> => {
-          const optionId = params.options?.[0]?.optionId ?? "approve";
-          return {
-            outcome: {
-              outcome: "selected",
-              optionId,
-            },
-          };
+          if (autoApprove) {
+            const option =
+              params.options.find((o) => o.kind === "allow_once") ??
+              params.options.find((o) => o.kind === "allow_always") ??
+              params.options[0];
+            if (option) {
+              return {
+                outcome: { outcome: "selected", optionId: option.optionId },
+              };
+            }
+            return { outcome: { outcome: "cancelled" } };
+          }
+
+          process.stderr.write(
+            `\nPermission requested for ${
+              params.toolCall.title ?? params.toolCall.toolCallId
+            } — declined because --text mode is non-interactive. Pass --yes ` +
+              `to auto-approve tool calls in this mode.\n`,
+          );
+          const rejectOption =
+            params.options.find((o) => o.kind === "reject_once") ??
+            params.options[0];
+          if (rejectOption) {
+            return {
+              outcome: {
+                outcome: "selected",
+                optionId: rejectOption.optionId,
+              },
+            };
+          }
+          return { outcome: { outcome: "cancelled" } };
         },
         sessionUpdate: async (params: SessionNotification) => {
           const update = params.update;
@@ -1399,7 +1470,7 @@ async function main() {
 
   // Text mode: bypass TUI and stream directly to stdout
   if (cli.flags.text) {
-    await runTextMode(serverConnection, cli.flags.text);
+    await runTextMode(serverConnection, cli.flags.text, cli.flags.yes);
     cleanup();
     return;
   }
