@@ -11,7 +11,7 @@ use gosling_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, 
 
 use crate::commands::configure::handle_configure;
 use crate::commands::info::handle_info;
-use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
+use crate::commands::plugin::{handle_plugin_install, handle_plugin_trust, handle_plugin_update};
 use crate::commands::project::{handle_project_default, handle_projects_interactive};
 use crate::commands::term::{
     handle_term_info, handle_term_init, handle_term_log, handle_term_run, Shell,
@@ -552,6 +552,16 @@ enum PluginCommand {
     Update {
         #[arg(help = "Name of the installed plugin to update")]
         name: String,
+    },
+
+    /// Trust a project's plugins so their hooks and MCP servers may run
+    #[command(about = "Trust a project's plugins so their hooks and MCP servers may run")]
+    Trust {
+        #[arg(
+            help = "Project directory to trust (defaults to the current directory)",
+            default_value = "."
+        )]
+        path: PathBuf,
     },
 }
 
@@ -1693,6 +1703,7 @@ fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     match command {
         PluginCommand::Install { url, auto_update } => handle_plugin_install(&url, auto_update),
         PluginCommand::Update { name } => handle_plugin_update(&name),
+        PluginCommand::Trust { path } => handle_plugin_trust(&path),
     }
 }
 

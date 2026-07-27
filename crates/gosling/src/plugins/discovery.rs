@@ -84,51 +84,65 @@ fn discover_enabled_plugins_with_config(
         .filter(|plugin| settings_state(&plugin.name, &scoped_settings) != Some(false))
         .collect();
 
-    filter_by_config(enabled_by_settings, config, &scoped_settings)
+    filter_by_config(enabled_by_settings, config, &scoped_settings, project_root)
 }
 
 /// Apply the `plugins` map in `config.yaml`. Newly discovered user plugins stay
-/// enabled for compatibility; project plugins require explicit trust through
-/// settings or a persisted enabled config entry.
+/// enabled for compatibility (installing a user plugin is already an explicit
+/// action via `gosling plugin install`). Project plugins are never enabled or
+/// marked `trusted` from repo-shipped content alone (SEC-GSL-101): a
+/// project-scope plugin's own `settings.json`/`settings.local.json` can only
+/// *disable* it, never establish trust. Trust for a project's plugins is set
+/// exclusively by [`trust_project`], called from an explicit, out-of-repo user
+/// action (e.g. the `gosling plugin trust` CLI command).
 fn filter_by_config(
     plugins: Vec<DiscoveredPlugin>,
     config: &Config,
     scoped_settings: &[(SettingsScope, PluginSettings)],
+    project_root: Option<&Path>,
 ) -> Vec<DiscoveredPlugin> {
     let mut entries: HashMap<String, PluginConfigEntry> =
         config.get_param(PLUGINS_CONFIG_KEY).unwrap_or_default();
 
     let mut dirty = false;
     let mut enabled = Vec::new();
+    let mut untrusted_pending = Vec::new();
     for plugin in plugins {
         let key = plugin.root.to_string_lossy().to_string();
         match entries.get(&key) {
             Some(entry) => {
-                let explicitly_enabled =
-                    settings_state(&plugin.name, scoped_settings) == Some(true);
-                let trusted =
-                    plugin.scope == PluginScope::User || entry.trusted || explicitly_enabled;
+                // `trusted` is only ever flipped true by `trust_project`; it
+                // must never be re-derived here from the current
+                // settings.json content, or a repo could re-win trust simply
+                // by re-shipping `enabledPlugins`.
+                let trusted = plugin.scope == PluginScope::User || entry.trusted;
                 if entry.enabled && trusted {
                     enabled.push(plugin);
+                } else if !trusted && settings_state(&plugin.name, scoped_settings) == Some(true) {
+                    untrusted_pending.push(plugin.name);
                 }
             }
             None => {
-                let is_enabled = match plugin.scope {
+                let repo_requests_enable = match plugin.scope {
                     PluginScope::User => true,
                     PluginScope::Project => {
                         settings_state(&plugin.name, scoped_settings) == Some(true)
                     }
                 };
+                let trusted = plugin.scope == PluginScope::User;
+                let is_enabled = trusted && repo_requests_enable;
                 entries.insert(
                     key,
                     PluginConfigEntry {
                         enabled: is_enabled,
-                        trusted: plugin.scope == PluginScope::User || is_enabled,
+                        trusted,
                     },
                 );
                 dirty = true;
                 if is_enabled {
                     enabled.push(plugin);
+                } else if plugin.scope == PluginScope::Project && repo_requests_enable {
+                    untrusted_pending.push(plugin.name);
                 }
             }
         }
@@ -140,7 +154,54 @@ fn filter_by_config(
         }
     }
 
+    if !untrusted_pending.is_empty() {
+        tracing::warn!(
+            plugins = ?untrusted_pending,
+            project = ?project_root,
+            "project plugin(s) request to run hooks/MCP servers but this project is not \
+             trusted; run `gosling plugin trust` after reviewing them to allow it",
+        );
+    }
+
     enabled
+}
+
+/// Marks every plugin currently discovered under `project_root`'s
+/// `.agents/plugins/` directory as trusted, applying the project's own
+/// `settings.json`/`settings.local.json` to decide which of them become
+/// enabled. This is the only place `PluginConfigEntry::trusted` is set true
+/// for a project-scope plugin, and it must only be called from an explicit
+/// user action (SEC-GSL-101) — never automatically while discovering or
+/// loading a session.
+pub fn trust_project(project_root: &Path) -> anyhow::Result<Vec<String>> {
+    trust_project_with_config(project_root, Config::global())
+}
+
+fn trust_project_with_config(project_root: &Path, config: &Config) -> anyhow::Result<Vec<String>> {
+    let scoped_settings = load_all_settings(Some(project_root));
+    let discovered = list_dir_children(&project_plugin_dir(project_root));
+    let mut entries: HashMap<String, PluginConfigEntry> =
+        config.get_param(PLUGINS_CONFIG_KEY).unwrap_or_default();
+
+    let mut newly_enabled = Vec::new();
+    for (name, root) in discovered {
+        let key = root.to_string_lossy().to_string();
+        let repo_requests_enable = settings_state(&name, &scoped_settings) == Some(true);
+        let entry = entries.entry(key).or_insert(PluginConfigEntry {
+            enabled: false,
+            trusted: false,
+        });
+        entry.trusted = true;
+        if repo_requests_enable {
+            entry.enabled = true;
+        }
+        if entry.enabled {
+            newly_enabled.push(name);
+        }
+    }
+
+    config.set_param(PLUGINS_CONFIG_KEY, entries)?;
+    Ok(newly_enabled)
 }
 
 fn settings_state(
@@ -296,8 +357,11 @@ mod tests {
         assert!(found.iter().all(|p| p.name != "demo"), "got: {found:?}");
     }
 
+    // SEC-GSL-101 regression: a repo-shipped settings.json alone must never be
+    // sufficient to run a project's plugin hooks/MCP servers, even though the
+    // plugin is otherwise "explicitly enabled" per the settings file.
     #[test]
-    fn explicit_enabled_project_plugin_loads() {
+    fn explicit_enabled_project_plugin_does_not_load_without_trust() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
         write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
@@ -307,8 +371,55 @@ mod tests {
         );
 
         let found = discover(project);
+        assert!(
+            found.iter().all(|p| p.name != "demo"),
+            "an untrusted project's settings.json must not auto-enable a plugin; got: {found:?}"
+        );
+    }
+
+    #[test]
+    fn trusting_project_enables_settings_json_requested_plugin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+        write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
+        write_settings(
+            &project.join(".config").join("gosling"),
+            r#"{"enabledPlugins":["demo"]}"#,
+        );
+
+        let cfg_dir = tempfile::tempdir().unwrap();
+        let config = test_config(cfg_dir.path());
+
+        // Before trust: still refused, exactly like the untrusted case above.
+        let found = discover_enabled_plugins_with_config(Some(project), &config);
+        assert!(found.iter().all(|p| p.name != "demo"));
+
+        let newly_enabled = trust_project_with_config(project, &config).unwrap();
+        assert_eq!(newly_enabled, vec!["demo".to_string()]);
+
+        // After the explicit trust action, the settings.json request now applies.
+        let found = discover_enabled_plugins_with_config(Some(project), &config);
         let demo = found.iter().find(|p| p.name == "demo").unwrap();
         assert_eq!(demo.scope, PluginScope::Project);
+    }
+
+    #[test]
+    fn trusting_project_does_not_enable_plugin_settings_do_not_request() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path();
+        write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
+
+        let cfg_dir = tempfile::tempdir().unwrap();
+        let config = test_config(cfg_dir.path());
+
+        let newly_enabled = trust_project_with_config(project, &config).unwrap();
+        assert!(
+            newly_enabled.is_empty(),
+            "trust alone should not enable a plugin settings.json never asked for"
+        );
+
+        let found = discover_enabled_plugins_with_config(Some(project), &config);
+        assert!(found.iter().all(|p| p.name != "demo"));
     }
 
     #[test]
@@ -338,7 +449,11 @@ mod tests {
             r#"{"enabledPlugins":["demo"]}"#,
         );
 
-        let found = discover(project);
+        let cfg_dir = tempfile::tempdir().unwrap();
+        let config = test_config(cfg_dir.path());
+        trust_project_with_config(project, &config).unwrap();
+
+        let found = discover_enabled_plugins_with_config(Some(project), &config);
         let names: Vec<_> = found.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"demo"), "got: {names:?}");
         assert!(!names.contains(&"other"), "got: {names:?}");
@@ -359,7 +474,11 @@ mod tests {
             r#"{"enabledPlugins":["demo"]}"#,
         );
 
-        let found = discover(project);
+        let cfg_dir = tempfile::tempdir().unwrap();
+        let config = test_config(cfg_dir.path());
+        trust_project_with_config(project, &config).unwrap();
+
+        let found = discover_enabled_plugins_with_config(Some(project), &config);
         assert!(
             found.iter().any(|p| p.name == "demo"),
             "local scope should win; got: {:?}",
@@ -384,9 +503,13 @@ mod tests {
             r#"{"enabledPlugins":["demo"]}"#,
         );
 
+        let cfg_dir = tempfile::tempdir().unwrap();
+        let config = test_config(cfg_dir.path());
+
         let prev = std::env::var("GOSLING_PATH_ROOT").ok();
         unsafe { std::env::set_var("GOSLING_PATH_ROOT", fake_home.path()) };
-        let found = discover(project);
+        trust_project_with_config(project, &config).unwrap();
+        let found = discover_enabled_plugins_with_config(Some(project), &config);
         match prev {
             Some(v) => unsafe { std::env::set_var("GOSLING_PATH_ROOT", v) },
             None => unsafe { std::env::remove_var("GOSLING_PATH_ROOT") },
