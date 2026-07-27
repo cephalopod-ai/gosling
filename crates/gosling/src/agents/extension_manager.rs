@@ -2234,7 +2234,13 @@ impl ExtensionManager {
         }
 
         if !errors.is_empty() {
-            tracing::debug!(
+            // `debug` is typically disabled in production, which made a fully
+            // failed listing (every extension errored) indistinguishable from
+            // the legitimate "no extension defines any prompts" case
+            // (REL-GOS-003). `warn` keeps a partial failure visible without
+            // failing the call - callers should still see the prompts that
+            // did succeed.
+            tracing::warn!(
                 errors = ?errors
                     .into_iter()
                     .map(|e| format!("{:?}", e))

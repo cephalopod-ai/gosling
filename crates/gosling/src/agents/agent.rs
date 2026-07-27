@@ -2828,9 +2828,30 @@ impl Agent {
 
                                 for request in frontend_requests.iter().chain(remaining_requests.iter()) {
                                     let final_response = match &request.tool_call {
-                                        Ok(_) => request_to_response_map
-                                            .remove(&request.id)
-                                            .unwrap_or_else(|| Message::user().with_generated_id()),
+                                        Ok(_) => {
+                                            let Some(response) =
+                                                request_to_response_map.remove(&request.id)
+                                            else {
+                                                continue;
+                                            };
+                                            let has_tool_response =
+                                                response.content.iter().any(|c| {
+                                                    matches!(c, MessageContent::ToolResponse(r) if r.id == request.id)
+                                                });
+                                            if !has_tool_response {
+                                                // Cancelled before this tool call's result
+                                                // arrived: the placeholder is still empty.
+                                                // Leave it out of this turn's persisted
+                                                // history rather than pairing an
+                                                // already-durable ToolRequest with a
+                                                // misleading empty response
+                                                // (AOC-ORCH-002); `recover_tool_operations`
+                                                // synthesizes the correct in-doubt response
+                                                // for it on the next `reply()` call.
+                                                continue;
+                                            }
+                                            response
+                                        }
                                         Err(error) => {
                                             error!("Tool call could not be parsed: {error}");
                                             let mut response = request_to_response_map
@@ -3541,10 +3562,14 @@ impl Agent {
     }
 
     pub async fn list_extension_prompts(&self, session_id: &str) -> HashMap<String, Vec<Prompt>> {
+        // `list_prompts` never returns `Err` (per-extension failures are
+        // collected and logged internally, not propagated) - `unwrap_or_default`
+        // documents that contract instead of asserting a failure mode the
+        // callee cannot produce (REL-GOS-003).
         self.extension_manager
             .list_prompts(session_id, CancellationToken::default())
             .await
-            .expect("Failed to list prompts")
+            .unwrap_or_default()
     }
 
     pub async fn get_prompt(
@@ -3610,13 +3635,37 @@ impl Agent {
         self.frontend_tool_result_router.deliver(id, result).await;
     }
 
+    /// Frontend tool calls can legitimately involve a human in the loop, so
+    /// this mirrors the elicitation wait's 300s bound rather than a short
+    /// per-request timeout.
+    const FRONTEND_TOOL_RESULT_TIMEOUT: Duration = Duration::from_secs(300);
+
     pub(super) async fn wait_for_frontend_tool_result(
         &self,
         request_id: String,
     ) -> Option<ToolResult<CallToolResult>> {
-        match self.frontend_tool_result_router.register(request_id).await {
+        match self
+            .frontend_tool_result_router
+            .register(request_id.clone())
+            .await
+        {
             FrontendToolResultRegistration::Ready(result) => Some(result),
-            FrontendToolResultRegistration::Pending(rx) => rx.await.ok(),
+            // A crashed/disconnected frontend never calls `deliver`, and
+            // nothing else resolves this channel - without a bound, the whole
+            // reply stream hangs forever (REL-GOS-002).
+            FrontendToolResultRegistration::Pending(rx) => {
+                match tokio::time::timeout(Self::FRONTEND_TOOL_RESULT_TIMEOUT, rx).await {
+                    Ok(received) => received.ok(),
+                    Err(_) => {
+                        tracing::warn!(
+                            request_id = %request_id,
+                            timeout = ?Self::FRONTEND_TOOL_RESULT_TIMEOUT,
+                            "Frontend tool result wait timed out",
+                        );
+                        None
+                    }
+                }
+            }
         }
     }
 }
