@@ -1889,8 +1889,8 @@ fn redirect_target_is_private(url: &Url) -> bool {
 /// SSRF guard for model/tool-supplied fetch URLs: require an http(s) scheme and
 /// reject any host that resolves to a non-public address. This is a pre-flight
 /// check; a residual DNS-rebinding gap remains (re-resolving a hostname target
-/// on each redirect hop would need connection-time IP pinning to fully close)
-/// - the redirect policy on `build_web_scrape_client`'s client covers the
+/// on each redirect hop would need connection-time IP pinning to fully close).
+/// The redirect policy on `build_web_scrape_client`'s client covers the
 /// cheaper, more common IP-literal-redirect bypass.
 async fn ensure_public_http_url(raw: &str) -> Result<(), String> {
     let url = Url::parse(raw).map_err(|e| format!("invalid URL: {e}"))?;
