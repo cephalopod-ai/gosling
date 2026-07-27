@@ -77,6 +77,7 @@ impl GoslingAcpAgent {
         crate::config::extensions::set_extension_with_secrets(
             ExtensionEntry {
                 enabled: req.enabled,
+                activation_paths: None,
                 config: conversion.config,
             },
             &conversion.secret_updates,

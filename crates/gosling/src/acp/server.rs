@@ -16,7 +16,9 @@ use crate::agents::{
     Agent, AgentConfig, ExtensionConfig, ExtensionLoadResult, GoslingPlatform, SessionConfig,
 };
 use crate::config::base::CONFIG_YAML_NAME;
-use crate::config::extensions::{get_enabled_extensions_with_config, is_builtin_disabled_by_user};
+use crate::config::extensions::{
+    get_enabled_extensions_with_config_for_cwd, is_builtin_disabled_by_user,
+};
 use crate::config::paths::Paths;
 use crate::config::paths::RuntimePaths;
 use crate::config::permission::PermissionManager;
@@ -1188,13 +1190,13 @@ impl GoslingAcpAgent {
         let mut extensions = selected_builtin_extensions(config, &self.builtins);
 
         if let Some(gosling_extensions) = gosling_extensions {
-            let configured = get_enabled_extensions_with_config(config);
+            let configured = get_enabled_extensions_with_config_for_cwd(config, project_root);
             for mut extension in extensions::gosling_extensions_to_configs(gosling_extensions)? {
                 rehydrate_configured_envs(&mut extension, &configured);
                 push_or_replace_extension(&mut extensions, extension);
             }
         } else if mcp_servers.is_empty() {
-            for extension in get_enabled_extensions_with_config(config) {
+            for extension in get_enabled_extensions_with_config_for_cwd(config, project_root) {
                 push_or_replace_extension(&mut extensions, extension);
             }
             for extension in
@@ -1203,7 +1205,7 @@ impl GoslingAcpAgent {
                 push_or_replace_extension(&mut extensions, extension);
             }
         } else {
-            let configured = get_enabled_extensions_with_config(config);
+            let configured = get_enabled_extensions_with_config_for_cwd(config, project_root);
             for mcp_server in mcp_servers {
                 let mut extension =
                     mcp_server_to_extension_config(mcp_server).map_err(|message| {
