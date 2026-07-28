@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_yaml::Mapping;
+use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use tracing::{info, warn};
 use utoipa::ToSchema;
@@ -25,8 +26,56 @@ fn lock_extension_mutations() -> MutexGuard<'static, ()> {
 #[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
 pub struct ExtensionEntry {
     pub enabled: bool,
+    /// Absolute directory paths this extension is scoped to.
+    ///
+    /// `None` or an empty list (the default, and what every config predating
+    /// this field deserializes to) means the extension is available in every
+    /// session regardless of working directory - unchanged from historical
+    /// behavior. When non-empty, the extension is only made available to a
+    /// session whose working directory is equal to, or a descendant of, one
+    /// of these paths. See [`ExtensionEntry::is_active_for_cwd`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activation_paths: Option<Vec<String>>,
     #[serde(flatten)]
     pub config: ExtensionConfig,
+}
+
+impl ExtensionEntry {
+    /// Returns true when this extension entry should be considered for a
+    /// session whose working directory is `cwd`. See the `activation_paths`
+    /// field docs for the exact matching semantics.
+    pub fn is_active_for_cwd(&self, cwd: &Path) -> bool {
+        extension_active_for_cwd(self.activation_paths.as_deref(), cwd)
+    }
+}
+
+/// Core matcher behind [`ExtensionEntry::is_active_for_cwd`], split out as a
+/// free function so it can be unit tested against raw path lists without
+/// constructing a full `ExtensionEntry`.
+///
+/// `None`/empty `activation_paths` always match (backward compatible default).
+/// Otherwise `cwd` must equal, or descend from, one of the listed paths. Both
+/// sides are canonicalized before comparing so symlinks (e.g. macOS `/tmp` vs
+/// `/private/tmp`) and trailing slashes don't cause false negatives; if a path
+/// can't be canonicalized (e.g. it doesn't exist on this machine) the raw path
+/// is used as a best-effort fallback instead of unconditionally failing the match.
+pub(crate) fn extension_active_for_cwd(activation_paths: Option<&[String]>, cwd: &Path) -> bool {
+    let Some(paths) = activation_paths else {
+        return true;
+    };
+    if paths.is_empty() {
+        return true;
+    }
+
+    let canonical_cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+
+    paths.iter().any(|raw_path| {
+        let candidate = Path::new(raw_path.as_str());
+        let canonical_candidate = candidate
+            .canonicalize()
+            .unwrap_or_else(|_| candidate.to_path_buf());
+        canonical_cwd.starts_with(&canonical_candidate)
+    })
 }
 
 pub fn name_to_key(name: &str) -> String {
@@ -390,6 +439,31 @@ pub fn get_enabled_extensions_with_config(config: &Config) -> Vec<ExtensionConfi
         .collect()
 }
 
+/// Like [`get_enabled_extensions_with_config`], but additionally filters out
+/// extensions whose `activation_paths` don't cover `cwd`.
+///
+/// Use this at session-start call sites where the session's working directory
+/// is known, so extensions locked to an unrelated project (e.g. a codebase
+/// memory server hard-coded to a different repo) don't get loaded into every
+/// session. Callers with no session/cwd concept (config editing commands,
+/// `gosling mcp list`, analytics) should keep using the cwd-agnostic version.
+pub fn get_enabled_extensions_with_config_for_cwd(
+    config: &Config,
+    cwd: &Path,
+) -> Vec<ExtensionConfig> {
+    get_extensions_map_with_config(config)
+        .into_values()
+        .filter(|ext| ext.enabled)
+        .filter(|ext| ext.is_active_for_cwd(cwd))
+        .map(|ext| ext.config)
+        .collect()
+}
+
+/// [`get_enabled_extensions_with_config_for_cwd`] against the global config.
+pub fn get_enabled_extensions_for_cwd(cwd: &Path) -> Vec<ExtensionConfig> {
+    get_enabled_extensions_with_config_for_cwd(Config::global(), cwd)
+}
+
 pub fn get_available_extensions() -> Vec<ExtensionConfig> {
     let mut builtin_names = crate::builtin_extension::get_builtin_extension_names();
     builtin_names.sort_unstable();
@@ -448,10 +522,27 @@ pub fn get_warnings() -> Vec<String> {
 pub fn resolve_extensions_for_new_session(
     override_extensions: Option<Vec<ExtensionConfig>>,
 ) -> Vec<ExtensionConfig> {
-    let extensions = if let Some(exts) = override_extensions {
-        exts
-    } else {
-        get_enabled_extensions()
+    resolve_extensions_for_new_session_inner(override_extensions, None)
+}
+
+/// Like [`resolve_extensions_for_new_session`], but scopes the extension set
+/// to the new session's working directory via `activation_paths`. Prefer this
+/// at any session-creation call site that knows the session's cwd up front.
+pub fn resolve_extensions_for_new_session_for_cwd(
+    override_extensions: Option<Vec<ExtensionConfig>>,
+    cwd: &Path,
+) -> Vec<ExtensionConfig> {
+    resolve_extensions_for_new_session_inner(override_extensions, Some(cwd))
+}
+
+fn resolve_extensions_for_new_session_inner(
+    override_extensions: Option<Vec<ExtensionConfig>>,
+    cwd: Option<&Path>,
+) -> Vec<ExtensionConfig> {
+    let extensions = match (override_extensions, cwd) {
+        (Some(exts), _) => exts,
+        (None, Some(cwd)) => get_enabled_extensions_for_cwd(cwd),
+        (None, None) => get_enabled_extensions(),
     };
 
     extensions
@@ -490,8 +581,17 @@ mod tests {
     }
 
     fn builtin_entry(name: &str, enabled: bool) -> ExtensionEntry {
+        builtin_entry_with_activation_paths(name, enabled, None)
+    }
+
+    fn builtin_entry_with_activation_paths(
+        name: &str,
+        enabled: bool,
+        activation_paths: Option<Vec<String>>,
+    ) -> ExtensionEntry {
         ExtensionEntry {
             enabled,
+            activation_paths,
             config: ExtensionConfig::Builtin {
                 name: name.to_string(),
                 description: format!("{name} description"),
@@ -696,6 +796,7 @@ extensions:
     fn test_get_extension_by_name_resolves_saved_entry_by_key() {
         let saved = ExtensionEntry {
             enabled: true,
+            activation_paths: None,
             config: ExtensionConfig::Stdio {
                 name: "My Tool".to_string(),
                 description: "saved description".to_string(),
@@ -942,5 +1043,140 @@ extensions:
         set_extension_with_config(&config, builtin_entry("some_custom_builtin", false)).unwrap();
 
         assert!(is_builtin_disabled_by_user(&config, "some_custom_builtin"));
+    }
+
+    mod activation_paths {
+        use super::*;
+
+        #[test]
+        fn test_no_activation_paths_always_active() {
+            let cwd = TempDir::new().unwrap();
+
+            assert!(extension_active_for_cwd(None, cwd.path()));
+        }
+
+        #[test]
+        fn test_empty_activation_paths_always_active() {
+            let cwd = TempDir::new().unwrap();
+
+            assert!(extension_active_for_cwd(Some(&[]), cwd.path()));
+        }
+
+        #[test]
+        fn test_cwd_equal_to_activation_path_is_active() {
+            let root = TempDir::new().unwrap();
+            let paths = vec![root.path().to_string_lossy().to_string()];
+
+            assert!(extension_active_for_cwd(Some(&paths), root.path()));
+        }
+
+        #[test]
+        fn test_cwd_outside_activation_path_is_inactive() {
+            let root = TempDir::new().unwrap();
+            let unrelated = TempDir::new().unwrap();
+            let paths = vec![root.path().to_string_lossy().to_string()];
+
+            assert!(!extension_active_for_cwd(Some(&paths), unrelated.path()));
+        }
+
+        #[test]
+        fn test_cwd_descendant_of_activation_path_is_active() {
+            let root = TempDir::new().unwrap();
+            let nested = root.path().join("nested").join("deeper");
+            std::fs::create_dir_all(&nested).unwrap();
+            let paths = vec![root.path().to_string_lossy().to_string()];
+
+            assert!(extension_active_for_cwd(Some(&paths), &nested));
+        }
+
+        #[test]
+        fn test_sibling_directory_with_shared_prefix_is_inactive() {
+            // Regression guard for naive string-prefix matching: "/tmp/foo-bar"
+            // must not match an activation path of "/tmp/foo" even though the
+            // string "/tmp/foo" is a textual prefix of "/tmp/foo-bar".
+            let root = TempDir::new().unwrap();
+            let scoped = root.path().join("foo");
+            let sibling = root.path().join("foo-bar");
+            std::fs::create_dir_all(&scoped).unwrap();
+            std::fs::create_dir_all(&sibling).unwrap();
+            let paths = vec![scoped.to_string_lossy().to_string()];
+
+            assert!(!extension_active_for_cwd(Some(&paths), &sibling));
+        }
+
+        #[test]
+        fn test_trailing_slash_on_activation_path_is_normalized() {
+            let root = TempDir::new().unwrap();
+            let mut with_slash = root.path().to_string_lossy().to_string();
+            with_slash.push(std::path::MAIN_SEPARATOR);
+            let paths = vec![with_slash];
+
+            assert!(extension_active_for_cwd(Some(&paths), root.path()));
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn test_symlinked_cwd_resolves_to_activation_path() {
+            let real_root = TempDir::new().unwrap();
+            let outer = TempDir::new().unwrap();
+            let symlink_path = outer.path().join("link-to-real-root");
+            std::os::unix::fs::symlink(real_root.path(), &symlink_path).unwrap();
+            let paths = vec![real_root.path().to_string_lossy().to_string()];
+
+            // cwd is reached through a symlink; only canonicalizing both sides
+            // reveals that it actually resolves inside the activation path.
+            assert!(extension_active_for_cwd(Some(&paths), &symlink_path));
+        }
+
+        #[test]
+        fn test_extension_entry_is_active_for_cwd_matches_free_function() {
+            let root = TempDir::new().unwrap();
+            let entry = builtin_entry_with_activation_paths(
+                "scoped",
+                true,
+                Some(vec![root.path().to_string_lossy().to_string()]),
+            );
+
+            assert!(entry.is_active_for_cwd(root.path()));
+
+            let unrelated = TempDir::new().unwrap();
+            assert!(!entry.is_active_for_cwd(unrelated.path()));
+        }
+
+        #[test]
+        fn test_get_enabled_extensions_with_config_for_cwd_filters_scoped_extension() {
+            let (config, _config_file, _secrets_file) = test_config("");
+            let scoped_root = TempDir::new().unwrap();
+            let unrelated = TempDir::new().unwrap();
+
+            set_extension_with_config(&config, builtin_entry("global", true)).unwrap();
+            set_extension_with_config(
+                &config,
+                builtin_entry_with_activation_paths(
+                    "scoped",
+                    true,
+                    Some(vec![scoped_root.path().to_string_lossy().to_string()]),
+                ),
+            )
+            .unwrap();
+
+            let names_for = |cwd: &std::path::Path| -> Vec<String> {
+                get_enabled_extensions_with_config_for_cwd(&config, cwd)
+                    .into_iter()
+                    .filter_map(|ext| match ext {
+                        ExtensionConfig::Builtin { name, .. } => Some(name),
+                        _ => None,
+                    })
+                    .collect()
+            };
+
+            let in_scope = names_for(scoped_root.path());
+            assert!(in_scope.contains(&"global".to_string()));
+            assert!(in_scope.contains(&"scoped".to_string()));
+
+            let out_of_scope = names_for(unrelated.path());
+            assert!(out_of_scope.contains(&"global".to_string()));
+            assert!(!out_of_scope.contains(&"scoped".to_string()));
+        }
     }
 }

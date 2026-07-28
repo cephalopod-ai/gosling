@@ -5,7 +5,9 @@ use super::CliSession;
 use console::style;
 use gosling::agents::{Agent, Container, ExtensionError};
 use gosling::config::extensions::name_to_key;
-use gosling::config::resolve_extensions_for_new_session;
+use gosling::config::{
+    resolve_extensions_for_new_session, resolve_extensions_for_new_session_for_cwd,
+};
 use gosling::config::{Config, ExtensionConfig, GoslingMode};
 use gosling::model_config::model_config_from_user_config;
 use gosling::providers::create;
@@ -401,7 +403,12 @@ async fn collect_extension_configs(
         .await
     } else if session_config.no_profile {
         Vec::new()
+    } else if let Ok(cwd) = std::env::current_dir() {
+        resolve_extensions_for_new_session_for_cwd(None, &cwd)
     } else {
+        // Can't determine the session's cwd (e.g. it was deleted out from under
+        // the process) - fall back to the cwd-agnostic behavior rather than
+        // guessing, so activation-scoped extensions just aren't excluded.
         resolve_extensions_for_new_session(None)
     };
 
