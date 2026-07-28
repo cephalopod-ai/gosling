@@ -3084,7 +3084,7 @@
     "defaultMessage": "Off by default. When on, actions outside the directories above need your approval, with an explanation of what and why."
   },
   "workingDirectoriesMenu.restrictToggleDescriptionWorkspace": {
-    "defaultMessage": "On by default for workspaces. While on, providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked because Gosling can’t scope them to these directories. Turn off to use them."
+    "defaultMessage": "Off by default. While on, providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked because Gosling can’t scope them to these directories, and other actions outside the directories above need your approval. The workspace folder policy is enforced either way."
   },
   "workingDirectoriesMenu.restrictToggleLabel": {
     "defaultMessage": "Restrict tools to working directories"
