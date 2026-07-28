@@ -72,11 +72,11 @@ For large codebases, delegate analysis to a subagent and retain only the summary
 ### Instructions
 Chat Recall
 
-Search past conversations and load session summaries when the user expects some memory or context.
+Search past conversations and hydrate only the relevant context when the user expects some memory or context.
 
 Two modes:
-- Search mode: Use query with keywords/synonyms to find relevant messages
-- Load mode: Use session_id to get first and last messages of a specific session
+- Search mode: Use query to find relevance-ranked, bounded text snippets
+- Context mode: Use the returned session_id and message_id to get a small window around that exact hit
 
 ## code_execution
 

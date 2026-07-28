@@ -20,9 +20,11 @@ pub use declarative_providers::DeclarativeProviderConfig;
 pub use experiments::ExperimentManager;
 pub use extensions::{
     get_all_extension_names, get_all_extensions, get_available_extensions, get_enabled_extensions,
+    get_enabled_extensions_for_cwd, get_enabled_extensions_with_config_for_cwd,
     get_extension_by_name, get_warnings, is_extension_enabled, remove_extension,
-    remove_extension_and_permissions, resolve_extensions_for_new_session, set_extension,
-    set_extension_enabled, set_extension_with_secrets, ExtensionEntry,
+    remove_extension_and_permissions, resolve_extensions_for_new_session,
+    resolve_extensions_for_new_session_for_cwd, set_extension, set_extension_enabled,
+    set_extension_with_secrets, ExtensionEntry,
 };
 pub use gosling_providers::gosling_mode::GoslingMode;
 pub use permission::PermissionManager;
