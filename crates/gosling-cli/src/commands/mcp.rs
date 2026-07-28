@@ -38,6 +38,7 @@ pub fn handle_install(args: InstallArgs) -> Result<()> {
         }
         ExtensionEntry {
             enabled: true,
+            activation_paths: None,
             config: ExtensionConfig::Stdio {
                 name: args.name.clone(),
                 description: String::new(),

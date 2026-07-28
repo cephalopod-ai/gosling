@@ -514,6 +514,7 @@ fn apply_claude_desktop_candidate(
 
         let entry = crate::config::extensions::ExtensionEntry {
             enabled: enable_imported_extensions,
+            activation_paths: None,
             config: ExtensionConfig::Stdio {
                 name,
                 description: "Imported from Claude Desktop".to_string(),

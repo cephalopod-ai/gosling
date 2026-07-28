@@ -11,7 +11,7 @@ use axum::{
 use gosling::agents::{Container, ExtensionLoadResult};
 
 use gosling::agents::ExtensionConfig;
-use gosling::config::resolve_extensions_for_new_session;
+use gosling::config::resolve_extensions_for_new_session_for_cwd;
 use gosling::config::{Config, GoslingMode};
 use gosling::providers::create;
 use gosling::session::session_manager::SessionType;
@@ -154,7 +154,10 @@ async fn start_agent(
         })?;
 
     let has_extension_overrides = extension_overrides.is_some();
-    let mut extensions_to_use = resolve_extensions_for_new_session(extension_overrides);
+    let mut extensions_to_use = resolve_extensions_for_new_session_for_cwd(
+        extension_overrides,
+        &PathBuf::from(&working_dir),
+    );
     if !has_extension_overrides {
         extensions_to_use.extend(gosling::plugins::mcp_servers::enabled_plugin_mcp_servers(
             Some(&PathBuf::from(&working_dir)),

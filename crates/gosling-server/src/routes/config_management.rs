@@ -362,6 +362,7 @@ pub async fn add_extension(
 
     gosling::config::set_extension(ExtensionEntry {
         enabled: extension_query.enabled,
+        activation_paths: None,
         config: extension_query.config,
     })?;
 
