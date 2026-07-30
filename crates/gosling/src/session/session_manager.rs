@@ -6455,15 +6455,24 @@ mod tests {
             .await
             .unwrap();
 
-        // Breaking the `messages` table (not `sessions`) isolates the
+        // Breaking inserts into `messages` (not `sessions`) isolates the
         // failure to copy_session's final replace_conversation step,
         // *after* create_session and the extension_data/metadata update
         // have already succeeded — simulating an interruption partway
-        // through the copy rather than one before it even starts.
-        sqlx::query("ALTER TABLE messages DROP COLUMN content_json")
-            .execute(pool)
-            .await
-            .unwrap();
+        // through the copy rather than one before it even starts. A trigger
+        // is used instead of dropping a column because the message_search
+        // triggers reference content_json, which makes SQLite reject the
+        // drop; aborting only inserts also keeps the cleanup path's deletes
+        // working.
+        sqlx::query(
+            r#"
+            CREATE TRIGGER break_messages_insert BEFORE INSERT ON messages
+            BEGIN SELECT RAISE(ABORT, 'forced test failure'); END
+            "#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
 
         let result = sm.copy_session(&original.id, "copy".into()).await;
         assert!(

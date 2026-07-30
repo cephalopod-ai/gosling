@@ -131,7 +131,9 @@ fn install_config_failure_restores_secret_values() {
         "ROLLBACK_TOKEN: old-value\n",
     )
     .unwrap();
-    std::fs::create_dir(root.path().join("config").join("config.tmp")).unwrap();
+    // A directory where save_values expects its config.save.lock file makes
+    // persisting config.yaml fail after the secret has already been stored.
+    std::fs::create_dir(root.path().join("config").join("config.save.lock")).unwrap();
 
     let output = gosling(
         &root,
@@ -400,7 +402,9 @@ extensions:
     timeout: 300
 "#,
     );
-    std::fs::create_dir(root.path().join("config").join("config.tmp")).unwrap();
+    // A directory where save_values expects its config.save.lock file makes
+    // persisting config.yaml fail while leaving the original file intact.
+    std::fs::create_dir(root.path().join("config").join("config.save.lock")).unwrap();
 
     let output = gosling(&root, &["mcp", "remove", "retained"]);
 

@@ -180,6 +180,35 @@ pub fn handle_projects_interactive() -> Result<()> {
     // Sort projects by last_accessed (newest first)
     projects.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
 
+    // Without a terminal the interactive picker below fails with an opaque
+    // cliclack error, so fall back to printing the list. Write through a
+    // fallible handle: println! panics on BrokenPipe when a pipeline consumer
+    // such as `head` exits early.
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        use std::io::Write;
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        for project in &projects {
+            let instruction_preview = project
+                .last_instruction
+                .as_ref()
+                .map_or(String::new(), |instr| {
+                    format!(" [{}]", safe_truncate(instr, 40))
+                });
+            match writeln!(
+                out,
+                "{} ({}){}",
+                project.path,
+                format_date(project.last_accessed),
+                instruction_preview
+            ) {
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => return Ok(()),
+                other => other?,
+            }
+        }
+        return Ok(());
+    }
+
     // Format project paths for display
     let project_choices: Vec<(String, String)> = projects
         .iter()
