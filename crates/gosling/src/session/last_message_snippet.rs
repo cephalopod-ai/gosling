@@ -519,7 +519,10 @@ mod tests {
         .bind("invalid-content")
         .bind(&id)
         .bind("assistant")
-        .bind("not valid json")
+        // Valid JSON so the message_search insert trigger's json_each
+        // accepts the row, but not a content array, so snippet hydration
+        // fails to parse it.
+        .bind("{}")
         .bind(2_000_i64)
         .bind("{}")
         .execute(pool)
