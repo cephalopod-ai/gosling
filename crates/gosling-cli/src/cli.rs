@@ -1777,9 +1777,17 @@ pub async fn cli() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Command::Completion { shell, bin_name }) => {
+            // Generate into a buffer first: clap_complete panics if the writer
+            // fails, which turns `gosling completion bash | head` (early-closed
+            // pipe) into a panic instead of a silent broken-pipe exit.
             let mut cmd = Cli::command();
-            shell.generate(&mut cmd, &bin_name, &mut std::io::stdout());
-            Ok(())
+            let mut buffer = Vec::new();
+            shell.generate(&mut cmd, &bin_name, &mut buffer);
+            use std::io::Write;
+            match std::io::stdout().write_all(&buffer) {
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+                other => other.map_err(Into::into),
+            }
         }
         Some(Command::Configure {}) => handle_configure().await,
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,

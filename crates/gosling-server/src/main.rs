@@ -41,10 +41,6 @@ enum Commands {
     },
 }
 
-fn boot_marker(message: &str) {
-    eprintln!("GOSLINGD_BOOT: {message}");
-}
-
 fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info: &PanicHookInfo<'_>| {
@@ -60,8 +56,8 @@ fn install_panic_hook() {
             .or_else(|| panic_info.payload().downcast_ref::<String>().cloned())
             .unwrap_or_else(|| "unknown panic payload".to_string());
 
-        eprintln!("GOSLINGD_BOOT: panic at {location}: {payload}");
-        eprintln!("GOSLINGD_BOOT: backtrace:\n{}", Backtrace::force_capture());
+        eprintln!("goslingd panic at {location}: {payload}");
+        eprintln!("goslingd panic backtrace:\n{}", Backtrace::force_capture());
 
         default_hook(panic_info);
     }));
@@ -70,13 +66,8 @@ fn install_panic_hook() {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     install_panic_hook();
-    boot_marker("main entered");
 
     let cli = Cli::parse();
-    boot_marker(&format!(
-        "command parsed: {:?}",
-        std::mem::discriminant(&cli.command)
-    ));
 
     match cli.command {
         Commands::Agent => {

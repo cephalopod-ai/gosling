@@ -12,10 +12,6 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
-fn boot_marker(message: &str) {
-    eprintln!("GOSLINGD_BOOT: {message}");
-}
-
 #[cfg(unix)]
 async fn platform_signal_wait() {
     use tokio::signal::unix::{signal, SignalKind};
@@ -80,7 +76,6 @@ pub async fn run() -> Result<()> {
     #[cfg(feature = "rustls-tls")]
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    boot_marker("main entered");
     crate::logging::setup_logging(Some("goslingd"))?;
 
     let settings = configuration::Settings::new()?;
@@ -88,7 +83,6 @@ pub async fn run() -> Result<()> {
     let secret_key = std::env::var("GOSLING_SERVER__SECRET_KEY")
         .unwrap_or_else(|_| hex::encode(rand::random::<[u8; 32]>()));
 
-    boot_marker("appstate init start");
     let app_state = state::AppState::new(settings.tls).await?;
     let shutdown_state = app_state.clone();
     let shutdown_token = app_state.shutdown_token();
@@ -131,7 +125,6 @@ pub async fn run() -> Result<()> {
     if settings.tls {
         #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
         {
-            boot_marker("tls setup start");
             let tls_setup = gosling::acp::transport::tls::setup_tls(
                 settings.tls_cert_path.as_deref(),
                 settings.tls_key_path.as_deref(),
@@ -147,7 +140,6 @@ pub async fn run() -> Result<()> {
             });
 
             info!("listening on https://{}", addr);
-            boot_marker("listening");
 
             #[cfg(feature = "rustls-tls")]
             axum_server::bind_rustls(addr, tls_setup.config)
@@ -170,11 +162,9 @@ pub async fn run() -> Result<()> {
             );
         }
     } else {
-        boot_marker("tcp bind start");
         let listener = tokio::net::TcpListener::bind(addr).await?;
 
         info!("listening on http://{}", addr);
-        boot_marker("listening");
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_token.cancelled_owned())

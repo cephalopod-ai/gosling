@@ -180,6 +180,26 @@ pub fn handle_projects_interactive() -> Result<()> {
     // Sort projects by last_accessed (newest first)
     projects.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
 
+    // Without a terminal the interactive picker below fails with an opaque
+    // cliclack error, so fall back to printing the list.
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        for project in &projects {
+            let instruction_preview = project
+                .last_instruction
+                .as_ref()
+                .map_or(String::new(), |instr| {
+                    format!(" [{}]", safe_truncate(instr, 40))
+                });
+            println!(
+                "{} ({}){}",
+                project.path,
+                format_date(project.last_accessed),
+                instruction_preview
+            );
+        }
+        return Ok(());
+    }
+
     // Format project paths for display
     let project_choices: Vec<(String, String)> = projects
         .iter()
