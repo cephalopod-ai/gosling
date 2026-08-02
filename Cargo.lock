@@ -4192,6 +4192,7 @@ dependencies = [
  "chrono",
  "docx-rs",
  "etcetera 0.11.0",
+ "fs2",
  "image 0.24.9",
  "include_dir",
  "indoc",

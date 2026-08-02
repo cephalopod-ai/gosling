@@ -359,9 +359,9 @@ pub struct XlsxToolParams {
     #[serde(default)]
     pub case_sensitive: bool,
     /// Row number for update_cell and get_cell operations
-    pub row: Option<u64>,
+    pub row: Option<u32>,
     /// Column number for update_cell and get_cell operations
-    pub col: Option<u64>,
+    pub col: Option<u32>,
     /// New value for update_cell operation
     pub value: Option<String>,
 }
@@ -1297,7 +1297,7 @@ impl ComputerControllerServer {
             - find_text: Search for text in a worksheet (returns a list of (row, column) coordinates)
             - update_cell: Update a single cell's value (returns confirmation message)
             - get_cell: Get value and formula from a specific cell (returns both value and formula if present)
-            - save: Save changes back to the file (returns confirmation message)
+            - save: Confirm that there are no pending changes (update_cell saves immediately)
 
             Use this when working with Excel spreadsheets to analyze or modify data.
         "
@@ -1401,20 +1401,8 @@ impl ComputerControllerServer {
                 ))]))
             }
             XlsxOperation::UpdateCell => {
-                let row = params.row.ok_or_else(|| {
-                    ErrorData::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "Missing 'row' parameter".to_string(),
-                        None,
-                    )
-                })?;
-                let col = params.col.ok_or_else(|| {
-                    ErrorData::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "Missing 'col' parameter".to_string(),
-                        None,
-                    )
-                })?;
+                let row = required_xlsx_coordinate(params.row, "row")?;
+                let col = required_xlsx_coordinate(params.col, "col")?;
                 let value = params.value.as_ref().ok_or_else(|| {
                     ErrorData::new(
                         ErrorCode::INVALID_PARAMS,
@@ -1423,11 +1411,15 @@ impl ComputerControllerServer {
                     )
                 })?;
 
-                let worksheet_name = params.worksheet.as_deref().unwrap_or("Sheet1");
-
                 let mut xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                xlsx.update_cell(worksheet_name, row as u32, col as u32, value)
+                let worksheet_name = match params.worksheet.as_deref() {
+                    Some(name) => name.to_string(),
+                    None => xlsx.default_worksheet_name().map_err(|e| {
+                        ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+                    })?,
+                };
+                xlsx.update_cell(&worksheet_name, row, col, value)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 xlsx.save(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
@@ -1436,31 +1428,12 @@ impl ComputerControllerServer {
                     row, col, value, worksheet_name
                 ))]))
             }
-            XlsxOperation::Save => {
-                let xlsx = xlsx_tool::XlsxTool::new(&path)
-                    .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                xlsx.save(&path)
-                    .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
-                Ok(CallToolResult::success(vec![Content::text(
-                    "File saved successfully.",
-                )]))
-            }
+            XlsxOperation::Save => Ok(CallToolResult::success(vec![Content::text(
+                "No pending changes: update_cell saves each change immediately.",
+            )])),
             XlsxOperation::GetCell => {
-                let row = params.row.ok_or_else(|| {
-                    ErrorData::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "Missing 'row' parameter".to_string(),
-                        None,
-                    )
-                })?;
-
-                let col = params.col.ok_or_else(|| {
-                    ErrorData::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "Missing 'col' parameter".to_string(),
-                        None,
-                    )
-                })?;
+                let row = required_xlsx_coordinate(params.row, "row")?;
+                let col = required_xlsx_coordinate(params.col, "col")?;
 
                 let xlsx = xlsx_tool::XlsxTool::new(&path)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
@@ -1474,7 +1447,7 @@ impl ComputerControllerServer {
                     })?
                 };
                 let cell_value = xlsx
-                    .get_cell_value(worksheet, row as u32, col as u32)
+                    .get_cell_value(worksheet, row, col)
                     .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
                 Ok(CallToolResult::success(vec![Content::text(format!(
                     "{:#?}",
@@ -1722,6 +1695,22 @@ impl ComputerControllerServer {
                 )]))
             }
         }
+    }
+}
+
+fn required_xlsx_coordinate(coordinate: Option<u32>, name: &str) -> Result<u32, ErrorData> {
+    match coordinate {
+        Some(0) => Err(ErrorData::new(
+            ErrorCode::INVALID_PARAMS,
+            format!("'{name}' must be at least 1"),
+            None,
+        )),
+        Some(coordinate) => Ok(coordinate),
+        None => Err(ErrorData::new(
+            ErrorCode::INVALID_PARAMS,
+            format!("Missing '{name}' parameter"),
+            None,
+        )),
     }
 }
 
@@ -2047,6 +2036,29 @@ mod cache_path_tests {
             first, second,
             "two calls in the same wall-clock second must not produce the same cache path"
         );
+    }
+}
+
+#[cfg(test)]
+mod xlsx_parameter_tests {
+    use super::{required_xlsx_coordinate, XlsxToolParams};
+
+    #[test]
+    fn rejects_coordinates_that_do_not_fit_the_spreadsheet_api() {
+        let result = serde_json::from_value::<XlsxToolParams>(serde_json::json!({
+            "path": "workbook.xlsx",
+            "operation": "get_cell",
+            "row": 4294967296u64,
+            "col": 1
+        }));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_zero_based_spreadsheet_coordinates() {
+        assert!(required_xlsx_coordinate(Some(0), "row").is_err());
+        assert_eq!(required_xlsx_coordinate(Some(1), "row").unwrap(), 1);
     }
 }
 

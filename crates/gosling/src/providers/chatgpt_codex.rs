@@ -476,14 +476,28 @@ async fn fetch_jwks_for(issuer: &str) -> Result<JwkSet> {
     Ok(jwks)
 }
 
-async fn get_jwks(state: &ChatGptCodexAuthState) -> Result<JwkSet> {
+async fn get_jwks(state: &ChatGptCodexAuthState) -> Result<(JwkSet, bool)> {
     let mut cache = state.jwks_cache.lock().await;
     if let Some(jwks) = cache.clone() {
-        return Ok(jwks);
+        return Ok((jwks, true));
     }
     let jwks = fetch_jwks_for(ISSUER).await?;
     *cache = Some(jwks.clone());
+    Ok((jwks, false))
+}
+
+async fn refresh_jwks(state: &ChatGptCodexAuthState) -> Result<JwkSet> {
+    let mut cache = state.jwks_cache.lock().await;
+    let jwks = fetch_jwks_for(ISSUER).await?;
+    *cache = Some(jwks.clone());
     Ok(jwks)
+}
+
+fn jwks_contains_token_kid(token: &str, jwks: &JwkSet) -> bool {
+    decode_header(token)
+        .ok()
+        .and_then(|header| header.kid)
+        .is_some_and(|kid| jwks.find(&kid).is_some())
 }
 
 fn parse_jwt_claims_with_jwks(token: &str, jwks: &JwkSet) -> Result<JwtClaims> {
@@ -515,7 +529,12 @@ fn parse_jwt_claims_unverified(token: &str) -> Option<JwtClaims> {
 }
 
 async fn parse_jwt_claims(token: &str, state: &ChatGptCodexAuthState) -> Option<JwtClaims> {
-    if let Ok(jwks) = get_jwks(state).await {
+    if let Ok((jwks, was_cached)) = get_jwks(state).await {
+        let jwks = if was_cached && !jwks_contains_token_kid(token, &jwks) {
+            refresh_jwks(state).await.unwrap_or(jwks)
+        } else {
+            jwks
+        };
         if let Ok(claims) = parse_jwt_claims_with_jwks(token, &jwks) {
             return Some(claims);
         }
@@ -1527,6 +1546,21 @@ mod tests {
         let claims = parse_jwt_claims_with_jwks(&token, &jwks).unwrap();
 
         assert_eq!(claims.chatgpt_account_id.as_deref(), Some("account-1"));
+    }
+
+    #[test]
+    fn cached_jwks_with_a_missing_key_is_detected_for_refresh() {
+        let token = format!(
+            "{}.payload.signature",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(serde_json::json!({ "alg": "HS256", "kid": "new-key" }).to_string())
+        );
+        let jwks: JwkSet = serde_json::from_value(serde_json::json!({
+            "keys": [{ "kty": "oct", "alg": "HS256", "kid": "old-key", "k": "c2VjcmV0" }]
+        }))
+        .unwrap();
+
+        assert!(!jwks_contains_token_kid(&token, &jwks));
     }
 
     #[test_case(

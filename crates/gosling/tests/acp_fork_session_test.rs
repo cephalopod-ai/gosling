@@ -2,7 +2,9 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 
-use agent_client_protocol::schema::v1::{ForkSessionRequest, ForkSessionResponse, SessionId};
+use agent_client_protocol::schema::v1::{
+    ForkSessionRequest, ForkSessionResponse, McpServer, McpServerSse, SessionId,
+};
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{run_test, Connection, OpenAiFixture, TestConnectionConfig};
 use gosling::config::GoslingMode;
@@ -124,6 +126,41 @@ fn fork_session_conversation_before_matches_rest_cutoff() {
         assert_eq!(
             session_texts(&session_manager, &session.id).await,
             vec!["first", "second", "third"]
+        );
+    });
+}
+
+#[test]
+fn fork_session_failure_does_not_leave_a_copied_session() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        let session = seed_session_with_messages(&session_manager, cwd.path(), &[]).await;
+        let conn = new_connection(data_root.path()).await;
+        let before = session_manager
+            .list_sessions_by_types(&[SessionType::Acp])
+            .await
+            .unwrap()
+            .len();
+
+        let error = fork_session_request(
+            &conn,
+            ForkSessionRequest::new(SessionId::new(session.id), cwd.path()).mcp_servers(vec![
+                McpServer::Sse(McpServerSse::new("legacy-sse", "https://example.com/sse")),
+            ]),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("SSE is unsupported"));
+        assert_eq!(
+            session_manager
+                .list_sessions_by_types(&[SessionType::Acp])
+                .await
+                .unwrap()
+                .len(),
+            before
         );
     });
 }

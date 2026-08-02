@@ -1,7 +1,10 @@
 use crate::configuration;
 use crate::state;
 use anyhow::Result;
-use axum::middleware;
+use axum::{
+    http::{header, HeaderName, HeaderValue, Method},
+    middleware,
+};
 use axum_server::Handle;
 use gosling::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
 use gosling::acp::transport::create_authenticated_acp_router;
@@ -9,7 +12,7 @@ use gosling::agents::GoslingPlatform;
 use gosling::config::paths::Paths;
 use gosling_server::auth::check_token;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::info;
 
 #[cfg(unix)]
@@ -34,6 +37,41 @@ const PARENT_PID_ENV_VAR: &str = "GOSLING_SERVER__PARENT_PID";
 const PARENT_LIVENESS_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
 #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
 const TLS_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+fn desktop_origin_allowed(origin: &HeaderValue) -> bool {
+    if origin == HeaderValue::from_static("null") {
+        return true;
+    }
+
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
+    let Ok(uri) = origin.parse::<http::Uri>() else {
+        return false;
+    };
+
+    matches!(uri.scheme_str(), Some("http") | Some("https"))
+        && matches!(uri.host(), Some("localhost" | "127.0.0.1" | "::1"))
+}
+
+fn desktop_cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(move |origin, _request_parts| {
+            desktop_origin_allowed(origin)
+        }))
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::ACCEPT,
+            HeaderName::from_static("x-secret-key"),
+        ])
+}
 
 fn supervising_parent_pid() -> Option<u32> {
     std::env::var(PARENT_PID_ENV_VAR).ok()?.parse().ok()
@@ -91,10 +129,7 @@ pub async fn run() -> Result<()> {
         shutdown_state.shutdown().await;
     });
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = desktop_cors_layer();
 
     // TODO(acp-migration): When ui/desktop launches `gosling serve` directly,
     // move any goslingd-only ACP setup into the gosling serve path before deleting
@@ -178,4 +213,20 @@ pub async fn run() -> Result<()> {
 
     info!("server shutdown complete");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::desktop_origin_allowed;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn limits_browser_origins_to_desktop_and_loopback() {
+        for origin in ["null", "http://localhost:5173", "https://127.0.0.1:8443"] {
+            assert!(desktop_origin_allowed(&HeaderValue::from_static(origin)));
+        }
+        assert!(!desktop_origin_allowed(&HeaderValue::from_static(
+            "https://evil.example"
+        )));
+    }
 }

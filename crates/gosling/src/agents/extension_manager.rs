@@ -571,7 +571,7 @@ async fn child_process_client(
         ExtensionError::SetupError("failed to attach child process stderr".to_owned())
     })?;
 
-    let stderr_task = tokio::spawn(async move {
+    let mut stderr_task = tokio::spawn(async move {
         // This buffer is only consumed to build an error message if the connect
         // below fails. On the success path the task is detached and lives as long
         // as the MCP server, so an unbounded `read_to_end` would accumulate every
@@ -608,11 +608,18 @@ async fn child_process_client(
     match client_result {
         Ok(client) => Ok(client),
         Err(error) => {
-            let error_task_out = stderr_task.await?;
-            Err::<McpClient, ExtensionError>(match error_task_out {
-                Ok(stderr_content) => ProcessExit::new(stderr_content, error).into(),
-                Err(e) => e.into(),
-            })
+            let stderr_content =
+                match tokio::time::timeout(Duration::from_secs(1), &mut stderr_task).await {
+                    Ok(error_task_out) => match error_task_out? {
+                        Ok(stderr_content) => stderr_content,
+                        Err(e) => return Err(e.into()),
+                    },
+                    Err(_) => {
+                        stderr_task.abort();
+                        String::new()
+                    }
+                };
+            Err(ProcessExit::new(stderr_content, error).into())
         }
     }
 }
@@ -2476,6 +2483,29 @@ mod tests {
             .unwrap_or(false)
     }
 
+    async fn start_detached_container_process(container_name: &str, argv: &[String], label: &str) {
+        let mut last_error = String::new();
+        for attempt in 1..=3 {
+            let output = tokio::process::Command::new("docker")
+                .arg("exec")
+                .arg("-d")
+                .arg(container_name)
+                .args(argv)
+                .kill_on_drop(true)
+                .output()
+                .await
+                .expect("failed to invoke docker exec");
+            if output.status.success() {
+                return;
+            }
+            last_error = String::from_utf8_lossy(&output.stderr).into_owned();
+            if attempt < 3 {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        panic!("failed to start {label} in container after retries: {last_error}");
+    }
+
     struct MockClient {}
 
     struct FailingListToolsClient;
@@ -3204,19 +3234,7 @@ mod tests {
         let guard = DockerTestContainerGuard::new(container_name.clone());
 
         let argv = vec!["sleep".to_string(), "300".to_string()];
-        let exec = tokio::process::Command::new("docker")
-            .arg("exec")
-            .arg("-d")
-            .arg(&container_name)
-            .args(&argv)
-            .kill_on_drop(true)
-            .output()
-            .await
-            .expect("failed to invoke docker exec");
-        assert!(
-            exec.status.success(),
-            "failed to start process in container"
-        );
+        start_detached_container_process(&container_name, &argv, "extension process").await;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let extension_manager =
@@ -3264,16 +3282,7 @@ mod tests {
         );
 
         let shutdown_argv = vec!["sleep".to_string(), "301".to_string()];
-        let exec = tokio::process::Command::new("docker")
-            .arg("exec")
-            .arg("-d")
-            .arg(&container_name)
-            .args(&shutdown_argv)
-            .kill_on_drop(true)
-            .output()
-            .await
-            .expect("failed to invoke docker exec for manager shutdown");
-        assert!(exec.status.success());
+        start_detached_container_process(&container_name, &shutdown_argv, "shutdown process").await;
         extension_manager
             .add_mock_extension_with_docker_process(
                 "shutdown_ext".to_string(),
@@ -3301,16 +3310,8 @@ mod tests {
         );
 
         let drop_argv = vec!["sleep".to_string(), "302".to_string()];
-        let exec = tokio::process::Command::new("docker")
-            .arg("exec")
-            .arg("-d")
-            .arg(&container_name)
-            .args(&drop_argv)
-            .kill_on_drop(true)
-            .output()
-            .await
-            .expect("failed to invoke docker exec for drop fallback");
-        assert!(exec.status.success());
+        start_detached_container_process(&container_name, &drop_argv, "drop fallback process")
+            .await;
         extension_manager
             .add_mock_extension_with_docker_process(
                 "drop_ext".to_string(),

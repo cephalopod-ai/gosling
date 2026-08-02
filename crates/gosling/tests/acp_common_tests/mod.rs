@@ -272,7 +272,7 @@ pub async fn run_config_mcp<C: Connection>() {
     expected_session_id.set(&session.session_id().0);
 
     let output = session
-        .prompt(prompt, PermissionDecision::Cancel)
+        .prompt(prompt, PermissionDecision::AllowOnce)
         .await
         .unwrap();
     assert_eq!(output.text, FAKE_CODE);
@@ -324,7 +324,7 @@ pub async fn run_fs_read_text_file_true<C: Connection>() {
     expected_session_id.set(&session.session_id().0);
 
     let output = session
-        .prompt(prompt, PermissionDecision::Cancel)
+        .prompt(prompt, PermissionDecision::AllowOnce)
         .await
         .unwrap();
     assert_eq!(output.text, "test-read-content-12345");
@@ -597,7 +597,7 @@ pub async fn run_load_session_mcp<C: Connection>() {
 
     // First prompt: tool should work in the new session.
     let output = session
-        .prompt(prompt, PermissionDecision::Cancel)
+        .prompt(prompt, PermissionDecision::AllowOnce)
         .await
         .unwrap();
     assert_eq!(output.text, FAKE_CODE, "tool call failed in new session");
@@ -611,7 +611,7 @@ pub async fn run_load_session_mcp<C: Connection>() {
 
     // Second prompt: tool should work in the loaded session.
     let output = loaded_session
-        .prompt(prompt, PermissionDecision::Cancel)
+        .prompt(prompt, PermissionDecision::AllowOnce)
         .await
         .unwrap();
     assert_eq!(output.text, FAKE_CODE, "tool call failed in loaded session");
@@ -752,7 +752,7 @@ async fn run_mode_set_impl<C: Connection>(via: SetModeVia) {
     let mcp = McpFixture::new(expected_session_id.clone()).await;
 
     let config_yaml = format!(
-        "GOSLING_MODEL: {TEST_MODEL}\nGOSLING_PROVIDER: openai\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
+        "GOSLING_MODEL: {TEST_MODEL}\nGOSLING_PROVIDER: openai\nGOSLING_MODE: auto\nextensions:\n  mcp-fixture:\n    enabled: true\n    type: streamable_http\n    name: mcp-fixture\n    description: MCP fixture\n    uri: \"{}\"\n",
         mcp.url
     );
     fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
@@ -823,7 +823,7 @@ async fn run_mode_set_impl<C: Connection>(via: SetModeVia) {
         ],
     );
 
-    // Auto mode ignores Cancel -- tool succeeds without permission prompt
+    // The initial auto mode ignores Cancel -- tool succeeds without a permission prompt.
     conn.reset_openai();
     expected_session_id.set(&session_a.session_id().0);
     let output = session_a
@@ -949,7 +949,10 @@ pub async fn run_new_session_uses_current_config_mode<C: Connection>() {
     let SessionData { session, modes, .. } = conn.new_session().await.unwrap();
     expected_session_id.set(&session.session_id().0);
 
-    assert_eq!(modes.unwrap().current_mode_id, SessionModeId::new("auto"));
+    assert_eq!(
+        modes.unwrap().current_mode_id,
+        SessionModeId::new("approve")
+    );
 }
 
 pub async fn run_config_option_model_set<C: Connection>() {
@@ -1324,7 +1327,7 @@ pub async fn run_prompt_mcp<C: Connection>() {
     let output = session
         .prompt(
             "Use the get_code tool and output only its result.",
-            PermissionDecision::Cancel,
+            PermissionDecision::AllowOnce,
         )
         .await
         .unwrap();

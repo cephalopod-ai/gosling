@@ -13,6 +13,7 @@ use tokio::sync::{oneshot, Mutex as TokioMutex};
 use url::Url;
 
 static OAUTH_MUTEX: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
+const UNKNOWN_TOKEN_EXPIRY_SECS: i64 = 300;
 
 #[derive(Debug, Clone)]
 struct OidcEndpoints {
@@ -204,12 +205,12 @@ impl OAuthFlow {
                 // Traditional OAuth flow with expires_in seconds
                 Some(Utc::now() + chrono::Duration::seconds(expires_in as i64))
             } else {
-                // If the server doesn't provide any expiration info, log it but don't set an expiration
-                // This will make us rely on the refresh token for renewal rather than expiration time
+                // Treat an unbounded lifetime as short-lived. This avoids a cached token being
+                // used indefinitely when a provider omits expires_in.
                 tracing::debug!(
-                    "No expiration information provided by server, token expiration unknown."
+                    "No expiration information provided by server; using conservative expiration."
                 );
-                None
+                Some(Utc::now() + chrono::Duration::seconds(UNKNOWN_TOKEN_EXPIRY_SECS))
             };
 
         Ok(TokenData {
@@ -401,7 +402,7 @@ pub(crate) async fn get_oauth_token_async(
 
     // Try cache first
     if let Some(token) = token_cache.load_token() {
-        // If token has an expiration time, check if it's expired
+        // If token has an expiration time, check if it's expired.
         if let Some(expires_at) = token.expires_at {
             if expires_at > Utc::now() {
                 return Ok(token.access_token);
@@ -409,14 +410,12 @@ pub(crate) async fn get_oauth_token_async(
             // Token is expired, will try to refresh below
             tracing::debug!("Token is expired, attempting to refresh");
         } else {
-            // No expiration time was provided by the server
-            // We'll use the token without checking expiration
-            // This is safe because we'll fall back to refresh token if the server rejects it
-            tracing::debug!("Token has no expiration time, using it without expiration check");
-            return Ok(token.access_token);
+            // A legacy cache entry without an expiry must be refreshed instead
+            // of being reused indefinitely.
+            tracing::debug!("Token has no expiration time, attempting to refresh");
         }
 
-        // Token is expired or has no expiration, try to refresh if we have a refresh token
+        // Token is expired or has no expiration, try to refresh if we have a refresh token.
         if let Some(refresh_token) = token.refresh_token {
             // Get endpoints for token refresh
             match get_workspace_endpoints(host).await {
@@ -605,7 +604,7 @@ mod tests {
             token_data.refresh_token,
             Some("invalid-format-refresh".to_string())
         );
-        assert!(token_data.expires_at.is_none()); // Should be None due to parse error
+        assert!(token_data.expires_at.is_some());
 
         Ok(())
     }

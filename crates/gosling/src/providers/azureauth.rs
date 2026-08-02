@@ -1,4 +1,5 @@
 use crate::subprocess::SubprocessExt;
+use base64::Engine;
 use chrono;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -55,6 +56,30 @@ struct TokenResponse {
     expires_on: u64,
 }
 
+#[derive(Deserialize)]
+struct BearerTokenClaims {
+    exp: Option<i64>,
+}
+
+fn bearer_token_is_expired(token: &str) -> bool {
+    let Some(payload) = token.split('.').nth(1) else {
+        return false;
+    };
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(payload));
+    let Ok(decoded) = decoded else {
+        return false;
+    };
+    let Ok(claims) = serde_json::from_slice::<BearerTokenClaims>(&decoded) else {
+        return false;
+    };
+
+    claims
+        .exp
+        .is_some_and(|expires_at| expires_at <= chrono::Utc::now().timestamp() + 30)
+}
+
 /// Azure authentication handler that manages credentials and token caching.
 #[derive(Debug)]
 pub struct AzureAuth {
@@ -109,10 +134,18 @@ impl AzureAuth {
                 token_type: "Bearer".to_string(),
                 token_value: key.clone(),
             }),
-            AzureCredentials::BearerToken(token) => Ok(AuthToken {
-                token_type: "Bearer".to_string(),
-                token_value: token.clone(),
-            }),
+            AzureCredentials::BearerToken(token) => {
+                if bearer_token_is_expired(token) {
+                    return Err(AuthError::Credentials(
+                        "Pre-acquired Azure bearer token is expired or expires within 30 seconds"
+                            .to_string(),
+                    ));
+                }
+                Ok(AuthToken {
+                    token_type: "Bearer".to_string(),
+                    token_value: token.clone(),
+                })
+            }
             AzureCredentials::DefaultCredential => self.get_default_credential_token().await,
         }
     }
@@ -183,6 +216,12 @@ impl AzureAuth {
 mod tests {
     use super::*;
 
+    fn jwt_with_expiration(exp: i64) -> String {
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::json!({ "exp": exp }).to_string());
+        format!("header.{payload}.signature")
+    }
+
     #[test]
     fn test_ad_token_takes_precedence_over_api_key() {
         let auth = AzureAuth::new(Some("key".to_string()), Some("token".to_string())).unwrap();
@@ -216,5 +255,26 @@ mod tests {
         let token = auth.get_token().await.unwrap();
         assert_eq!(token.token_type, "Bearer");
         assert_eq!(token.token_value, "my-token");
+    }
+
+    #[tokio::test]
+    async fn expired_jwt_bearer_token_is_rejected_before_request() {
+        let auth = AzureAuth::new(
+            None,
+            Some(jwt_with_expiration(chrono::Utc::now().timestamp() - 1)),
+        )
+        .unwrap();
+
+        assert!(auth.get_token().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn opaque_bearer_token_remains_supported() {
+        let auth = AzureAuth::new(None, Some("opaque-user-token".to_string())).unwrap();
+
+        assert_eq!(
+            auth.get_token().await.unwrap().token_value,
+            "opaque-user-token"
+        );
     }
 }

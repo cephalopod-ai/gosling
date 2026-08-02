@@ -1,7 +1,8 @@
 use super::*;
 use gosling_providers::thinking::ThinkingEffort;
 
-const SECRET_MASK_SHOW_LEN: usize = 8;
+const SECRET_MASK_PREFIX_LEN: usize = 4;
+const SECRET_MASK_FALLBACK: &str = "***";
 
 fn mask_secret(secret: serde_json::Value) -> String {
     let as_string = match secret {
@@ -9,12 +10,12 @@ fn mask_secret(secret: serde_json::Value) -> String {
         _ => serde_json::to_string(&secret).unwrap_or_else(|_| secret.to_string()),
     };
 
-    let chars: Vec<_> = as_string.chars().collect();
-    let show_len = std::cmp::min(chars.len() / 2, SECRET_MASK_SHOW_LEN);
-    let visible: String = chars.iter().take(show_len).collect();
-    let mask = "*".repeat(chars.len() - show_len);
+    let prefix: String = as_string.chars().take(SECRET_MASK_PREFIX_LEN).collect();
+    if as_string.chars().count() <= SECRET_MASK_PREFIX_LEN {
+        return SECRET_MASK_FALLBACK.to_string();
+    }
 
-    format!("{}{}", visible, mask)
+    format!("{prefix}{SECRET_MASK_FALLBACK}")
 }
 
 impl GoslingAcpAgent {
@@ -368,4 +369,25 @@ fn prepare_voice_dictation_preferred_mic(
 
 fn is_supported_voice_dictation_provider(value: &str) -> bool {
     matches!(value, "openai" | "groq" | "elevenlabs" | "__disabled__")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_secret;
+
+    #[test]
+    fn masks_secrets_without_exposing_their_length() {
+        assert_eq!(
+            mask_secret(serde_json::Value::String("abcdefgh".to_string())),
+            "abcd***"
+        );
+        assert_eq!(
+            mask_secret(serde_json::Value::String("abcdefghijklmnop".to_string())),
+            "abcd***"
+        );
+        assert_eq!(
+            mask_secret(serde_json::Value::String("abc".to_string())),
+            "***"
+        );
+    }
 }

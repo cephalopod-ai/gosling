@@ -532,9 +532,14 @@ async fn run_command_hook(
     timeout: Duration,
     use_login_shell_path: bool,
 ) -> Result<std::process::Output> {
+    let path = if use_login_shell_path {
+        hook_path().await
+    } else {
+        None
+    };
     match tokio::time::timeout(
         timeout,
-        run_command_hook_inner(raw_command, plugin_root, payload, use_login_shell_path),
+        run_command_hook_inner(raw_command, plugin_root, payload, path.as_deref()),
     )
     .await
     {
@@ -547,15 +552,10 @@ async fn run_command_hook_inner(
     raw_command: &str,
     plugin_root: &Path,
     payload: &str,
-    use_login_shell_path: bool,
+    path: Option<&str>,
 ) -> Result<std::process::Output> {
     let command = expand_plugin_root(raw_command, plugin_root);
-    let path = if use_login_shell_path {
-        hook_path().await
-    } else {
-        None
-    };
-    let mut process = hook_command(&command, plugin_root, path.as_deref());
+    let mut process = hook_command(&command, plugin_root, path);
     process
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

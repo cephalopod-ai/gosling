@@ -587,6 +587,14 @@ fn test_config_option_model_set() {
 #[test]
 fn test_config_option_thinking_effort_set() {
     run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            data_root
+                .path()
+                .join(gosling::config::base::CONFIG_YAML_NAME),
+            "GOSLING_MODEL: gpt-5.1\nGOSLING_PROVIDER: openai\n",
+        )
+        .unwrap();
         let openai = OpenAiFixture::new(
             vec![],
             <AcpServerConnection as Connection>::expected_session_id(),
@@ -594,7 +602,8 @@ fn test_config_option_thinking_effort_set() {
         .await;
         let mut conn = <AcpServerConnection as Connection>::new(
             TestConnectionConfig {
-                current_model: "claude-sonnet-4".to_string(),
+                current_model: "gpt-5.1".to_string(),
+                data_root: data_root.path().to_path_buf(),
                 ..Default::default()
             },
             openai,

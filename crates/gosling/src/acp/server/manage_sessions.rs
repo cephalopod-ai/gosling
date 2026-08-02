@@ -81,6 +81,7 @@ impl GoslingAcpAgent {
             .session_manager
             .update(&previous_session.id)
             .working_dir(previous_session.working_dir.clone())
+            .additional_working_dirs(previous_session.additional_working_dirs.clone())
             .apply()
             .await
         {
@@ -138,14 +139,33 @@ impl GoslingAcpAgent {
             additional_working_dirs.push(path);
         }
 
+        let agent = self.get_session_agent(session_id).await?;
+
         self.session_manager
             .update(session_id)
-            .additional_working_dirs(additional_working_dirs)
+            .additional_working_dirs(additional_working_dirs.clone())
             .apply()
             .await
             .internal_err_ctx("Failed to add session working directory")?;
 
-        self.refresh_session_working_dirs(session_id).await
+        if let Err(error) = agent
+            .extension_manager
+            .update_working_dirs(&session.working_dir, &additional_working_dirs)
+            .await
+        {
+            return Err(self
+                .rollback_working_dir_transition(
+                    &agent,
+                    &session,
+                    format!("failed to update extension working directories: {error}"),
+                )
+                .await);
+        }
+
+        Ok(session_working_dirs_response(
+            &session.working_dir,
+            &additional_working_dirs,
+        ))
     }
 
     pub(super) async fn on_remove_session_working_dir(
@@ -158,6 +178,10 @@ impl GoslingAcpAgent {
                 .data("working directory cannot be empty"));
         }
         let path = std::path::PathBuf::from(&working_dir);
+        if !path.is_absolute() {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("working directory must be an absolute path"));
+        }
         let session_id = &req.session_id;
 
         let session = self
@@ -172,18 +196,38 @@ impl GoslingAcpAgent {
 
         let additional_working_dirs: Vec<_> = session
             .additional_working_dirs
-            .into_iter()
-            .filter(|dir| dir != &path)
+            .iter()
+            .filter(|&dir| dir != &path)
+            .cloned()
             .collect();
+
+        let agent = self.get_session_agent(session_id).await?;
 
         self.session_manager
             .update(session_id)
-            .additional_working_dirs(additional_working_dirs)
+            .additional_working_dirs(additional_working_dirs.clone())
             .apply()
             .await
             .internal_err_ctx("Failed to remove session working directory")?;
 
-        self.refresh_session_working_dirs(session_id).await
+        if let Err(error) = agent
+            .extension_manager
+            .update_working_dirs(&session.working_dir, &additional_working_dirs)
+            .await
+        {
+            return Err(self
+                .rollback_working_dir_transition(
+                    &agent,
+                    &session,
+                    format!("failed to update extension working directories: {error}"),
+                )
+                .await);
+        }
+
+        Ok(session_working_dirs_response(
+            &session.working_dir,
+            &additional_working_dirs,
+        ))
     }
 
     pub(super) async fn on_set_session_working_dir_restriction(
@@ -213,33 +257,6 @@ impl GoslingAcpAgent {
             .internal_err_ctx("Failed to update working directory restriction")?;
 
         Ok(EmptyResponse {})
-    }
-
-    async fn refresh_session_working_dirs(
-        &self,
-        session_id: &str,
-    ) -> Result<SessionWorkingDirsResponse, agent_client_protocol::Error> {
-        let session = self
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .internal_err_ctx("Failed to reload session")?;
-
-        let agent = self.get_session_agent(session_id).await?;
-        agent
-            .extension_manager
-            .update_working_dirs(&session.working_dir, &session.additional_working_dirs)
-            .await
-            .internal_err_ctx("Failed to update extension working directories")?;
-
-        Ok(SessionWorkingDirsResponse {
-            working_dir: session.working_dir.to_string_lossy().to_string(),
-            additional_working_dirs: session
-                .additional_working_dirs
-                .iter()
-                .map(|dir| dir.to_string_lossy().to_string())
-                .collect(),
-        })
     }
 
     pub(super) async fn on_set_session_system_prompt(
@@ -619,6 +636,19 @@ impl GoslingAcpAgent {
             .await
             .internal_err()?;
         Ok(EmptyResponse {})
+    }
+}
+
+fn session_working_dirs_response(
+    working_dir: &std::path::Path,
+    additional_working_dirs: &[std::path::PathBuf],
+) -> SessionWorkingDirsResponse {
+    SessionWorkingDirsResponse {
+        working_dir: working_dir.to_string_lossy().to_string(),
+        additional_working_dirs: additional_working_dirs
+            .iter()
+            .map(|dir| dir.to_string_lossy().to_string())
+            .collect(),
     }
 }
 

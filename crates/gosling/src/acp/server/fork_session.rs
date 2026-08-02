@@ -29,61 +29,69 @@ impl GoslingAcpAgent {
             .internal_err()?;
         let new_session_id = new_session.id.clone();
 
-        if let Some(conversation_before) = conversation_before {
-            self.session_manager
-                .truncate_conversation(&new_session_id, conversation_before)
+        let result = async {
+            if let Some(conversation_before) = conversation_before {
+                self.session_manager
+                    .truncate_conversation(&new_session_id, conversation_before)
+                    .await
+                    .internal_err()?;
+            }
+
+            let new_session = self
+                .session_manager
+                .get_session(&new_session_id, false)
                 .await
                 .internal_err()?;
-        }
 
-        let new_session = self
-            .session_manager
-            .get_session(&new_session_id, false)
-            .await
-            .internal_err()?;
+            let gosling_session = self
+                .prepare_session_for_activation(
+                    new_session.clone(),
+                    args.cwd.clone(),
+                    args.mcp_servers,
+                    false,
+                )
+                .await?;
 
-        let gosling_session = self
-            .prepare_session_for_activation(
-                new_session.clone(),
-                args.cwd.clone(),
-                args.mcp_servers,
+            let (agent, extension_results) =
+                self.prepare_acp_session_agent(cx, &gosling_session).await?;
+            self.register_acp_session(
+                gosling_session.id.clone(),
+                agent,
+                HashMap::new(),
                 false,
+                DEFAULT_SESSION_TAIL_LIMIT,
             )
-            .await?;
+            .await;
 
-        let (agent, extension_results) =
-            self.prepare_acp_session_agent(cx, &gosling_session).await?;
-        self.register_acp_session(
-            gosling_session.id.clone(),
-            agent,
-            HashMap::new(),
-            false,
-            DEFAULT_SESSION_TAIL_LIMIT,
-        )
+            let acp_session_id = SessionId::new(new_session_id.clone());
+            let mut meta = session_meta(&gosling_session);
+            if let Ok(v) = serde_json::to_value(&extension_results) {
+                meta.insert("extensionResults".to_string(), v);
+            }
+
+            let (mode_state, config_options) =
+                build_session_setup_config(&self.provider_inventory, &gosling_session).await?;
+
+            let mut response = ForkSessionResponse::new(acp_session_id.clone())
+                .modes(mode_state)
+                .meta(meta);
+
+            if let Some(co) = config_options {
+                response = response.config_options(co);
+            }
+            send_session_setup_notifications(
+                cx,
+                &gosling_session,
+                self.supports_gosling_custom_notifications(),
+            )?;
+            Ok(response)
+        }
         .await;
 
-        let acp_session_id = SessionId::new(new_session_id.clone());
-        let mut meta = session_meta(&gosling_session);
-        if let Ok(v) = serde_json::to_value(&extension_results) {
-            meta.insert("extensionResults".to_string(), v);
+        if result.is_err() {
+            self.cleanup_failed_new_session(&new_session_id).await;
         }
-
-        let (mode_state, config_options) =
-            build_session_setup_config(&self.provider_inventory, &gosling_session).await?;
-
-        let mut response = ForkSessionResponse::new(acp_session_id.clone())
-            .modes(mode_state)
-            .meta(meta);
-
-        if let Some(co) = config_options {
-            response = response.config_options(co);
-        }
-        send_session_setup_notifications(
-            cx,
-            &gosling_session,
-            self.supports_gosling_custom_notifications(),
-        )?;
-        Ok(response)
+        result
     }
 }
 

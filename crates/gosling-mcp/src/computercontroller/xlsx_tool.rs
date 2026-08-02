@@ -71,6 +71,10 @@ impl XlsxTool {
             .context("Worksheet index out of bounds")
     }
 
+    pub fn default_worksheet_name(&self) -> Result<String> {
+        Ok(self.get_worksheet_by_index(0)?.get_name().to_string())
+    }
+
     fn get_worksheet_dimensions(&self, worksheet: &Worksheet) -> Result<(usize, usize)> {
         Ok((
             worksheet.get_highest_column() as usize,
@@ -293,6 +297,16 @@ mod tests {
         let columns = xlsx.get_column_names(worksheet)?;
         assert!(!columns.is_empty());
         println!("Columns: {:?}", columns);
+        Ok(())
+    }
+
+    #[test]
+    fn default_worksheet_name_matches_the_first_worksheet() -> Result<()> {
+        let xlsx = XlsxTool::new(get_test_file())?;
+        assert_eq!(
+            xlsx.default_worksheet_name()?,
+            xlsx.get_worksheet_by_index(0)?.get_name()
+        );
         Ok(())
     }
 

@@ -221,7 +221,13 @@ fn test_custom_get_extensions() {
         )
         .await;
         assert!(add_result.is_ok(), "expected ok, got: {:?}", add_result);
-        let stored_inline_token = gosling::config::Config::global()
+        let config = gosling::config::Config::new(
+            conn.data_root()
+                .join(gosling::config::base::CONFIG_YAML_NAME),
+            "gosling-acp-test",
+        )
+        .expect("ACP test config should load");
+        let stored_inline_token = config
             .get_secret::<String>("INLINE_TOKEN")
             .expect("inline env should be saved as a secret");
         assert!(
@@ -1113,7 +1119,7 @@ fn test_developer_fs_requests_use_acp_session_id() {
         let output = session
             .prompt(
                 "Use the read tool to read /tmp/test_acp_read.txt and output only its contents.",
-                PermissionDecision::Cancel,
+                PermissionDecision::AllowOnce,
             )
             .await
             .expect("prompt should succeed");

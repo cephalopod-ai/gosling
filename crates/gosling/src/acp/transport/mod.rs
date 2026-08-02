@@ -13,7 +13,7 @@ use axum::{
     routing::get,
     Router,
 };
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::acp::server::GoslingAgentConnection;
 use crate::acp::server_factory::AcpServer;
@@ -161,9 +161,11 @@ fn acp_cors_layer(policy: AcpOriginPolicy) -> CorsLayer {
 /// CORS for the auxiliary routes (`/health`, `/status`, MCP app proxy) served by
 /// `gosling serve`. This allows the `x-secret-key` auth header the proxy routes
 /// rely on.
-fn aux_cors_layer() -> CorsLayer {
+fn aux_cors_layer(policy: AcpOriginPolicy) -> CorsLayer {
     CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(AllowOrigin::predicate(move |origin, _request_parts| {
+            policy.origin_allowed(origin)
+        }))
         .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([
             header::CONTENT_TYPE,
@@ -228,14 +230,17 @@ pub fn create_router(
     } else {
         AcpOriginPolicy::exact(additional_allowed_origins)
     };
-    let acp_routes =
-        create_acp_router_with_policy(server, policy, require_token.then_some(secret_key.clone()));
+    let acp_routes = create_acp_router_with_policy(
+        server,
+        policy.clone(),
+        require_token.then_some(secret_key.clone()),
+    );
 
     let aux_routes = Router::new()
         .route("/health", get(health))
         .route("/status", get(health))
         .merge(super::mcp_app_proxy::routes(secret_key))
-        .layer(aux_cors_layer());
+        .layer(aux_cors_layer(policy));
 
     acp_routes.merge(aux_routes)
 }

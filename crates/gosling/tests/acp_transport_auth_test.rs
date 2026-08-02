@@ -131,6 +131,28 @@ async fn websocket_handshake_rejects_arbitrary_web_origins() {
 }
 
 #[tokio::test]
+async fn auxiliary_routes_do_not_grant_cors_access_to_arbitrary_origins() {
+    let dir = tempfile::tempdir().unwrap();
+    let router = test_router(false, &dir);
+
+    let response = send_response(
+        &router,
+        Method::OPTIONS,
+        "/status",
+        &[
+            ("origin", "https://evil.example"),
+            ("access-control-request-method", "GET"),
+        ],
+    )
+    .await;
+
+    assert!(response
+        .headers()
+        .get("access-control-allow-origin")
+        .is_none());
+}
+
+#[tokio::test]
 async fn acp_router_websocket_handshake_rejects_arbitrary_web_origins() {
     let dir = tempfile::tempdir().unwrap();
     let router = test_acp_router(&dir);

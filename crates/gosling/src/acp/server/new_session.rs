@@ -106,7 +106,7 @@ impl GoslingAcpAgent {
         Ok(response)
     }
 
-    async fn cleanup_failed_new_session(&self, session_id: &str) {
+    pub(super) async fn cleanup_failed_new_session(&self, session_id: &str) {
         if let Err(error) = self.session_manager.delete_session(session_id).await {
             warn!(
                 session_id,

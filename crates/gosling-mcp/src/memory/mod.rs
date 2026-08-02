@@ -1,4 +1,5 @@
 use etcetera::{choose_app_strategy, AppStrategy};
+use fs2::FileExt;
 use indoc::formatdoc;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -34,6 +35,27 @@ fn write_file_atomic(path: &std::path::Path, content: &str) -> io::Result<()> {
         file.sync_all()?;
     }
     fs::rename(&temp_path, path)
+}
+
+fn lock_memory_store(path: &std::path::Path) -> io::Result<fs::File> {
+    let memory_dir = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "memory path must have a parent directory",
+        )
+    })?;
+    let lock_path = memory_dir.with_extension("lock");
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock_path)?;
+    lock.lock_exclusive()?;
+    Ok(lock)
 }
 
 fn extract_working_dir_from_meta(meta: &Meta) -> Option<PathBuf> {
@@ -251,6 +273,7 @@ impl MemoryServer {
         if let Some(parent) = memory_file_path.parent() {
             fs::create_dir_all(parent)?;
         }
+        let _lock = lock_memory_store(&memory_file_path)?;
 
         let mut file = fs::OpenOptions::new()
             .append(true)
@@ -274,6 +297,10 @@ impl MemoryServer {
         if !memory_file_path.exists() {
             return Ok(HashMap::new());
         }
+        let _lock = lock_memory_store(&memory_file_path)?;
+        if !memory_file_path.exists() {
+            return Ok(HashMap::new());
+        }
 
         let mut file = fs::File::open(memory_file_path)?;
         let mut content = String::new();
@@ -288,7 +315,10 @@ impl MemoryServer {
                         .split_whitespace()
                         .map(String::from)
                         .collect::<Vec<_>>();
-                    memories.insert(tags.join(" "), lines.map(String::from).collect());
+                    memories
+                        .entry(tags.join(" "))
+                        .or_insert_with(Vec::new)
+                        .extend(lines.map(String::from));
                 } else {
                     let entry_data: Vec<String> = std::iter::once(first_line.to_string())
                         .chain(lines.map(String::from))
@@ -318,6 +348,10 @@ impl MemoryServer {
         working_dir: Option<&PathBuf>,
     ) -> io::Result<usize> {
         let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
+        if !memory_file_path.exists() {
+            return Ok(0);
+        }
+        let _lock = lock_memory_store(&memory_file_path)?;
         if !memory_file_path.exists() {
             return Ok(0);
         }
@@ -358,6 +392,10 @@ impl MemoryServer {
     ) -> io::Result<()> {
         let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
         if memory_file_path.exists() {
+            let _lock = lock_memory_store(&memory_file_path)?;
+            if !memory_file_path.exists() {
+                return Ok(());
+            }
             fs::remove_file(memory_file_path)?;
         }
 
@@ -379,6 +417,10 @@ impl MemoryServer {
             local_base.join(".gosling").join("memory")
         };
         if base_dir.exists() {
+            let _lock = lock_memory_store(&base_dir.join(".memory-store"))?;
+            if !base_dir.exists() {
+                return Ok(());
+            }
             fs::remove_dir_all(&base_dir)?;
         }
         Ok(())
@@ -579,6 +621,50 @@ mod tests {
             .unwrap();
 
         assert!(router.global_memory_dir.exists());
+    }
+
+    #[test]
+    fn retrieve_combines_entries_with_identical_tags() {
+        let temp_dir = tempdir().unwrap();
+        let working_dir = temp_dir.path().join("working");
+        let router = MemoryServer {
+            tool_router: ToolRouter::new(),
+            instructions: String::new(),
+            global_memory_dir: temp_dir.path().join("global"),
+        };
+
+        router
+            .remember(
+                "context",
+                "category",
+                "first tagged memory",
+                &["project", "rust"],
+                false,
+                Some(&working_dir),
+            )
+            .unwrap();
+        router
+            .remember(
+                "context",
+                "category",
+                "second tagged memory",
+                &["project", "rust"],
+                false,
+                Some(&working_dir),
+            )
+            .unwrap();
+
+        assert_eq!(
+            router
+                .retrieve("category", false, Some(&working_dir))
+                .unwrap()
+                .get("project rust")
+                .unwrap(),
+            &vec![
+                "first tagged memory".to_string(),
+                "second tagged memory".to_string()
+            ]
+        );
     }
 
     #[test]

@@ -813,6 +813,18 @@ impl SessionManager {
             .await
     }
 
+    pub async fn record_usage(
+        &self,
+        session_id: &str,
+        current_usage: Usage,
+        accumulated_delta: Usage,
+        cost_delta: Option<f64>,
+    ) -> Result<()> {
+        self.storage
+            .record_usage(session_id, current_usage, accumulated_delta, cost_delta)
+            .await
+    }
+
     pub(crate) async fn list_sessions_paged(
         &self,
         query: SessionListPageQuery<'_>,
@@ -2852,6 +2864,59 @@ impl SessionStorage {
         }
 
         tx.commit().await?;
+        Ok(())
+    }
+
+    async fn record_usage(
+        &self,
+        session_id: &str,
+        current_usage: Usage,
+        accumulated_delta: Usage,
+        cost_delta: Option<f64>,
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let result = sqlx::query(
+            r#"
+            UPDATE sessions
+            SET total_tokens = ?,
+                input_tokens = ?,
+                output_tokens = ?,
+                cache_read_tokens = ?,
+                cache_write_tokens = ?,
+                accumulated_total_tokens = CASE WHEN ? IS NULL THEN accumulated_total_tokens ELSE COALESCE(accumulated_total_tokens, 0) + ? END,
+                accumulated_input_tokens = CASE WHEN ? IS NULL THEN accumulated_input_tokens ELSE COALESCE(accumulated_input_tokens, 0) + ? END,
+                accumulated_output_tokens = CASE WHEN ? IS NULL THEN accumulated_output_tokens ELSE COALESCE(accumulated_output_tokens, 0) + ? END,
+                accumulated_cache_read_tokens = CASE WHEN ? IS NULL THEN accumulated_cache_read_tokens ELSE COALESCE(accumulated_cache_read_tokens, 0) + ? END,
+                accumulated_cache_write_tokens = CASE WHEN ? IS NULL THEN accumulated_cache_write_tokens ELSE COALESCE(accumulated_cache_write_tokens, 0) + ? END,
+                accumulated_cost = CASE WHEN ? IS NULL THEN accumulated_cost ELSE COALESCE(accumulated_cost, 0) + ? END,
+                updated_at = datetime('now')
+            WHERE id = ?
+            "#,
+        )
+        .bind(current_usage.total_tokens)
+        .bind(current_usage.input_tokens)
+        .bind(current_usage.output_tokens)
+        .bind(current_usage.cache_read_input_tokens)
+        .bind(current_usage.cache_write_input_tokens)
+        .bind(accumulated_delta.total_tokens)
+        .bind(accumulated_delta.total_tokens)
+        .bind(accumulated_delta.input_tokens)
+        .bind(accumulated_delta.input_tokens)
+        .bind(accumulated_delta.output_tokens)
+        .bind(accumulated_delta.output_tokens)
+        .bind(accumulated_delta.cache_read_input_tokens)
+        .bind(accumulated_delta.cache_read_input_tokens)
+        .bind(accumulated_delta.cache_write_input_tokens)
+        .bind(accumulated_delta.cache_write_input_tokens)
+        .bind(cost_delta)
+        .bind(cost_delta)
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            anyhow::bail!("Session not found: {session_id}");
+        }
         Ok(())
     }
 
@@ -7665,5 +7730,36 @@ mod tests {
         let loaded = sm.get_session("cache_id", false).await.unwrap();
         assert_eq!(loaded.usage, usage);
         assert_eq!(loaded.accumulated_usage, accumulated_usage);
+    }
+
+    #[tokio::test]
+    async fn record_usage_accumulates_concurrent_updates() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Usage accounting".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let first_usage = Usage::new(Some(10), Some(5), None).with_cache_tokens(Some(2), None);
+        let second_usage = Usage::new(Some(20), Some(10), None).with_cache_tokens(None, Some(3));
+        let first = manager.record_usage(&session.id, first_usage, first_usage, Some(0.25));
+        let second = manager.record_usage(&session.id, second_usage, second_usage, Some(0.75));
+
+        let (first_result, second_result) = tokio::join!(first, second);
+        first_result.unwrap();
+        second_result.unwrap();
+
+        let reloaded = manager.get_session(&session.id, false).await.unwrap();
+        assert_eq!(
+            reloaded.accumulated_usage,
+            Usage::new(Some(30), Some(15), None).with_cache_tokens(Some(2), Some(3))
+        );
+        assert_eq!(reloaded.accumulated_cost, Some(1.0));
     }
 }

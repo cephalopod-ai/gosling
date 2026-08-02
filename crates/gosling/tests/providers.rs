@@ -196,7 +196,8 @@ impl ProviderTestConfig {
     }
 
     fn with_agentic_provider(name: &'static str, model_name: &'static str, binary: &str) -> Self {
-        let skip = which::which(binary).is_err();
+        let skip = std::env::var("GOSLING_RUN_LIVE_PROVIDER_TESTS").as_deref() != Ok("1")
+            || which::which(binary).is_err();
         Self {
             skip,
             expected_session_id: || Arc::new(IgnoreSessionId),

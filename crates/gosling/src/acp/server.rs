@@ -2826,6 +2826,7 @@ impl GoslingAcpAgent {
         }
         self.clear_active_run(&session_id, &run_id).await;
         Self::send_active_run_update(cx, &args.session_id, None)?;
+        was_cancelled |= cancel_token.is_cancelled();
         if let Some(error) = stream_error {
             return Err(error);
         }

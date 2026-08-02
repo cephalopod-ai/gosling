@@ -1736,6 +1736,10 @@ impl Agent {
         session_config: SessionConfig,
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
+        if is_token_cancelled(&cancel_token) {
+            return Ok(Box::pin(futures::stream::empty()));
+        }
+
         let session_manager = self.config.session_manager.clone();
         session_manager
             .recover_tool_operations(&session_config.id)
@@ -2600,12 +2604,12 @@ impl Agent {
                                     direct_thinking
                                 };
 
+                                let mut request_msg = Message::assistant()
+                                    .with_id(format!("msg_{}", Uuid::new_v4()));
+                                for thinking in &response_thinking {
+                                    request_msg = request_msg.with_content(thinking.clone());
+                                }
                                 for request in frontend_requests.iter().chain(remaining_requests.iter()) {
-                                    let mut request_msg = Message::assistant()
-                                        .with_id(format!("msg_{}", Uuid::new_v4()));
-                                    for thinking in &response_thinking {
-                                        request_msg = request_msg.with_content(thinking.clone());
-                                    }
                                     let history_tool_call = match &request.tool_call {
                                         Ok(_) => request.tool_call.clone(),
                                         Err(_) => Ok(CallToolRequestParams::new(
@@ -2626,11 +2630,11 @@ impl Agent {
                                             request_msg.created = response_placeholder.created;
                                         }
                                     }
-                                    session_manager
-                                        .upsert_message(&session_config.id, &request_msg)
-                                        .await?;
-                                    messages_to_add.push(request_msg);
                                 }
+                                session_manager
+                                    .upsert_message(&session_config.id, &request_msg)
+                                    .await?;
+                                messages_to_add.push(request_msg);
 
                                 for request in frontend_requests.iter() {
                                     let response_msg = request_to_response_map.get_mut(&request.id)
@@ -4917,6 +4921,42 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         );
         assert!(completed_messages.messages()[1].id.is_some());
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn already_cancelled_reply_does_not_persist_a_user_message() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
+        let (agent, session_id) = create_test_agent(
+            temp_dir.path().join("data"),
+            hook_manager,
+            Arc::new(ChunkedTextProvider),
+        )
+        .await?;
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+
+        let reply_stream = agent
+            .reply(
+                Message::user().with_text("do not store this"),
+                SessionConfig {
+                    id: session_id.clone(),
+                    max_turns: Some(10),
+                    compacted_context: false,
+                    tail_limit: None,
+                },
+                Some(cancellation),
+            )
+            .await?;
+        assert_eq!(reply_stream.count().await, 0);
+
+        let session = agent
+            .config
+            .session_manager
+            .get_session(&session_id, true)
+            .await?;
+        assert!(session.conversation.unwrap().messages().is_empty());
         Ok(())
     }
 

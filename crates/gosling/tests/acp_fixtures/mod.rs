@@ -41,11 +41,17 @@ fn write_global_test_config(config_path: &Path, openai_base_url: &str) {
         serde_yaml::Value::String("OPENAI_HOST".to_string()),
         serde_yaml::Value::String(openai_base_url.to_string()),
     );
+    config.insert(
+        serde_yaml::Value::String("GOSLING_DISABLE_KEYRING".to_string()),
+        serde_yaml::Value::Bool(true),
+    );
+    let contents = serde_yaml::to_string(&config).unwrap();
+    fs::write(config_path, &contents).unwrap();
 
     let global_config_dir = Paths::config_dir();
     fs::create_dir_all(&global_config_dir).unwrap();
     let global_config_path = global_config_dir.join(gosling::config::base::CONFIG_YAML_NAME);
-    fs::write(&global_config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
+    fs::write(&global_config_path, contents).unwrap();
 }
 
 pub struct OpenAiFixture {
