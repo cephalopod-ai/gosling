@@ -1,0 +1,13 @@
+# Giles scan exclusions for the gosling fork.
+# Vendored dependencies and build output are not authored in this repo and are
+# excluded from the tree hash and watcher inventory.
+node_modules
+*/node_modules
+.venv
+venv
+dist
+build
+# Cargo build output (221k files). Repo-local rather than a Giles default:
+# `target` is a plausible authored directory name in non-Rust repos.
+target
+*/target
