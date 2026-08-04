@@ -11,3 +11,6 @@ build
 # `target` is a plausible authored directory name in non-Rust repos.
 target
 */target
+# Hermit-managed toolchain cache (63k downloaded binaries/packages).
+.hermit
+*/.hermit
