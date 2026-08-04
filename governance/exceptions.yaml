@@ -1,0 +1,66 @@
+schema_version: "3.3"
+
+# Canonical exceptions lane for the gosling fork (v3.3).
+# Authored 2026-08-03 under explicit operator delegation during the
+# fleet-wide Giles blocker remediation pass.
+
+exceptions:
+  - exception_id: "GOSLING-CARGO-WORKSPACE-LAYOUT"
+    description: >-
+      gosling is a Cargo workspace. Application code lives in per-crate
+      `crates/<name>/src/` trees and tests live in each crate's `src/`
+      and `tests/` directories, so there is no top-level `src/` or
+      `tests/` directory for the `program` repo_type to match.
+    owner: "human_operator"
+    approved_by: "eric"
+    mitigations:
+      - "Workspace members are declared in Cargo.toml"
+      - "`cargo test` across the workspace is the documented test entry point in AGENTS.md"
+      - "Build, test, lint and format commands are documented in AGENTS.md"
+    created_at: "2026-08-03T00:00:00Z"
+    review_by: "2027-02-03T00:00:00Z"
+    expires_at: "2027-08-03T00:00:00Z"
+    status: "active"
+    suppressed_codes:
+      - "GD-001"
+      - "GT-001"
+      - "IDX-GD-001"
+      - "IDX-GT-001"
+    suppressed_finding_keys: []
+    divergence_class: "permanent"
+    justification: >-
+      canon/repo_types.yaml assumes a single top-level source root.
+      Restructuring a Cargo workspace to satisfy that assumption would
+      break the build and diverge further from the upstream this fork
+      tracks. Recorded here rather than satisfied with placeholder dirs.
+    linked_migration: null
+    linked_investigation: null
+    review_history: []
+
+  - exception_id: "GOSLING-UPSTREAM-RELEASE-TAGS"
+    description: >-
+      The fork carries 86 release tags inherited from the upstream
+      cephalopod-ai/gosling history. The docsync watcher expects a release
+      note under docs/changes/releases/ for each tag and emits GDOC-013 for
+      every inherited tag. Those releases were cut upstream and this fork
+      does not author release notes for them.
+    owner: "human_operator"
+    approved_by: "eric"
+    mitigations:
+      - "Fork provenance and upstream relationship documented in UPSTREAM.md"
+      - "Fork-authored releases, if any, will carry their own release notes"
+    created_at: "2026-08-03T00:00:00Z"
+    review_by: "2027-02-03T00:00:00Z"
+    expires_at: "2027-08-03T00:00:00Z"
+    status: "active"
+    suppressed_codes:
+      - "GDOC-013"
+    suppressed_finding_keys: []
+    divergence_class: "permanent"
+    justification: >-
+      Backfilling 86 release notes for upstream releases this fork did not
+      cut would fabricate provenance. The finding is a fork artifact, not a
+      documentation gap in this repository.
+    linked_migration: null
+    linked_investigation: null
+    review_history: []

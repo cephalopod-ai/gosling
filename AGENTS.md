@@ -120,3 +120,99 @@ remaining space for dynamic text.
 - CLI: crates/gosling-cli/src/main.rs
 - UI: ui/desktop/src/main.ts
 - Agent: crates/gosling/src/agents/agent.rs
+
+
+---
+
+## Required execution clauses
+
+These clauses are load-bearing for the Giles `repo_docs_agent_watcher`
+contract (GDOC-058) and must remain literally present in AGENTS.md.
+
+- **Read existing code before edits.** Inspect before modifying any file;
+  do not edit by analogy or assumption.
+- **Do not invent APIs/paths.** Follow existing patterns; do not invent
+  APIs, imports, paths, or commands that are not already present.
+- **Surface partial success.** Report work as partially validated when
+  only part of the change was verified; never round partial up to done.
+- **One task per run.** Prefer one workflow completed end-to-end over
+  many partial surfaces added at once.
+- **Preserve style/conventions.** Preserve the established formatting,
+  naming, and structural conventions of the file being edited.
+- **Run validation before done.** Validate before completion: any change
+  that touches code or governance must execute the relevant tests/scans
+  and report the result before being declared complete.
+- **Do not delete/overwrite user work.** Do not delete or overwrite
+  in-progress files. Never revert existing changes the operator did not
+  authorize.
+- **No fake success/stub completion.** MUST NOT present stubs,
+  placeholders, or canned responses as working behaviour.
+
+
+<!-- GILES:DOCS-GOVERNANCE:START -->
+## Documentation and agent operating contract
+
+This repository carries its own local operating instructions. Fleet-wide documentation governance may be scanned or enforced by Giles, but agents must not assume external memory or external policy is available while working in this repo.
+
+### Required read order
+
+Before making code, documentation, configuration, schema, or test changes, read the relevant files in this order when present:
+
+1. `AGENTS.md`
+2. `GEMINI.md`
+3. `README.md`
+4. `docs/INDEX.md`
+5. architecture, development, usage, ADR, and governance docs referenced by `docs/INDEX.md`
+6. `.giles/repo.yaml` and other `.giles/*.yaml` advisory metadata
+7. recent `docs/logs/session/` entries relevant to the task
+
+### Authority rules
+
+- **Read AGENTS.md first.** AGENTS.md is the canonical repo-local operating contract; every agent must start by reading AGENTS.md before consulting any other instruction file. Adapter files (GEMINI.md, CLAUDE.md, etc.) defer to AGENTS.md.
+- `GEMINI.md` contains Gemini-specific execution guidance and must defer to `AGENTS.md` for repo authority.
+- `.giles/*.yaml` files are advisory mirrors unless a fresh Giles scan or explicit repo policy marks them as promoted evidence.
+- Agents record evidence; they do not declare fleet compliance.
+- If code, docs, and Giles metadata disagree, preserve the conflict explicitly and log it as a follow-up unless the requested task is to resolve that conflict.
+
+### Documentation patch rules
+
+Documentation changes must be source-grounded.
+
+Allowed:
+- update stale paths
+- add missing repo-local operating instructions
+- update docs indexes
+- document existing behavior
+- add explicit TODOs or follow-ups for unresolved conflicts
+- create or update session logs in the repo's established format
+
+Not allowed without explicit request:
+- runtime code changes
+- architecture changes disguised as documentation
+- invented behavior
+- deleting repo-specific constraints because they appear redundant
+- converting advisory Giles metadata into compliance claims
+- broad reorganization of docs
+
+### Validation expectations
+
+For documentation-only tasks, run the lightest available validation that proves the patch is structurally safe. Prefer:
+
+```sh
+git diff -- AGENTS.md GEMINI.md docs README.md
+grep -R "GILES:DOCS-GOVERNANCE:START" -n AGENTS.md
+grep -R "GILES:GEMINI-DOCS-GOVERNANCE:START" -n GEMINI.md
+```
+
+If the repo has doc linting, markdown linting, tests, or a Giles scan command documented locally, run the relevant targeted command and record the result.
+
+### Logging
+
+For non-trivial documentation or governance changes, create or update a session log under `docs/logs/session/` using the repo's established format. If no format exists, create a concise Markdown log with:
+
+* date
+* task
+* files changed
+* validation run
+* risks or follow-ups
+<!-- GILES:DOCS-GOVERNANCE:END -->

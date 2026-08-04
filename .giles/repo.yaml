@@ -1,0 +1,6 @@
+schema_version: "1.0"
+repo_id: "gosling"
+canon_version: "1.4"
+mode: "canonical"
+governance_profile: "default"
+custom_categories: []

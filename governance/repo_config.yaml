@@ -1,0 +1,11 @@
+schema_version: "3.3"
+repo_id: "gosling"
+repo_type: "program"
+repo_name: "gosling"
+owner: "human_operator"
+
+# Fork of cephalopod-ai/gosling (see UPSTREAM.md). Cargo workspace: the
+# application code lives in crates/, not a top-level src/ tree.
+family: "application"
+stage: active_dev
+rigor: normal
