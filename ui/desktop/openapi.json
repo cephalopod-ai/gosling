@@ -3154,6 +3154,14 @@
               "enabled"
             ],
             "properties": {
+              "activation_paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Absolute directory paths this extension is scoped to.\n\n`None` or an empty list (the default, and what every config predating\nthis field deserializes to) means the extension is available in every\nsession regardless of working directory - unchanged from historical\nbehavior. When non-empty, the extension is only made available to a\nsession whose working directory is equal to, or a descendant of, one\nof these paths. See [`ExtensionEntry::is_active_for_cwd`].",
+                "nullable": true
+              },
               "enabled": {
                 "type": "boolean"
               }
