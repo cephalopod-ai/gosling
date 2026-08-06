@@ -1268,6 +1268,31 @@ async fn apply_session_mode(
     Ok(session)
 }
 
+/// Resolve each extension's `env_keys` (keyring-backed secrets) and `${VAR}`
+/// placeholders before converting to ACP MCP server configs. Without this,
+/// UI-configured extensions — which store credentials exclusively via
+/// `env_keys` — are handed to the ACP agent with an empty environment.
+pub async fn resolved_extension_configs_to_mcp_servers(
+    configs: &[ExtensionConfig],
+) -> Vec<McpServer> {
+    let config = crate::config::Config::global();
+    let mut resolved = Vec::with_capacity(configs.len());
+    for extension in configs {
+        match extension.clone().resolve(config).await {
+            Ok(extension) => resolved.push(extension),
+            Err(error) => {
+                tracing::warn!(
+                    extension = extension.key(),
+                    %error,
+                    "failed to resolve extension credentials; passing config through unresolved"
+                );
+                resolved.push(extension.clone());
+            }
+        }
+    }
+    extension_configs_to_mcp_servers(&resolved)
+}
+
 pub fn extension_configs_to_mcp_servers(configs: &[ExtensionConfig]) -> Vec<McpServer> {
     let mut servers = Vec::new();
 

@@ -3542,6 +3542,20 @@ impl Agent {
             .workspace_service
             .as_ref()
             .ok_or_else(|| anyhow!("Workspace credential service is unavailable"))?;
+        let resolution = service.profile_resolution(profile_id)?;
+        if resolution.provider != provider_name {
+            // The pinned credential profile's scope only covers its own
+            // provider's config keys; building a scope for a mismatched
+            // provider would leave every requested key unscoped and silently
+            // fall through to global config, defeating the profile's
+            // credential isolation. Fail loudly instead.
+            return Err(anyhow!(
+                "Session's pinned credential profile is for provider '{}', not '{}'. \
+                 Start a new chat to use a different provider with this credential profile.",
+                resolution.provider,
+                provider_name
+            ));
+        }
         let scope = service.config_scope(profile_id).await?;
         Config::with_resolution_scope(scope, async {
             crate::providers::create_with_working_dir(

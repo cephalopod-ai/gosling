@@ -82,6 +82,11 @@ const i18n = defineMessages({
     id: 'workingDirectoriesMenu.failedToUpdateRestriction',
     defaultMessage: 'Failed to update working directory restriction',
   },
+  workspacePinnedHint: {
+    id: 'workingDirectoriesMenu.workspacePinnedHint',
+    defaultMessage:
+      'This session’s folders are pinned by its workspace. Edit the workspace and start a new session to change them.',
+  },
 });
 
 interface WorkingDirectoriesMenuProps {
@@ -110,6 +115,10 @@ export default function WorkingDirectoriesMenu({
     () => session?.additional_working_dirs ?? [],
     [session?.additional_working_dirs]
   );
+  // The server rejects folder-policy mutations for workspace sessions
+  // (folders are pinned when the workspace session is created); mirror that
+  // here so the UI doesn't offer actions that always fail.
+  const isWorkspacePinned = Boolean(session?.workspace_id);
 
   const refreshRecentDirs = useCallback(async () => {
     const version = ++refreshVersionRef.current;
@@ -125,7 +134,7 @@ export default function WorkingDirectoriesMenu({
 
   const addDirectory = useCallback(
     async (dir: string) => {
-      if (!session) return;
+      if (!session || isWorkspacePinned) return;
       if (dir === workingDir || additionalWorkingDirs.includes(dir)) {
         toast.info(intl.formatMessage(i18n.alreadyAdded));
         return;
@@ -146,12 +155,12 @@ export default function WorkingDirectoriesMenu({
         setIsAdding(false);
       }
     },
-    [session, workingDir, additionalWorkingDirs, onSessionChange, intl]
+    [session, workingDir, additionalWorkingDirs, onSessionChange, intl, isWorkspacePinned]
   );
 
   const removeDirectory = useCallback(
     async (dir: string) => {
-      if (!session) return;
+      if (!session || isWorkspacePinned) return;
 
       try {
         const result = await acpRemoveSessionWorkingDir(session.id, dir);
@@ -164,7 +173,7 @@ export default function WorkingDirectoriesMenu({
         toast.error(intl.formatMessage(i18n.failedToRemove));
       }
     },
-    [session, onSessionChange, intl]
+    [session, onSessionChange, intl, isWorkspacePinned]
   );
 
   const handleChooseDirectory = useCallback(async () => {
@@ -241,22 +250,24 @@ export default function WorkingDirectoriesMenu({
                 <span className="truncate flex-1" title={dir}>
                   {dir}
                 </span>
-                <button
-                  type="button"
-                  aria-label={intl.formatMessage(i18n.removeDirectory)}
-                  className="ml-2 rounded p-0.5 hover:bg-background-secondary"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    void removeDirectory(dir);
-                  }}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                {!isWorkspacePinned && (
+                  <button
+                    type="button"
+                    aria-label={intl.formatMessage(i18n.removeDirectory)}
+                    className="ml-2 rounded p-0.5 hover:bg-background-secondary"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void removeDirectory(dir);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </DropdownMenuItem>
             ))}
 
-            {filteredRecentDirs.length > 0 && (
+            {!isWorkspacePinned && filteredRecentDirs.length > 0 && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>{intl.formatMessage(i18n.recentDirectories)}</DropdownMenuLabel>
@@ -270,10 +281,19 @@ export default function WorkingDirectoriesMenu({
             )}
 
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={isAdding} onSelect={() => void handleChooseDirectory()}>
-              <Plus className="mr-2 h-4 w-4" />
-              <span>{intl.formatMessage(i18n.addDirectory)}</span>
-            </DropdownMenuItem>
+            {isWorkspacePinned ? (
+              <div className="px-2 py-1.5 flex items-start gap-2">
+                <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-0.5 text-text-secondary" />
+                <p className="text-[11px] leading-snug text-text-secondary">
+                  {intl.formatMessage(i18n.workspacePinnedHint)}
+                </p>
+              </div>
+            ) : (
+              <DropdownMenuItem disabled={isAdding} onSelect={() => void handleChooseDirectory()}>
+                <Plus className="mr-2 h-4 w-4" />
+                <span>{intl.formatMessage(i18n.addDirectory)}</span>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <div className="px-2 py-1.5 text-[11px] leading-snug text-text-secondary flex gap-1.5">
               <FolderPlus className="h-3.5 w-3.5 shrink-0 mt-0.5" />

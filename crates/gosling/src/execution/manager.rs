@@ -72,6 +72,21 @@ impl AgentManager {
                     .unwrap_or(DEFAULT_MAX_SESSION);
                 let default_mode = config.get_gosling_mode().unwrap_or_default();
                 let session_manager = Arc::new(SessionManager::instance());
+                // Workspace sessions pin a credential profile that provider
+                // construction resolves through this service; without it any
+                // workspace session reached through this manager fails hard.
+                let default_working_folder = std::env::var_os("GOSLING_WORKING_DIR")
+                    .map(std::path::PathBuf::from)
+                    .filter(|path| path.is_absolute())
+                    .or_else(|| std::env::current_dir().ok())
+                    .unwrap_or_else(|| std::path::PathBuf::from("/"));
+                let workspace_service = Arc::new(
+                    crate::workspace::WorkspaceService::initialize(
+                        &crate::config::paths::Paths::data_dir(),
+                        &default_working_folder,
+                    )
+                    .await?,
+                );
                 let agent_config = AgentConfig::new(
                     session_manager,
                     PermissionManager::instance(),
@@ -79,7 +94,8 @@ impl AgentManager {
                     config.get_gosling_disable_session_naming().unwrap_or(false),
                     GoslingPlatform::GoslingDesktop,
                 )
-                .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime());
+                .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime())
+                .with_workspace_service(workspace_service);
                 let manager = Self::new(agent_config, Some(max_sessions)).await?;
                 Ok(Arc::new(manager))
             })

@@ -3,11 +3,16 @@
 # Enable strict mode to exit on errors and unset variables
 set -euo pipefail
 
-# Set log file
-LOG_FILE="/tmp/mcp.log"
+# Per-process log file so concurrent MCP server launches don't clobber each
+# other's logs; honor TMPDIR like the rest of the launch environment.
+LOG_FILE="${TMPDIR:-/tmp}/gosling-mcp-$$.log"
 
 # Clear the log file at the start
 > "$LOG_FILE"
+
+# The MCP server must run in the working directory the caller launched us
+# from (the session's project), not the hermit setup directory.
+GOSLING_LAUNCH_DIR="$(pwd)"
 
 # Function for logging
 log() {
@@ -156,8 +161,15 @@ else
     log "Neither GOSLING_UV_REGISTRY nor UV_INDEX_URL is set. Falling back to default configuration."
 fi
 
-# Final step: Execute uvx with passed arguments
-log "Executing 'uvx' command with arguments: $*"
-uvx "$@" || log "Failed to execute 'uvx' with arguments: $*"
+log "Returning to launch directory ${GOSLING_LAUNCH_DIR}."
+cd "${GOSLING_LAUNCH_DIR}"
 
-log "uvx setup script completed successfully."
+# Final step: Execute uvx with passed arguments, propagating its exit status
+# so a failed MCP server surfaces as an error instead of a clean EOF.
+log "Executing 'uvx' command with arguments: $*"
+STATUS=0
+uvx "$@" || STATUS=$?
+if [ "${STATUS}" -ne 0 ]; then
+    log "'uvx' exited with status ${STATUS} for arguments: $*"
+fi
+exit "${STATUS}"

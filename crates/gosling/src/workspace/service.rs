@@ -351,6 +351,12 @@ impl WorkspaceService {
         if (binding.is_some() || overrides.credential_profile_id.is_some()) && profile.is_none() {
             bail!("credential profile must be relinked before resuming this workspace");
         }
+        if overrides.credential_profile_id.is_some() && binding.is_none() {
+            // An explicit override must reference one of this workspace's own
+            // credential bindings; otherwise a session could be launched with
+            // another workspace's credentials, defeating workspace isolation.
+            bail!("credential profile is not bound to this workspace");
+        }
         if profile
             .is_some_and(|profile| profile.status != super::CredentialProfileStatus::Configured)
         {

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
+    resolved_extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GoslingMode};
@@ -60,7 +60,7 @@ impl ProviderDef for CodexAcpProvider {
                 .resolve(CODEX_ACP_PROVIDER_NAME)?;
             let env = vec![];
             let gosling_mode = config.get_gosling_mode().unwrap_or_default();
-            let mcp_servers = extension_configs_to_mcp_servers(&extensions);
+            let mcp_servers = resolved_extension_configs_to_mcp_servers(&extensions).await;
 
             // fixed gosling mode via -c overrides until session/set-mode works
             let (approval_policy, sandbox_mode) = map_gosling_mode(gosling_mode);

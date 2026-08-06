@@ -3079,7 +3079,28 @@ impl GoslingAcpAgent {
             .internal_err_ctx("Failed to resolve model config")?;
         let current_model = current_model_config.model_name.clone();
         let use_default_provider = provider_name == DEFAULT_PROVIDER_ID;
-        let resolved_provider_name = if use_default_provider {
+        // A workspace's own default provider/model take precedence over the
+        // app-wide default so picking "Default" inside a workspace session
+        // doesn't silently jump to an unrelated provider.
+        let workspace_default = if use_default_provider {
+            match self.session_manager.get_session(session_id, false).await {
+                Ok(session) => session
+                    .workspace_id
+                    .as_deref()
+                    .and_then(|id| self.workspace_service.get(id).ok())
+                    .and_then(|workspace| {
+                        workspace
+                            .default_provider
+                            .map(|p| (p, workspace.default_model))
+                    }),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+        let resolved_provider_name = if let Some((provider, _)) = &workspace_default {
+            provider.clone()
+        } else if use_default_provider {
             config
                 .get_gosling_provider()
                 .internal_err_ctx("Failed to resolve default provider from config")?
@@ -3089,6 +3110,11 @@ impl GoslingAcpAgent {
         let is_changing_provider = resolved_provider_name != current_provider_name;
         let default_model = if let Some(model_name) = model_name {
             model_name.to_string()
+        } else if let Some(model) = workspace_default
+            .as_ref()
+            .and_then(|(_, model)| model.clone())
+        {
+            model
         } else if use_default_provider {
             config
                 .get_gosling_model()

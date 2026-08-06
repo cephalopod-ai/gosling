@@ -250,6 +250,11 @@ impl GithubCopilotProvider {
                 .get_param::<String>("GITHUB_COPILOT_HOST")
                 .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
         );
+        // The disk cache only holds the short-lived Copilot API token; the
+        // long-lived GitHub OAuth token lives in the secret store under a
+        // host-scoped key and must be deleted too, or "remove provider"
+        // leaves it behind and `has_configured_token` keeps reporting true.
+        let _ = config.delete_secret(&token_secret_key(&host));
         DiskCache::new(&host).clear().await
     }
 

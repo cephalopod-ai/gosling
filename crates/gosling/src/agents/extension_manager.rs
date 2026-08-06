@@ -383,14 +383,40 @@ fn resolve_command(cmd: &str) -> PathBuf {
 
 fn minimal_child_environment() -> HashMap<String, String> {
     let mut env = HashMap::new();
-    for key in ["PATH", "HOME", "USER", "TMPDIR", "TEMP", "TMP"] {
+    for key in [
+        "PATH",
+        "HOME",
+        "USER",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        // Spawned MCP servers and the desktop launcher shims resolve gosling's
+        // config/data locations from these; dropping them makes children write
+        // to a different tree than the one the agent reads.
+        "GOSLING_PATH_ROOT",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+        // Custom registry settings consumed by the desktop npx/uvx shims.
+        "GOSLING_NPM_REGISTRY",
+        "GOSLING_NPM_CERT",
+        "GOSLING_UV_REGISTRY",
+    ] {
         if let Ok(value) = std::env::var(key) {
             env.insert(key.to_string(), value);
         }
     }
 
     #[cfg(windows)]
-    for key in ["SystemRoot", "COMSPEC", "PATHEXT", "USERPROFILE"] {
+    for key in [
+        "SystemRoot",
+        "COMSPEC",
+        "PATHEXT",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+    ] {
         if let Ok(value) = std::env::var(key) {
             env.insert(key.to_string(), value);
         }
@@ -401,6 +427,48 @@ fn minimal_child_environment() -> HashMap<String, String> {
 
 fn apply_minimal_child_environment(command: &mut Command) {
     command.env_clear().envs(minimal_child_environment());
+}
+
+/// Write resolved extension env vars (which may include keyring secrets) to a
+/// `docker exec --env-file` compatible file instead of `-e KEY=VALUE` argv,
+/// which would leak them to any local process via `ps`/`/proc/<pid>/cmdline`.
+/// The env-file format is one `KEY=VALUE` pair per line with no quoting, so
+/// values containing a newline can't be represented and are skipped.
+fn write_docker_env_file(
+    path: &std::path::Path,
+    envs: &HashMap<String, String>,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut contents = String::new();
+    for (key, value) in envs {
+        if value.contains('\n') {
+            tracing::warn!(
+                key,
+                "skipping env var with embedded newline; unsupported by docker --env-file"
+            );
+            continue;
+        }
+        contents.push_str(key);
+        contents.push('=');
+        contents.push_str(value);
+        contents.push('\n');
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.write_all(contents.as_bytes())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents)
+    }
 }
 
 fn require_str_parameter<'a>(v: &'a serde_json::Value, name: &str) -> Result<&'a str, ErrorData> {
@@ -1252,6 +1320,7 @@ impl ExtensionManager {
                         docker_process =
                             Some(DockerExecProcess::new(container, in_container_argv.clone()));
                         let command = Command::new("docker").configure(|command| {
+                            apply_minimal_child_environment(command);
                             command.arg("exec").arg("-i").arg(container_id);
                             command.args(&in_container_argv);
                         });
@@ -1300,7 +1369,17 @@ impl ExtensionManager {
                     merge_environments(envs, env_keys, &sanitized_name, config).await?;
                 let process_working_dir = cwd
                     .as_deref()
-                    .map(PathBuf::from)
+                    .map(|raw| {
+                        // Match the StreamableHttp arm: a configured cwd may
+                        // reference ${VAR} placeholders that only resolve
+                        // against the extension's merged environment.
+                        let substituted = PathBuf::from(substitute_env_vars(raw, &all_envs));
+                        if substituted.is_relative() {
+                            effective_working_dir.join(substituted)
+                        } else {
+                            substituted
+                        }
+                    })
                     .unwrap_or_else(|| effective_working_dir.clone());
 
                 if let Some(sid) = session_id {
@@ -1321,11 +1400,16 @@ impl ExtensionManager {
                     in_container_argv.extend(args.iter().cloned());
                     docker_process =
                         Some(DockerExecProcess::new(container, in_container_argv.clone()));
+                    // Resolved env can contain keyring secrets; pass them via
+                    // an --env-file instead of `-e KEY=VALUE`, which would put
+                    // them in argv and be readable via `ps`/`/proc/<pid>/cmdline`.
+                    let env_file_dir = tempdir()?;
+                    let env_file_path = env_file_dir.path().join("docker-exec.env");
+                    write_docker_env_file(&env_file_path, &all_envs)?;
+                    temp_dir = Some(env_file_dir);
                     Command::new("docker").configure(|command| {
                         command.arg("exec").arg("-i");
-                        for (key, value) in &all_envs {
-                            command.arg("-e").arg(format!("{}={}", key, value));
-                        }
+                        command.arg("--env-file").arg(&env_file_path);
                         command.arg(container_id);
                         command.args(&in_container_argv);
                     })

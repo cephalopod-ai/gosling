@@ -3091,5 +3091,8 @@
   },
   "workingDirectoriesMenu.restrictToggleDescriptionWorkspace": {
     "defaultMessage": "On by default for workspaces. While on, providers that run their own tools (Claude Code CLI, Codex CLI, …) are blocked because Gosling can’t scope them to these directories. Turn off to use them."
+  },
+  "workingDirectoriesMenu.workspacePinnedHint": {
+    "defaultMessage": "This session’s folders are pinned by its workspace. Edit the workspace and start a new session to change them."
   }
 }

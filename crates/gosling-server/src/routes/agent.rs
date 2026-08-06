@@ -13,7 +13,6 @@ use gosling::agents::{Container, ExtensionLoadResult};
 use gosling::agents::ExtensionConfig;
 use gosling::config::resolve_extensions_for_new_session_for_cwd;
 use gosling::config::{Config, GoslingMode};
-use gosling::providers::create;
 use gosling::session::session_manager::SessionType;
 use gosling::session::{EnabledExtensionsState, ExtensionState, Session};
 use gosling::{
@@ -465,36 +464,17 @@ async fn update_agent_provider(
         .map_err(|e| (e.status, e.message))?;
     model_config.reasoning = Some(model_info.reasoning);
 
-    let extensions =
-        EnabledExtensionsState::for_session(state.session_manager(), &payload.session_id, config)
-            .await;
-
-    let new_provider = create(&payload.provider, extensions).await.map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("Failed to create {} provider: {}", &payload.provider, e),
-        )
-    })?;
-
+    // Route through the same path the ACP surface uses so a pinned workspace
+    // credential profile and the session's working dir are honored instead of
+    // building the provider from unscoped global config (also propagates the
+    // session mode to the new provider internally).
     agent
-        .update_provider(new_provider, model_config, &payload.session_id)
+        .recreate_provider_for_session(&payload.session_id, &payload.provider, model_config)
         .await
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to update provider: {}", e),
-            )
-        })?;
-
-    // Propagate session mode to the new provider
-    let mode = agent.gosling_mode().await;
-    agent
-        .update_gosling_mode(mode, &payload.session_id)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to propagate mode to provider: {}", e),
             )
         })?;
 

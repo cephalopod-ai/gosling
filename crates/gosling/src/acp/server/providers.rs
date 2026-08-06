@@ -986,6 +986,14 @@ impl GoslingAcpAgent {
         let config = Config::global();
         let mut secret_keys = Vec::new();
 
+        // Some providers' cleanup (e.g. GitHub Copilot) reads non-secret
+        // config fields like the configured host to locate cached state; run
+        // it before those fields are deleted below, or it silently falls
+        // back to the wrong host and orphans the cache.
+        crate::providers::cleanup_provider(&req.provider_id)
+            .await
+            .internal_err_ctx("Failed to clean up provider state")?;
+
         for config_key in &metadata.config_keys {
             if config_key.secret {
                 secret_keys.push(config_key.name.clone());
@@ -999,9 +1007,6 @@ impl GoslingAcpAgent {
         config
             .delete_secret_values(&secret_keys)
             .internal_err_ctx("Failed to delete provider secret fields")?;
-        crate::providers::cleanup_provider(&req.provider_id)
-            .await
-            .internal_err_ctx("Failed to clean up provider state")?;
 
         let provider_ids = [req.provider_id.clone()];
         let status = Self::provider_config_status(req.provider_id.clone()).await;
