@@ -3115,20 +3115,28 @@ impl GoslingAcpAgent {
             .and_then(|(_, model)| model.clone())
         {
             model
-        } else if workspace_default.is_some() || is_changing_provider {
-            // Either the workspace only supplied a provider (no default
-            // model) or the plain app-wide default provider changed; in both
-            // cases fall back to the resolved provider's own registry
-            // default instead of the unrelated app-wide GOSLING_MODEL.
+        } else if workspace_default.is_some() {
+            // The workspace only supplied a provider, no default model; use
+            // that provider's own registry default instead of the unrelated
+            // app-wide GOSLING_MODEL.
             crate::providers::get_from_registry(&resolved_provider_name)
                 .await
                 .ok()
                 .map(|entry| entry.metadata().default_model.clone())
                 .unwrap_or(ACP_CURRENT_MODEL.to_string())
         } else if use_default_provider {
+            // Returning to "Gosling Default" (no workspace override) should
+            // restore the user's saved app-wide default model, not the
+            // resolved provider's registry default.
             config
                 .get_gosling_model()
                 .internal_err_ctx("Failed to resolve default model from config")?
+        } else if is_changing_provider {
+            crate::providers::get_from_registry(&resolved_provider_name)
+                .await
+                .ok()
+                .map(|entry| entry.metadata().default_model.clone())
+                .unwrap_or(ACP_CURRENT_MODEL.to_string())
         } else {
             current_model
         };
