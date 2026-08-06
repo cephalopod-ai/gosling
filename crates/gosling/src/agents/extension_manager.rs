@@ -455,20 +455,25 @@ fn apply_minimal_docker_client_environment(command: &mut Command) {
 /// `docker exec --env-file` compatible file instead of `-e KEY=VALUE` argv,
 /// which would leak them to any local process via `ps`/`/proc/<pid>/cmdline`.
 /// The env-file format is one `KEY=VALUE` pair per line with no quoting, so
-/// values containing a newline can't be represented and are skipped.
+/// invalid names and values containing line breaks are rejected.
 fn write_docker_env_file(
     path: &std::path::Path,
     envs: &HashMap<String, String>,
 ) -> std::io::Result<()> {
     use std::io::Write;
     let mut contents = String::new();
-    for (key, value) in envs {
-        if value.contains('\n') {
-            tracing::warn!(
-                key,
-                "skipping env var with embedded newline; unsupported by docker --env-file"
-            );
-            continue;
+    let mut entries = envs.iter().collect::<Vec<_>>();
+    entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+    for (key, value) in entries {
+        if key.is_empty()
+            || key.contains('=')
+            || key.contains(['\r', '\n'])
+            || value.contains(['\r', '\n'])
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("environment variable {key:?} cannot be represented in a Docker env file"),
+            ));
         }
         contents.push_str(key);
         contents.push('=');
@@ -1430,6 +1435,7 @@ impl ExtensionManager {
                     write_docker_env_file(&env_file_path, &all_envs)?;
                     temp_dir = Some(env_file_dir);
                     Command::new("docker").configure(|command| {
+                        apply_minimal_docker_client_environment(command);
                         command.arg("exec").arg("-i");
                         command.arg("--env-file").arg(&env_file_path);
                         command.arg(container_id);
@@ -2524,6 +2530,33 @@ mod tests {
 
         assert!(output.status.success());
         assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+    }
+
+    #[test]
+    fn docker_env_file_is_deterministic_and_rejects_line_injection() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("extension.env");
+        let envs = HashMap::from([
+            ("TOKEN".to_string(), "secret".to_string()),
+            ("ALPHA".to_string(), "first".to_string()),
+        ]);
+
+        write_docker_env_file(&path, &envs).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "ALPHA=first\nTOKEN=secret\n"
+        );
+
+        for invalid in [
+            HashMap::from([("INJECTED\nOTHER".to_string(), "value".to_string())]),
+            HashMap::from([("TOKEN".to_string(), "secret\nOTHER=value".to_string())]),
+            HashMap::from([("BAD=NAME".to_string(), "value".to_string())]),
+        ] {
+            assert_eq!(
+                write_docker_env_file(&path, &invalid).unwrap_err().kind(),
+                std::io::ErrorKind::InvalidInput
+            );
+        }
     }
 
     impl ExtensionManager {
