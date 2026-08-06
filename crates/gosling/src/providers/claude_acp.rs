@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
+    resolved_extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GoslingMode};
@@ -82,7 +82,7 @@ impl ProviderDef for ClaudeAcpProvider {
                 // Prevent nested-session detection in claude-agent-acp (wraps Claude Code)
                 env_remove: vec!["CLAUDECODE".to_string()],
                 work_dir: working_dir,
-                mcp_servers: extension_configs_to_mcp_servers(&extensions),
+                mcp_servers: resolved_extension_configs_to_mcp_servers(&extensions).await,
                 session_mode_id: Some(mode_mapping[&gosling_mode].clone()),
                 session_config_options: if model == ACP_CURRENT_MODEL {
                     vec![]

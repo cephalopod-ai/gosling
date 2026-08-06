@@ -3542,6 +3542,29 @@ impl Agent {
             .workspace_service
             .as_ref()
             .ok_or_else(|| anyhow!("Workspace credential service is unavailable"))?;
+        let resolution = service.profile_resolution(profile_id)?;
+        if resolution.provider != provider_name {
+            // The pinned credential profile's scope only covers its own
+            // provider's config keys; building a scope for a mismatched
+            // provider would leave every requested key unscoped and fall
+            // through to global config anyway. Skip building the scope
+            // rather than hard-failing: the caller (e.g. a new workspace
+            // chat whose launch metadata specifies a different provider
+            // than its default credential binding) still needs a working
+            // provider, just without this profile's credential isolation.
+            tracing::warn!(
+                profile_provider = %resolution.provider,
+                requested_provider = %provider_name,
+                "Session's pinned credential profile provider doesn't match the requested \
+                 provider; creating it from global config instead of the profile's scope"
+            );
+            return crate::providers::create_with_working_dir(
+                provider_name,
+                extensions,
+                session.working_dir.clone(),
+            )
+            .await;
+        }
         let scope = service.config_scope(profile_id).await?;
         Config::with_resolution_scope(scope, async {
             crate::providers::create_with_working_dir(

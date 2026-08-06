@@ -9,8 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source the common setup script
 source "${SCRIPT_DIR}/node-setup-common.sh"
 
-# Final step: Execute node with passed arguments
+# Final step: Execute node with passed arguments, propagating its exit status
+# so a failed MCP server surfaces as an error instead of a clean EOF.
 log "Executing 'node' command with arguments: ${*}"
-node "${@}" || log "Failed to execute 'node' with arguments: ${*}"
-
-log "node script completed successfully."
+STATUS=0
+node "${@}" || STATUS=$?
+if [ "${STATUS}" -ne 0 ]; then
+    log "'node' exited with status ${STATUS} for arguments: ${*}"
+fi
+exit "${STATUS}"

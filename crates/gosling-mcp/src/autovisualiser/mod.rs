@@ -1,4 +1,3 @@
-use etcetera::{choose_app_strategy, AppStrategy};
 use indoc::formatdoc;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -729,13 +728,12 @@ impl ServerHandler for AutoVisualiserRouter {
 #[tool_router(router = tool_router)]
 impl AutoVisualiserRouter {
     pub fn new() -> Self {
-        // choose_app_strategy().cache_dir()
         // - macOS/Linux: ~/.cache/gosling/autovisualiser/
         // - Windows:     ~\AppData\Local\Block\gosling\cache\autovisualiser\
-        let cache_dir = choose_app_strategy(crate::APP_STRATEGY.clone())
-            .unwrap()
-            .cache_dir()
-            .join("autovisualiser");
+        // Must not panic on a missing home dir: this runs in-process inside
+        // the agent when the extension is enabled.
+        let cache_dir = crate::gosling_cache_dir("autovisualiser")
+            .unwrap_or_else(|| std::env::temp_dir().join("gosling").join("autovisualiser"));
 
         // Create cache directory if it doesn't exist
         let _ = std::fs::create_dir_all(&cache_dir);

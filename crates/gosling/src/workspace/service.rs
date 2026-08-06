@@ -351,6 +351,11 @@ impl WorkspaceService {
         if (binding.is_some() || overrides.credential_profile_id.is_some()) && profile.is_none() {
             bail!("credential profile must be relinked before resuming this workspace");
         }
+        // Note: an explicit override is intentionally not required to be one
+        // of this workspace's own credential_bindings. The desktop's new-chat
+        // "Credential" picker lets a user apply any configured profile to a
+        // single chat ("This choice applies only to this new chat"), so any
+        // configured profile is a valid override here, not just bound ones.
         if profile
             .is_some_and(|profile| profile.status != super::CredentialProfileStatus::Configured)
         {

@@ -11,5 +11,6 @@ pub mod transport;
 pub use common::{map_permission_response, PermissionDecision};
 pub use gosling_sdk_types::{custom_notifications, custom_requests};
 pub use provider::{
-    extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
+    extension_configs_to_mcp_servers, resolved_extension_configs_to_mcp_servers, AcpProvider,
+    AcpProviderConfig, ACP_CURRENT_MODEL,
 };

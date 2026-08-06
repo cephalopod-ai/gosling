@@ -6,11 +6,16 @@
 # Enable strict mode to exit on errors and unset variables
 set -euo pipefail
 
-# Set log file
-LOG_FILE="/tmp/mcp.log"
+# Per-process log file so concurrent MCP server launches don't clobber each
+# other's logs; honor TMPDIR like the rest of the launch environment.
+LOG_FILE="${TMPDIR:-/tmp}/gosling-mcp-$$.log"
 
 # Clear the log file at the start
 > "${LOG_FILE}"
+
+# The MCP server must run in the working directory the caller launched us
+# from (the session's project), not the hermit setup directory.
+GOSLING_LAUNCH_DIR="$(pwd)"
 
 # Function for logging
 log() {
@@ -179,5 +184,8 @@ else
     log "GOSLING_NPM_REGISTRY is either not set or not accessible. Falling back to default npm registry."
     export NPM_CONFIG_REGISTRY="https://registry.npmjs.org/"
 fi
+
+log "Returning to launch directory ${GOSLING_LAUNCH_DIR}."
+cd "${GOSLING_LAUNCH_DIR}"
 
 log "Node setup (common) completed successfully."

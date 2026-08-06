@@ -1,4 +1,3 @@
-use etcetera::{choose_app_strategy, AppStrategy};
 use fs2::FileExt;
 use indoc::formatdoc;
 use rmcp::{
@@ -126,23 +125,25 @@ impl Default for MemoryServer {
 #[tool_router(router = tool_router)]
 impl MemoryServer {
     pub fn new() -> Self {
+        // Fall back to an absolute path in the system temp dir when no home
+        // directory exists (containers, service accounts): a relative fallback
+        // would silently scatter "global" memories across working directories.
+        let global_memory_dir = crate::gosling_config_dir("memory")
+            .unwrap_or_else(|| std::env::temp_dir().join("gosling").join("memory"));
+
         let instructions = formatdoc! {r#"
              This extension stores and retrieves categorized information with tagging support.
 
              Storage:
              - Local: .gosling/memory/ (project-specific)
-             - Global: ~/.config/gosling/memory/ (user-wide)
+             - Global: {global_dir} (user-wide)
 
              Save proactively when users share preferences, project configurations, workflow patterns,
              or recurring commands. Always confirm with the user before saving. Suggest relevant
              categories and tags, and clarify storage scope (local vs global).
 
              Use category "*" with retrieve_memories or remove_memory_category to access all entries.
-            "#};
-
-        let global_memory_dir = choose_app_strategy(crate::APP_STRATEGY.clone())
-            .map(|strategy| strategy.in_config_dir("memory"))
-            .unwrap_or_else(|_| PathBuf::from(".config/gosling/memory"));
+            "#, global_dir = global_memory_dir.display()};
 
         let mut memory_router = Self {
             tool_router: Self::tool_router(),

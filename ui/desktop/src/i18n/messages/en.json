@@ -3091,5 +3091,8 @@
   },
   "workingDirectoriesMenu.workingDirectories": {
     "defaultMessage": "Working Directories"
+  },
+  "workingDirectoriesMenu.workspacePinnedHint": {
+    "defaultMessage": "This session’s folders are pinned by its workspace. Edit the workspace and start a new session to change them."
   }
 }

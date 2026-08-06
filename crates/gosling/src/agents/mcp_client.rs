@@ -678,13 +678,6 @@ impl McpClient {
         request: ClientRequest,
         cancel_token: CancellationToken,
     ) -> Result<ServerResult, Error> {
-        let request = inject_session_context_into_request(
-            request,
-            Some(session_id),
-            working_dir,
-            tool_call_request_id,
-            tool_operation_id,
-        );
         let active_tool_call = tool_call_request_id.filter(|id| !id.is_empty());
         // The inner mutex is held only for the send; the actual response wait
         // happens outside the lock so concurrent calls can overlap. The guard
@@ -692,6 +685,23 @@ impl McpClient {
         // dropped reply streams as well as normal completion.
         let (handle, _active_tool_call_guard) = {
             let client = self.client.lock().await;
+            // Only tool calls carry an explicit working dir; fall back to the
+            // service's current primary working dir for every other request so
+            // servers can resolve project-relative resources, prompts, and
+            // tool lists.
+            let fallback_working_dir = if working_dir.is_none() {
+                let dir = client.service().shared_working_dir().read().await.clone();
+                dir.to_str().map(str::to_string)
+            } else {
+                None
+            };
+            let request = inject_session_context_into_request(
+                request,
+                Some(session_id),
+                working_dir.or(fallback_working_dir.as_deref()),
+                tool_call_request_id,
+                tool_operation_id,
+            );
             client.service().set_session_id(session_id).await;
             let guard = active_tool_call.map(|tool_call_request_id| {
                 client
