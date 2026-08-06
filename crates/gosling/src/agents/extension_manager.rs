@@ -429,6 +429,28 @@ fn apply_minimal_child_environment(command: &mut Command) {
     command.env_clear().envs(minimal_child_environment());
 }
 
+/// Like `apply_minimal_child_environment`, but also forwards the env vars
+/// that select which Docker daemon/context the `docker` CLI talks to.
+/// Clearing these would make `docker exec` silently fall back to the local
+/// default daemon and fail to find a container selected via a non-default
+/// `DOCKER_HOST`/`DOCKER_CONTEXT`.
+/// See https://docs.docker.com/reference/cli/docker/#environment-variables
+fn apply_minimal_docker_client_environment(command: &mut Command) {
+    let mut env = minimal_child_environment();
+    for key in [
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_CERT_PATH",
+        "DOCKER_TLS_VERIFY",
+        "DOCKER_CONFIG",
+    ] {
+        if let Ok(value) = std::env::var(key) {
+            env.insert(key.to_string(), value);
+        }
+    }
+    command.env_clear().envs(env);
+}
+
 /// Write resolved extension env vars (which may include keyring secrets) to a
 /// `docker exec --env-file` compatible file instead of `-e KEY=VALUE` argv,
 /// which would leak them to any local process via `ps`/`/proc/<pid>/cmdline`.
@@ -1320,7 +1342,7 @@ impl ExtensionManager {
                         docker_process =
                             Some(DockerExecProcess::new(container, in_container_argv.clone()));
                         let command = Command::new("docker").configure(|command| {
-                            apply_minimal_child_environment(command);
+                            apply_minimal_docker_client_environment(command);
                             command.arg("exec").arg("-i").arg(container_id);
                             command.args(&in_container_argv);
                         });
