@@ -254,7 +254,9 @@ impl GithubCopilotProvider {
         // long-lived GitHub OAuth token lives in the secret store under a
         // host-scoped key and must be deleted too, or "remove provider"
         // leaves it behind and `has_configured_token` keeps reporting true.
-        let _ = config.delete_secret(&token_secret_key(&host));
+        // Propagate failures instead of swallowing them: a caller like
+        // provider-config deletion needs to know the token wasn't cleared.
+        config.delete_secret(&token_secret_key(&host))?;
         DiskCache::new(&host).clear().await
     }
 
