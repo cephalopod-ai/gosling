@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures::stream::BoxStream;
 use futures::{stream, FutureExt, Stream, StreamExt, TryStreamExt};
 use tracing_futures::Instrument;
@@ -3545,25 +3545,21 @@ impl Agent {
         let resolution = service.profile_resolution(profile_id)?;
         if resolution.provider != provider_name {
             // The pinned credential profile's scope only covers its own
-            // provider's config keys; building a scope for a mismatched
-            // provider would leave every requested key unscoped and fall
-            // through to global config anyway. Skip building the scope
-            // rather than hard-failing: the caller (e.g. a new workspace
-            // chat whose launch metadata specifies a different provider
-            // than its default credential binding) still needs a working
-            // provider, just without this profile's credential isolation.
-            tracing::warn!(
-                profile_provider = %resolution.provider,
-                requested_provider = %provider_name,
-                "Session's pinned credential profile provider doesn't match the requested \
-                 provider; creating it from global config instead of the profile's scope"
+            // provider's config keys. Falling through to an unscoped
+            // provider here would silently run this session on global
+            // config instead of the isolated profile the session (and its
+            // "Pinned" UI indicator) claims to be using — defeating
+            // workspace credential isolation without telling the user.
+            // Fail closed instead: a mismatch means the workspace's
+            // default provider and its default credential binding disagree,
+            // or the caller is trying to switch a pinned session to a
+            // provider outside its pinned profile. Both need the workspace
+            // (or the session's provider selection) fixed, not a silent
+            // downgrade.
+            bail!(
+                "credential profile is pinned to provider '{}', not '{provider_name}'",
+                resolution.provider
             );
-            return crate::providers::create_with_working_dir(
-                provider_name,
-                extensions,
-                session.working_dir.clone(),
-            )
-            .await;
         }
         let scope = service.config_scope(profile_id).await?;
         Config::with_resolution_scope(scope, async {
@@ -4328,6 +4324,85 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
         assert!(result.is_err());
         assert_eq!(agent.provider().await?.get_name(), "chunked-text");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn provider_switch_rejected_when_it_disagrees_with_pinned_credential_profile(
+    ) -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let workspace_data_dir = tempfile::tempdir()?;
+        let workspace_root = tempfile::tempdir()?;
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let workspace_service = Arc::new(
+            crate::workspace::WorkspaceService::initialize(
+                workspace_data_dir.path(),
+                workspace_root.path(),
+            )
+            .await?,
+        );
+        // "ollama" has no required secret fields, so the profile is
+        // immediately Configured without touching global secret storage.
+        let profile = workspace_service
+            .create_profile(
+                "Local Ollama".to_string(),
+                "ollama".to_string(),
+                crate::workspace::CredentialAuthKind::Local,
+                std::collections::BTreeMap::new(),
+                Vec::new(),
+            )
+            .await?;
+        assert_eq!(
+            profile.status,
+            crate::workspace::CredentialProfileStatus::Configured
+        );
+
+        let agent = Agent::with_config(
+            AgentConfig::new(
+                session_manager.clone(),
+                Arc::new(PermissionManager::new(temp_dir.path().to_path_buf())),
+                GoslingMode::Auto,
+                true,
+                GoslingPlatform::GoslingCli,
+            )
+            .with_workspace_service(workspace_service),
+        );
+        let session = session_manager
+            .create_session(
+                PathBuf::default(),
+                "pinned-credential-mismatch".to_string(),
+                SessionType::Hidden,
+                GoslingMode::Auto,
+            )
+            .await?;
+        session_manager
+            .update(&session.id)
+            .workspace_snapshot(
+                "workspace-id".to_string(),
+                "Workspace".to_string(),
+                Some(profile.id.clone()),
+                Some(profile.name.clone()),
+                None,
+                crate::workspace::WorkspaceSessionContext::default(),
+            )
+            .apply()
+            .await?;
+
+        let result = agent
+            .recreate_provider_for_session(
+                &session.id,
+                "definitely-not-ollama",
+                gosling_providers::model::ModelConfig::new("mock-model"),
+            )
+            .await;
+
+        let error = result.expect_err(
+            "switching a pinned session to a provider outside its credential profile must fail",
+        );
+        assert!(
+            error.to_string().contains("pinned to provider 'ollama'"),
+            "unexpected error: {error}"
+        );
         Ok(())
     }
 
