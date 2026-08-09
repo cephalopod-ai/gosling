@@ -402,7 +402,10 @@ impl ClaudeCodeProvider {
                 cmd.arg("--permission-prompt-tool").arg("stdio");
                 true
             }
-            GoslingMode::Chat => false,
+            GoslingMode::Chat => {
+                cmd.arg("--permission-mode").arg("plan");
+                false
+            }
         }
     }
 
@@ -1105,7 +1108,12 @@ mod tests {
         vec!["--permission-prompt-tool", "stdio"];
         "approve_uses_permission_protocol"
     )]
-    #[test_case(GoslingMode::Chat, false, vec![]; "chat_has_no_permission_flags")]
+    #[test_case(
+        GoslingMode::Chat,
+        false,
+        vec!["--permission-mode", "plan"];
+        "chat_uses_plan_mode"
+    )]
     fn permission_flags_follow_session_mode(
         mode: GoslingMode,
         expected_control_protocol: bool,
