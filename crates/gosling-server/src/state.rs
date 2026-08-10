@@ -111,10 +111,39 @@ pub struct AppState {
     extension_loading_tasks: ExtensionLoadingTasks,
     /// Bounded like the agent LRU: SSE clients rarely call `stop_agent`, so
     /// without eviction each abandoned session would pin its bus (and up to
-    /// 8 MiB of replay buffer) for the lifetime of the server. In-flight
-    /// subscribers hold their own `Arc` clone and are unaffected by eviction.
+    /// 8 MiB of replay buffer) for the lifetime of the server. Buses with
+    /// in-flight subscribers or reply tasks are retained until they become idle.
     session_buses: Arc<Mutex<LruCache<String, Arc<SessionEventBus>>>>,
+    session_bus_capacity: NonZeroUsize,
     shutdown: CancellationToken,
+}
+
+fn insert_session_bus(
+    buses: &mut LruCache<String, Arc<SessionEventBus>>,
+    capacity: NonZeroUsize,
+    session_id: String,
+) -> Arc<SessionEventBus> {
+    while buses.len() >= capacity.get() {
+        let idle_session_id = buses
+            .iter()
+            .rev()
+            .find(|(_, bus)| Arc::strong_count(bus) == 1)
+            .map(|(session_id, _)| session_id.clone());
+
+        match idle_session_id {
+            Some(idle_session_id) => {
+                buses.pop(&idle_session_id);
+            }
+            None => {
+                buses.resize(NonZeroUsize::new(buses.len() + 1).unwrap());
+                break;
+            }
+        }
+    }
+
+    let bus = Arc::new(SessionEventBus::new());
+    buses.put(session_id, bus.clone());
+    bus
 }
 
 impl AppState {
@@ -131,6 +160,7 @@ impl AppState {
             agent_manager,
             extension_loading_tasks: ExtensionLoadingTasks::default(),
             session_buses: Arc::new(Mutex::new(LruCache::new(bus_capacity))),
+            session_bus_capacity: bus_capacity,
             shutdown: CancellationToken::new(),
         }))
     }
@@ -183,9 +213,15 @@ impl AppState {
 
     pub async fn get_or_create_event_bus(&self, session_id: &str) -> Arc<SessionEventBus> {
         let mut buses = self.session_buses.lock().await;
-        buses
-            .get_or_insert(session_id.to_string(), || Arc::new(SessionEventBus::new()))
-            .clone()
+        if let Some(bus) = buses.get(session_id) {
+            return bus.clone();
+        }
+
+        insert_session_bus(
+            &mut buses,
+            self.session_bus_capacity,
+            session_id.to_string(),
+        )
     }
 
     /// Get an existing event bus for a session without creating one.
@@ -318,5 +354,40 @@ mod tests {
         assert_ne!(left, right);
         assert_eq!(spawn_count.load(Ordering::SeqCst), 1);
         tasks.remove("session").await;
+    }
+
+    #[test]
+    fn event_bus_cache_does_not_evict_a_bus_in_use() {
+        let capacity = NonZeroUsize::new(2).unwrap();
+        let mut buses = LruCache::new(capacity);
+        let first = insert_session_bus(&mut buses, capacity, "first".to_string());
+        let first_in_use = first.clone();
+        drop(first);
+        insert_session_bus(&mut buses, capacity, "idle".to_string());
+
+        insert_session_bus(&mut buses, capacity, "new".to_string());
+
+        assert!(buses.contains("first"));
+        assert!(!buses.contains("idle"));
+        assert!(buses.contains("new"));
+        drop(first_in_use);
+    }
+
+    #[test]
+    fn event_bus_cache_temporarily_grows_when_every_bus_is_in_use() {
+        let capacity = NonZeroUsize::new(1).unwrap();
+        let mut buses = LruCache::new(capacity);
+        let first = insert_session_bus(&mut buses, capacity, "first".to_string());
+
+        insert_session_bus(&mut buses, capacity, "second".to_string());
+
+        assert_eq!(buses.len(), 2);
+        assert!(buses.contains("first"));
+        assert!(buses.contains("second"));
+        drop(first);
+
+        insert_session_bus(&mut buses, capacity, "third".to_string());
+        assert_eq!(buses.len(), 1);
+        assert!(buses.contains("third"));
     }
 }
