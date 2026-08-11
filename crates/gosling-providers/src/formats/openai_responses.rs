@@ -274,7 +274,7 @@ fn is_known_responses_stream_event_type(event_type: &str) -> bool {
 
 /// Errors delivered as stream events (rather than HTTP statuses) still need
 /// transient/permanent classification so the retry layer treats an in-band
-/// `server_error` like a 5xx instead of a permanent request failure.
+/// `server_error` or overload error like a 5xx instead of a permanent request failure.
 fn classify_stream_error(context: &str, error: &Value) -> ProviderError {
     let details = format!("{context}: {error:?}");
     let marker = |needle: &str| {
@@ -284,7 +284,7 @@ fn classify_stream_error(context: &str, error: &Value) -> ProviderError {
             .filter_map(|value| value.as_str())
             .any(|value| value.contains(needle))
     };
-    if marker("server_error") {
+    if marker("server_error") || marker("service_unavailable") || marker("server_is_overloaded") {
         ProviderError::ServerError(details)
     } else if marker("rate_limit") {
         ProviderError::RateLimitExceeded {
@@ -1303,6 +1303,20 @@ mod tests {
             "type": "server_error",
             "code": "server_error",
             "message": "An error occurred while processing your request.",
+            "param": null,
+        });
+        assert!(matches!(
+            classify_stream_error("Responses API error", &error),
+            ProviderError::ServerError(details) if details.contains("Responses API error")
+        ));
+    }
+
+    #[test]
+    fn classify_stream_error_marks_service_unavailable_transient() {
+        let error = serde_json::json!({
+            "type": "service_unavailable_error",
+            "code": "server_is_overloaded",
+            "message": "Our servers are currently overloaded. Please try again later.",
             "param": null,
         });
         assert!(matches!(
