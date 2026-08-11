@@ -1,10 +1,10 @@
 use regex::Regex;
-use std::collections::HashMap;
+use regex::RegexBuilder;
 use std::sync::LazyLock;
 
 /// Security threat patterns for command injection detection
 /// These patterns detect dangerous shell commands and injection attempts
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ThreatPattern {
     pub name: &'static str,
     pub pattern: &'static str,
@@ -13,7 +13,7 @@ pub struct ThreatPattern {
     pub category: ThreatCategory,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RiskLevel {
     Low,      // Minor security issue
     Medium,   // Moderate security concern
@@ -21,7 +21,7 @@ pub enum RiskLevel {
     Critical, // Immediate system compromise risk
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ThreatCategory {
     FileSystemDestruction,
     RemoteCodeExecution,
@@ -307,19 +307,21 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
 ];
 
-static COMPILED_PATTERNS: LazyLock<HashMap<&'static str, Regex>> = LazyLock::new(|| {
-    let mut patterns = HashMap::new();
-    for threat in THREAT_PATTERNS {
-        if let Ok(regex) = Regex::new(&format!("(?i){}", threat.pattern)) {
-            patterns.insert(threat.name, regex);
-        }
-    }
-    patterns
+static COMPILED_PATTERNS: LazyLock<Vec<Option<Regex>>> = LazyLock::new(|| {
+    THREAT_PATTERNS
+        .iter()
+        .map(|threat| {
+            RegexBuilder::new(threat.pattern)
+                .case_insensitive(true)
+                .build()
+                .ok()
+        })
+        .collect()
 });
 
 /// Pattern matcher for detecting security threats
 pub struct PatternMatcher {
-    patterns: &'static HashMap<&'static str, Regex>,
+    patterns: &'static [Option<Regex>],
 }
 
 impl PatternMatcher {
@@ -332,31 +334,28 @@ impl PatternMatcher {
     pub fn scan_for_patterns(&self, text: &str) -> Vec<PatternMatch> {
         let mut matches = Vec::new();
 
-        for threat in THREAT_PATTERNS {
-            if let Some(regex) = self.patterns.get(threat.name) {
-                if regex.is_match(text) {
-                    // Find all matches to get position information
-                    for regex_match in regex.find_iter(text) {
-                        matches.push(PatternMatch {
-                            threat: threat.clone(),
-                            matched_text: regex_match.as_str().to_string(),
-                            start_pos: regex_match.start(),
-                            end_pos: regex_match.end(),
-                        });
-                    }
+        for (threat, regex) in THREAT_PATTERNS.iter().zip(self.patterns) {
+            if let Some(regex) = regex {
+                for regex_match in regex.find_iter(text) {
+                    matches.push(PatternMatch {
+                        threat: *threat,
+                        matched_text: regex_match.as_str().to_string(),
+                        start_pos: regex_match.start(),
+                        end_pos: regex_match.end(),
+                    });
                 }
             }
         }
 
         // Sort by risk level (highest first), then by position in text
-        matches.sort_by_key(|m| (std::cmp::Reverse(m.threat.risk_level.clone()), m.start_pos));
+        matches.sort_by_key(|m| (std::cmp::Reverse(m.threat.risk_level), m.start_pos));
 
         matches
     }
 
     /// Get the highest risk level from matches
     pub fn get_max_risk_level(&self, matches: &[PatternMatch]) -> Option<RiskLevel> {
-        matches.iter().map(|m| &m.threat.risk_level).max().cloned()
+        matches.iter().map(|m| m.threat.risk_level).max()
     }
 
     /// Check if any critical or high-risk patterns are detected
