@@ -38,47 +38,40 @@ const CLAUDE_CODE_PROVIDER_NAME: &str = "claude-code";
 pub const CLAUDE_CODE_DEFAULT_MODEL: &str = "default";
 pub const CLAUDE_CODE_DOC_URL: &str = "https://code.claude.com/docs/en/setup";
 const CLAUDE_CODE_KNOWN_MODELS: &[&str] = &[
-    // Latest Claude family releases available in Anthropic's model overview.
     "claude-opus-5",
-    "claude-fable-5",
-    "claude-opus-4-8",
     "claude-sonnet-5",
-    "claude-haiku-4-5-20251001",
-    // Current supported Claude Code aliases and recent fallback versions.
-    "claude-opus-4-7",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-sonnet-4-5-20250929",
+    "claude-fable-5",
     "claude-haiku-4-5",
 ];
-const CLAUDE_CODE_MODEL_ALIASES: &[&str] = &[
-    "default",
-    "best",
-    "fable",
-    "opus",
-    "sonnet",
-    "haiku",
-    "opusplan",
-    "sonnet[1m]",
-    "opus[1m]",
-];
 
-fn merge_model_names(models: Vec<String>) -> Vec<String> {
-    let mut merged = Vec::with_capacity(CLAUDE_CODE_KNOWN_MODELS.len() + models.len());
-    let mut seen = HashSet::new();
+fn current_claude_model(model: &str) -> Option<&'static str> {
+    match model.strip_suffix("[1m]").unwrap_or(model) {
+        "best" | "opus" | "claude-opus-5" => Some("claude-opus-5"),
+        "sonnet" | "claude-sonnet-5" => Some("claude-sonnet-5"),
+        "fable" | "claude-fable-5" => Some("claude-fable-5"),
+        "haiku" | "claude-haiku-4-5" | "claude-haiku-4-5-20251001" => Some("claude-haiku-4-5"),
+        _ => None,
+    }
+}
 
-    for name in CLAUDE_CODE_KNOWN_MODELS
-        .iter()
-        .copied()
-        .chain(CLAUDE_CODE_MODEL_ALIASES.iter().copied())
-        .chain(models.iter().map(|model| model.as_str()))
-    {
-        if seen.insert(name) {
-            merged.push(name.to_string());
-        }
+fn normalize_model_names(models: Vec<String>) -> Vec<String> {
+    if models.is_empty() {
+        return CLAUDE_CODE_KNOWN_MODELS
+            .iter()
+            .map(|model| (*model).to_string())
+            .collect();
     }
 
-    merged
+    let available: HashSet<_> = models
+        .iter()
+        .filter_map(|model| current_claude_model(model))
+        .collect();
+
+    CLAUDE_CODE_KNOWN_MODELS
+        .iter()
+        .filter(|model| available.contains(**model))
+        .map(|model| (*model).to_string())
+        .collect()
 }
 
 // https://github.com/anthropics/claude-agent-sdk-python/blob/0e9397e/src/claude_agent_sdk/types.py#L857-L859
@@ -760,7 +753,7 @@ impl Provider for ClaudeCodeProvider {
         .await;
         let _ = child.kill().await;
         let fetched = extract_model_aliases(response.ok().flatten().as_ref());
-        Ok(merge_model_names(fetched))
+        Ok(normalize_model_names(fetched))
     }
 
     async fn update_mode(&self, _session_id: &str, mode: GoslingMode) -> Result<(), ProviderError> {
@@ -1316,14 +1309,41 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_model_names_includes_latest_claude_models() {
-        let merged = merge_model_names(vec!["sonnet".to_string(), "default".to_string()]);
-        assert!(merged.contains(&"claude-fable-5".to_string()));
-        assert!(merged.contains(&"claude-opus-4-8".to_string()));
-        assert!(merged.contains(&"claude-sonnet-5".to_string()));
-        assert!(merged.contains(&"claude-haiku-4-5-20251001".to_string()));
-        assert!(merged.contains(&"default".to_string()));
-        assert!(merged.contains(&"sonnet".to_string()));
+    fn test_normalize_model_names_uses_current_claude_models() {
+        let models = normalize_model_names(vec![
+            "default".to_string(),
+            "opus[1m]".to_string(),
+            "claude-fable-5[1m]".to_string(),
+            "sonnet".to_string(),
+            "claude-haiku-4-5-20251001".to_string(),
+            "claude-opus-4-8".to_string(),
+        ]);
+
+        assert_eq!(
+            models,
+            vec![
+                "claude-opus-5",
+                "claude-sonnet-5",
+                "claude-fable-5",
+                "claude-haiku-4-5",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_normalize_model_names_filters_unavailable_models() {
+        let models = normalize_model_names(vec![
+            "sonnet".to_string(),
+            "haiku".to_string(),
+            "claude-opus-4-8".to_string(),
+        ]);
+
+        assert_eq!(models, vec!["claude-sonnet-5", "claude-haiku-4-5"]);
+    }
+
+    #[test]
+    fn test_normalize_model_names_falls_back_when_discovery_is_empty() {
+        assert_eq!(normalize_model_names(Vec::new()), CLAUDE_CODE_KNOWN_MODELS);
     }
 
     #[test_case(

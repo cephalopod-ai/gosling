@@ -14,7 +14,6 @@ use gosling::providers::azure::AZURE_DEFAULT_MODEL;
 use gosling::providers::base::Provider;
 #[cfg(feature = "aws-providers")]
 use gosling::providers::bedrock::BEDROCK_DEFAULT_MODEL;
-use gosling::providers::claude_code::CLAUDE_CODE_DEFAULT_MODEL;
 use gosling::providers::codex::CODEX_DEFAULT_MODEL;
 use gosling::providers::create_with_named_model;
 use gosling::providers::databricks::DATABRICKS_DEFAULT_MODEL;
@@ -883,8 +882,8 @@ async fn test_xai_provider() -> Result<()> {
 
 #[tokio::test]
 async fn test_claude_code_provider() -> Result<()> {
-    ProviderTestConfig::with_agentic_provider("claude-code", CLAUDE_CODE_DEFAULT_MODEL, "claude")
-        .model_switch_name("sonnet")
+    ProviderTestConfig::with_agentic_provider("claude-code", "claude-fable-5", "claude")
+        .model_switch_name("claude-opus-5")
         .run()
         .await
 }
