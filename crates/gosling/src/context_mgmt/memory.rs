@@ -7,6 +7,7 @@
 //! the trailing user message. Both are fully internal — no external
 //! services, no MCP.
 
+use std::io::Read;
 use std::path::PathBuf;
 
 use rmcp::model::Role;
@@ -113,9 +114,16 @@ impl FileMemorySource {
     }
 
     fn load(&self) -> Vec<StoredMemory> {
-        let Ok(raw) = std::fs::read_to_string(&self.path) else {
+        let Ok(mut file) = std::fs::File::open(&self.path) else {
             return Vec::new();
         };
+        if fs2::FileExt::lock_shared(&file).is_err() {
+            return Vec::new();
+        }
+        let mut raw = String::new();
+        if file.read_to_string(&mut raw).is_err() {
+            return Vec::new();
+        }
         raw.lines()
             .filter(|line| !line.trim().is_empty())
             .filter_map(|line| serde_json::from_str::<StoredMemory>(line).ok())
@@ -307,5 +315,43 @@ mod tests {
             reserved_tokens: 1_000,
         });
         assert!(recalled.is_empty());
+    }
+
+    #[test]
+    fn file_source_waits_for_writer_before_loading() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_memory_file(&dir, &[r#"{"content": "coordinated memory boundary"}"#]);
+        let writer = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        fs2::FileExt::lock_exclusive(&writer).unwrap();
+
+        let (sent, received) = std::sync::mpsc::channel();
+        let source_path = path.clone();
+        let handle = std::thread::spawn(move || {
+            let source = FileMemorySource::new(source_path);
+            let messages = query_messages("coordinated memory boundary");
+            let recalled = source.retrieve(&MemoryQuery {
+                session_id: "test",
+                messages: &messages,
+                reserved_tokens: 1_000,
+            });
+            sent.send(recalled).unwrap();
+        });
+
+        assert!(
+            received
+                .recv_timeout(std::time::Duration::from_millis(100))
+                .is_err()
+        );
+        fs2::FileExt::unlock(&writer).unwrap();
+        let recalled = received
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        handle.join().unwrap();
+        assert_eq!(recalled.len(), 1);
+        assert!(recalled[0].content.contains("coordinated memory"));
     }
 }
