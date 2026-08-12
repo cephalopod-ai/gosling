@@ -784,7 +784,7 @@ enum Command {
             long = "shell-runtime-namespace",
             value_name = "NAMESPACE",
             requires = "shell_id",
-            help = "Isolate shell config, data, state, sessions and caches"
+            help = "Isolate shell data, state, sessions and caches while retaining shared Gosling configuration"
         )]
         shell_runtime_namespace: Option<String>,
 
