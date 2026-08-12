@@ -16,9 +16,8 @@ use rmcp::{
         ClientInfo, ClientRequest, CreateMessageRequestParams, CreateMessageResult,
         GetPromptRequestParams, GetPromptResult, Implementation, InitializeRequestParams,
         InitializeResult, ListPromptsResult, ListResourcesResult, ListToolsResult, Notification,
-        PaginatedRequestParams, ProtocolVersion, ReadResourceRequestParams, ReadResourceResult,
-        Request, RequestId, RequestOptionalParam, Role, SamplingMessage, ServerNotification,
-        ServerResult,
+        PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResult, Request, RequestId,
+        RequestOptionalParam, Role, SamplingMessage, ServerNotification, ServerResult,
     },
     service::{
         ClientInitializeError, PeerRequestOptions, RequestContext, RequestHandle, RunningService,
@@ -561,7 +560,6 @@ impl ClientHandler for GoslingClient {
                 .build(),
             self.resolved_client_info(),
         )
-        .with_protocol_version(ProtocolVersion::V_2025_03_26)
     }
 }
 
@@ -1414,6 +1412,17 @@ mod tests {
             .expect("list tools request should have meta");
         assert!(!tools_meta.0.contains_key(TOOL_CALL_REQUEST_ID_HEADER));
         assert!(!tools_meta.0.contains_key(TOOL_OPERATION_ID_HEADER));
+    }
+
+    #[test]
+    fn test_client_info_uses_current_mcp_protocol_version() {
+        use rmcp::model::ProtocolVersion;
+
+        let client = new_client(GoslingPlatform::GoslingDesktop);
+        let info = ClientHandler::get_info(&client);
+
+        assert_eq!(info.protocol_version, ProtocolVersion::LATEST);
+        assert_eq!(info.protocol_version, ProtocolVersion::V_2025_11_25);
     }
 
     #[test]
