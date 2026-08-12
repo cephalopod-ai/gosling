@@ -359,12 +359,20 @@ pub async fn handle_session_import(
 }
 
 pub async fn handle_diagnostics(session_id: &str, output_path: Option<PathBuf>) -> Result<()> {
+    let session_manager = SessionManager::instance();
+    if let Err(error) = session_manager.get_session(session_id, false).await {
+        return Err(anyhow::anyhow!(
+            "Session '{}' not found or failed to read: {}",
+            session_id,
+            error
+        ));
+    }
+
     println!(
         "Generating diagnostics report for session '{}'...",
         session_id
     );
 
-    let session_manager = SessionManager::instance();
     let diagnostics_report =
         generate_diagnostics(&session_manager, session_id, DiagnosticsLevel::Full)
             .await

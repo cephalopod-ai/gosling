@@ -1225,15 +1225,12 @@ impl CliSession {
                                         principal_type: PrincipalType::Tool,
                                         permission: Permission::DenyOnce,
                                     }).await;
-                                    let mut response_message = Message::user();
-                                    response_message.content.push(MessageContent::tool_response(
+                                    let response_message = persist_cancelled_tool_response(
+                                        &self.agent.config.session_manager,
+                                        &self.session_id,
                                         id,
-                                        Err(ErrorData {
-                                            code: ErrorCode::INVALID_REQUEST,
-                                            message: std::borrow::Cow::from("Tool call cancelled by user"),
-                                            data: None,
-                                        }),
-                                    ));
+                                    )
+                                    .await?;
                                     self.messages.push(response_message);
                                     cancel_token_clone.cancel();
                                     drop(stream);
@@ -1806,6 +1803,26 @@ fn remove_local_turn(conversation: &mut Conversation, message_id: &str) -> bool 
         conversation.pop();
     }
     true
+}
+
+async fn persist_cancelled_tool_response(
+    session_manager: &gosling::session::SessionManager,
+    session_id: &str,
+    request_id: String,
+) -> Result<Message> {
+    let mut response_message = Message::user().with_generated_id();
+    response_message.content.push(MessageContent::tool_response(
+        request_id,
+        Err(ErrorData {
+            code: ErrorCode::INVALID_REQUEST,
+            message: std::borrow::Cow::from("Tool call cancelled by user"),
+            data: None,
+        }),
+    ));
+    session_manager
+        .add_message(session_id, &response_message)
+        .await?;
+    Ok(response_message)
 }
 
 fn print_run_stats(
@@ -2597,6 +2614,57 @@ mod tests {
         assert_eq!(conversation.messages(), std::slice::from_ref(&before));
         assert!(!remove_local_turn(&mut conversation, "missing"));
         assert_eq!(conversation.messages(), &[before]);
+    }
+
+    #[tokio::test]
+    async fn cancelled_tool_response_is_persisted_before_the_next_turn() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let session_manager = gosling::session::SessionManager::new(temp_dir.path().to_path_buf());
+        let session = session_manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Cancelled tool".to_string(),
+                gosling::session::SessionType::User,
+                GoslingMode::Approve,
+            )
+            .await
+            .unwrap();
+        let request_id = "cancelled-request";
+        session_manager
+            .add_message(
+                &session.id,
+                &Message::assistant().with_generated_id().with_tool_request(
+                    request_id,
+                    Ok(rmcp::model::CallToolRequestParams::new("write")),
+                ),
+            )
+            .await
+            .unwrap();
+
+        let response =
+            persist_cancelled_tool_response(&session_manager, &session.id, request_id.to_string())
+                .await
+                .unwrap();
+
+        assert!(response.id.is_some());
+        let reloaded = session_manager
+            .get_session(&session.id, true)
+            .await
+            .unwrap();
+        let conversation = reloaded.conversation.unwrap();
+        let responses = conversation
+            .messages()
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .filter_map(MessageContent::as_tool_response)
+            .filter(|tool_response| tool_response.id == request_id)
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 1);
+        let error = responses[0]
+            .tool_result
+            .as_ref()
+            .expect_err("cancelled tool response should be an error");
+        assert!(error.message.contains("Tool call cancelled by user"));
     }
 
     #[test_case(

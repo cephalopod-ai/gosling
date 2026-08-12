@@ -4,7 +4,7 @@ use clap_complete::{generate, Shell as ClapShell};
 use clap_complete_nushell::Nushell as ClapNushell;
 use gosling::agents::GoslingPlatform;
 use gosling::builtin_extension::register_builtin_extensions;
-use gosling::config::{Config, GoslingMode};
+use gosling::config::{Config, ConfigError, GoslingMode};
 use gosling::source_roots::SourceRoot;
 use gosling_mcp::mcp_server_runner::{serve, McpCommand};
 use gosling_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
@@ -28,6 +28,36 @@ use std::path::PathBuf;
 use tracing::warn;
 
 const GOSLING_SERVER_SECRET_KEY_ENV: &str = "GOSLING_SERVER__SECRET_KEY";
+
+fn warn_about_invalid_config_values() {
+    let config = Config::global();
+
+    if let Err(error) = config.get_gosling_mode() {
+        if !matches!(error, ConfigError::NotFound(_)) {
+            eprintln!("Warning: Invalid GOSLING_MODE: {error}. Falling back to smart_approve.");
+        }
+    }
+
+    if let Err(error) = config.get_param::<u32>("GOSLING_MAX_TURNS") {
+        if !matches!(error, ConfigError::NotFound(_)) {
+            eprintln!("Warning: Invalid GOSLING_MAX_TURNS: {error}. Falling back to the default.");
+        }
+    }
+
+    match config.get_param::<f64>("GOSLING_AUTO_COMPACT_THRESHOLD") {
+        Ok(threshold) if threshold != 0.0 && !(0.0..1.0).contains(&threshold) => {
+            eprintln!(
+                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {threshold}. Use 0 to disable auto-compaction or a value greater than 0 and less than 1."
+            );
+        }
+        Err(error) if !matches!(error, ConfigError::NotFound(_)) => {
+            eprintln!(
+                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {error}. Falling back to the default."
+            );
+        }
+        _ => {}
+    }
+}
 
 fn generate_serve_secret_key() -> String {
     use rand::distr::{Alphanumeric, SampleString};
@@ -1763,6 +1793,7 @@ pub async fn cli() -> anyhow::Result<()> {
     register_builtin_extensions(gosling_mcp::BUILTIN_EXTENSIONS.clone());
 
     let cli = Cli::parse();
+    warn_about_invalid_config_values();
 
     if let Err(e) = crate::project_tracker::update_project_tracker(None, None) {
         warn!("Warning: Failed to update project tracker: {}", e);
