@@ -322,21 +322,17 @@ mod tests {
             sent.send(result).unwrap();
         });
 
-        assert!(
-            received
-                .recv_timeout(std::time::Duration::from_millis(100))
-                .is_err()
-        );
+        assert!(received
+            .recv_timeout(std::time::Duration::from_millis(100))
+            .is_err());
         FileExt::unlock(&reader).unwrap();
         received
             .recv_timeout(std::time::Duration::from_secs(2))
             .unwrap()
             .unwrap();
         handle.join().unwrap();
-        assert!(
-            std::fs::read_to_string(path)
-                .unwrap()
-                .contains("serialized fact")
-        );
+        assert!(std::fs::read_to_string(path)
+            .unwrap()
+            .contains("serialized fact"));
     }
 }

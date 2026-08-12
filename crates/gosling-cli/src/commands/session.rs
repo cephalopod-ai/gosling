@@ -8,7 +8,7 @@ use gosling::config::Config;
 #[cfg(feature = "nostr")]
 use gosling::session::nostr_share;
 use gosling::session::{
-    DiagnosticsLevel, Session, SessionManager, SessionType, generate_diagnostics,
+    generate_diagnostics, DiagnosticsLevel, Session, SessionManager, SessionType,
 };
 use gosling::utils::safe_truncate;
 use regex::Regex;

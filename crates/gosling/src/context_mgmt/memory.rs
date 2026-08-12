@@ -341,11 +341,9 @@ mod tests {
             sent.send(recalled).unwrap();
         });
 
-        assert!(
-            received
-                .recv_timeout(std::time::Duration::from_millis(100))
-                .is_err()
-        );
+        assert!(received
+            .recv_timeout(std::time::Duration::from_millis(100))
+            .is_err());
         fs2::FileExt::unlock(&writer).unwrap();
         let recalled = received
             .recv_timeout(std::time::Duration::from_secs(2))
