@@ -82,6 +82,9 @@ interface ProgressiveMessageListProps {
   ) => Promise<boolean>;
   workingDirectory?: string;
   workspaceId?: string;
+  threadTurnAttribute?: string;
+  forceRenderAll?: boolean;
+  onThreadTurnsRendered?: () => void;
 }
 
 interface MessageRenderIndex {
@@ -126,17 +129,24 @@ export default function ProgressiveMessageList({
   submitElicitationResponse,
   workingDirectory,
   workspaceId,
+  threadTurnAttribute,
+  forceRenderAll = false,
+  onThreadTurnsRendered,
 }: ProgressiveMessageListProps) {
   const intl = useIntl();
   const [renderedCount, setRenderedCount] = useState(() => {
     // Initialize with either all messages (if small) or first batch (if large)
-    return messages.length <= showLoadingThreshold
+    return forceRenderAll || messages.length <= showLoadingThreshold
       ? messages.length
       : Math.min(batchSize, messages.length);
   });
-  const [isLoading, setIsLoading] = useState(() => messages.length > showLoadingThreshold);
+  const [isLoading, setIsLoading] = useState(
+    () => !forceRenderAll && messages.length > showLoadingThreshold
+  );
   const timeoutRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+  const onThreadTurnsRenderedRef = useRef(onThreadTurnsRendered);
+  onThreadTurnsRenderedRef.current = onThreadTurnsRendered;
   const hasOnlyToolResponses = (message: Message) =>
     message.content.every((c) => c.type === 'toolResponse');
 
@@ -197,9 +207,22 @@ export default function ProgressiveMessageList({
     }
   };
 
+  useEffect(() => {
+    if (!forceRenderAll) {
+      return;
+    }
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setRenderedCount(messages.length);
+    setIsLoading(false);
+    window.requestAnimationFrame(() => onThreadTurnsRenderedRef.current?.());
+  }, [forceRenderAll, messages.length]);
+
   // Simple progressive loading - start immediately when component mounts if needed
   useEffect(() => {
-    if (messages.length <= showLoadingThreshold) {
+    if (forceRenderAll || messages.length <= showLoadingThreshold) {
       setRenderedCount(messages.length);
       setIsLoading(false);
       // For small lists, call completion callback immediately
@@ -243,6 +266,7 @@ export default function ProgressiveMessageList({
     batchSize,
     batchDelay,
     showLoadingThreshold,
+    forceRenderAll,
     renderedCount,
     onRenderingComplete,
   ]);
@@ -389,6 +413,7 @@ export default function ProgressiveMessageList({
           <div
             className={`relative ${index === 0 || suppressTopMargin ? 'mt-0' : 'mt-4'} ${isUser ? 'user' : 'assistant'} ${messageIsInChain ? 'in-chain' : ''}`}
             data-testid="message-container"
+            {...(isUser && threadTurnAttribute ? { [threadTurnAttribute]: String(index) } : {})}
           >
             {isUser ? (
               !hasOnlyToolResponses(message) && (
@@ -532,6 +557,7 @@ export default function ProgressiveMessageList({
     submitElicitationResponse,
     workingDirectory,
     workspaceId,
+    threadTurnAttribute,
     getPreviousResolvedModel,
     getResolvedModel,
     hasModelSwitchRecordSincePreviousResolvedModel,

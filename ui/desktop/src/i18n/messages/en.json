@@ -2852,6 +2852,24 @@
   "themeSelector.theme": {
     "defaultMessage": "Theme"
   },
+  "threadNavigator.image": {
+    "defaultMessage": "Image message"
+  },
+  "threadNavigator.label": {
+    "defaultMessage": "Thread navigation"
+  },
+  "threadNavigator.latest": {
+    "defaultMessage": "Jump to latest"
+  },
+  "threadNavigator.start": {
+    "defaultMessage": "Jump to start"
+  },
+  "threadNavigator.startWithHistory": {
+    "defaultMessage": "Jump to start · loads older history"
+  },
+  "threadNavigator.turn": {
+    "defaultMessage": "Turn {current} of {total}: {preview}"
+  },
   "toolApprovalButtons.allowOnce": {
     "defaultMessage": "Allow Once"
   },

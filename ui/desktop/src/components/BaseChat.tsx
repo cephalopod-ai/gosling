@@ -1,5 +1,5 @@
 import { AppEvents } from '../constants/events';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defineMessages, useIntl } from '../i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SearchView } from './conversation/SearchView';
@@ -34,6 +34,7 @@ import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
 import { useArtifactRouter } from '../contexts/ArtifactRouterContext';
+import ThreadNavigator, { THREAD_TURN_ATTRIBUTE } from './conversation/ThreadNavigator';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -129,6 +130,7 @@ export default function BaseChat({
     updateSession,
     handleSubmit,
     loadOlderMessages,
+    loadAllOlderMessages,
     onSteerQueuedMessage,
     submitElicitationResponse,
     stopStreaming,
@@ -385,6 +387,49 @@ export default function BaseChat({
   const initialPrompt =
     noAutoSubmit && messages.length === 0 && initialMessage?.msg ? initialMessage.msg : '';
 
+  const [threadViewport, setThreadViewport] = useState<HTMLDivElement | null>(null);
+  const [threadNavigationRenderSessionId, setThreadNavigationRenderSessionId] = useState<
+    string | null
+  >(null);
+  const pendingThreadNavigationRef = useRef<'latest' | number | null>(null);
+
+  useEffect(() => {
+    setThreadViewport(scrollRef.current?.viewportRef.current ?? null);
+  }, [sessionId, messages.length]);
+
+  const handleJumpToThreadStart = useCallback(async () => {
+    await loadAllOlderMessages();
+    window.requestAnimationFrame(() => {
+      scrollRef.current?.scrollToPosition({ top: 0, behavior: 'smooth' });
+    });
+  }, [loadAllOlderMessages]);
+
+  const handleJumpToThreadLatest = useCallback(() => {
+    if (threadNavigationRenderSessionId === sessionId) {
+      scrollRef.current?.scrollToBottom('smooth');
+      return;
+    }
+    setThreadNavigationRenderSessionId(sessionId);
+    pendingThreadNavigationRef.current = 'latest';
+  }, [sessionId, threadNavigationRenderSessionId]);
+
+  const handleThreadTurnsRendered = useCallback(() => {
+    if (pendingThreadNavigationRef.current === 'latest') {
+      pendingThreadNavigationRef.current = null;
+      scrollRef.current?.scrollToBottom('smooth');
+      return;
+    }
+
+    if (typeof pendingThreadNavigationRef.current === 'number') {
+      const messageIndex = pendingThreadNavigationRef.current;
+      pendingThreadNavigationRef.current = null;
+      const viewport = scrollRef.current?.viewportRef.current;
+      viewport
+        ?.querySelector<HTMLElement>(`[${THREAD_TURN_ATTRIBUTE}="${messageIndex}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, []);
+
   if (sessionLoadError) {
     return (
       <div className="h-full flex flex-col min-h-0">
@@ -460,11 +505,7 @@ export default function BaseChat({
                 </span>
               </a>
               <EnvironmentBadge className="translate-y-px" />
-              <WorkingDirectoriesMenu
-                session={session}
-                onSessionChange={updateSession}
-                compact
-              />
+              <WorkingDirectoriesMenu session={session} onSessionChange={updateSession} compact />
               <CredentialProfileSelector
                 credentialProfileId={session?.credential_profile_id}
                 credentialProfileName={session?.credential_profile_name}
@@ -488,7 +529,7 @@ export default function BaseChat({
           >
             {messages.length > 0 ? (
               <>
-                <SearchView>
+                <SearchView className="md:pr-9">
                   {historyHasMore ? (
                     <div className="flex justify-center py-3">
                       <button
@@ -514,6 +555,9 @@ export default function BaseChat({
                     submitElicitationResponse={submitElicitationResponse}
                     workingDirectory={session?.working_dir}
                     workspaceId={session?.workspace_id ?? undefined}
+                    threadTurnAttribute={THREAD_TURN_ATTRIBUTE}
+                    forceRenderAll={threadNavigationRenderSessionId === sessionId}
+                    onThreadTurnsRendered={handleThreadTurnsRendered}
                   />
                 </SearchView>
 
@@ -521,6 +565,19 @@ export default function BaseChat({
               </>
             ) : null}
           </ScrollArea>
+
+          <ThreadNavigator
+            messages={messages}
+            viewport={threadViewport}
+            historyHasMore={historyHasMore}
+            historyLoading={historyLoading}
+            onPrepareNavigation={(messageIndex) => {
+              pendingThreadNavigationRef.current = messageIndex;
+              setThreadNavigationRenderSessionId(sessionId);
+            }}
+            onJumpToStart={handleJumpToThreadStart}
+            onJumpToLatest={handleJumpToThreadLatest}
+          />
 
           {chatState !== ChatState.Idle && (
             <div className="absolute bottom-1 left-4 z-20 pointer-events-none">

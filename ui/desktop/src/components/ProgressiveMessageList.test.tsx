@@ -47,6 +47,48 @@ function toolRequest(id: string): MessageContent {
 }
 
 describe('ProgressiveMessageList tool activity', () => {
+  it('marks user messages as thread navigation landmarks', () => {
+    const { container } = render(
+      <ProgressiveMessageList
+        messages={[
+          message('user', [{ type: 'text', text: 'First prompt' }], 'user-one'),
+          message('assistant', [{ type: 'text', text: 'Answer' }], 'assistant-one'),
+        ]}
+        chat={{ sessionId: 'session-one' }}
+        isUserMessage={(candidate) => candidate.role === 'user'}
+        threadTurnAttribute="data-thread-turn-index"
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(container.querySelector('[data-thread-turn-index="0"]')).toHaveClass('user');
+    expect(container.querySelector('[data-thread-turn-index="1"]')).toBeNull();
+  });
+
+  it('renders every message immediately when thread navigation requests it', () => {
+    render(
+      <ProgressiveMessageList
+        messages={[
+          message('user', [{ type: 'text', text: 'First prompt' }], 'user-one'),
+          message('assistant', [{ type: 'text', text: 'First answer' }], 'assistant-one'),
+          message('user', [{ type: 'text', text: 'Second prompt' }], 'user-two'),
+        ]}
+        chat={{ sessionId: 'session-one' }}
+        isUserMessage={(candidate) => candidate.role === 'user'}
+        batchSize={1}
+        batchDelay={60_000}
+        showLoadingThreshold={1}
+        forceRenderAll
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(screen.getByText('First prompt')).toBeInTheDocument();
+    expect(screen.getByText('First answer')).toBeInTheDocument();
+    expect(screen.getByText('Second prompt')).toBeInTheDocument();
+    expect(screen.queryByText(/Loading messages/)).not.toBeInTheDocument();
+  });
+
   it('collapses a run of tool activity without hiding adjacent prose', async () => {
     render(
       <ProgressiveMessageList

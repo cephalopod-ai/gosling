@@ -3094,5 +3094,23 @@
   },
   "workingDirectoriesMenu.workspacePinnedHint": {
     "defaultMessage": "This session’s folders are pinned by its workspace. Edit the workspace and start a new session to change them."
+  },
+  "threadNavigator.image": {
+    "defaultMessage": "Image message"
+  },
+  "threadNavigator.label": {
+    "defaultMessage": "Thread navigation"
+  },
+  "threadNavigator.latest": {
+    "defaultMessage": "Jump to latest"
+  },
+  "threadNavigator.start": {
+    "defaultMessage": "Jump to start"
+  },
+  "threadNavigator.startWithHistory": {
+    "defaultMessage": "Jump to start · loads older history"
+  },
+  "threadNavigator.turn": {
+    "defaultMessage": "Turn {current} of {total}: {preview}"
   }
 }
