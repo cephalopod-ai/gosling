@@ -3,6 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub const SHELL_PROVISIONING_SCHEMA_VERSION: u32 = 1;
+pub const SHELL_HANDOFF_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -185,6 +186,7 @@ pub struct ShellHandoffPrepareRequest {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellHandoffEnvelope {
+    pub schema_version: u32,
     pub handoff_id: String,
     pub origin: ShellIdentity,
     pub source_session_id: String,

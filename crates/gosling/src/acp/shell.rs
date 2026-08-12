@@ -2,7 +2,7 @@ use crate::acp::custom_requests::{
     DomainActionRequest, DomainActionResponse, DomainAdapterDescriptor, DomainSnapshotRequest,
     DomainSnapshotResponse, ShellAuthorityMode, ShellHandoffEnvelope, ShellHandoffPrepareRequest,
     ShellIdentity, ShellProtocolPolicy, ShellProvisioning, ShellProvisioningReadResponse,
-    SHELL_PROVISIONING_SCHEMA_VERSION,
+    SHELL_HANDOFF_SCHEMA_VERSION, SHELL_PROVISIONING_SCHEMA_VERSION,
 };
 use agent_client_protocol::Error;
 use anyhow::Result;
@@ -131,6 +131,7 @@ impl ShellRuntime {
 
     pub fn prepare_handoff(&self, request: ShellHandoffPrepareRequest) -> ShellHandoffEnvelope {
         ShellHandoffEnvelope {
+            schema_version: SHELL_HANDOFF_SCHEMA_VERSION,
             handoff_id: Uuid::now_v7().to_string(),
             origin: self.identity().clone(),
             source_session_id: request.session_id,
@@ -184,5 +185,20 @@ mod tests {
             .enforce_custom_method("_gosling/unstable/config/upsert")
             .unwrap_err();
         assert_eq!(i32::from(error.code), -32003);
+    }
+
+    #[test]
+    fn handoff_envelope_is_versioned_and_uses_server_identity() {
+        let envelope =
+            runtime(ShellAuthorityMode::Inherit).prepare_handoff(ShellHandoffPrepareRequest {
+                session_id: "session-1".into(),
+                question: "Continue this analysis".into(),
+                requested_capability: "general_workspace".into(),
+                ..ShellHandoffPrepareRequest::default()
+            });
+
+        assert_eq!(envelope.schema_version, SHELL_HANDOFF_SCHEMA_VERSION);
+        assert_eq!(envelope.origin.id, "math");
+        assert_eq!(envelope.source_session_id, "session-1");
     }
 }

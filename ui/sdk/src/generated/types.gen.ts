@@ -104,6 +104,7 @@ export type ShellHandoffPrepareResponse_unstable = {
 };
 
 export type ShellHandoffEnvelope = {
+    schemaVersion: number;
     handoffId: string;
     origin: ShellIdentity;
     sourceSessionId: string;

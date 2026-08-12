@@ -135,6 +135,7 @@ export const zShellHandoffPrepareRequest_unstable = z.object({
 });
 
 export const zShellHandoffEnvelope = z.object({
+    schemaVersion: z.number().int().gte(0),
     handoffId: z.string(),
     origin: zShellIdentity,
     sourceSessionId: z.string(),

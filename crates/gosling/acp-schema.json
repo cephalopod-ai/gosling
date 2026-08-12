@@ -382,6 +382,10 @@
     "ShellHandoffEnvelope": {
       "type": "object",
       "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
         "handoffId": {
           "type": "string"
         },
@@ -416,6 +420,7 @@
         }
       },
       "required": [
+        "schemaVersion",
         "handoffId",
         "origin",
         "sourceSessionId",
