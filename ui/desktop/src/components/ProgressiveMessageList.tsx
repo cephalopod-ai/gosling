@@ -29,6 +29,7 @@ import {
 import {
   getAnyToolConfirmationData,
   getPendingToolConfirmationIds,
+  getTextAndImageContent,
   getToolRequests,
   getToolResponses,
   type Message,
@@ -39,8 +40,12 @@ import {
 } from '../types/message';
 import LoadingGosling from './LoadingGosling';
 import { ChatType } from '../types/chat';
-import { identifyConsecutiveToolCalls } from '../utils/toolCallChaining';
+import {
+  identifyCollapsibleToolActivityGroups,
+  identifyConsecutiveToolCalls,
+} from '../utils/toolCallChaining';
 import { getModelDisplayName } from './settings/models/predefinedModelsUtils';
+import ToolActivityGroup from './ToolActivityGroup';
 
 const i18n = defineMessages({
   loadingMessages: {
@@ -80,6 +85,8 @@ interface ProgressiveMessageListProps {
 }
 
 interface MessageRenderIndex {
+  collapsibleToolCallGroupIndexes: Set<number>;
+  collapsibleToolCallGroupsByStart: Map<number, number[]>;
   confirmationByToolRequestId: Map<string, ToolConfirmationData>;
   hiddenTimestampIndexes: Set<number>;
   pendingConfirmationIds: Set<string>;
@@ -302,6 +309,9 @@ export default function ProgressiveMessageList({
     const toolCallChains = identifyConsecutiveToolCalls(messages);
     const toolCallChainIndexes = new Set<number>();
     const hiddenTimestampIndexes = new Set<number>();
+    const collapsibleToolCallGroups = identifyCollapsibleToolActivityGroups(messages);
+    const collapsibleToolCallGroupIndexes = new Set<number>();
+    const collapsibleToolCallGroupsByStart = new Map<number, number[]>();
 
     for (const chain of toolCallChains) {
       for (const index of chain) {
@@ -313,7 +323,16 @@ export default function ProgressiveMessageList({
       }
     }
 
+    for (const group of collapsibleToolCallGroups) {
+      collapsibleToolCallGroupsByStart.set(group[0], group);
+      for (const index of group) {
+        collapsibleToolCallGroupIndexes.add(index);
+      }
+    }
+
     return {
+      collapsibleToolCallGroupIndexes,
+      collapsibleToolCallGroupsByStart,
       confirmationByToolRequestId,
       hiddenTimestampIndexes,
       pendingConfirmationIds: getPendingToolConfirmationIds(messages),
@@ -326,6 +345,82 @@ export default function ProgressiveMessageList({
   // Render messages up to the current rendered count
   const renderMessages = useCallback(() => {
     const messagesToRender = messages.slice(0, renderedCount);
+    const renderModelDisclosure = (message: Message, index: number) => {
+      const currentResolvedModel = getResolvedModel(message);
+      const previousResolvedModel = currentResolvedModel ? getPreviousResolvedModel(index) : null;
+      const showModelChangeDisclosure = Boolean(
+        currentResolvedModel &&
+        previousResolvedModel &&
+        currentResolvedModel !== previousResolvedModel &&
+        !hasModelSwitchRecordSincePreviousResolvedModel(index)
+      );
+
+      return showModelChangeDisclosure && currentResolvedModel && previousResolvedModel
+        ? renderModelChangeDisclosure(previousResolvedModel, currentResolvedModel)
+        : null;
+    };
+
+    const renderDefaultMessage = (
+      message: Message,
+      index: number,
+      showDisclosure = true,
+      suppressTopMargin = false
+    ) => {
+      const notification = getSystemNotification(message);
+      if (notification) {
+        return (
+          <div
+            key={`notification-${message.id ?? `msg-${index}-${message.created}`}`}
+            className={`relative ${index === 0 ? 'mt-0' : 'mt-4'} assistant`}
+            data-testid="message-container"
+          >
+            {renderSystemNotification(notification)}
+          </div>
+        );
+      }
+
+      const isUser = isUserMessage(message);
+      const messageIsInChain = messageRenderIndex.toolCallChainIndexes.has(index);
+      const messageKey = message.id ?? `msg-${index}-${message.created}`;
+
+      return (
+        <Fragment key={messageKey}>
+          {showDisclosure && renderModelDisclosure(message, index)}
+          <div
+            className={`relative ${index === 0 || suppressTopMargin ? 'mt-0' : 'mt-4'} ${isUser ? 'user' : 'assistant'} ${messageIsInChain ? 'in-chain' : ''}`}
+            data-testid="message-container"
+          >
+            {isUser ? (
+              !hasOnlyToolResponses(message) && (
+                <UserMessage message={message} onMessageUpdate={onMessageUpdate} />
+              )
+            ) : (
+              <GoslingMessage
+                sessionId={chat.sessionId}
+                message={message}
+                hideTimestamp={messageRenderIndex.hiddenTimestampIndexes.has(index)}
+                toolResponsesById={messageRenderIndex.toolResponseByRequestId}
+                confirmationByToolRequestId={messageRenderIndex.confirmationByToolRequestId}
+                pendingConfirmationIds={messageRenderIndex.pendingConfirmationIds}
+                toolRequestIds={messageRenderIndex.toolRequestIds}
+                append={append}
+                toolCallNotifications={toolCallNotifications}
+                isStreaming={
+                  isStreamingMessage &&
+                  !isUser &&
+                  index === messagesToRender.length - 1 &&
+                  message.role === 'assistant'
+                }
+                submitElicitationResponse={submitElicitationResponse}
+                workingDirectory={workingDirectory}
+                workspaceId={workspaceId}
+              />
+            )}
+          </div>
+        </Fragment>
+      );
+    };
+
     return messagesToRender
       .map((message, index) => {
         if (!message.metadata.userVisible) {
@@ -343,71 +438,84 @@ export default function ProgressiveMessageList({
           return null;
         }
 
-        const notification = getSystemNotification(message);
-        if (notification) {
+        const activityGroup = messageRenderIndex.collapsibleToolCallGroupsByStart.get(index);
+        if (activityGroup) {
+          const visibleIndexes = activityGroup.filter(
+            (messageIndex) => messageIndex < messagesToRender.length
+          );
+          const toolCount = activityGroup.reduce(
+            (count, messageIndex) => count + getToolRequests(messages[messageIndex]).length,
+            0
+          );
+          const hasPendingApproval = activityGroup.some((messageIndex) =>
+            getToolRequests(messages[messageIndex]).some((request) =>
+              messageRenderIndex.pendingConfirmationIds.has(request.id)
+            )
+          );
+          const lastActivityIndex = activityGroup[activityGroup.length - 1];
+          const isStreamingActivity =
+            isStreamingMessage &&
+            messages.slice(lastActivityIndex + 1).every((candidate) => {
+              const { imagePaths, textContent } = getTextAndImageContent(candidate);
+              return (
+                candidate.metadata.userVisible &&
+                getToolResponses(candidate).length > 0 &&
+                getToolRequests(candidate).length === 0 &&
+                !textContent.trim() &&
+                imagePaths.length === 0
+              );
+            });
+          const activityRequests = activityGroup.flatMap((messageIndex) =>
+            getToolRequests(messages[messageIndex])
+          );
+          const hasError = activityRequests.some((request) => {
+            const response = messageRenderIndex.toolResponseByRequestId.get(request.id);
+            return (
+              (response?.toolResult as Record<string, unknown> | undefined)?.status === 'error'
+            );
+          });
+          const hasMissingResponse = activityRequests.some(
+            (request) => !messageRenderIndex.toolResponseByRequestId.has(request.id)
+          );
+          const activityStatus = hasError
+            ? 'error'
+            : isStreamingActivity && hasMissingResponse
+              ? 'loading'
+              : hasMissingResponse
+                ? 'pending'
+                : 'success';
+
           return (
-            <div
-              key={`notification-${message.id ?? `msg-${index}-${message.created}`}`}
-              className={`relative ${index === 0 ? 'mt-0' : 'mt-4'} assistant`}
-              data-testid="message-container"
-            >
-              {renderSystemNotification(notification)}
-            </div>
+            <Fragment key={`activity-${message.id ?? index}`}>
+              {visibleIndexes.map((messageIndex) => (
+                <Fragment key={`disclosure-${messages[messageIndex].id ?? messageIndex}`}>
+                  {renderModelDisclosure(messages[messageIndex], messageIndex)}
+                </Fragment>
+              ))}
+              <ToolActivityGroup
+                count={toolCount}
+                hasPendingApproval={hasPendingApproval}
+                status={activityStatus}
+                className={index === 0 ? undefined : 'mt-4'}
+              >
+                {visibleIndexes.map((messageIndex, activityIndex) =>
+                  renderDefaultMessage(
+                    messages[messageIndex],
+                    messageIndex,
+                    false,
+                    activityIndex === 0
+                  )
+                )}
+              </ToolActivityGroup>
+            </Fragment>
           );
         }
 
-        const isUser = isUserMessage(message);
-        const messageIsInChain = messageRenderIndex.toolCallChainIndexes.has(index);
-        const currentResolvedModel = getResolvedModel(message);
-        const previousResolvedModel = currentResolvedModel ? getPreviousResolvedModel(index) : null;
-        const showModelChangeDisclosure = Boolean(
-          currentResolvedModel &&
-          previousResolvedModel &&
-          currentResolvedModel !== previousResolvedModel &&
-          !hasModelSwitchRecordSincePreviousResolvedModel(index)
-        );
+        if (messageRenderIndex.collapsibleToolCallGroupIndexes.has(index)) {
+          return null;
+        }
 
-        const messageKey = message.id ?? `msg-${index}-${message.created}`;
-
-        return (
-          <Fragment key={messageKey}>
-            {showModelChangeDisclosure &&
-              currentResolvedModel &&
-              previousResolvedModel &&
-              renderModelChangeDisclosure(previousResolvedModel, currentResolvedModel)}
-            <div
-              className={`relative ${index === 0 ? 'mt-0' : 'mt-4'} ${isUser ? 'user' : 'assistant'} ${messageIsInChain ? 'in-chain' : ''}`}
-              data-testid="message-container"
-            >
-              {isUser ? (
-                !hasOnlyToolResponses(message) && (
-                  <UserMessage message={message} onMessageUpdate={onMessageUpdate} />
-                )
-              ) : (
-                <GoslingMessage
-                  sessionId={chat.sessionId}
-                  message={message}
-                  hideTimestamp={messageRenderIndex.hiddenTimestampIndexes.has(index)}
-                  toolResponsesById={messageRenderIndex.toolResponseByRequestId}
-                  confirmationByToolRequestId={messageRenderIndex.confirmationByToolRequestId}
-                  pendingConfirmationIds={messageRenderIndex.pendingConfirmationIds}
-                  toolRequestIds={messageRenderIndex.toolRequestIds}
-                  append={append}
-                  toolCallNotifications={toolCallNotifications}
-                  isStreaming={
-                    isStreamingMessage &&
-                    !isUser &&
-                    index === messagesToRender.length - 1 &&
-                    message.role === 'assistant'
-                  }
-                  submitElicitationResponse={submitElicitationResponse}
-                  workingDirectory={workingDirectory}
-                  workspaceId={workspaceId}
-                />
-              )}
-            </div>
-          </Fragment>
-        );
+        return renderDefaultMessage(message, index);
       })
       .filter(Boolean);
   }, [
