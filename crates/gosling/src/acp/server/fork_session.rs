@@ -84,7 +84,7 @@ impl GoslingAcpAgent {
                 &gosling_session,
                 self.supports_gosling_custom_notifications(),
             )?;
-            Ok(response)
+            super::presentation::ensure_response_fits(response, "Fork session")
         }
         .await;
 

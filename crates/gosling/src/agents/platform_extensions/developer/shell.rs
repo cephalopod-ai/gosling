@@ -901,7 +901,8 @@ fn truncate_output(
     let output_path = save_full_output(full_output, label, output_dir)?;
 
     let preview_start = total_lines.saturating_sub(OUTPUT_PREVIEW_LINES);
-    let preview = lines[preview_start..].join("\n");
+    let tail_preview = lines[preview_start..].join("\n");
+    let preview = bounded_output_preview(&tail_preview);
 
     let reason = if exceeded_lines {
         format!("Output exceeded {OUTPUT_LIMIT_LINES} line limit ({total_lines} lines total).")
@@ -919,6 +920,22 @@ fn truncate_output(
             reason,
         }),
     })
+}
+
+fn bounded_output_preview(output: &str) -> String {
+    if output.len() <= OUTPUT_LIMIT_BYTES {
+        return output.to_string();
+    }
+
+    let notice = format!(
+        "[Preview truncated to {OUTPUT_LIMIT_BYTES} bytes; showing the end. The full output is saved separately.]\n"
+    );
+    let suffix_bytes = OUTPUT_LIMIT_BYTES.saturating_sub(notice.len());
+    let mut start = output.len().saturating_sub(suffix_bytes);
+    while start < output.len() && !output.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("{}{}", notice, output.get(start..).unwrap_or_default())
 }
 
 fn save_full_output(
@@ -1100,6 +1117,19 @@ mod tests {
 
         let notice = truncation_notice(info);
         assert!(notice.contains("Full output saved to"));
+    }
+
+    #[test]
+    fn render_output_bounds_preview_for_very_long_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = ["a".repeat(6 * 1024 * 1024), "b".repeat(6 * 1024 * 1024)].join("\n");
+
+        let result = render_output(&input, "long_lines", dir.path()).unwrap();
+
+        assert!(result.text.len() <= OUTPUT_LIMIT_BYTES);
+        assert!(result.text.contains("Preview truncated"));
+        assert!(result.text.ends_with(&"b".repeat(1_000)));
+        assert!(result.truncation.is_some());
     }
 
     #[test]

@@ -464,7 +464,10 @@ impl GoslingAcpAgent {
                 agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
             );
         }
-        let limit = req.limit.unwrap_or(DEFAULT_SESSION_TAIL_LIMIT);
+        let limit = req
+            .limit
+            .unwrap_or(DEFAULT_SESSION_TAIL_LIMIT)
+            .min(presentation::ACP_HISTORY_PAGE_LIMIT);
         let page = self
             .session_manager
             .get_session_message_page(session_id, req.before_cursor.as_deref(), limit)
@@ -476,8 +479,7 @@ impl GoslingAcpAgent {
                     agent_client_protocol::Error::internal_error().data(error.to_string())
                 }
             })?;
-        let messages = page
-            .messages
+        let messages = presentation::project_history_page(page.messages)
             .into_iter()
             .map(|message| serde_json::to_value(message).unwrap_or(serde_json::Value::Null))
             .collect();

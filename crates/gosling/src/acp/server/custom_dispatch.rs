@@ -9,7 +9,10 @@ impl GoslingAcpAgent {
         params: serde_json::Value,
     ) -> Result<serde_json::Value, agent_client_protocol::Error> {
         self.shell_runtime.enforce_custom_method(method)?;
-        let result = self.handle_custom_request(method, params).await;
+        let result = super::presentation::ensure_custom_result_fits(
+            self.handle_custom_request(method, params).await,
+            method,
+        );
 
         if let Err(error) = &result {
             tracing::error!(method, error = ?error, "ACP custom request failed");

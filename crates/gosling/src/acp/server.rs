@@ -105,6 +105,7 @@ mod load_session;
 mod manage_sessions;
 mod new_session;
 mod onboarding;
+mod presentation;
 mod prompts;
 mod providers;
 mod resources;
@@ -663,7 +664,7 @@ fn extract_locations_from_meta(
         .filter_map(|entry| {
             let path = entry.get("path")?.as_str()?;
             let line = entry.get("line").and_then(|v| v.as_u64()).map(|l| l as u32);
-            Some(ToolCallLocation::new(path).line(line))
+            Some(ToolCallLocation::new(presentation::project_location(path)).line(line))
         })
         .collect::<Vec<_>>();
     if locations.is_empty() {
@@ -694,12 +695,15 @@ fn extract_tool_locations(
         if let Some(path_str) = path_str {
             if matches!(tool_name, "read") {
                 let line = get_requested_line(tool_call.arguments.as_ref());
-                locations.push(ToolCallLocation::new(path_str).line(line));
+                locations.push(
+                    ToolCallLocation::new(presentation::project_location(path_str)).line(line),
+                );
                 return locations;
             }
 
             if matches!(tool_name, "write" | "edit") {
-                locations.push(ToolCallLocation::new(path_str).line(1));
+                locations
+                    .push(ToolCallLocation::new(presentation::project_location(path_str)).line(1));
                 return locations;
             }
 
@@ -719,19 +723,31 @@ fn extract_tool_locations(
                                 let line = extract_view_line_range(text)
                                     .map(|range| range.0 as u32)
                                     .or(Some(1));
-                                locations.push(ToolCallLocation::new(path_str).line(line));
+                                locations.push(
+                                    ToolCallLocation::new(presentation::project_location(path_str))
+                                        .line(line),
+                                );
                             }
                             Some("str_replace") | Some("insert") => {
                                 let line = extract_first_line_number(text)
                                     .map(|l| l as u32)
                                     .or(Some(1));
-                                locations.push(ToolCallLocation::new(path_str).line(line));
+                                locations.push(
+                                    ToolCallLocation::new(presentation::project_location(path_str))
+                                        .line(line),
+                                );
                             }
                             Some("write") => {
-                                locations.push(ToolCallLocation::new(path_str).line(1));
+                                locations.push(
+                                    ToolCallLocation::new(presentation::project_location(path_str))
+                                        .line(1),
+                                );
                             }
                             _ => {
-                                locations.push(ToolCallLocation::new(path_str).line(1));
+                                locations.push(
+                                    ToolCallLocation::new(presentation::project_location(path_str))
+                                        .line(1),
+                                );
                             }
                         }
                         break;
@@ -740,7 +756,8 @@ fn extract_tool_locations(
             }
 
             if locations.is_empty() {
-                locations.push(ToolCallLocation::new(path_str).line(1));
+                locations
+                    .push(ToolCallLocation::new(presentation::project_location(path_str)).line(1));
             }
         }
     }
@@ -834,17 +851,17 @@ fn summarize_tool_call(tool_name: &str, arguments: Option<&serde_json::Value>) -
 
 fn tool_call_identity_meta(tool_request: &ToolRequest) -> Option<Meta> {
     let tool_call = tool_request.tool_call.as_ref().ok()?;
-    let tool_name = tool_call.name.to_string();
+    let tool_name = presentation::project_identifier(tool_call.name.as_ref());
     let extension_name = tool_request
         .tool_meta
         .as_ref()
         .and_then(|meta| meta.get("gosling_extension"))
         .and_then(serde_json::Value::as_str)
-        .map(ToString::to_string)
+        .map(presentation::project_identifier)
         .or_else(|| {
             tool_name
                 .split_once("__")
-                .map(|(extension_name, _)| extension_name.to_string())
+                .map(|(extension_name, _)| presentation::project_identifier(extension_name))
         });
 
     let mut tool_call_meta = serde_json::Map::new();
@@ -874,6 +891,7 @@ fn tool_call_identity_meta(tool_request: &ToolRequest) -> Option<Meta> {
 /// preserving any existing `gosling.*` keys (e.g. `gosling.toolCall` set by
 /// [`tool_call_identity_meta`]).
 fn with_tool_chain_summary_meta(base: Option<Meta>, summary: &str, count: usize) -> Option<Meta> {
+    let summary = presentation::project_tool_chain_summary(summary);
     let mut meta = base.unwrap_or_default();
     let gosling_entry = meta
         .entry("gosling".to_string())
@@ -889,10 +907,7 @@ fn with_tool_chain_summary_meta(base: Option<Meta>, summary: &str, count: usize)
         }
     };
     let mut chain = serde_json::Map::new();
-    chain.insert(
-        "summary".to_string(),
-        serde_json::Value::String(summary.to_string()),
-    );
+    chain.insert("summary".to_string(), serde_json::Value::String(summary));
     chain.insert(
         "count".to_string(),
         serde_json::Value::Number(serde_json::Number::from(count)),
@@ -959,15 +974,20 @@ fn pending_tool_call_from_request(tool_request: &ToolRequest) -> PendingToolCall
     // any subsequent live initial ToolCall after the title task has already
     // resolved) emits the nice title up front, with no flash of the
     // deterministic fallback.
-    let initial_title = tool_request
-        .persisted_title()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| fallback_title.clone());
+    let initial_title = presentation::project_tool_title(
+        &tool_request
+            .persisted_title()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| fallback_title.clone()),
+    );
 
-    let mut tool_call = ToolCall::new(ToolCallId::new(tool_request.id.clone()), initial_title)
-        .status(ToolCallStatus::Pending);
+    let mut tool_call = ToolCall::new(
+        ToolCallId::new(presentation::project_identifier(&tool_request.id)),
+        initial_title,
+    )
+    .status(ToolCallStatus::Pending);
     if let Some(args) = args_value {
-        tool_call = tool_call.raw_input(args);
+        tool_call = tool_call.raw_input(presentation::project_tool_input(&args));
     }
 
     PendingToolCall {
@@ -1575,9 +1595,10 @@ impl GoslingAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         match content_item {
             MessageContent::Text(text) => {
-                let chunk =
-                    ContentChunk::new(ContentBlock::Text(TextContent::new(text.text.clone())))
-                        .meta(message_update_meta(message_id, message_created, steer));
+                let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(
+                    presentation::project_live_text(&text.text, "Message text"),
+                )))
+                .meta(message_update_meta(message_id, message_created, steer));
                 let update = match role {
                     Role::User => SessionUpdate::UserMessageChunk(chunk),
                     Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
@@ -1611,7 +1632,7 @@ impl GoslingAcpAgent {
                     session_id.clone(),
                     SessionUpdate::AgentThoughtChunk(
                         ContentChunk::new(ContentBlock::Text(TextContent::new(
-                            thinking.thinking.clone(),
+                            presentation::project_live_text(&thinking.thinking, "Thinking content"),
                         )))
                         .meta(message_update_meta(
                             message_id,
@@ -1815,12 +1836,16 @@ impl GoslingAcpAgent {
                     }
                 };
 
+                let title = presentation::project_tool_title(&title);
                 let fields = ToolCallUpdateFields::new().title(title.clone());
                 let _ = cx.send_notification(SessionNotification::new(
                     sid,
                     SessionUpdate::ToolCallUpdate(
-                        ToolCallUpdate::new(ToolCallId::new(request_id.clone()), fields)
-                            .meta(identity_meta),
+                        ToolCallUpdate::new(
+                            ToolCallId::new(presentation::project_identifier(&request_id)),
+                            fields,
+                        )
+                        .meta(identity_meta),
                     ),
                 ));
 
@@ -1872,16 +1897,20 @@ impl GoslingAcpAgent {
             Err(_) => ToolCallStatus::Failed,
         };
 
+        let mut presented_response = tool_response.clone();
+        presented_response.tool_result =
+            presentation::project_tool_result_for_update(&tool_response.tool_result);
+
         let mut fields = ToolCallUpdateFields::new().status(status);
-        if let Some(raw_output) = extract_tool_raw_output(&tool_response.tool_result) {
+        if let Some(raw_output) = extract_tool_raw_output(&presented_response.tool_result) {
             fields = fields.raw_output(raw_output);
         }
-        if !tool_response
+        if !presented_response
             .tool_result
             .as_ref()
             .is_ok_and(|r| r.is_acp_aware())
         {
-            let content = build_tool_call_content(&tool_response.tool_result);
+            let content = build_tool_call_content(&presented_response.tool_result);
             fields = fields.content(content);
 
             let locations = extract_locations_from_meta(tool_response).unwrap_or_else(|| {
@@ -1896,8 +1925,11 @@ impl GoslingAcpAgent {
             }
         }
 
-        let update = ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
-            .meta(extract_tool_call_update_meta(tool_response));
+        let update = ToolCallUpdate::new(
+            ToolCallId::new(presentation::project_identifier(&tool_response.id)),
+            fields,
+        )
+        .meta(extract_tool_call_update_meta(&presented_response));
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
             SessionUpdate::ToolCallUpdate(update),
@@ -2095,6 +2127,7 @@ impl GoslingAcpAgent {
                 );
                 return;
             };
+            let summary = presentation::project_tool_chain_summary(&summary);
 
             let count = chain_for_task.ids.len();
             let patch = serde_json::json!({
@@ -2118,7 +2151,11 @@ impl GoslingAcpAgent {
             let _ = cx.send_notification(SessionNotification::new(
                 sid,
                 SessionUpdate::ToolCallUpdate(
-                    ToolCallUpdate::new(ToolCallId::new(first_id), fields).meta(meta),
+                    ToolCallUpdate::new(
+                        ToolCallId::new(presentation::project_identifier(&first_id)),
+                        fields,
+                    )
+                    .meta(meta),
                 ),
             ));
         });
@@ -2139,19 +2176,27 @@ impl GoslingAcpAgent {
         let agent = agent.clone();
         let session_id = session_id.clone();
 
-        let formatted_name = format_tool_name(&tool_name);
+        let formatted_name = presentation::project_tool_title(&format_tool_name(&tool_name));
 
         let mut fields = ToolCallUpdateFields::new()
             .title(formatted_name)
             .kind(ToolKind::default())
             .status(ToolCallStatus::Pending)
-            .raw_input(serde_json::Value::Object(arguments));
+            .raw_input(presentation::project_tool_input(
+                &serde_json::Value::Object(arguments),
+            ));
         if let Some(p) = prompt {
             fields = fields.content(vec![ToolCallContent::Content(Content::new(
-                ContentBlock::Text(TextContent::new(p)),
+                ContentBlock::Text(TextContent::new(presentation::project_live_text(
+                    &p,
+                    "Permission prompt",
+                ))),
             ))]);
         }
-        let tool_call_update = ToolCallUpdate::new(ToolCallId::new(request_id.clone()), fields);
+        let tool_call_update = ToolCallUpdate::new(
+            ToolCallId::new(presentation::project_identifier(&request_id)),
+            fields,
+        );
 
         fn option(kind: PermissionOptionKind) -> PermissionOption {
             let id = serde_json::to_value(kind)
@@ -2278,10 +2323,10 @@ fn status_message_from_system_notification(
 ) -> Option<StatusMessage> {
     match notification.notification_type {
         SystemNotificationType::InlineMessage => Some(StatusMessage::Notice {
-            message: notification.msg.clone(),
+            message: presentation::project_live_text(&notification.msg, "Status message"),
         }),
         SystemNotificationType::ThinkingMessage => Some(StatusMessage::Progress {
-            message: notification.msg.clone(),
+            message: presentation::project_live_text(&notification.msg, "Status message"),
         }),
         SystemNotificationType::CreditsExhausted => None,
     }
@@ -2291,7 +2336,10 @@ fn message_update_meta(message_id: Option<&str>, created: i64, steer: bool) -> M
     let mut gosling = serde_json::Map::new();
     gosling.insert("created".to_string(), serde_json::json!(created));
     if let Some(id) = message_id {
-        gosling.insert("messageId".to_string(), serde_json::json!(id));
+        gosling.insert(
+            "messageId".to_string(),
+            serde_json::json!(presentation::project_identifier(id)),
+        );
     }
     if steer {
         gosling.insert("steer".to_string(), serde_json::json!(true));
@@ -2330,7 +2378,10 @@ fn replay_message_gosling_meta(message: &Message) -> serde_json::Map<String, ser
     let mut gosling = serde_json::Map::new();
     gosling.insert("created".to_string(), serde_json::json!(message.created));
     if let Some(id) = &message.id {
-        gosling.insert("messageId".to_string(), serde_json::json!(id));
+        gosling.insert(
+            "messageId".to_string(),
+            serde_json::json!(presentation::project_identifier(id)),
+        );
     }
     if message.metadata.steer {
         gosling.insert("steer".to_string(), serde_json::json!(true));
@@ -3076,6 +3127,7 @@ impl GoslingAcpAgent {
             session_id.clone(),
             SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(config_options.clone())),
         );
+        presentation::ensure_response_fits(&notification, "Session configuration update")?;
         Ok((notification, config_options))
     }
 
@@ -4377,6 +4429,23 @@ print(\"hello, world\")
                 "messageId": "msg_live",
             })),
         );
+    }
+
+    #[test]
+    fn test_replay_message_meta_bounds_imported_message_id() {
+        let oversized_id = format!("prefix-{}-suffix", "x".repeat(10_000));
+        let message =
+            Message::new(Role::Assistant, 1_700_000_000, vec![]).with_id(oversized_id.clone());
+
+        let replay = merge_replay_message_meta(None, &message);
+        let replayed_id = replay["gosling"]["messageId"]
+            .as_str()
+            .expect("message ID should be present");
+
+        assert!(replayed_id.len() <= 1_024);
+        assert!(replayed_id.starts_with("prefix-"));
+        assert!(replayed_id.ends_with("-suffix"));
+        assert_eq!(message.id.as_deref(), Some(oversized_id.as_str()));
     }
 
     #[test]

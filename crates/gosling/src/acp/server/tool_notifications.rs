@@ -42,7 +42,9 @@ pub(super) fn tool_notification_update(
     let mut meta = Meta::new();
     meta.insert(
         "toolNotification".to_string(),
-        serde_json::to_value(tool_notification).ok()?,
+        super::presentation::project_notification_value(
+            &serde_json::to_value(tool_notification).ok()?,
+        ),
     );
 
     Some(SessionUpdate::ToolCallUpdate(
@@ -187,5 +189,25 @@ mod tests {
         ));
 
         assert!(tool_notification_update("tool_1", notification).is_none());
+    }
+
+    #[test]
+    fn bounds_oversized_live_notification_data() {
+        let notification = ServerNotification::LoggingMessageNotification(Notification::new(
+            LoggingMessageNotificationParam::new(
+                LoggingLevel::Info,
+                json!({ "stdout": "x".repeat(1_000_000) }),
+            ),
+        ));
+
+        let update = tool_notification_update("tool_1", notification).expect("expected update");
+        let value = serde_json::to_value(update).expect("update should serialize");
+        let serialized = serde_json::to_vec(&value).expect("update should serialize");
+
+        assert!(serialized.len() < 300_000);
+        assert_eq!(
+            value["_meta"]["toolNotification"]["_gosling"]["truncated"],
+            true
+        );
     }
 }

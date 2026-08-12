@@ -7,6 +7,7 @@ export type ClosableAcpStream = Stream & {
 export const MAX_BUFFERED_ACP_MESSAGES = 1024;
 export const MAX_BUFFERED_ACP_MESSAGE_CHARS = 8_000_000;
 export const MAX_ACP_MESSAGE_CHARS = MAX_BUFFERED_ACP_MESSAGE_CHARS;
+const ACP_OVERSIZED_CLOSE_CODE = 4009;
 
 export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
   const ws = new window.WebSocket(wsUrl);
@@ -30,7 +31,7 @@ export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
     incoming.length = 0;
     bufferedChars = 0;
     closeWaiters(new Error(errorMessage));
-    ws.close(1009, closeReason);
+    ws.close(ACP_OVERSIZED_CLOSE_CODE, closeReason);
   }
 
   function pushMessage(message: unknown, encodedLength: number): void {

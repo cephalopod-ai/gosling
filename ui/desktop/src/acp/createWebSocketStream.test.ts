@@ -48,7 +48,7 @@ describe('createWebSocketStream', () => {
     }
 
     expect(MockWebSocket.instance.close).toHaveBeenCalledWith(
-      1009,
+      4009,
       'ACP receive buffer limit exceeded'
     );
   });
@@ -61,6 +61,26 @@ describe('createWebSocketStream', () => {
       new window.MessageEvent('message', { data: ' '.repeat(MAX_ACP_MESSAGE_CHARS + 1) })
     );
 
-    expect(MockWebSocket.instance.close).toHaveBeenCalledWith(1009, 'ACP message limit exceeded');
+    expect(MockWebSocket.instance.close).toHaveBeenCalledWith(4009, 'ACP message limit exceeded');
+  });
+
+  it('uses an application close code accepted by browser WebSocket clients', () => {
+    class ValidatingMockWebSocket extends MockWebSocket {
+      override close = vi.fn((code?: number) => {
+        if (code !== undefined && code !== 1000 && (code < 3000 || code > 4999)) {
+          throw new DOMException('Invalid WebSocket close code', 'InvalidAccessError');
+        }
+      });
+    }
+
+    vi.stubGlobal('WebSocket', ValidatingMockWebSocket);
+    createWebSocketStream('ws://127.0.0.1:64027/acp');
+
+    expect(() => {
+      MockWebSocket.instance.dispatchEvent(
+        new window.MessageEvent('message', { data: ' '.repeat(MAX_ACP_MESSAGE_CHARS + 1) })
+      );
+    }).not.toThrow();
+    expect(MockWebSocket.instance.close).toHaveBeenCalledWith(4009, 'ACP message limit exceeded');
   });
 });

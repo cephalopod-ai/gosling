@@ -87,7 +87,12 @@ function getOrCreateAssistantMessageForUpdate(
   state: AdapterState,
   goslingMeta: GoslingMessageMeta
 ): Message {
-  const existing = findMessageForChunk(state, 'assistant', goslingMeta.messageId, goslingMeta.created);
+  const existing = findMessageForChunk(
+    state,
+    'assistant',
+    goslingMeta.messageId,
+    goslingMeta.created
+  );
   if (existing) {
     return existing;
   }
@@ -144,15 +149,7 @@ function toolResponseMetadata(
   update: ToolCallUpdate,
   identity: ToolIdentity
 ): Record<string, unknown> | undefined {
-  const metadata = baseToolMetadata(update, identity) ?? {};
-  if (update.rawOutput !== undefined) {
-    metadata.rawOutput = update.rawOutput;
-  }
-  if (update.content) {
-    metadata.content = update.content;
-  }
-
-  return Object.keys(metadata).length > 0 ? metadata : undefined;
+  return baseToolMetadata(update, identity);
 }
 
 function baseToolMetadata(

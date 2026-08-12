@@ -68,13 +68,28 @@ fn replay_conversation_to_client(
         for content_item in &message.content {
             match content_item {
                 MessageContent::Text(text) => {
-                    let mut tc = TextContent::new(text.text.clone());
+                    let mut tc = TextContent::new(presentation::project_live_text(
+                        &text.text,
+                        "Message text",
+                    ));
                     if let Some(audience) = text.audience() {
                         tc = tc.annotations(replay_audience_annotations(audience));
                     }
                     send_replay_content_chunk(cx, &session_id, message, ContentBlock::Text(tc))?;
                 }
                 MessageContent::Image(image) => {
+                    if !presentation::live_image_fits(&image.data) {
+                        send_replay_content_chunk(
+                            cx,
+                            &session_id,
+                            message,
+                            ContentBlock::Text(TextContent::new(format!(
+                                "[Image omitted from ACP replay: {} bytes total]",
+                                image.data.len()
+                            ))),
+                        )?;
+                        continue;
+                    }
                     let mut image_content =
                         ImageContent::new(image.data.clone(), image.mime_type.clone());
                     if let Some(audience) = image.audience() {
@@ -116,16 +131,22 @@ fn replay_conversation_to_client(
                         Err(_) => ToolCallStatus::Failed,
                     };
 
+                    let mut presented_response = tool_response.clone();
+                    presented_response.tool_result =
+                        presentation::project_tool_result_for_update(&tool_response.tool_result);
+
                     let mut fields = ToolCallUpdateFields::new().status(status);
-                    if let Some(raw_output) = extract_tool_raw_output(&tool_response.tool_result) {
+                    if let Some(raw_output) =
+                        extract_tool_raw_output(&presented_response.tool_result)
+                    {
                         fields = fields.raw_output(raw_output);
                     }
-                    if !tool_response
+                    if !presented_response
                         .tool_result
                         .as_ref()
                         .is_ok_and(|r| r.is_acp_aware())
                     {
-                        let content = build_tool_call_content(&tool_response.tool_result);
+                        let content = build_tool_call_content(&presented_response.tool_result);
                         fields = fields.content(content);
 
                         let locations =
@@ -143,12 +164,14 @@ fn replay_conversation_to_client(
                         }
                     }
 
-                    let update =
-                        ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
-                            .meta(merge_replay_message_meta(
-                                extract_tool_call_update_meta(tool_response),
-                                message,
-                            ));
+                    let update = ToolCallUpdate::new(
+                        ToolCallId::new(presentation::project_identifier(&tool_response.id)),
+                        fields,
+                    )
+                    .meta(merge_replay_message_meta(
+                        extract_tool_call_update_meta(&presented_response),
+                        message,
+                    ));
                     cx.send_notification(SessionNotification::new(
                         session_id.clone(),
                         SessionUpdate::ToolCallUpdate(update),
@@ -159,7 +182,10 @@ fn replay_conversation_to_client(
                         session_id.clone(),
                         SessionUpdate::AgentThoughtChunk(
                             ContentChunk::new(ContentBlock::Text(TextContent::new(
-                                thinking.thinking.clone(),
+                                presentation::project_live_text(
+                                    &thinking.thinking,
+                                    "Thinking content",
+                                ),
                             )))
                             .meta(replay_message_meta(message)),
                         ),
@@ -321,6 +347,6 @@ impl GoslingAcpAgent {
             "perf: load_session_refactor done"
         );
         self.closed_session_ids.lock().await.remove(&session_id_str);
-        Ok(response)
+        super::presentation::ensure_response_fits(response, "Load session")
     }
 }

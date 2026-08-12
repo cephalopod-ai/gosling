@@ -338,7 +338,7 @@ impl GoslingAcpAgent {
             response = response.config_options(co);
         }
         response = response.meta(super::session_response_meta(session, extension_results));
-        Ok(response)
+        super::presentation::ensure_response_fits(response, "New session")
     }
 }
 

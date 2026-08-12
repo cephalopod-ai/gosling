@@ -414,7 +414,6 @@ describe('createAcpSessionNotificationAdapter', () => {
           },
           metadata: {
             status: 'completed',
-            rawOutput: 'raw result',
           },
         });
       });
@@ -445,7 +444,6 @@ describe('createAcpSessionNotificationAdapter', () => {
           metadata: {
             title: 'Read file',
             status: 'failed',
-            rawOutput: 'permission denied',
           },
         });
       });
