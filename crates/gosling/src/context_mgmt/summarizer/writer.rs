@@ -64,14 +64,18 @@ pub fn append_memories(path: &Path, records: &[MemoryRecord]) -> std::io::Result
         .create(true)
         .append(true)
         .open(path)?;
-
-    for record in records {
-        let line = serde_json::to_string(record)
-            .expect("MemoryRecord only contains plain strings and a float");
-        writeln!(file, "{line}")?;
-    }
-
-    Ok(())
+    file.lock_exclusive()?;
+    let result = (|| {
+        for record in records {
+            let line = serde_json::to_string(record)
+                .expect("MemoryRecord only contains plain strings and a float");
+            writeln!(file, "{line}")?;
+        }
+        file.flush()?;
+        file.sync_data()
+    })();
+    FileExt::unlock(&file)?;
+    result
 }
 
 /// Heading under which extracted facts are grouped when appended to a
@@ -292,5 +296,43 @@ mod tests {
         assert_eq!(contents.lines().count(), 2);
         assert!(contents.contains("first fact"));
         assert!(contents.contains("second fact"));
+    }
+
+    #[test]
+    fn memory_writer_waits_for_readers_before_appending() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("memories.jsonl");
+        std::fs::write(&path, "").unwrap();
+        let reader = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        reader.lock_shared().unwrap();
+
+        let records = records_for_facts(
+            &[fact("serialized fact", FactType::Fact)],
+            "session",
+            "2026-08-12T00:00:00Z",
+        );
+        let (sent, received) = std::sync::mpsc::channel();
+        let write_path = path.clone();
+        let handle = std::thread::spawn(move || {
+            let result = append_memories(&write_path, &records);
+            sent.send(result).unwrap();
+        });
+
+        assert!(received
+            .recv_timeout(std::time::Duration::from_millis(100))
+            .is_err());
+        FileExt::unlock(&reader).unwrap();
+        received
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        handle.join().unwrap();
+        assert!(std::fs::read_to_string(path)
+            .unwrap()
+            .contains("serialized fact"));
     }
 }

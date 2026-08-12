@@ -100,6 +100,19 @@ tree-sitter-typescript = { version = "0.23", default-features = false }
 [patch.crates-io]
 v8 = { path = "vendor/v8" }
 
+# Local development and test builds are disposable. Incremental compilation
+# retains a separate object graph for every crate/feature/test combination and
+# had allowed target/debug to grow past 100 GiB during agent-driven validation.
+# Keep line tables for useful backtraces, but do not retain incremental object
+# archives between builds.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.test]
+debug = "line-tables-only"
+incremental = false
+
 # Dependencies don't need debug info. You rarely step-debug into third-party
 # crates, but their DWARF dominates `target/debug` — roughly 50-70% of each
 # dependency rlib in this workspace is debug info. Dropping it for dependencies

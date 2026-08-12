@@ -783,6 +783,16 @@ impl SessionManager {
         self.storage.recover_tool_operations(session_id).await
     }
 
+    pub async fn cancel_undispatched_tool_requests(
+        &self,
+        session_id: &str,
+        cancelled_request_id: &str,
+    ) -> Result<usize> {
+        self.storage
+            .cancel_undispatched_tool_requests(session_id, cancelled_request_id)
+            .await
+    }
+
     pub async fn add_model_switch_record(
         &self,
         id: &str,
@@ -3795,6 +3805,73 @@ impl SessionStorage {
         Ok(recovered)
     }
 
+    async fn cancel_undispatched_tool_requests(
+        &self,
+        session_id: &str,
+        cancelled_request_id: &str,
+    ) -> Result<usize> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let operation_request_ids = sqlx::query_scalar::<_, String>(
+            "SELECT tool_request_id FROM tool_operations WHERE session_id = ? AND conversation_bound = TRUE",
+        )
+        .bind(session_id)
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .collect::<HashSet<_>>();
+        let stored_messages = sqlx::query_scalar::<_, String>(
+            "SELECT content_json FROM messages WHERE session_id = ? ORDER BY id",
+        )
+        .bind(session_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        let mut sibling_requests = HashMap::new();
+        let mut answered_request_ids = HashSet::new();
+        for content_json in stored_messages {
+            let contents: Vec<MessageContent> = serde_json::from_str(&content_json)?;
+            let contains_cancelled_request = contents.iter().any(
+                |content| matches!(content, MessageContent::ToolRequest(request) if request.id == cancelled_request_id),
+            );
+            for content in contents {
+                match content {
+                    MessageContent::ToolRequest(request) if contains_cancelled_request => {
+                        sibling_requests.insert(request.id, request.metadata);
+                    }
+                    MessageContent::ToolResponse(response) => {
+                        answered_request_ids.insert(response.id);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut cancelled = 0;
+        for (request_id, request_metadata) in sibling_requests {
+            if answered_request_ids.contains(&request_id)
+                || operation_request_ids.contains(&request_id)
+            {
+                continue;
+            }
+            let mut response = Message::user().with_generated_id();
+            response.add_tool_response_with_metadata(
+                request_id,
+                Err(ErrorData::new(
+                    ErrorCode::INVALID_REQUEST,
+                    "Tool execution was cancelled before it started because the prior turn ended. It will not be retried automatically.".to_string(),
+                    None,
+                )),
+                request_metadata.as_ref(),
+            );
+            Self::upsert_message_in_tx(&mut tx, session_id, &response).await?;
+            cancelled += 1;
+        }
+
+        tx.commit().await?;
+        Ok(cancelled)
+    }
+
     async fn add_message(&self, session_id: &str, message: &Message) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -5070,6 +5147,118 @@ mod tests {
                 .unwrap(),
             ToolOperationStart::InDoubt { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn cancelling_tool_request_cancels_undispatched_siblings_once() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Partially dispatched tools".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        sm.add_message(
+            &session.id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request(
+                    "tool-request-completed",
+                    Ok(rmcp::model::CallToolRequestParams::new("read_file")),
+                )
+                .with_tool_request(
+                    "tool-request-undispatched",
+                    Ok(rmcp::model::CallToolRequestParams::new("write_file")),
+                ),
+        )
+        .await
+        .unwrap();
+        let mut completed_response = Message::user().with_generated_id();
+        completed_response.add_tool_response_with_metadata(
+            "tool-request-completed",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::Content::text("read"),
+            ])),
+            None,
+        );
+        sm.add_message(&session.id, &completed_response)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            sm.cancel_undispatched_tool_requests(&session.id, "tool-request-completed")
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            sm.cancel_undispatched_tool_requests(&session.id, "tool-request-completed")
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(sm.recover_tool_operations(&session.id).await.unwrap(), 0);
+
+        let reloaded = sm.get_session(&session.id, true).await.unwrap();
+        let conversation = reloaded.conversation.unwrap();
+        let responses = conversation
+            .messages()
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .filter_map(MessageContent::as_tool_response)
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 2);
+        let undispatched = responses
+            .iter()
+            .find(|response| response.id == "tool-request-undispatched")
+            .expect("undispatched request should receive a terminal response");
+        let error = undispatched
+            .tool_result
+            .as_ref()
+            .expect_err("undispatched request should be cancelled");
+        assert!(error.message.contains("before it started"));
+        assert!(error.message.contains("will not be retried automatically"));
+    }
+
+    #[tokio::test]
+    async fn generic_recovery_does_not_cancel_a_pending_approval() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Pending approval".to_string(),
+                SessionType::User,
+                GoslingMode::Approve,
+            )
+            .await
+            .unwrap();
+        sm.add_message(
+            &session.id,
+            &Message::assistant().with_generated_id().with_tool_request(
+                "tool-request-pending",
+                Ok(rmcp::model::CallToolRequestParams::new("write_file")),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(sm.recover_tool_operations(&session.id).await.unwrap(), 0);
+        let conversation = sm
+            .get_session(&session.id, true)
+            .await
+            .unwrap()
+            .conversation
+            .unwrap();
+        assert!(conversation
+            .messages()
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .all(|content| !matches!(content, MessageContent::ToolResponse(response) if response.id == "tool-request-pending")));
     }
 
     #[tokio::test]

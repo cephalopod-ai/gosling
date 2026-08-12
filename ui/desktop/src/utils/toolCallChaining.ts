@@ -51,6 +51,52 @@ export function identifyConsecutiveToolCalls(messages: Message[]): number[][] {
   return chains;
 }
 
+export function identifyCollapsibleToolActivityGroups(messages: Message[]): number[][] {
+  const groups: number[][] = [];
+  let currentGroup: number[] = [];
+  let currentToolCount = 0;
+
+  const finishGroup = () => {
+    if (currentToolCount > 1) {
+      groups.push(currentGroup);
+    }
+    currentGroup = [];
+    currentToolCount = 0;
+  };
+
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    const toolRequests = getToolRequests(message);
+    const toolResponses = getToolResponses(message);
+    const { imagePaths, textContent } = getTextAndImageContent(message);
+
+    if (!message.metadata.userVisible) {
+      finishGroup();
+      continue;
+    }
+
+    if (
+      toolResponses.length > 0 &&
+      toolRequests.length === 0 &&
+      !textContent.trim() &&
+      imagePaths.length === 0
+    ) {
+      continue;
+    }
+
+    if (toolRequests.length > 0 && !textContent.trim() && imagePaths.length === 0) {
+      currentGroup.push(i);
+      currentToolCount += toolRequests.length;
+      continue;
+    }
+
+    finishGroup();
+  }
+
+  finishGroup();
+  return groups;
+}
+
 export function shouldHideTimestamp(messageIndex: number, chains: number[][]): boolean {
   for (const chain of chains) {
     if (chain.includes(messageIndex)) {

@@ -1228,9 +1228,12 @@ impl CliSession {
                                     let response_message = persist_cancelled_tool_response(
                                         &self.agent.config.session_manager,
                                         &self.session_id,
-                                        id,
+                                        id.clone(),
                                     )
                                     .await?;
+                                    self.agent.config.session_manager
+                                        .cancel_undispatched_tool_requests(&self.session_id, &id)
+                                        .await?;
                                     self.messages.push(response_message);
                                     cancel_token_clone.cancel();
                                     drop(stream);

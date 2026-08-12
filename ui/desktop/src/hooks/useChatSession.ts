@@ -215,14 +215,14 @@ export function useChatSession({
     [handleSubmit]
   );
 
-  const loadOlderMessages = useCallback(async () => {
+  const loadOlderMessagePage = useCallback(async (): Promise<boolean> => {
     const currentSnapshot = acpChatSessionStore.getSnapshot(sessionId);
     if (
       !currentSnapshot?.historyHasMore ||
       currentSnapshot.historyLoading ||
       !currentSnapshot.historyCursor
     ) {
-      return;
+      return false;
     }
 
     acpChatSessionActions.setHistoryPageState(sessionId, { loading: true });
@@ -234,6 +234,9 @@ export function useChatSession({
         page.nextBeforeCursor,
         page.totalCount
       );
+      return (
+        page.nextBeforeCursor !== null && page.nextBeforeCursor !== currentSnapshot.historyCursor
+      );
     } catch (error) {
       console.warn('Failed to load older session messages:', error);
       acpChatSessionActions.setHistoryPageState(sessionId, { loading: false });
@@ -242,8 +245,31 @@ export function useChatSession({
         title: 'Failed to load older messages',
         msg: errorMessage(error),
       });
+      return false;
     }
   }, [sessionId]);
+
+  const loadOlderMessages = useCallback(async () => {
+    await loadOlderMessagePage();
+  }, [loadOlderMessagePage]);
+
+  const loadAllOlderMessages = useCallback(async (): Promise<boolean> => {
+    while (true) {
+      const beforeLoad = acpChatSessionStore.getSnapshot(sessionId);
+      if (!beforeLoad) {
+        return false;
+      }
+      if (!beforeLoad.historyHasMore) {
+        return true;
+      }
+
+      const loadedOlderPage = await loadOlderMessagePage();
+      const afterLoad = acpChatSessionStore.getSnapshot(sessionId);
+      if (!loadedOlderPage) {
+        return afterLoad?.historyHasMore === false;
+      }
+    }
+  }, [loadOlderMessagePage, sessionId]);
 
   const onSteerQueuedMessage = useCallback(
     async (input: UserInput): Promise<boolean> => {
@@ -381,6 +407,7 @@ export function useChatSession({
     updateSession,
     handleSubmit,
     loadOlderMessages,
+    loadAllOlderMessages,
     onSteerQueuedMessage,
     submitElicitationResponse,
     stopStreaming,

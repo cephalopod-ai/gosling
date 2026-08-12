@@ -19,6 +19,7 @@ export interface UseChatSessionResult {
   updateSession: (updater: (session: Session) => Session) => void;
   handleSubmit: (input: UserInput) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
+  loadAllOlderMessages: () => Promise<boolean>;
   onSteerQueuedMessage?: (input: UserInput) => Promise<boolean>;
   submitElicitationResponse: (
     elicitationId: string,
