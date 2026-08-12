@@ -253,3 +253,21 @@ mutation was performed.
 - [x] Desktop typecheck, 547 tests, ESLint, and i18n validation are green.
 - [x] ACP schema generation and generated TypeScript consistency are green.
 - [x] Credential selector, chat scrolling, parent supervision, Claude permissions, and container cleanup regression cards pass.
+
+## Six-lens audit and repair campaign — 2026-08-12
+
+Full inventory and repair evidence:
+[`reports/2026-08-12-six-lens-agent-skills-audit-repair.md`](../reports/2026-08-12-six-lens-agent-skills-audit-repair.md).
+
+- [x] On explicit CLI turn cancellation, close undispatched sibling tool requests with terminal,
+  idempotent responses while preserving ledger-only reconnect recovery and the existing in-doubt
+  boundary after dispatch.
+- [x] Bound diagnostics disk reads as well as returned content, report real truncation, and
+  create full diagnostic bundles owner-only with an explicit sharing warning.
+- [x] Serialize `projects.json` read-modify-write operations and atomically replace private
+  tracker state.
+- [x] Coordinate shared memory JSONL readers and batch writers with file locks and durable
+  flushes.
+- [ ] Replace Bedrock/SageMaker process-global AWS environment export with provider-instance
+  AWS SDK configuration. Preserve and test environment/config precedence, live reload,
+  concurrent different credentials, and subagent construction before deleting the adapter.
