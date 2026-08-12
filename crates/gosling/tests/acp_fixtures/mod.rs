@@ -230,10 +230,12 @@ pub async fn spawn_acp_server_in_process(
         builtins: builtins.to_vec(),
         state_dir: data_root.to_path_buf().clone(),
         data_dir: data_root.to_path_buf(),
+        platform_data_dir: data_root.to_path_buf(),
         config_dir: data_root.to_path_buf(),
         disable_session_naming: settings.disable_session_naming,
         gosling_platform: GoslingPlatform::GoslingCli,
         additional_source_roots: Vec::new(),
+        shell_runtime: Default::default(),
     })
     .await
     .unwrap();

@@ -198,6 +198,58 @@ describe('startGoslingServe', () => {
   );
 
   it.skipIf(process.platform === 'win32')(
+    'passes a shell identity and independent runtime namespace to the backend',
+    async () => {
+      const tempDir = makeTempDir();
+      const argsPath = path.join(tempDir, 'args.txt');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        [
+          '#!/usr/bin/env sh',
+          'printf "%s\\n" "$@" > "$TEST_ARGS_PATH"',
+          'while true; do sleep 1; done',
+          '',
+        ].join('\n')
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        shell: {
+          id: 'math_mcp',
+          displayName: 'Math',
+          version: '2',
+          runtimeNamespace: 'math_mcp',
+          provisioningPath: '/profiles/math.json',
+        },
+        env: { TEST_ARGS_PATH: argsPath },
+        readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+      });
+
+      try {
+        const args = await waitForFileLines(argsPath);
+        expect(args).toEqual(
+          expect.arrayContaining([
+            '--shell-id',
+            'math_mcp',
+            '--shell-display-name',
+            'Math',
+            '--shell-version',
+            '2',
+            '--shell-runtime-namespace',
+            'math_mcp',
+            '--shell-provisioning',
+            '/profiles/math.json',
+          ])
+        );
+      } finally {
+        await result.cleanup();
+      }
+    }
+  );
+
+  it.skipIf(process.platform === 'win32')(
     'passes its own pid to the subprocess as the supervising parent pid',
     async () => {
       const tempDir = makeTempDir();

@@ -1,6 +1,26 @@
 {
   "methods": [
     {
+      "method": "_gosling/unstable/shell/provisioning/read",
+      "requestType": "ShellProvisioningReadRequest_unstable",
+      "responseType": "ShellProvisioningReadResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/domain/snapshot",
+      "requestType": "DomainSnapshotRequest_unstable",
+      "responseType": "DomainSnapshotResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/domain/action",
+      "requestType": "DomainActionRequest_unstable",
+      "responseType": "DomainActionResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/handoff/prepare",
+      "requestType": "ShellHandoffPrepareRequest_unstable",
+      "responseType": "ShellHandoffPrepareResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/session/extensions/add",
       "requestType": "AddSessionExtensionRequest_unstable",
       "responseType": "EmptyResponse"

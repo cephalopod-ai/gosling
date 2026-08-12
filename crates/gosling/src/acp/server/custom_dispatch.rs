@@ -8,6 +8,7 @@ impl GoslingAcpAgent {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, agent_client_protocol::Error> {
+        self.shell_runtime.enforce_custom_method(method)?;
         let result = self.handle_custom_request(method, params).await;
 
         if let Err(error) = &result {
@@ -15,6 +16,37 @@ impl GoslingAcpAgent {
         }
 
         result
+    }
+
+    #[custom_method(ShellProvisioningReadRequest)]
+    async fn dispatch_read_shell_provisioning(
+        &self,
+    ) -> Result<ShellProvisioningReadResponse, agent_client_protocol::Error> {
+        Ok(self.on_read_shell_provisioning())
+    }
+
+    #[custom_method(DomainSnapshotRequest)]
+    async fn dispatch_domain_snapshot(
+        &self,
+        req: DomainSnapshotRequest,
+    ) -> Result<DomainSnapshotResponse, agent_client_protocol::Error> {
+        self.on_domain_snapshot(req).await
+    }
+
+    #[custom_method(DomainActionRequest)]
+    async fn dispatch_domain_action(
+        &self,
+        req: DomainActionRequest,
+    ) -> Result<DomainActionResponse, agent_client_protocol::Error> {
+        self.on_domain_action(req).await
+    }
+
+    #[custom_method(ShellHandoffPrepareRequest)]
+    async fn dispatch_prepare_shell_handoff(
+        &self,
+        req: ShellHandoffPrepareRequest,
+    ) -> Result<ShellHandoffPrepareResponse, agent_client_protocol::Error> {
+        Ok(self.on_prepare_shell_handoff(req))
     }
 
     #[custom_method(AddSessionExtensionRequest)]

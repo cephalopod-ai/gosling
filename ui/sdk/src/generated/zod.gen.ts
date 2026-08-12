@@ -2,6 +2,156 @@
 
 import { z } from 'zod';
 
+export const zShellProvisioningReadRequest_unstable = z.record(z.unknown());
+
+export const zShellIdentity = z.object({
+    id: z.string(),
+    displayName: z.string(),
+    version: z.string()
+});
+
+export const zShellSettingsAuthority = z.enum(['main_gosling']);
+
+export const zShellAuthorityMode = z.enum(['inherit', 'restricted']);
+
+export const zShellProtocolPolicy = z.object({
+    mode: zShellAuthorityMode.optional().default('inherit'),
+    deniedMethods: z.array(z.string()).optional()
+});
+
+export const zShellExtensionSelection = z.object({
+    name: z.string(),
+    availableTools: z.union([
+        z.array(z.string()),
+        z.null()
+    ]).optional()
+});
+
+export const zShellSessionProvisioning = z.object({
+    workspaceId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    credentialProfileId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    provider: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    model: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    extensions: z.union([
+        z.array(zShellExtensionSelection),
+        z.null()
+    ]).optional(),
+    skillIds: z.union([
+        z.array(z.string()),
+        z.null()
+    ]).optional()
+});
+
+export const zDomainAdapterDescriptor = z.object({
+    domainId: z.string(),
+    displayName: z.string(),
+    version: z.string(),
+    actions: z.array(z.string()).optional().default([])
+});
+
+export const zShellProvisioning = z.object({
+    schemaVersion: z.number().int().gte(0),
+    identity: zShellIdentity,
+    settingsAuthority: zShellSettingsAuthority.optional().default('main_gosling'),
+    protocolPolicy: zShellProtocolPolicy.optional().default({ mode: 'inherit' }),
+    session: zShellSessionProvisioning.optional().default({}),
+    domainAdapter: z.union([
+        zDomainAdapterDescriptor,
+        z.null()
+    ]).optional()
+});
+
+export const zShellProvisioningReadResponse_unstable = z.object({
+    provisioning: zShellProvisioning
+});
+
+export const zDomainSnapshotRequest_unstable = z.object({
+    input: z.unknown().optional().default(null)
+});
+
+export const zDomainResourceReference = z.object({
+    kind: z.string(),
+    id: z.string(),
+    label: z.string(),
+    uri: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zDomainSnapshotResponse_unstable = z.object({
+    domainId: z.string(),
+    payload: z.unknown().optional().default(null),
+    resources: z.array(zDomainResourceReference).optional().default([])
+});
+
+export const zDomainActionRequest_unstable = z.object({
+    action: z.string(),
+    input: z.unknown().optional().default(null),
+    confirmationToken: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zDomainActionResponse_unstable = z.object({
+    domainId: z.string(),
+    action: z.string(),
+    payload: z.unknown().optional().default(null),
+    resources: z.array(zDomainResourceReference).optional().default([])
+});
+
+export const zShellHandoffReference = z.object({
+    kind: z.string(),
+    id: z.string(),
+    uri: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zShellHandoffPrepareRequest_unstable = z.object({
+    sessionId: z.string(),
+    question: z.string(),
+    requestedCapability: z.string(),
+    references: z.array(zShellHandoffReference).optional().default([]),
+    returnDestination: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    allowMutation: z.boolean().optional().default(false)
+});
+
+export const zShellHandoffEnvelope = z.object({
+    handoffId: z.string(),
+    origin: zShellIdentity,
+    sourceSessionId: z.string(),
+    question: z.string(),
+    requestedCapability: z.string(),
+    references: z.array(zShellHandoffReference).optional().default([]),
+    returnDestination: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    allowMutation: z.boolean().optional().default(false)
+});
+
+export const zShellHandoffPrepareResponse_unstable = z.object({
+    handoff: zShellHandoffEnvelope
+});
+
 /**
  * An HTTP header to set when making requests to the MCP server.
  */
@@ -2399,6 +2549,10 @@ export const zExtRequest = z.object({
     method: z.string(),
     params: z.union([
         z.union([
+            zShellProvisioningReadRequest_unstable,
+            zDomainSnapshotRequest_unstable,
+            zDomainActionRequest_unstable,
+            zShellHandoffPrepareRequest_unstable,
             zAddSessionExtensionRequest_unstable,
             zRemoveSessionExtensionRequest_unstable,
             zGetToolsRequest_unstable,
@@ -2508,6 +2662,10 @@ export const zExtResponse = z.union([
         id: z.string(),
         result: z.union([
             z.union([
+                zShellProvisioningReadResponse_unstable,
+                zDomainSnapshotResponse_unstable,
+                zDomainActionResponse_unstable,
+                zShellHandoffPrepareResponse_unstable,
                 zEmptyResponse,
                 zGetToolsResponse_unstable,
                 zSetToolPermissionsResponse_unstable,

@@ -32,3 +32,23 @@
 - Operator work preserved: an unrelated root `Cargo.toml` profile edit appeared during the
   run and was excluded from every campaign commit and campaign diff.
 - Report: [`reports/2026-08-12-six-lens-agent-skills-audit-repair.md`](../../../reports/2026-08-12-six-lens-agent-skills-audit-repair.md).
+
+## Gosling shell foundation follow-up
+
+- Task: implement the shared shell foundation without creating a DAWES, Project ABC,
+  math_mcp, or Physics/CST shell.
+- Branch/worktree: `codex/shell-foundation` in a dedicated clean worktree, preserving
+  unrelated Desktop work in the original worktree.
+- Authority decision: shell policy defaults to permissive `inherit`; optional restricted
+  policy is server-enforced before custom ACP method dispatch.
+- Implemented: server-fixed shell identity, read-only provisioning, shared-config and
+  namespaced data/state paths, workspace/credential/provider/model/extension/tool/skill
+  profile application, domain adapter contract, explicit handoff envelope, minimal
+  Electron host composition, shell UI primitives, package identity composition, and
+  generated ACP schema and TypeScript SDK.
+- Validation: Rust formatting and targeted checks/tests passed; generated schema and SDK
+  completed. `goslingServe.test.ts` passed 15/15. Full Desktop typecheck remained blocked
+  by existing dependency/version issues in MCP Apps after package installation itself was
+  blocked by pnpm's exotic-subdependency policy.
+- Deferred: actual domain adapters and shells, shell-specific icons/updater feeds, and
+  built package artifacts.

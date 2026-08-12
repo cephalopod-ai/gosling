@@ -19,9 +19,11 @@ fn test_acp_router(dir: &tempfile::TempDir) -> Router {
         builtins: vec![],
         state_dir: dir.path().join("state"),
         data_dir: dir.path().join("data"),
+        platform_data_dir: dir.path().join("data"),
         config_dir: dir.path().join("config"),
         gosling_platform: GoslingPlatform::GoslingCli,
         additional_source_roots: Vec::new(),
+        shell_runtime: Default::default(),
     }));
     create_acp_router(server)
 }
@@ -31,9 +33,11 @@ fn test_authenticated_acp_router(dir: &tempfile::TempDir) -> Router {
         builtins: vec![],
         state_dir: dir.path().join("state"),
         data_dir: dir.path().join("data"),
+        platform_data_dir: dir.path().join("data"),
         config_dir: dir.path().join("config"),
         gosling_platform: GoslingPlatform::GoslingCli,
         additional_source_roots: Vec::new(),
+        shell_runtime: Default::default(),
     }));
     create_authenticated_acp_router(server, SECRET.to_string())
 }
@@ -47,9 +51,11 @@ fn test_router_with_origins(
         builtins: vec![],
         state_dir: dir.path().join("state"),
         data_dir: dir.path().join("data"),
+        platform_data_dir: dir.path().join("data"),
         config_dir: dir.path().join("config"),
         gosling_platform: GoslingPlatform::GoslingCli,
         additional_source_roots: Vec::new(),
+        shell_runtime: Default::default(),
     }));
     create_router(
         server,

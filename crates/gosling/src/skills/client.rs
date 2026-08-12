@@ -3,6 +3,7 @@ use super::{discover_skills, hydrate_skill_entry, loaded_skill_context_with_args
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
+use crate::session::extension_data::{ExtensionState, ShellSkillSelectionState};
 use async_trait::async_trait;
 use gosling_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
@@ -15,6 +16,14 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "skills";
+
+fn selected_skills(working_dir: &Path, selected_skill_ids: Option<&[String]>) -> Vec<SourceEntry> {
+    let mut skills = discover_skills(Some(working_dir));
+    if let Some(selected_skill_ids) = selected_skill_ids {
+        skills.retain(|skill| selected_skill_ids.contains(&skill.name));
+    }
+    skills
+}
 const DIRECT_SKILL_ADVERTISEMENT_LIMIT: usize = 40;
 const DEFAULT_SEARCH_LIMIT: usize = 5;
 const MAX_SEARCH_LIMIT: usize = 20;
@@ -23,6 +32,7 @@ pub struct SkillsClient {
     info: InitializeResult,
     working_dir: PathBuf,
     skills: RwLock<Vec<SourceEntry>>,
+    selected_skill_ids: Option<Vec<String>>,
 }
 
 impl SkillsClient {
@@ -36,12 +46,17 @@ impl SkillsClient {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Skills"));
 
-        let skills = RwLock::new(discover_skills(Some(&working_dir)));
+        let selected_skill_ids = context.session.as_ref().and_then(|session| {
+            ShellSkillSelectionState::from_extension_data(&session.extension_data)
+                .map(|selection| selection.skill_ids)
+        });
+        let skills = RwLock::new(selected_skills(&working_dir, selected_skill_ids.as_deref()));
 
         Ok(Self {
             info,
             working_dir,
             skills,
+            selected_skill_ids,
         })
     }
 
@@ -50,7 +65,7 @@ impl SkillsClient {
     }
 
     fn refresh(&self) -> Vec<SourceEntry> {
-        let skills = discover_skills(Some(&self.working_dir));
+        let skills = selected_skills(&self.working_dir, self.selected_skill_ids.as_deref());
         *self.skills.write().unwrap() = skills.clone();
         skills
     }
@@ -459,6 +474,25 @@ mod tests {
 
         entry.name = "different-id".to_string();
         assert!(hydrate_skill_entry(&entry).is_none());
+    }
+
+    #[test]
+    fn shell_skill_selection_filters_discovery() {
+        let temp_dir = TempDir::new().unwrap();
+        for skill_name in ["allowed-skill", "other-skill"] {
+            let skill_dir = temp_dir.path().join(".agents/skills").join(skill_name);
+            fs::create_dir_all(&skill_dir).unwrap();
+            fs::write(
+                skill_dir.join("SKILL.md"),
+                format!("---\nname: {skill_name}\ndescription: Test\n---\nUse {skill_name}."),
+            )
+            .unwrap();
+        }
+
+        let selected = selected_skills(temp_dir.path(), Some(&["allowed-skill".into()]));
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].name, "allowed-skill");
+        assert!(selected_skills(temp_dir.path(), Some(&[])).is_empty());
     }
 
     #[tokio::test]

@@ -2,6 +2,427 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "GoslingExtensions",
   "$defs": {
+    "ShellProvisioningReadRequest_unstable": {
+      "type": "object",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/provisioning/read"
+    },
+    "ShellProvisioningReadResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "provisioning": {
+          "$ref": "#/$defs/ShellProvisioning"
+        }
+      },
+      "required": [
+        "provisioning"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/provisioning/read"
+    },
+    "ShellProvisioning": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "identity": {
+          "$ref": "#/$defs/ShellIdentity"
+        },
+        "settingsAuthority": {
+          "$ref": "#/$defs/ShellSettingsAuthority",
+          "default": "main_gosling"
+        },
+        "protocolPolicy": {
+          "$ref": "#/$defs/ShellProtocolPolicy",
+          "default": {
+            "mode": "inherit"
+          }
+        },
+        "session": {
+          "$ref": "#/$defs/ShellSessionProvisioning",
+          "default": {}
+        },
+        "domainAdapter": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DomainAdapterDescriptor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity"
+      ]
+    },
+    "ShellIdentity": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "displayName",
+        "version"
+      ]
+    },
+    "ShellSettingsAuthority": {
+      "type": "string",
+      "enum": [
+        "main_gosling"
+      ]
+    },
+    "ShellProtocolPolicy": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/ShellAuthorityMode",
+          "default": "inherit"
+        },
+        "deniedMethods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ShellAuthorityMode": {
+      "type": "string",
+      "enum": [
+        "inherit",
+        "restricted"
+      ]
+    },
+    "ShellSessionProvisioning": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "credentialProfileId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extensions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ShellExtensionSelection"
+          }
+        },
+        "skillIds": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ShellExtensionSelection": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "availableTools": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "DomainAdapterDescriptor": {
+      "type": "object",
+      "properties": {
+        "domainId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "domainId",
+        "displayName",
+        "version"
+      ]
+    },
+    "DomainSnapshotRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "default": null
+        }
+      },
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/domain/snapshot"
+    },
+    "DomainSnapshotResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "domainId": {
+          "type": "string"
+        },
+        "payload": {
+          "default": null
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DomainResourceReference"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "domainId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/domain/snapshot"
+    },
+    "DomainResourceReference": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "uri": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "label"
+      ]
+    },
+    "DomainActionRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "input": {
+          "default": null
+        },
+        "confirmationToken": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/domain/action"
+    },
+    "DomainActionResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "domainId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "payload": {
+          "default": null
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DomainResourceReference"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "domainId",
+        "action"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/domain/action"
+    },
+    "ShellHandoffPrepareRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "requestedCapability": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellHandoffReference"
+          },
+          "default": []
+        },
+        "returnDestination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "sessionId",
+        "question",
+        "requestedCapability"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/handoff/prepare"
+    },
+    "ShellHandoffReference": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "uri": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ]
+    },
+    "ShellHandoffPrepareResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "handoff": {
+          "$ref": "#/$defs/ShellHandoffEnvelope"
+        }
+      },
+      "required": [
+        "handoff"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/handoff/prepare"
+    },
+    "ShellHandoffEnvelope": {
+      "type": "object",
+      "properties": {
+        "handoffId": {
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/ShellIdentity"
+        },
+        "sourceSessionId": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "requestedCapability": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellHandoffReference"
+          },
+          "default": []
+        },
+        "returnDestination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "handoffId",
+        "origin",
+        "sourceSessionId",
+        "question",
+        "requestedCapability"
+      ]
+    },
     "AddSessionExtensionRequest_unstable": {
       "type": "object",
       "properties": {
@@ -5762,6 +6183,42 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ShellProvisioningReadRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/provisioning/read",
+                  "title": "ShellProvisioningReadRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DomainSnapshotRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/domain/snapshot",
+                  "title": "DomainSnapshotRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DomainActionRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/domain/action",
+                  "title": "DomainActionRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ShellHandoffPrepareRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/handoff/prepare",
+                  "title": "ShellHandoffPrepareRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/AddSessionExtensionRequest_unstable"
                     }
                   ],
@@ -6653,6 +7110,38 @@
               "anyOf": [
                 {
                   "anyOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellProvisioningReadResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellProvisioningReadResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DomainSnapshotResponse_unstable"
+                        }
+                      ],
+                      "title": "DomainSnapshotResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DomainActionResponse_unstable"
+                        }
+                      ],
+                      "title": "DomainActionResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellHandoffPrepareResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellHandoffPrepareResponse_unstable"
+                    },
                     {
                       "allOf": [
                         {

@@ -86,6 +86,16 @@ pub trait ExtensionState: Sized + Serialize + for<'de> Deserialize<'de> {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShellSkillSelectionState {
+    pub skill_ids: Vec<String>,
+}
+
+impl ExtensionState for ShellSkillSelectionState {
+    const EXTENSION_NAME: &'static str = "shell_skill_selection";
+    const VERSION: &'static str = "v0";
+}
+
 /// TODO extension state implementation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoState {

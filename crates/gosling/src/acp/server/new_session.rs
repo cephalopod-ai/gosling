@@ -30,8 +30,22 @@ impl GoslingAcpAgent {
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         let config = Config::global();
         let project_id = meta_string(args.meta.as_ref(), "projectId")?;
-        let workspace_id = meta_string(args.meta.as_ref(), "workspaceId")?;
-        let workspace_overrides = workspace_launch_overrides(args.meta.as_ref())?;
+        let workspace_id = meta_string(args.meta.as_ref(), "workspaceId")?.or_else(|| {
+            self.shell_runtime
+                .provisioning()
+                .session
+                .workspace_id
+                .clone()
+        });
+        let mut workspace_overrides = workspace_launch_overrides(args.meta.as_ref())?;
+        if workspace_overrides.credential_profile_id.is_none() {
+            workspace_overrides.credential_profile_id = self
+                .shell_runtime
+                .provisioning()
+                .session
+                .credential_profile_id
+                .clone();
+        }
         let workspace = match workspace_id.as_deref() {
             Some(workspace_id) => Some(
                 self.workspace_service
@@ -140,7 +154,17 @@ impl GoslingAcpAgent {
             .resolve_provider_and_model(config, args.meta.as_ref(), workspace.as_ref())
             .await?;
 
-        let gosling_extensions = meta_gosling_extensions(args.meta.as_ref())?;
+        let gosling_extensions = if self
+            .shell_runtime
+            .provisioning()
+            .session
+            .extensions
+            .is_some()
+        {
+            None
+        } else {
+            meta_gosling_extensions(args.meta.as_ref())?
+        };
         let extension_data = self.build_enabled_extensions_data(
             config,
             session,
@@ -179,8 +203,13 @@ impl GoslingAcpAgent {
         meta: Option<&Meta>,
         workspace: Option<&PreparedWorkspaceSession>,
     ) -> Result<(String, ModelConfig), agent_client_protocol::Error> {
-        if let Some(provider) = meta_string(meta, "provider")? {
-            let mut model_config = if let Some(model) = meta_string(meta, "model")? {
+        let shell_session = &self.shell_runtime.provisioning().session;
+        if let Some(provider) =
+            meta_string(meta, "provider")?.or_else(|| shell_session.provider.clone())
+        {
+            let mut model_config = if let Some(model) =
+                meta_string(meta, "model")?.or_else(|| shell_session.model.clone())
+            {
                 crate::model_config::model_config_from_user_config(&provider, &model)
                     .invalid_params_err_ctx("Selected model is invalid")?
             } else {
@@ -212,6 +241,22 @@ impl GoslingAcpAgent {
                 }
                 return Ok((provider, model_config));
             }
+        }
+        if let Some(profile_id) = shell_session.credential_profile_id.as_deref() {
+            let provider = self
+                .workspace_service
+                .profile_resolution(profile_id)
+                .invalid_params_err_ctx("Shell credential profile is unavailable")?
+                .provider;
+            let model_config = if let Some(model) = shell_session.model.as_deref() {
+                crate::model_config::model_config_from_user_config(&provider, model)
+                    .invalid_params_err_ctx("Shell model is invalid")?
+            } else {
+                super::resolve_provider_default_model_config(&provider).await?
+            };
+            self.validate_model_for_provider(&provider, &model_config.model_name)
+                .await?;
+            return Ok((provider, model_config));
         }
         let (provider, model_config) = match meta_string(meta, "provider")? {
             Some(provider) => {
@@ -249,6 +294,28 @@ impl GoslingAcpAgent {
                 workspace.credential_binding_id,
                 workspace.context,
             );
+        } else if let Some(profile_id) = self
+            .shell_runtime
+            .provisioning()
+            .session
+            .credential_profile_id
+            .as_deref()
+        {
+            let profile = self
+                .workspace_service
+                .credential_profiles()
+                .internal_err_ctx("Failed to read shell credential profile")?
+                .into_iter()
+                .find(|profile| profile.id == profile_id)
+                .ok_or_else(|| {
+                    agent_client_protocol::Error::invalid_params()
+                        .data("shell credential profile must be relinked in Gosling")
+                })?;
+            if profile.status != crate::workspace::CredentialProfileStatus::Configured {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("shell credential profile must be configured in Gosling"));
+            }
+            builder = builder.credential_profile_snapshot(profile.id, profile.name);
         }
         builder
             .apply()
