@@ -108,6 +108,28 @@ impl RuntimePaths {
             state_dir,
         }
     }
+
+    pub fn for_namespace(base: &Self, namespace: &str) -> Result<Self, String> {
+        validate_runtime_namespace(namespace)?;
+        Ok(Self::new(
+            base.config_dir.clone(),
+            base.data_dir.join("shells").join(namespace),
+            base.state_dir.join("shells").join(namespace),
+        ))
+    }
+}
+
+fn validate_runtime_namespace(namespace: &str) -> Result<(), String> {
+    let valid = !namespace.is_empty()
+        && namespace.len() <= 64
+        && namespace.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        });
+    if valid && namespace != "." && namespace != ".." {
+        Ok(())
+    } else {
+        Err("runtime namespace must use 1-64 lowercase letters, digits, '-' or '_'".to_string())
+    }
 }
 
 tokio::task_local! {
@@ -126,6 +148,20 @@ impl Paths {
 #[cfg(test)]
 mod runtime_paths_tests {
     use super::{Paths, RuntimePaths};
+    use std::path::PathBuf;
+
+    #[test]
+    fn shell_runtime_namespaces_are_isolated_and_validated() {
+        let base = RuntimePaths::new("config".into(), "data".into(), "state".into());
+        let dawes = RuntimePaths::for_namespace(&base, "dawes").unwrap();
+        let math = RuntimePaths::for_namespace(&base, "math_mcp").unwrap();
+
+        assert_eq!(dawes.config_dir, PathBuf::from("config"));
+        assert_eq!(math.data_dir, PathBuf::from("data/shells/math_mcp"));
+        assert_ne!(dawes, math);
+        assert!(RuntimePaths::for_namespace(&base, "../escape").is_err());
+        assert!(RuntimePaths::for_namespace(&base, "Uppercase").is_err());
+    }
 
     #[tokio::test]
     async fn runtime_paths_are_isolated_between_concurrent_tasks() {

@@ -140,9 +140,11 @@ pub async fn run() -> Result<()> {
         builtins: vec!["developer".to_string()],
         state_dir: Paths::state_dir(),
         data_dir: Paths::data_dir(),
+        platform_data_dir: Paths::data_dir(),
         config_dir: Paths::config_dir(),
         gosling_platform: GoslingPlatform::GoslingDesktop,
         additional_source_roots: Vec::new(),
+        shell_runtime: Default::default(),
     }));
 
     let rest_router = crate::routes::configure(app_state.clone(), secret_key.clone())

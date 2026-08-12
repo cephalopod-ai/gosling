@@ -31,9 +31,18 @@ type ReadinessFetchInit = Parameters<typeof globalThis.fetch>[1];
 export type GoslingServeExitSignal = ChildProcess['signalCode'];
 type ReadinessFetch = (input: string, init?: ReadinessFetchInit) => Promise<Response>;
 
+export interface ShellHostProfile {
+  id: string;
+  displayName: string;
+  version?: string;
+  runtimeNamespace?: string;
+  provisioningPath?: string;
+}
+
 export interface StartGoslingServeOptions extends FindGoslingBinaryOptions {
   dir?: string;
   serverSecret: string;
+  shell?: ShellHostProfile;
   tls?: boolean;
   env?: Record<string, string | undefined>;
   logger?: Logger;
@@ -392,6 +401,7 @@ const buildGoslingServeEnv = (
 export const startGoslingServe = async ({
   dir,
   serverSecret,
+  shell,
   tls = false,
   env: additionalEnv = {},
   isPackaged,
@@ -438,6 +448,21 @@ export const startGoslingServe = async ({
     '127.0.0.1',
     '--port',
     String(port),
+    ...(shell
+      ? [
+          '--shell-id',
+          shell.id,
+          '--shell-display-name',
+          shell.displayName,
+          '--shell-version',
+          shell.version ?? '1',
+          '--shell-runtime-namespace',
+          shell.runtimeNamespace ?? shell.id,
+          ...(shell.provisioningPath
+            ? ['--shell-provisioning', shell.provisioningPath]
+            : []),
+        ]
+      : []),
     // The packaged renderer is served from file://, so its WebSocket upgrades
     // carry `Origin: file://` while CORS fetches serialize the origin as
     // `null`. Allow both; anything else stays rejected.

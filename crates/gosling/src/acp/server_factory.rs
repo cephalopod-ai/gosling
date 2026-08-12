@@ -1,4 +1,5 @@
 use crate::acp::server::{AcpProviderFactory, GoslingAcpAgent, GoslingAcpAgentOptions};
+use crate::acp::shell::ShellRuntime;
 use crate::agents::GoslingPlatform;
 use crate::config::paths::{Paths, RuntimePaths};
 use crate::source_roots::SourceRoot;
@@ -10,9 +11,11 @@ pub struct AcpServerFactoryConfig {
     pub state_dir: std::path::PathBuf,
     pub builtins: Vec<String>,
     pub data_dir: std::path::PathBuf,
+    pub platform_data_dir: std::path::PathBuf,
     pub config_dir: std::path::PathBuf,
     pub gosling_platform: GoslingPlatform,
     pub additional_source_roots: Vec<SourceRoot>,
+    pub shell_runtime: ShellRuntime,
 }
 
 pub struct AcpServer {
@@ -52,10 +55,12 @@ impl AcpServer {
                 builtins: self.config.builtins.clone(),
                 state_dir: self.config.state_dir.clone(),
                 data_dir: self.config.data_dir.clone(),
+                platform_data_dir: self.config.platform_data_dir.clone(),
                 config_dir: self.config.config_dir.clone(),
                 disable_session_naming,
                 gosling_platform: self.config.gosling_platform.clone(),
                 additional_source_roots: self.config.additional_source_roots.clone(),
+                shell_runtime: self.config.shell_runtime.clone(),
             })
             .await?;
             info!("Created new ACP agent");

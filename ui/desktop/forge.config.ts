@@ -3,8 +3,13 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const { resolve } = require('path');
 
 const isLinuxVulkanBuild = process.env.GOSLING_DESKTOP_LINUX_VARIANT === 'vulkan';
+const productName = process.env.GOSLING_SHELL_PRODUCT_NAME || 'Gosling';
+const protocolScheme = process.env.GOSLING_SHELL_PROTOCOL_SCHEME || 'gosling';
+const packageId = process.env.GOSLING_SHELL_PACKAGE_ID || 'io.github.repo_makeover.Gosling';
 
 let cfg = {
+  name: productName,
+  executableName: productName,
   asar: true,
   extraResource: ['src/bin', 'src/images', 'src/app-update.yml'],
   icon: 'src/images/icon',
@@ -19,8 +24,8 @@ let cfg = {
   // Protocol registration
   protocols: [
     {
-      name: 'GoslingProtocol',
-      schemes: ['gosling'],
+      name: `${productName}Protocol`,
+      schemes: [protocolScheme],
     },
   ],
   // macOS Info.plist extensions for drag-and-drop support
@@ -87,8 +92,8 @@ module.exports = {
     {
       name: '@electron-forge/maker-deb',
       config: {
-        name: 'Gosling',
-        bin: 'Gosling',
+        name: productName,
+        bin: productName,
         maintainer: 'repo-makeover',
         homepage: 'https://gosling-docs.ai/',
         categories: ['Development'],
@@ -103,8 +108,8 @@ module.exports = {
     {
       name: '@electron-forge/maker-rpm',
       config: {
-        name: 'Gosling',
-        bin: 'Gosling',
+        name: productName,
+        bin: productName,
         maintainer: 'repo-makeover',
         homepage: 'https://gosling-docs.ai/',
         categories: ['Development'],
@@ -120,7 +125,7 @@ module.exports = {
       name: '@electron-forge/maker-flatpak',
       config: {
         options: {
-          id: 'io.github.repo_makeover.Gosling',
+          id: packageId,
           categories: ['Development'],
           icon: {
             scalable: 'src/images/icon.svg',
@@ -129,7 +134,7 @@ module.exports = {
           homepage: 'https://gosling-docs.ai/',
           runtimeVersion: '25.08',
           baseVersion: '25.08',
-          bin: 'Gosling',
+          bin: productName,
           modules: [
             {
               name: 'libbz2-shim',

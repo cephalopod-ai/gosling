@@ -2,8 +2,14 @@ use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
 use clap_complete_nushell::Nushell as ClapNushell;
+use gosling::acp::custom_requests::{
+    ShellAuthorityMode, ShellIdentity, ShellProtocolPolicy, ShellProvisioning,
+    ShellSessionProvisioning, SHELL_PROVISIONING_SCHEMA_VERSION,
+};
+use gosling::acp::shell::ShellRuntime;
 use gosling::agents::GoslingPlatform;
 use gosling::builtin_extension::register_builtin_extensions;
+use gosling::config::paths::RuntimePaths;
 use gosling::config::{Config, ConfigError, GoslingMode};
 use gosling::source_roots::SourceRoot;
 use gosling_mcp::mcp_server_runner::{serve, McpCommand};
@@ -749,6 +755,40 @@ enum Command {
         builtins: Vec<String>,
 
         #[arg(
+            long = "shell-id",
+            value_name = "ID",
+            requires = "shell_display_name",
+            help = "Run with a server-enforced shell identity"
+        )]
+        shell_id: Option<String>,
+
+        #[arg(
+            long = "shell-display-name",
+            value_name = "NAME",
+            requires = "shell_id"
+        )]
+        shell_display_name: Option<String>,
+
+        #[arg(long = "shell-version", default_value = "1", requires = "shell_id")]
+        shell_version: String,
+
+        #[arg(
+            long = "shell-provisioning",
+            value_name = "PATH",
+            requires = "shell_id",
+            help = "Read a shell provisioning document without exposing secret values"
+        )]
+        shell_provisioning: Option<PathBuf>,
+
+        #[arg(
+            long = "shell-runtime-namespace",
+            value_name = "NAMESPACE",
+            requires = "shell_id",
+            help = "Isolate shell config, data, state, sessions and caches"
+        )]
+        shell_runtime_namespace: Option<String>,
+
+        #[arg(
             long = "dangerously-unauthenticated",
             help = "Start the ACP endpoint without requiring GOSLING_SERVER__SECRET_KEY"
         )]
@@ -1224,6 +1264,11 @@ struct ServeCommandArgs {
     tls_key_path: Option<String>,
     platform: ServePlatform,
     builtins: Vec<String>,
+    shell_id: Option<String>,
+    shell_display_name: Option<String>,
+    shell_version: String,
+    shell_provisioning: Option<PathBuf>,
+    shell_runtime_namespace: Option<String>,
     dangerously_unauthenticated: bool,
     allowed_origins: Vec<String>,
 }
@@ -1240,6 +1285,60 @@ mod serve_warning_tests {
         assert!(DANGEROUS_UNAUTHENTICATED_WARNING.contains("authentication is disabled"));
         assert!(DANGEROUS_UNAUTHENTICATED_WARNING.contains("Any client"));
     }
+}
+
+fn validate_shell_id(shell_id: &str) -> Result<()> {
+    let valid = !shell_id.is_empty()
+        && shell_id.len() <= 64
+        && shell_id.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        });
+    if valid && shell_id != "." && shell_id != ".." {
+        Ok(())
+    } else {
+        anyhow::bail!("shell ID must use 1-64 lowercase letters, digits, '-' or '_'")
+    }
+}
+
+fn build_shell_runtime(
+    shell_id: Option<String>,
+    shell_display_name: Option<String>,
+    shell_version: String,
+    provisioning_path: Option<&std::path::Path>,
+) -> Result<ShellRuntime> {
+    let Some(shell_id) = shell_id else {
+        return Ok(ShellRuntime::default());
+    };
+    validate_shell_id(&shell_id)?;
+    let display_name = shell_display_name
+        .ok_or_else(|| anyhow::anyhow!("--shell-display-name is required with --shell-id"))?;
+    let mut provisioning = match provisioning_path {
+        Some(path) => serde_json::from_slice::<ShellProvisioning>(&std::fs::read(path)?)?,
+        None => ShellProvisioning {
+            schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
+            protocol_policy: ShellProtocolPolicy {
+                mode: ShellAuthorityMode::Inherit,
+                denied_methods: Vec::new(),
+            },
+            session: ShellSessionProvisioning::default(),
+            ..ShellProvisioning::default()
+        },
+    };
+    if provisioning.schema_version != 0
+        && provisioning.schema_version != SHELL_PROVISIONING_SCHEMA_VERSION
+    {
+        anyhow::bail!(
+            "unsupported shell provisioning schema version {}",
+            provisioning.schema_version
+        );
+    }
+    provisioning.identity = ShellIdentity {
+        id: shell_id,
+        display_name,
+        version: shell_version,
+    };
+    provisioning.schema_version = SHELL_PROVISIONING_SCHEMA_VERSION;
+    Ok(ShellRuntime::new(provisioning, None))
 }
 
 async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
@@ -1259,6 +1358,11 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         tls_key_path,
         platform,
         builtins,
+        shell_id,
+        shell_display_name,
+        shell_version,
+        shell_provisioning,
+        shell_runtime_namespace,
         dangerously_unauthenticated,
         allowed_origins,
     } = args;
@@ -1268,6 +1372,20 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     } else {
         builtins
     };
+
+    let base_paths = RuntimePaths::new(Paths::config_dir(), Paths::data_dir(), Paths::state_dir());
+    let runtime_paths = match shell_runtime_namespace.as_deref() {
+        Some(namespace) => {
+            RuntimePaths::for_namespace(&base_paths, namespace).map_err(anyhow::Error::msg)?
+        }
+        None => base_paths.clone(),
+    };
+    let shell_runtime = build_shell_runtime(
+        shell_id,
+        shell_display_name,
+        shell_version,
+        shell_provisioning.as_deref(),
+    )?;
 
     let additional_source_roots = Config::global()
         .get_param::<String>("ADDITIONAL_AGENT_SOURCE_ROOTS")
@@ -1283,11 +1401,13 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
 
     let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
         builtins,
-        state_dir: Paths::state_dir(),
-        data_dir: Paths::data_dir(),
-        config_dir: Paths::config_dir(),
+        state_dir: runtime_paths.state_dir,
+        data_dir: runtime_paths.data_dir,
+        platform_data_dir: base_paths.data_dir,
+        config_dir: runtime_paths.config_dir,
         gosling_platform: platform.into(),
         additional_source_roots,
+        shell_runtime,
     }));
     let env_secret = std::env::var(GOSLING_SERVER_SECRET_KEY_ENV)
         .ok()
@@ -1839,6 +1959,11 @@ pub async fn cli() -> anyhow::Result<()> {
             tls_key_path,
             platform,
             builtins,
+            shell_id,
+            shell_display_name,
+            shell_version,
+            shell_provisioning,
+            shell_runtime_namespace,
             dangerously_unauthenticated,
             allowed_origins,
         }) => {
@@ -1850,6 +1975,11 @@ pub async fn cli() -> anyhow::Result<()> {
                 tls_key_path,
                 platform,
                 builtins,
+                shell_id,
+                shell_display_name,
+                shell_version,
+                shell_provisioning,
+                shell_runtime_namespace,
                 dangerously_unauthenticated,
                 allowed_origins,
             })
@@ -2151,6 +2281,43 @@ mod tests {
             }
             _ => panic!("expected serve command"),
         }
+    }
+
+    #[test]
+    fn shell_serve_options_default_to_permissive_identity() {
+        let cli = Cli::try_parse_from([
+            "gosling",
+            "serve",
+            "--shell-id",
+            "math_mcp",
+            "--shell-display-name",
+            "Math",
+            "--shell-runtime-namespace",
+            "math_mcp",
+        ])
+        .expect("parse failed");
+
+        let Some(Command::Serve {
+            shell_id,
+            shell_display_name,
+            shell_runtime_namespace,
+            shell_version,
+            ..
+        }) = cli.command
+        else {
+            panic!("expected serve command");
+        };
+        assert_eq!(shell_id.as_deref(), Some("math_mcp"));
+        assert_eq!(shell_display_name.as_deref(), Some("Math"));
+        assert_eq!(shell_runtime_namespace.as_deref(), Some("math_mcp"));
+        assert_eq!(shell_version, "1");
+    }
+
+    #[test]
+    fn shell_id_rejects_path_like_values() {
+        assert!(validate_shell_id("../math").is_err());
+        assert!(validate_shell_id("Math").is_err());
+        assert!(validate_shell_id("math_mcp").is_ok());
     }
 
     #[test]

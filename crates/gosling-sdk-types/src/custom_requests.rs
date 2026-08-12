@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub use crate::shell::*;
 pub use crate::workspace::*;
 
 /// Schema descriptor for a single custom method, produced by the

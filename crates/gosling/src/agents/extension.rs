@@ -423,6 +423,30 @@ impl ExtensionConfig {
         .to_string()
     }
 
+    pub fn set_available_tools(&mut self, tools: Vec<String>) {
+        match self {
+            Self::Sse { .. } => {}
+            Self::StreamableHttp {
+                available_tools, ..
+            }
+            | Self::Stdio {
+                available_tools, ..
+            }
+            | Self::Builtin {
+                available_tools, ..
+            }
+            | Self::Platform {
+                available_tools, ..
+            }
+            | Self::InlinePython {
+                available_tools, ..
+            }
+            | Self::Frontend {
+                available_tools, ..
+            } => *available_tools = tools,
+        }
+    }
+
     /// Check if a tool should be available to the LLM
     pub fn is_tool_available(&self, tool_name: &str) -> bool {
         let available_tools = match self {

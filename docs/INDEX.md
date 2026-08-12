@@ -6,6 +6,7 @@ for the relationship to cephalopod-ai/gosling.
 ## Standard sections
 
 - [architecture.md](architecture.md) — system architecture
+- [architecture/shell-foundation.md](architecture/shell-foundation.md) — focused shell identity, provisioning, runtime, adapter, handoff, and host foundation
 - [INTENT.md](INTENT.md) — fork intent and scope
 - [TODO.md](TODO.md) — outstanding work
 - [adr/](adr/) — architecture decision records

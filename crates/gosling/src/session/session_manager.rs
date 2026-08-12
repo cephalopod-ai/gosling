@@ -454,6 +454,17 @@ impl<'a> SessionUpdateBuilder<'a> {
         self
     }
 
+    pub fn credential_profile_snapshot(
+        mut self,
+        credential_profile_id: String,
+        credential_profile_name: String,
+    ) -> Self {
+        self.credential_profile_id = Some(Some(credential_profile_id));
+        self.credential_profile_name = Some(Some(credential_profile_name));
+        self.credential_binding_id = Some(None);
+        self
+    }
+
     pub fn workspace_snapshot(
         mut self,
         workspace_id: String,

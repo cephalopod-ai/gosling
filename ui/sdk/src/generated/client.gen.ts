@@ -57,6 +57,10 @@ import type {
   DictationSecretSaveRequest_unstable,
   DictationTranscribeRequest_unstable,
   DictationTranscribeResponse_unstable,
+  DomainActionRequest_unstable,
+  DomainActionResponse_unstable,
+  DomainSnapshotRequest_unstable,
+  DomainSnapshotResponse_unstable,
   ExportSessionRequest_unstable,
   ExportSessionResponse_unstable,
   ExportSourceRequest_unstable,
@@ -144,6 +148,10 @@ import type {
   SetToolPermissionsResponse_unstable,
   ShareSessionNostrRequest_unstable,
   ShareSessionNostrResponse_unstable,
+  ShellHandoffPrepareRequest_unstable,
+  ShellHandoffPrepareResponse_unstable,
+  ShellProvisioningReadRequest_unstable,
+  ShellProvisioningReadResponse_unstable,
   SteerSessionRequest_unstable,
   SteerSessionResponse_unstable,
   TruncateSessionConversationRequest_unstable,
@@ -186,6 +194,8 @@ import {
   zDiagnosticsGetResponse_unstable,
   zDictationConfigResponse_unstable,
   zDictationTranscribeResponse_unstable,
+  zDomainActionResponse_unstable,
+  zDomainSnapshotResponse_unstable,
   zExportSessionResponse_unstable,
   zExportSourceResponse_unstable,
   zGetAvailableExtensionsResponse_unstable,
@@ -224,6 +234,8 @@ import {
   zSessionWorkingDirsResponse_unstable,
   zSetToolPermissionsResponse_unstable,
   zShareSessionNostrResponse_unstable,
+  zShellHandoffPrepareResponse_unstable,
+  zShellProvisioningReadResponse_unstable,
   zSteerSessionResponse_unstable,
   zUpdateSourceResponse_unstable,
   zWorkspaceDeleteResponse_unstable,
@@ -235,6 +247,54 @@ import {
 
 export class GoslingExtClient {
   constructor(private conn: ExtMethodProvider) {}
+
+  async shellProvisioningRead_unstable(
+    params: ShellProvisioningReadRequest_unstable,
+  ): Promise<ShellProvisioningReadResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/provisioning/read",
+      params,
+    );
+    return zShellProvisioningReadResponse_unstable.parse(
+      raw,
+    ) as ShellProvisioningReadResponse_unstable;
+  }
+
+  async shellDomainSnapshot_unstable(
+    params: DomainSnapshotRequest_unstable,
+  ): Promise<DomainSnapshotResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/domain/snapshot",
+      params,
+    );
+    return zDomainSnapshotResponse_unstable.parse(
+      raw,
+    ) as DomainSnapshotResponse_unstable;
+  }
+
+  async shellDomainAction_unstable(
+    params: DomainActionRequest_unstable,
+  ): Promise<DomainActionResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/domain/action",
+      params,
+    );
+    return zDomainActionResponse_unstable.parse(
+      raw,
+    ) as DomainActionResponse_unstable;
+  }
+
+  async shellHandoffPrepare_unstable(
+    params: ShellHandoffPrepareRequest_unstable,
+  ): Promise<ShellHandoffPrepareResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/handoff/prepare",
+      params,
+    );
+    return zShellHandoffPrepareResponse_unstable.parse(
+      raw,
+    ) as ShellHandoffPrepareResponse_unstable;
+  }
 
   async sessionExtensionsAdd_unstable(
     params: AddSessionExtensionRequest_unstable,

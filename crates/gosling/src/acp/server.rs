@@ -6,6 +6,7 @@ pub(super) use crate::acp::response_builder::{
     build_session_info, build_session_setup_config, send_session_setup_notifications, session_meta,
     session_provider_selection, session_response_meta, should_refresh_inventory_for_session_init,
 };
+use crate::acp::shell::ShellRuntime;
 use crate::acp::tools::AcpAwareToolMeta;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
@@ -107,6 +108,7 @@ mod onboarding;
 mod prompts;
 mod providers;
 mod resources;
+mod shell_handlers;
 mod slash_commands;
 mod sources;
 mod tool_notifications;
@@ -211,10 +213,12 @@ pub struct GoslingAcpAgentOptions {
     pub provider_factory: AcpProviderFactory,
     pub builtins: Vec<String>,
     pub data_dir: std::path::PathBuf,
+    pub platform_data_dir: std::path::PathBuf,
     pub config_dir: std::path::PathBuf,
     pub disable_session_naming: bool,
     pub gosling_platform: GoslingPlatform,
     pub additional_source_roots: Vec<SourceRoot>,
+    pub shell_runtime: ShellRuntime,
 }
 
 pub struct GoslingAcpAgent {
@@ -239,6 +243,7 @@ pub struct GoslingAcpAgent {
     provider_inventory: ProviderInventoryService,
     additional_source_roots: Vec<SourceRoot>,
     workspace_service: Arc<WorkspaceService>,
+    shell_runtime: ShellRuntime,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -558,6 +563,31 @@ fn selected_builtin_extensions(config: &Config, builtins: &[String]) -> Vec<Exte
         push_or_replace_extension(&mut extensions, builtin_config);
     }
     extensions
+}
+
+fn apply_shell_extension_selection(
+    extensions: &mut Vec<ExtensionConfig>,
+    selections: Option<&[ShellExtensionSelection]>,
+) {
+    let Some(selections) = selections else {
+        return;
+    };
+    extensions.retain(|extension| {
+        selections
+            .iter()
+            .any(|selection| selection.name == extension.name())
+    });
+    for extension in extensions {
+        let Some(selection) = selections
+            .iter()
+            .find(|selection| selection.name == extension.name())
+        else {
+            continue;
+        };
+        if let Some(tools) = &selection.available_tools {
+            extension.set_available_tools(tools.clone());
+        }
+    }
 }
 
 fn push_or_replace_extension(extensions: &mut Vec<ExtensionConfig>, extension: ExtensionConfig) {
@@ -1061,7 +1091,8 @@ impl GoslingAcpAgent {
                 .or_else(|| std::env::current_dir().ok())
                 .unwrap_or_else(|| PathBuf::from("/"));
             let workspace_service = Arc::new(
-                WorkspaceService::initialize(&options.data_dir, &default_working_folder).await?,
+                WorkspaceService::initialize(&options.platform_data_dir, &default_working_folder)
+                    .await?,
             );
             let session_manager = Arc::new(SessionManager::new(options.data_dir));
 
@@ -1108,6 +1139,7 @@ impl GoslingAcpAgent {
                 provider_inventory,
                 additional_source_roots: options.additional_source_roots,
                 workspace_service,
+                shell_runtime: options.shell_runtime,
             })
         })
         .await
@@ -1216,6 +1248,14 @@ impl GoslingAcpAgent {
             }
         }
 
+        apply_shell_extension_selection(
+            &mut extensions,
+            self.shell_runtime
+                .provisioning()
+                .session
+                .extensions
+                .as_deref(),
+        );
         Ok(extensions)
     }
 
@@ -1398,6 +1438,13 @@ impl GoslingAcpAgent {
         EnabledExtensionsState::new(extensions)
             .to_extension_data(&mut extension_data)
             .internal_err_ctx("Failed to initialize session extensions")?;
+        if let Some(skill_ids) = &self.shell_runtime.provisioning().session.skill_ids {
+            crate::session::extension_data::ShellSkillSelectionState {
+                skill_ids: skill_ids.clone(),
+            }
+            .to_extension_data(&mut extension_data)
+            .internal_err_ctx("Failed to initialize shell skill selection")?;
+        }
         Ok(extension_data)
     }
 
@@ -2363,6 +2410,21 @@ fn extract_tool_raw_output(tool_result: &ToolResult<CallToolResult>) -> Option<s
         .and_then(|result| result.structured_content.clone())
 }
 
+fn shell_capabilities_meta(shell_runtime: &ShellRuntime) -> Meta {
+    let provisioning = shell_runtime.provisioning();
+    serde_json::Map::from_iter([(
+        "goslingShell".to_string(),
+        serde_json::json!({
+            "schemaVersion": provisioning.schema_version,
+            "identity": &provisioning.identity,
+            "authorityMode": provisioning.protocol_policy.mode,
+            "settingsAuthority": &provisioning.settings_authority,
+            "provisioningMethod": "_gosling/unstable/shell/provisioning/read",
+            "domainAdapter": &provisioning.domain_adapter,
+        }),
+    )])
+}
+
 impl GoslingAcpAgent {
     async fn on_initialize(
         &self,
@@ -2408,7 +2470,7 @@ impl GoslingAcpAgent {
                     .embedded_context(true),
             )
             .mcp_capabilities(McpCapabilities::new().http(true))
-            .meta(None);
+            .meta(Some(shell_capabilities_meta(&self.shell_runtime)));
         Ok(InitializeResponse::new(protocol_version)
             .agent_info(Implementation::new("gosling", env!("CARGO_PKG_VERSION")))
             .agent_capabilities(capabilities)
@@ -3369,9 +3431,11 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
             builtins,
             state_dir: Paths::state_dir(),
             data_dir: Paths::data_dir(),
+            platform_data_dir: Paths::data_dir(),
             config_dir: Paths::config_dir(),
             gosling_platform: GoslingPlatform::GoslingCli,
             additional_source_roots: Vec::new(),
+            shell_runtime: Default::default(),
         },
     );
     let agent = server.create_agent().await?;
