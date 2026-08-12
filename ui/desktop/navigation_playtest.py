@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -8,8 +9,13 @@ from playwright.sync_api import sync_playwright
 
 
 BASE_URL = "http://127.0.0.1:4179/navigation-playtest.html"
-EVIDENCE_DIR = Path("/tmp/gosling-navigation-playtest.CK9zQn")
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+EVIDENCE_DIR = Path(
+    os.environ.get("GOSLING_NAV_PLAYTEST_EVIDENCE", "/tmp/gosling-navigation-playtest-evidence")
+)
+CHROME = os.environ.get(
+    "PLAYWRIGHT_CHROMIUM_EXECUTABLE",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+)
 
 
 def relative_luminance(rgb: str) -> float:
@@ -33,7 +39,43 @@ def open_case(browser, turns: int, width: int, height: int, reduced_motion: bool
     page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
     page.goto(f"{BASE_URL}?turns={turns}")
     page.wait_for_load_state("networkidle")
+    console_errors[:] = [error for error in console_errors if "favicon.ico" not in error]
     return context, page, console_errors
+
+
+def assert_repaired(results: dict[str, object]) -> None:
+    normal = results["normal"]
+    single_long_turn = results["single_long_turn"]
+    responsive = results["responsive"]
+    hundred_turns = results["hundred_turns"]
+    keyboard = results["keyboard"]
+    reduced_motion = results["reduced_motion"]
+    rapid_repeat = results["rapid_repeat"]
+
+    assert normal["navigation_visible"] is True
+    assert normal["active_turn"].startswith("Turn 4 of 5:")
+    assert normal["console_errors"] == []
+    assert single_long_turn["navigation_count"] == 1
+    assert responsive["desktop"]["navigation_visible"] is True
+    assert responsive["tablet"]["navigation_visible"] is True
+    assert responsive["mobile"]["navigation_visible"] is True
+    assert all(
+        case["body_scroll_width"] == case["body_client_width"]
+        for case in responsive.values()
+    )
+    assert hundred_turns["marker_count"] == 100
+    assert hundred_turns["min_marker_height"] >= 24
+    assert hundred_turns["rect_calls"] < 400
+    assert keyboard["focus_order"][1:4] == [
+        "Jump to start",
+        "Turn 1 of 5: Prompt 1 — 日本語 🪿 navigation marker 1",
+        "Jump to latest",
+    ]
+    assert keyboard["after_arrow_down"].startswith("Turn 2 of 5:")
+    assert keyboard["after_end"].startswith("Turn 5 of 5:")
+    assert reduced_motion["requested_behavior"] == "auto"
+    assert rapid_repeat["clicks_received"] == 4
+    assert rapid_repeat["distance_from_bottom"] == 0
 
 
 def main() -> None:
@@ -141,11 +183,23 @@ def main() -> None:
         focus_order: list[str | None] = []
         for _ in range(8):
             page.keyboard.press("Tab")
-            focus_order.append(page.locator(":focus").get_attribute("aria-label"))
+            focus_order.append(
+                page.evaluate("document.activeElement?.getAttribute('aria-label') ?? null")
+            )
         results["keyboard"] = {
             "focus_order": focus_order,
             "console_errors": errors,
         }
+        first_turn = page.get_by_role("button", name=re.compile(r"^Turn 1 of 5:"))
+        first_turn.focus()
+        page.keyboard.press("ArrowDown")
+        results["keyboard"]["after_arrow_down"] = page.evaluate(
+            "document.activeElement?.getAttribute('aria-label') ?? null"
+        )
+        page.keyboard.press("End")
+        results["keyboard"]["after_end"] = page.evaluate(
+            "document.activeElement?.getAttribute('aria-label') ?? null"
+        )
         context.close()
 
         context, page, errors = open_case(browser, 5, 1280, 820, reduced_motion=True)
@@ -172,6 +226,7 @@ def main() -> None:
 
         browser.close()
 
+    assert_repaired(results)
     print(json.dumps(results, indent=2, ensure_ascii=False))
 
 

@@ -1,8 +1,9 @@
 import { ArrowDownToLine, ArrowUpToLine } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defineMessages, useIntl } from '../../i18n';
 import { getTextAndImageContent, type Message } from '../../types/message';
 import { cn } from '../../utils';
+import { getMotionAwareScrollBehavior } from '../../utils/motion';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 
 const i18n = defineMessages({
@@ -73,24 +74,45 @@ function getThreadTurns(messages: Message[], imageFallback: string): ThreadTurn[
   });
 }
 
-function findActiveTurn(viewport: HTMLDivElement, turns: ThreadTurn[]): number {
+function findActiveTurn(
+  viewport: HTMLDivElement,
+  turns: ThreadTurn[],
+  turnIndexByMessageIndex: Map<number, number>
+): number {
   const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-  if (distanceFromBottom <= 2) {
+  const finalTurn = turns[turns.length - 1];
+  if (
+    distanceFromBottom <= 2 &&
+    finalTurn &&
+    viewport.querySelector(`[${THREAD_TURN_ATTRIBUTE}="${finalTurn.messageIndex}"]`)
+  ) {
     return turns.length - 1;
   }
 
   const viewportTop = viewport.getBoundingClientRect().top;
   const readingLine = viewportTop + viewport.clientHeight * 0.5;
-  let activeTurn = 0;
-
-  turns.forEach((turn, turnIndex) => {
-    const element = viewport.querySelector<HTMLElement>(
-      `[${THREAD_TURN_ATTRIBUTE}="${turn.messageIndex}"]`
-    );
-    if (element && element.getBoundingClientRect().top <= readingLine) {
-      activeTurn = turnIndex;
-    }
+  const mountedTurns = Array.from(
+    viewport.querySelectorAll<HTMLElement>(`[${THREAD_TURN_ATTRIBUTE}]`)
+  ).flatMap((element) => {
+    const messageIndex = Number(element.getAttribute(THREAD_TURN_ATTRIBUTE));
+    const turnIndex = turnIndexByMessageIndex.get(messageIndex);
+    return turnIndex === undefined ? [] : [{ element, turnIndex }];
   });
+
+  let activeTurn = mountedTurns[0]?.turnIndex ?? 0;
+  let low = 0;
+  let high = mountedTurns.length - 1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = mountedTurns[middle];
+    if (candidate.element.getBoundingClientRect().top <= readingLine) {
+      activeTurn = candidate.turnIndex;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
 
   return activeTurn;
 }
@@ -105,19 +127,35 @@ export default function ThreadNavigator({
   onJumpToLatest,
 }: ThreadNavigatorProps) {
   const intl = useIntl();
-  const [activeTurn, setActiveTurn] = useState(0);
+  const [selectedTurn, setSelectedTurn] = useState<number | null>(null);
+  const [visibleTurn, setVisibleTurn] = useState(0);
+  const [isScrollable, setIsScrollable] = useState(false);
+  const markerTrackRef = useRef<HTMLDivElement>(null);
+  const turnButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const turns = useMemo(
     () => getThreadTurns(messages, intl.formatMessage(i18n.image)),
     [intl, messages]
   );
+  const turnIndexByMessageIndex = useMemo(
+    () => new Map(turns.map((turn, turnIndex) => [turn.messageIndex, turnIndex])),
+    [turns]
+  );
 
   const updateActiveTurn = useCallback(() => {
-    if (!viewport || turns.length === 0) {
-      setActiveTurn(0);
+    if (!viewport) {
+      setIsScrollable(false);
+      setVisibleTurn(0);
       return;
     }
-    setActiveTurn(findActiveTurn(viewport, turns));
-  }, [turns, viewport]);
+    setIsScrollable(viewport.scrollHeight - viewport.clientHeight > 2);
+    if (turns.length === 0) {
+      setVisibleTurn(0);
+      return;
+    }
+    const nextVisibleTurn = findActiveTurn(viewport, turns, turnIndexByMessageIndex);
+    setVisibleTurn(nextVisibleTurn);
+    setSelectedTurn((current) => (current === nextVisibleTurn ? null : current));
+  }, [turnIndexByMessageIndex, turns, viewport]);
 
   useEffect(() => {
     if (!viewport) {
@@ -125,7 +163,16 @@ export default function ThreadNavigator({
     }
 
     let frameId: number | null = null;
+    let settleTimerId: number | null = null;
     const scheduleUpdate = () => {
+      if (settleTimerId !== null) {
+        window.clearTimeout(settleTimerId);
+      }
+      settleTimerId = window.setTimeout(() => {
+        settleTimerId = null;
+        setSelectedTurn(null);
+        updateActiveTurn();
+      }, 150);
       if (frameId !== null) {
         return;
       }
@@ -152,6 +199,9 @@ export default function ThreadNavigator({
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId);
       }
+      if (settleTimerId !== null) {
+        window.clearTimeout(settleTimerId);
+      }
       observer.disconnect();
     };
   }, [updateActiveTurn, viewport]);
@@ -162,12 +212,15 @@ export default function ThreadNavigator({
         return;
       }
       const turn = turns[turnIndex];
-      setActiveTurn(turnIndex);
+      setSelectedTurn(turnIndex);
       const scrollToElement = () => {
         const element = viewport.querySelector<HTMLElement>(
           `[${THREAD_TURN_ATTRIBUTE}="${turn.messageIndex}"]`
         );
-        element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element?.scrollIntoView({
+          behavior: getMotionAwareScrollBehavior(),
+          block: 'center',
+        });
       };
 
       if (viewport.querySelector(`[${THREAD_TURN_ATTRIBUTE}="${turn.messageIndex}"]`)) {
@@ -179,14 +232,55 @@ export default function ThreadNavigator({
     [onPrepareNavigation, turns, viewport]
   );
 
-  if (turns.length < 2) {
+  const moveTurnFocus = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, turnIndex: number) => {
+      let nextTurnIndex: number | null = null;
+      if (event.key === 'ArrowDown') {
+        nextTurnIndex = Math.min(turnIndex + 1, turns.length - 1);
+      } else if (event.key === 'ArrowUp') {
+        nextTurnIndex = Math.max(turnIndex - 1, 0);
+      } else if (event.key === 'Home') {
+        nextTurnIndex = 0;
+      } else if (event.key === 'End') {
+        nextTurnIndex = turns.length - 1;
+      }
+
+      if (nextTurnIndex === null) {
+        return;
+      }
+      event.preventDefault();
+      turnButtonRefs.current[nextTurnIndex]?.focus();
+      jumpToTurn(nextTurnIndex);
+    },
+    [jumpToTurn, turns.length]
+  );
+
+  useEffect(() => {
+    const track = markerTrackRef.current;
+    const activeButton = turnButtonRefs.current[selectedTurn ?? visibleTurn];
+    if (!track || !activeButton) {
+      return;
+    }
+
+    const trackTop = track.scrollTop;
+    const trackBottom = trackTop + track.clientHeight;
+    const buttonTop = activeButton.offsetTop - track.offsetTop;
+    const buttonBottom = buttonTop + activeButton.offsetHeight;
+    if (buttonTop < trackTop) {
+      track.scrollTo({ top: buttonTop, behavior: 'auto' });
+    } else if (buttonBottom > trackBottom) {
+      track.scrollTo({ top: buttonBottom - track.clientHeight, behavior: 'auto' });
+    }
+  }, [selectedTurn, visibleTurn]);
+
+  if (turns.length < 2 && !historyHasMore && !isScrollable) {
     return null;
   }
 
   return (
     <nav
       aria-label={intl.formatMessage(i18n.label)}
-      className="absolute right-3 top-20 bottom-14 z-20 hidden w-7 flex-col items-center md:flex"
+      className="absolute right-2 top-20 bottom-14 z-20 flex w-7 flex-col items-center md:right-3"
     >
       <Tooltip>
         <TooltipTrigger asChild>
@@ -205,8 +299,12 @@ export default function ThreadNavigator({
         </TooltipContent>
       </Tooltip>
 
-      <div className="my-2 flex min-h-0 flex-1 flex-col items-center justify-evenly py-1">
+      <div
+        ref={markerTrackRef}
+        className="my-2 flex min-h-0 flex-1 flex-col items-center overflow-y-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {turns.map((turn, turnIndex) => {
+          const activeTurn = selectedTurn ?? visibleTurn;
           const isActive = turnIndex === activeTurn;
           const label = intl.formatMessage(i18n.turn, {
             current: turnIndex + 1,
@@ -218,11 +316,17 @@ export default function ThreadNavigator({
             <Tooltip key={`${turn.messageIndex}-${turnIndex}`}>
               <TooltipTrigger asChild>
                 <button
+                  ref={(button) => {
+                    turnButtonRefs.current[turnIndex] = button;
+                  }}
                   type="button"
+                  data-thread-turn-control={turnIndex}
                   aria-label={label}
                   aria-current={isActive ? 'location' : undefined}
+                  tabIndex={isActive ? 0 : -1}
                   onClick={() => jumpToTurn(turnIndex)}
-                  className="group flex h-4 w-7 shrink items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
+                  onKeyDown={(event) => moveTurnFocus(event, turnIndex)}
+                  className="group flex h-6 w-7 shrink-0 items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
                 >
                   <span
                     className={cn(

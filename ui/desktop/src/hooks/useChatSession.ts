@@ -253,12 +253,23 @@ export function useChatSession({
     await loadOlderMessagePage();
   }, [loadOlderMessagePage]);
 
-  const loadAllOlderMessages = useCallback(async () => {
-    let loadedOlderPage = true;
-    while (loadedOlderPage) {
-      loadedOlderPage = await loadOlderMessagePage();
+  const loadAllOlderMessages = useCallback(async (): Promise<boolean> => {
+    while (true) {
+      const beforeLoad = acpChatSessionStore.getSnapshot(sessionId);
+      if (!beforeLoad) {
+        return false;
+      }
+      if (!beforeLoad.historyHasMore) {
+        return true;
+      }
+
+      const loadedOlderPage = await loadOlderMessagePage();
+      const afterLoad = acpChatSessionStore.getSnapshot(sessionId);
+      if (!loadedOlderPage) {
+        return afterLoad?.historyHasMore === false;
+      }
     }
-  }, [loadOlderMessagePage]);
+  }, [loadOlderMessagePage, sessionId]);
 
   const onSteerQueuedMessage = useCallback(
     async (input: UserInput): Promise<boolean> => {

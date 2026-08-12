@@ -1,16 +1,14 @@
 import { StrictMode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { IntlProvider } from 'react-intl';
-import ThreadNavigator, {
-  THREAD_TURN_ATTRIBUTE,
-} from './components/conversation/ThreadNavigator';
+import ThreadNavigator, { THREAD_TURN_ATTRIBUTE } from './components/conversation/ThreadNavigator';
 import type { Message } from './types/message';
 import './styles/main.css';
 
 declare global {
   interface Window {
     navigationPlaytest: {
-      lastBehavior: ScrollBehavior | null;
+      lastBehavior: string | null;
       latestClicks: number;
       startClicks: number;
     };
@@ -97,9 +95,7 @@ function NavigationPlaytest() {
                     : 'mb-16 min-h-64 px-2 py-4 leading-7'
                 }
               >
-                {currentMessage.content[0]?.type === 'text'
-                  ? currentMessage.content[0].text
-                  : null}
+                {currentMessage.content[0]?.type === 'text' ? currentMessage.content[0].text : null}
               </article>
             ))}
           </div>

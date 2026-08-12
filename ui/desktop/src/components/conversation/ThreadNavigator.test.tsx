@@ -71,6 +71,7 @@ describe('ThreadNavigator', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -95,6 +96,22 @@ describe('ThreadNavigator', () => {
     );
   });
 
+  it('uses roving focus and arrow keys across turn locations', async () => {
+    renderNavigator();
+
+    const firstTurn = screen.getByRole('button', { name: /Turn 1 of 2: First prompt/ });
+    const secondTurn = screen.getByRole('button', { name: /Turn 2 of 2: Second prompt/ });
+    expect(firstTurn).toHaveAttribute('tabindex', '0');
+    expect(secondTurn).toHaveAttribute('tabindex', '-1');
+
+    firstTurn.focus();
+    await userEvent.keyboard('{ArrowDown}');
+
+    expect(secondTurn).toHaveFocus();
+    expect(secondTurn).toHaveAttribute('aria-current', 'location');
+    expect(secondTurn).toHaveAttribute('tabindex', '0');
+  });
+
   it('tracks the active turn as the viewport scrolls', async () => {
     const { secondTurn, viewport } = renderNavigator();
     secondTurn.getBoundingClientRect = vi.fn(() => ({ top: 80 }) as ElementRect);
@@ -117,6 +134,40 @@ describe('ThreadNavigator', () => {
 
     await vi.waitFor(() => {
       expect(screen.getByRole('button', { name: /Turn 2 of 2: Second prompt/ })).toHaveAttribute(
+        'aria-current',
+        'location'
+      );
+    });
+  });
+
+  it('does not select an unmounted final turn at the bottom of a progressive batch', async () => {
+    const viewport = document.createElement('div');
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 500 });
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 500 });
+    Object.defineProperty(viewport, 'scrollTop', { configurable: true, writable: true, value: 0 });
+    viewport.getBoundingClientRect = vi.fn(() => ({ top: 0 }) as ElementRect);
+    const firstTurn = document.createElement('div');
+    firstTurn.setAttribute(THREAD_TURN_ATTRIBUTE, '0');
+    firstTurn.getBoundingClientRect = vi.fn(() => ({ top: 40 }) as ElementRect);
+    viewport.append(firstTurn);
+    document.body.append(viewport);
+
+    render(
+      <ThreadNavigator
+        messages={[
+          message('user', 'First prompt', 'user-one'),
+          message('assistant', 'First answer', 'assistant-one'),
+          message('user', 'Second prompt', 'user-two'),
+        ]}
+        viewport={viewport}
+        onJumpToStart={vi.fn()}
+        onJumpToLatest={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: /Turn 1 of 2: First prompt/ })).toHaveAttribute(
         'aria-current',
         'location'
       );
@@ -170,11 +221,37 @@ describe('ThreadNavigator', () => {
     expect(onPrepareNavigation).toHaveBeenCalledWith(2);
   });
 
-  it('stays hidden for threads without multiple user turns', () => {
+  it('keeps start and latest reachable for one long turn', async () => {
+    const viewport = document.createElement('div');
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 500 });
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 1_500 });
+
     render(
       <ThreadNavigator
         messages={[message('user', 'Only prompt', 'user-one')]}
-        viewport={document.createElement('div')}
+        viewport={viewport}
+        onJumpToStart={vi.fn()}
+        onJumpToLatest={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'Thread navigation' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Jump to start' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Jump to latest' })).toBeInTheDocument();
+  });
+
+  it('stays hidden when a single turn already fits', () => {
+    const viewport = document.createElement('div');
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 500 });
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: 500 });
+
+    render(
+      <ThreadNavigator
+        messages={[message('user', 'Only prompt', 'user-one')]}
+        viewport={viewport}
         onJumpToStart={vi.fn()}
         onJumpToLatest={vi.fn()}
       />,
@@ -182,5 +259,20 @@ describe('ThreadNavigator', () => {
     );
 
     expect(screen.queryByRole('navigation', { name: 'Thread navigation' })).not.toBeInTheDocument();
+  });
+
+  it('honors reduced motion when jumping to a turn', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true }))
+    );
+    const { secondTurn } = renderNavigator();
+
+    await userEvent.click(screen.getByRole('button', { name: /Turn 2 of 2: Second prompt/ }));
+
+    expect(secondTurn.scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'auto',
+      block: 'center',
+    });
   });
 });

@@ -15,6 +15,7 @@ import { ChatType } from '../types/chat';
 import { useIsMobile } from '../hooks/use-mobile';
 import { useNavigationContextSafe } from './Layout/NavigationContext';
 import { cn } from '../utils';
+import { getMotionAwareScrollBehavior } from '../utils/motion';
 import { useChatSession } from '../hooks/useChatSession';
 import { acpSetSessionMode, acpUpdateWorkingDir } from '../acp/sessions';
 import type { GoslingMode } from '../types/session';
@@ -398,15 +399,21 @@ export default function BaseChat({
   }, [sessionId, messages.length]);
 
   const handleJumpToThreadStart = useCallback(async () => {
-    await loadAllOlderMessages();
+    const reachedStart = await loadAllOlderMessages();
+    if (!reachedStart) {
+      return;
+    }
     window.requestAnimationFrame(() => {
-      scrollRef.current?.scrollToPosition({ top: 0, behavior: 'smooth' });
+      scrollRef.current?.scrollToPosition({
+        top: 0,
+        behavior: getMotionAwareScrollBehavior(),
+      });
     });
   }, [loadAllOlderMessages]);
 
   const handleJumpToThreadLatest = useCallback(() => {
     if (threadNavigationRenderSessionId === sessionId) {
-      scrollRef.current?.scrollToBottom('smooth');
+      scrollRef.current?.scrollToBottom(getMotionAwareScrollBehavior());
       return;
     }
     setThreadNavigationRenderSessionId(sessionId);
@@ -416,7 +423,7 @@ export default function BaseChat({
   const handleThreadTurnsRendered = useCallback(() => {
     if (pendingThreadNavigationRef.current === 'latest') {
       pendingThreadNavigationRef.current = null;
-      scrollRef.current?.scrollToBottom('smooth');
+      scrollRef.current?.scrollToBottom(getMotionAwareScrollBehavior());
       return;
     }
 
@@ -426,7 +433,7 @@ export default function BaseChat({
       const viewport = scrollRef.current?.viewportRef.current;
       viewport
         ?.querySelector<HTMLElement>(`[${THREAD_TURN_ATTRIBUTE}="${messageIndex}"]`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        ?.scrollIntoView({ behavior: getMotionAwareScrollBehavior(), block: 'center' });
     }
   }, []);
 
@@ -529,7 +536,7 @@ export default function BaseChat({
           >
             {messages.length > 0 ? (
               <>
-                <SearchView className="md:pr-9">
+                <SearchView className="pr-9">
                   {historyHasMore ? (
                     <div className="flex justify-center py-3">
                       <button
