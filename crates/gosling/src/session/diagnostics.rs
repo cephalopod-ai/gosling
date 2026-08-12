@@ -6,10 +6,12 @@ use crate::providers::utils::LOGS_TO_KEEP;
 use crate::session::SessionManager;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use utoipa::ToSchema;
 
 const SERVER_LOG_TAIL_LINES: usize = 400;
+const SERVER_LOG_MAX_BYTES: usize = 2 * 1024 * 1024;
 const LLM_LOG_MAX_BYTES: usize = 2 * 1024 * 1024;
 const CONFIG_MAX_BYTES: usize = 256 * 1024;
 
@@ -215,44 +217,52 @@ fn llm_log_name(path: &std::path::Path) -> String {
 }
 
 pub fn read_tail(path: &std::path::Path, max_lines: usize) -> std::io::Result<String> {
-    let content = fs::read_to_string(path)?;
+    read_tail_capped(path, max_lines, SERVER_LOG_MAX_BYTES).map(|(content, _)| content)
+}
+
+fn read_tail_capped(
+    path: &std::path::Path,
+    max_lines: usize,
+    max_bytes: usize,
+) -> std::io::Result<(String, bool)> {
+    let mut file = fs::File::open(path)?;
+    let file_len = file.metadata()?.len();
+    let start = file_len.saturating_sub(max_bytes as u64);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::with_capacity(max_bytes.min(file_len as usize));
+    file.take(max_bytes as u64).read_to_end(&mut bytes)?;
+    let content = String::from_utf8_lossy(&bytes);
     let lines: Vec<&str> = content.lines().collect();
     let start = lines.len().saturating_sub(max_lines);
-    Ok(lines[start..].join("\n"))
+    Ok((
+        lines[start..].join("\n"),
+        file_len > bytes.len() as u64 || start > 0,
+    ))
 }
 
 pub fn read_capped(path: &std::path::Path, max_bytes: usize) -> std::io::Result<String> {
-    let content = fs::read_to_string(path)?;
-    if content.len() <= max_bytes {
-        return Ok(content);
+    let mut file = fs::File::open(path)?;
+    let file_len = file.metadata()?.len();
+    if file_len <= max_bytes as u64 {
+        let mut bytes = Vec::with_capacity(file_len as usize);
+        file.take(max_bytes as u64).read_to_end(&mut bytes)?;
+        return String::from_utf8(bytes)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error));
     }
+
     let half = max_bytes / 2;
-    let head: String = content
-        .chars()
-        .take_while({
-            let mut n = 0;
-            move |c| {
-                n += c.len_utf8();
-                n <= half
-            }
-        })
-        .collect();
-    let tail: String = {
-        let skip = content.len().saturating_sub(half);
-        let mut chars = content.chars();
-        let mut skipped = 0;
-        for c in chars.by_ref() {
-            skipped += c.len_utf8();
-            if skipped >= skip {
-                break;
-            }
-        }
-        chars.collect()
-    };
-    let omitted = content.len() - head.len() - tail.len();
+    let mut head = Vec::with_capacity(half);
+    file.by_ref().take(half as u64).read_to_end(&mut head)?;
+    let tail_budget = max_bytes.saturating_sub(head.len());
+    file.seek(SeekFrom::Start(file_len.saturating_sub(tail_budget as u64)))?;
+    let mut tail = Vec::with_capacity(tail_budget);
+    file.take(tail_budget as u64).read_to_end(&mut tail)?;
+    let omitted = file_len.saturating_sub((head.len() + tail.len()) as u64);
     Ok(format!(
         "{}\n\n... ({} bytes omitted) ...\n\n{}",
-        head, omitted, tail,
+        String::from_utf8_lossy(&head),
+        omitted,
+        String::from_utf8_lossy(&tail),
     ))
 }
 
@@ -341,11 +351,11 @@ pub async fn generate_diagnostics(
 
     let logs = if is_full {
         let server = latest_server_log_path().and_then(|path| {
-            match read_tail(&path, SERVER_LOG_TAIL_LINES) {
-                Ok(content) => Some(DiagnosticsTextFile {
+            match read_tail_capped(&path, SERVER_LOG_TAIL_LINES, SERVER_LOG_MAX_BYTES) {
+                Ok((content, truncated)) => Some(DiagnosticsTextFile {
                     path: path.display().to_string(),
                     content,
-                    truncated: true,
+                    truncated,
                 }),
                 Err(e) => {
                     errors.push(DiagnosticsError {
@@ -434,6 +444,47 @@ mod tests {
         let path = dir.path().join("small.txt");
         std::fs::write(&path, "hello").unwrap();
         assert_eq!(read_capped(&path, 1024).unwrap(), "hello");
+    }
+
+    #[test]
+    fn read_capped_reads_only_the_bounded_head_and_tail() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large.log");
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(b"HEAD").unwrap();
+        file.set_len(64 * 1024 * 1024).unwrap();
+        file.seek(SeekFrom::End(-4)).unwrap();
+        file.write_all(b"TAIL").unwrap();
+
+        let content = read_capped(&path, 1024).unwrap();
+        assert!(content.starts_with("HEAD"));
+        assert!(content.ends_with("TAIL"));
+        assert!(was_truncated(&content));
+        assert!(content.len() < 1200);
+    }
+
+    #[test]
+    fn read_tail_caps_bytes_and_reports_real_truncation() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.log");
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.set_len(4 * 1024 * 1024).unwrap();
+        file.seek(SeekFrom::End(-17)).unwrap();
+        file.write_all(b"older\nnewer\nlast\n").unwrap();
+
+        let (content, truncated) = read_tail_capped(&path, 2, 1024).unwrap();
+        assert_eq!(content, "newer\nlast");
+        assert!(truncated);
+
+        let small = dir.path().join("small.log");
+        std::fs::write(&small, "one\ntwo").unwrap();
+        let (content, truncated) = read_tail_capped(&small, 10, 1024).unwrap();
+        assert_eq!(content, "one\ntwo");
+        assert!(!truncated);
     }
 
     #[tokio::test]

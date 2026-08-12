@@ -8,12 +8,14 @@ use gosling::config::Config;
 #[cfg(feature = "nostr")]
 use gosling::session::nostr_share;
 use gosling::session::{
-    generate_diagnostics, DiagnosticsLevel, Session, SessionManager, SessionType,
+    DiagnosticsLevel, Session, SessionManager, SessionType, generate_diagnostics,
 };
 use gosling::utils::safe_truncate;
 use regex::Regex;
 use std::fs;
 use std::io::{self, Write};
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -349,7 +351,9 @@ pub async fn handle_session_import(
                 println!("{} - {}", session.id, session.name);
             }
             gosling::session::session_manager::SessionFileImportResult::SourceChanged(session) => {
-                println!("Source file changed after its first import; skipped to prevent duplicate transcript history:");
+                println!(
+                    "Source file changed after its first import; skipped to prevent duplicate transcript history:"
+                );
                 println!("{} - {}", session.id, session.name);
             }
         }
@@ -391,17 +395,50 @@ pub async fn handle_diagnostics(session_id: &str, output_path: Option<PathBuf>) 
         PathBuf::from(format!("diagnostics_{}.json", session_id))
     };
 
-    let mut file = fs::File::create(&output_file).context(format!(
+    let mut file = create_diagnostics_output_file(&output_file).context(format!(
         "Failed to create output file: {}",
         output_file.display()
     ))?;
 
     file.write_all(&diagnostics_data)
         .context("Failed to write diagnostics data")?;
+    file.sync_all().context("Failed to sync diagnostics data")?;
 
     println!("Diagnostics report saved to: {}", output_file.display());
+    println!("This report may contain prompts, configuration, and logs. Review it before sharing.");
 
     Ok(())
+}
+
+fn create_diagnostics_output_file(path: &Path) -> io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let file = options.open(path)?;
+    #[cfg(unix)]
+    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    Ok(file)
+}
+
+#[cfg(all(test, unix))]
+mod diagnostics_output_tests {
+    use super::*;
+
+    #[test]
+    fn diagnostics_output_is_owner_only_even_when_overwriting() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("diagnostics.json");
+        fs::write(&path, "old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        create_diagnostics_output_file(&path).unwrap();
+
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
 }
 
 fn export_session_to_markdown(
