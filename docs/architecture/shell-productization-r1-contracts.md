@@ -33,10 +33,12 @@ testFixturesRoot (optional): same containment rule as assetsRoot
 
 Rejected content, in addition to everything the product profile already rejects: secrets, shell
 commands, arbitrary URLs, native-library paths, main/preload replacement paths, release/signing
-credentials, and any `declaredCapabilities` entry that does not name a frozen operation from this
-document. The manifest is resolved and canonically hashed the same way as the product profile
-(`shell-profile.js` pattern); the resolved hash is embedded in `ShellBuildManifest` alongside
-`profileHash`. Unknown fields and unknown `schemaVersion` fail closed (`CONSUMER_SCHEMA_UNSUPPORTED`).
+credentials, any `approvedRoot`-shaped field (the approved root is trusted resolver configuration,
+never manifest content — see ADR-0010), and any `declaredCapabilities` entry that does not name a
+frozen operation from this document. The manifest is resolved and canonically hashed the same way as
+the product profile (`shell-profile.js` pattern); the resolved hash is embedded in
+`ShellBuildManifest` alongside `profileHash`. Unknown fields and unknown `schemaVersion` fail closed
+(`CONSUMER_SCHEMA_UNSUPPORTED`).
 
 ## Safe runtime snapshot v2 (ADR-0011)
 
@@ -49,7 +51,7 @@ compatibility: { expectedVsActual summary, no raw values }
 provisioningIssues: [{ code, path }]                              # codes only, matches existing diagnostic redaction
 session: { sessionId, status: none|creating|active|resuming|closing, promptAttempt: { id, phase: idle|streaming|cancelling } | null }
 adapter: { descriptorId, version, capabilities: string[], status: absent|negotiating|ready|incompatible|crashed } | null
-pendingInteractions: [{ actionId, kind: permission|elicitation, summary (allowlisted fields only), expiresAtGeneration }]
+pendingInteractions: [{ actionId, kind: permission|elicitation|confirm, summary (allowlisted fields only), expiresAtGeneration }]
 ```
 
 Total bound remains <=64 KiB as today. No ACP endpoint, token, raw config, private path, prompt
@@ -67,14 +69,16 @@ already are:
 | `session.create` | invoke | none beyond generation | typed result <=8 KiB | main/server-owned working directory only |
 | `session.resume` | invoke | session ID | typed result <=8 KiB | rejects unknown/foreign session ID |
 | `prompt.submit` | invoke | bounded text, <=64 KiB | prompt-attempt ID <=1 KiB | rejects if an attempt is already outstanding |
-| `prompt.cancel` | invoke | prompt-attempt ID | status <=1 KiB | idempotent; rejects stale/foreign attempt ID |
+| `prompt.cancel` | invoke | prompt-attempt ID | status <=1 KiB | idempotent no-op success if the named ID is the current attempt (whether or not it was already cancelled); rejects with a stale-ID error if the ID was never issued or belongs to a different session/generation |
 | `session.updates` | event | main only | bounded update <=64 KiB, attempt-fenced | streamed model/tool output |
 | `permission.respond` | invoke | action ID + allow_once\|deny | status <=1 KiB | rejects replay/expired/foreign action ID |
 | `elicitation.respond` | invoke | action ID + submit(bounded fields)\|cancel | status <=8 KiB | rejects replay/expired/foreign action ID |
 | `permission.requested` | event | main only | action summary <=8 KiB | opaque action ID, allowlisted fields only |
 | `elicitation.requested` | event | main only | action summary <=8 KiB | opaque action ID, allowlisted fields only |
-| `domain.snapshot` | invoke | none beyond generation | bounded payload, size TBD by ADR-0012 fixture | only when `adapter.status == ready` |
-| `domain.action` | invoke | action ID + confirmation token for mutations | bounded payload | routed through Rust server authority (ADR-0012) |
+| `domain.snapshot` | invoke | none beyond generation | bounded payload <=64 KiB (matches the safe-snapshot ceiling; the R4 neutral fixture's snapshot must fit this bound, and an adapter that would exceed it fails as overproducing) | only when `adapter.status == ready` |
+| `domain.action` | invoke | action name + args, <=16 KiB | bounded payload <=64 KiB, or `CONFIRMATION_REQUIRED` + interaction actionId for an unapproved `mutate` action | `read` actions execute directly; `mutate` actions execute only once their `confirm` interaction (below) is approved |
+| `confirmation.requested` | event | main only | interaction summary <=8 KiB | opaque action ID, allowlisted action-name/args summary only |
+| `confirmation.respond` | invoke | action ID + approve\|deny | status <=1 KiB | rejects replay/expired/foreign action ID; on approve, main executes the pending action server-side using the token it minted internally |
 
 Explicitly still absent, unchanged from the Gate 2 contract: arbitrary file/settings/clipboard/
 notification/updater access, raw ACP URL/token, MCP proxy URL, server secret, and arbitrary IPC
@@ -88,12 +92,16 @@ A pending permission/elicitation is represented server-side (main-owned, not ren
 
 ```text
 actionId: opaque, unguessable, unique per request
-kind: permission | elicitation
+kind: permission | elicitation | confirm
 generation, sessionId, promptAttemptId: fencing keys
 issuedAt: monotonic counter (not wall-clock, to keep event ordering testable)
 expiresWith: promptAttempt end | session end | explicit cancel
 status: pending | resolved | expired | superseded
 ```
+
+A `confirm` interaction is how a `domain.action` mutation is authorized (§ below): it is not tied to
+a `promptAttemptId` the way permission/elicitation interactions are, since a mutation can be
+requested outside an active prompt attempt; it fences on `generation`/`sessionId` only.
 
 A `respond` call is accepted exactly once per `actionId`; every subsequent call for the same ID
 returns a stale-action error rather than re-executing the response.
@@ -101,9 +109,19 @@ returns a stale-action error rather than re-executing the response.
 ## Domain adapter descriptor and confirmation token (ADR-0012)
 
 ```text
-DomainAdapterDescriptor        # existing DTO, crates/gosling-sdk-types/src/shell.rs:60-66
+DomainAdapterDescriptor (existing, v1)   # crates/gosling-sdk-types/src/shell.rs:60-66
+  domain_id, display_name, version, actions: Vec<String>   # flat action names only
+
+DomainAdapterDescriptor (proposed v2)    # NOT yet implemented; requires an explicit R4 DTO migration
   domain_id, display_name, version, actions: [{ name, kind: read|mutate, schemaRef }]
 ```
+
+The existing v1 descriptor's `actions` field is a flat `Vec<String>` — it carries no `kind`, so a
+runtime cannot yet decide which actions require a confirmation token from the descriptor alone. R4
+must version this DTO (schema bump on `DomainAdapterDescriptor`, with the client/server compatibility
+check in `compatibility.ts` extended accordingly) before the confirmation-token authorization rule
+below can be enforced; until that migration lands, the authorization rule is a frozen target, not an
+implementable one, and no R4 work may claim it works against the current v1 shape.
 
 New, R4-scoped:
 
@@ -114,16 +132,21 @@ AdapterProcessDescriptor       # source-controlled, not renderer-suppliable
   startupTimeoutMs, actionTimeoutMs: bounded positive integers
   maxMessageBytes: bounded positive integer
 
-ActionConfirmationToken
+ActionConfirmationToken        # internal to main/server; never sent over IPC or to the adapter process
   actionName, adapterVersion, sessionId, generation: binds the token to exactly one action/session/generation
   nonce: single-use, server-minted
   expiresAtGeneration: fails closed on generation rollover
 ```
 
 `domain.action` for any action whose descriptor marks it `mutate` requires a valid, unexpired,
-matching-scope `ActionConfirmationToken`; `read` actions do not. Replay, cross-action, cross-session,
-cross-generation, or expired tokens fail with a typed `ADAPTER_ACTION_UNAUTHORIZED` error and no
-mutation occurs.
+matching-scope `ActionConfirmationToken`. The token is minted by main only when a `confirm`
+interaction (§ "Application-runtime operations and events") for that exact action/session/generation
+is approved via `confirmation.respond`, and is consumed server-side in the same step that dispatches
+the action to the adapter — the renderer requests a mutation and answers a yes/no confirmation
+prompt, but never receives, stores, or resubmits the token itself, closing the same "opaque action
+ID, not a raw credential" pattern already used for permission/elicitation. `read` actions require no
+token. Replay, cross-action, cross-session, cross-generation, or expired tokens fail with a typed
+`ADAPTER_ACTION_UNAUTHORIZED` error and no mutation occurs.
 
 ## Error taxonomy additions
 

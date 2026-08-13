@@ -50,11 +50,17 @@ Concretely:
   `docs/architecture/shell-productization-r1-contracts.md`) is the only new build input. It names:
   consumer schema version, required shell-kit/core version range (exact-pin initially, per
   `SHP-ASM-012`), the product profile path (existing `ResolvedShellProductProfile`), a renderer
-  entry resolved from an **approved consumer root** (a path prefix declared by the manifest and
-  validated by containment, not by arbitrary filesystem traversal), an optional domain-adapter
-  descriptor reference (ADR-0012), and the declared shell-kit capabilities the renderer uses. The
-  manifest is resolved and hashed alongside the product profile, exactly as `ShellBuildManifest`
-  already embeds `profileHash` today.
+  entry, an optional domain-adapter descriptor reference (ADR-0012), and the declared shell-kit
+  capabilities the renderer uses. The renderer entry is validated by containment against an
+  **approved consumer root**, but — mirroring `APPROVED_PROFILE_ROOTS` in
+  `ui/desktop/scripts/shell-profile.js:170-174`, which is a source-controlled constant in the
+  trusted resolver, never a field the profile itself supplies — the approved root is derived from
+  trusted package/workspace registration (a resolver-side allowlist keyed by `consumerId`, or the
+  verified installed location of the pinned shell-kit-consuming package) and is never read from the
+  manifest under evaluation. A manifest that declared its own containment boundary could simply
+  declare a boundary wide enough to contain any path, which is not a security boundary. The manifest
+  is resolved and hashed alongside the product profile, exactly as `ShellBuildManifest` already
+  embeds `profileHash` today.
 - `forge.config.ts`/`vite.shell.renderer.config.mts` are extended, not replaced: the branch on
   `product.shell` becomes a branch that additionally resolves the renderer entry from the consumer
   manifest when one is declared, falling back to the current fixed `src/shell/renderer.ts` fixture
@@ -76,6 +82,7 @@ Concretely:
 | Keep the current model: add a profile field and hard-code a per-product renderer switch in `forge.config.ts` | This is exactly the rejected "copy the fixture and edit Gosling" pattern; every new project would require a host source edit, which SHP-RSK-031 identifies as the blocking risk. |
 | Dynamic renderer loading from an arbitrary URL or unpinned package name at build time | Violates PG-INV-003 (no arbitrary build hooks) and the threat model's traversal/injection controls already established for profile paths in ADR-0007; a manifest must resolve to a source-controlled, hashed, approved-root path. |
 | Let the product profile (`ResolvedShellProductProfile`) carry the renderer entry directly | Conflates build/release identity (profile's existing role, ADR-0007) with consumer/composition identity; a profile has no schema slot for capability declarations, adapter references, or asset/test roots, and extending it would relitigate ADR-0007's "no domain semantics in the profile" boundary. |
+| Let the manifest declare its own approved consumer root | Containment against a caller-controlled boundary is not a security boundary — a hostile manifest could simply declare a root wide enough to contain any path reachable by the build. The approved root must come from the trusted resolver's own registration data, the same way `APPROVED_PROFILE_ROOTS` already works for product profiles. |
 
 ## Consequences
 

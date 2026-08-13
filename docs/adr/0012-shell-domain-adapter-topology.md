@@ -52,12 +52,14 @@ Specifically:
   an ADR and conformance fixture prove this path, `DomainAdapter` is an unfulfilled internal seam,
   not a supported consumer capability."
 - **Authority.** `domain_snapshot` stays read-only, unchanged from today's shape. `perform_action`
-  additionally requires an **action-bound, single-use confirmation token** minted by the server for
-  mutating actions; replayed, expired, cross-action, cross-session, or cross-generation tokens fail
-  closed. The adapter never receives raw ACP credentials or session state beyond what its descriptor
-  declares it needs; Electron main and the renderer never talk to the adapter process directly — all
-  adapter traffic is proxied through the existing `domain_snapshot`/`perform_domain_action` custom
-  ACP methods the server already exposes.
+  additionally requires an **action-bound, single-use confirmation token** minted by the server only
+  after the renderer's explicit approval of a `confirm` interaction naming that exact action (the
+  interaction/token mechanics are frozen in `shell-productization-r1-contracts.md`); replayed,
+  expired, cross-action, cross-session, or cross-generation tokens fail closed, and the token itself
+  is never sent to the renderer or the adapter process. The adapter never receives raw ACP
+  credentials or session state beyond what its descriptor declares it needs; Electron main and the
+  renderer never talk to the adapter process directly — all adapter traffic is proxied through the
+  existing `domain_snapshot`/`perform_domain_action` custom ACP methods the server already exposes.
 - **Payload ownership.** Native adapter payloads stay opaque to `gosling-cli`/`gosling-server` and to
   the shared Electron host; they are validated only by the project consumer's own generated schema
   (ADR-0010), matching the existing DTO comment "Domain implementations remain responsible for their

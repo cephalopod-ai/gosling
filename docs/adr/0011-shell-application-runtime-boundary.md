@@ -40,8 +40,11 @@ Extend `ShellAcpConnection` and the IPC allowlist with:
   policy (no renderer-supplied path).
 - `prompt.submit` — bounded text prompt, tagged with a main-generated **prompt-attempt ID**; only
   one attempt may be outstanding per session (per `SHP-ASM-032`, one active session initially).
-- `prompt.cancel` — cancels the current attempt by ID; stale/duplicate attempt IDs are rejected, not
-  silently accepted.
+- `prompt.cancel` — cancels the current attempt by ID; repeating the call for the same still-current
+  attempt is an idempotent no-op success (it does not silently accept a *different* or *foreign*
+  attempt ID as if it matched — an ID that was never issued, or that names a prior generation/
+  session/attempt, is rejected as stale). This is the same idempotency posture `runtime.stop` already
+  uses.
 - `session.updates` (event) — replaces the discarded `sessionUpdate` callback with a bounded,
   schema-validated, attempt-fenced stream to the renderer.
 
