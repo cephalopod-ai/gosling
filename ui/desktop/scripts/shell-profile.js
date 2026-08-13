@@ -7,6 +7,7 @@ const APPROVED_PROFILE_ROOTS = ['shell-products', 'fixtures/shell-products'];
 const PROFILE_FILE_NAME = 'product-profile.json';
 const TARGETS = new Set(['macos-arm64', 'macos-x64', 'windows-x64', 'linux-x64']);
 const METHODS = new Set([
+  '_gosling/unstable/session/info',
   '_gosling/unstable/shell/handoff/prepare',
   '_gosling/unstable/shell/provisioning/read',
   '_gosling/unstable/shell/provisioning/validate',
@@ -440,7 +441,8 @@ function validateProfile(raw, profilePath) {
     !Array.isArray(compatibility.requiredMethods) ||
     compatibility.requiredMethods.length === 0 ||
     new Set(compatibility.requiredMethods).size !== compatibility.requiredMethods.length ||
-    !compatibility.requiredMethods.every((method) => METHODS.has(method))
+    !compatibility.requiredMethods.every((method) => METHODS.has(method)) ||
+    [...METHODS].some((method) => !compatibility.requiredMethods.includes(method))
   ) {
     fail('profile.compatibility.requiredMethods is invalid');
   }

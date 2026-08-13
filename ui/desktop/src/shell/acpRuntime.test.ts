@@ -4,7 +4,9 @@ import type { InitializeResponse } from '@agentclientprotocol/sdk';
 import { connectShellAcp, ShellCompatibilityError } from './acpRuntime';
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
 
+const sessionInfoMethod = '_gosling/unstable/session/info';
 const methods = [
+  sessionInfoMethod,
   '_gosling/unstable/shell/handoff/prepare',
   '_gosling/unstable/shell/provisioning/read',
   '_gosling/unstable/shell/provisioning/validate',
@@ -63,6 +65,8 @@ function response(): InitializeResponse {
     protocolVersion: 1,
     agentInfo: { name: 'gosling', version: '0.1.0' },
     agentCapabilities: {
+      loadSession: true,
+      sessionCapabilities: { list: {} },
       _meta: {
         goslingShell: {
           identity: {
@@ -96,12 +100,25 @@ function harness() {
   const validate = vi.fn((request) =>
     Promise.resolve({ provisioning: request.provisioning, validation: { valid: true, issues: [] } })
   );
+  const newSession = vi.fn(() => Promise.resolve({ sessionId: 'session-1' }));
+  const loadSession = vi.fn(() => Promise.resolve({}));
+  const sessionInfo = vi.fn(() =>
+    Promise.resolve({
+      session: {
+        sessionId: 'session-1',
+        cwd: '/workspace/saved',
+      },
+    })
+  );
   const prepare = vi.fn(() => Promise.reject(new Error('not used')));
   const client = {
     signal: new AbortController().signal,
     closed: new Promise<void>(() => {}),
     initialize,
+    newSession,
+    loadSession,
     gosling: {
+      sessionInfo_unstable: sessionInfo,
       shellProvisioningRead_unstable: read,
       shellProvisioningValidate_unstable: validate,
       shellHandoffPrepare_unstable: prepare,
@@ -122,7 +139,19 @@ function harness() {
     setTimeout,
     clearTimeout,
   };
-  return { client, close, createClient, createStream, dependencies, initialize, read, validate };
+  return {
+    client,
+    close,
+    createClient,
+    createStream,
+    dependencies,
+    initialize,
+    loadSession,
+    newSession,
+    read,
+    sessionInfo,
+    validate,
+  };
 }
 
 function connect(value = harness()) {
@@ -132,6 +161,7 @@ function connect(value = harness()) {
       acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
       profile,
       manifest,
+      workingDir: '/workspace/current',
       clientName: 'fixture-shell',
       clientVersion: '0.0.0-test',
       dependencies: value.dependencies,
@@ -151,7 +181,8 @@ describe('shell ACP runtime', () => {
     });
     expect(value.read).toHaveBeenCalledWith({});
     expect(value.validate).toHaveBeenCalledTimes(1);
-    expect(Object.keys(value.client)).not.toContain('newSession');
+    expect(value.newSession).not.toHaveBeenCalled();
+    expect(value.loadSession).not.toHaveBeenCalled();
     const callbacks = value.createClient.mock.calls[0][0]();
     expect(Object.keys(callbacks).sort()).toEqual([
       'requestPermission',
@@ -163,8 +194,92 @@ describe('shell ACP runtime', () => {
     });
     expect(await callbacks.unstable_createElicitation!({} as never)).toEqual({ action: 'decline' });
     expect(connection.compatibility).toEqual({ compatible: true });
+    expect(value.newSession).not.toHaveBeenCalled();
+    expect(value.loadSession).not.toHaveBeenCalled();
     expect(value.close).not.toHaveBeenCalled();
     connection.close();
+    expect(value.close).toHaveBeenCalledOnce();
+  });
+
+  it('creates and resumes sessions only through the compatible main-owned connection', async () => {
+    const { promise, value } = connect();
+    const connection = await promise;
+
+    await expect(connection.createSession()).resolves.toEqual({
+      sessionId: 'session-1',
+      workingDir: '/workspace/current',
+    });
+    expect(value.newSession).toHaveBeenCalledWith({
+      cwd: '/workspace/current',
+      mcpServers: [],
+      _meta: { client: 'gosling-shell' },
+    });
+
+    await expect(connection.resumeSession('session-1')).resolves.toEqual({
+      sessionId: 'session-1',
+      workingDir: '/workspace/saved',
+    });
+    expect(value.sessionInfo).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    expect(value.loadSession).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      cwd: '/workspace/saved',
+      mcpServers: [],
+      _meta: { gosling: { loadMode: 'compacted', tailLimit: 50 } },
+    });
+  });
+
+  it('rejects a relative main-owned working directory before opening a transport', async () => {
+    const value = harness();
+    await expect(
+      connectShellAcp({
+        acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+        profile,
+        manifest,
+        workingDir: 'relative',
+        clientName: 'fixture-shell',
+        clientVersion: '0.0.0-test',
+        dependencies: value.dependencies,
+      })
+    ).rejects.toThrow('workingDir must be an absolute path');
+    expect(value.createStream).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid resume IDs before contacting the backend', async () => {
+    const { promise, value } = connect();
+    const connection = await promise;
+
+    await expect(connection.resumeSession(' padded ')).rejects.toThrow('sessionId');
+    expect(value.sessionInfo).not.toHaveBeenCalled();
+    expect(value.loadSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing required session-info method before provisioning or session use', async () => {
+    const value = harness();
+    const missing = response();
+    const shell = missing.agentCapabilities!._meta!.goslingShell as {
+      availableMethods: string[];
+    };
+    shell.availableMethods = shell.availableMethods.filter(
+      (method) => method !== sessionInfoMethod
+    );
+    value.initialize.mockResolvedValue(missing);
+
+    await expect(connect(value).promise).rejects.toMatchObject({
+      result: { compatible: false, code: 'METHOD_UNAVAILABLE' },
+    });
+    expect(value.read).not.toHaveBeenCalled();
+    expect(value.close).toHaveBeenCalledOnce();
+  });
+
+  it('requires canonical load-session capability before provisioning or session use', async () => {
+    const value = harness();
+    const missing = response();
+    missing.agentCapabilities!.loadSession = false;
+    value.initialize.mockResolvedValue(missing);
+
+    await expect(connect(value).promise).rejects.toThrow('required load-session capability');
+    expect(value.read).not.toHaveBeenCalled();
+    expect(value.newSession).not.toHaveBeenCalled();
     expect(value.close).toHaveBeenCalledOnce();
   });
 
@@ -182,6 +297,7 @@ describe('shell ACP runtime', () => {
         acpUrl,
         profile,
         manifest,
+        workingDir: '/workspace/current',
         clientName: 'fixture-shell',
         clientVersion: '0.0.0-test',
         dependencies: value.dependencies,
@@ -205,7 +321,9 @@ describe('shell ACP runtime', () => {
       identity: { id: string };
       availableMethods: string[];
     };
-    shell.availableMethods = shell.availableMethods.slice(0, -1);
+    shell.availableMethods = shell.availableMethods.filter(
+      (method) => method !== '_gosling/unstable/shell/provisioning/validate'
+    );
     value.initialize.mockResolvedValue(incompatible);
     await expect(connect(value).promise).rejects.toMatchObject({
       result: { compatible: false, code: 'METHOD_UNAVAILABLE' },

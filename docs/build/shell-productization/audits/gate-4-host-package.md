@@ -1,8 +1,8 @@
 # Gate 4 checkpoint audit — host, package, and integrity boundary
 
 Date: 2026-08-13
-Scope: shared shell identity/lifecycle/IPC/ACP/bootstrap/resources/diagnostics/handoff and local
-package/readback path
+Scope: shared shell identity/lifecycle/IPC/ACP/session/bootstrap/resources/diagnostics/handoff and
+local package/readback path
 Verdict: **CONTINUE Gate 4 after corrections**
 
 ## Findings and dispositions
@@ -23,8 +23,9 @@ Verdict: **CONTINUE Gate 4 after corrections**
 - Renderer/preload receive lifecycle, diagnostics, handoff, and allowlisted external-open operations
   only; backend URL, generated secret, profile/provisioning paths, runtime namespace, filesystem,
   provider/settings, updater, and release authority remain in main or absent.
-- Compatibility is main-owned and runs before any session seam. Current code does not create a
-  session, so no compatibility failure can create one through this path.
+- Compatibility and session create/resume are main-owned. Live controller/child tests prove
+  compatibility precedes create, resume survives child restart, incompatible preflight leaves zero
+  durable sessions, and both paths clean the process registry.
 - Package wrapper rejects publishable, update-enabled, or signing-required profiles. It clears
   release-signing environment inputs and invokes Forge package only; it has no make/publish/upload
   path.
@@ -38,7 +39,6 @@ Verdict: **CONTINUE Gate 4 after corrections**
 
 ## Residual findings
 
-- Session create/resume and deterministic neutral probe are required before Gate 4 can close.
 - Full Desktop handoff receiving must be routed through a focused module without adding domain or
   lifecycle behavior to oversized `main.ts`.
 - Renderer recovery/accessibility, packaged restart/coexistence, and cross-platform package
@@ -47,4 +47,5 @@ Verdict: **CONTINUE Gate 4 after corrections**
   check.
 
 No unresolved defect in this checkpoint permits stale binary/profile substitution, broad preload
-packaging, updater inclusion, or transformed macOS bundle identity to pass readback.
+packaging, updater inclusion, transformed macOS bundle identity, or preflight-before-session ordering
+to pass the applicable readback/runtime probes.

@@ -31,7 +31,7 @@ compatibility
   goslingRevision: `current` for this checkout or an exact 40-character source revision
   provisioningSchemaVersion: 1
   handoffSchemaVersion: 1
-  requiredMethods: sorted unique list of required shell ACP method names
+  requiredMethods: exact sorted set of shell ACP methods used by the shared host
 assets
   root: repository-relative non-symlink directory
   iconBase: repository-relative path stem under assets.root
@@ -71,44 +71,44 @@ it never adds secrets.
 
 ## Fixture identities
 
-| Field | Fixture A | Fixture B |
-| --- | --- | --- |
-| product ID | `gosling-shell-fixture-a` | `gosling-shell-fixture-b` |
-| display name | `Gosling Shell Fixture A` | `Gosling Shell Fixture B` |
-| version | `0.0.0-test` | `0.0.0-test` |
-| namespace | `shell-fixture-a` | `shell-fixture-b` |
-| protocol | `gosling-fixture-a` | `gosling-fixture-b` |
-| executable | `gosling-shell-fixture-a` | `gosling-shell-fixture-b` |
-| macOS bundle ID | `io.github.repo-makeover.gosling.fixture.a` | `io.github.repo-makeover.gosling.fixture.b` |
-| Windows app ID | `Gosling.Shell.Fixture.A` | `Gosling.Shell.Fixture.B` |
-| Linux package | `gosling-shell-fixture-a` | `gosling-shell-fixture-b` |
-| Flatpak ID | `io.github.repo_makeover.Gosling.FixtureA` | `io.github.repo_makeover.Gosling.FixtureB` |
-| update channel | `fixture-a-disabled` | `fixture-b-disabled` |
-| artifact prefix | `gosling-shell-fixture-a` | `gosling-shell-fixture-b` |
-| publish/update/sign | false/false/none | false/false/none |
+| Field               | Fixture A                                   | Fixture B                                   |
+| ------------------- | ------------------------------------------- | ------------------------------------------- |
+| product ID          | `gosling-shell-fixture-a`                   | `gosling-shell-fixture-b`                   |
+| display name        | `Gosling Shell Fixture A`                   | `Gosling Shell Fixture B`                   |
+| version             | `0.0.0-test`                                | `0.0.0-test`                                |
+| namespace           | `shell-fixture-a`                           | `shell-fixture-b`                           |
+| protocol            | `gosling-fixture-a`                         | `gosling-fixture-b`                         |
+| executable          | `gosling-shell-fixture-a`                   | `gosling-shell-fixture-b`                   |
+| macOS bundle ID     | `io.github.repo-makeover.gosling.fixture.a` | `io.github.repo-makeover.gosling.fixture.b` |
+| Windows app ID      | `Gosling.Shell.Fixture.A`                   | `Gosling.Shell.Fixture.B`                   |
+| Linux package       | `gosling-shell-fixture-a`                   | `gosling-shell-fixture-b`                   |
+| Flatpak ID          | `io.github.repo_makeover.Gosling.FixtureA`  | `io.github.repo_makeover.Gosling.FixtureB`  |
+| update channel      | `fixture-a-disabled`                        | `fixture-b-disabled`                        |
+| artifact prefix     | `gosling-shell-fixture-a`                   | `gosling-shell-fixture-b`                   |
+| publish/update/sign | false/false/none                            | false/false/none                            |
 
 Fixtures contain generic connectivity/status/probe text only. Domain nouns, payload
 interpretation, actions, prompts, branding claims, and production destinations fail the negative-space audit.
 
 ## Module contracts and dependency direction
 
-| Module | Owns | Must not own | Allowed dependencies | Primary oracle |
-| --- | --- | --- | --- | --- |
-| profile types/resolver | raw parsing, strict validation, canonical hash, collision/asset report | Electron, ACP, secrets, domain semantics, publishing | Node standard library | golden/hostile profile tests |
-| Forge/workflow adapter | mechanical projection of resolved manifest | independent identity defaults, policy, profile parsing duplication | resolver output, Forge/workflow APIs | default parity and package readback |
-| app identity | pre-ready app paths/name/partition/protocol derivation | config/credential storage, session policy | resolved profile, Electron app adapter | ordering/path/coexistence tests |
-| shell bootstrap | lifecycle sequencing and generation ownership | profile parsing rules, domain behavior, renderer UI | resolved profile, host, lifecycle, IPC, ACP | call-order/failure cleanup tests |
-| minimal host / `goslingServe` | child launch/readiness/TLS/process cleanup | Electron app identity, renderer state, updater | process/fs/net adapters | existing + failure-path tests |
-| compatibility | pure expected/actual comparison | network/session creation/migration | profile contract, generated ACP metadata | table-driven matrix tests |
-| lifecycle reducer | legal state transitions and stale-generation rejection | process side effects, UI rendering | typed events only | exhaustive transition tests |
-| shell IPC/main handlers | payload/sender/state validation and actions | raw renderer trust, broad filesystem/settings API | bootstrap, diagnostics, handoff | malformed/oversized/negative-space tests |
-| shell preload | frozen typed bridge | ACP URL/secret, identity override, arbitrary IPC/filesystem/settings | shell channel constants | surface snapshot/reverse trace |
-| ACP adapter | authenticated initialize/provision/read/session/handoff calls | hand-written canonical DTOs, policy decisions | generated SDK/types | call-order/integration tests |
-| diagnostics | allowlisted bounded redacted snapshot/export | arbitrary log collection, secret/profile dump | lifecycle/host/package summaries, atomic writer | sentinel/size/permission tests |
-| shared renderer provider | display state and invokes allowed actions | Electron/process/filesystem/policy/domain semantics | preload bridge, presentation components | state/action/UI tests |
-| fixture renderer | neutral acceptance controls | domain behavior or publish controls | shared renderer interface | packaged smoke/negative-space audit |
-| package verifier | post-build artifact/readback comparison | mutation or metadata repair | generated manifest, platform readers | tamper/readback tests |
-| release adapter | guarded build/attest/upload sequencing | profile authority, free-form destination, fixture promotion | resolver/verifier output, pinned actions | workflow dry-run/security audit |
+| Module                        | Owns                                                                   | Must not own                                                         | Allowed dependencies                            | Primary oracle                           |
+| ----------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------- |
+| profile types/resolver        | raw parsing, strict validation, canonical hash, collision/asset report | Electron, ACP, secrets, domain semantics, publishing                 | Node standard library                           | golden/hostile profile tests             |
+| Forge/workflow adapter        | mechanical projection of resolved manifest                             | independent identity defaults, policy, profile parsing duplication   | resolver output, Forge/workflow APIs            | default parity and package readback      |
+| app identity                  | pre-ready app paths/name/partition/protocol derivation                 | config/credential storage, session policy                            | resolved profile, Electron app adapter          | ordering/path/coexistence tests          |
+| shell bootstrap               | lifecycle sequencing and generation ownership                          | profile parsing rules, domain behavior, renderer UI                  | resolved profile, host, lifecycle, IPC, ACP     | call-order/failure cleanup tests         |
+| minimal host / `goslingServe` | child launch/readiness/TLS/process cleanup                             | Electron app identity, renderer state, updater                       | process/fs/net adapters                         | existing + failure-path tests            |
+| compatibility                 | pure expected/actual comparison                                        | network/session creation/migration                                   | profile contract, generated ACP metadata        | table-driven matrix tests                |
+| lifecycle reducer             | legal state transitions and stale-generation rejection                 | process side effects, UI rendering                                   | typed events only                               | exhaustive transition tests              |
+| shell IPC/main handlers       | payload/sender/state validation and actions                            | raw renderer trust, broad filesystem/settings API                    | bootstrap, diagnostics, handoff                 | malformed/oversized/negative-space tests |
+| shell preload                 | frozen typed bridge                                                    | ACP URL/secret, identity override, arbitrary IPC/filesystem/settings | shell channel constants                         | surface snapshot/reverse trace           |
+| ACP adapter                   | authenticated initialize/provision/read/session/handoff calls          | hand-written canonical DTOs, policy decisions                        | generated SDK/types                             | call-order/integration tests             |
+| diagnostics                   | allowlisted bounded redacted snapshot/export                           | arbitrary log collection, secret/profile dump                        | lifecycle/host/package summaries, atomic writer | sentinel/size/permission tests           |
+| shared renderer provider      | display state and invokes allowed actions                              | Electron/process/filesystem/policy/domain semantics                  | preload bridge, presentation components         | state/action/UI tests                    |
+| fixture renderer              | neutral acceptance controls                                            | domain behavior or publish controls                                  | shared renderer interface                       | packaged smoke/negative-space audit      |
+| package verifier              | post-build artifact/readback comparison                                | mutation or metadata repair                                          | generated manifest, platform readers            | tamper/readback tests                    |
+| release adapter               | guarded build/attest/upload sequencing                                 | profile authority, free-form destination, fixture promotion          | resolver/verifier output, pinned actions        | workflow dry-run/security audit          |
 
 Dependency direction is `raw profile → resolver → build/runtime adapters`; and
 `main bootstrap → narrow preload → renderer`. Renderer never imports Node/Electron main/process/Forge
@@ -119,18 +119,18 @@ modules. Packaging never implements runtime policy. Rust remains provisioning an
 All path derivation occurs before Electron readiness/locking. `<id>` is the validated profile ID or
 namespace; exact platform roots use Electron/OS APIs rather than string-literal home assumptions.
 
-| Surface | Full Gosling | Focused shell | Sharing policy |
-| --- | --- | --- | --- |
-| protected config and credential catalog | canonical Gosling root | canonical Gosling root via backend runtime | intentionally shared, backend-only |
-| Electron userData | Gosling app root | product-specific `<id>` root | isolated |
-| browser session partition | `persist:gosling` | `persist:gosling-shell-<id>` | isolated |
-| logs/diagnostics | Gosling userData logs | shell userData logs | isolated |
-| process registry | Gosling userData registry | shell userData registry | isolated |
-| cache/temp | Gosling app namespace | shell product namespace | isolated |
-| protocol | `gosling` | profile protocol | isolated |
-| single-instance lock | Gosling app identity | profile app identity | isolated |
-| backend runtime namespace/data/state | Gosling default | profile runtime namespace | isolated |
-| updater channel/feed | Gosling updater | disabled or profile-specific | isolated |
+| Surface                                 | Full Gosling              | Focused shell                              | Sharing policy                     |
+| --------------------------------------- | ------------------------- | ------------------------------------------ | ---------------------------------- |
+| protected config and credential catalog | canonical Gosling root    | canonical Gosling root via backend runtime | intentionally shared, backend-only |
+| Electron userData                       | Gosling app root          | product-specific `<id>` root               | isolated                           |
+| browser session partition               | `persist:gosling`         | `persist:gosling-shell-<id>`               | isolated                           |
+| logs/diagnostics                        | Gosling userData logs     | shell userData logs                        | isolated                           |
+| process registry                        | Gosling userData registry | shell userData registry                    | isolated                           |
+| cache/temp                              | Gosling app namespace     | shell product namespace                    | isolated                           |
+| protocol                                | `gosling`                 | profile protocol                           | isolated                           |
+| single-instance lock                    | Gosling app identity      | profile app identity                       | isolated                           |
+| backend runtime namespace/data/state    | Gosling default           | profile runtime namespace                  | isolated                           |
+| updater channel/feed                    | Gosling updater           | disabled or profile-specific               | isolated                           |
 
 A path matrix mismatch is a Gate 6 blocker; no fallback silently converts an isolated path to a
 shared one or vice versa.
@@ -140,16 +140,16 @@ shared one or vice versa.
 The renderer bridge exposes exactly these operations; later additions require ADR/change-control
 review and a typed negative-space test.
 
-| Operation | Direction | Input bound | Output/event bound | Main behavior |
-| --- | --- | --- | --- | --- |
-| `runtime.read` | invoke | none | allowlisted snapshot <=64 KiB | returns current generation/state only |
-| `runtime.retry` | invoke | expected generation integer | typed result <=8 KiB | rejects stale/illegal request; full cleanup then fresh generation |
-| `runtime.stop` | invoke | expected generation integer | typed result <=8 KiB | idempotent bounded stop |
-| `diagnostics.save` | invoke | expected generation + explicit user gesture | result path/status <=8 KiB | native save dialog, atomic private bounded export |
-| `handoff.prepare` | invoke | session/capability/question/references/mutation intent, total <=64 KiB | server-prepared summary <=64 KiB | calls canonical ACP method; does not open destination |
-| `handoff.confirm` | invoke | handoff ID + expected generation | status <=8 KiB | confirms current prepared envelope and opens allowlisted full-Gosling protocol |
-| `external.open` | invoke | allowlisted HTTP(S) support URL <=2 KiB | status <=8 KiB | parses and opens only configured support origins |
-| `runtime.changed` | event | main only | snapshot <=64 KiB | generation-fenced lifecycle update |
+| Operation          | Direction | Input bound                                                            | Output/event bound               | Main behavior                                                                  |
+| ------------------ | --------- | ---------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| `runtime.read`     | invoke    | none                                                                   | allowlisted snapshot <=64 KiB    | returns current generation/state only                                          |
+| `runtime.retry`    | invoke    | expected generation integer                                            | typed result <=8 KiB             | rejects stale/illegal request; full cleanup then fresh generation              |
+| `runtime.stop`     | invoke    | expected generation integer                                            | typed result <=8 KiB             | idempotent bounded stop                                                        |
+| `diagnostics.save` | invoke    | expected generation + explicit user gesture                            | result path/status <=8 KiB       | native save dialog, atomic private bounded export                              |
+| `handoff.prepare`  | invoke    | session/capability/question/references/mutation intent, total <=64 KiB | server-prepared summary <=64 KiB | calls canonical ACP method; does not open destination                          |
+| `handoff.confirm`  | invoke    | handoff ID + expected generation                                       | status <=8 KiB                   | confirms current prepared envelope and opens allowlisted full-Gosling protocol |
+| `external.open`    | invoke    | allowlisted HTTP(S) support URL <=2 KiB                                | status <=8 KiB                   | parses and opens only configured support origins                               |
+| `runtime.changed`  | event     | main only                                                              | snapshot <=64 KiB                | generation-fenced lifecycle update                                             |
 
 Explicitly absent: arbitrary file read/write/delete/list, settings get/set, directory chooser,
 clipboard, notifications, updater operations, app restart, generic logging, raw ACP URL, MCP proxy
@@ -160,20 +160,21 @@ URL, server secret, profile/provisioning/namespace mutation, shell command, or a
 The first release uses exact bundled-core compatibility; semver ranges and external core discovery
 are unsupported.
 
-| Check in required order | Expected | Actual source | Failure code |
-| --- | --- | --- | --- |
-| profile schema | 1 | resolver | `PROFILE_SCHEMA_UNSUPPORTED` |
-| profile identity vs provisioning | exact ID/name/version | resolved profile + provisioning read | `IDENTITY_MISMATCH` |
-| bundled Gosling version/revision | exact version and resolved build revision (`current` → manifest HEAD) | embedded manifest/package | `CORE_MISMATCH` |
-| provisioning schema | 1 | Rust provisioning response | `PROVISIONING_SCHEMA_UNSUPPORTED` |
-| required ACP methods | every exact method available | authenticated initialization/custom-method capability | `METHOD_UNAVAILABLE` |
-| handoff schema | 1 when handoff is used | embedded expected + prepared envelope | `HANDOFF_SCHEMA_UNSUPPORTED` |
-| provisioning validation | `valid: true` | server response | `PROVISIONING_INVALID` |
+| Check in required order          | Expected                                                              | Actual source                                         | Failure code                      |
+| -------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------- |
+| profile schema                   | 1                                                                     | resolver                                              | `PROFILE_SCHEMA_UNSUPPORTED`      |
+| profile identity vs provisioning | exact ID/name/version                                                 | resolved profile + provisioning read                  | `IDENTITY_MISMATCH`               |
+| bundled Gosling version/revision | exact version and resolved build revision (`current` → manifest HEAD) | embedded manifest/package                             | `CORE_MISMATCH`                   |
+| provisioning schema              | 1                                                                     | Rust provisioning response                            | `PROVISIONING_SCHEMA_UNSUPPORTED` |
+| required ACP methods             | every exact method available                                          | authenticated initialization/custom-method capability | `METHOD_UNAVAILABLE`              |
+| handoff schema                   | 1 when handoff is used                                                | embedded expected + prepared envelope                 | `HANDOFF_SCHEMA_UNSUPPORTED`      |
+| provisioning validation          | `valid: true`                                                         | server response                                       | `PROVISIONING_INVALID`            |
 
-Current ACP initialization does not enumerate required custom methods, while the Rust server already
-derives the authoritative list through `GoslingAcpAgent::custom_method_schemas`. Gate 4 must expose
-that canonical generated capability metadata additively before the renderer compatibility check; it
-must not probe by creating a session or maintain an independent TypeScript list. Failure includes
+ACP initialization exposes the canonical custom-method set derived through
+`GoslingAcpAgent::custom_method_schemas`. The profile's exact required set includes
+`_gosling/unstable/session/info` plus shell provisioning read/validate and handoff prepare; the
+main-owned adapter checks that set before provisioning and session use. It must not probe
+compatibility by creating a session or maintain an independent TypeScript list. Failure includes
 expected/actual non-secret values and occurs before session create/resume.
 
 ## Lifecycle and error contracts
@@ -198,17 +199,17 @@ an internal-bug diagnostic and do not mutate state. `stop` is idempotent; retry 
 
 ### Error taxonomy
 
-| Category | Representative codes | User actions |
-| --- | --- | --- |
-| profile/build | invalid schema/path/asset/identity/collision | fix reviewed profile; no launch |
-| provisioning/reference | missing/invalid workspace, profile, extension, skill, policy | open diagnostics or full Gosling |
-| credential relink | missing/unavailable/mismatched credential profile | explicit full-Gosling relink handoff |
-| compatibility | core/schema/method/identity/handoff mismatch | stop, diagnostics, install compatible artifact |
-| environment/startup | binary/resource/port/TLS/readiness/process-registry failure | retry, diagnostics, quit |
-| policy denial | server-denied custom method/action | explain denial; no retry-as-bypass |
-| transport/backend | disconnect, early exit, crash, forced cleanup | retry after complete cleanup or quit |
-| package integrity | embedded manifest/resource/identity mismatch | stop; artifact invalid |
-| internal bug | illegal transition/unexpected invariant | stop, diagnostics, report |
+| Category               | Representative codes                                         | User actions                                   |
+| ---------------------- | ------------------------------------------------------------ | ---------------------------------------------- |
+| profile/build          | invalid schema/path/asset/identity/collision                 | fix reviewed profile; no launch                |
+| provisioning/reference | missing/invalid workspace, profile, extension, skill, policy | open diagnostics or full Gosling               |
+| credential relink      | missing/unavailable/mismatched credential profile            | explicit full-Gosling relink handoff           |
+| compatibility          | core/schema/method/identity/handoff mismatch                 | stop, diagnostics, install compatible artifact |
+| environment/startup    | binary/resource/port/TLS/readiness/process-registry failure  | retry, diagnostics, quit                       |
+| policy denial          | server-denied custom method/action                           | explain denial; no retry-as-bypass             |
+| transport/backend      | disconnect, early exit, crash, forced cleanup                | retry after complete cleanup or quit           |
+| package integrity      | embedded manifest/resource/identity mismatch                 | stop; artifact invalid                         |
+| internal bug           | illegal transition/unexpected invariant                      | stop, diagnostics, report                      |
 
 Messages expose stable codes and actionable non-secret summaries; raw child stderr, profile contents,
 paths, credentials, prompts, server secret, and auth query/header values never enter renderer state.
@@ -225,17 +226,17 @@ overwrite. The UI warns the user to inspect before sharing.
 
 ## Threat model and mandatory controls
 
-| Boundary/input | Threat | Required control | Proving test |
-| --- | --- | --- | --- |
-| profile/path/assets | traversal, symlink escape, secret/policy injection | strict schema, approved roots, canonical containment, secret/domain-key rejection | hostile profile corpus |
-| renderer/IPC | identity/process/file/updater confused deputy | separate preload, frozen allowlist, sender/type/size/state checks | surface snapshot + malformed/oversized calls |
-| loopback ACP | secret theft, remote endpoint, TLS substitution | generated secret, loopback-only URL, authenticated ACP, pinned dev TLS | auth/host/fingerprint negative tests |
-| child process | orphan/stale registry, stale event, wrong binary | single owner, packaged resource lookup, generation fencing, bounded graceful/forced cleanup | crash/kill/retry/PID tests |
-| diagnostics/logs | secret/content/path exfiltration or unbounded output | allowlisted schema, sentinels, path redaction, byte/count limits, private atomic write | sentinel/size/permission/failure tests |
-| deep link/handoff | forged origin/reference, arbitrary scheme, implicit mutation | server-prepared envelope, schema/ID/current-generation check, explicit confirm, scheme/action allowlist | malformed/mismatched/no-confirm tests |
-| package/update | Gosling fallback assets/feed, identity substitution | complete profile assets, embedded manifest/hash, platform readback, updater default off | missing/tamper/cross-profile tests |
-| workflow/release | input injection, fixture promotion, cross-publication, secret exposure | source-controlled profile, no `eval`, generated artifact names, privileged re-resolution/hash match, least privilege | hostile inputs/permissions/dry run |
-| signing credentials | untrusted code access | protected environment/human approval; no fork-PR signing | platform control readback/manual gate |
+| Boundary/input      | Threat                                                                 | Required control                                                                                                     | Proving test                                 |
+| ------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| profile/path/assets | traversal, symlink escape, secret/policy injection                     | strict schema, approved roots, canonical containment, secret/domain-key rejection                                    | hostile profile corpus                       |
+| renderer/IPC        | identity/process/file/updater confused deputy                          | separate preload, frozen allowlist, sender/type/size/state checks                                                    | surface snapshot + malformed/oversized calls |
+| loopback ACP        | secret theft, remote endpoint, TLS substitution                        | generated secret, loopback-only URL, authenticated ACP, pinned dev TLS                                               | auth/host/fingerprint negative tests         |
+| child process       | orphan/stale registry, stale event, wrong binary                       | single owner, packaged resource lookup, generation fencing, bounded graceful/forced cleanup                          | crash/kill/retry/PID tests                   |
+| diagnostics/logs    | secret/content/path exfiltration or unbounded output                   | allowlisted schema, sentinels, path redaction, byte/count limits, private atomic write                               | sentinel/size/permission/failure tests       |
+| deep link/handoff   | forged origin/reference, arbitrary scheme, implicit mutation           | server-prepared envelope, schema/ID/current-generation check, explicit confirm, scheme/action allowlist              | malformed/mismatched/no-confirm tests        |
+| package/update      | Gosling fallback assets/feed, identity substitution                    | complete profile assets, embedded manifest/hash, platform readback, updater default off                              | missing/tamper/cross-profile tests           |
+| workflow/release    | input injection, fixture promotion, cross-publication, secret exposure | source-controlled profile, no `eval`, generated artifact names, privileged re-resolution/hash match, least privilege | hostile inputs/permissions/dry run           |
+| signing credentials | untrusted code access                                                  | protected environment/human approval; no fork-PR signing                                                             | platform control readback/manual gate        |
 
 Unsupported threat model: hostile local administrator or compromised OS/keychain; malicious Gosling
 core binary already trusted by the package; arbitrary third-party domain adapter semantics. These do

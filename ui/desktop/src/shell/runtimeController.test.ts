@@ -157,6 +157,7 @@ describe('shell runtime controller', () => {
         acpUrl: 'ws://127.0.0.1:7001/acp?token=secret',
         profile,
         manifest,
+        workingDir: '/workspace',
       })
     );
     await value.controller.stop(1);

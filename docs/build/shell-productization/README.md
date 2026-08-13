@@ -15,6 +15,6 @@ This package is the durable, resumable plan for turning the merged Gosling shell
 
 ## Current status
 
-Implementation is in Gate 4. Gates 0, 2, and 3 have local GO checkpoints; Gate 1 is built locally but remote Linux evidence is blocked because push/PR is unauthorized. The dedicated shell host and host-target package-integrity path are built and locally verified, while session create/resume and full-Gosling handoff receiving still block Gate 4 exit. No production signing, notarization, publication, updater promotion, production identifier, release destination, or domain shell is authorized or implemented.
+Implementation is in Gate 4. Gates 0, 2, and 3 have local GO checkpoints; Gate 1 is built locally but remote Linux evidence is blocked because push/PR is unauthorized. The dedicated shell host and host-target package-integrity path are built and locally verified, while focused full-Gosling handoff receiving still blocks Gate 4 exit. No production signing, notarization, publication, updater promotion, production identifier, release destination, or domain shell is authorized or implemented.
 
 Resume from `build-state.md` and verify the current repository instead of trusting an earlier checkpoint blindly.

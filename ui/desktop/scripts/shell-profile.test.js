@@ -240,6 +240,11 @@ test('compatibility fields reject unsupported schemas, methods, revisions, and d
     raw.compatibility.requiredMethods.push(raw.compatibility.requiredMethods[0]);
   });
   validationError((raw) => {
+    raw.compatibility.requiredMethods = raw.compatibility.requiredMethods.filter(
+      (method) => method !== '_gosling/unstable/session/info'
+    );
+  });
+  validationError((raw) => {
     raw.compatibility.requiredMethods = ['_gosling/unknown'];
   });
 });

@@ -194,6 +194,7 @@ export function createShellRuntimeController(
           acpUrl: runtime.backend.acpUrl,
           profile: options.profile,
           manifest: options.manifest,
+          workingDir: options.workingDir,
           clientName: options.clientName,
           clientVersion: options.clientVersion,
         });

@@ -1,10 +1,10 @@
 # Gate 4 evidence — shared Electron host checkpoint
 
 Date: 2026-08-13
-Decision: **CONTINUE Gate 4 after local checkpoint commit**
+Decision: **CONTINUE Gate 4 after session-runtime checkpoint**
 Baseline revision: `269f04b94`
-Checkpoint revisions: `842356a53`, `ff4567d74`, `d7e4178a5`, `48b4d5c6c`
-Final bootstrap/package checkpoint: recorded by the local commit after this evidence file
+Checkpoint revisions: `842356a53`, `ff4567d74`, `d7e4178a5`, `48b4d5c6c`, `6304a9afe`
+Session-runtime checkpoint: recorded by the local commit after this evidence update
 
 ## Implemented in this checkpoint
 
@@ -12,6 +12,12 @@ Final bootstrap/package checkpoint: recorded by the local commit after this evid
 - exact eight-channel shell IPC allowlist and dedicated frozen `window.goslingShell` preload;
 - main-owned authenticated ACP initialization, method/provisioning/identity/core/schema validation,
   and fail-closed compatibility mapping before session use;
+- main-owned generated-SDK session create/resume after compatibility, with the server owning persisted
+  session identity/directory and no renderer session IPC or automatic production persistence policy;
+- a real controller → minimal host → child → authenticated ACP → create → cleanup → child restart →
+  resume harness using an isolated neutral fixture root and no live provider credential or model call;
+- live incompatible-core proof that transport/child cleanup precedes SQLite readback and leaves zero
+  durable sessions plus an empty process registry;
 - one backend generation owner with fresh secrets, stale-event fencing, expected/unexpected exit
   handling, ordered cleanup, and deterministic retry;
 - dedicated shell main, preload, and renderer Vite entries selected mechanically by Forge;
@@ -75,10 +81,13 @@ pnpm run lint:check
 passed, including 21 i18n transaction tests and 15 locale catalogs
 
 pnpm run test:run
-100 test files passed; 655 tests passed
+100 test files passed; 660 tests passed
 
-focused shell Vitest
-10 files passed; 53 tests passed
+focused session Vitest
+2 files passed; 24 tests passed
+
+live shell session integration
+2 tests passed: create/restart/resume and incompatible-preflight/no-session
 
 focused shell/package ESLint
 passed with zero warnings
@@ -101,14 +110,12 @@ focused touched-file check then passed. No unrelated formatting was changed.
 
 Gate 4 remains open. The following exit criteria are not yet satisfied:
 
-- session create/resume is not implemented or exercised after preflight;
-- no deterministic neutral session probe proves no durable session is created on compatibility
-  failure;
 - full Gosling does not yet receive `gosling://handoff` through a focused routed module;
 - broader renderer recovery/accessibility UI remains Gate 5;
 - full packaged workflow, restart, coexistence, and failure matrix remains Gate 6;
 - Linux, Windows, and macOS x64 package readback remains Gate 7/CI work;
 - remote Linux CI evidence remains blocked because push/PR is not authorized.
 
-This checkpoint proves package construction and integrity readback for the host macOS arm64 neutral
-fixture only. It does not claim Gate 4 complete or any target release-ready.
+This evidence now also proves the unpackaged main-owned session boundary against a real child and
+isolated SQLite store. Packaged session/restart remains Gate 6. Gate 4 is not complete until focused
+full-Gosling handoff receiving lands, and no target is claimed release-ready.

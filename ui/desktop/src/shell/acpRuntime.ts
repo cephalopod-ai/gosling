@@ -1,12 +1,19 @@
 import {
   GoslingClient,
+  type GetSessionInfoResponse_unstable,
   type GoslingClientCallbacks,
   type ShellHandoffPrepareRequest_unstable,
   type ShellHandoffPrepareResponse_unstable,
   type ShellProvisioningReadResponse_unstable,
   type ShellProvisioningValidateResponse_unstable,
 } from '@repo-makeover/gosling-sdk';
-import { PROTOCOL_VERSION, type InitializeResponse } from '@agentclientprotocol/sdk';
+import {
+  PROTOCOL_VERSION,
+  type InitializeResponse,
+  type LoadSessionResponse,
+  type NewSessionResponse,
+} from '@agentclientprotocol/sdk';
+import path from 'node:path';
 import type { ClosableAcpStream } from '../acp/createWebSocketStream';
 import { createWebSocketStream } from '../acp/createWebSocketStream';
 import {
@@ -18,11 +25,19 @@ import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile'
 
 const ACP_INITIALIZE_TIMEOUT_MS = 10_000;
 
+export interface ShellSession {
+  sessionId: string;
+  workingDir: string;
+}
+
 export interface ShellAcpClient {
   signal: globalThis.AbortSignal;
   closed: Promise<void>;
   initialize(params: Parameters<GoslingClient['initialize']>[0]): Promise<InitializeResponse>;
+  newSession(params: Parameters<GoslingClient['newSession']>[0]): Promise<NewSessionResponse>;
+  loadSession(params: Parameters<GoslingClient['loadSession']>[0]): Promise<LoadSessionResponse>;
   gosling: {
+    sessionInfo_unstable(params: { sessionId: string }): Promise<GetSessionInfoResponse_unstable>;
     shellProvisioningRead_unstable(
       params: Record<string, never>
     ): Promise<ShellProvisioningReadResponse_unstable>;
@@ -40,6 +55,8 @@ export interface ShellAcpConnection {
   initializeResponse: InitializeResponse;
   provisioning: ShellProvisioningValidateResponse_unstable;
   compatibility: { compatible: true };
+  createSession(): Promise<ShellSession>;
+  resumeSession(sessionId: string): Promise<ShellSession>;
   prepareHandoff(
     request: ShellHandoffPrepareRequest_unstable
   ): Promise<ShellHandoffPrepareResponse_unstable>;
@@ -162,15 +179,49 @@ function agentVersion(response: InitializeResponse): string {
   return version;
 }
 
+function assertSessionCapabilities(response: InitializeResponse): void {
+  if (response.agentCapabilities?.loadSession !== true) {
+    throw new Error('ACP initialization omitted the required load-session capability');
+  }
+}
+
+function assertSessionId(sessionId: string): string {
+  if (
+    typeof sessionId !== 'string' ||
+    sessionId.length === 0 ||
+    sessionId.length > 512 ||
+    sessionId.trim() !== sessionId
+  ) {
+    throw new Error('sessionId must be a non-empty bounded string');
+  }
+  return sessionId;
+}
+
+function assertAbsoluteWorkingDir(workingDir: string): string {
+  if (typeof workingDir !== 'string' || !path.isAbsolute(workingDir)) {
+    throw new Error('workingDir must be an absolute path');
+  }
+  return path.normalize(workingDir);
+}
+
+function asShellSession(sessionId: string, workingDir: string): ShellSession {
+  return {
+    sessionId: assertSessionId(sessionId),
+    workingDir: assertAbsoluteWorkingDir(workingDir),
+  };
+}
+
 export async function connectShellAcp(input: {
   acpUrl: string;
   profile: ResolvedShellProductProfile;
   manifest: ShellBuildManifest;
+  workingDir: string;
   clientName: string;
   clientVersion: string;
   dependencies?: ShellAcpRuntimeDependencies;
 }): Promise<ShellAcpConnection> {
   const dependencies = input.dependencies ?? defaultDependencies;
+  const workingDir = assertAbsoluteWorkingDir(input.workingDir);
   const stream = dependencies.createStream(assertAuthenticatedLoopbackUrl(input.acpUrl));
   const client = dependencies.createClient(clientCallbacks(), stream);
 
@@ -185,6 +236,7 @@ export async function connectShellAcp(input: {
       dependencies
     );
     const metadata = readShellMetadata(initializeResponse);
+    assertSessionCapabilities(initializeResponse);
     const methodCompatibility = checkShellMethods(
       input.profile.compatibility.requiredMethods,
       metadata.availableMethods
@@ -218,6 +270,29 @@ export async function connectShellAcp(input: {
       initializeResponse,
       provisioning: validation,
       compatibility,
+      createSession: async () => {
+        const created = await client.newSession({
+          cwd: workingDir,
+          mcpServers: [],
+          _meta: { client: 'gosling-shell' },
+        });
+        return asShellSession(String(created.sessionId), workingDir);
+      },
+      resumeSession: async (sessionId) => {
+        const fixedSessionId = assertSessionId(sessionId);
+        const info = await client.gosling.sessionInfo_unstable({ sessionId: fixedSessionId });
+        const session = asShellSession(String(info.session.sessionId), info.session.cwd);
+        if (session.sessionId !== fixedSessionId) {
+          throw new Error('session info returned a different sessionId');
+        }
+        await client.loadSession({
+          sessionId: session.sessionId,
+          cwd: session.workingDir,
+          mcpServers: [],
+          _meta: { gosling: { loadMode: 'compacted', tailLimit: 50 } },
+        });
+        return session;
+      },
       prepareHandoff: (request) => client.gosling.shellHandoffPrepare_unstable(request),
       closed: client.closed,
       close: () => stream.close(),

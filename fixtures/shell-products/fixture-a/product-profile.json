@@ -19,6 +19,7 @@
     "provisioningSchemaVersion": 1,
     "handoffSchemaVersion": 1,
     "requiredMethods": [
+      "_gosling/unstable/session/info",
       "_gosling/unstable/shell/provisioning/validate",
       "_gosling/unstable/shell/handoff/prepare",
       "_gosling/unstable/shell/provisioning/read"
