@@ -29,17 +29,6 @@ impl GoslingAcpAgent {
         args: NewSessionRequest,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         let config = Config::global();
-        let shell_validation = self
-            .shell_provisioning_validation(self.shell_runtime.provisioning())
-            .await;
-        if !shell_validation.valid {
-            return Err(
-                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
-                    "message": "Shell provisioning is invalid",
-                    "validation": shell_validation,
-                })),
-            );
-        }
         let project_id = meta_string(args.meta.as_ref(), "projectId")?;
         let workspace_id = meta_string(args.meta.as_ref(), "workspaceId")?.or_else(|| {
             self.shell_runtime
@@ -74,6 +63,20 @@ impl GoslingAcpAgent {
             .map(|workspace| workspace.working_folder.clone())
             .unwrap_or_else(|| args.cwd.clone());
         validate_absolute_cwd(&effective_cwd)?;
+        let shell_validation = self
+            .shell_provisioning_validation_for_working_dir(
+                self.shell_runtime.provisioning(),
+                &effective_cwd,
+            )
+            .await;
+        if !shell_validation.valid {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "message": "Shell provisioning is invalid",
+                    "validation": shell_validation,
+                })),
+            );
+        }
         let session_type = match meta_string(args.meta.as_ref(), "client")? {
             Some(_) => SessionType::User,
             None => SessionType::Acp,

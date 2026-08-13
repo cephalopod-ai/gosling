@@ -3,8 +3,10 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo};
 use agent_client_protocol_http::HttpClient;
 use gosling::acp::custom_requests::{
-    GetSessionInfoRequest, GetSessionInfoResponse, ShellProvisioningReadRequest,
-    ShellProvisioningReadResponse,
+    GetSessionInfoRequest, GetSessionInfoResponse, GetToolsRequest, GetToolsResponse,
+    GoslingToolCallRequest, GoslingToolCallResponse, SetToolPermissionsRequest,
+    SetToolPermissionsResponse, ShellProvisioningIssueCode, ShellProvisioningReadRequest,
+    ShellProvisioningReadResponse, ToolPermissionEntry, ToolPermissionLevel,
 };
 use gosling::session::{EnabledExtensionsState, ExtensionState, ShellSkillSelectionState};
 use std::net::TcpListener;
@@ -34,7 +36,18 @@ fn free_port() -> u16 {
 }
 
 fn spawn_server(root: &Path, namespace: &str, provisioning: &Path, port: u16) -> ServeProcess {
-    let child = Command::new(env!("CARGO_BIN_EXE_gosling"))
+    spawn_server_from(root, namespace, provisioning, port, None)
+}
+
+fn spawn_server_from(
+    root: &Path,
+    namespace: &str,
+    provisioning: &Path,
+    port: u16,
+    startup_dir: Option<&Path>,
+) -> ServeProcess {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_gosling"));
+    command
         .args([
             "serve",
             "--host",
@@ -58,10 +71,11 @@ fn spawn_server(root: &Path, namespace: &str, provisioning: &Path, port: u16) ->
         .env("GOSLING_DISABLE_KEYRING", "1")
         .env("GOSLING_SERVER__SECRET_KEY", SECRET)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("failed to spawn gosling serve");
-    ServeProcess(child)
+        .stderr(Stdio::null());
+    if let Some(startup_dir) = startup_dir {
+        command.current_dir(startup_dir);
+    }
+    ServeProcess(command.spawn().expect("failed to spawn gosling serve"))
 }
 
 async fn wait_for_server(port: u16) {
@@ -154,6 +168,34 @@ async fn read_session(
         .get_session(session_id, false)
         .await
         .unwrap()
+}
+
+fn write_project_skill(working_dir: &Path, name: &str, description: &str) {
+    let skill_dir = working_dir.join(".agents/skills").join(name);
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        format!(
+            "---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n\n{description}\n"
+        ),
+    )
+    .unwrap();
+}
+
+fn write_skill_provisioning(path: &Path, skill_id: &str) {
+    std::fs::write(
+        path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 1,
+            "identity": { "id": "ignored", "displayName": "Ignored", "version": "0" },
+            "session": {
+                "extensions": [{ "name": "skills" }],
+                "skillIds": [skill_id]
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -291,4 +333,164 @@ async fn spawned_shell_runtime_applies_provisioning_and_isolates_sessions() {
     .await;
     assert_eq!(reloaded.session.session_id.0.as_ref(), session_id);
     restart_task.abort();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn session_preflight_and_runtime_use_the_requested_working_directory() {
+    let root = TempDir::new().unwrap();
+    let startup_dir = TempDir::new().unwrap();
+    let requested_dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(root.path().join("config")).unwrap();
+    std::fs::write(
+        root.path().join("config/config.yaml"),
+        "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\nGOSLING_DISABLE_KEYRING: true\n",
+    )
+    .unwrap();
+    write_project_skill(
+        requested_dir.path(),
+        "requested-only-skill",
+        "Only the requested session directory provides this skill.",
+    );
+    let provisioning_path = root.path().join("requested-provisioning.json");
+    write_skill_provisioning(&provisioning_path, "requested-only-skill");
+
+    let port = free_port();
+    let _server = spawn_server_from(
+        root.path(),
+        "requested-cwd",
+        &provisioning_path,
+        port,
+        Some(startup_dir.path()),
+    );
+    wait_for_server(port).await;
+    let (cx, client_task) = connect(port).await;
+
+    let startup_preflight: ShellProvisioningReadResponse = custom(
+        &cx,
+        "_gosling/unstable/shell/provisioning/read",
+        serde_json::to_value(ShellProvisioningReadRequest {}).unwrap(),
+    )
+    .await;
+    assert!(!startup_preflight.validation.valid);
+    assert!(startup_preflight.validation.issues.iter().any(|issue| {
+        issue.code == ShellProvisioningIssueCode::MissingSkill
+            && issue.path == "session.skillIds[0]"
+    }));
+
+    let session = cx
+        .send_request(NewSessionRequest::new(requested_dir.path()))
+        .block_task()
+        .await
+        .expect("session-specific preflight should use the requested directory");
+    let session_id = session.session_id.0.to_string();
+    let tools: GetToolsResponse = custom(
+        &cx,
+        "_gosling/unstable/tools/list",
+        serde_json::to_value(GetToolsRequest {
+            session_id: session_id.clone(),
+            extension_name: Some("skills".into()),
+        })
+        .unwrap(),
+    )
+    .await;
+    assert!(tools
+        .tools
+        .iter()
+        .any(|tool| tool.name.ends_with("load_skill")));
+    let load_skill_name = tools
+        .tools
+        .iter()
+        .find(|tool| tool.name.ends_with("load_skill"))
+        .unwrap()
+        .name
+        .clone();
+    let _: SetToolPermissionsResponse = custom(
+        &cx,
+        "_gosling/unstable/tools/permissions/set",
+        serde_json::to_value(SetToolPermissionsRequest {
+            tool_permissions: vec![ToolPermissionEntry {
+                tool_name: load_skill_name.clone(),
+                permission: ToolPermissionLevel::AlwaysAllow,
+            }],
+        })
+        .unwrap(),
+    )
+    .await;
+
+    let loaded: GoslingToolCallResponse = custom(
+        &cx,
+        "_gosling/unstable/tools/call",
+        serde_json::to_value(GoslingToolCallRequest {
+            session_id,
+            name: load_skill_name,
+            arguments: serde_json::json!({"name": "requested-only-skill"}),
+        })
+        .unwrap(),
+    )
+    .await;
+    assert!(!loaded.is_error);
+    assert!(serde_json::to_string(&loaded.content)
+        .unwrap()
+        .contains("requested-only-skill"));
+    client_task.abort();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn session_preflight_rejects_skills_available_only_in_the_startup_directory() {
+    let root = TempDir::new().unwrap();
+    let startup_dir = TempDir::new().unwrap();
+    let requested_dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(root.path().join("config")).unwrap();
+    std::fs::write(
+        root.path().join("config/config.yaml"),
+        "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\nGOSLING_DISABLE_KEYRING: true\n",
+    )
+    .unwrap();
+    write_project_skill(
+        startup_dir.path(),
+        "startup-only-skill",
+        "Only the server startup directory provides this skill.",
+    );
+    let provisioning_path = root.path().join("startup-provisioning.json");
+    write_skill_provisioning(&provisioning_path, "startup-only-skill");
+
+    let port = free_port();
+    let _server = spawn_server_from(
+        root.path(),
+        "startup-cwd",
+        &provisioning_path,
+        port,
+        Some(startup_dir.path()),
+    );
+    wait_for_server(port).await;
+    let (cx, client_task) = connect(port).await;
+
+    let startup_preflight: ShellProvisioningReadResponse = custom(
+        &cx,
+        "_gosling/unstable/shell/provisioning/read",
+        serde_json::to_value(ShellProvisioningReadRequest {}).unwrap(),
+    )
+    .await;
+    assert!(startup_preflight.validation.valid);
+
+    let error = cx
+        .send_request(NewSessionRequest::new(requested_dir.path()))
+        .block_task()
+        .await
+        .expect_err("session preflight must reject startup-only selections");
+    let data = error
+        .data
+        .expect("invalid provisioning should include a report");
+    assert_eq!(data["validation"]["valid"], false);
+    assert_eq!(data["validation"]["issues"][0]["code"], "missing_skill");
+    assert_eq!(
+        gosling::session::SessionManager::new(root.path().join("data/shells/startup-cwd"))
+            .list_sessions()
+            .await
+            .unwrap()
+            .len(),
+        0,
+        "invalid session-specific provisioning must fail before durable session creation"
+    );
+    client_task.abort();
 }

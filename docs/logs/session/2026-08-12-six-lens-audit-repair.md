@@ -68,9 +68,13 @@
   Desktop tests passed. ACP schema and TypeScript SDK regeneration also passed.
 - Final review corrections: dynamic provider models are no longer rejected from static
   metadata during preflight (session startup remains authoritative); extension resolution
-  now matches runtime replacement and plugin discovery; validation uses the server's
-  captured default working folder; credential-catalog read failures remain visible; the
-  ACP HTTP client feature is scoped to CLI tests; and namespace isolation is asserted by
-  querying empty session stores rather than relying on absent database files.
+  now matches runtime replacement and plugin discovery; document preflight uses the
+  server's captured default working folder while session preflight uses the resolved
+  effective directory (including workspace working-directory overrides); credential-
+  catalog read failures remain visible; the ACP HTTP client feature is scoped to CLI
+  tests; and namespace isolation is asserted by querying empty session stores rather than
+  relying on absent database files. Directory regressions prove requested-directory
+  project skills load at runtime, startup-only skills are rejected before durable session
+  creation, and workspace overrides supersede the provisioned workspace for validation.
 - Deferred: actual domain adapters and shells, shell-specific icons/updater feeds, built
   package artifacts, and an end-to-end Electron renderer-to-backend shell smoke test.

@@ -45,6 +45,25 @@ pub async fn validate_shell_provisioning(
     builtins: &[String],
     default_working_dir: &Path,
 ) -> ShellProvisioningValidationReport {
+    validate_shell_provisioning_for_working_dir(
+        provisioning,
+        config,
+        workspace_service,
+        builtins,
+        default_working_dir,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn validate_shell_provisioning_for_working_dir(
+    provisioning: &ShellProvisioning,
+    config: &Config,
+    workspace_service: &WorkspaceService,
+    builtins: &[String],
+    default_working_dir: &Path,
+    effective_working_dir: Option<&Path>,
+) -> ShellProvisioningValidationReport {
     let mut issues = Vec::new();
     let mut resolution = ShellProvisioningResolution::default();
 
@@ -81,13 +100,17 @@ pub async fn validate_shell_provisioning(
     }
 
     let session = &provisioning.session;
-    let mut working_dir = default_working_dir.to_path_buf();
+    let mut working_dir = effective_working_dir
+        .unwrap_or(default_working_dir)
+        .to_path_buf();
     let workspace =
         session.workspace_id.as_deref().and_then(|workspace_id| {
             match workspace_service.get(workspace_id) {
                 Ok(workspace) => {
                     resolution.workspace_id = Some(workspace_id.to_string());
-                    working_dir = workspace.working_folder.clone().into();
+                    if effective_working_dir.is_none() {
+                        working_dir = workspace.working_folder.clone().into();
+                    }
                     match workspace_service.list() {
                         Ok((workspaces, _, _)) => {
                             if let Some(entry) = workspaces
@@ -382,5 +405,75 @@ pub async fn validate_shell_provisioning(
         valid: issues.is_empty(),
         issues,
         resolution,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::acp::custom_requests::{
+        ShellIdentity, ShellSessionProvisioning, SHELL_PROVISIONING_SCHEMA_VERSION,
+    };
+    use tempfile::TempDir;
+
+    fn write_project_skill(working_dir: &Path, name: &str) {
+        let skill_dir = working_dir.join(".agents/skills").join(name);
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Workspace override skill\n---\n\n# {name}\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn effective_working_dir_overrides_the_provisioned_workspace_for_skill_validation() {
+        let data = TempDir::new().unwrap();
+        let workspace_dir = TempDir::new().unwrap();
+        let override_dir = TempDir::new().unwrap();
+        let skill_id = "shell-workspace-override-only-skill";
+        write_project_skill(override_dir.path(), skill_id);
+        let workspace_service = WorkspaceService::initialize(data.path(), workspace_dir.path())
+            .await
+            .unwrap();
+        let workspace_id = workspace_service.list().unwrap().1;
+        let provisioning = ShellProvisioning {
+            schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
+            identity: ShellIdentity {
+                id: "test_shell".into(),
+                display_name: "Test Shell".into(),
+                version: "1".into(),
+            },
+            session: ShellSessionProvisioning {
+                workspace_id: Some(workspace_id),
+                skill_ids: Some(vec![skill_id.into()]),
+                ..ShellSessionProvisioning::default()
+            },
+            ..ShellProvisioning::default()
+        };
+
+        let workspace_report = validate_shell_provisioning(
+            &provisioning,
+            Config::global(),
+            &workspace_service,
+            &[],
+            workspace_dir.path(),
+        )
+        .await;
+        assert!(workspace_report
+            .issues
+            .iter()
+            .any(|issue| issue.code == ShellProvisioningIssueCode::MissingSkill));
+
+        let override_report = validate_shell_provisioning_for_working_dir(
+            &provisioning,
+            Config::global(),
+            &workspace_service,
+            &[],
+            workspace_dir.path(),
+            Some(override_dir.path()),
+        )
+        .await;
+        assert!(override_report.valid, "{:?}", override_report.issues);
     }
 }

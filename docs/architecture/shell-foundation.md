@@ -40,7 +40,10 @@ so preflight does not reject a non-empty model merely because it is absent from
 static metadata; session startup performs the authoritative provider model
 availability check. Extension tool names likewise remain runtime-discovered MCP
 metadata, so preflight validates their selection syntax while the extension
-verifies actual names when it loads.
+verifies actual names when it loads. Session creation performs directory-scoped
+validation only after resolving the effective working directory, including a
+workspace working-directory override, so project-local extension and skill
+selection matches the directory used by the runtime.
 
 Gosling remains the settings authority. Namespaced shell runtimes share the
 main Gosling configuration and protected credential catalog while separating
