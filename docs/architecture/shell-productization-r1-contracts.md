@@ -50,7 +50,7 @@ identity: { id, displayName, version }                            # newly expose
 runtimeNamespace: string | null                                   # null until R3 adds it to ShellIdentity/checkShellCompatibility; only ever non-null once genuinely verified, never trusted-but-unlabeled
 compatibility: { expectedVsActual summary, no raw values }
 provisioningIssues: [{ code, path }]                              # codes only, matches existing diagnostic redaction
-session: { sessionId, status: none|creating|active|resuming|closing, resumeKind: fresh|resumed, promptAttempt: { id, phase: idle|streaming|cancelling } | null }
+session: { sessionId, status: none|creating|active|resuming|closing, resumeKind: fresh|resumed, resumeIntegrity: clean|uncertain|not_applicable, promptAttempt: { id, phase: idle|streaming|cancelling } | null }
 adapter: { descriptorId, version, capabilities: string[], status: absent|negotiating|ready|incompatible|crashed } | null
 pendingInteractions: [{ actionId, kind: permission|elicitation|confirm, summary (allowlisted fields only), expiresAtGeneration }]
 ```
@@ -75,9 +75,21 @@ consequence for session/prompt/interaction state explicit, since the Gate 2 cont
 - A live conversation survives a reconnect only via the existing `session.resume` operation: after
   `booting` completes on the new generation, the renderer calls `session.resume` with the known
   `sessionId`. The resulting snapshot's `session.resumeKind` is `resumed` (as opposed to `fresh` for
-  `session.create`), and `promptAttempt` is always `null` immediately after resume — any prompt that
-  was mid-flight when the disconnect happened is not resubmitted automatically; the renderer must
-  call `prompt.submit` again if it wants to continue.
+  `session.create`), and `promptAttempt` is always `null` immediately after resume.
+- **Open problem, explicitly deferred, not silently resolved.** "The renderer must just call
+  `prompt.submit` again" is unsound on its own: if the prior attempt's tool call or mutation already
+  executed and committed server-side before the transport dropped — only the response never reached
+  the client — blind resubmission risks repeating that side effect; the reverse failure (rejecting a
+  legitimate resubmit because the server still considers the old attempt active) is equally possible.
+  Resolving this fully requires an idempotency fence R1 is not positioned to invent correctly without
+  an implementation to test against (PG-12/PG-32 assign this design work to R3). This document instead
+  freezes the minimum truthful signal: `session` gains `resumeIntegrity: clean | uncertain`, computed
+  server-side from whether the resumed session's last turn reached a persisted terminal state before
+  the disconnect. `resumeIntegrity: clean` means `prompt.submit` after resume is safe exactly as a
+  fresh submit would be. `resumeIntegrity: uncertain` means the renderer must be told — via this field,
+  never silently — that resubmission carries a known repeat-side-effect risk; R3 owns building the
+  actual reconciliation (durable attempt outcome query, cancellation-and-terminal-ack rule, or
+  equivalent) before `uncertain` can be eliminated. This contract does not claim that work is done.
 - `session.updates` carries a monotonic per-session `updateSeq` (added to the event payload) that
   resets to 1 on every `session.create`/`session.resume`. This gives the renderer a way to detect a
   gap (a jump in `updateSeq`) without this contract committing to a replay/backfill buffer, which is
@@ -109,7 +121,7 @@ already are:
 | `domain.snapshot` | invoke | none beyond generation | bounded payload <=64 KiB (matches the safe-snapshot ceiling; the R4 neutral fixture's snapshot must fit this bound, and an adapter that would exceed it fails as overproducing) | only when `adapter.status == ready` |
 | `domain.action` | invoke | action name + args, <=16 KiB | bounded payload <=64 KiB, or `CONFIRMATION_REQUIRED` + interaction actionId for an unapproved `mutate` action | `read` actions execute directly; `mutate` actions execute only once their `confirm` interaction (below) is approved |
 | `confirmation.requested` | event | main only | interaction summary <=8 KiB | opaque action ID, allowlisted action-name/args summary only |
-| `confirmation.respond` | invoke | action ID + approve\|deny | status <=1 KiB | main relays to the Rust server, which rejects replay/expired/foreign action ID and, on approve, mints a single-use token and returns it; main relays that opaque value straight into the follow-up `perform_domain_action` call without inspecting, storing, or being able to mint one itself |
+| `confirmation.respond` | invoke | action ID + approve\|deny | on approve: bounded `DomainActionResponse` payload <=64 KiB; on deny/reject: status <=1 KiB | main relays to the Rust server, which rejects replay/expired/foreign action ID and, on approve, executes the already-pending action immediately (it retained the action/input from the original `domain.action` call) and returns the result inline — there is no second `perform_domain_action` round trip and no token ever crosses the main/server boundary |
 
 Explicitly still absent, unchanged from the Gate 2 contract: arbitrary file/settings/clipboard/
 notification/updater access, raw ACP URL/token, MCP proxy URL, server secret, and arbitrary IPC
@@ -177,8 +189,11 @@ Ownership follows the authority boundary each kind already belongs to, not one s
   and the parent plan's binding boundary that domain-operation authorization stays in Rust/backend
   services (`project-shell-readiness-plan.md` §3.3). Electron main relays `confirmation.requested`/
   `confirmation.respond` to and from the server over the existing authenticated ACP channel (a new
-  custom method alongside `domain_snapshot`/`perform_domain_action`); main holds no pending-record
-  state of its own for this kind and cannot resolve it locally. It is not tied to a
+  custom method, `_gosling/unstable/shell/domain/action/confirm`, alongside `domain_snapshot`/
+  `perform_domain_action`); main holds no pending-record state of its own for this kind and cannot
+  resolve it locally. The server-side record additionally retains the pending action's `action`/
+  `input` alongside the fencing keys (not just an opaque ID) — this is what lets approval execute the
+  action immediately instead of requiring the renderer or main to resupply it. It is not tied to a
   `promptAttemptId` the way permission/elicitation interactions are, since a mutation can be
   requested outside an active prompt attempt; it fences on `generation`/`sessionId` only.
 
@@ -226,20 +241,31 @@ DomainActionConfirmRequest      # method: _gosling/unstable/shell/domain/action/
   approve: boolean
 DomainActionConfirmResponse
   status: approved | denied
-  confirmation_token: Option<String>   # present only when status == approved; the value main relays into perform_domain_action
+  result: Option<DomainActionResponse>   # present only when status == approved; the server executes
+                                          # the retained pending action immediately and returns the
+                                          # result inline — there is no second perform_domain_action
+                                          # call and no token is ever serialized to main or the renderer
 
-ActionConfirmationToken        # minted and validated by the Rust server only; the value itself is an opaque
-                                # single-use bearer string that main relays (never mints/forges/validates) — see below
+ActionConfirmationToken        # purely internal Rust-server bookkeeping; minted and consumed atomically
+                                # in the same request that handles approval — never appears on any wire
+                                # DTO, never reaches Electron main, the renderer, or the adapter process
   actionName, adapterVersion, sessionId, generation: binds the token to exactly one action/session/generation
   nonce: single-use, server-minted
   expiresAtGeneration: fails closed on generation rollover
 ```
 
 Before reporting `adapter.status == ready`, the Rust server calls the adapter's `descriptor()` tool
-once and compares the live `{ domain_id, version, actions }` against what
-`ShellProvisioning.domain_adapter` and the consumer manifest's `domainAdapter` block declare; any
-mismatch is `incompatible`, never a silently accepted `ready` (closes the gap a two-tool protocol with
-no descriptor exchange would leave open, per PG-INV-004/PG-INV-009).
+once and compares the live `{ domain_id, version, actions }` against `ShellProvisioning.domain_adapter`
+— both are already available to Rust today. The consumer manifest's `domainAdapter` declaration is a
+*separate*, Electron-side check: the server's authenticated `initialize` response already carries the
+live descriptor back to main today via `_meta.goslingShell.domainAdapter`
+(`shell_capabilities_meta()`, `crates/gosling/src/acp/server.rs:2506-2530` — this metadata exists now,
+this contract adds no new field to it), so `checkShellCompatibility` in Electron main compares *that*
+live descriptor against the manifest's `domainAdapter.descriptorId`/declared actions — no new trusted
+channel is needed to move manifest data into Rust, because Rust never needs to see the manifest at
+all; it only needs to compare against provisioning, which it already has. `ready` requires both
+independent comparisons (Rust vs. provisioning, main vs. manifest) to pass; either failing is
+`incompatible`, never a silently accepted `ready` (PG-INV-004/PG-INV-009).
 
 **Resolution mapping.** `ShellProvisioning.domain_adapter: Option<DomainAdapterDescriptor>` and the
 consumer manifest's `domainAdapter.descriptorId` both identify an adapter by `domain_id` — an ID
@@ -258,27 +284,28 @@ spawns the registered adapter through the existing `ExtensionConfig::Stdio` chil
 fails closed (`ADAPTER_NOT_REGISTERED`) if `domain_id` has no registry entry, rather than falling
 back to `None` silently.
 
-`domain.action` for any action whose descriptor marks it `mutate` requires a valid, unexpired,
-matching-scope `ActionConfirmationToken`, populated into the **already-existing**
-`DomainActionRequest.confirmation_token: Option<String>` field
-(`crates/gosling-sdk-types/src/shell.rs:229-230`) — this contract does not add a new wire field to
-that DTO, it specifies how that field gets filled. Consistent with ADR-0012's server-owned-
-authorization decision, the token is minted and validated **by the Rust server only**, never by
-Electron main, through the dedicated `_gosling/unstable/shell/domain/action/confirm` method (new;
+`domain.action` for any action whose descriptor marks it `mutate` first returns `CONFIRMATION_REQUIRED`
+plus a `confirm` interaction `actionId` rather than executing (the server retains the pending
+`action`/`input` alongside that interaction record). Consistent with ADR-0012's
+server-owned-authorization decision, approval is handled entirely **inside the Rust server** through
+the dedicated `_gosling/unstable/shell/domain/action/confirm` method (new;
 `DomainActionConfirmRequest`/`DomainActionConfirmResponse`, defined above) — `confirmation.respond`
 maps to *this* method, not to `perform_domain_action`, since `DomainActionRequest` has no field for an
-interaction's `action_id` or an approve/deny decision. The server mints the token only once a
-`confirm` interaction (§ "Application-runtime operations and events") for that exact
-action/session/generation is approved, and returns it as `DomainActionConfirmResponse.confirmation_token`.
-Main relays this single-use, short-lived, scope-bound value from that response directly into the
-immediately following `perform_domain_action` call — main holds the value only in transit between two
-server round trips and cannot mint, forge, extend, or
-independently validate it, so this is not a second authority, the same way main already relays the
-ACP loopback secret without being able to generate one. The renderer, in turn, only answers a yes/no
-confirmation prompt and never sees the token at all, closing the same "opaque action ID, not a raw
-credential" pattern already used for permission/elicitation. `read` actions require no token. Replay,
-cross-action, cross-session, cross-generation, or expired tokens fail with a typed
-`ADAPTER_ACTION_UNAUTHORIZED` error and no mutation occurs.
+interaction's `action_id` or an approve/deny decision. On approval the server mints and immediately
+consumes an `ActionConfirmationToken` internally, executes the retained pending action, and returns
+the resulting `DomainActionResponse` shape as `DomainActionConfirmResponse.result` in the *same*
+response — there is no second `perform_domain_action` call, no token relay through Electron main, and
+no wire field anywhere carries the token value; main's role is strictly to relay the
+`confirmation.respond` invoke to the server and relay `DomainActionConfirmResponse` back to the
+renderer unmodified. `DomainActionRequest.confirmation_token`
+(`crates/gosling-sdk-types/src/shell.rs:229-230`) remains present on that DTO for API compatibility
+but is unused by this flow; a future direct (non-confirmation-mediated) caller of
+`perform_domain_action` could still populate it, which is why the field is not removed. The renderer,
+in turn, only answers a yes/no confirmation prompt and never sees a token at all, closing the same
+"opaque action ID, not a raw credential" pattern already used for permission/elicitation. `read`
+actions require no confirmation step. Replay, cross-action, cross-session, cross-generation, or
+expired confirm interactions fail with a typed `ADAPTER_ACTION_UNAUTHORIZED` error and no mutation
+occurs.
 
 ## Error taxonomy additions
 
@@ -309,9 +336,14 @@ Extends the existing table in `shell-productization-contracts.md` §"Error taxon
 - A generation change (reconnect/retry) must not silently replay, duplicate, or auto-resume a prior
   generation's prompt attempt or pending interaction; the renderer must observe the new generation,
   call `session.resume` explicitly, and resubmit any prompt it wants continued.
-- Electron main must never be observed minting, caching, or independently validating an
-  `ActionConfirmationToken` — that authority is Rust-server-only; a main-side token would be a
-  regression of ADR-0012's server-owned-authorization decision.
+- An `ActionConfirmationToken` value must never be observed on any wire DTO, IPC payload, or log —
+  including in transit through Electron main. It is minted, consumed, and discarded entirely inside
+  the Rust server's handling of one `_gosling/unstable/shell/domain/action/confirm` call; a token
+  reaching main, the renderer, or the adapter process at all would be a regression of ADR-0012's
+  server-owned-authorization decision.
+- `prompt.submit` after `session.resume` with `resumeIntegrity: uncertain` must surface that
+  uncertainty to the renderer via the snapshot before submission, not silently behave as if resuming
+  were always safe.
 
 ## Status
 

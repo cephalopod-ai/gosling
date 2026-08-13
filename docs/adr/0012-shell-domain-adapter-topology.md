@@ -49,12 +49,13 @@ Specifically:
   - `snapshot(input)` — matches `DomainSnapshotRequest`, returns the shape of `DomainSnapshotResponse`
     (`crates/gosling-sdk-types/src/shell.rs:204-217`).
   - `action(action, input)` — an **adapter-facing** request shape, deliberately narrower than the
-    canonical `DomainActionRequest`: it omits `confirmation_token`. The confirmation token authorizes
-    the *Rust server's* decision to call this tool at all (§ "Authority" below); it is consumed by the
-    server before dispatch and is never serialized to the adapter process. The server validates the
-    token against the pending `confirm` interaction, and only on success does it call `action` with
-    the token already stripped — the adapter tool schema and the canonical `DomainActionRequest` DTO
-    are intentionally different shapes for different hops, not the same wire message end to end.
+    canonical `DomainActionRequest`: it has no `confirmation_token` field at all, because no token ever
+    reaches this hop. For a `read` action the server calls `action` directly. For a `mutate` action the
+    server never calls `action` until its internal confirm/approve step (§ "Authority" below) succeeds
+    — the confirmation token, where one exists, is minted and consumed entirely inside that internal
+    step, before this tool call happens, and authorizes the *Rust server's* decision to make the call
+    at all. The adapter tool schema and the canonical `DomainActionRequest` DTO are intentionally
+    different shapes for different hops, not the same wire message end to end.
 - **Process ownership.** The Rust server (not Electron main, not the renderer) owns adapter process
   lifecycle — launch, health/readiness, timeout, and cleanup — using the *same* child-process
   supervision code path that already spawns and supervises `ExtensionConfig::Stdio` extensions, not a
@@ -82,28 +83,28 @@ Specifically:
   PG-INV-009). This directly answers PSR-004's disposition requirement: "Until an ADR and conformance
   fixture prove this path, `DomainAdapter` is an unfulfilled internal seam, not a supported consumer
   capability."
-- **Authority.** `domain_snapshot` stays read-only, unchanged from today's shape. `perform_action`
-  additionally requires an **action-bound, single-use confirmation token** minted and validated by
-  the server only, matching the existing `DomainActionRequest.confirmation_token: Option<String>`
-  field (`crates/gosling-sdk-types/src/shell.rs:229-230`) — this ADR does not add a wire field to that
-  DTO, it specifies how that already-existing field gets populated. Minting itself happens through a
-  **new, distinct custom ACP method**, `_gosling/unstable/shell/domain/action/confirm`
+- **Authority.** `domain_snapshot` stays read-only, unchanged from today's shape. `perform_action` for
+  a `mutate` action first returns `CONFIRMATION_REQUIRED` plus a `confirm` interaction ID rather than
+  executing; the server retains the pending `action`/`input` alongside that interaction record so
+  nothing needs to be resupplied later. Approval is handled entirely **inside the Rust server** through
+  a **new, distinct custom ACP method**, `_gosling/unstable/shell/domain/action/confirm`
   (`DomainActionConfirmRequest { action_id, approve: bool } → DomainActionConfirmResponse { status:
-  approved|denied, confirmation_token: Option<String> }`), not by overloading
+  approved|denied, result: Option<DomainActionResponse> }`), not by overloading
   `perform_domain_action`/`DomainActionRequest` — that request shape has no field for an interaction's
   opaque `action_id` or an approve/deny decision, so reusing it would leave `confirmation.respond`
-  uncallable. The server mints the token only after the renderer's explicit approval of a `confirm`
-  interaction naming that exact action (mechanics frozen in `shell-productization-r1-contracts.md`)
-  and returns the opaque value as `confirmation_token` on `DomainActionConfirmResponse`; Electron main
-  relays this single-use, short-lived, scope-bound value from the
-  approval response into the immediately following `perform_domain_action` call without being able to
-  mint, forge, extend, or independently validate it — main is a relay for an opaque bearer value here,
-  the same relationship it already has to the ACP loopback secret, not a second authority. Replayed,
-  expired, cross-action, cross-session, or cross-generation tokens fail closed. The token is never
-  sent to the adapter process — it authorizes the *server's* dispatch decision, not the adapter call.
-  Electron main and the renderer never talk to the adapter process directly — all adapter traffic is
-  proxied through the existing `domain_snapshot`/`perform_domain_action` custom ACP methods the server
-  already exposes.
+  uncallable. On approval, the server mints and immediately consumes an
+  **action-bound, single-use confirmation token internally**, executes the retained pending action,
+  and returns the resulting `DomainActionResponse` shape inline as
+  `DomainActionConfirmResponse.result` — in the *same* response, with no second
+  `perform_domain_action` round trip. The token itself never appears on any wire DTO and never reaches
+  Electron main, the renderer, or the adapter process; `DomainActionRequest.confirmation_token`
+  (`crates/gosling-sdk-types/src/shell.rs:229-230`) is unused by this flow and remains present only for
+  API compatibility with a hypothetical future direct caller. Electron main's role is strictly to
+  relay `confirmation.respond` to the server and relay `DomainActionConfirmResponse` back to the
+  renderer unmodified — it is not a second authority for anything in this flow. Replayed, expired,
+  cross-action, cross-session, or cross-generation confirm interactions fail closed. Electron main and
+  the renderer never talk to the adapter process directly — all adapter traffic is proxied through the
+  existing `domain_snapshot`/`perform_domain_action` custom ACP methods the server already exposes.
 - **Payload ownership.** Native adapter payloads stay opaque to `gosling-cli`/`gosling-server` and to
   the shared Electron host; they are validated only by the project consumer's own generated schema
   (ADR-0010), matching the existing DTO comment "Domain implementations remain responsible for their
