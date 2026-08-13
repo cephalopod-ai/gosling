@@ -63,6 +63,39 @@ case "$target" in
     ;;
 esac
 
+gnu_stat_bin="$test_root/gnu-stat-bin"
+mkdir -p "$gnu_stat_bin"
+cat > "$gnu_stat_bin/stat" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  -c)
+    shift
+    [[ "$1" == '%s' ]] || exit 2
+    shift
+    wc -c < "$1" | tr -d '[:space:]'
+    printf '\n'
+    ;;
+  -f)
+    printf 'File: "%s"\n' "${3:-unknown}"
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+EOF
+chmod +x "$gnu_stat_bin/stat"
+gnu_archive="$(PATH="$gnu_stat_bin:$PATH" GOSLING_V8_CACHE_DIR="$test_root/gnu-stat-cache" GOSLING_V8_SEED_ARCHIVE="$seed" "$helper" --prepare)"
+assert_file "$gnu_archive"
+
+nonnumeric_stat_bin="$test_root/nonnumeric-stat-bin"
+mkdir -p "$nonnumeric_stat_bin"
+cat > "$nonnumeric_stat_bin/stat" <<'EOF'
+#!/usr/bin/env bash
+printf 'not numeric\n'
+EOF
+chmod +x "$nonnumeric_stat_bin/stat"
+assert_fails 'is invalid' env PATH="$nonnumeric_stat_bin:$PATH" GOSLING_V8_CACHE_DIR="$test_root/nonnumeric-stat-cache" GOSLING_V8_SEED_ARCHIVE="$seed" "$helper" --prepare
+
 cache="$test_root/cache"
 archive="$(GOSLING_V8_CACHE_DIR="$cache" GOSLING_V8_SEED_ARCHIVE="$seed" "$helper" --prepare)"
 assert_file "$archive"
