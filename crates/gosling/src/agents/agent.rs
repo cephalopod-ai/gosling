@@ -3138,6 +3138,9 @@ impl Agent {
 
                 for msg in &messages_to_add {
                     session_manager.upsert_message(&session_config.id, msg).await?;
+                    session_manager
+                        .register_completed_assistant_artifacts(&session_config.id, msg)
+                        .await?;
                 }
                 conversation.extend(messages_to_add);
 

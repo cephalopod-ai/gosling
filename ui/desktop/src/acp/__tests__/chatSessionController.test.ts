@@ -12,6 +12,7 @@ import { acpCancelPrompt, acpPromptSession } from '../prompt';
 import { getAcpConnectionGeneration } from '../acpConnection';
 import {
   acpLoadSession,
+  acpListSessionArtifacts,
   acpTruncateSessionConversation,
   isAcpSessionLoadInFlight,
   sessionInfoToSession,
@@ -33,6 +34,7 @@ vi.mock('../chatSessionStore', () => ({
     finishPromptAttemptIfCurrent: vi.fn(),
     isCurrentPromptAttempt: vi.fn(),
     setMessages: vi.fn(),
+    setArtifacts: vi.fn(),
     addPendingLocalSteerMessage: vi.fn(),
     clearActivePromptAttempt: vi.fn(),
     startPromptCancellation: vi.fn(),
@@ -47,6 +49,7 @@ vi.mock('../chatSessionStore', () => ({
 
 vi.mock('../sessions', () => ({
   acpLoadSession: vi.fn(),
+  acpListSessionArtifacts: vi.fn(),
   isAcpSessionLoadInFlight: vi.fn(),
   sessionInfoToSession: vi.fn(),
   acpForkSession: vi.fn(),
@@ -105,6 +108,7 @@ function snapshotWithActivePrompt(activePromptAttemptId: string | null): AcpChat
     session: undefined,
     connectionGeneration: activePromptAttemptId ? 1 : null,
     messages: [],
+    artifacts: [],
     historyCursor: null,
     historyHasMore: false,
     historyLoading: false,
@@ -152,6 +156,7 @@ describe('acpChatSessionController.loadSession', () => {
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(undefined);
     vi.mocked(getAcpConnectionGeneration).mockReturnValue(1);
     vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+    vi.mocked(acpListSessionArtifacts).mockResolvedValue([]);
     vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
   });
 

@@ -755,6 +755,69 @@ pub struct ListSessionMessagesResponse {
     pub newest_row_id: Option<i64>,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/artifacts/list",
+    response = ListSessionArtifactsResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionArtifactsRequest {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionArtifactRelationDto {
+    Created,
+    Modified,
+    #[default]
+    Referenced,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionArtifactProvenanceDto {
+    BuiltInTool,
+    McpResourceLink,
+    ToolMetadata,
+    ToolArgument,
+    AssistantMessage,
+    #[default]
+    CompatibilityInference,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionArtifactDto {
+    pub session_id: String,
+    pub display_path: String,
+    pub resolved_path: String,
+    pub base_working_dir: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    pub relation: SessionArtifactRelationDto,
+    pub provenance: SessionArtifactProvenanceDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    pub first_seen_at: String,
+    pub last_seen_at: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSessionArtifactsResponse {
+    pub artifacts: Vec<SessionArtifactDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    pub total_count: usize,
+}
+
 /// Search persisted messages within one session.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(

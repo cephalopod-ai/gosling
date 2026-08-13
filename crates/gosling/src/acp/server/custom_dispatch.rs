@@ -538,6 +538,14 @@ impl GoslingAcpAgent {
         self.on_list_session_messages(req).await
     }
 
+    #[custom_method(ListSessionArtifactsRequest)]
+    async fn dispatch_list_session_artifacts(
+        &self,
+        req: ListSessionArtifactsRequest,
+    ) -> Result<ListSessionArtifactsResponse, agent_client_protocol::Error> {
+        self.on_list_session_artifacts(req).await
+    }
+
     #[custom_method(SearchSessionMessagesRequest)]
     async fn dispatch_search_session_messages(
         &self,

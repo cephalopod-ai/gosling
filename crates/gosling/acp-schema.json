@@ -4290,6 +4290,135 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/messages/list"
     },
+    "ListSessionArtifactsRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/artifacts/list"
+    },
+    "ListSessionArtifactsResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionArtifactDto"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "artifacts",
+        "totalCount"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/artifacts/list"
+    },
+    "SessionArtifactDto": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "displayPath": {
+          "type": "string"
+        },
+        "resolvedPath": {
+          "type": "string"
+        },
+        "baseWorkingDir": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mimeType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relation": {
+          "$ref": "#/$defs/SessionArtifactRelationDto"
+        },
+        "provenance": {
+          "$ref": "#/$defs/SessionArtifactProvenanceDto"
+        },
+        "sourceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "firstSeenAt": {
+          "type": "string"
+        },
+        "lastSeenAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "displayPath",
+        "resolvedPath",
+        "baseWorkingDir",
+        "relation",
+        "provenance",
+        "firstSeenAt",
+        "lastSeenAt"
+      ]
+    },
+    "SessionArtifactRelationDto": {
+      "type": "string",
+      "enum": [
+        "created",
+        "modified",
+        "referenced"
+      ]
+    },
+    "SessionArtifactProvenanceDto": {
+      "type": "string",
+      "enum": [
+        "built_in_tool",
+        "mcp_resource_link",
+        "tool_metadata",
+        "tool_argument",
+        "assistant_message",
+        "compatibility_inference"
+      ]
+    },
     "SearchSessionMessagesRequest_unstable": {
       "type": "object",
       "properties": {
@@ -6236,6 +6365,19 @@
           "required": [
             "sessionUpdate"
           ]
+        },
+        {
+          "$ref": "#/$defs/ArtifactUpdate",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "artifact_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ]
         }
       ],
       "description": "Discriminated union of gosling-specific session update payloads.\nVariant tag matches ACP's convention (`sessionUpdate: \"<snake_case>\"`).\n\n`discriminator.mapping` is what makes TS codegen (`@hey-api/openapi-ts`)\nemit the correct snake_case tag value even when this enum has a single\nvariant. Add a mapping entry per variant.",
@@ -6243,7 +6385,8 @@
         "propertyName": "sessionUpdate",
         "mapping": {
           "usage_update": "#/$defs/SessionUsageUpdate",
-          "status_message": "#/$defs/StatusMessageUpdate"
+          "status_message": "#/$defs/StatusMessageUpdate",
+          "artifact_update": "#/$defs/ArtifactUpdate"
         }
       }
     },
@@ -6329,6 +6472,17 @@
         "status"
       ],
       "description": "Live UI/session status. This is not conversation transcript content, and\nshould not be persisted or replayed as history."
+    },
+    "ArtifactUpdate": {
+      "type": "object",
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/SessionArtifactDto"
+        }
+      },
+      "required": [
+        "artifact"
+      ]
     },
     "ExtRequest": {
       "properties": {
@@ -6926,6 +7080,15 @@
                   ],
                   "description": "Params for _gosling/unstable/session/messages/list",
                   "title": "ListSessionMessagesRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ListSessionArtifactsRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/artifacts/list",
+                  "title": "ListSessionArtifactsRequest_unstable"
                 },
                 {
                   "allOf": [
@@ -7648,6 +7811,14 @@
                         }
                       ],
                       "title": "ListSessionMessagesResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ListSessionArtifactsResponse_unstable"
+                        }
+                      ],
+                      "title": "ListSessionArtifactsResponse_unstable"
                     },
                     {
                       "allOf": [

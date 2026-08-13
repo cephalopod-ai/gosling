@@ -75,4 +75,37 @@ describe('ArtifactWorkbenchProvider', () => {
       expect(stored.tabs[0].source.path).toBe('/workspace/report.csv');
     });
   });
+
+  it('keeps inventory and preview tabs session scoped without opening the pane', () => {
+    render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+    const artifact = {
+      sessionId: 'session-a',
+      displayPath: 'src/main.rs',
+      resolvedPath: '/workspace/src/main.rs',
+      baseWorkingDir: '/workspace',
+      relation: 'created' as const,
+      provenance: 'built_in_tool' as const,
+      firstSeenAt: '2026-01-01T00:00:00Z',
+      lastSeenAt: '2026-01-01T00:00:00Z',
+    };
+
+    act(() => workbench.setVisibleSession('session-a', [artifact]));
+    expect(workbench.artifacts).toEqual([artifact]);
+    expect(workbench.tabs).toEqual([]);
+    expect(workbench.isOpen).toBe(false);
+
+    act(() => workbench.openArtifact(artifact));
+    expect(workbench.activeTab?.kind).toBe('code');
+
+    act(() => workbench.setVisibleSession('session-b', []));
+    expect(workbench.artifacts).toEqual([]);
+    expect(workbench.tabs).toEqual([]);
+
+    act(() => workbench.setVisibleSession('session-a', [artifact]));
+    expect(workbench.tabs).toHaveLength(1);
+  });
 });

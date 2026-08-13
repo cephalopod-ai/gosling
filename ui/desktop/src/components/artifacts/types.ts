@@ -1,4 +1,5 @@
 export type ArtifactKind =
+  | 'code'
   | 'csv'
   | 'graphml'
   | 'html'

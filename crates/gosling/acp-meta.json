@@ -326,6 +326,11 @@
       "responseType": "ListSessionMessagesResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/session/artifacts/list",
+      "requestType": "ListSessionArtifactsRequest_unstable",
+      "responseType": "ListSessionArtifactsResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/session/messages/search",
       "requestType": "SearchSessionMessagesRequest_unstable",
       "responseType": "SearchSessionMessagesResponse_unstable"

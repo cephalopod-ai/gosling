@@ -15,7 +15,7 @@ describe('ArtifactPane', () => {
   const readArtifactFile = vi.fn();
 
   function Harness() {
-    const { openContent, openFile } = useArtifactWorkbench();
+    const { openContent, openFile, setVisibleSession } = useArtifactWorkbench();
     return (
       <>
         <button
@@ -37,6 +37,27 @@ describe('ArtifactPane', () => {
           onClick={() => openFile('/outputs/report.md', '/outputs', 'workspace-1')}
         >
           Open file
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setVisibleSession(
+              'session-four-files',
+              ['report.md', 'analysis.py', 'engine.rs', 'build.sh'].map((displayPath, index) => ({
+                sessionId: 'session-four-files',
+                displayPath,
+                resolvedPath: `/outputs/${displayPath}`,
+                baseWorkingDir: '/outputs',
+                relation: 'created',
+                provenance: 'built_in_tool',
+                sourceId: `tool-${index}`,
+                firstSeenAt: `2026-01-01T00:00:0${index}Z`,
+                lastSeenAt: `2026-01-01T00:00:0${index}Z`,
+              }))
+            )
+          }
+        >
+          Load four outputs
         </button>
         <ArtifactPane />
       </>
@@ -133,5 +154,24 @@ describe('ArtifactPane', () => {
 
     await waitFor(() => expect(readArtifactFile).toHaveBeenCalledTimes(2), { timeout: 1000 });
     expect(await screen.findByText('Report')).toBeInTheDocument();
+  });
+
+  it('shows four discovered outputs without opening or reading a preview', () => {
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load four outputs' }));
+
+    expect(screen.getByText('Outputs 4')).toBeInTheDocument();
+    expect(screen.getByText('report.md')).toBeInTheDocument();
+    expect(screen.getByText('analysis.py')).toBeInTheDocument();
+    expect(screen.getByText('engine.rs')).toBeInTheDocument();
+    expect(screen.getByText('build.sh')).toBeInTheDocument();
+    expect(readArtifactFile).not.toHaveBeenCalled();
   });
 });

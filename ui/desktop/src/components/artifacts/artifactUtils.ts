@@ -1,22 +1,44 @@
 import type { ArtifactKind } from './types';
 
 const KIND_BY_EXTENSION: Record<string, ArtifactKind> = {
+  bash: 'code',
+  c: 'code',
+  cc: 'code',
+  cpp: 'code',
+  css: 'code',
   csv: 'csv',
   gif: 'image',
   graphml: 'graphml',
+  h: 'code',
+  hpp: 'code',
   htm: 'html',
   html: 'html',
   jpeg: 'image',
   jpg: 'image',
   json: 'json',
   jsonl: 'jsonl',
+  js: 'code',
+  jsx: 'code',
+  mjs: 'code',
   md: 'markdown',
   markdown: 'markdown',
   pdf: 'pdf',
   png: 'image',
+  py: 'code',
+  rb: 'code',
+  rs: 'code',
+  sh: 'code',
   svg: 'svg',
   txt: 'text',
+  toml: 'code',
+  ts: 'code',
+  tsx: 'code',
+  vue: 'code',
   webp: 'image',
+  xml: 'code',
+  yaml: 'code',
+  yml: 'code',
+  zsh: 'code',
 };
 
 const FILE_ARGUMENT_KEYS = new Set([
@@ -171,6 +193,17 @@ export function artifactKindFromMimeType(mimeType: string): ArtifactKind {
   if (normalized === 'application/json') return 'json';
   if (normalized === 'text/html') return 'html';
   if (normalized === 'image/svg+xml') return 'svg';
+  if (
+    normalized.includes('javascript') ||
+    normalized.includes('typescript') ||
+    normalized.includes('python') ||
+    normalized.includes('rust') ||
+    normalized.includes('shell') ||
+    normalized === 'application/toml' ||
+    normalized.endsWith('+xml') ||
+    normalized.endsWith('+yaml')
+  )
+    return 'code';
   if (normalized.startsWith('image/')) return 'image';
   if (normalized.startsWith('text/')) return 'text';
   return 'unknown';

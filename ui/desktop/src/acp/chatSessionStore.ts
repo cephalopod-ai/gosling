@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { GoslingSessionNotification_unstable } from '@repo-makeover/gosling-sdk';
+import type {
+  GoslingSessionNotification_unstable,
+  SessionArtifactDto,
+} from '@repo-makeover/gosling-sdk';
 import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
 import type { TokenState } from '../types/chat';
 import { ChatState } from '../types/chatState';
@@ -18,6 +21,7 @@ export interface AcpChatSessionSnapshot {
   session: Session | undefined;
   connectionGeneration: number | null;
   messages: Message[];
+  artifacts: SessionArtifactDto[];
   historyCursor: string | null;
   historyHasMore: boolean;
   historyLoading: boolean;
@@ -93,6 +97,7 @@ export interface AcpChatSessionActions {
   ): AcpChatSessionSnapshot;
 
   setMessages(sessionId: string, messages: Message[]): AcpChatSessionSnapshot;
+  setArtifacts(sessionId: string, artifacts: SessionArtifactDto[]): AcpChatSessionSnapshot;
   setHistoryPageState(
     sessionId: string,
     state: {
@@ -189,6 +194,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       session: undefined,
       connectionGeneration: null,
       messages: [],
+      artifacts: [],
       historyCursor: null,
       historyHasMore: false,
       historyLoading: false,
@@ -268,6 +274,12 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     entry.messages = cloneMessages(messages);
     retainPendingLocalSteerMessageIds(entry);
     entry.adapter = createAdapterForEntry(entry);
+    return notify(sessionId, entry);
+  };
+
+  const setArtifacts: AcpChatSessionActions['setArtifacts'] = (sessionId, artifacts) => {
+    const entry = getOrCreateEntry(sessionId);
+    entry.artifacts = deduplicateArtifacts(artifacts);
     return notify(sessionId, entry);
   };
 
@@ -580,6 +592,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     failSessionLoad,
     setSessionLoadError,
     setMessages,
+    setArtifacts,
     setHistoryPageState,
     prependMessages,
     addPendingLocalSteerMessage,
@@ -660,6 +673,7 @@ function actionsFromStore(store: AcpChatSessionStoreInternal): AcpChatSessionAct
     failSessionLoad: store.failSessionLoad,
     setSessionLoadError: store.setSessionLoadError,
     setMessages: store.setMessages,
+    setArtifacts: store.setArtifacts,
     setHistoryPageState: store.setHistoryPageState,
     prependMessages: store.prependMessages,
     addPendingLocalSteerMessage: store.addPendingLocalSteerMessage,
@@ -701,6 +715,9 @@ function applyChatStateChanges(entry: StoreEntry, changes: AcpChatStateChange[])
       case 'localSteerConfirmed':
         entry.pendingLocalSteerMessageIds.delete(change.messageId);
         break;
+      case 'artifactUpserted':
+        entry.artifacts = deduplicateArtifacts([...entry.artifacts, change.artifact]);
+        break;
       case 'notification':
         entry.notifications = [...entry.notifications, change.notification];
         break;
@@ -710,6 +727,7 @@ function applyChatStateChanges(entry: StoreEntry, changes: AcpChatStateChange[])
 
 function resetReplayState(entry: StoreEntry): void {
   entry.messages = [];
+  entry.artifacts = [];
   entry.historyCursor = null;
   entry.historyHasMore = false;
   entry.historyLoading = false;
@@ -817,6 +835,7 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     session: entry.session,
     connectionGeneration: entry.connectionGeneration,
     messages: entry.messages,
+    artifacts: [...entry.artifacts],
     historyCursor: entry.historyCursor,
     historyHasMore: entry.historyHasMore,
     historyLoading: entry.historyLoading,
@@ -831,6 +850,16 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     activeRunId: entry.activeRunId,
     pendingCancelPromptAttemptId: entry.pendingCancelPromptAttemptId,
   };
+}
+
+function deduplicateArtifacts(artifacts: SessionArtifactDto[]): SessionArtifactDto[] {
+  const byPath = new Map<string, SessionArtifactDto>();
+  for (const artifact of artifacts) {
+    byPath.set(artifact.resolvedPath, artifact);
+  }
+  return [...byPath.values()].sort((left, right) =>
+    left.firstSeenAt.localeCompare(right.firstSeenAt)
+  );
 }
 
 function cloneMessages(messages: Message[]): Message[] {

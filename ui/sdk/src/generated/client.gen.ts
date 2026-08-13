@@ -92,6 +92,8 @@ import type {
   ListPromptsResponse_unstable,
   ListProvidersRequest_unstable,
   ListProvidersResponse_unstable,
+  ListSessionArtifactsRequest_unstable,
+  ListSessionArtifactsResponse_unstable,
   ListSessionMessagesRequest_unstable,
   ListSessionMessagesResponse_unstable,
   ListSlashCommandsRequest_unstable,
@@ -214,6 +216,7 @@ import {
   zListAgentMentionsResponse_unstable,
   zListPromptsResponse_unstable,
   zListProvidersResponse_unstable,
+  zListSessionArtifactsResponse_unstable,
   zListSessionMessagesResponse_unstable,
   zListSlashCommandsResponse_unstable,
   zListSourcesResponse_unstable,
@@ -966,6 +969,18 @@ export class GoslingExtClient {
     return zListSessionMessagesResponse_unstable.parse(
       raw,
     ) as ListSessionMessagesResponse_unstable;
+  }
+
+  async sessionArtifactsList_unstable(
+    params: ListSessionArtifactsRequest_unstable,
+  ): Promise<ListSessionArtifactsResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/artifacts/list",
+      params,
+    );
+    return zListSessionArtifactsResponse_unstable.parse(
+      raw,
+    ) as ListSessionArtifactsResponse_unstable;
   }
 
   async sessionMessagesSearch_unstable(

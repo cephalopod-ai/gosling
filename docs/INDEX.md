@@ -18,6 +18,7 @@ for the relationship to cephalopod-ai/gosling.
 - [INTENT.md](INTENT.md) — fork intent and scope
 - [TODO.md](TODO.md) — outstanding work
 - [adr/](adr/) — architecture decision records
+- [adr/0013-session-artifact-inventory.md](adr/0013-session-artifact-inventory.md) — durable session-scoped Outputs inventory and preview authorization boundary
 - [build/](build/) — build documentation
 - [cloud/](cloud/) — cloud deployment notes
 - [test_scenarios/](test_scenarios/) — test scenario definitions

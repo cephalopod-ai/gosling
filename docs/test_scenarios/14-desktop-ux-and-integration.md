@@ -7,6 +7,7 @@ screenshots and both renderer/backend logs for every failure.
 ---
 
 ### DT-01 — Onboarding interruption and resume
+
 - Goal: an unconfigured user can leave and resume onboarding without a dead end.
 - Category: first launch / interruption
 - Preconditions: fresh disposable root and Desktop installation.
@@ -15,6 +16,7 @@ screenshots and both renderer/backend logs for every failure.
 - Observe: keyboard focus, default button, and secret-field clearing after quit.
 
 ### DT-02 — Window close versus application quit
+
 - Goal: macOS close, reopen, quit, and relaunch have distinct, honest lifecycle behavior.
 - Category: lifecycle / persistence
 - Preconditions: Desktop with two chats, one actively streaming from a controllable delayed fixture.
@@ -23,6 +25,7 @@ screenshots and both renderer/backend logs for every failure.
 - Observe: Dock indicator, menu enablement, and approval dialogs owned by a closed window.
 
 ### DT-03 — Keyboard-only navigation and focus
+
 - Goal: all primary Desktop workflows are reachable without a pointer.
 - Category: accessibility / navigation
 - Preconditions: Desktop configured with one session and one workspace.
@@ -31,6 +34,7 @@ screenshots and both renderer/backend logs for every failure.
 - Observe: screen-reader names for icon-only controls using macOS Accessibility Inspector if available.
 
 ### DT-04 — Shortcut rebinding, conflicts, and persistence
+
 - Goal: user-defined shortcuts validate conflicts and survive relaunch.
 - Category: settings / persistence
 - Preconditions: Desktop Keyboard settings; record defaults and real system-level shortcuts to avoid.
@@ -39,6 +43,7 @@ screenshots and both renderer/backend logs for every failure.
 - Observe: global versus app-local scope and behavior when focus is in the composer.
 
 ### DT-05 — Narrow window, resize, and long-content layout
+
 - Goal: Desktop remains usable over its supported size range.
 - Category: boundary / navigation
 - Preconditions: session containing a long unbroken URL, wide code block, long tool name, deep list, and long workspace/model names.
@@ -46,23 +51,26 @@ screenshots and both renderer/backend logs for every failure.
 - Expected: no overlapping controls, unreachable buttons, horizontal page escape, blank panel, or lost content; intended panes scroll independently; layout recovers after expansion.
 - Observe: text truncation has accessible full-name affordance where selection depends on it.
 
-### DT-06 — Artifact preview type matrix
-- Goal: supported artifacts preview safely and unsupported content fails clearly.
+### DT-06 — Artifact inventory and preview type matrix
+
+- Goal: completed outputs populate automatically, supported artifacts preview safely, and unsupported content fails clearly.
 - Category: files / boundary
 - Preconditions: small known fixtures for Markdown, JSON, HTML, image, PDF, SVG, empty file, unknown binary, and a missing path.
-- Steps: open each fixture through the artifact links/workbench; switch tabs rapidly; use Save a copy where offered; compare source hash before and after preview.
-- Expected: supported formats render the intended content; active content cannot execute privileged app actions; malformed/unknown/missing files show a bounded error; preview never mutates source; saved copy hash matches source where no conversion is promised.
+- Steps: complete one turn that writes/references four fixtures; verify `Outputs 4` before clicking a chip; open each fixture through the inventory; switch tabs rapidly; use Save a copy where offered; compare source hash before and after preview.
+- Expected: the inventory populates without opening the pane or reading a file; `.rs`, `.ts`, `.py`, and `.sh` are code; unknown files remain listed; supported formats render the intended content; active content cannot execute privileged app actions; malformed/unknown/missing files show a bounded error; preview never mutates source; saved copy hash matches source where no conversion is promised.
 - Observe: large-file warning and renderer console errors.
 
-### DT-07 — Artifact workbench state across navigation and relaunch
-- Goal: pane open state, width, tabs, and active selection restore without stale-file confusion.
+### DT-07 — Session artifact state across navigation and relaunch
+
+- Goal: durable inventory and session-scoped preview state restore without cross-session or stale-file confusion.
 - Category: persistence / navigation
 - Preconditions: three artifact tabs from two sessions/workspaces; record tab order and pane width.
 - Steps: resize and select the middle tab; navigate away and back; close one tab; quit/relaunch; move one source file before another relaunch.
-- Expected: navigation preserves current state; closed tab stays closed; relaunch restores only documented state; moved source becomes a named missing-file state and is not replaced with another file of the same basename.
+- Expected: switching sessions immediately replaces the inventory and restores only that session's tabs/selection; closed tab stays closed; relaunch reloads inventory from ACP and restores only documented preview state; moved source becomes a named missing-file state and is not replaced with another file of the same basename. Inventory presence alone never grants access to an outside-root path.
 - Observe: state isolation across multiple Desktop windows.
 
 ### DT-08 — Archive and restore session lifecycle
+
 - Goal: archiving changes visibility, not history integrity.
 - Category: delete-undo / persistence
 - Preconditions: three completed sessions including one pinned workspace session and one open in another window.
@@ -71,6 +79,7 @@ screenshots and both renderer/backend logs for every failure.
 - Observe: counts, selection after removal, and CLI list agreement.
 
 ### DT-09 — External backend authentication and reconnect
+
 - Goal: Desktop can switch to a remote gosling backend and recover from bad settings.
 - Category: settings / recovery
 - Preconditions: local `gosling serve` on a test port with known secret and certificate mode; embedded backend healthy.
@@ -79,6 +88,7 @@ screenshots and both renderer/backend logs for every failure.
 - Observe: retry cadence and whether an old authenticated socket survives credential replacement.
 
 ### DT-10 — Native notifications and denied permission
+
 - Goal: task notifications respect app setting and macOS permission state.
 - Category: settings / interruption
 - Preconditions: controllable delayed completion; Desktop notification toggle; ability to reset permission for the test app if safe.

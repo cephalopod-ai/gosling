@@ -492,6 +492,38 @@ impl GoslingAcpAgent {
         })
     }
 
+    pub(super) async fn on_list_session_artifacts(
+        &self,
+        req: ListSessionArtifactsRequest,
+    ) -> Result<ListSessionArtifactsResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+        let page = self
+            .session_manager
+            .list_session_artifacts(session_id, req.cursor.as_deref(), req.limit.unwrap_or(100))
+            .await
+            .map_err(|error| {
+                if error.to_string().contains("invalid digit") {
+                    agent_client_protocol::Error::invalid_params().data("invalid artifact cursor")
+                } else {
+                    agent_client_protocol::Error::internal_error().data(error.to_string())
+                }
+            })?;
+        Ok(ListSessionArtifactsResponse {
+            artifacts: page
+                .artifacts
+                .into_iter()
+                .map(session_artifact_dto)
+                .collect(),
+            next_cursor: page.next_cursor,
+            total_count: page.total_count,
+        })
+    }
+
     pub(super) async fn on_search_session_messages(
         &self,
         req: SearchSessionMessagesRequest,

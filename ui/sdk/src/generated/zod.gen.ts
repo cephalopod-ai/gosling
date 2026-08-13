@@ -1801,6 +1801,65 @@ export const zListSessionMessagesResponse_unstable = z.object({
     ]).optional()
 });
 
+export const zListSessionArtifactsRequest_unstable = z.object({
+    sessionId: z.string(),
+    cursor: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    limit: z.union([
+        z.number().int().gte(0),
+        z.null()
+    ]).optional()
+});
+
+export const zSessionArtifactRelationDto = z.enum([
+    'created',
+    'modified',
+    'referenced'
+]);
+
+export const zSessionArtifactProvenanceDto = z.enum([
+    'built_in_tool',
+    'mcp_resource_link',
+    'tool_metadata',
+    'tool_argument',
+    'assistant_message',
+    'compatibility_inference'
+]);
+
+export const zSessionArtifactDto = z.object({
+    sessionId: z.string(),
+    displayPath: z.string(),
+    resolvedPath: z.string(),
+    baseWorkingDir: z.string(),
+    workspaceId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    mimeType: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    relation: zSessionArtifactRelationDto,
+    provenance: zSessionArtifactProvenanceDto,
+    sourceId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    firstSeenAt: z.string(),
+    lastSeenAt: z.string()
+});
+
+export const zListSessionArtifactsResponse_unstable = z.object({
+    artifacts: z.array(zSessionArtifactDto),
+    nextCursor: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    totalCount: z.number().int().gte(0)
+});
+
 /**
  * Search persisted messages within one session.
  */
@@ -2587,6 +2646,10 @@ export const zStatusMessageUpdate = z.object({
     status: zStatusMessage
 });
 
+export const zArtifactUpdate = z.object({
+    artifact: zSessionArtifactDto
+});
+
 /**
  * Discriminated union of gosling-specific session update payloads.
  * Variant tag matches ACP's convention (`sessionUpdate: "<snake_case>"`).
@@ -2601,7 +2664,10 @@ export const zGoslingSessionUpdate = z.union([
     }).and(zSessionUsageUpdate),
     z.object({
         sessionUpdate: z.literal('status_message')
-    }).and(zStatusMessageUpdate)
+    }).and(zStatusMessageUpdate),
+    z.object({
+        sessionUpdate: z.literal('artifact_update')
+    }).and(zArtifactUpdate)
 ]);
 
 /**
@@ -2683,6 +2749,7 @@ export const zExtRequest = z.object({
             zGetSessionInfoRequest_unstable,
             zRecordSessionModelSwitchRequest_unstable,
             zListSessionMessagesRequest_unstable,
+            zListSessionArtifactsRequest_unstable,
             zSearchSessionMessagesRequest_unstable,
             zGetSessionSummaryRequest_unstable,
             zTruncateSessionConversationRequest_unstable,
@@ -2778,6 +2845,7 @@ export const zExtResponse = z.union([
                 zGetSessionInfoResponse_unstable,
                 zRecordSessionModelSwitchResponse_unstable,
                 zListSessionMessagesResponse_unstable,
+                zListSessionArtifactsResponse_unstable,
                 zSearchSessionMessagesResponse_unstable,
                 zGetSessionSummaryResponse_unstable,
                 zCreateSourceResponse_unstable,
