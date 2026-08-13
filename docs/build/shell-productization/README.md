@@ -19,6 +19,15 @@ This package is the durable, resumable plan for turning the merged Gosling shell
 
 ## Current status
 
-Gates 0–4 remain historical foundation evidence. R0 is merged on `main` at `3feffca7c` and closed by two clean Linux Rust executions: PR run `31731952749` and merged-main run `31732990062`; later `main` CI run `31744291492` also passed at `e5af0f640`. The reassessment still reopens omitted Gate 4 failure-path acceptance and replaces forward Gates 5–8 with R0–R8. The renderer remains lifecycle-only; main-owned ACP has no usable renderer session/prompt/update API; the Rust domain adapter has no production registration path; and no external project renderer composition seam or reusable shell workflow exists. The next action is the R1 architecture work detailed in the pre-GUI plan—not shared UI implementation.
+Gates 0–4 remain historical foundation evidence. R0 is merged on `main` at `3feffca7c` and closed by two clean Linux Rust executions: PR run `31731952749` and merged-main run `31732990062`; later `main` CI run `31744291492` also passed at `e5af0f640`. The reassessment still reopens omitted Gate 4 failure-path acceptance and replaces forward Gates 5–8 with R0–R8. The renderer remains lifecycle-only; main-owned ACP has no usable renderer session/prompt/update API; the Rust domain adapter has no production registration path; and no external project renderer composition seam or reusable shell workflow exists.
+
+As of 2026-08-13, ADR-0010–0012 and a companion R1 contracts addendum
+([`../../adr/0010-project-shell-consumer-composition.md`](../../adr/0010-project-shell-consumer-composition.md),
+[`../../adr/0011-shell-application-runtime-boundary.md`](../../adr/0011-shell-application-runtime-boundary.md),
+[`../../adr/0012-shell-domain-adapter-topology.md`](../../adr/0012-shell-domain-adapter-topology.md),
+[`../../architecture/shell-productization-r1-contracts.md`](../../architecture/shell-productization-r1-contracts.md))
+are drafted as **proposed**, pending operator/architecture acceptance — see `build-state.md` for the
+current disposition. No R2–R4 code was written; that remains blocked until R1 acceptance closes the
+open topology/authority decisions.
 
 No production signing, notarization, publication, updater promotion, production identifier, release destination, or named project shell is authorized or implemented. Resume from `build-state.md` and verify the current repository instead of trusting an earlier checkpoint blindly.
