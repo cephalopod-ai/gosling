@@ -1,11 +1,12 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-13 after R0 remote verification
+Updated: 2026-08-13 after R1 ADR drafting
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
+R1 draft revision: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
 Mode: architecture readiness; no named shell, production release, signing, publication, or updater activation
 Completed gate: **R0 — baseline CI restored and evidence reconciled**
-Current gate: **R1 — freeze project-shell topology and application contracts**
+Current gate: **R1 — freeze project-shell topology and application contracts (ADR-0010–0012 and the R1 contracts addendum drafted as `proposed`; NOT yet accepted — R1 is not complete)**
 
 ## Intent
 
@@ -90,15 +91,43 @@ Gate 4 remains a historical local process-boundary acceptance. R0 does not relab
 
 R3 must implement truthful event/state/recovery behavior. R6 must exercise these paths in the packaged workflow and coexistence matrix.
 
+## R1 drafting status (2026-08-13)
+
+ADR-0010 (project-shell consumer composition), ADR-0011 (main-owned application runtime and
+renderer capability boundary), and ADR-0012 (domain adapter lifecycle, transport, and authority) are
+drafted at `docs/adr/0010-project-shell-consumer-composition.md`,
+`docs/adr/0011-shell-application-runtime-boundary.md`, and
+`docs/adr/0012-shell-domain-adapter-topology.md`. Each is grounded in the exact current source
+(`ui/desktop/shell.html`, `vite.shell.renderer.config.mts`, `forge.config.ts`,
+`GoslingShellAPI`/`ipc.ts`, `ShellAcpConnection`/`acpRuntime.ts`, `DomainAdapter`/`ShellRuntime` in
+`crates/gosling/src/acp/shell.rs`, and `build_shell_runtime` in `crates/gosling-cli/src/cli.rs`) and
+each selects the plan's preferred direction: separate-repository consumer topology (ADR-0010),
+main-owned bounded session/prompt/permission/elicitation operations (ADR-0011), and a versioned
+out-of-process domain adapter (ADR-0012). The companion schema freeze is
+`docs/architecture/shell-productization-r1-contracts.md` (consumer manifest v1, safe runtime
+snapshot v2, application-runtime operations/events, interaction records, adapter descriptor and
+confirmation token, error taxonomy additions, negative-space rules).
+
+**Status is `proposed`, not `accepted for implementation`.** Per the parent plan
+("architecture review accepts one topology and rejects alternatives explicitly... Draft ADRs are not
+R1 completion"), R1 does not exit until an independent architecture/operator review accepts these
+three ADRs and confirms no open P0 topology/authority decision remains — in particular the two
+items `assumption-ledger.md` still lists as `unresolved` (SHP-ASM-029 separate-repo vs
+isolated-workspace, SHP-ASM-031 out-of-process adapter). This session did not implement any R2–R4
+code (Vite/Forge, IPC/preload, Rust adapter registration): the plan explicitly forbids that before
+R1 schemas are frozen and accepted, and the topology/transport choices are named as human decisions
+the plan requires the operator to accept, not an agent to self-certify.
+
 ## Strict next actions
 
 Execute the dependency-aware work packages in
 [`pre-gui-backend-implementation-plan.md`](pre-gui-backend-implementation-plan.md). In summary:
 
-1. **R1 architecture only:** write and review ADR-0010–0012 for consumer composition, main-owned application runtime, and domain adapter lifecycle/transport.
-2. Freeze consumer manifest, safe runtime snapshot, session/prompt/update/permission, and domain operation contracts.
-3. Review the preferred separate-consumer/out-of-process-adapter model against the isolated-workspace alternative.
-4. Only then implement R2/R3. Shared UI is R5, not the next task.
+1. **Obtain operator/architecture review and acceptance of ADR-0010–0012** and the R1 contracts
+   addendum drafted above. This is the remaining R1 exit criterion.
+2. Only after acceptance, implement R2 (consumer resolver/Vite/Forge) and pure R3 reducers per the
+   plan's safe-concurrency rule.
+3. Only then implement the rest of R3/R4. Shared UI is R5, not the next task.
 
 ## Named-shell start policy
 
