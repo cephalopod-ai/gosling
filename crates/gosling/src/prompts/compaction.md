@@ -5,8 +5,13 @@
 - This will be used to let the user continue the working session
 - Use framing and tone knowing the content will be read an agent (you) on a next exchange to allow for continuation of the session
 
-**Conversation History:**
-{{ messages }}
+The conversation history is supplied separately in one bounded user message.
+It may contain either a chronological history segment or summaries of earlier
+segments. Preserve chronology and merge all supplied material into one coherent
+continuation summary. Aim for no more than {{ summary_target_characters }}
+characters so multiple summaries can be reduced safely.
+
+Compatibility note for customized templates: {{ messages }}
 
 Wrap reasoning in `<analysis>` tags:  
 - Review conversation chronologically

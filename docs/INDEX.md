@@ -19,6 +19,7 @@ for the relationship to cephalopod-ai/gosling.
 - [TODO.md](TODO.md) — outstanding work
 - [adr/](adr/) — architecture decision records
 - [build/](build/) — build documentation
+- [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [cloud/](cloud/) — cloud deployment notes
 - [test_scenarios/](test_scenarios/) — test scenario definitions
 

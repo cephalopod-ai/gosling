@@ -30,7 +30,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 use tokio::pin;
-use tokio::sync::{oneshot, Mutex as TokioMutex};
+use tokio::sync::{oneshot, Mutex as TokioMutex, OnceCell as TokioOnceCell};
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::io::StreamReader;
 
@@ -96,15 +96,43 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     },
 ];
 
+#[derive(Debug, Clone, Deserialize)]
+struct ChatGptCodexRouteModel {
+    slug: String,
+    #[serde(default)]
+    context_window: Option<usize>,
+    #[serde(default = "default_effective_context_window_percent")]
+    effective_context_window_percent: usize,
+    #[serde(default)]
+    supported_in_api: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatGptCodexModelsResponse {
+    models: Vec<ChatGptCodexRouteModel>,
+}
+
+const fn default_effective_context_window_percent() -> usize {
+    95
+}
+
+fn effective_route_context_limit(model: &ChatGptCodexRouteModel) -> Option<usize> {
+    let percent = model.effective_context_window_percent.min(100);
+    let context_window = model.context_window?;
+    (percent > 0)
+        .then(|| context_window.saturating_mul(percent) / 100)
+        .filter(|limit| *limit > 0)
+}
+
 fn uses_responses_lite(model_name: &str) -> bool {
     matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna")
 }
 
 pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
     match model_name {
-        "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" => Some(372_000),
-        "gpt-5.5" | "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.2" => Some(272_000),
-        "gpt-5.3-codex" => Some(400_000),
+        "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4"
+        | "gpt-5.4-mini" | "gpt-5.2" => Some(258_400),
+        "gpt-5.3-codex" => Some(380_000),
         _ => None,
     }
 }
@@ -986,6 +1014,8 @@ pub struct ChatGptCodexProvider {
     client: reqwest::Client,
     #[serde(skip)]
     request_builder: RequestBuilderDecorator,
+    #[serde(skip)]
+    route_models: TokioOnceCell<Vec<ChatGptCodexRouteModel>>,
 }
 
 impl ChatGptCodexProvider {
@@ -1011,7 +1041,72 @@ impl ChatGptCodexProvider {
             name: CHATGPT_CODEX_PROVIDER_NAME.to_string(),
             client,
             request_builder: crate::session_context::session_id_request_builder(),
+            route_models: TokioOnceCell::new(),
         })
+    }
+
+    async fn fetch_route_models(&self) -> Result<&[ChatGptCodexRouteModel], ProviderError> {
+        let models = self
+            .route_models
+            .get_or_try_init(|| async {
+                let token_data = self
+                    .auth_provider
+                    .get_valid_token()
+                    .await
+                    .map_err(|e| ProviderError::Authentication(e.to_string()))?;
+                let mut headers = reqwest::header::HeaderMap::new();
+                if let Some(account_id) = &token_data.account_id {
+                    headers.insert(
+                        reqwest::header::HeaderName::from_static("chatgpt-account-id"),
+                        reqwest::header::HeaderValue::from_str(account_id)
+                            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?,
+                    );
+                }
+
+                let request = self
+                    .client
+                    .get(format!(
+                        "{CODEX_API_ENDPOINT}/models?client_version={}",
+                        env!("CARGO_PKG_VERSION")
+                    ))
+                    .header(
+                        "Authorization",
+                        format!("Bearer {}", token_data.access_token),
+                    )
+                    .headers(headers);
+                let response = (self.request_builder)(request)
+                    .map_err(|e| ProviderError::ExecutionError(e.to_string()))?
+                    .send()
+                    .await
+                    .map_err(ProviderError::from)?;
+                let response = handle_status(response).await?;
+                let catalog = response
+                    .json::<ChatGptCodexModelsResponse>()
+                    .await
+                    .map_err(|e| {
+                        ProviderError::ExecutionError(format!(
+                            "Failed to decode ChatGPT Codex model catalog: {e}"
+                        ))
+                    })?;
+                Ok::<_, ProviderError>(catalog.models)
+            })
+            .await?;
+        Ok(models.as_slice())
+    }
+
+    async fn route_model_info(&self, model_name: &str) -> Option<ModelInfo> {
+        let route_model = self
+            .fetch_route_models()
+            .await
+            .ok()?
+            .iter()
+            .find(|model| model.slug == model_name)?;
+        let mut model = ModelInfo::new(
+            route_model.slug.clone(),
+            effective_route_context_limit(route_model)?,
+        );
+        model.reasoning = true;
+        Some(model)
     }
 
     async fn post_streaming(
@@ -1110,7 +1205,11 @@ impl Provider for ChatGptCodexProvider {
     }
 
     async fn get_context_limit(&self, model_config: &ModelConfig) -> Result<usize, ProviderError> {
-        Ok(context_limit_for_model(&model_config.model_name)
+        Ok(self
+            .route_model_info(&model_config.model_name)
+            .await
+            .map(|model| model.context_limit)
+            .or_else(|| context_limit_for_model(&model_config.model_name))
             .unwrap_or_else(|| model_config.context_limit()))
     }
 
@@ -1179,7 +1278,38 @@ impl Provider for ChatGptCodexProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        Ok(known_model_names().into_iter().map(String::from).collect())
+        let discovered = self.fetch_route_models().await.ok().map(|models| {
+            models
+                .iter()
+                .filter(|model| model.supported_in_api)
+                .map(|model| model.slug.clone())
+                .collect::<Vec<_>>()
+        });
+        Ok(discovered
+            .filter(|models| !models.is_empty())
+            .unwrap_or_else(|| known_model_names().into_iter().map(String::from).collect()))
+    }
+
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        let discovered = self.fetch_route_models().await.ok().map(|models| {
+            models
+                .iter()
+                .filter(|model| model.supported_in_api)
+                .filter_map(|route_model| {
+                    let mut model = ModelInfo::new(
+                        route_model.slug.clone(),
+                        effective_route_context_limit(route_model)?,
+                    );
+                    model.reasoning = true;
+                    Some(model)
+                })
+                .collect::<Vec<_>>()
+        });
+        Ok(discovered
+            .filter(|models| !models.is_empty())
+            .unwrap_or_else(|| {
+                <Self as gosling_providers::base::ProviderDescriptor>::metadata().known_models
+            }))
     }
 }
 
@@ -1588,9 +1718,9 @@ mod tests {
         assert_eq!(reasoning_levels_for_model(model), expected);
     }
 
-    #[test_case("gpt-5.6-luna", true, Some(372_000); "gpt 5.6 luna")]
-    #[test_case("gpt-5.4-mini", false, Some(272_000); "gpt 5.4 mini")]
-    #[test_case("gpt-5.3-codex", false, Some(400_000); "gpt 5.3 codex")]
+    #[test_case("gpt-5.6-luna", true, Some(258_400); "gpt 5.6 luna")]
+    #[test_case("gpt-5.4-mini", false, Some(258_400); "gpt 5.4 mini")]
+    #[test_case("gpt-5.3-codex", false, Some(380_000); "gpt 5.3 codex")]
     #[test_case("unknown-model", false, None; "unknown model")]
     fn test_model_transport_and_context_limits(
         model: &str,
@@ -1599,6 +1729,45 @@ mod tests {
     ) {
         assert_eq!(uses_responses_lite(model), expected_lite);
         assert_eq!(context_limit_for_model(model), expected_context_limit);
+    }
+
+    #[test]
+    fn route_model_catalog_uses_effective_context_window() {
+        let catalog: ChatGptCodexModelsResponse = serde_json::from_value(json!({
+            "models": [{
+                "slug": "gpt-5.6-sol",
+                "context_window": 272000,
+                "effective_context_window_percent": 95,
+                "supported_in_api": true
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(
+            effective_route_context_limit(&catalog.models[0]),
+            Some(258_400)
+        );
+    }
+
+    #[test]
+    fn route_model_catalog_rejects_unusable_limits() {
+        for model in [
+            ChatGptCodexRouteModel {
+                slug: "missing".into(),
+                context_window: None,
+                effective_context_window_percent: 95,
+                supported_in_api: true,
+            },
+            ChatGptCodexRouteModel {
+                slug: "zero".into(),
+                context_window: Some(272_000),
+                effective_context_window_percent: 0,
+                supported_in_api: true,
+            },
+        ] {
+            assert_eq!(effective_route_context_limit(&model), None);
+        }
     }
 
     #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("max"); "sol falls back to max (backend rejects ultra over HTTP)")]

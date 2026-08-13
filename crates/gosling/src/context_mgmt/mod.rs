@@ -13,6 +13,7 @@ use gosling_providers::retry::{retry_operation, RetryConfig};
 use indoc::indoc;
 use rmcp::model::Role;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::info;
@@ -40,6 +41,11 @@ pub use summarizer::{summarizer_mode, PendingSummary, SummarizerMode, Summarizer
 pub const DEFAULT_COMPACTION_THRESHOLD: f64 = 0.8;
 
 const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
+const COMPACTION_MAX_INPUT_BYTES: usize = 192 * 1024;
+const COMPACTION_MIN_INPUT_BYTES: usize = 24 * 1024;
+const COMPACTION_MAX_INPUT_TOKENS: usize = 60_000;
+const COMPACTION_SUMMARY_TARGET_CHARACTERS: usize = 12_000;
+const COMPACTION_MAX_REDUCTION_ROUNDS: usize = 12;
 
 fn tool_pair_summarization_enabled() -> bool {
     Config::global()
@@ -62,9 +68,16 @@ const MANUAL_COMPACT_CONTINUATION_TEXT: &str =
 Do not mention that you read a summary or that conversation summarization occurred.
 Just continue the conversation naturally based on the summarized context.";
 
+pub fn compaction_failure_message(error: &dyn std::fmt::Display) -> String {
+    format!(
+        "Compaction did not complete: {error}\n\nYour original session is intact. You can switch providers and run /compact again, or start a new session with the essential context."
+    )
+}
+
 #[derive(Serialize)]
 struct SummarizeContext {
     messages: String,
+    summary_target_characters: usize,
 }
 
 /// Compact messages by summarizing them
@@ -277,52 +290,265 @@ pub async fn check_if_compaction_needed(
     Ok(usage_ratio > threshold)
 }
 
-fn filter_tool_responses(messages: &[Message], remove_percent: u32) -> Vec<&Message> {
-    fn has_tool_response(msg: &Message) -> bool {
-        msg.content
-            .iter()
-            .any(|c| matches!(c, MessageContent::ToolResponse(_)))
-    }
-
+fn filter_tool_pairs(messages: &[Message], remove_percent: u32) -> Vec<Message> {
     if remove_percent == 0 {
-        return messages.iter().collect();
+        return messages.to_vec();
     }
 
-    let tool_indices: Vec<usize> = messages
+    let response_ids: HashSet<&str> = messages
         .iter()
-        .enumerate()
-        .filter(|(_, msg)| has_tool_response(msg))
-        .map(|(i, _)| i)
+        .flat_map(|message| &message.content)
+        .filter_map(|content| match content {
+            MessageContent::ToolResponse(response) => Some(response.id.as_str()),
+            _ => None,
+        })
         .collect();
-
-    if tool_indices.is_empty() {
-        return messages.iter().collect();
+    let mut matched_ids = Vec::new();
+    for content in messages.iter().flat_map(|message| &message.content) {
+        if let MessageContent::ToolRequest(request) = content {
+            if response_ids.contains(request.id.as_str())
+                && !matched_ids.iter().any(|id| id == &request.id)
+            {
+                matched_ids.push(request.id.clone());
+            }
+        }
     }
 
-    let num_to_remove = ((tool_indices.len() * remove_percent as usize) / 100)
-        .max(1)
-        .min(tool_indices.len());
+    if matched_ids.is_empty() {
+        return messages.to_vec();
+    }
 
-    // Remove middle-out: order candidates by distance from the center so the
-    // earliest and most recent tool responses survive the longest, then take
-    // exactly `num_to_remove`. (The previous alternating-offset walk skipped
-    // removals when one side ran out, so a single tool response was never
-    // removed and 100% left one behind — breaking the escalation in
-    // `do_compact`, whose last resort assumes all tool responses are gone.)
-    let middle = tool_indices.len() / 2;
-    let mut candidate_order: Vec<usize> = (0..tool_indices.len()).collect();
+    let num_to_remove = ((matched_ids.len() * remove_percent as usize) / 100)
+        .max(1)
+        .min(matched_ids.len());
+
+    let middle = matched_ids.len() / 2;
+    let mut candidate_order: Vec<usize> = (0..matched_ids.len()).collect();
     candidate_order.sort_by_key(|&i| (i.abs_diff(middle), i));
-    let indices_to_remove: Vec<usize> = candidate_order[..num_to_remove]
+    let ids_to_remove: HashSet<&str> = candidate_order[..num_to_remove]
         .iter()
-        .map(|&i| tool_indices[i])
+        .map(|&i| matched_ids[i].as_str())
         .collect();
 
     messages
         .iter()
-        .enumerate()
-        .filter(|(i, _)| !indices_to_remove.contains(i))
-        .map(|(_, msg)| msg)
+        .filter_map(|message| {
+            let mut filtered = message.clone();
+            filtered.content.retain(|content| match content {
+                MessageContent::ToolRequest(request) => {
+                    !ids_to_remove.contains(request.id.as_str())
+                }
+                MessageContent::ToolResponse(response) => {
+                    !ids_to_remove.contains(response.id.as_str())
+                }
+                _ => true,
+            });
+            (!filtered.content.is_empty()).then_some(filtered)
+        })
         .collect()
+}
+
+fn char_boundary_at_or_before(text: &str, mut index: usize) -> usize {
+    index = index.min(text.len());
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn split_text_to_budget(
+    text: &str,
+    max_bytes: usize,
+    max_tokens: usize,
+    token_counter: &crate::token_counter::TokenCounter,
+) -> Vec<String> {
+    if text.len() <= max_bytes && token_counter.count_tokens(text) <= max_tokens {
+        return vec![text.to_string()];
+    }
+
+    let mut segments = Vec::new();
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        let mut end = char_boundary_at_or_before(remaining, max_bytes);
+        while end > 0
+            && token_counter.count_tokens(
+                remaining
+                    .get(..end)
+                    .expect("end is adjusted to a UTF-8 character boundary"),
+            ) > max_tokens
+        {
+            end = char_boundary_at_or_before(remaining, end * 3 / 4);
+        }
+        if end == 0 {
+            end = remaining.chars().next().map(char::len_utf8).unwrap_or(0);
+        }
+        segments.push(
+            remaining
+                .get(..end)
+                .expect("end is adjusted to a UTF-8 character boundary")
+                .to_string(),
+        );
+        remaining = remaining
+            .get(end..)
+            .expect("end is adjusted to a UTF-8 character boundary");
+    }
+
+    if segments.len() > 1 && max_bytes > 512 && max_tokens > 128 {
+        let segment_count = segments.len();
+        for (index, segment) in segments.iter_mut().enumerate() {
+            *segment = format!(
+                "[Oversized message segment {} of {}]\n{}",
+                index + 1,
+                segment_count,
+                segment
+            );
+        }
+    }
+    segments
+}
+
+fn pack_compaction_units(
+    units: &[String],
+    max_bytes: usize,
+    max_tokens: usize,
+    token_counter: &crate::token_counter::TokenCounter,
+) -> Vec<String> {
+    let payload_bytes = max_bytes.saturating_sub(512).max(1);
+    let payload_tokens = max_tokens.saturating_sub(128).max(1);
+    let expanded: Vec<String> = units
+        .iter()
+        .flat_map(|unit| split_text_to_budget(unit, payload_bytes, payload_tokens, token_counter))
+        .collect();
+
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    for unit in expanded {
+        let separator = if current.is_empty() { "" } else { "\n\n" };
+        let candidate = format!("{current}{separator}{unit}");
+        if !current.is_empty()
+            && (candidate.len() > max_bytes || token_counter.count_tokens(&candidate) > max_tokens)
+        {
+            chunks.push(current);
+            current = unit;
+        } else {
+            current = candidate;
+        }
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
+}
+
+fn combine_usage(total: &mut Option<ProviderUsage>, usage: ProviderUsage) {
+    *total = Some(match total.take() {
+        Some(existing) => existing.combine_with(&usage),
+        None => usage,
+    });
+}
+
+async fn summarize_compaction_chunk(
+    provider: &dyn Provider,
+    model_config: &ModelConfig,
+    session_id: &str,
+    system_prompt: &str,
+    chunk: String,
+) -> Result<(Message, ProviderUsage), ProviderError> {
+    let summarization_request = vec![Message::user().with_text(chunk)];
+    retry_operation(&RetryConfig::default(), || {
+        crate::model_config::complete_fast(
+            provider,
+            model_config,
+            session_id,
+            system_prompt,
+            &summarization_request,
+            &[],
+        )
+    })
+    .await
+}
+
+struct CompactionRequestContext<'a> {
+    provider: &'a dyn Provider,
+    model_config: &'a ModelConfig,
+    session_id: &'a str,
+    system_prompt: &'a str,
+    max_tokens: usize,
+    token_counter: &'a crate::token_counter::TokenCounter,
+}
+
+async fn reduce_compaction_units(
+    request_context: &CompactionRequestContext<'_>,
+    initial_units: Vec<String>,
+    max_bytes: usize,
+) -> Result<(Message, ProviderUsage), (ProviderError, Option<ProviderUsage>)> {
+    let mut chunks = pack_compaction_units(
+        &initial_units,
+        max_bytes,
+        request_context.max_tokens,
+        request_context.token_counter,
+    );
+    let mut total_usage = None;
+
+    for _ in 0..COMPACTION_MAX_REDUCTION_ROUNDS {
+        let mut summaries = Vec::with_capacity(chunks.len());
+        let is_final = chunks.len() == 1;
+        let mut final_message = None;
+
+        for chunk in chunks {
+            let (mut response, mut usage) = summarize_compaction_chunk(
+                request_context.provider,
+                request_context.model_config,
+                request_context.session_id,
+                request_context.system_prompt,
+                chunk.clone(),
+            )
+            .await
+            .map_err(|error| (error, total_usage.take()))?;
+            crate::providers::usage_estimator::ensure_usage_tokens(
+                &mut usage,
+                request_context.system_prompt,
+                &[Message::user().with_text(chunk)],
+                &response,
+                &[],
+            )
+            .await
+            .map_err(|error| {
+                (
+                    ProviderError::ExecutionError(error.to_string()),
+                    total_usage.take(),
+                )
+            })?;
+            combine_usage(&mut total_usage, usage);
+            response.role = Role::User;
+            if is_final {
+                final_message = Some(response);
+            } else {
+                summaries.push(format_message_for_compacting(&response));
+            }
+        }
+
+        if let Some(message) = final_message {
+            return Ok((
+                message,
+                total_usage.expect("a completed compaction request records usage"),
+            ));
+        }
+
+        chunks = pack_compaction_units(
+            &summaries,
+            max_bytes,
+            request_context.max_tokens,
+            request_context.token_counter,
+        );
+    }
+
+    Err((
+        ProviderError::ContextLengthExceeded(
+            "Compaction summaries did not converge within the bounded reduction limit".to_string(),
+        ),
+        total_usage,
+    ))
 }
 
 async fn do_compact(
@@ -337,77 +563,73 @@ async fn do_compact(
         .map(|msg| msg.agent_visible_content())
         .collect();
 
-    // Try progressively removing more tool response messages from the middle to reduce context length
-    let removal_percentages = [0, 10, 20, 50, 100];
-
-    for (attempt, &remove_percent) in removal_percentages.iter().enumerate() {
-        let filtered_messages = filter_tool_responses(&agent_visible_messages, remove_percent);
-
-        let messages_text = filtered_messages
-            .iter()
-            .map(|&msg| format_message_for_compacting(msg))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let context = SummarizeContext {
-            messages: messages_text,
-        };
-
-        let system_prompt = render_template("compaction.md", &context)?;
-
-        let user_message = Message::user()
-            .with_text("Please summarize the conversation history provided in the system prompt.");
-        let summarization_request = vec![user_message];
-
-        // The retry wraps the whole request/response round trip rather than just the
-        // connection handshake: compaction is a one-shot summarization call with no
-        // partial output already shown to the user, so re-issuing it after a transient
-        // network or stream-decode failure (which provider streaming's own retry doesn't
-        // cover once the response body starts arriving) is safe.
-        match retry_operation(&RetryConfig::default(), || {
-            crate::model_config::complete_fast(
-                provider,
-                model_config,
-                session_id,
-                &system_prompt,
-                &summarization_request,
-                &[],
-            )
-        })
+    let context = SummarizeContext {
+        messages: "Conversation history is supplied in bounded user-message chunks.".to_string(),
+        summary_target_characters: COMPACTION_SUMMARY_TARGET_CHARACTERS,
+    };
+    let system_prompt = render_template("compaction.md", &context)?;
+    let token_counter = crate::token_counter::shared_token_counter()
         .await
-        {
-            Ok((mut response, mut provider_usage)) => {
-                response.role = Role::User;
+        .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;
+    let fast_model = crate::model_config::get_fast_model(provider.get_name(), model_config).await?;
+    let main_limit = provider
+        .get_context_limit(model_config)
+        .await
+        .unwrap_or_else(|_| model_config.context_limit());
+    let fast_limit = provider
+        .get_context_limit(&fast_model)
+        .await
+        .unwrap_or_else(|_| fast_model.context_limit());
+    let max_tokens = (main_limit.min(fast_limit) / 3).clamp(1, COMPACTION_MAX_INPUT_TOKENS);
+    let input_byte_budgets = [
+        COMPACTION_MAX_INPUT_BYTES,
+        COMPACTION_MAX_INPUT_BYTES / 2,
+        COMPACTION_MAX_INPUT_BYTES / 4,
+        COMPACTION_MIN_INPUT_BYTES,
+    ];
+    let removal_percentages = [0, 10, 25, 50, 100];
+    let mut accumulated_usage = None;
+    let request_context = CompactionRequestContext {
+        provider,
+        model_config,
+        session_id,
+        system_prompt: &system_prompt,
+        max_tokens,
+        token_counter: token_counter.as_ref(),
+    };
 
-                crate::providers::usage_estimator::ensure_usage_tokens(
-                    &mut provider_usage,
-                    &system_prompt,
-                    &summarization_request,
-                    &response,
-                    &[],
-                )
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to ensure usage tokens: {}", e))?;
+    for remove_percent in removal_percentages {
+        let filtered_messages = filter_tool_pairs(&agent_visible_messages, remove_percent);
+        let mut units: Vec<String> = filtered_messages
+            .iter()
+            .map(format_message_for_compacting)
+            .collect();
+        if units.is_empty() {
+            units.push("[No agent-visible conversation content]".to_string());
+        }
 
-                return Ok((response, provider_usage));
-            }
-            Err(e) => {
-                if matches!(e, ProviderError::ContextLengthExceeded(_)) {
-                    if attempt < removal_percentages.len() - 1 {
-                        continue;
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Failed to compact: context limit exceeded even after removing all tool responses"
-                        ));
-                    }
+        for max_bytes in input_byte_budgets {
+            match reduce_compaction_units(&request_context, units.clone(), max_bytes).await {
+                Ok((message, usage)) => {
+                    combine_usage(&mut accumulated_usage, usage);
+                    return Ok((
+                        message,
+                        accumulated_usage.expect("successful compaction records usage"),
+                    ));
                 }
-                return Err(e.into());
+                Err((ProviderError::ContextLengthExceeded(_), partial_usage)) => {
+                    if let Some(usage) = partial_usage {
+                        combine_usage(&mut accumulated_usage, usage);
+                    }
+                    continue;
+                }
+                Err((error, _)) => return Err(error.into()),
             }
         }
     }
 
     Err(anyhow::anyhow!(
-        "Unexpected: exhausted all attempts without returning"
+        "Compaction could not fit within this provider's request limits. The original session was preserved; switch to another provider to compact it or start a new session with the essential context."
     ))
 }
 
@@ -672,7 +894,10 @@ mod tests {
     struct MockProvider {
         message: Message,
         config: ModelConfig,
-        max_tool_responses: Option<usize>,
+        max_input_bytes: Option<usize>,
+        reject_context: bool,
+        input_sizes: std::sync::Mutex<Vec<usize>>,
+        system_sizes: std::sync::Mutex<Vec<usize>>,
         remaining_transient_failures: std::sync::atomic::AtomicUsize,
     }
 
@@ -690,13 +915,21 @@ mod tests {
                     request_params: None,
                     reasoning: None,
                 },
-                max_tool_responses: None,
+                max_input_bytes: None,
+                reject_context: false,
+                input_sizes: std::sync::Mutex::new(Vec::new()),
+                system_sizes: std::sync::Mutex::new(Vec::new()),
                 remaining_transient_failures: std::sync::atomic::AtomicUsize::new(0),
             }
         }
 
-        fn with_max_tool_responses(mut self, max: usize) -> Self {
-            self.max_tool_responses = Some(max);
+        fn with_max_input_bytes(mut self, max: usize) -> Self {
+            self.max_input_bytes = Some(max);
+            self
+        }
+
+        fn rejecting_context(mut self) -> Self {
+            self.reject_context = true;
             self
         }
 
@@ -715,7 +948,7 @@ mod tests {
         async fn stream(
             &self,
             _model_config: &ModelConfig,
-            _system: &str,
+            system: &str,
             messages: &[Message],
             _tools: &[Tool],
         ) -> Result<MessageStream, ProviderError> {
@@ -733,23 +966,19 @@ mod tests {
                 ));
             }
 
-            // If max_tool_responses is set, fail if we have too many
-            if let Some(max) = self.max_tool_responses {
-                let tool_response_count = messages
-                    .iter()
-                    .filter(|m| {
-                        m.content
-                            .iter()
-                            .any(|c| matches!(c, MessageContent::ToolResponse(_)))
-                    })
-                    .count();
+            let input_bytes = messages
+                .iter()
+                .flat_map(|message| &message.content)
+                .filter_map(MessageContent::as_text)
+                .map(|text| text.len())
+                .sum();
+            self.input_sizes.lock().unwrap().push(input_bytes);
+            self.system_sizes.lock().unwrap().push(system.len());
 
-                if tool_response_count > max {
-                    return Err(ProviderError::ContextLengthExceeded(format!(
-                        "Too many tool responses: {} > {}",
-                        tool_response_count, max
-                    )));
-                }
+            if self.reject_context || self.max_input_bytes.is_some_and(|max| input_bytes > max) {
+                return Err(ProviderError::ContextLengthExceeded(format!(
+                    "Input too large: {input_bytes} bytes"
+                )));
             }
 
             let message = self.message.clone();
@@ -768,7 +997,7 @@ mod tests {
     #[tokio::test]
     async fn test_keeps_tool_request() {
         let response_message = Message::assistant().with_text("<mock summary>");
-        let provider = MockProvider::new(response_message, 1);
+        let provider = MockProvider::new(response_message, 10_000);
         let basic_conversation = vec![
             Message::user().with_text("read hello.txt"),
             Message::assistant()
@@ -827,25 +1056,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_progressive_removal_on_context_exceeded() {
+    async fn test_compaction_retries_with_smaller_bounded_chunks() {
         let response_message = Message::assistant().with_text("<mock summary>");
-        // Set max to 2 tool responses - will trigger progressive removal
-        let provider = MockProvider::new(response_message, 1000).with_max_tool_responses(2);
-
-        // Create a conversation with many tool responses
-        let mut messages = vec![Message::user().with_text("start")];
-        for i in 0..10 {
-            messages.push(Message::assistant().with_tool_request(
-                format!("tool_{}", i),
-                Ok(CallToolRequestParams::new("read_file")),
-            ));
-            messages.push(Message::user().with_tool_response(
-                format!("tool_{}", i),
-                Ok(rmcp::model::CallToolResult::success(vec![
-                    RawContent::text(format!("response{}", i)).no_annotation(),
-                ])),
-            ));
-        }
+        let provider = MockProvider::new(response_message, 258_400).with_max_input_bytes(40_000);
+        let messages = vec![Message::user().with_text("x".repeat(300_000))];
 
         let conversation = Conversation::new_unvalidated(messages);
         let model_config = provider.config.clone();
@@ -860,12 +1074,52 @@ mod tests {
 
         assert!(
             result.is_ok(),
-            "Should succeed with progressive removal: {:?}",
+            "Should succeed after reducing the request budget: {:?}",
             result.err()
         );
+        let input_sizes = provider.input_sizes.lock().unwrap();
+        assert!(input_sizes.iter().any(|size| *size > 40_000));
+        assert!(input_sizes.iter().any(|size| *size <= 40_000));
+        assert!(input_sizes
+            .iter()
+            .all(|size| *size <= COMPACTION_MAX_INPUT_BYTES));
+        assert!(provider
+            .system_sizes
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|size| *size < 64 * 1024));
     }
 
-    fn tool_response_count(messages: &[&Message]) -> usize {
+    #[tokio::test]
+    async fn test_failed_compaction_preserves_original_conversation() {
+        let response_message = Message::assistant().with_text("<mock summary>");
+        let provider = MockProvider::new(response_message, 258_400).rejecting_context();
+        let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text("important original request"),
+            Message::assistant().with_text("important original response"),
+        ]);
+        let original = conversation.clone();
+        let model_config = provider.config.clone();
+
+        let result = compact_messages(
+            &provider,
+            &model_config,
+            "test-session-id",
+            &conversation,
+            true,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(conversation.messages(), original.messages());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("original session was preserved"));
+    }
+
+    fn tool_response_count(messages: &[Message]) -> usize {
         messages
             .iter()
             .filter(|m| {
@@ -877,16 +1131,34 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_tool_responses_removes_single_response_at_full_removal() {
+    fn test_filter_tool_pairs_removes_single_pair_at_full_removal() {
         let mut messages = vec![Message::user().with_text("start")];
         messages.extend(create_tool_pair("call0", "resp0", "read_file", "content"));
+        messages[1]
+            .content
+            .push(MessageContent::text("request context"));
+        messages[2]
+            .content
+            .push(MessageContent::text("response context"));
 
-        let filtered = filter_tool_responses(&messages, 100);
+        let filtered = filter_tool_pairs(&messages, 100);
         assert_eq!(tool_response_count(&filtered), 0);
+        assert!(!filtered.iter().any(|message| message
+            .content
+            .iter()
+            .any(|content| matches!(content, MessageContent::ToolRequest(_)))));
+        assert!(filtered.iter().any(|message| message
+            .content
+            .iter()
+            .any(|content| content.as_text() == Some("request context"))));
+        assert!(filtered.iter().any(|message| message
+            .content
+            .iter()
+            .any(|content| content.as_text() == Some("response context"))));
     }
 
     #[test]
-    fn test_filter_tool_responses_removes_all_for_odd_count() {
+    fn test_filter_tool_pairs_removes_all_for_odd_count() {
         let mut messages = vec![Message::user().with_text("start")];
         for i in 0..5 {
             messages.extend(create_tool_pair(
@@ -897,12 +1169,16 @@ mod tests {
             ));
         }
 
-        let filtered = filter_tool_responses(&messages, 100);
+        let filtered = filter_tool_pairs(&messages, 100);
         assert_eq!(tool_response_count(&filtered), 0);
+        assert!(!filtered.iter().any(|message| message
+            .content
+            .iter()
+            .any(|content| matches!(content, MessageContent::ToolRequest(_)))));
     }
 
     #[test]
-    fn test_filter_tool_responses_partial_removal_is_middle_out() {
+    fn test_filter_tool_pairs_partial_removal_is_middle_out() {
         let mut messages = Vec::new();
         for i in 0..10 {
             messages.extend(create_tool_pair(
@@ -913,7 +1189,7 @@ mod tests {
             ));
         }
 
-        let filtered = filter_tool_responses(&messages, 50);
+        let filtered = filter_tool_pairs(&messages, 50);
         assert_eq!(tool_response_count(&filtered), 5);
 
         // The first and last tool responses survive a partial removal.

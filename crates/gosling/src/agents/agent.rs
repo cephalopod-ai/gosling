@@ -1999,9 +1999,8 @@ impl Agent {
                     }
                     Err(e) => {
                         yield AgentEvent::Message(
-                            Message::assistant().with_text(
-                                format!("Ran into this error trying to compact: {e}.\n\nPlease try again or create a new session")
-                            )
+                            Message::assistant()
+                                .with_text(crate::context_mgmt::compaction_failure_message(&e))
                         );
                         return;
                     }
@@ -2367,9 +2366,8 @@ impl Agent {
                         }
                         Err(e) => {
                             yield AgentEvent::Message(
-                                Message::assistant().with_text(
-                                    format!("Ran into this error trying to compact: {e}.\n\nPlease try again or create a new session")
-                                )
+                                Message::assistant()
+                                    .with_text(crate::context_mgmt::compaction_failure_message(&e))
                             );
                             break;
                         }
@@ -2939,9 +2937,9 @@ impl Agent {
                                     crate::posthog::emit_error("compaction_failed", &e.to_string());
                                     error!("Compaction failed: {}", e);
                                     yield AgentEvent::Message(
-                                        Message::assistant().with_text(
-                                            format!("Ran into this error trying to compact: {e}.\n\nPlease try again or create a new session")
-                                        ).with_terminal_error(e.to_string())
+                                        Message::assistant()
+                                            .with_text(crate::context_mgmt::compaction_failure_message(&e))
+                                            .with_terminal_error(e.to_string())
                                     );
                                     break;
                                 }

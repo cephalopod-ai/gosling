@@ -148,14 +148,22 @@ impl Agent {
             .ok_or_else(|| anyhow!("Session has no conversation"))?;
 
         let model_config = self.model_config_for_session(session_id).await?;
-        let (compacted_conversation, usage) = compact_messages(
+        let (compacted_conversation, usage) = match compact_messages(
             self.provider().await?.as_ref(),
             &model_config,
             session_id,
             &conversation,
             true, // is_manual_compact
         )
-        .await?;
+        .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                return Ok(Some(user_only_assistant_text(
+                    crate::context_mgmt::compaction_failure_message(&error),
+                )));
+            }
+        };
 
         manager
             .replace_conversation(session_id, &compacted_conversation)
@@ -245,7 +253,7 @@ impl Agent {
              - Provider: {}\n\
              - Mode: {}\n\
              - Tokens (lifetime): {}\n\
-             - Context: {} / {} tokens ({})",
+             - Last model request: {} / {} effective context tokens ({})",
             model_config.model_name,
             provider.get_name(),
             gosling_mode,

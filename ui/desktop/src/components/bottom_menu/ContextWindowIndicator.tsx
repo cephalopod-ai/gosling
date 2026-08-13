@@ -28,11 +28,16 @@ export function ContextWindowIndicator({
 
   const percentage = Math.round((totalTokens / tokenLimit) * 100);
   const colorClass = getProgressColor(percentage);
+  const usageLabel = `Last model request: ${formatTokenCount(totalTokens)} of ${formatTokenCount(tokenLimit)} effective context limit`;
 
   return (
     <div className="flex items-center h-full">
       <BottomMenuAlertPopover alerts={alerts}>
-        <span className={`text-xs font-mono ${colorClass}`}>
+        <span
+          aria-label={usageLabel}
+          title={usageLabel}
+          className={`text-xs font-mono ${colorClass}`}
+        >
           {formatTokenCount(totalTokens)} / {formatTokenCount(tokenLimit)}
         </span>
       </BottomMenuAlertPopover>

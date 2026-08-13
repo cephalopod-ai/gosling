@@ -41,6 +41,18 @@ When you reach the auto-compaction threshold:
   2. Once complete, you'll see a confirmation message that the conversation was compacted and summarized.
   3. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for gosling.
 
+Compaction requests are bounded independently from the conversation that triggered
+them. Gosling sends fixed-size instructions, splits large histories into ordered
+chunks, summarizes those chunks, and reduces the summaries into one continuation
+context. Provider context-limit errors cause smaller bounded retries. Original
+history is replaced only after the final summary succeeds.
+
+If every bounded retry is rejected, Gosling leaves the original session intact.
+You can switch to another configured provider, run `/compact`, and then switch back;
+or start a new session with the essential context. Switching providers does not
+repair damaged session data—it simply lets a route with different request limits
+perform the same provider-neutral compaction.
+
 :::tip Customize Compaction
 You can customize how gosling summarizes conversations during compaction by editing the `compaction.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
 :::
@@ -260,7 +272,9 @@ After sending your first message, gosling Desktop and gosling CLI display token 
 
 <Tabs groupId="interface">
     <TabItem value="ui" label="gosling Desktop" default>
-    The Desktop displays a colored circle next to the model name at the bottom of the session window. The color provides a visual indicator of your token usage for the session. 
+    The Desktop displays token usage next to the model name at the bottom of the session window. The numerator is usage from the **last model request**, not an estimate of a future compaction request. The denominator is the active provider route's effective context limit when that route reports one. Public API and subscription-route limits for the same model name can differ.
+
+    The color provides a visual indicator of the last request's usage:
       - **Green**: Normal usage - Plenty of context space available
       - **Orange**: Warning state - Approaching limit (80% of capacity)
       - **Red**: Error state - Context limit reached
@@ -294,7 +308,9 @@ Context limits are automatically detected based on your model name, but gosling 
 | **Planner** | Set context for [planner models](/docs/guides/context-engineering/creating-plans) | Large planning tasks requiring extensive context | `GOSLING_PLANNER_CONTEXT_LIMIT` |
 
 :::info
-This setting only affects the displayed token usage and progress indicators. Actual context management is handled by your LLM, so you may experience more or less usage than the limit you set, regardless of what the display shows.
+This setting supplies a fallback or explicit model configuration. Providers that
+report route-specific capabilities can supply a lower effective limit for request
+budgeting and display. The provider still enforces the final request limit.
 :::
 
 This feature is particularly useful with:

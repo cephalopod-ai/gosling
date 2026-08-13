@@ -35,6 +35,7 @@ import { getNavigationShortcutText } from '../utils/keyboardShortcuts';
 import { UserInput, ImageData } from '../types/message';
 import { compressImageDataUrl } from '../utils/conversionUtils';
 import { fetchCanonicalModelInfo } from '../utils/canonical';
+import { resolveContextLimit } from '../utils/contextLimit';
 import { defineMessages, useIntl } from '../i18n';
 import TurndownService from 'turndown';
 import type { NextChatExtensionDraft } from '../utils/nextChatExtensions';
@@ -604,37 +605,20 @@ export default function ChatInput({
         return;
       }
 
-      // Priority 1: Check predefined models from environment
       const predefinedModels = getPredefinedModelsFromEnv();
-      const predefinedModel = predefinedModels.find((m) => m.name === model);
-      if (predefinedModel?.context_limit) {
-        setTokenLimit(predefinedModel.context_limit);
-        setIsTokenLimitLoaded(true);
-        return;
-      }
-
-      // Priority 2: Check canonical model info (source of truth)
-      const canonicalInfo = await fetchCanonicalModelInfo(provider, model);
-      if (canonicalInfo?.contextLimit) {
-        setTokenLimit(canonicalInfo.contextLimit);
-        setIsTokenLimitLoaded(true);
-        return;
-      }
-
-      // Priority 3: Fall back to provider metadata known_models (may be outdated)
-      const providers = await acpListProviderDetails();
-      const currentProvider = providers.find((p) => p.name === provider);
-      if (currentProvider?.metadata?.known_models) {
-        const modelConfig = currentProvider.metadata.known_models.find((m) => m.name === model);
-        if (modelConfig?.context_limit) {
-          setTokenLimit(modelConfig.context_limit);
-          setIsTokenLimitLoaded(true);
-          return;
-        }
-      }
-
-      // Priority 4: Use default if nothing else found
-      setTokenLimit(TOKEN_LIMIT_DEFAULT);
+      const resolvedLimit = await resolveContextLimit(
+        model,
+        predefinedModels,
+        async () => {
+          const providers = await acpListProviderDetails();
+          return (
+            providers.find((candidate) => candidate.name === provider)?.metadata?.known_models ?? []
+          );
+        },
+        async () => (await fetchCanonicalModelInfo(provider, model))?.contextLimit,
+        TOKEN_LIMIT_DEFAULT
+      );
+      setTokenLimit(resolvedLimit);
       setIsTokenLimitLoaded(true);
     } catch (err) {
       console.error('Error loading providers or token limit:', err);

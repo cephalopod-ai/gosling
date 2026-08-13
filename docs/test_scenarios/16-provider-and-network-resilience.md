@@ -33,10 +33,10 @@ must use capped test credentials and record external request IDs.
 ### PN-04 — Context-window exhaustion and compaction
 - Goal: an oversized history is compacted or rejected without losing the session.
 - Category: boundary / persistence
-- Preconditions: fixture with a small declared context limit; session with ordered marker turns near threshold; auto-compact settings recorded.
-- Steps: send a turn below limit, one crossing limit, and one after recovery; repeat with auto-compact disabled/enabled; export before and after; relaunch.
-- Expected: below-limit succeeds; crossing result is a named context error or explicit compaction; markers retained/removed match the documented compaction policy; no retry loop; post-recovery turn and export work.
-- Observe: token estimates versus provider-reported usage.
+- Preconditions: fixture with a small declared context limit and a separately enforced request-field byte limit; session with ordered marker turns, matched tool request/response pairs, and one oversized result; auto-compact settings recorded; second provider fixture with a larger accepted request.
+- Steps: send a turn below limit and one crossing it; run `/compact`; force an in-band `context_length_exceeded` event and an oversized-`instructions` HTTP 400; inspect every compaction request; force all bounded retries to fail; switch to the larger provider and compact; switch back to the original provider and send another turn; repeat with auto-compact disabled/enabled; export before and after; relaunch.
+- Expected: compaction instructions never contain the complete transcript; every user-input chunk stays within byte and token budgets; retries reduce chunk size and are bounded; deliberate pruning removes matched tool requests and responses together; structured provider errors have clean text and retain the context-limit type; terminal failure says the original session is intact and does not replace history; cross-provider compaction succeeds and the original provider works afterward; post-recovery export and relaunch retain the summary.
+- Observe: last-request usage versus estimated compaction input, route-reported effective context limits, request count, summary ordering, and aggregate compaction usage.
 
 ### PN-05 — Empty and malformed provider responses
 - Goal: invalid upstream payloads fail as provider errors, not successful blank turns.

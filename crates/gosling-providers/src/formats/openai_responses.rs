@@ -4,6 +4,7 @@ use crate::errors::ProviderError;
 use crate::formats::openai::{
     extract_reasoning_effort, is_openai_responses_model, openai_reasoning_effort_for_thinking,
 };
+use crate::http_status::is_context_length_exceeded_message;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use anyhow::{anyhow, Error};
@@ -208,7 +209,13 @@ pub enum ResponsesStreamEvent {
         response: ResponseMetadata,
     },
     #[serde(rename = "response.failed")]
-    ResponseFailed { sequence_number: i32, error: Value },
+    ResponseFailed {
+        sequence_number: i32,
+        #[serde(default)]
+        error: Option<Value>,
+        #[serde(default)]
+        response: Option<Value>,
+    },
     #[serde(rename = "response.function_call_arguments.delta")]
     FunctionCallArgumentsDelta {
         sequence_number: i32,
@@ -272,11 +279,14 @@ fn is_known_responses_stream_event_type(event_type: &str) -> bool {
     )
 }
 
-/// Errors delivered as stream events (rather than HTTP statuses) still need
-/// transient/permanent classification so the retry layer treats an in-band
-/// `server_error` or overload error like a 5xx instead of a permanent request failure.
 fn classify_stream_error(context: &str, error: &Value) -> ProviderError {
-    let details = format!("{context}: {error:?}");
+    let code = error.get("code").and_then(Value::as_str);
+    let message = error.get("message").and_then(Value::as_str);
+    let details = match (message, code) {
+        (Some(message), Some(code)) => format!("{context}: {message} (code: {code})"),
+        (Some(message), None) => format!("{context}: {message}"),
+        (None, _) => format!("{context}: {error}"),
+    };
     let marker = |needle: &str| {
         [error.get("type"), error.get("code")]
             .iter()
@@ -284,7 +294,12 @@ fn classify_stream_error(context: &str, error: &Value) -> ProviderError {
             .filter_map(|value| value.as_str())
             .any(|value| value.contains(needle))
     };
-    if marker("server_error") || marker("service_unavailable") || marker("server_is_overloaded") {
+    if marker("context_length_exceeded") || is_context_length_exceeded_message(&details) {
+        ProviderError::ContextLengthExceeded(details)
+    } else if marker("server_error")
+        || marker("service_unavailable")
+        || marker("server_is_overloaded")
+    {
         ProviderError::ServerError(details)
     } else if marker("rate_limit") {
         ProviderError::RateLimitExceeded {
@@ -957,7 +972,14 @@ where
                     // Refusal text already streamed via deltas
                 }
 
-                ResponsesStreamEvent::ResponseFailed { error, .. } => {
+                ResponsesStreamEvent::ResponseFailed {
+                    error, response, ..
+                } => {
+                    let error = error
+                        .or_else(|| response.and_then(|value| value.get("error").cloned()))
+                        .unwrap_or_else(|| {
+                            json!({"message": "Responses API returned a failed response"})
+                        });
                     Err::<(), ProviderError>(classify_stream_error("Responses API failed", &error))?;
                 }
 
@@ -1335,11 +1357,77 @@ mod tests {
     }
 
     #[test]
+    fn classify_stream_error_marks_context_length_and_uses_message() {
+        let error = serde_json::json!({
+            "type": "invalid_request_error",
+            "code": "context_length_exceeded",
+            "message": "Your input exceeds the context window of this model.",
+            "param": "input",
+        });
+
+        assert!(matches!(
+            classify_stream_error("Responses API error", &error),
+            ProviderError::ContextLengthExceeded(details)
+                if details == "Responses API error: Your input exceeds the context window of this model. (code: context_length_exceeded)"
+        ));
+    }
+
+    #[tokio::test]
+    async fn responses_stream_preserves_typed_context_length_error() {
+        let lines = vec![
+            r#"data: {"type":"response.failed","sequence_number":1,"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model.","param":"input"}}"#.to_string(),
+            "data: [DONE]".to_string(),
+        ];
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let messages = responses_api_to_streaming_message(response_stream);
+        futures::pin_mut!(messages);
+
+        let error = messages
+            .next()
+            .await
+            .expect("stream should emit a context error")
+            .expect_err("stream should fail");
+        let provider_error = error
+            .downcast_ref::<ProviderError>()
+            .expect("error should retain ProviderError type");
+
+        assert!(matches!(
+            provider_error,
+            ProviderError::ContextLengthExceeded(details)
+                if details.contains("Your input exceeds the context window")
+                    && !details.contains("Object {")
+        ));
+    }
+
+    #[tokio::test]
+    async fn nested_response_failed_preserves_typed_context_length_error() {
+        let lines = vec![
+            r#"data: {"type":"response.failed","sequence_number":1,"response":{"id":"resp_test","status":"failed","error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model."}}}"#.to_string(),
+            "data: [DONE]".to_string(),
+        ];
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let messages = responses_api_to_streaming_message(response_stream);
+        futures::pin_mut!(messages);
+
+        let error = messages
+            .next()
+            .await
+            .expect("stream should emit a context error")
+            .expect_err("stream should fail");
+
+        assert!(matches!(
+            error.downcast_ref::<ProviderError>(),
+            Some(ProviderError::ContextLengthExceeded(details))
+                if details.contains("Your input exceeds the context window")
+        ));
+    }
+
+    #[test]
     fn classify_stream_error_defaults_to_request_failed() {
         let error = serde_json::json!({"type": "invalid_request_error", "message": "bad input"});
         assert!(matches!(
             classify_stream_error("Responses API error", &error),
-            ProviderError::RequestFailed(details) if details.contains("invalid_request_error")
+            ProviderError::RequestFailed(details) if details == "Responses API error: bad input"
         ));
     }
 

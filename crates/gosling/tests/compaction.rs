@@ -35,19 +35,19 @@ impl MockCompactionProvider {
     /// Simulates realistic token counts for different scenarios
     fn calculate_input_tokens(&self, system_prompt: &str, messages: &[Message]) -> i32 {
         // Check if this is a compaction call
-        let is_compaction_call = messages.len() == 1
-            && messages[0].content.iter().any(|c| {
-                if let MessageContent::Text(text) = c {
-                    text.text.to_lowercase().contains("summarize")
-                } else {
-                    false
-                }
-            });
+        let is_compaction_call = system_prompt.contains("llm context limit was reached");
 
         if is_compaction_call {
-            // For compaction: system prompt length is a good proxy for conversation size
-            // Base: 6000 (system) + conversation content embedded in prompt
-            6000 + (system_prompt.len() as i32 / 4).max(400)
+            // Compaction instructions stay fixed-size; transcript chunks are user input.
+            let message_chars: usize = messages
+                .iter()
+                .flat_map(|message| &message.content)
+                .filter_map(|content| match content {
+                    MessageContent::Text(text) => Some(text.text.len()),
+                    _ => None,
+                })
+                .sum();
+            6000 + ((system_prompt.len() + message_chars) as i32 / 4).max(400)
         } else {
             // Regular call: system prompt + messages
             let system_tokens = if system_prompt.is_empty() { 0 } else { 6000 };
@@ -106,16 +106,7 @@ impl Provider for MockCompactionProvider {
         messages: &[Message],
         _tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        // Check if this is a compaction call (message contains "summarize")
-        let is_compaction = messages.iter().any(|msg| {
-            msg.content.iter().any(|content| {
-                if let MessageContent::Text(text) = content {
-                    text.text.to_lowercase().contains("summarize")
-                } else {
-                    false
-                }
-            })
-        });
+        let is_compaction = system_prompt.contains("llm context limit was reached");
 
         // Calculate realistic token counts based on actual content
         let input_tokens = self.calculate_input_tokens(system_prompt, messages);
@@ -281,7 +272,7 @@ async fn setup_test_session_with_usage(
 
 /// Mock provider for proactive threshold-based compaction tests (Case 1 and Case 2).
 ///
-/// - Compaction calls (containing "summarize") return a short summary and mark compaction seen.
+/// - Compaction calls use the dedicated fixed-size system prompt and mark compaction seen.
 /// - Regular calls before compaction return `first_call_total_tokens`; after compaction return low tokens.
 /// - Using has_seen_compaction (rather than a raw call counter) makes the provider resilient to
 ///   concurrent provider calls like session naming that would otherwise skew the counter.
@@ -313,19 +304,11 @@ impl Provider for ThresholdCompactionProvider {
     async fn stream(
         &self,
         _model_config: &ModelConfig,
-        _system_prompt: &str,
-        messages: &[Message],
+        system_prompt: &str,
+        _messages: &[Message],
         _tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let is_compaction = messages.iter().any(|msg| {
-            msg.content.iter().any(|c| {
-                if let MessageContent::Text(text) = c {
-                    text.text.to_lowercase().contains("summarize")
-                } else {
-                    false
-                }
-            })
-        });
+        let is_compaction = system_prompt.contains("llm context limit was reached");
 
         if is_compaction {
             self.has_seen_compaction.store(true, Ordering::SeqCst);
@@ -508,8 +491,8 @@ async fn test_manual_compaction_updates_token_counts_and_conversation() -> Resul
         .await?;
 
     // Expected token calculation for compaction:
-    // During compaction, the 4 messages are embedded in the system prompt template
-    // - Input: system prompt with embedded conversation + "Please summarize" message
+    // During compaction, the fixed system prompt and bounded conversation user input
+    // are both counted.
     // - Output: summary (200 tokens)
     //
     // From mock provider calculation:
@@ -860,8 +843,8 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
 
     // After compaction, the retry only sees agent-visible messages:
     // Input: system (6000) + summary (~100) + continuation (~100) + user message (~100) = ~6300
-    // Output: 200 (mock detects "summarized" in continuation as compaction)
-    // Total: ~6500
+    // Output: 100 (ordinary response after compaction)
+    // Total: ~6400
     assert!(
         (6000..=6600).contains(&final_input),
         "Final input should reflect retry with agent-visible messages (~6300). Got: {}",
@@ -870,8 +853,8 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
 
     assert_eq!(
         final_output,
-        Some(200),
-        "Final output should be 200 (mock detects continuation as compaction). Got: {:?}",
+        Some(100),
+        "Final output should be an ordinary post-compaction response. Got: {:?}",
         final_output
     );
 
@@ -884,8 +867,8 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
     // Accumulated tokens should include all operations:
     // - Initial: 1000
     // - Compaction: ~6400 input (mock uses system_prompt.len()/4) + 200 output = ~6600
-    // - Reply: ~6500 input + 200 output = ~6700
-    // Total: 1000 + 6600 + 6700 = ~14300
+    // - Reply: ~6300 input + 100 output = ~6400
+    // Total: 1000 + 6600 + 6400 = ~14000
     let accumulated = updated_session.accumulated_usage.total_tokens.unwrap();
     assert!(
         (13000..=16000).contains(&accumulated),

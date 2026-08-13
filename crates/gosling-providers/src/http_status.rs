@@ -141,6 +141,8 @@ pub fn is_context_length_exceeded_message(text: &str) -> bool {
         "input too long",
         "prompt is too long",
         "prompt too long",
+        "invalid 'instructions': string too long",
+        "invalid \"instructions\": string too long",
     ]
     .iter()
     .any(|phrase| text_lower.contains(phrase))
@@ -402,6 +404,7 @@ mod tests {
             "Input token count exceeds the maximum number of tokens allowed",
             "Please reduce the length of the messages",
             "prompt is too long for this model",
+            "Invalid 'instructions': string too long. Expected a string with maximum length 1048576",
         ];
 
         for message in messages {

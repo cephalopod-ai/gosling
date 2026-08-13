@@ -1131,10 +1131,9 @@ fn enriched_model(
             .as_ref()
             .and_then(|model| model.family.clone())
             .or(fallback_family),
-        context_limit: canonical
-            .as_ref()
-            .map(|model| model.limit.context)
-            .or(fallback_context_limit)
+        context_limit: fallback_context_limit
+            .filter(|limit| *limit > 0)
+            .or_else(|| canonical.as_ref().map(|model| model.limit.context))
             .or(fallback_config.context_limit),
         reasoning: canonical
             .as_ref()
@@ -1335,6 +1334,14 @@ mod tests {
 
         assert_eq!(models.len(), 1);
         assert!(models[0].name.contains("Claude"));
+    }
+
+    #[test]
+    fn configured_route_context_limit_overrides_public_canonical_limit() {
+        let models =
+            configured_models_to_inventory("chatgpt_codex", &[ModelInfo::new("gpt-5.4", 258_400)]);
+
+        assert_eq!(models[0].context_limit, Some(258_400));
     }
 
     #[test]
