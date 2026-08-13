@@ -1,5 +1,7 @@
 # Project-shell readiness reassessment
 
+> R0 status update, 2026-08-13: the Linux baseline defects identified by this assessment were repaired and merged at `3feffca7c`. PR run `31731952749` and merged-main run `31732990062` both passed the helper, verified archive preparation, and full Rust tests. The project-shell readiness findings and R1 architecture requirement remain unchanged. See [`evidence/r0.md`](evidence/r0.md).
+
 Date: 2026-08-13
 Repository: `cephalopod-ai/gosling`
 Assessed revision: `6fe6a3bfcab3a48846850fd321fb8a056223d355` (`main`)

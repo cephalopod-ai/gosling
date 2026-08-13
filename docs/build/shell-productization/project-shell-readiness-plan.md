@@ -36,7 +36,7 @@ The campaign ends at **project-shell consumer ready** and **fixture distribution
 
 | Area                                              | Current state        | Plan disposition                           |
 | ------------------------------------------------- | -------------------- | ------------------------------------------ |
-| Linux V8 CI                                       | red on current main  | R0 blocker                                 |
+| Linux V8 CI                                       | R0 baseline healthy  | verified twice; retain R8 freshness checks |
 | project renderer composition                      | absent               | R1 architecture blocker, R2 implementation |
 | usable shell session/prompt/update path           | absent               | R1 contract, R3 implementation             |
 | permission/elicitation handling                   | auto-denied/dropped  | R3 implementation                          |
@@ -169,6 +169,8 @@ The decision must explain source distribution, package manager/workspace wiring,
 ## 6. Gate plan
 
 ### R0 — Reconcile truth and restore baseline CI
+
+**Status:** complete on 2026-08-13. PR run `31731952749` and merged-main run `31732990062` both completed the Linux helper, verified archive preparation, and full Rust test step. See [`evidence/r0.md`](evidence/r0.md).
 
 **Purpose:** remove stale status and repair the current red prerequisite before new architecture work.
 
@@ -487,8 +489,7 @@ A strict product profile, a neutral lifecycle label, generated domain DTOs, or a
 
 ## 10. Immediate next actions
 
-1. Execute R0 only: repair and remotely verify the Linux V8 helper; reconcile status records.
-2. Conduct R1 as an architecture task before adding Gate 5 UI or widening preload.
-3. Obtain operator review of ADR-0010–0012 and the consumer/runtime/domain contracts.
-4. Implement R2/R3 in bounded, separately reviewable slices with tests and evidence.
-5. Do not create DAWES/math source roots, profiles, prompts, adapters, or UI during this campaign.
+1. Conduct R1 as an architecture task before adding shared UI or widening preload.
+2. Obtain operator review of ADR-0010–0012 and the consumer/runtime/domain contracts.
+3. Implement R2/R3 in bounded, separately reviewable slices with tests and evidence.
+4. Do not create DAWES/math source roots, profiles, prompts, adapters, or UI during this campaign.
