@@ -180,17 +180,13 @@ ensure_cache() {
   esac
 
   cache_archive="$cache_dir/$archive_name"
-  if archive_valid "$cache_archive"; then
-    if [[ -f "$cache_archive.sha256" ]] && [[ "$(<"$cache_archive.sha256")" != "$(sha256_file "$cache_archive")" ]]; then
-      rm -f -- "$cache_archive" "$cache_archive.sha256"
-    else
-      printf '%s\n' "$cache_archive"
-      return
-    fi
+  if archive_valid "$cache_archive" && [[ -f "$cache_archive.sha256" ]] && [[ "$(<"$cache_archive.sha256")" == "$(sha256_file "$cache_archive")" ]]; then
+    printf '%s\n' "$cache_archive"
+    return
   fi
 
   acquire_lock
-  if archive_valid "$cache_archive"; then
+  if archive_valid "$cache_archive" && [[ -f "$cache_archive.sha256" ]] && [[ "$(<"$cache_archive.sha256")" == "$(sha256_file "$cache_archive")" ]]; then
     printf '%s\n' "$cache_archive"
     return
   fi

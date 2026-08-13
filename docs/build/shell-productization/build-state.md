@@ -1,9 +1,9 @@
 # Build state — Gosling shared shell productization
 
-Updated: 2026-08-12 22:58 implementation session
+Updated: 2026-08-12 23:03 implementation session
 Mode: patch-authorized; local commits only; no push, signing, publication, updater promotion, production identifiers, or domain-shell work authorized
-Current gate: Gate 1 — repair and deterministically provision the Linux V8 prerequisite
-Current step: Gate 0 GO recorded; implement helper regression tests and CI wiring from current evidence
+Current gate: Gate 2 — freeze product, compatibility, security, and module contracts
+Current step: Gate 1 built/locally validated and remote-Linux-blocked; inspect existing contracts and author ADRs before feature code
 
 ## Intent echo
 
@@ -45,14 +45,13 @@ These are evidence of current structure, not proof that the proposed implementat
 
 ## Next actions in strict order
 
-1. Add deterministic, network-independent helper regression tests for target parsing, seed/cold/warm/corrupt cache, checksum sidecar, invalid seed, unsupported target, and cache-under-target rejection.
-2. Wire the Linux Rust CI job through the tested helper with a cache location outside Cargo `target/`.
-3. Run shell tests plus static workflow/YAML checks and a focused Rust test command under Hermit using the prepared archive.
-4. Audit the Gate 1 diff for supply-chain bypass, cache poisoning, unsafe shell interpolation, and unrelated CI changes; patch and revalidate.
-5. Commit Gate 0/planning checkpoint, then commit Gate 1 independently when its local checks pass. Do not push.
-6. Seek remote CI evidence only after a future authorized push/PR; until then SHP-REQ-014 cannot be marked verified.
-7. Freeze Gate 2 ADR/profile/preload/compatibility/release contracts before implementing renderer or workflows.
-8. Continue gate by gate, updating state after every coherent slice and before risky operations.
+1. Commit the accepted Gate 1 helper/workflow/tests/evidence slice locally; do not push.
+2. Read existing ADR convention/index, shell DTO/validation, Desktop shell host/preload/main/Forge/updater/deep-link/diagnostic contracts, and release workflow inputs.
+3. Author ADRs for product-profile authority, Electron process/preload ownership, and package/updater/release isolation without implementing behavior.
+4. Freeze the versioned profile schema, compatibility matrix, lifecycle/error taxonomy, IPC allowlist, path matrix, threat model, module contracts, and test fixture identities.
+5. Run docs/diagram/link/contract checks and adversarial architecture/appsec review; patch findings before Gate 2 GO.
+6. Seek remote Gate 1 CI evidence only after a future authorized push/PR; until then SHP-REQ-014 stays built, not verified.
+7. Begin Gate 3 only after Gate 2 contracts are accepted; continue checkpointing every coherent slice.
 
 ## Open blockers / decisions
 
@@ -89,7 +88,7 @@ Then re-run symbol/path searches before modifying files. If current `main` diffe
 ## Validation status
 
 - Gate 0: GO; orientation and live-state correction are recorded in `evidence/gate-0.md`.
-- Documentation structural/diff validation: passed; exact commands and limitations are recorded in `evidence/planning.md`.
-- Runtime/code changes: none yet; Gate 1 is the first code/workflow slice.
-- Plan requirements: all P0/P1 remain `planned`; none are claimed built or verified.
-- Known CI baseline: V8 native-link failures are historical and nondeterministic; current merged-main Rust CI instead fails on unrelated replay data. Neither red state is waived.
+- Gate 1: helper/workflow/tests are built and locally validated; remote Linux CI is blocked pending push/PR authority. Evidence/audit: `evidence/gate-1.md`, `audits/gate-1-supply-chain.md`.
+- Focused Rust shell tests: 4 passed, 0 failed after final Gate 1 changes.
+- SHP-REQ-014 is `built; remote verification blocked`; every other P0/P1 remains `planned`.
+- Known CI baseline: current merged-main Rust CI has an unrelated replay-data failure; it is not waived and remains a Gate 8 acceptance blocker if unresolved.
