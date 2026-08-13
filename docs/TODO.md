@@ -1,19 +1,21 @@
 # TODO
 
-## Shared shell productization — planned 2026-08-12
+## Shared project-shell readiness — reassessed 2026-08-13
 
-The ACP/runtime shell foundation is merged. The remaining shared work—excluding every
-actual domain shell—is specified in the gated
-[`shell-productization` execution plan](build/shell-productization/execution-plan.md),
-with independent [traceability](build/shell-productization/traceability-matrix.md),
-[risk](build/shell-productization/risk-register.md), and
-[resume state](build/shell-productization/build-state.md). Its required outcomes are a
-reusable Electron bootstrap and narrow preload, common lifecycle/diagnostic/handoff UI,
-a declarative package profile, an actual packaged renderer-to-backend smoke test,
-installed-app coexistence, guarded profile-driven release workflows, compatibility and
-rollback behavior, and repair of the Linux `rusty_v8` CI prerequisite. Neutral fixtures
-prove shared machinery only; named/domain adapters, workflows, UI, branding, real
-publication, and updater promotion remain outside this campaign.
+The host/process ACP foundation is merged, but the post-Gate-4
+[readiness reassessment](build/shell-productization/readiness-reassessment.md) found that it is not
+yet consumable by separate project shells. The renderer is hard-coded and lifecycle-only; main-owned
+ACP exposes no safe renderer prompt/update/permission service; the Rust domain-adapter trait has no
+production registration path; package metadata/resources are not fully project-neutral; reusable
+shell workflows are absent; and current Linux CI is red in the V8 helper self-test.
+
+Forward Gates 5–8 are superseded by the
+[project-shell readiness plan](build/shell-productization/project-shell-readiness-plan.md). Execute
+R0 CI repair, then freeze consumer composition, application-runtime, and domain-adapter contracts in
+R1 before adding shared UI or widening preload. Named adapters, prompts, workflows, UI, branding,
+real publication, and updater promotion remain outside this campaign. A DAWES, math, or other named
+shell begins only after milestone M5 proves a copy-free neutral consumer end to end, unless the
+operator explicitly accepts a narrower development-only exception.
 
 ## v1.0.0 release readiness - 2026-07-20
 

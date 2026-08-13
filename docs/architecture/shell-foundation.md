@@ -81,3 +81,23 @@ manifest under the ignored repository `build/` directory; Forge consumes that
 projection while retaining the existing full-Gosling defaults when no profile is
 selected. Runtime namespaces remain independent, and Rust provisioning remains
 the runtime/session/policy authority.
+
+## Project-shell readiness boundary
+
+The merged implementation is a host substrate, not yet a supported project-shell
+consumer platform. The packaged renderer is still the fixed neutral
+`src/shell/renderer.ts`; the narrow preload has no session prompt/update or domain
+operation service; focused ACP callbacks currently cancel permissions, decline
+elicitations, and discard session updates; and production CLI construction does
+not register a `DomainAdapter`. Shell packaging also needs exact-resource and
+platform-metadata closure beyond the primary identities already read back.
+
+The source/CI findings are recorded in the
+[project-shell readiness reassessment](../build/shell-productization/readiness-reassessment.md).
+Forward work follows the
+[R0–R8 readiness plan](../build/shell-productization/project-shell-readiness-plan.md):
+restore CI, freeze consumer/runtime/domain contracts, prove independently supplied
+neutral consumers, implement a usable main-owned application service and live
+neutral adapter, then complete shared UI, packaged coexistence, platform workflows,
+and clean-checkout onboarding. No named project shell should treat the current
+`DomainAdapter` trait or product profile as a complete integration seam.

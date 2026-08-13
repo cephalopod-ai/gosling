@@ -1,5 +1,7 @@
 # Prototype execution plan — Gosling shared shell productization
 
+> **Superseded forward plan:** Gates 0–4 remain historical design and evidence context. After the 2026-08-13 project-shell readiness reassessment, forward Gates 5–8 are superseded by [`project-shell-readiness-plan.md`](project-shell-readiness-plan.md). Do not resume implementation from the old Gate 5 sequence.
+
 Date: 2026-08-12
 Baseline: `main` at merge commit `8627dc31a` (PR #46)
 Target: Rust/ACP core + Electron/React Desktop + GitHub Actions release infrastructure
