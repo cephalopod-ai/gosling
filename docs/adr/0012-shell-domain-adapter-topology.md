@@ -38,14 +38,23 @@ Specifically:
   `crates/gosling/src/agents/extension.rs:178-200`, with its existing `cmd`/`args`/`envs`/`timeout`/
   `cwd` fields). No new transport, port, loopback URL, or bespoke authentication scheme is invented:
   a locally spawned stdio child inherits its pipes directly from the parent, so there is no network
-  surface to authenticate. The adapter exposes exactly two MCP tools whose JSON schemas are the
-  already-generated canonical DTOs — `snapshot(input)` returning the shape of `DomainSnapshotResponse`
-  and `action(action, input, confirmationToken)` returning the shape of `DomainActionResponse`
-  (`crates/gosling-sdk-types/src/shell.rs:204-242`); `DomainActionRequest.confirmation_token` already
-  exists on that DTO today, so this reuses rather than adds a wire field. MCP's own `initialize`
-  handshake supplies protocol/version negotiation; the adapter's declared `DomainAdapterDescriptor`
-  (`domain_id`, `version`, `actions`) is compared against the live `serverInfo`/tool list before
-  `ready`.
+  surface to authenticate. The adapter exposes exactly **three** MCP tools:
+  - `descriptor()` — takes no input, returns the live `{ domain_id, display_name, version, actions }`
+    shape of `DomainAdapterDescriptor`. `serverInfo`/tool listing from MCP's own `initialize`
+    identifies the server process, not the domain-action set, so this tool is the actual live
+    negotiation surface: the Rust server calls it once at startup and compares the result against the
+    descriptor `ShellProvisioning.domain_adapter` and the consumer manifest declare, failing closed
+    (`incompatible`) on any mismatch before `ready` — a two-tool protocol with no descriptor exchange
+    would let a mismatched adapter reach `ready` on trust alone (PG-INV-004, PG-INV-009).
+  - `snapshot(input)` — matches `DomainSnapshotRequest`, returns the shape of `DomainSnapshotResponse`
+    (`crates/gosling-sdk-types/src/shell.rs:204-217`).
+  - `action(action, input)` — an **adapter-facing** request shape, deliberately narrower than the
+    canonical `DomainActionRequest`: it omits `confirmation_token`. The confirmation token authorizes
+    the *Rust server's* decision to call this tool at all (§ "Authority" below); it is consumed by the
+    server before dispatch and is never serialized to the adapter process. The server validates the
+    token against the pending `confirm` interaction, and only on success does it call `action` with
+    the token already stripped — the adapter tool schema and the canonical `DomainActionRequest` DTO
+    are intentionally different shapes for different hops, not the same wire message end to end.
 - **Process ownership.** The Rust server (not Electron main, not the renderer) owns adapter process
   lifecycle — launch, health/readiness, timeout, and cleanup — using the *same* child-process
   supervision code path that already spawns and supervises `ExtensionConfig::Stdio` extensions, not a
@@ -76,11 +85,17 @@ Specifically:
 - **Authority.** `domain_snapshot` stays read-only, unchanged from today's shape. `perform_action`
   additionally requires an **action-bound, single-use confirmation token** minted and validated by
   the server only, matching the existing `DomainActionRequest.confirmation_token: Option<String>`
-  field (`crates/gosling-sdk-types/src/shell.rs:229-230`) — this ADR does not add a wire field, it
-  specifies how that already-existing field gets populated. The server mints the token only after the
-  renderer's explicit approval of a `confirm` interaction naming that exact action (mechanics frozen
-  in `shell-productization-r1-contracts.md`) and returns the opaque value as the result of that
-  approval call; Electron main relays this single-use, short-lived, scope-bound value from the
+  field (`crates/gosling-sdk-types/src/shell.rs:229-230`) — this ADR does not add a wire field to that
+  DTO, it specifies how that already-existing field gets populated. Minting itself happens through a
+  **new, distinct custom ACP method**, `_gosling/unstable/shell/domain/action/confirm`
+  (`DomainActionConfirmRequest { action_id, approve: bool } → DomainActionConfirmResponse { status:
+  approved|denied, confirmation_token: Option<String> }`), not by overloading
+  `perform_domain_action`/`DomainActionRequest` — that request shape has no field for an interaction's
+  opaque `action_id` or an approve/deny decision, so reusing it would leave `confirmation.respond`
+  uncallable. The server mints the token only after the renderer's explicit approval of a `confirm`
+  interaction naming that exact action (mechanics frozen in `shell-productization-r1-contracts.md`)
+  and returns the opaque value as `confirmation_token` on `DomainActionConfirmResponse`; Electron main
+  relays this single-use, short-lived, scope-bound value from the
   approval response into the immediately following `perform_domain_action` call without being able to
   mint, forge, extend, or independently validate it — main is a relay for an opaque bearer value here,
   the same relationship it already has to the ACP loopback secret, not a second authority. Replayed,
