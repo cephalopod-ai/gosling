@@ -3,8 +3,8 @@
 Date: 2026-08-13
 Decision: **GO — Gate 4 process-boundary exit criteria met locally**
 Baseline revision: `269f04b94`
-Checkpoint revisions: `842356a53`, `ff4567d74`, `d7e4178a5`, `48b4d5c6c`, `6304a9afe`, `18b9f2fb3`
-Gate 4 exit checkpoint: recorded by the local commit after this evidence update
+Checkpoint revisions: `842356a53`, `ff4567d74`, `d7e4178a5`, `48b4d5c6c`, `6304a9afe`, `18b9f2fb3`, `098f45cef`
+Gate 4 exit checkpoint: `098f45cef`
 
 ## Implemented in this checkpoint
 

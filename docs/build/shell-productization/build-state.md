@@ -4,8 +4,8 @@ Updated: 2026-08-13 Gate 4 exit checkpoint
 Mode: patch-authorized; local commits only; no push, signing identity, notarization, publication,
 updater promotion, production identifiers, release destination, or domain-shell work authorized
 Current gate: Gate 5 — shared renderer states, diagnostics, relink, and handoff UI
-Current step: checkpoint the focused full-Gosling handoff receiver and Gate 4 GO decision, then begin
-Gate 5 with the shared runtime provider/state surface
+Current step: begin Gate 5 with the shared runtime provider/state surface over the frozen preload
+bridge; do not widen IPC or add domain behavior
 
 ## Intent echo
 
@@ -15,21 +15,21 @@ adapter semantics, domain UI/workflow, final branding, real publication, or upda
 
 ## Verified baseline and checkpoints
 
-| Gate | Local checkpoint         | State                                                    | Evidence                                                       |
-| ---- | ------------------------ | -------------------------------------------------------- | -------------------------------------------------------------- |
-| 0    | `ee0d79ee0`              | GO                                                       | `evidence/gate-0.md`                                           |
-| 1    | `72c22f4cc`              | built locally; remote Linux verification blocked         | `evidence/gate-1.md`, `audits/gate-1-supply-chain.md`          |
-| 2    | `e68c5791a`              | GO                                                       | `evidence/gate-2.md`, `audits/gate-2-architecture-security.md` |
-| 3    | `269f04b94`              | GO                                                       | `evidence/gate-3.md`, `audits/gate-3-profile-release.md`       |
-| 4a   | `ce7586aa8`              | canonical ACP method capabilities committed              | focused Rust/runtime evidence                                  |
-| 4b   | `842356a53`              | app identity/lifecycle/compatibility committed           | source tests                                                   |
-| 4c   | `ff4567d74`              | constrained IPC/preload committed                        | source tests                                                   |
-| 4d   | `d7e4178a5`              | main-owned ACP preflight committed                       | source tests                                                   |
-| 4e   | `48b4d5c6c`              | backend generation/cleanup owner committed               | source tests                                                   |
-| 4f   | `6304a9afe`              | dedicated host/package integrity committed               | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
-| 4g   | `18b9f2fb3`              | main-owned session create/resume committed/live-verified | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
-| 4h   | pending local checkpoint | focused full-Gosling handoff receiver built/verified     | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
-| 4    | pending local checkpoint | local GO; Gate 4 process-boundary exit criteria met      | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
+| Gate | Local checkpoint | State                                                    | Evidence                                                       |
+| ---- | ---------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| 0    | `ee0d79ee0`      | GO                                                       | `evidence/gate-0.md`                                           |
+| 1    | `72c22f4cc`      | built locally; remote Linux verification blocked         | `evidence/gate-1.md`, `audits/gate-1-supply-chain.md`          |
+| 2    | `e68c5791a`      | GO                                                       | `evidence/gate-2.md`, `audits/gate-2-architecture-security.md` |
+| 3    | `269f04b94`      | GO                                                       | `evidence/gate-3.md`, `audits/gate-3-profile-release.md`       |
+| 4a   | `ce7586aa8`      | canonical ACP method capabilities committed              | focused Rust/runtime evidence                                  |
+| 4b   | `842356a53`      | app identity/lifecycle/compatibility committed           | source tests                                                   |
+| 4c   | `ff4567d74`      | constrained IPC/preload committed                        | source tests                                                   |
+| 4d   | `d7e4178a5`      | main-owned ACP preflight committed                       | source tests                                                   |
+| 4e   | `48b4d5c6c`      | backend generation/cleanup owner committed               | source tests                                                   |
+| 4f   | `6304a9afe`      | dedicated host/package integrity committed               | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
+| 4g   | `18b9f2fb3`      | main-owned session create/resume committed/live-verified | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
+| 4h   | `098f45cef`      | focused full-Gosling handoff receiver committed/verified | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
+| 4    | `098f45cef`      | GO; Gate 4 process-boundary exit criteria met locally    | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
 
 Live Gate 0 corrections remain binding: authoritative commands use `source bin/activate-hermit`;
 historical Linux V8 failures and any current unrelated baseline failures are distinct. No remote CI
@@ -95,12 +95,11 @@ team ID      absent
 
 ## Next actions in strict order
 
-1. Create the local Gate 4 handoff-receiver/exit checkpoint commit; do not push.
-2. Begin Gate 5 with `ShellRuntimeProvider` over the frozen lifecycle bridge and one abort-safe state
+1. Begin Gate 5 with `ShellRuntimeProvider` over the frozen lifecycle bridge and one abort-safe state
    source; do not add domain behavior or widen shell IPC/preload.
-3. Add shared recovery/diagnostic/relink/handoff presentation incrementally with focused
+2. Add shared recovery/diagnostic/relink/handoff presentation incrementally with focused
    accessibility tests and exact server-result routing.
-4. Re-run focused/full Desktop validation at each coherent Gate 5 checkpoint.
+3. Re-run focused/full Desktop validation at each coherent Gate 5 checkpoint.
 
 ## Open blockers / decisions
 
