@@ -3609,7 +3609,6 @@ impl SessionStorage {
     ) -> Result<()> {
         let result_json = serialize_tool_operation_result(result)?;
         let pool = self.pool().await?;
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let updated = sqlx::query(
             r#"
             UPDATE tool_operations
@@ -3619,7 +3618,7 @@ impl SessionStorage {
         )
         .bind(&result_json)
         .bind(operation_id)
-        .execute(&mut *tx)
+        .execute(pool)
         .await?;
 
         if updated.rows_affected() == 0 {
@@ -3627,7 +3626,7 @@ impl SessionStorage {
                 "SELECT state, result_json FROM tool_operations WHERE operation_id = ?",
             )
             .bind(operation_id)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(pool)
             .await?;
             match existing {
                 Some((state, Some(stored))) if state == "completed" && stored == result_json => {}
@@ -3637,8 +3636,6 @@ impl SessionStorage {
                 None => anyhow::bail!("tool operation {operation_id} does not exist"),
             }
         }
-
-        tx.commit().await?;
         Ok(())
     }
 
