@@ -35,13 +35,24 @@ cleanup() {
 trap cleanup EXIT
 
 archive_size() {
-  stat -f '%z' "$1" 2>/dev/null || stat -c '%s' "$1"
+  local size
+  if size="$(stat -c '%s' "$1" 2>/dev/null)" && [[ "$size" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$size"
+    return
+  fi
+  if size="$(stat -f '%z' "$1" 2>/dev/null)" && [[ "$size" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$size"
+    return
+  fi
+  return 1
 }
 
 archive_valid() {
   local archive="$1"
+  local size
   [[ -f "$archive" ]] || return 1
-  [[ "$(archive_size "$archive")" -ge 10000000 ]] || return 1
+  size="$(archive_size "$archive")" || return 1
+  [[ "$size" -ge 10000000 ]] || return 1
   ar -t "$archive" >/dev/null 2>&1
 }
 
