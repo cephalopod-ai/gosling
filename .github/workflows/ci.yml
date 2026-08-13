@@ -241,6 +241,13 @@ jobs:
         run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile
         working-directory: ui/desktop
 
+      - name: Validate Shell Product Profiles
+        run: |
+          source ../../bin/activate-hermit
+          pnpm run shell:test-profile
+          pnpm run shell:check-profiles
+        working-directory: ui/desktop
+
       - name: Run Lint
         run: source ../../bin/activate-hermit && pnpm run lint:check
         working-directory: ui/desktop

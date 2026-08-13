@@ -73,8 +73,11 @@ provisioning read/validation, session creation, extension and skill filtering,
 server-side policy denial, namespace isolation, and persistence across a server
 restart.
 
-Package names, executable names, protocol schemes, and Linux package IDs can be
-composed at build time through `GOSLING_SHELL_PRODUCT_NAME`,
-`GOSLING_SHELL_PROTOCOL_SCHEME`, and `GOSLING_SHELL_PACKAGE_ID`. Shell-specific
-icons and updater feeds remain distribution inputs. Runtime namespaces are
-already independent.
+Focused-shell package, executable, protocol, platform IDs, assets, compatibility,
+and distribution policy now resolve from one strict source-controlled product
+profile selected through `GOSLING_SHELL_PROFILE`. Independent shell identity
+overrides are rejected. The resolver emits a canonical profile/hash and target
+manifest under the ignored repository `build/` directory; Forge consumes that
+projection while retaining the existing full-Gosling defaults when no profile is
+selected. Runtime namespaces remain independent, and Rust provisioning remains
+the runtime/session/policy authority.

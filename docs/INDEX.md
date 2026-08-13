@@ -11,6 +11,7 @@ for the relationship to cephalopod-ai/gosling.
 - [build/shell-productization/README.md](build/shell-productization/README.md) — index for the shell productization plan, traceability, risks, evidence, audits, and handoff state
 - [build/shell-productization/execution-plan.md](build/shell-productization/execution-plan.md) — gated plan for the reusable packaged, tested, diagnosable, and releasable shell host
 - [build/shell-productization/build-state.md](build/shell-productization/build-state.md) — resumable status and verify-before-execution handoff for shell productization
+- [SHELL_PRODUCTS.md](SHELL_PRODUCTS.md) — strict product-profile roots, commands, fixtures, and extension recipe
 - [INTENT.md](INTENT.md) — fork intent and scope
 - [TODO.md](TODO.md) — outstanding work
 - [adr/](adr/) — architecture decision records

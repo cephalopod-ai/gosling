@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "id": "gosling-shell-fixture-b",
+    "displayName": "Gosling Shell Fixture B",
+    "version": "0.0.0-test",
+    "runtimeNamespace": "shell-fixture-b",
+    "protocolScheme": "gosling-fixture-b",
+    "executableName": "gosling-shell-fixture-b",
+    "macosBundleId": "io.github.repo_makeover.gosling.fixture.b",
+    "windowsAppId": "Gosling.Shell.Fixture.B",
+    "linuxPackageName": "gosling-shell-fixture-b",
+    "flatpakId": "io.github.repo_makeover.Gosling.FixtureB"
+  },
+  "provisioningPath": "fixtures/shell-products/fixture-b/provisioning.json",
+  "compatibility": {
+    "goslingVersion": "0.1.0",
+    "goslingRevision": "current",
+    "provisioningSchemaVersion": 1,
+    "handoffSchemaVersion": 1,
+    "requiredMethods": [
+      "_gosling/unstable/shell/provisioning/read",
+      "_gosling/unstable/shell/provisioning/validate",
+      "_gosling/unstable/shell/handoff/prepare"
+    ]
+  },
+  "assets": {
+    "root": "fixtures/shell-products/fixture-b/assets",
+    "iconBase": "fixtures/shell-products/fixture-b/assets/icon",
+    "requiredTargets": ["macos-arm64", "macos-x64", "windows-x64", "linux-x64"]
+  },
+  "update": {
+    "enabled": false,
+    "channel": "fixture-b-disabled"
+  },
+  "distribution": {
+    "publishable": false,
+    "artifactPrefix": "gosling-shell-fixture-b",
+    "signingPolicy": "none"
+  }
+}

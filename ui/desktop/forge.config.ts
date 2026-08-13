@@ -1,31 +1,45 @@
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
-const { resolve } = require('path');
+const { resolveForgeProjection } = require('./scripts/shell-forge-profile');
 
 const isLinuxVulkanBuild = process.env.GOSLING_DESKTOP_LINUX_VARIANT === 'vulkan';
-const productName = process.env.GOSLING_SHELL_PRODUCT_NAME || 'Gosling';
-const protocolScheme = process.env.GOSLING_SHELL_PROTOCOL_SCHEME || 'gosling';
-const packageId = process.env.GOSLING_SHELL_PACKAGE_ID || 'io.github.repo_makeover.Gosling';
+const product = resolveForgeProjection();
+const signingAllowed = !product.shell || product.resolved.profile.distribution.publishable;
 
 let cfg = {
-  name: productName,
-  executableName: productName,
+  name: product.productName,
+  executableName: product.executableName,
+  ...(product.version ? { appVersion: product.version } : {}),
+  ...(product.macosBundleId ? { appBundleId: product.macosBundleId } : {}),
   asar: true,
-  extraResource: ['src/bin', 'src/images', 'src/app-update.yml'],
-  icon: 'src/images/icon',
+  extraResource: product.extraResource,
+  icon: product.iconBase,
   // Windows specific configuration
   win32: {
-    icon: 'src/images/icon.ico',
-    certificateFile: process.env.WINDOWS_CERTIFICATE_FILE,
-    signingRole: process.env.WINDOW_SIGNING_ROLE,
-    rfc3161TimeStampServer: 'http://timestamp.digicert.com',
-    signWithParams: '/fd sha256 /tr http://timestamp.digicert.com /td sha256',
+    icon: product.iconIco,
+    ...(signingAllowed
+      ? {
+          certificateFile: process.env.WINDOWS_CERTIFICATE_FILE,
+          signingRole: process.env.WINDOW_SIGNING_ROLE,
+          rfc3161TimeStampServer: 'http://timestamp.digicert.com',
+          signWithParams: '/fd sha256 /tr http://timestamp.digicert.com /td sha256',
+        }
+      : {}),
   },
+  ...(product.windowsAppId
+    ? {
+        win32metadata: {
+          ProductName: product.productName,
+          InternalName: product.windowsAppId,
+          OriginalFilename: `${product.executableName}.exe`,
+        },
+      }
+    : {}),
   // Protocol registration
   protocols: [
     {
-      name: `${productName}Protocol`,
-      schemes: [protocolScheme],
+      name: `${product.productName}Protocol`,
+      schemes: [product.protocolScheme],
     },
   ],
   // macOS Info.plist extensions for drag-and-drop support
@@ -49,7 +63,7 @@ let cfg = {
 
 // macOS code signing and notarization via Electron Forge
 // Activated when APPLE_TEAM_ID is set (CI signing builds)
-if (process.env.APPLE_TEAM_ID) {
+if (process.env.APPLE_TEAM_ID && signingAllowed) {
   cfg.osxSign = {
     keychain: process.env.KEYCHAIN_PATH || undefined,
     entitlements: 'entitlements.plist',
@@ -65,19 +79,21 @@ if (process.env.APPLE_TEAM_ID) {
 module.exports = {
   packagerConfig: cfg,
   rebuildConfig: {},
-  publishers: [
-    {
-      name: '@electron-forge/publisher-github',
-      config: {
-        repository: {
-          owner: process.env.GITHUB_OWNER || 'repo-makeover',
-          name: process.env.GITHUB_REPO || 'gosling',
+  publishers: product.update.enabled
+    ? [
+        {
+          name: '@electron-forge/publisher-github',
+          config: {
+            repository: {
+              owner: product.update.owner,
+              name: product.update.repository,
+            },
+            prerelease: false,
+            draft: true,
+          },
         },
-        prerelease: false,
-        draft: true,
-      },
-    },
-  ],
+      ]
+    : [],
   makers: [
     {
       name: '@electron-forge/maker-zip',
@@ -85,21 +101,21 @@ module.exports = {
       config: {
         arch: process.env.ELECTRON_ARCH === 'x64' ? ['x64'] : ['arm64'],
         options: {
-          icon: 'src/images/icon.ico',
+          icon: product.iconIco,
         },
       },
     },
     {
       name: '@electron-forge/maker-deb',
       config: {
-        name: productName,
-        bin: productName,
+        name: product.linuxPackageName,
+        bin: product.executableName,
         maintainer: 'repo-makeover',
         homepage: 'https://gosling-docs.ai/',
         categories: ['Development'],
         desktopTemplate: './forge.deb.desktop',
         options: {
-          icon: 'src/images/icon.png',
+          icon: product.iconPng,
           prefix: '/opt',
           ...(isLinuxVulkanBuild ? { depends: ['libvulkan1'] } : {}),
         },
@@ -108,14 +124,14 @@ module.exports = {
     {
       name: '@electron-forge/maker-rpm',
       config: {
-        name: productName,
-        bin: productName,
+        name: product.linuxPackageName,
+        bin: product.executableName,
         maintainer: 'repo-makeover',
         homepage: 'https://gosling-docs.ai/',
         categories: ['Development'],
         desktopTemplate: './forge.rpm.desktop',
         options: {
-          icon: 'src/images/icon.png',
+          icon: product.iconPng,
           prefix: '/opt',
           ...(isLinuxVulkanBuild ? { requires: ['vulkan-loader'] } : {}),
         },
@@ -125,16 +141,16 @@ module.exports = {
       name: '@electron-forge/maker-flatpak',
       config: {
         options: {
-          id: packageId,
+          id: product.flatpakId,
           categories: ['Development'],
           icon: {
-            scalable: 'src/images/icon.svg',
-            '512x512': 'src/images/icon-512.png',
+            scalable: product.iconSvg,
+            '512x512': product.iconFlatpak512,
           },
           homepage: 'https://gosling-docs.ai/',
           runtimeVersion: '25.08',
           baseVersion: '25.08',
-          bin: productName,
+          bin: product.executableName,
           modules: [
             {
               name: 'libbz2-shim',
