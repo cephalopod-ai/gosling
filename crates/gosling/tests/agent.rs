@@ -1192,8 +1192,8 @@ mod tests {
             Ok(())
         }
 
-        /// Simulates a provider that emits reasoning and a tool call in the same
-        /// streamed message (no prior thinking-only chunk).
+        /// Simulates a provider that emits reasoning, visible progress, and a tool
+        /// call in the same streamed message (no prior thinking-only chunk).
         struct CombinedThinkingToolProvider {
             call_count: AtomicUsize,
         }
@@ -1211,7 +1211,8 @@ mod tests {
                 ProviderMetadata {
                     name: "combined-thinking-tool-mock".to_string(),
                     display_name: "Combined Thinking+Tool Mock".to_string(),
-                    description: "Mock for combined thinking+tool call in one chunk".to_string(),
+                    description: "Mock for combined thinking+text+tool call in one chunk"
+                        .to_string(),
                     default_model: "mock-model".to_string(),
                     known_models: vec![],
                     model_doc_link: "".to_string(),
@@ -1250,11 +1251,12 @@ mod tests {
                 );
                 match call {
                     0 => {
-                        // Single chunk: reasoning_content AND tool call together
+                        // Single chunk: reasoning, visible progress, and tool call together
                         let tool_call = CallToolRequestParams::new("test_tool")
                             .with_arguments(object!({"param": "value"}));
                         let combined = Message::assistant()
                             .with_thinking("I should call test_tool", "sig_0")
+                            .with_text("I’m checking the tool now.")
                             .with_tool_request("call_1", Ok(tool_call));
                         Ok(Box::pin(futures::stream::once(async move {
                             Ok((Some(combined), Some(usage)))
@@ -1335,6 +1337,17 @@ mod tests {
                 .to_vec();
 
             assert_formatter_adds_reasoning_to_tool_calls(&messages, "combined-thinking-tool");
+            assert!(messages.iter().any(|message| {
+                let has_tool_request = message
+                    .content
+                    .iter()
+                    .any(|content| matches!(content, MessageContent::ToolRequest(_)));
+                let has_progress = message
+                    .content
+                    .iter()
+                    .any(|content| content.as_text() == Some("I’m checking the tool now."));
+                has_tool_request && has_progress
+            }));
             Ok(())
         }
 

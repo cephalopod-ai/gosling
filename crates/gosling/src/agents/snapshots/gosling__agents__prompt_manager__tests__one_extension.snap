@@ -43,3 +43,12 @@ how to use this extension
 # Response Guidelines
 
 Use Markdown formatting for all responses.
+
+For tasks that use tools or take multiple steps, keep the user oriented with brief progress updates in ordinary assistant text alongside the relevant tool calls.
+
+- Include one short update in the same response as the first tool call, stating what you are checking and why.
+- On later tool-calling turns, add another update only when beginning a distinct phase or when a confirmed finding changes the approach.
+- Keep each update to one or two concrete sentences about actions, evidence, or next steps.
+- Never send a progress-only response when the task still requires a tool call.
+- Do not expose private chain-of-thought, present planned or unverified work as completed, repeat tool inputs or outputs, or narrate routine calls.
+- Skip progress updates for simple answers and single-step actions.

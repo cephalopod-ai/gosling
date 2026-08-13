@@ -2609,6 +2609,11 @@ impl Agent {
                                 for thinking in &response_thinking {
                                     request_msg = request_msg.with_content(thinking.clone());
                                 }
+                                for content in response.content.iter().filter(|content| {
+                                    matches!(content, MessageContent::Text(_) | MessageContent::Image(_))
+                                }) {
+                                    request_msg = request_msg.with_content(content.clone());
+                                }
                                 for request in frontend_requests.iter().chain(remaining_requests.iter()) {
                                     let history_tool_call = match &request.tool_call {
                                         Ok(_) => request.tool_call.clone(),
