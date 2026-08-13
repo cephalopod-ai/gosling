@@ -69,7 +69,15 @@ function input() {
       coreVersion: '0.1.0',
       availableMethods: [...methods],
     },
-    provisioning: { schemaVersion: 1, valid: true },
+    provisioning: {
+      schemaVersion: 1,
+      identity: {
+        id: product.id,
+        displayName: product.displayName,
+        version: product.version,
+      },
+      valid: true,
+    },
   };
 }
 
@@ -89,6 +97,12 @@ describe('shell compatibility', () => {
       'IDENTITY_MISMATCH',
       (value: ReturnType<typeof input>) => {
         value.runtime.identity.id = 'other';
+      },
+    ],
+    [
+      'IDENTITY_MISMATCH',
+      (value: ReturnType<typeof input>) => {
+        value.provisioning.identity.id = 'other';
       },
     ],
     [
@@ -146,6 +160,11 @@ describe('shell compatibility', () => {
         },
         runtime: {
           id: 'other',
+          displayName: product.displayName,
+          version: product.version,
+        },
+        provisioning: {
+          id: product.id,
           displayName: product.displayName,
           version: product.version,
         },

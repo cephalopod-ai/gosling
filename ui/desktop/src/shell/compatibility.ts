@@ -22,6 +22,7 @@ export interface ShellRuntimeMetadata {
 
 export interface ShellProvisioningPreflight {
   schemaVersion: number;
+  identity: ShellRuntimeIdentity;
   valid: boolean;
 }
 
@@ -37,6 +38,23 @@ export interface ShellCompatibilitySuccess {
 }
 
 export type ShellCompatibilityResult = ShellCompatibilityFailure | ShellCompatibilitySuccess;
+
+export function checkShellMethods(
+  requiredMethods: readonly string[],
+  availableMethods: readonly string[]
+): ShellCompatibilityResult {
+  const available = new Set(availableMethods);
+  const missing = requiredMethods.filter((method) => !available.has(method));
+  if (missing.length > 0) {
+    return {
+      compatible: false,
+      code: 'METHOD_UNAVAILABLE',
+      expected: [...requiredMethods],
+      actual: [...available].sort(),
+    };
+  }
+  return { compatible: true };
+}
 
 function runtimeIdentity(identity: ShellRuntimeIdentity): ShellRuntimeIdentity {
   return {
@@ -73,13 +91,18 @@ export function checkShellCompatibility(input: {
   const manifestIdentity = runtimeIdentity(manifest.product);
   if (
     !sameIdentity(expectedIdentity, manifestIdentity) ||
-    !sameIdentity(expectedIdentity, runtime.identity)
+    !sameIdentity(expectedIdentity, runtime.identity) ||
+    !sameIdentity(expectedIdentity, provisioning.identity)
   ) {
     return {
       compatible: false,
       code: 'IDENTITY_MISMATCH',
       expected: expectedIdentity,
-      actual: { manifest: manifestIdentity, runtime: runtimeIdentity(runtime.identity) },
+      actual: {
+        manifest: manifestIdentity,
+        runtime: runtimeIdentity(runtime.identity),
+        provisioning: runtimeIdentity(provisioning.identity),
+      },
     };
   }
   if (
@@ -108,15 +131,12 @@ export function checkShellCompatibility(input: {
       actual: provisioning.schemaVersion,
     };
   }
-  const available = new Set(runtime.availableMethods);
-  const missing = profile.compatibility.requiredMethods.filter((method) => !available.has(method));
-  if (missing.length > 0) {
-    return {
-      compatible: false,
-      code: 'METHOD_UNAVAILABLE',
-      expected: profile.compatibility.requiredMethods,
-      actual: [...available].sort(),
-    };
+  const methods = checkShellMethods(
+    profile.compatibility.requiredMethods,
+    runtime.availableMethods
+  );
+  if (!methods.compatible) {
+    return methods;
   }
   if (!provisioning.valid) {
     return {

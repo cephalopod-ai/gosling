@@ -10,7 +10,7 @@ export const MAX_ACP_MESSAGE_CHARS = MAX_BUFFERED_ACP_MESSAGE_CHARS;
 const ACP_OVERSIZED_CLOSE_CODE = 4009;
 
 export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
-  const ws = new window.WebSocket(wsUrl);
+  const ws = new globalThis.WebSocket(wsUrl);
 
   const incoming: Array<{ message: unknown; encodedLength: number }> = [];
   const waiters: Array<() => void> = [];
@@ -85,7 +85,7 @@ export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
   ws.addEventListener('close', () => closeWaiters());
   ws.addEventListener('error', () => closeWaiters(new Error('ACP WebSocket connection failed')));
 
-  const readable = new window.ReadableStream({
+  const readable = new globalThis.ReadableStream({
     async pull(controller) {
       await waitForMessage();
       if (incoming.length > 0) {
@@ -104,7 +104,7 @@ export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
     },
   });
 
-  const writable = new window.WritableStream({
+  const writable = new globalThis.WritableStream({
     async write(message) {
       await openPromise;
       ws.send(JSON.stringify(message));
