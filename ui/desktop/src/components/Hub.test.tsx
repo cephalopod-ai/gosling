@@ -55,7 +55,13 @@ const configuredCredentialProfile = {
   updatedAt: '2026-07-19T00:00:00Z',
 };
 
-function workspace(id: string, name: string, workingFolder: string, validForSession = true) {
+function workspace(
+  id: string,
+  name: string,
+  workingFolder: string,
+  validForSession = true,
+  createdAt = '2026-07-19T00:00:00Z'
+) {
   return {
     workspace: {
       id,
@@ -74,7 +80,7 @@ function workspace(id: string, name: string, workingFolder: string, validForSess
         },
       ],
       credentialBindings: [],
-      createdAt: '2026-07-19T00:00:00Z',
+      createdAt,
       updatedAt: '2026-07-19T00:00:00Z',
       lastOpenedAt: '2026-07-19T00:00:00Z',
     },
@@ -104,24 +110,22 @@ describe('Hub workspace selection', () => {
     vi.mocked(createSession).mockResolvedValue({ id: 'session-personal' } as never);
   });
 
-  it('requires a workspace choice instead of inheriting the active workspace', async () => {
+  it('preselects the active workspace for a global new chat', async () => {
     const user = userEvent.setup();
     const setView = vi.fn();
     render(<Hub setView={setView} />, { wrapper: IntlTestWrapper });
 
-    expect(screen.getByLabelText('Workspace')).toHaveValue('');
+    expect(screen.getByLabelText('Workspace')).toHaveValue('default');
     expect(screen.getByRole('option', { name: 'Missing folder — needs attention' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
 
-    await user.selectOptions(screen.getByLabelText('Workspace'), 'personal');
-    expect(screen.getByTitle('/Users/tester/Personal')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
     await waitFor(() =>
-      expect(createSession).toHaveBeenCalledWith('/Users/tester/Personal', {
+      expect(createSession).toHaveBeenCalledWith('/Users/tester/Work', {
         allExtensions: [],
-        workspaceId: 'personal',
-        workspaceWorkingDir: '/Users/tester/Personal',
+        workspaceId: 'default',
+        workspaceWorkingDir: '/Users/tester/Work',
       })
     );
     expect(setActiveWorkspace).not.toHaveBeenCalled();
@@ -145,7 +149,7 @@ describe('Hub workspace selection', () => {
     const setView = vi.fn();
     render(<Hub setView={setView} />, { wrapper: IntlTestWrapper });
 
-    expect(screen.getByLabelText('Workspace')).toHaveValue('');
+    expect(screen.getByLabelText('Workspace')).toHaveValue('missing');
     expect(screen.getByRole('option', { name: 'Missing folder — needs attention' })).toBeDisabled();
     const send = screen.getByRole('button', { name: 'Send message' });
     expect(send).toBeDisabled();
@@ -155,7 +159,7 @@ describe('Hub workspace selection', () => {
     expect(setView).not.toHaveBeenCalled();
   });
 
-  it('keeps a launcher prompt in the new-chat draft until a workspace is chosen', () => {
+  it('keeps a launcher prompt in the new-chat draft with the default workspace selected', () => {
     render(<Hub setView={vi.fn()} initialMessage={{ msg: 'Review this project', images: [] }} />, {
       wrapper: IntlTestWrapper,
     });
@@ -164,15 +168,74 @@ describe('Hub workspace selection', () => {
       'data-initial-value',
       'Review this project'
     );
-    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
   });
 
-  it('preselects only the workspace supplied by a sidebar new-chat action', () => {
+  it('prefers the workspace supplied by a sidebar new-chat action', () => {
     render(<Hub setView={vi.fn()} initialWorkspaceId="personal" />, {
       wrapper: IntlTestWrapper,
     });
 
     expect(screen.getByLabelText('Workspace')).toHaveValue('personal');
+  });
+
+  it('adopts the active workspace when workspace loading finishes', async () => {
+    vi.mocked(useWorkspace).mockReturnValue({
+      workspaces: [],
+      activeWorkspaceId: null,
+      defaultWorkspaceId: null,
+      credentialProfiles: [],
+      loading: true,
+      error: null,
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    const { rerender } = render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+    expect(screen.getByLabelText('Workspace')).toHaveValue('');
+
+    vi.mocked(useWorkspace).mockReturnValue({
+      workspaces: [workspace('default', 'Default', '/Users/tester/Work')],
+      activeWorkspaceId: 'default',
+      defaultWorkspaceId: 'default',
+      credentialProfiles: [],
+      loading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useWorkspace>);
+    rerender(<Hub setView={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByLabelText('Workspace')).toHaveValue('default'));
+  });
+
+  it('falls back to the configured default and then the newest workspace', () => {
+    vi.mocked(useWorkspace).mockReturnValue({
+      workspaces: [
+        workspace('older', 'Older', '/Users/tester/Older', true, '2026-07-18T00:00:00Z'),
+        workspace('newest', 'Newest', '/Users/tester/Newest', true, '2026-07-20T00:00:00Z'),
+      ],
+      activeWorkspaceId: 'deleted',
+      defaultWorkspaceId: 'older',
+      credentialProfiles: [],
+      loading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    const { unmount } = render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+    expect(screen.getByLabelText('Workspace')).toHaveValue('older');
+    unmount();
+
+    vi.mocked(useWorkspace).mockReturnValue({
+      workspaces: [
+        workspace('older', 'Older', '/Users/tester/Older', true, '2026-07-18T00:00:00Z'),
+        workspace('newest', 'Newest', '/Users/tester/Newest', true, '2026-07-20T00:00:00Z'),
+      ],
+      activeWorkspaceId: 'deleted',
+      defaultWorkspaceId: 'also-deleted',
+      credentialProfiles: [],
+      loading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+    expect(screen.getByLabelText('Workspace')).toHaveValue('newest');
   });
 
   it('uses an explicitly selected credential only for the new chat', async () => {

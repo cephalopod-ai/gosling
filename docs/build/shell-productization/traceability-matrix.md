@@ -6,6 +6,10 @@ Original baseline: `main` at `8627dc31a`
 Reassessed baseline: merged `main` at `6fe6a3bfc`, 2026-08-13
 Last updated: project-shell readiness reassessment; forward Gates 5–8 are superseded by R0–R8
 
+The focused execution mapping for every pre-GUI R1–R4 requirement is in
+[`pre-gui-backend-implementation-plan.md`](pre-gui-backend-implementation-plan.md). This matrix
+remains the canonical SHP-REQ inventory and status vocabulary.
+
 ## Requirements
 
 | REQ         | Pri | Requirement                                                                                                                                  | Design/module refs                              | Planned implementation                                                                | Planned verification                                                                                                              | Evidence target     | Status                                                                                                          |

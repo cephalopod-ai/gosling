@@ -92,6 +92,9 @@ R3 must implement truthful event/state/recovery behavior. R6 must exercise these
 
 ## Strict next actions
 
+Execute the dependency-aware work packages in
+[`pre-gui-backend-implementation-plan.md`](pre-gui-backend-implementation-plan.md). In summary:
+
 1. **R1 architecture only:** write and review ADR-0010–0012 for consumer composition, main-owned application runtime, and domain adapter lifecycle/transport.
 2. Freeze consumer manifest, safe runtime snapshot, session/prompt/update/permission, and domain operation contracts.
 3. Review the preferred separate-consumer/out-of-process-adapter model against the isolated-workspace alternative.

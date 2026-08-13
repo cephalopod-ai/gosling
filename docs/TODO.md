@@ -6,16 +6,19 @@ The host/process ACP foundation is merged, but the post-Gate-4
 [readiness reassessment](build/shell-productization/readiness-reassessment.md) found that it is not
 yet consumable by separate project shells. The renderer is hard-coded and lifecycle-only; main-owned
 ACP exposes no safe renderer prompt/update/permission service; the Rust domain-adapter trait has no
-production registration path; package metadata/resources are not fully project-neutral; reusable
-shell workflows are absent; and current Linux CI is red in the V8 helper self-test.
+production registration path; package metadata/resources are not fully project-neutral; and reusable
+shell workflows are absent. R0 repaired the Linux V8 helper and restored the baseline; three
+successive `main` CI runs through `31744291492` completed successfully. Reverify current CI before
+execution, but do not mistake baseline health for project-shell readiness.
 
 Forward Gates 5–8 are superseded by the
-[project-shell readiness plan](build/shell-productization/project-shell-readiness-plan.md). Execute
-R0 CI repair, then freeze consumer composition, application-runtime, and domain-adapter contracts in
-R1 before adding shared UI or widening preload. Named adapters, prompts, workflows, UI, branding,
-real publication, and updater promotion remain outside this campaign. A DAWES, math, or other named
-shell begins only after milestone M5 proves a copy-free neutral consumer end to end, unless the
-operator explicitly accepts a narrower development-only exception.
+[project-shell readiness plan](build/shell-productization/project-shell-readiness-plan.md). R0 is
+complete. Follow the focused
+[pre-GUI backend implementation plan](build/shell-productization/pre-gui-backend-implementation-plan.md)
+to freeze and implement R1–R4 before adding shared UI or widening preload. Named adapters, prompts,
+workflows, UI, branding, real publication, and updater promotion remain outside this campaign. A
+DAWES, math, or other named shell begins only after milestone M5 proves a copy-free neutral consumer
+end to end, unless the operator explicitly accepts a narrower development-only exception.
 
 ## v1.0.0 release readiness - 2026-07-20
 

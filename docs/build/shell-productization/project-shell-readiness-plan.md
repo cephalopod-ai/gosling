@@ -4,6 +4,8 @@ Date: 2026-08-13
 Baseline: `main` at `6fe6a3bfcab3a48846850fd321fb8a056223d355`
 Status: proposed replacement for forward Gates 5–8; Gates 0–4 remain historical evidence
 Companion assessment: [`readiness-reassessment.md`](readiness-reassessment.md)
+Focused R1–R4 execution companion:
+[`pre-gui-backend-implementation-plan.md`](pre-gui-backend-implementation-plan.md)
 
 ## 1. Mission
 

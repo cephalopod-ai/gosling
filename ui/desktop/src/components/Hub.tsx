@@ -62,8 +62,23 @@ export default function Hub({
   const intl = useIntl();
   const { extensionsList } = useConfig();
   const { currentModel, currentProvider } = useModelAndProvider();
-  const { workspaces, credentialProfiles, loading, error } = useWorkspace();
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(initialWorkspaceId ?? '');
+  const { workspaces, activeWorkspaceId, defaultWorkspaceId, credentialProfiles, loading, error } =
+    useWorkspace();
+  const preferredWorkspaceId = useMemo(() => {
+    const availableWorkspaceIds = new Set(workspaces.map((item) => item.workspace.id));
+    const configuredWorkspaceId = [initialWorkspaceId, activeWorkspaceId, defaultWorkspaceId].find(
+      (workspaceId) => workspaceId && availableWorkspaceIds.has(workspaceId)
+    );
+    if (configuredWorkspaceId) return configuredWorkspaceId;
+
+    return workspaces.reduce<(typeof workspaces)[number] | undefined>((latest, item) => {
+      if (!latest) return item;
+      return Date.parse(item.workspace.createdAt) > Date.parse(latest.workspace.createdAt)
+        ? item
+        : latest;
+    }, undefined)?.workspace.id;
+  }, [activeWorkspaceId, defaultWorkspaceId, initialWorkspaceId, workspaces]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(preferredWorkspaceId ?? '');
   const [selectedCredentialProfileId, setSelectedCredentialProfileId] = useState('');
   const [additionalWorkspaceFolders, setAdditionalWorkspaceFolders] = useState<string[]>([]);
   const [isChoosingAdditionalFolder, setIsChoosingAdditionalFolder] = useState(false);
@@ -104,10 +119,10 @@ export default function Hub({
 
   useEffect(() => {
     setSelectedWorkspaceId((current) => {
-      if (!current || workspaces.some((item) => item.workspace.id === current)) return current;
-      return '';
+      if (current && workspaces.some((item) => item.workspace.id === current)) return current;
+      return preferredWorkspaceId ?? '';
     });
-  }, [workspaces]);
+  }, [preferredWorkspaceId, workspaces]);
 
   const handleWorkspaceChange = useCallback(
     (workspaceId: string) => {
