@@ -69,8 +69,17 @@ making agent workflows fake or unusable").
 ### 3. Safe runtime snapshot v2
 
 Extend `runtime.read`/`runtime.changed` beyond `ShellLifecycleState` to include: verified product
-identity and runtime namespace (already computed during `connectShellAcp`'s compatibility check,
-`compatibility.ts:75-150`, but currently not returned to the renderer), safe compatibility result,
+identity — `id`/`displayName`/`version`, already computed during `connectShellAcp`'s compatibility
+check (`compatibility.ts:75-150`) but currently not returned to the renderer — safe compatibility
+result, and the runtime namespace *once R3 adds it to the checked surface*. Today neither
+`ShellRuntimeIdentity` (renderer-facing) nor the Rust `ShellIdentity` DTO
+(`crates/gosling-sdk-types/src/shell.rs:10-14`) carries `runtimeNamespace`, and
+`checkShellCompatibility` never compares it — the profile's `runtimeNamespace` is trusted, not
+verified against what the spawned backend actually used. R3 must add the backend's effective
+namespace to canonical runtime metadata and to the compatibility comparison before this snapshot can
+expose it as a *verified* fact; until then, `identity` in the snapshot carries only the fields that
+are genuinely checked today (`id`/`displayName`/`version`), and namespace exposure is deferred rather
+than mislabeled.
 provisioning issue codes/paths (not values — reusing the existing diagnostic redaction contract),
 session status/ID and prompt-attempt phase, negotiated domain-adapter descriptor and capability
 availability (ADR-0012), and pending permission/elicitation summaries by opaque action ID. The
