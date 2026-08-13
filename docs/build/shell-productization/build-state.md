@@ -1,11 +1,11 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-13 post-Gate-4 reassessment
-Assessed revision: `6fe6a3bfcab3a48846850fd321fb8a056223d355` on merged `main`
-Planning branch: `codex/project-shell-readiness-replan`
-Mode: assessment and planning; no named shell, production release, signing, publication, or updater activation
-Current gate: **R0 — reconcile truth and restore baseline CI**
-Next architecture gate: **R1 — freeze project-shell topology and application contracts**
+Updated: 2026-08-13 after R0 remote verification
+R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
+Evidence branch: `codex/r0-evidence-reconciliation`
+Mode: architecture readiness; no named shell, production release, signing, publication, or updater activation
+Completed gate: **R0 — baseline CI restored and evidence reconciled**
+Current gate: **R1 — freeze project-shell topology and application contracts**
 
 ## Intent
 
@@ -25,15 +25,16 @@ Do not start `ShellRuntimeProvider`, widen preload, or create a named project sh
 
 ## Retained checkpoints
 
-| Area                                               | Revision/evidence               | Current interpretation                                                |
-| -------------------------------------------------- | ------------------------------- | --------------------------------------------------------------------- |
-| original orientation                               | `ee0d79ee0`                     | historical baseline                                                   |
-| V8 helper implementation                           | `72c22f4cc`                     | locally passes; remote Linux path is currently defective              |
-| product/host contracts                             | `e68c5791a`                     | retain, subject to new ADRs for missing consumer/runtime/domain seams |
-| product profile                                    | `269f04b94`                     | retain; consumer manifest still absent                                |
-| host lifecycle/preload/ACP/package/session/handoff | `842356a53` through `098f45cef` | merged host substrate; not a usable project application               |
-| Gate 4 status record                               | `bd293a50e`                     | historical local process-boundary GO only                             |
-| merged main                                        | `6fe6a3bfc`                     | assessed source and remote CI revision                                |
+| Area                                               | Revision/evidence                     | Current interpretation                                                |
+| -------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------- |
+| original orientation                               | `ee0d79ee0`                           | historical baseline                                                   |
+| V8 helper implementation                           | `72c22f4cc`, `9d8ef5db9`, `ee3db7893` | numeric GNU/BSD probes pass locally and on Linux CI                   |
+| product/host contracts                             | `e68c5791a`                           | retain, subject to new ADRs for missing consumer/runtime/domain seams |
+| product profile                                    | `269f04b94`                           | retain; consumer manifest still absent                                |
+| host lifecycle/preload/ACP/package/session/handoff | `842356a53` through `098f45cef`       | merged host substrate; not a usable project application               |
+| Gate 4 status record                               | `bd293a50e`                           | historical local process-boundary GO only                             |
+| R0 repair PR                                       | `436c846f0`, PR #47                   | one clean PR Linux Rust execution                                     |
+| merged main                                        | `3feffca7c`                           | second clean Linux Rust execution                                     |
 
 ## Reassessment findings that block project shells
 
@@ -44,43 +45,57 @@ Do not start `ShellRuntimeProvider`, widen preload, or create a named project sh
 5. `busy`, `relink_required`, and `fatal` have no production transition source; runtime snapshot lacks verified identity/session/adapter facts.
 6. Shell packaging inherits Gosling-specific metadata/permissions and bundles broad `src/bin` resources.
 7. No packaged application workflow/restart/coexistence harness and no shell build/release workflows.
-8. Current main CI run `31695906352` failed at helper line 44 before Rust tests.
+8. Linux CI is restored; project-shell readiness remains blocked by findings 1–7, not baseline CI.
 
 Full details and source references are in the reassessment.
 
 ## Current observed validation
 
-Local at `6fe6a3bfc`:
+Local at `436c846f0`:
 
 ```text
 source bin/activate-hermit
-scripts/test-with-rusty-v8-cache.sh                         passed on macOS
-cd ui/desktop
-pnpm run shell:test-profile                                41/41 passed
-focused shell/host/serve/handoff Vitest                    120/120 passed, 14 files
-pnpm run typecheck                                          passed
+scripts/test-with-rusty-v8-cache.sh                         passed repeatedly on macOS
+cargo fmt --all -- --check                                 passed
+cargo clippy --all-targets -- -D warnings                  passed
+cargo test -p gosling --test agent                         17/17 passed
+focused concurrent-tool regression                         10 consecutive passes
+focused Anthropic weather replay                            passed
+pnpm --dir ui/desktop run shell:test-profile               41/41 passed
+pnpm --dir ui/desktop run shell:check-profiles              passed; sourceClean=true
 ```
 
-Remote at the same revision:
+Remote on the repaired lineage:
 
 ```text
-Desktop lint/tests                                          passed
-Rust format, Clippy, MSRV, schema/SDK, Windows build        passed
-Canary and live-provider workflows                          passed
-Linux Build and Test Rust Project                           failed
-failure                                                     with-rusty-v8-cache.sh line 44: File: unbound variable
+PR run 31731952749 / job 94554362098                        passed
+merged-main run 31732990062 / job 94557761229               passed
+V8 helper self-test and verified archive preparation        passed in both jobs
+full Linux Build and Test step                              passed in both jobs
+PR Desktop, format, Clippy, MSRV, and schema/SDK jobs       passed
+both complete CI workflows                                  passed overall
+merged-main Windows Rust build                              passed
 ```
 
-The macOS helper pass does not override the Linux failure.
+The two Linux jobs are independent executions on the repaired branch and merged `main`, not retries of one attempt. Detailed evidence is in [`evidence/r0.md`](evidence/r0.md).
+
+## Reopened Gate 4 acceptance
+
+Gate 4 remains a historical local process-boundary acceptance. R0 does not relabel it as full application-runtime acceptance. The following originally declared paths remain reopened:
+
+- renderer crash and cleanup;
+- ACP loss/reconnect and compacted resume;
+- forced-cleanup escalation;
+- the complete typed startup/runtime failure matrix.
+
+R3 must implement truthful event/state/recovery behavior. R6 must exercise these paths in the packaged workflow and coexistence matrix.
 
 ## Strict next actions
 
-1. **R0 only:** repair the portable V8 archive-size probe and add Linux/GNU regression coverage.
-2. Obtain two clean Linux CI runs on the repaired lineage and confirm Rust tests actually execute.
-3. Reconcile evidence/ledgers after observed remote success; do not predeclare it.
-4. **R1 architecture:** write and review ADR-0010–0012 for consumer composition, main-owned application runtime, and domain adapter lifecycle/transport.
-5. Freeze consumer manifest, safe runtime snapshot, session/prompt/update/permission, and domain operation contracts.
-6. Only then implement R2/R3. Shared UI is R5, not the next task.
+1. **R1 architecture only:** write and review ADR-0010–0012 for consumer composition, main-owned application runtime, and domain adapter lifecycle/transport.
+2. Freeze consumer manifest, safe runtime snapshot, session/prompt/update/permission, and domain operation contracts.
+3. Review the preferred separate-consumer/out-of-process-adapter model against the isolated-workspace alternative.
+4. Only then implement R2/R3. Shared UI is R5, not the next task.
 
 ## Named-shell start policy
 
@@ -103,6 +118,7 @@ sed -n '1,220p' AGENTS.md
 cat docs/build/shell-productization/readiness-reassessment.md
 cat docs/build/shell-productization/project-shell-readiness-plan.md
 cat docs/build/shell-productization/build-state.md
+cat docs/build/shell-productization/evidence/r0.md
 cat docs/build/shell-productization/traceability-matrix.md
 cat docs/build/shell-productization/risk-register.md
 cat docs/build/shell-productization/assumption-ledger.md

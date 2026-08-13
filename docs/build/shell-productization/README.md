@@ -13,10 +13,11 @@ This package is the durable, resumable plan for turning the merged Gosling shell
 7. [`plan-changes.md`](plan-changes.md) — append-only change control before deviations.
 8. [`defects.md`](defects.md) — known baseline gaps and future audit/implementation findings.
 9. [`evidence/planning.md`](evidence/planning.md) and [`audits/plan-review.md`](audits/plan-review.md) — what was observed and how the original plan was challenged.
-10. [`evidence/gate-4.md`](evidence/gate-4.md) and [`audits/gate-4-host-package.md`](audits/gate-4-host-package.md) — historical Gate 4 process-boundary evidence, audit, and residual limits.
+10. [`evidence/r0.md`](evidence/r0.md) — merged Linux baseline repair, two clean Rust CI executions, and reopened Gate 4 acceptance.
+11. [`evidence/gate-4.md`](evidence/gate-4.md) and [`audits/gate-4-host-package.md`](audits/gate-4-host-package.md) — historical Gate 4 process-boundary evidence, audit, and residual limits.
 
 ## Current status
 
-Gates 0–4 are retained as historical foundation evidence, and their implementation is merged on `main` at `6fe6a3bfc`. The reassessment reopens omitted failure-path acceptance and replaces forward Gates 5–8 with R0–R8. Current Linux CI is red in the V8 helper self-test; the renderer is lifecycle-only; main-owned ACP has no usable renderer session/prompt/update API; the Rust domain adapter has no production registration path; and no external project renderer composition seam or reusable shell workflow exists. The next action is R0 CI repair, followed by R1 architecture—not shared UI implementation.
+Gates 0–4 remain historical foundation evidence. R0 is merged on `main` at `3feffca7c` and closed by two clean Linux Rust executions: PR run `31731952749` and merged-main run `31732990062`. The reassessment still reopens omitted Gate 4 failure-path acceptance and replaces forward Gates 5–8 with R0–R8. The renderer remains lifecycle-only; main-owned ACP has no usable renderer session/prompt/update API; the Rust domain adapter has no production registration path; and no external project renderer composition seam or reusable shell workflow exists. The next action is R1 architecture—not shared UI implementation.
 
 No production signing, notarization, publication, updater promotion, production identifier, release destination, or named project shell is authorized or implemented. Resume from `build-state.md` and verify the current repository instead of trusting an earlier checkpoint blindly.

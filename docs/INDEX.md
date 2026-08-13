@@ -13,6 +13,7 @@ for the relationship to cephalopod-ai/gosling.
 - [build/shell-productization/project-shell-readiness-plan.md](build/shell-productization/project-shell-readiness-plan.md) — superseding R0–R8 plan for consumer, application-runtime, domain-adapter, package, and onboarding readiness
 - [build/shell-productization/execution-plan.md](build/shell-productization/execution-plan.md) — historical original plan; forward Gates 5–8 are superseded
 - [build/shell-productization/build-state.md](build/shell-productization/build-state.md) — current resumable status and verify-before-execution handoff
+- [build/shell-productization/evidence/r0.md](build/shell-productization/evidence/r0.md) — R0 Linux CI repair, two clean Rust executions, and Gate 4 acceptance reconciliation
 - [SHELL_PRODUCTS.md](SHELL_PRODUCTS.md) — strict product-profile roots, local package/readback commands, fixtures, and extension recipe
 - [INTENT.md](INTENT.md) — fork intent and scope
 - [TODO.md](TODO.md) — outstanding work
