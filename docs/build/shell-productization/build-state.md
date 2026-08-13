@@ -1,9 +1,9 @@
 # Build state — Gosling shared shell productization
 
-Updated: 2026-08-12 Gate 3 implementation session
+Updated: 2026-08-12 Gate 4 compatibility-metadata slice
 Mode: patch-authorized; local commits only; no push, signing, publication, updater promotion, production identifiers, release destination, or domain-shell work authorized
-Current gate: Gate 3 — implementation and validation complete; checkpoint commit in progress
-Current step: create the local Gate 3 commit, verify clean checkpoint, then orient Gate 4
+Current gate: Gate 4 — shared Electron bootstrap, preload, ACP, compatibility, and diagnostics
+Current step: checkpoint canonical ACP custom-method capability metadata, then implement pure app-identity/lifecycle/compatibility modules before the shell entrypoint
 
 ## Intent echo
 
@@ -18,7 +18,8 @@ adapter semantics, domain UI/workflow, final branding, real publication, or upda
 | 0 | `ee0d79ee0` | GO | `evidence/gate-0.md` |
 | 1 | `72c22f4cc` | built locally; remote Linux verification blocked | `evidence/gate-1.md`, `audits/gate-1-supply-chain.md` |
 | 2 | `e68c5791a` | GO | `evidence/gate-2.md`, `audits/gate-2-architecture-security.md` |
-| 3 | pending local checkpoint | implementation/targeted acceptance green | `evidence/gate-3.md`, `audits/gate-3-profile-release.md` |
+| 3 | `269f04b94` | GO | `evidence/gate-3.md`, `audits/gate-3-profile-release.md` |
+| 4a | pending local checkpoint | canonical custom-method metadata unit/runtime proof green | source tests; Gate 4 evidence pending |
 
 Live Gate 0 corrections remain binding: authoritative commands use `source bin/activate-hermit`;
 historical Linux V8 failures and current unrelated Anthropic weather replay failure are distinct.
@@ -60,17 +61,36 @@ and 15 locale catalogs); Desktop Vitest passed 88 files/583 tests; Prettier, For
 load probe, documentation fences/index links, and `git diff --check` passed. Actual package readback
 is deliberately deferred until dedicated shell Vite entries exist in Gate 4.
 
+## Gate 4 orientation and current proof
+
+Fresh inspection covered `shellHost.ts`, `goslingServe.ts` and its spawned-process tests,
+`backendProcessRegistry.ts`, `startupDiagnostics.ts`, Desktop ACP connection/transport, full preload
+and IPC channels, Vite/Forge entries, Rust shell validation/runtime, generated SDK custom methods,
+and full Desktop app identity ordering. Findings:
+
+- `createMinimalShellHost` still points at the broad `preload.js` and has no production call site;
+- `startGoslingServe` already owns loopback binding, generated-secret injection, TLS fingerprint,
+  readiness, process registration, graceful/forced cleanup, and parent-death signaling;
+- full Desktop app name/protocol/partition/single-instance behavior is hard-coded and cannot be the
+  shell entrypoint;
+- generated SDK already exposes provisioning read/validate and handoff prepare;
+- initialization shell metadata lacked the authoritative custom-method list required for pre-session
+  compatibility.
+
+The metadata gap is now patched additively: `availableMethods` is sorted directly from
+`GoslingAcpAgent::custom_method_schemas`. The focused Rust unit test passed; the CLI runtime E2E
+compiled and its actual spawned-server provisioning/session/isolation test passed.
+
 ## Next actions in strict order
 
-1. Run broad Gate 3 validation and repair only Gate 3 regressions.
-2. Update evidence with exact results and create one local checkpoint commit; do not push.
-3. Start Gate 4 with fresh source inspection: existing host/lifecycle/process-registry, Vite entries,
-   ACP initialization/custom-method schema generation, startup diagnostics, deep links, and preload
-   channel conventions.
-4. Add canonical Rust custom-method capability metadata before any session compatibility use; do
-   not duplicate method authority in TypeScript.
-5. Implement dedicated shell main/preload/renderer entries, app identity ordering, lifecycle,
-   compatibility, narrow IPC, ACP preflight, diagnostics, and handoff in focused modules.
+1. Create a local compatibility-metadata checkpoint commit; do not push.
+2. Implement and exhaustively test pure shell app-identity, lifecycle, and compatibility modules.
+3. Implement shell-only IPC channel/types and separate preload with a frozen operation snapshot.
+4. Implement ACP adapter/preflight from generated SDK types; reject identity/core/schema/method and
+   invalid provisioning before any session create/resume.
+5. Implement the dedicated shell bootstrap/main entry with one generation owner and isolated paths.
+6. Add shell renderer entry only after the main/preload contracts are green.
+7. Extend bounded/redacted diagnostics and explicit handoff, then run process failure-path tests.
 
 ## Open blockers / decisions
 

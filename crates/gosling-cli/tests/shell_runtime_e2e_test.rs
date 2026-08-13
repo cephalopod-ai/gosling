@@ -132,6 +132,15 @@ async fn connect(port: u16) -> (ConnectionTo<Agent>, tokio::task::JoinHandle<()>
                             .expect("initialize response omitted shell metadata");
                         assert_eq!(shell["identity"]["id"], "test_shell");
                         assert_eq!(shell["identity"]["version"], "7");
+                        let available_methods = shell["availableMethods"]
+                            .as_array()
+                            .expect("shell metadata omitted available custom methods");
+                        assert!(available_methods.iter().any(|method| {
+                            method == "_gosling/unstable/shell/provisioning/read"
+                        }));
+                        assert!(available_methods
+                            .iter()
+                            .any(|method| { method == "_gosling/unstable/shell/handoff/prepare" }));
                         *holder.lock().unwrap() = Some(cx.clone());
                         let _ = ready_tx.send(());
                         std::future::pending::<Result<(), agent_client_protocol::Error>>().await
