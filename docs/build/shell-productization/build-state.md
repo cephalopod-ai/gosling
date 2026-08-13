@@ -1,9 +1,9 @@
 # Build state — Gosling shared shell productization
 
-Updated: 2026-08-12 23:03 implementation session
+Updated: 2026-08-12 23:13 implementation session
 Mode: patch-authorized; local commits only; no push, signing, publication, updater promotion, production identifiers, or domain-shell work authorized
-Current gate: Gate 2 — freeze product, compatibility, security, and module contracts
-Current step: Gate 1 built/locally validated and remote-Linux-blocked; inspect existing contracts and author ADRs before feature code
+Current gate: Gate 3 — product-profile and build-resolution foundation
+Current step: Gate 2 GO pending local checkpoint commit; implement strict resolver/types/tests and neutral fixture profiles next
 
 ## Intent echo
 
@@ -45,13 +45,13 @@ These are evidence of current structure, not proof that the proposed implementat
 
 ## Next actions in strict order
 
-1. Commit the accepted Gate 1 helper/workflow/tests/evidence slice locally; do not push.
-2. Read existing ADR convention/index, shell DTO/validation, Desktop shell host/preload/main/Forge/updater/deep-link/diagnostic contracts, and release workflow inputs.
-3. Author ADRs for product-profile authority, Electron process/preload ownership, and package/updater/release isolation without implementing behavior.
-4. Freeze the versioned profile schema, compatibility matrix, lifecycle/error taxonomy, IPC allowlist, path matrix, threat model, module contracts, and test fixture identities.
-5. Run docs/diagram/link/contract checks and adversarial architecture/appsec review; patch findings before Gate 2 GO.
-6. Seek remote Gate 1 CI evidence only after a future authorized push/PR; until then SHP-REQ-014 stays built, not verified.
-7. Begin Gate 3 only after Gate 2 contracts are accepted; continue checkpointing every coherent slice.
+1. Commit the accepted Gate 2 ADR/contracts/evidence slice locally; do not push.
+2. Inspect nearby Node script/test conventions and implement typed profile/resolved-manifest contracts with no new dependency.
+3. Implement strict parser, canonicalization/hash, path containment, identifiers, secret/domain-key rejection, target asset inventory, and collision checker.
+4. Add fixture A/B profiles, neutral provisioning, and test-only assets exactly matching the frozen identities; keep `publishable:false` irreversible.
+5. Add check/resolve package scripts and CI profile/collision checks without editing Forge behavior yet if resolver acceptance is not green.
+6. Run resolver tests, Desktop typecheck/lint/test targets, default-Gosling parity readback, and Gate 3 configuration/release audit.
+7. Integrate Forge as a thin resolver consumer only after the standalone resolver is green; seek remote Gate 1 evidence only after future push authority.
 
 ## Open blockers / decisions
 
@@ -90,5 +90,6 @@ Then re-run symbol/path searches before modifying files. If current `main` diffe
 - Gate 0: GO; orientation and live-state correction are recorded in `evidence/gate-0.md`.
 - Gate 1: helper/workflow/tests are built and locally validated; remote Linux CI is blocked pending push/PR authority. Evidence/audit: `evidence/gate-1.md`, `audits/gate-1-supply-chain.md`.
 - Focused Rust shell tests: 4 passed, 0 failed after final Gate 1 changes.
-- SHP-REQ-014 is `built; remote verification blocked`; every other P0/P1 remains `planned`.
+- Gate 2: GO; ADR-0007–0009 and architecture contracts passed adversarial review after two design corrections (`evidence/gate-2.md`).
+- SHP-REQ-014 is `built; remote verification blocked`; every other P0/P1 has frozen design and planned implementation.
 - Known CI baseline: current merged-main Rust CI has an unrelated replay-data failure; it is not waived and remains a Gate 8 acceptance blocker if unresolved.
