@@ -123,15 +123,6 @@ CODE_ANALYSIS_PROTOCOL:
 </TabItem>
 </Tabs>
 
-### Strategy 3: Memory MCP Integration
-
-Combine with the [Memory MCP extension](../mcp/memory-mcp.md) for hybrid approach:
-
-1. Store Cognee usage patterns as memories
-2. Use Memory MCP to trigger Cognee searches
-3. Lower token usage than goslinghints
-4. More reliable than pure instruction files
-
 ## Advanced Workflows
 
 ### Developer Workflow
@@ -264,8 +255,8 @@ curl http://localhost:8000/health
 
 ### Integration Patterns
 
-1. **Layered approach**: Use both Memory MCP and Cognee for different purposes
-2. **Context switching**: Different instruction files for different workflows
+1. **Layered approach**: Use Cognee for knowledge and instruction files for workflow guidance
+2. **Context switching**: Use different instruction files for different workflows
 3. **Selective automation**: Not every interaction needs knowledge graph queries
 
 ## Examples

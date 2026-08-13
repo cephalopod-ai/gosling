@@ -3568,13 +3568,13 @@ extensions:
 
     #[test]
     fn default_off_builtin_loads_when_explicitly_requested() {
-        // chatrecall is default_enabled: false, so read-migration writes
+        // summarize is default_enabled: false, so read-migration writes
         // `enabled: false` into config. An explicit builtins request must still
         // load it (mirrors code mode requesting code_execution).
         let (config, _c, _s) = config_with_yaml("");
-        let selected = selected_builtin_extensions(&config, &["chatrecall".to_string()]);
+        let selected = selected_builtin_extensions(&config, &["summarize".to_string()]);
         assert!(
-            selected.iter().any(|ext| ext.name() == "chatrecall"),
+            selected.iter().any(|ext| ext.name() == "summarize"),
             "default-off builtins must load when explicitly requested via builtins"
         );
     }
@@ -4165,7 +4165,7 @@ print(\"hello, world\")
     #[test_case("write", true ; "write is developer file tool")]
     #[test_case("edit", true ; "edit is developer file tool")]
     #[test_case("shell", false ; "shell is not developer file tool")]
-    #[test_case("analyze", false ; "analyze is not developer file tool")]
+    #[test_case("summarize", false ; "summarize is not developer file tool")]
     fn test_is_developer_file_tool(tool_name: &str, expected: bool) {
         assert_eq!(is_developer_file_tool(tool_name), expected);
     }

@@ -1075,8 +1075,8 @@ mod tests {
     async fn augment_parses_inline_json_even_with_existing_tool_request() {
         let tools = vec![
             Tool::new(
-                "analyze".to_string(),
-                "Analyze files".to_string(),
+                "inspect".to_string(),
+                "Inspect files".to_string(),
                 serde_json::Map::new(),
             ),
             Tool::new(
@@ -1087,7 +1087,7 @@ mod tests {
         ];
 
         let message = Message::assistant()
-            .with_tool_request("existing", Ok(CallToolRequestParams::new("analyze")))
+            .with_tool_request("existing", Ok(CallToolRequestParams::new("inspect")))
             .with_text(
                 "Using tool: shell\n{\n  \"name\": \"shell\",\n  \"arguments\": {\n    \"command\": \"type Cargo.toml\"\n  }\n}",
             );

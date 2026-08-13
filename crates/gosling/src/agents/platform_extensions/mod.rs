@@ -1,5 +1,3 @@
-pub mod analyze;
-pub mod chatrecall;
 #[cfg(feature = "code-mode")]
 pub mod code_execution;
 pub mod developer;
@@ -8,7 +6,6 @@ pub mod orchestrator;
 pub mod summarize;
 pub mod summon;
 pub mod todo;
-pub mod tom;
 
 use std::collections::HashMap;
 
@@ -30,20 +27,6 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
         let mut map = HashMap::new();
 
         map.insert(
-            analyze::EXTENSION_NAME,
-            PlatformExtensionDef {
-                name: analyze::EXTENSION_NAME,
-                display_name: "Analyze",
-                description:
-                    "Analyze code structure with tree-sitter: directory overviews, file details, symbol call graphs",
-                default_enabled: true,
-                unprefixed_tools: true,
-                hidden: false,
-                client_factory: |ctx| Box::new(analyze::AnalyzeClient::new(ctx).unwrap()),
-            },
-        );
-
-        map.insert(
             todo::EXTENSION_NAME,
             PlatformExtensionDef {
                 name: todo::EXTENSION_NAME,
@@ -54,20 +37,6 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: false,
                 hidden: false,
                 client_factory: |ctx| Box::new(todo::TodoClient::new(ctx).unwrap()),
-            },
-        );
-
-        map.insert(
-            chatrecall::EXTENSION_NAME,
-            PlatformExtensionDef {
-                name: chatrecall::EXTENSION_NAME,
-                display_name: "Chat Recall",
-                description:
-                    "Search past conversations and load session summaries for contextual memory",
-                default_enabled: false,
-                unprefixed_tools: false,
-                hidden: false,
-                client_factory: |ctx| Box::new(chatrecall::ChatRecallClient::new(ctx).unwrap()),
             },
         );
 
@@ -158,20 +127,6 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: false,
                 hidden: true,
                 client_factory: |ctx| Box::new(orchestrator::OrchestratorClient::new(ctx).unwrap()),
-            },
-        );
-
-        map.insert(
-            tom::EXTENSION_NAME,
-            PlatformExtensionDef {
-                name: tom::EXTENSION_NAME,
-                display_name: "Top Of Mind",
-                description:
-                    "Inject custom context into every turn via GOSLING_MOIM_MESSAGE_TEXT and GOSLING_MOIM_MESSAGE_FILE environment variables",
-                default_enabled: true,
-                unprefixed_tools: false,
-                hidden: false,
-                client_factory: |ctx| Box::new(tom::TomClient::new(ctx).unwrap()),
             },
         );
 

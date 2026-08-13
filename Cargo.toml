@@ -85,18 +85,6 @@ opentelemetry-appender-tracing = { version = "0.32", default-features = false, f
 opentelemetry-stdout = { version = "0.32", default-features = false, features = ["trace", "metrics", "logs"] }
 tracing-opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
 
-rayon = { version = "1.10", default-features = false }
-tree-sitter = { version = "0.26", default-features = false, features = ["std"] }
-tree-sitter-go = { version = "0.25", default-features = false }
-tree-sitter-java = { version = "0.23", default-features = false }
-tree-sitter-javascript = { version = "0.25", default-features = false }
-tree-sitter-kotlin-ng = { version = "1", default-features = false }
-tree-sitter-python = { version = "0.25", default-features = false }
-tree-sitter-ruby = { version = "0.23", default-features = false }
-tree-sitter-rust = { version = "0.24", default-features = false }
-tree-sitter-swift = { version = "0.7", default-features = false }
-tree-sitter-typescript = { version = "0.23", default-features = false }
-
 [patch.crates-io]
 v8 = { path = "vendor/v8" }
 

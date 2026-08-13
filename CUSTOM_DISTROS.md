@@ -333,7 +333,7 @@ ACP provides:
 
 ```bash
 # Run gosling as an ACP server on stdio
-gosling acp --with-builtin developer,memory
+gosling acp --with-builtin developer
 
 # Or programmatically
 cargo run -p gosling-cli -- acp --with-builtin developer

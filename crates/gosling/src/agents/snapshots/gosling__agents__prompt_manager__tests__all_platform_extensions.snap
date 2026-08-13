@@ -52,32 +52,6 @@ to discover what extensions can help.
 Use manage_extensions to enable or disable specific extensions by name.
 Use list_resources and read_resource to work with extension data and resources.
 
-## analyze
-
-### Instructions
-Index code structure via tree-sitter. Use to navigate or summarize an unfamiliar
-and large codebase. Returns one of three views:
-
-  1) Directory path → file tree with LOC, function, and class counts
-     (depth-limited).
-  2) File path → list of functions (with signatures), classes, imports,
-     and call counts. Functions called >3x are marked •N.
-  3) Any path + `focus` → incoming/outgoing call graph for a symbol
-     (case-sensitive).
-
-For large codebases, delegate analysis to a subagent and retain only the summary.
-
-## chatrecall
-
-### Instructions
-Chat Recall
-
-Search past conversations and hydrate only the relevant context when the user expects some memory or context.
-
-Two modes:
-- Search mode: Use query to find relevance-ranked, bounded text snippets
-- Context mode: Use the returned session_id and message_id to get a small window around that exact hit
-
 ## code_execution
 
 ### Instructions
@@ -141,9 +115,6 @@ Template:
   - [ ] Sub-task
 - [ ] Requirement 2
 - [ ] Another task
-
-## tom
-
 
 
 

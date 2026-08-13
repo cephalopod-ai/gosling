@@ -117,10 +117,6 @@ You'll need [Node.js](https://nodejs.org/) installed on your system to run this 
 
 ## Example Usage
 
-:::tip Memory Extension
-Use the built-in memory extension to save your contacts. e.g. "My friend Rene's lightning address is reneaaron@getalby.com. Please save it to your memory."
-:::
-
 ### gosling Prompt
 
 > _Pay Rene $1 USD, with message "Hi Rene, it's Roland. I'm making a gosling tutorial!"_

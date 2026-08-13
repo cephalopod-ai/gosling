@@ -782,13 +782,13 @@ extensions:
     #[test]
     fn test_get_extension_by_name_falls_back_to_available_builtin() {
         fn spawn_builtin(_: tokio::io::DuplexStream, _: tokio::io::DuplexStream) {}
-        crate::builtin_extension::register_builtin_extension("memory", spawn_builtin);
+        crate::builtin_extension::register_builtin_extension("autovisualiser", spawn_builtin);
 
-        let extension = get_extension_by_name("memory").unwrap();
+        let extension = get_extension_by_name("autovisualiser").unwrap();
 
         assert!(matches!(
             extension,
-            ExtensionConfig::Builtin { ref name, .. } if name == "memory"
+            ExtensionConfig::Builtin { ref name, .. } if name == "autovisualiser"
         ));
     }
 
@@ -1027,14 +1027,14 @@ extensions:
 
     #[test]
     fn test_default_off_extension_not_treated_as_user_disabled() {
-        // chatrecall is default_enabled: false, so read-migration synthesizes
+        // summarize is default_enabled: false, so read-migration synthesizes
         // `enabled: false`. That must NOT count as the user disabling it, otherwise
         // an explicit builtins request (e.g. code mode's code_execution) would be
         // skipped even though it is default-off.
         let (config, _config_file, _secrets_file) = test_config("");
 
-        assert_eq!(configured_enabled_state(&config, "chatrecall"), Some(false));
-        assert!(!is_builtin_disabled_by_user(&config, "chatrecall"));
+        assert_eq!(configured_enabled_state(&config, "summarize"), Some(false));
+        assert!(!is_builtin_disabled_by_user(&config, "summarize"));
     }
 
     #[test]

@@ -11,13 +11,6 @@ const inkeepApiKey = process.env.INKEEP_API_KEY;
 const inkeepIntegrationId = process.env.INKEEP_INTEGRATION_ID;
 const inkeepOrgId = process.env.INKEEP_ORG_ID;
 
-type SidebarItem = {
-  type?: string;
-  label?: string;
-  items?: SidebarItem[];
-  [key: string]: unknown;
-};
-
 const config: Config = {
   title: "gosling | Your open source AI agent",
   tagline: "a lighter gosling — your local AI agent, automating engineering tasks seamlessly",
@@ -68,43 +61,6 @@ const config: Config = {
       {
         docs: {
           sidebarPath: "./sidebars.ts",
-          async sidebarItemsGenerator(args) {
-            const items = await args.defaultSidebarItemsGenerator(args);
-
-            const contextEngineeringItems = [
-              {
-                type: "doc" as const,
-                id: "mcp/memory-mcp",
-                label: "Memory Extension",
-              },
-            ];
-
-            const addItemsToCategory = (
-              sidebarItems: SidebarItem[],
-              categoryLabel: string,
-              extraItems: SidebarItem[],
-            ) => {
-              for (const item of sidebarItems) {
-                if (item.type === "category" && item.label === categoryLabel) {
-                  item.items.push(...extraItems);
-                  return true;
-                }
-
-                if (
-                  item.type === "category" &&
-                  addItemsToCategory(item.items, categoryLabel, extraItems)
-                ) {
-                  return true;
-                }
-              }
-
-              return false;
-            };
-
-            addItemsToCategory(items, "Context Engineering", contextEngineeringItems);
-
-            return items;
-          },
         },
         blog: {
           showReadingTime: true,
@@ -314,10 +270,6 @@ const config: Config = {
             to: "/docs/mcp/mbot-mcp",
           },
           {
-            from: "/docs/tutorials/memory-mcp",
-            to: "/docs/mcp/memory-mcp",
-          },
-          {
             from: "/docs/tutorials/nostrbook-mcp",
             to: "/docs/mcp/nostrbook-mcp",
           },
@@ -364,10 +316,6 @@ const config: Config = {
           {
             from: "/docs/tutorials/tavily-mcp",
             to: "/docs/mcp/tavily-mcp",
-          },
-          {
-            from: "/docs/tutorials/tutorial-extension",
-            to: "/docs/mcp/tutorial-mcp",
           },
           {
             from: "/docs/tutorials/vscode-mcp",

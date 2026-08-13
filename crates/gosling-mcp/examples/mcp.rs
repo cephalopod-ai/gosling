@@ -1,6 +1,6 @@
 // An example script to run an MCP server
 use anyhow::Result;
-use gosling_mcp::MemoryServer;
+use gosling_mcp::ComputerControllerServer;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{self, EnvFilter};
 
@@ -22,14 +22,14 @@ async fn main() -> Result<()> {
 
     tracing::info!("Starting MCP server");
 
-    // Create an instance of our memory server
-    let memory_server = MemoryServer::new();
+    // Create an instance of a bundled server.
+    let server = ComputerControllerServer::new();
 
     // Run the server using rmcp
     let transport = rmcp::transport::stdio();
 
     tracing::info!("Server initialized and ready to handle requests");
-    let running_service = rmcp::service::serve_directly(memory_server, transport, None);
+    let running_service = rmcp::service::serve_directly(server, transport, None);
 
     // Wait for the service to complete
     running_service.waiting().await?;

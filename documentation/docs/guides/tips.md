@@ -34,7 +34,7 @@ Consider enabling [Code Mode](/docs/guides/managing-tools/code-mode), an alterna
 :::
 
 ### Teach gosling your preferences
-Help gosling remember how you like to work by using [`.goslinghints` or other context files](/docs/guides/context-engineering/using-goslinghints) or [skills](/docs/guides/context-engineering/using-skills) for permanent project preferences and the [Memory extension](/docs/mcp/memory-mcp) for things you want gosling to dynamically recall later. Both can help save valuable context window space while keeping your preferences available.
+Help gosling remember how you like to work by using [`.goslinghints` or other context files](/docs/guides/context-engineering/using-goslinghints) or [skills](/docs/guides/context-engineering/using-skills) for permanent project preferences. Both can save valuable context window space while keeping your preferences available.
 
 ### Protect sensitive files
 gosling is often eager to make changes. You can stop it from changing specific files by creating a [.goslingignore](/docs/guides/context-engineering/using-goslingignore) file. In this file, you can list all the file paths you want it to avoid.

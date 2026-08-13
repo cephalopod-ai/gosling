@@ -402,11 +402,11 @@ mod tests {
     fn prepend_extension_failure_warning_names_failed_extensions() {
         let response = super::prepend_extension_failure_warning(
             "done".to_string(),
-            &["computercontroller".to_string(), "memory".to_string()],
+            &["computercontroller".to_string(), "summarize".to_string()],
         );
         assert!(response.starts_with("[Warning:"));
         assert!(response.contains("computercontroller"));
-        assert!(response.contains("memory"));
+        assert!(response.contains("summarize"));
         assert!(
             response.ends_with("done"),
             "the original response text must still be present: {response}"
@@ -422,9 +422,9 @@ mod tests {
         assert_eq!(
             super::prepend_resolved_authority(
                 "done".to_string(),
-                &["developer".to_string(), "memory".to_string()],
+                &["developer".to_string(), "summarize".to_string()],
             ),
-            "[Resolved delegate authority: extensions = developer, memory]\n\ndone"
+            "[Resolved delegate authority: extensions = developer, summarize]\n\ndone"
         );
     }
 }

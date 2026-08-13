@@ -985,16 +985,6 @@ fn configure_builtin_extension() -> anyhow::Result<()> {
             "Developer Tools",
             "Code editing and shell access",
         ),
-        (
-            "memory",
-            "Memory",
-            "Tools to save and retrieve durable memories",
-        ),
-        (
-            "tutorial",
-            "Tutorial",
-            "Access interactive tutorials and guides",
-        ),
     ];
 
     let mut select = cliclack::select("Which built-in extension would you like to enable?");

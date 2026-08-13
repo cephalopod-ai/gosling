@@ -1802,12 +1802,12 @@ You review code."#;
             version: 1,
             extensions: vec![
                 "developer".to_string(),
-                "memory".to_string(),
+                "summarize".to_string(),
                 "developer".to_string(),
             ],
         }))
         .unwrap();
-        assert_eq!(extensions, vec!["developer", "memory"]);
+        assert_eq!(extensions, vec!["developer", "summarize"]);
 
         let error = validate_capability_policy(Some(DelegateCapabilityPolicy {
             version: 2,
@@ -1819,7 +1819,7 @@ You review code."#;
 
     #[test]
     fn test_adhoc_delegate_defaults_to_no_extensions() {
-        let parent = vec![test_extension("developer"), test_extension("memory")];
+        let parent = vec![test_extension("developer"), test_extension("summarize")];
         let resolved = resolve_delegate_extensions(parent, &DelegateSpec::default(), None).unwrap();
         assert!(resolved.is_empty());
     }
@@ -1828,11 +1828,11 @@ You review code."#;
     fn test_source_delegate_is_bounded_by_role_and_explicit_request() {
         let parent = vec![
             test_extension("developer"),
-            test_extension("memory"),
+            test_extension("summarize"),
             test_extension("summon"),
         ];
         let spec = DelegateSpec {
-            role_extensions: Some(vec!["developer".to_string(), "memory".to_string()]),
+            role_extensions: Some(vec!["developer".to_string(), "summarize".to_string()]),
             ..Default::default()
         };
 
@@ -1842,13 +1842,13 @@ You review code."#;
                 .iter()
                 .map(|ext| ext.name())
                 .collect::<Vec<_>>(),
-            vec!["developer", "memory"]
+            vec!["developer", "summarize"]
         );
 
         let narrowed =
-            resolve_delegate_extensions(parent.clone(), &spec, Some(&["memory".to_string()]))
+            resolve_delegate_extensions(parent.clone(), &spec, Some(&["summarize".to_string()]))
                 .unwrap();
-        assert_eq!(narrowed[0].name(), "memory");
+        assert_eq!(narrowed[0].name(), "summarize");
 
         let error =
             resolve_delegate_extensions(parent, &spec, Some(&["summon".to_string()])).unwrap_err();
@@ -1860,7 +1860,7 @@ You review code."#;
         let error = resolve_delegate_extensions(
             vec![test_extension("developer")],
             &DelegateSpec::default(),
-            Some(&["memory".to_string()]),
+            Some(&["summarize".to_string()]),
         )
         .unwrap_err();
         assert!(error.contains("unavailable in the parent session"));

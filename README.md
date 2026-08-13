@@ -60,9 +60,7 @@ In addition to footprint reduction, Gosling implements several targeted performa
 Relative to the inherited baseline, gosling implements several safety and security hardening improvements:
 
 * **Fail-Closed Tool Inspection**: In upstream, if a tool inspector encountered an error (e.g., timeout, network issue, or internal error), it logged the error and allowed the loop to continue. Because the permission baseline in auto-approval mode is `Allow`, a failing safety inspector would silently let tools execute ungated. Gosling fixes this by synthesizing a `RequireApproval` safety action when a tool inspector fails, forcing execution to halt for manual human approval.
-* **Confined MCP Cache & Memory Tool Paths (Directory Traversal Hardening)**: 
-  - Restricts the MCP `cache` command to the sandbox/cache directory via path canonicalization and membership verification, preventing directory traversal injections from reading or deleting files outside the sandbox.
-  - Validates memory categories in the MCP memory server to ensure they are single, ordinary path components, preventing path traversal reads/writes.
+* **Confined MCP Cache Tool Paths (Directory Traversal Hardening)**: Restricts the MCP `cache` command to the sandbox/cache directory via path canonicalization and membership verification, preventing directory traversal injections from reading or deleting files outside the sandbox.
 * **Restricted File & Directory Permissions**: 
   - Enforces safe file permissions (`0o600`) for token and session files containing sensitive API keys and OAuth tokens.
   - Restricts the session database directory (`sessions.db` along with SQLite `-wal` and `-shm` sidecar files) to owner-only access (`0o700`), keeping conversation history and echoed secrets protected from other local users.
@@ -81,7 +79,7 @@ Relative to the inherited baseline, gosling implements several safety and securi
 | **Coexistence** | No | **Yes** | Gosling is fully deconflicted and runs cleanly side-by-side with Goose (isolated configs, databases, keyring, and deep links). |
 | **Context Manager MVP** | No | **Yes** | Gosling features an MVP context manager with localized LLM summarization and a `FileMemorySource` backend for retrieved memory. |
 | **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
-| **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in memory/cache extensions. |
+| **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in cache extension paths. |
 
 ## What's included in gosling v1.0.0
 

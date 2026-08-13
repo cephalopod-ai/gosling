@@ -53,10 +53,8 @@ Desktop applications are available for macOS, Linux, and Windows at /docs/gettin
 
 - Developer: shell commands, file editing, and code analysis
 - Computer Controller: system automation and browser interaction
-- Memory: persistent storage across sessions
 - Todo: task management within sessions
 - Extension Manager: enable and disable extensions dynamically
-- Chat Recall: search and reference past conversations
 
 ## Configuration
 

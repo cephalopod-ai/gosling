@@ -12,19 +12,6 @@ pub static APP_STRATEGY: Lazy<AppStrategyArgs> = Lazy::new(|| AppStrategyArgs {
     app_name: "gosling".to_string(),
 });
 
-/// Directory under gosling's config tree, honoring the `GOSLING_PATH_ROOT`
-/// override that scopes all gosling config, data, and state files (mirrors
-/// `Paths` in the `gosling` crate, which this crate cannot depend on).
-/// Returns `None` when no override is set and no home directory exists.
-pub(crate) fn gosling_config_dir(subpath: &str) -> Option<PathBuf> {
-    if let Ok(root) = std::env::var("GOSLING_PATH_ROOT") {
-        return Some(PathBuf::from(root).join("config").join(subpath));
-    }
-    choose_app_strategy(APP_STRATEGY.clone())
-        .ok()
-        .map(|strategy| strategy.in_config_dir(subpath))
-}
-
 /// Directory under gosling's cache tree, honoring `GOSLING_PATH_ROOT`.
 pub(crate) fn gosling_cache_dir(subpath: &str) -> Option<PathBuf> {
     if let Ok(root) = std::env::var("GOSLING_PATH_ROOT") {
@@ -38,16 +25,12 @@ pub(crate) fn gosling_cache_dir(subpath: &str) -> Option<PathBuf> {
 pub mod autovisualiser;
 pub mod computercontroller;
 pub mod mcp_server_runner;
-mod memory;
 #[cfg(target_os = "macos")]
 pub mod peekaboo;
 pub mod subprocess;
-pub mod tutorial;
 
 pub use autovisualiser::AutoVisualiserRouter;
 pub use computercontroller::ComputerControllerServer;
-pub use memory::MemoryServer;
-pub use tutorial::TutorialServer;
 
 /// Type definition for a function that spawns and serves a builtin extension server
 pub type SpawnServerFn = fn(tokio::io::DuplexStream, tokio::io::DuplexStream);
@@ -82,7 +65,5 @@ pub static BUILTIN_EXTENSIONS: Lazy<HashMap<&'static str, SpawnServerFn>> = Lazy
     HashMap::from([
         builtin!(autovisualiser, AutoVisualiserRouter),
         builtin!(computercontroller, ComputerControllerServer),
-        builtin!(memory, MemoryServer),
-        builtin!(tutorial, TutorialServer),
     ])
 });

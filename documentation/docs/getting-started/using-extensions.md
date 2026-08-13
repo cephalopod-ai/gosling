@@ -23,8 +23,6 @@ gosling includes several built-in extensions you can start using out of the box:
 
 - [Developer](/docs/mcp/developer-mcp): Provides a set of general development tools that are useful for software development. The Developer extension is **enabled by default**.
 - [Computer Controller](/docs/mcp/computer-controller-mcp): Provides general computer control tools for webscraping, file caching, and automations.
-- [Memory](/docs/mcp/memory-mcp): Teaches gosling to remember your preferences as you use it.
-- [Tutorial](/docs/mcp/tutorial-mcp): Provides interactive tutorials for learning about gosling.
 - [Auto Visualiser](/docs/mcp/autovisualiser-mcp): Automatically generates graphical data visualizations in conversations.
 
 :::warning Access Control
@@ -35,12 +33,10 @@ gosling operates autonomously by default. Combined with the Developer extension'
 
 Platform extensions are built-in extensions that provide global features like conversation search, task tracking, and extension management. These extensions are always available and can be toggled on or off as needed.
 
-- [Chat Recall](/docs/mcp/chatrecall-mcp): Search conversation content across all your session history
 - [Code Mode](/docs/mcp/code-mode-mcp): Execute JavaScript code for tool discovery and tool calling
 - [Extension Manager](/docs/mcp/extension-manager-mcp): Discover, enable, and disable extensions dynamically during sessions (enabled by default)
 - [Summon](/docs/mcp/summon-mcp): Load skills and delegate tasks to subagents (enabled by default)
 - [Todo](/docs/mcp/todo-mcp): Manage task lists and track progress across sessions (enabled by default)
-- [Top of Mind](/docs/mcp/tom-mcp): Inject persistent instructions into gosling's working memory every turn
 
 ### Toggling Built-in Extensions
 

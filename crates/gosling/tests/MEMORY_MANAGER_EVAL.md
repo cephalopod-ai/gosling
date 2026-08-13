@@ -150,11 +150,9 @@ in its summary, regardless of how good that model is.
 | Recall cost as conversation scales | 1 LLM call per compaction (cost + latency + can itself fail on very large input) | Free — deterministic, provider-less, sub-second even at 3.6M tokens |
 | Uses extra context window budget (200K→1M) for richer memory | N/A (compacts to threshold regardless) | **No** — fixed ~1.4K-token output regardless of window size |
 
-\* Base goose does have a separate, pre-existing MCP "memory" extension
-(`crates/gosling-mcp/src/memory`, `remember_memory`/`retrieve_memories` tools) —
-but it requires the agent to proactively decide to call it during the
-session; it's unrelated to and untouched by this fork's feature, and exists
-identically in gosling too.
+\* Gosling's retired MCP "memory" extension was separate from the Context
+Manager evaluated here. Its removal does not change these Context Manager
+results or the `FileMemorySource` backend.
 
 ## Utility assessment
 

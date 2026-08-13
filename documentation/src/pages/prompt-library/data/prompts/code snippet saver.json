@@ -5,11 +5,11 @@
   "category": "productivity",
   "job": "engineering",
   "example_prompt": "Save this retry logic snippet: async function retry(fn, retries=3) { for(let i=0; i<retries; i++) { try { return await fn(); } catch(e) { if(i===retries-1) throw e; } } }",
-  "example_result": "I'll help you save this retry logic snippet using the memory extension. Let me confirm the details:\n\n**Category**: \"javascript\" (since this is a JavaScript snippet)\n**Tags**: #retry #async #error-handling\n**Scope**: Would you like this to be stored globally (available across all projects) or locally (only for this project)?\n\nWould you like me to proceed with saving this snippet?",
+  "example_result": "I'll save this retry helper in your project's snippet library with JavaScript, retry, async, and error-handling tags, then show you the file path so it can be reviewed and committed.",
   "extensions": [
     {
-      "name": "memory",
-      "command": "memory",
+      "name": "Developer",
+      "command": "developer",
       "is_builtin": true,
       "environmentVariables": []
     }

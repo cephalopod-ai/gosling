@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Archive,
-  Brain,
   Camera,
   Code2,
   Delegate,
@@ -12,7 +11,6 @@ import {
   Globe,
   Monitor,
   Numbers,
-  Save,
   Search,
   Settings,
   Terminal,
@@ -35,12 +33,6 @@ export const getToolIcon = (toolName: string): React.ComponentType<ToolIconProps
       return FileEdit;
     case 'shell':
       return Terminal;
-
-    // Memory Extension Tools
-    case 'remember_memory':
-      return Save;
-    case 'retrieve_memories':
-      return Brain;
 
     // Computer Controller Extension Tools
     case 'automation_script':
@@ -101,8 +93,6 @@ export const getExtensionIcon = (extensionName: string): React.ComponentType<Too
   switch (extensionName) {
     case 'developer':
       return Code2;
-    case 'memory':
-      return Brain;
     case 'computercontroller':
       return Monitor;
     default:

@@ -188,12 +188,6 @@ Search allows you to find specific content within sessions or find specific sess
 
     This searches the content of messages in your conversations. The search is limited to the 10 most recent matching messages across sessions. If your search term appears in many messages, the search will only return a subset of sessions.
 
-    :::tip Ask gosling directly
-    You can also use the built-in [Chat Recall extension](/docs/mcp/chatrecall-mcp) to ask gosling to search your conversation history:
-    - "Find my earlier conversation about React hooks from last week"
-    - "Show me sessions where I worked on database migrations"
-    :::
-
   </TabItem>
   <TabItem value="cli" label="gosling CLI">
 
@@ -216,19 +210,6 @@ Search allows you to find specific content within sessions or find specific sess
 
     :::info
     Your specific terminal emulator may use a different keyboard shortcut. Check your terminal's documentation or settings for the search command.
-    :::
-
-    #### Search Across All Session Content
-    
-    To search conversation content across all your sessions, start a gosling session and ask directly:
-
-    - "Find my earlier conversation about React hooks from last week"
-    - "Show me sessions where I worked on database migrations"
-
-    gosling will search your session history and show relevant conversations with context from matching sessions.
-    
-    :::info
-    This functionality requires the built-in [Chatrecall extension](/docs/mcp/chatrecall-mcp) to be enabled.
     :::
 
     #### Search Session Data Directly

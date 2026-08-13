@@ -12,7 +12,7 @@ import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructi
 <YouTubeShortEmbed videoUrl="https://www.youtube.com/embed/PF6hpDaI9Mc" />
 
 
-This tutorial covers how to add the [Knowledge Graph Memory MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) as a gosling extension. This enables gosling to analyze relationships, detect patterns, and gain a deeper understanding of your data. The knowledge graph builds on the [memory extension](/docs/mcp/memory-mcp) by mapping complex relationships between concepts and providing persistent memory across gosling sessions.
+This tutorial covers how to add the [Knowledge Graph Memory MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) as a gosling extension. This enables gosling to analyze relationships, detect patterns, map complex relationships between concepts, and persist its own knowledge graph across gosling sessions.
 
 :::tip Quick Install
 <Tabs groupId="interface">

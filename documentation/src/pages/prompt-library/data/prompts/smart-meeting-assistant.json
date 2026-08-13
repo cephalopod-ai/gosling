@@ -43,12 +43,6 @@
       "command": "developer",
       "is_builtin": true,
       "environmentVariables": []
-    },
-    {
-      "name": "Memory",
-      "command": "memory",
-      "is_builtin": true,
-      "environmentVariables": []
     }
   ]
 }

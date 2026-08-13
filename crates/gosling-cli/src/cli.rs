@@ -13,7 +13,7 @@ use gosling::config::paths::RuntimePaths;
 use gosling::config::{Config, ConfigError, GoslingMode};
 use gosling::source_roots::SourceRoot;
 use gosling_mcp::mcp_server_runner::{serve, McpCommand};
-use gosling_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
+use gosling_mcp::{AutoVisualiserRouter, ComputerControllerServer};
 
 use crate::commands::configure::handle_configure;
 use crate::commands::info::handle_info;
@@ -1218,8 +1218,6 @@ async fn handle_mcp_command(server: McpCommand) -> Result<()> {
     match server {
         McpCommand::AutoVisualiser => serve(AutoVisualiserRouter::new()).await?,
         McpCommand::ComputerController => serve(ComputerControllerServer::new()).await?,
-        McpCommand::Memory => serve(MemoryServer::new()).await?,
-        McpCommand::Tutorial => serve(TutorialServer::new()).await?,
     }
     Ok(())
 }

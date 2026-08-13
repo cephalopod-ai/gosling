@@ -232,13 +232,13 @@ mod tests {
 
         // Add multiple extension states
         extension_data.set_extension_state("todo", "v0", json!("TODO content"));
-        extension_data.set_extension_state("memory", "v1", json!({"items": ["item1", "item2"]}));
+        extension_data.set_extension_state("notes", "v1", json!({"items": ["item1", "item2"]}));
         extension_data.set_extension_state("config", "v2", json!({"setting": true}));
 
         // Check all states exist
         assert_eq!(extension_data.extension_states.len(), 3);
         assert!(extension_data.get_extension_state("todo", "v0").is_some());
-        assert!(extension_data.get_extension_state("memory", "v1").is_some());
+        assert!(extension_data.get_extension_state("notes", "v1").is_some());
         assert!(extension_data.get_extension_state("config", "v2").is_some());
     }
 
@@ -260,7 +260,7 @@ mod tests {
     fn test_extension_data_serialization() {
         let mut extension_data = ExtensionData::new();
         extension_data.set_extension_state("todo", "v0", json!("TODO content"));
-        extension_data.set_extension_state("memory", "v1", json!({"key": "value"}));
+        extension_data.set_extension_state("notes", "v1", json!({"key": "value"}));
 
         // Serialize to JSON
         let json = serde_json::to_value(&extension_data).unwrap();
@@ -268,7 +268,7 @@ mod tests {
         // Check the structure
         assert!(json.is_object());
         assert_eq!(json.get("todo.v0"), Some(&json!("TODO content")));
-        assert_eq!(json.get("memory.v1"), Some(&json!({"key": "value"})));
+        assert_eq!(json.get("notes.v1"), Some(&json!({"key": "value"})));
 
         // Deserialize back
         let deserialized: ExtensionData = serde_json::from_value(json).unwrap();
@@ -277,7 +277,7 @@ mod tests {
             Some(&json!("TODO content"))
         );
         assert_eq!(
-            deserialized.get_extension_state("memory", "v1"),
+            deserialized.get_extension_state("notes", "v1"),
             Some(&json!({"key": "value"}))
         );
     }

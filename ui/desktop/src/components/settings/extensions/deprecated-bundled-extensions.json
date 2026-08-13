@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "analyze"
+  },
+  {
+    "id": "chatrecall"
+  },
+  {
+    "id": "memory"
+  },
+  {
+    "id": "tom"
+  },
+  {
+    "id": "tutorial"
+  }
+]

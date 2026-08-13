@@ -80,7 +80,7 @@ I researched the gosling documentation using the gosling Docs extension and wrot
 #### 📋 Documentation Research
 
 - **Configuring extensions**: Extensions are managed in `~/.config/gosling/config.yaml`, via `gosling configure` in the CLI, or from the Extensions page in gosling Desktop.
-- **Built-in platform extensions**: Extension Manager, Summon, and Todo are enabled by default. Others like Chat Recall and Code Mode can be toggled on as needed.
+- **Built-in platform extensions**: Extension Manager, Summon, and Todo are enabled by default. Others like Code Mode can be toggled on as needed.
 - **External MCP servers**: Any MCP server can be added as an extension by providing the command (stdio) or URL (http) plus a name and timeout.
 
 #### 🛠️ Generated Skill
