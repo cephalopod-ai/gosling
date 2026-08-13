@@ -2469,6 +2469,16 @@ fn extract_tool_raw_output(tool_result: &ToolResult<CallToolResult>) -> Option<s
         .and_then(|result| result.structured_content.clone())
 }
 
+fn custom_method_names() -> Vec<String> {
+    let mut methods =
+        GoslingAcpAgent::custom_method_schemas(&mut schemars::SchemaGenerator::default())
+            .into_iter()
+            .map(|schema| schema.method)
+            .collect::<Vec<_>>();
+    methods.sort();
+    methods
+}
+
 fn shell_capabilities_meta(shell_runtime: &ShellRuntime) -> Meta {
     let provisioning = shell_runtime.provisioning();
     serde_json::Map::from_iter([(
@@ -2479,6 +2489,7 @@ fn shell_capabilities_meta(shell_runtime: &ShellRuntime) -> Meta {
             "authorityMode": provisioning.protocol_policy.mode,
             "settingsAuthority": &provisioning.settings_authority,
             "provisioningMethod": "_gosling/unstable/shell/provisioning/read",
+            "availableMethods": custom_method_names(),
             "domainAdapter": &provisioning.domain_adapter,
         }),
     )])
@@ -4612,6 +4623,27 @@ print(\"hello, world\")
             TokenUsage::default(),
         );
         assert!(build_usage_updates(&session).is_none());
+    }
+
+    #[test]
+    fn shell_capability_methods_come_from_the_custom_method_registry() {
+        let methods = custom_method_names();
+        let expected =
+            GoslingAcpAgent::custom_method_schemas(&mut schemars::SchemaGenerator::default())
+                .into_iter()
+                .map(|schema| schema.method)
+                .collect::<std::collections::HashSet<_>>();
+
+        assert_eq!(
+            methods
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>(),
+            expected
+        );
+        assert!(methods.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(methods.contains(&"_gosling/unstable/shell/provisioning/read".to_string()));
+        assert!(methods.contains(&"_gosling/unstable/shell/handoff/prepare".to_string()));
     }
 
     #[test]

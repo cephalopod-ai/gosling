@@ -254,6 +254,9 @@ importers:
       '@electron-forge/plugin-vite':
         specifier: ^7.11.1
         version: 7.11.1(bluebird@3.7.2)(supports-color@8.1.1)
+      '@electron/asar':
+        specifier: 3.4.1
+        version: 3.4.1
       '@electron/fuses':
         specifier: ^1.8.0
         version: 1.8.0
@@ -365,6 +368,9 @@ importers:
       knip:
         specifier: ^5.85.0
         version: 5.88.1(@types/node@25.5.0)(typescript@5.9.3)
+      plist:
+        specifier: 3.1.0
+        version: 3.1.0
       postcss:
         specifier: ^8.5.6
         version: 8.5.8

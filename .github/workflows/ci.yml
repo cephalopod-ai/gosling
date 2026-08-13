@@ -68,6 +68,16 @@ jobs:
           sudo apt update -y
           sudo apt install -y libdbus-1-dev gnome-keyring libxcb1-dev
 
+      - name: Test verified V8 archive helper
+        run: scripts/test-with-rusty-v8-cache.sh
+
+      - name: Prepare verified V8 archive
+        run: |
+          cache_dir="${RUNNER_TEMP}/gosling-rusty-v8"
+          archive="$(GOSLING_V8_CACHE_DIR="$cache_dir" scripts/with-rusty-v8-cache.sh --prepare)"
+          echo "GOSLING_V8_CACHE_DIR=$cache_dir" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_ARCHIVE=$archive" >> "$GITHUB_ENV"
+
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
 
@@ -229,6 +239,13 @@ jobs:
 
       - name: Install Dependencies
         run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile
+        working-directory: ui/desktop
+
+      - name: Validate Shell Product Profiles
+        run: |
+          source ../../bin/activate-hermit
+          pnpm run shell:test-profile
+          pnpm run shell:check-profiles
         working-directory: ui/desktop
 
       - name: Run Lint

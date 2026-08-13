@@ -7,6 +7,11 @@ for the relationship to cephalopod-ai/gosling.
 
 - [architecture.md](architecture.md) — system architecture
 - [architecture/shell-foundation.md](architecture/shell-foundation.md) — focused shell identity, provisioning, runtime, adapter, handoff, and host foundation
+- [architecture/shell-productization-contracts.md](architecture/shell-productization-contracts.md) — accepted product profile, process/preload, compatibility, lifecycle, diagnostics, release, and threat-model contracts
+- [build/shell-productization/README.md](build/shell-productization/README.md) — index for the shell productization plan, traceability, risks, evidence, audits, and handoff state
+- [build/shell-productization/execution-plan.md](build/shell-productization/execution-plan.md) — gated plan for the reusable packaged, tested, diagnosable, and releasable shell host
+- [build/shell-productization/build-state.md](build/shell-productization/build-state.md) — resumable status and verify-before-execution handoff for shell productization
+- [SHELL_PRODUCTS.md](SHELL_PRODUCTS.md) — strict product-profile roots, local package/readback commands, fixtures, and extension recipe
 - [INTENT.md](INTENT.md) — fork intent and scope
 - [TODO.md](TODO.md) — outstanding work
 - [adr/](adr/) — architecture decision records

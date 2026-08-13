@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "id": "gosling-shell-fixture-a",
+    "displayName": "Gosling Shell Fixture A",
+    "version": "0.0.0-test"
+  },
+  "settingsAuthority": "main_gosling",
+  "protocolPolicy": {
+    "mode": "restricted",
+    "deniedMethods": ["_gosling/unstable/config/upsert"]
+  },
+  "session": {
+    "extensions": [
+      {
+        "name": "developer",
+        "availableTools": ["read_file"]
+      }
+    ]
+  }
+}

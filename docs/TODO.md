@@ -1,5 +1,20 @@
 # TODO
 
+## Shared shell productization — planned 2026-08-12
+
+The ACP/runtime shell foundation is merged. The remaining shared work—excluding every
+actual domain shell—is specified in the gated
+[`shell-productization` execution plan](build/shell-productization/execution-plan.md),
+with independent [traceability](build/shell-productization/traceability-matrix.md),
+[risk](build/shell-productization/risk-register.md), and
+[resume state](build/shell-productization/build-state.md). Its required outcomes are a
+reusable Electron bootstrap and narrow preload, common lifecycle/diagnostic/handoff UI,
+a declarative package profile, an actual packaged renderer-to-backend smoke test,
+installed-app coexistence, guarded profile-driven release workflows, compatibility and
+rollback behavior, and repair of the Linux `rusty_v8` CI prerequisite. Neutral fixtures
+prove shared machinery only; named/domain adapters, workflows, UI, branding, real
+publication, and updater promotion remain outside this campaign.
+
 ## v1.0.0 release readiness - 2026-07-20
 
 - [x] Prepare the README, release notes, release process, release checklist, user-manual entry points, documentation index, inventory, and stewardship status for v1.0.0.

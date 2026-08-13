@@ -10,11 +10,33 @@ export interface MinimalShellHostOptions {
   processRegistryPath?: string;
   isPackaged?: boolean;
   resourcesPath?: string;
+  preloadPath?: string;
+  sessionPartition?: string;
 }
 
 export interface MinimalShellHostRuntime {
   backend: GoslingServeResult;
   windowOptions: BrowserWindowConstructorOptions;
+}
+
+export function createMinimalShellWindowOptions(
+  options: Pick<MinimalShellHostOptions, 'profile' | 'preloadPath' | 'sessionPartition'>
+): BrowserWindowConstructorOptions {
+  return {
+    width: 1180,
+    height: 780,
+    minWidth: 760,
+    minHeight: 520,
+    show: false,
+    title: options.profile.displayName,
+    webPreferences: {
+      preload: options.preloadPath ?? path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      ...(options.sessionPartition ? { partition: options.sessionPartition } : {}),
+    },
+  };
 }
 
 export const createMinimalShellHost = async (
@@ -32,19 +54,6 @@ export const createMinimalShellHost = async (
 
   return {
     backend,
-    windowOptions: {
-      width: 1180,
-      height: 780,
-      minWidth: 760,
-      minHeight: 520,
-      show: false,
-      title: options.profile.displayName,
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    },
+    windowOptions: createMinimalShellWindowOptions(options),
   };
 };
