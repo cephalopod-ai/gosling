@@ -3,7 +3,7 @@
 Date: 2026-08-13
 Scope: shared shell identity/lifecycle/IPC/ACP/session/bootstrap/resources/diagnostics/handoff and
 local package/readback path
-Verdict: **CONTINUE Gate 4 after corrections**
+Verdict: **GO — Gate 4 process boundary locally accepted after corrections**
 
 ## Findings and dispositions
 
@@ -35,12 +35,15 @@ Verdict: **CONTINUE Gate 4 after corrections**
 - Diagnostics tests cover secret/path/URL redaction, circular input, bounds, explicit gesture,
   atomic owner-private writes, overwrite refusal, and temporary-file cleanup.
 - Handoff preparation is canonical server output retained exactly and consumed once after explicit
-  confirmation. Full Desktop receiving is still absent and is not represented as complete.
+  confirmation. The focused full Desktop receiver validates exact action/schema/shape and canonical
+  encoding, then creates a non-auto-submitted review draft containing the exact JSON and a no-grant
+  warning. It does not execute references, return destinations, mutation intent, or protocol content,
+  and the shell's frozen IPC/preload surface did not change.
+- Full Desktop `main.ts` now delegates parse/dispatch to the focused router; it retains only Electron
+  window selection and existing chat/session routing. Full lint and 688 Desktop tests pass.
 
 ## Residual findings
 
-- Full Desktop handoff receiving must be routed through a focused module without adding domain or
-  lifecycle behavior to oversized `main.ts`.
 - Renderer recovery/accessibility, packaged restart/coexistence, and cross-platform package
   readback remain later gates.
 - Repository-wide format check has an unrelated 62-file baseline; touched files pass the focused

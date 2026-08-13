@@ -155,6 +155,15 @@ Explicitly absent: arbitrary file read/write/delete/list, settings get/set, dire
 clipboard, notifications, updater operations, app restart, generic logging, raw ACP URL, MCP proxy
 URL, server secret, profile/provisioning/namespace mutation, shell command, or arbitrary IPC channel.
 
+Full Gosling receives a confirmed handoff only at `gosling://handoff` through a focused
+parser/router. It accepts one canonical base64url-encoded schema-v1 envelope with exact generated
+fields and the same 64 KiB URI ceiling, then creates a fresh, non-auto-submitted review draft
+containing the exact JSON. Receipt does not grant requested capability or mutation authority, fetch
+references, navigate to the return destination, or execute any embedded URI. Unsupported actions,
+duplicate parameters, non-canonical encoding, unknown fields, and malformed envelopes fail closed;
+protocol and draft content are not logged. Electron window/directory selection remains routing-only
+in full Desktop `main.ts`, and this receiver adds no shell preload or IPC operation.
+
 ## Compatibility contract
 
 The first release uses exact bundled-core compatibility; semver ranges and external core discovery

@@ -70,6 +70,11 @@ import { installArtifactDownloadRouter } from './utils/artifactDownloads';
 import { ArtifactRoutingRegistry } from './utils/artifactRoutingRegistry';
 import { saveArtifactWithDialog } from './utils/artifactSave';
 import { assertArtifactFileAccess } from './utils/artifactFileAccess';
+import {
+  dispatchFullGoslingProtocolUrl,
+  findGoslingProtocolUrl,
+  parseGoslingProtocolRoute,
+} from './handoffProtocol';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -680,7 +685,7 @@ function focusExistingWindow(): boolean {
 }
 
 function handleSecondInstanceCommandLine(commandLine: string[]): void {
-  const protocolUrl = commandLine.find((arg) => arg.startsWith('gosling://'));
+  const protocolUrl = findGoslingProtocolUrl(commandLine);
   if (!protocolUrl) {
     void app.whenReady().then(() => {
       focusExistingWindow();
@@ -698,7 +703,10 @@ function handleSecondInstanceCommandLine(commandLine: string[]): void {
 
   void app.whenReady().then(async () => {
     try {
-      await handleProtocolUrl(protocolUrl, parsedUrl);
+      if (!(await handleProtocolUrl(protocolUrl, parsedUrl))) {
+        log.warn('[Main] Ignoring unsupported second-instance protocol URL');
+        focusExistingWindow();
+      }
     } catch (error) {
       log.error('[Main] Failed to handle second-instance protocol URL:', errorMessage(error));
       focusExistingWindow();
@@ -717,8 +725,12 @@ if (!app.requestSingleInstanceLock()) {
 
 if (process.platform !== 'darwin') {
   // Handle protocol URLs on Windows and Linux startup
-  const protocolUrl = process.argv.find((arg) => arg.startsWith('gosling://'));
+  const protocolUrl = findGoslingProtocolUrl(process.argv);
   if (protocolUrl) {
+    const startupRoute = parseGoslingProtocolRoute(protocolUrl);
+    if (startupRoute) {
+      openUrlHandledLaunch = true;
+    }
     app.whenReady().then(async () => {
       let parsedUrl: URL;
       try {
@@ -728,14 +740,18 @@ if (process.platform !== 'darwin') {
         return;
       }
 
-      openUrlHandledLaunch = true;
       try {
-        await handleProtocolUrl(protocolUrl, parsedUrl);
+        openUrlHandledLaunch = await handleProtocolUrl(protocolUrl, parsedUrl);
+        if (!openUrlHandledLaunch) {
+          log.warn('[Main] Ignoring unsupported startup protocol URL');
+        }
       } catch (error) {
         log.error('[Main] Failed to handle startup protocol URL:', errorMessage(error));
+        openUrlHandledLaunch = false;
         if (BrowserWindow.getAllWindows().length === 0) {
           const { dirPath } = parseArgs();
           await createNewWindow(app, dirPath);
+          openUrlHandledLaunch = true;
         }
       }
     });
@@ -786,80 +802,49 @@ function sendOpenSharedSession(window: BrowserWindow, url: string): void {
   window.webContents.send(rendererEventChannels.openSharedSession, url);
 }
 
-function deliverExtensionOrSessionDeepLink(
-  url: string,
-  parsedUrl: URL,
-  targetWindow: BrowserWindow
-): void {
-  if (!reactReadyWindows.has(targetWindow.id) || targetWindow.webContents.isLoadingMainFrame()) {
-    queuePendingDeepLink(targetWindow.id, url);
-    return;
-  }
-
-  if (parsedUrl.hostname === 'extension') {
-    targetWindow.webContents.send(rendererEventChannels.addExtension, url);
-  } else if (parsedUrl.hostname === 'sessions') {
-    sendOpenSharedSession(targetWindow, url);
-  }
-}
-
-function getResumeSessionId(parsedUrl: URL): string | null {
-  try {
-    const sessionId = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, '')).trim();
-    return sessionId || null;
-  } catch {
-    return null;
-  }
-}
-
-async function createResumeChatWindow(parsedUrl: URL, dir?: string): Promise<boolean> {
-  const resumeSessionId = getResumeSessionId(parsedUrl);
-  if (!resumeSessionId) {
-    log.warn('[Main] Ignoring gosling://resume URL without a session id');
-    return false;
-  }
-
+async function createResumeChatWindow(resumeSessionId: string, dir?: string): Promise<boolean> {
   await createChat(app, { dir, resumeSessionId });
   return true;
 }
 
-async function handleProtocolUrl(url: string, parsedUrl: URL) {
-  if (!url) return;
-
-  const openDir = firstGrantedRecentDirectory();
-
-  if (parsedUrl.hostname === 'new-session') {
-    const prompt = parsedUrl.searchParams.get('prompt') || undefined;
-    await createChat(app, {
-      dir: openDir,
-      initialMessage: prompt,
-      initialMessageNoAutoSubmit: prompt !== undefined,
-    });
-    return;
-  } else if (parsedUrl.hostname === 'resume') {
-    await createResumeChatWindow(parsedUrl, openDir);
-    return;
+async function deliverRendererProtocolUrl(
+  url: string,
+  parsedUrl: URL,
+  openDir: string | undefined
+): Promise<void> {
+  const existingWindows = BrowserWindow.getAllWindows();
+  let targetWindow: BrowserWindow | undefined;
+  if (existingWindows.length > 0) {
+    targetWindow = existingWindows[0];
+    if (targetWindow.isMinimized()) {
+      targetWindow.restore();
+    }
+    targetWindow.focus();
   } else {
-    const existingWindows = BrowserWindow.getAllWindows();
-    let targetWindow: BrowserWindow | undefined;
-    if (existingWindows.length > 0) {
-      targetWindow = existingWindows[0];
-      if (targetWindow.isMinimized()) {
-        targetWindow.restore();
-      }
-      targetWindow.focus();
-    } else {
-      targetWindow = await createChat(app, { dir: openDir });
-    }
-
-    if (!targetWindow) return;
-
-    if (targetWindow.webContents.isLoadingMainFrame()) {
-      queuePendingDeepLink(targetWindow.id, url);
-    } else {
-      await processProtocolUrl(url, parsedUrl, targetWindow);
-    }
+    targetWindow = await createChat(app, { dir: openDir });
   }
+  if (!targetWindow) return;
+  if (targetWindow.webContents.isLoadingMainFrame()) {
+    queuePendingDeepLink(targetWindow.id, url);
+  } else {
+    await processProtocolUrl(url, parsedUrl, targetWindow);
+  }
+}
+
+async function handleProtocolUrl(url: string, parsedUrl: URL): Promise<boolean> {
+  if (!url) return false;
+  const openDir = firstGrantedRecentDirectory();
+  return dispatchFullGoslingProtocolUrl(url, {
+    openChat: async (options) => {
+      await createChat(app, { dir: openDir, ...options });
+    },
+    resume: async (sessionId) => {
+      await createResumeChatWindow(sessionId, openDir);
+    },
+    renderer: async () => {
+      await deliverRendererProtocolUrl(url, parsedUrl, openDir);
+    },
+  });
 }
 
 async function processProtocolUrl(url: string, parsedUrl: URL, window: BrowserWindow) {
@@ -880,48 +865,26 @@ app.on('open-url', async (_event, url) => {
       return;
     }
 
-    log.info(
-      '[Main] Received open-url event:',
-      url.includes('key=') ? url.replace(/key=[^&]+/, 'key=REDACTED') : url
-    );
+    log.info('[Main] Received open-url protocol action:', parsedUrl.hostname);
 
+    const route = parseGoslingProtocolRoute(url);
+    if (route && BrowserWindow.getAllWindows().length === 0) {
+      openUrlHandledLaunch = true;
+    }
     await app.whenReady();
-
-    const openDir = firstGrantedRecentDirectory();
-
-    // Handle new-session URL by creating a fresh chat window
-    if (parsedUrl.hostname === 'new-session') {
-      log.info('[Main] Detected new-session URL, creating new chat window');
-      openUrlHandledLaunch = true;
-      const prompt = parsedUrl.searchParams.get('prompt') || undefined;
-      await createChat(app, {
-        dir: openDir,
-        initialMessage: prompt,
-        initialMessageNoAutoSubmit: prompt !== undefined,
-      });
-      return;
-    }
-
-    if (parsedUrl.hostname === 'resume') {
-      log.info('[Main] Detected resume URL, creating session resume window');
-      openUrlHandledLaunch = await createResumeChatWindow(parsedUrl, openDir);
-      return;
-    }
-
-    // For extension/session URLs, send to existing window or store pending for new one
-    const existingWindows = BrowserWindow.getAllWindows();
-    if (existingWindows.length > 0) {
-      const targetWindow = existingWindows[0];
-      if (targetWindow.isMinimized()) targetWindow.restore();
-      targetWindow.focus();
-      if (parsedUrl.hostname === 'extension' || parsedUrl.hostname === 'sessions') {
-        deliverExtensionOrSessionDeepLink(url, parsedUrl, targetWindow);
+    try {
+      const handled = await handleProtocolUrl(url, parsedUrl);
+      if (!handled) {
+        openUrlHandledLaunch = false;
+        log.warn('[Main] Ignoring unsupported open-url protocol action');
       }
-    } else {
-      openUrlHandledLaunch = true;
-      const newWindow = await createChat(app, { dir: openDir });
-      if (!newWindow) return;
-      queuePendingDeepLink(newWindow.id, url);
+    } catch (error) {
+      log.error('[Main] Failed to handle open-url protocol URL:', errorMessage(error));
+      if (BrowserWindow.getAllWindows().length === 0) {
+        const { dirPath } = parseArgs();
+        await createNewWindow(app, dirPath);
+        openUrlHandledLaunch = true;
+      }
     }
   }
 });
@@ -2000,7 +1963,7 @@ ipcMain.on(desktopCommandChannels.reactReady, (event) => {
   if (windowId && pendingInitialMessages.has(windowId)) {
     const initialMessage = pendingInitialMessages.get(windowId)!;
     const noAutoSubmit = pendingInitialMessageNoAutoSubmit.has(windowId);
-    log.info('Sending pending initial message to window:', initialMessage);
+    log.info('Sending pending initial message to window');
     window.webContents.send(rendererEventChannels.setInitialMessage, initialMessage, {
       noAutoSubmit,
     });

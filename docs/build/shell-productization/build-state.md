@@ -1,11 +1,11 @@
 # Build state — Gosling shared shell productization
 
-Updated: 2026-08-13 Gate 4 session-runtime checkpoint
+Updated: 2026-08-13 Gate 4 exit checkpoint
 Mode: patch-authorized; local commits only; no push, signing identity, notarization, publication,
 updater promotion, production identifiers, release destination, or domain-shell work authorized
-Current gate: Gate 4 — shared Electron bootstrap, preload, ACP, compatibility, and diagnostics
-Current step: checkpoint the main-owned session create/resume runtime slice, then add focused
-full-Gosling handoff receiving
+Current gate: Gate 5 — shared renderer states, diagnostics, relink, and handoff UI
+Current step: checkpoint the focused full-Gosling handoff receiver and Gate 4 GO decision, then begin
+Gate 5 with the shared runtime provider/state surface
 
 ## Intent echo
 
@@ -27,7 +27,9 @@ adapter semantics, domain UI/workflow, final branding, real publication, or upda
 | 4d   | `d7e4178a5`              | main-owned ACP preflight committed                       | source tests                                                   |
 | 4e   | `48b4d5c6c`              | backend generation/cleanup owner committed               | source tests                                                   |
 | 4f   | `6304a9afe`              | dedicated host/package integrity committed               | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
-| 4g   | pending local checkpoint | main-owned session create/resume built and live-verified | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
+| 4g   | `18b9f2fb3`              | main-owned session create/resume committed/live-verified | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
+| 4h   | pending local checkpoint | focused full-Gosling handoff receiver built/verified     | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
+| 4    | pending local checkpoint | local GO; Gate 4 process-boundary exit criteria met      | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
 
 Live Gate 0 corrections remain binding: authoritative commands use `source bin/activate-hermit`;
 historical Linux V8 failures and any current unrelated baseline failures are distinct. No remote CI
@@ -47,6 +49,9 @@ evidence is claimed because no push/PR is authorized.
   cleanup-before-quit;
 - compile-time packaged resources plus runtime identity/profile-hash validation;
 - bounded redacted diagnostics and one-time explicit handoff preparation/confirmation;
+- focused full-Gosling `gosling://handoff` parser/router that validates the exact bounded envelope,
+  opens a non-auto-submitted review draft, preserves intent/references, executes no embedded URI or
+  mutation, and logs no protocol/draft content;
 - tracked host-only non-publishable package wrapper and deterministic package verifier;
 - exact macOS arm64 readback of profile, manifest, provisioning, binary hash, dedicated entries,
   updater absence, protocol, executable, and stable bundle identifier.
@@ -65,10 +70,11 @@ cd ui/desktop
 pnpm run shell:test-profile     # 41 passed, 0 failed
 pnpm run typecheck              # passed
 pnpm run lint:check             # passed; i18n checks included
-pnpm run test:run               # 100 files, 660 tests passed
-focused session Vitest          # 2 files, 24 tests passed
+pnpm exec vite build --config vite.main.config.mts  # passed; existing warnings only
+pnpm run test:run               # 101 files, 688 tests passed
+focused handoff Vitest          # 2 files, 37 tests passed
 live session integration        # 2 tests passed
-focused shell/package ESLint    # zero warnings
+focused touched-file ESLint     # zero warnings
 focused touched-file Prettier   # passed
 shell package build/readback    # passed on macOS arm64 fixture A
 git diff --check                # passed
@@ -89,15 +95,17 @@ team ID      absent
 
 ## Next actions in strict order
 
-1. Create the local Gate 4 session-runtime checkpoint commit; do not push.
-2. Add full Desktop `gosling://handoff` receiving through a focused parser/router module, keeping
-   lifecycle/domain rules out of oversized `main.ts`.
-3. Re-run focused/full Desktop validation and process cleanup tests, then decide Gate 4 exit.
-4. Proceed to Gate 5 recovery/diagnostic/handoff UI only after the Gate 4 primary workflow is real.
+1. Create the local Gate 4 handoff-receiver/exit checkpoint commit; do not push.
+2. Begin Gate 5 with `ShellRuntimeProvider` over the frozen lifecycle bridge and one abort-safe state
+   source; do not add domain behavior or widen shell IPC/preload.
+3. Add shared recovery/diagnostic/relink/handoff presentation incrementally with focused
+   accessibility tests and exact server-result routing.
+4. Re-run focused/full Desktop validation at each coherent Gate 5 checkpoint.
 
 ## Open blockers / decisions
 
-- Gate 4 is not complete: full-Gosling handoff receiving remains absent.
+- Gate 4 has local GO. Gate 5 renderer recovery/accessibility/diagnostic/handoff presentation is not
+  yet implemented and no Gate 5 completion claim is made.
 - Production release destination and identifiers remain unselected and block production profile
   activation only.
 - Signing/notarization credentials and compatible predecessor artifact remain human Gate 7/8 checks.
@@ -127,5 +135,5 @@ pnpm run shell:verify-package -- ../../fixtures/shell-products/fixture-a/product
 cd ../.. && git diff --check
 ```
 
-Inspect live files before every Gate 4 edit. If source differs materially from the checkpoint,
+Inspect live files before every Gate 5 edit. If source differs materially from the checkpoint,
 record a plan change before widening the implementation.

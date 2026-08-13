@@ -1,10 +1,10 @@
 # Gate 4 evidence — shared Electron host checkpoint
 
 Date: 2026-08-13
-Decision: **CONTINUE Gate 4 after session-runtime checkpoint**
+Decision: **GO — Gate 4 process-boundary exit criteria met locally**
 Baseline revision: `269f04b94`
-Checkpoint revisions: `842356a53`, `ff4567d74`, `d7e4178a5`, `48b4d5c6c`, `6304a9afe`
-Session-runtime checkpoint: recorded by the local commit after this evidence update
+Checkpoint revisions: `842356a53`, `ff4567d74`, `d7e4178a5`, `48b4d5c6c`, `6304a9afe`, `18b9f2fb3`
+Gate 4 exit checkpoint: recorded by the local commit after this evidence update
 
 ## Implemented in this checkpoint
 
@@ -26,6 +26,10 @@ Session-runtime checkpoint: recorded by the local commit after this evidence upd
 - compile-time resource selection and packaged profile/manifest identity/hash validation;
 - bounded redacted diagnostics with explicit save dialog and atomic owner-private output;
 - one-time exact server-prepared handoff codec/store and explicit main-owned protocol opening;
+- focused full-Gosling protocol parser/router that rejects malformed/unknown handoff actions and
+  envelope fields, preserves the exact validated JSON in a no-auto-submit review draft, grants no
+  embedded capability/mutation/reference/return authority, executes no envelope URI, and avoids
+  logging protocol or draft contents;
 - tracked local package wrapper that requires one approved non-publishable profile, builds the exact
   host-target `gosling-cli` through the verified V8 helper, stages that artifact, rebuilds the SDK,
   packages without release credentials, and verifies the artifact;
@@ -80,11 +84,14 @@ passed
 pnpm run lint:check
 passed, including 21 i18n transaction tests and 15 locale catalogs
 
-pnpm run test:run
-100 test files passed; 660 tests passed
+pnpm exec vite build --config vite.main.config.mts
+passed; existing module-directive and chunk-size warnings only
 
-focused session Vitest
-2 files passed; 24 tests passed
+pnpm run test:run
+101 test files passed; 688 tests passed
+
+focused handoff Vitest
+2 files passed; 37 tests passed
 
 live shell session integration
 2 tests passed: create/restart/resume and incompatible-preflight/no-session
@@ -108,14 +115,18 @@ focused touched-file check then passed. No unrelated formatting was changed.
 
 ## Gate 4 status and residual limits
 
-Gate 4 remains open. The following exit criteria are not yet satisfied:
+Gate 4 receives a local GO because its primary process-boundary criteria are now observed: dedicated
+main/preload/renderer entries; narrow IPC; main-owned authenticated ACP preflight; compatibility
+before durable session creation; real create/restart/resume and cleanup; diagnostics; and focused
+full-Gosling receipt of the exact explicit handoff as a non-executing review draft.
 
-- full Gosling does not yet receive `gosling://handoff` through a focused routed module;
-- broader renderer recovery/accessibility UI remains Gate 5;
+The following remain outside this Gate 4 decision:
+
+- renderer recovery/accessibility/diagnostic/handoff presentation remains Gate 5;
 - full packaged workflow, restart, coexistence, and failure matrix remains Gate 6;
 - Linux, Windows, and macOS x64 package readback remains Gate 7/CI work;
 - remote Linux CI evidence remains blocked because push/PR is not authorized.
 
-This evidence now also proves the unpackaged main-owned session boundary against a real child and
-isolated SQLite store. Packaged session/restart remains Gate 6. Gate 4 is not complete until focused
-full-Gosling handoff receiving lands, and no target is claimed release-ready.
+The session proof remains unpackaged and packaged session/restart remains Gate 6. The handoff proof
+is parser/router plus dispatch behavior, not installed OS protocol ownership or renderer confirmation
+UI. No target is claimed release-ready.
