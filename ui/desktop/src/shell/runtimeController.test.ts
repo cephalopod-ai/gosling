@@ -11,7 +11,7 @@ const product = {
   runtimeNamespace: 'shell-fixture-a',
   protocolScheme: 'gosling-fixture-a',
   executableName: 'gosling-shell-fixture-a',
-  macosBundleId: 'io.github.repo_makeover.gosling.fixture.a',
+  macosBundleId: 'io.github.repo-makeover.gosling.fixture.a',
   windowsAppId: 'Gosling.Shell.Fixture.A',
   linuxPackageName: 'gosling-shell-fixture-a',
   flatpakId: 'io.github.repo_makeover.Gosling.FixtureA',
@@ -81,7 +81,7 @@ function harness() {
         getExitDetails: () => ({ code: null, signal: null }),
         startupDiagnosticsPath: null,
         getStartupDiagnostics: () => null,
-        recordStartupEvent: () => {},
+        recordStartupEvent: vi.fn(),
       },
       windowOptions: {},
     } as never;
@@ -113,6 +113,8 @@ function harness() {
       workingDir: '/workspace',
       isPackaged: true,
       resourcesPath: '/resources',
+      preloadPath: '/app/shell-preload.js',
+      sessionPartition: 'persist:gosling-shell-fixture-a',
       clientName: product.id,
       clientVersion: product.version,
     },
@@ -147,6 +149,8 @@ describe('shell runtime controller', () => {
       processRegistryPath: '/user/backend-processes.json',
       isPackaged: true,
       resourcesPath: '/resources',
+      preloadPath: '/app/shell-preload.js',
+      sessionPartition: 'persist:gosling-shell-fixture-a',
     });
     expect(value.connectAcp).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -19,9 +19,9 @@ export interface ShellAppIdentity {
 }
 
 export interface ShellAppIdentityAdapter {
-  getPath(name: 'appData' | 'cache' | 'temp'): string;
+  getPath(name: 'appData' | 'sessionData' | 'temp'): string;
   setName(name: string): void;
-  setPath(name: 'userData' | 'sessionData' | 'cache' | 'temp' | 'logs', value: string): void;
+  setPath(name: 'userData' | 'sessionData' | 'temp' | 'logs', value: string): void;
 }
 
 export function deriveShellAppIdentity(
@@ -53,13 +53,12 @@ export function applyShellAppIdentity(
 ): ShellAppIdentity {
   const identity = deriveShellAppIdentity(product, {
     appData: app.getPath('appData'),
-    cache: app.getPath('cache'),
+    cache: app.getPath('sessionData'),
     temp: app.getPath('temp'),
   });
   app.setName(identity.name);
   app.setPath('userData', identity.paths.userData);
   app.setPath('sessionData', identity.paths.sessionData);
-  app.setPath('cache', identity.paths.cache);
   app.setPath('temp', identity.paths.temp);
   app.setPath('logs', identity.paths.logs);
   return identity;

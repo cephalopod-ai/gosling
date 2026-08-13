@@ -4,7 +4,15 @@ const test = require('node:test');
 
 const desktopRoot = path.resolve(__dirname, '..');
 const configPath = path.join(desktopRoot, 'forge.config.ts');
-const fixtureA = path.resolve(desktopRoot, '..', '..', 'fixtures', 'shell-products', 'fixture-a', 'product-profile.json');
+const fixtureA = path.resolve(
+  desktopRoot,
+  '..',
+  '..',
+  'fixtures',
+  'shell-products',
+  'fixture-a',
+  'product-profile.json'
+);
 const controlledEnvironment = [
   'APPLE_TEAM_ID',
   'APPLE_ID',
@@ -46,12 +54,23 @@ test('default Gosling Forge config preserves packaging, updater, and signing beh
   assert.equal(config.packagerConfig.name, 'Gosling');
   assert.equal(config.packagerConfig.executableName, 'Gosling');
   assert.equal(config.packagerConfig.icon, 'src/images/icon');
-  assert.deepEqual(config.packagerConfig.extraResource, ['src/bin', 'src/images', 'src/app-update.yml']);
+  assert.deepEqual(config.packagerConfig.extraResource, [
+    'src/bin',
+    'src/images',
+    'src/app-update.yml',
+  ]);
   assert.equal(config.packagerConfig.protocols[0].schemes[0], 'gosling');
   assert.equal(config.packagerConfig.osxNotarize.teamId, 'team');
   assert.equal(config.packagerConfig.win32.certificateFile, 'certificate.pfx');
   assert.equal(config.publishers.length, 1);
   assert.equal(config.publishers[0].config.repository.name, 'gosling');
+  assert.deepEqual(config.plugins[0].config, {
+    build: [
+      { entry: 'src/main.ts', config: 'vite.main.config.mts' },
+      { entry: 'src/preload.ts', config: 'vite.preload.config.mts' },
+    ],
+    renderer: [{ name: 'main_window', config: 'vite.renderer.config.mts' }],
+  });
 });
 
 test('fixture Forge config cannot enable signing, notarization, updater, or publication through environment', () => {
@@ -72,7 +91,16 @@ test('fixture Forge config cannot enable signing, notarization, updater, or publ
   assert.equal(config.packagerConfig.win32.signingRole, undefined);
   assert.deepEqual(config.publishers, []);
   assert.ok(config.packagerConfig.extraResource.some((entry) => entry.endsWith('manifest.json')));
-  assert.ok(config.packagerConfig.extraResource.every((entry) => !entry.includes('app-update.yml')));
+  assert.ok(
+    config.packagerConfig.extraResource.every((entry) => !entry.includes('app-update.yml'))
+  );
+  assert.deepEqual(config.plugins[0].config, {
+    build: [
+      { entry: 'src/shell/main.ts', config: 'vite.shell.main.config.mts' },
+      { entry: 'src/shell/preload.ts', config: 'vite.shell.preload.config.mts' },
+    ],
+    renderer: [{ name: 'shell_window', config: 'vite.shell.renderer.config.mts' }],
+  });
 });
 
 test('Forge config rejects retired independent shell identity overrides', () => {

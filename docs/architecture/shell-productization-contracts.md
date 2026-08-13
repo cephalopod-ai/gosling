@@ -21,7 +21,7 @@ product
   runtimeNamespace: lower kebab identifier, 3..64 characters
   protocolScheme: lower ASCII scheme, 3..32 characters
   executableName: portable leaf, 1..64 characters
-  macosBundleId: reverse-DNS identifier, <=255 characters
+  macosBundleId: reverse-DNS identifier using only alphanumerics, dots, and hyphens, <=255 characters
   windowsAppId: dotted identifier, <=128 characters
   linuxPackageName: lower package identifier, <=64 characters
   flatpakId: reverse-DNS identifier, <=255 characters
@@ -79,7 +79,7 @@ it never adds secrets.
 | namespace | `shell-fixture-a` | `shell-fixture-b` |
 | protocol | `gosling-fixture-a` | `gosling-fixture-b` |
 | executable | `gosling-shell-fixture-a` | `gosling-shell-fixture-b` |
-| macOS bundle ID | `io.github.repo_makeover.gosling.fixture.a` | `io.github.repo_makeover.gosling.fixture.b` |
+| macOS bundle ID | `io.github.repo-makeover.gosling.fixture.a` | `io.github.repo-makeover.gosling.fixture.b` |
 | Windows app ID | `Gosling.Shell.Fixture.A` | `Gosling.Shell.Fixture.B` |
 | Linux package | `gosling-shell-fixture-a` | `gosling-shell-fixture-b` |
 | Flatpak ID | `io.github.repo_makeover.Gosling.FixtureA` | `io.github.repo_makeover.Gosling.FixtureB` |

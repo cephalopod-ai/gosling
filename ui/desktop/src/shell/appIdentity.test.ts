@@ -10,7 +10,7 @@ const product: ShellProductIdentity = {
   runtimeNamespace: 'shell-fixture-a',
   protocolScheme: 'gosling-fixture-a',
   executableName: 'gosling-shell-fixture-a',
-  macosBundleId: 'io.github.repo_makeover.gosling.fixture.a',
+  macosBundleId: 'io.github.repo-makeover.gosling.fixture.a',
   windowsAppId: 'Gosling.Shell.Fixture.A',
   linuxPackageName: 'gosling-shell-fixture-a',
   flatpakId: 'io.github.repo_makeover.Gosling.FixtureA',
@@ -43,7 +43,7 @@ describe('shell app identity', () => {
   it('applies identity before callers can acquire readiness or a lock', () => {
     const calls: string[] = [];
     const adapter = {
-      getPath: vi.fn((name: 'appData' | 'cache' | 'temp') => `/${name}`),
+      getPath: vi.fn((name: 'appData' | 'sessionData' | 'temp') => `/${name}`),
       setName: vi.fn((name: string) => calls.push(`name:${name}`)),
       setPath: vi.fn((name: string, value: string) => calls.push(`path:${name}:${value}`)),
     };
@@ -52,11 +52,11 @@ describe('shell app identity', () => {
     expect(calls.slice(1).map((call) => call.split(':')[1])).toEqual([
       'userData',
       'sessionData',
-      'cache',
       'temp',
       'logs',
     ]);
     expect(identity.paths.userData).toBe(path.join('/appData', product.id));
+    expect(identity.paths.cache).toBe(path.join('/sessionData', product.id));
   });
 
   it('keeps two shell identities disjoint across every local path and partition', () => {

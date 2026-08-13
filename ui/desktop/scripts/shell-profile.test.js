@@ -40,13 +40,19 @@ function writeProduct(name, raw, provisioning) {
   const assets = path.join(directory, 'assets');
   fs.mkdirSync(assets, { recursive: true });
   for (const extension of ['.icns', '.ico', '.png', '.svg']) {
-    fs.copyFileSync(path.join(fixtureRoot, 'fixture-a', 'assets', `icon${extension}`), path.join(assets, `icon${extension}`));
+    fs.copyFileSync(
+      path.join(fixtureRoot, 'fixture-a', 'assets', `icon${extension}`),
+      path.join(assets, `icon${extension}`)
+    );
   }
   const relativeDirectory = path.relative(repositoryRoot, directory).split(path.sep).join('/');
   raw.provisioningPath = `${relativeDirectory}/provisioning.json`;
   raw.assets.root = `${relativeDirectory}/assets`;
   raw.assets.iconBase = `${relativeDirectory}/assets/icon`;
-  fs.writeFileSync(path.join(directory, 'provisioning.json'), `${JSON.stringify(provisioning, null, 2)}\n`);
+  fs.writeFileSync(
+    path.join(directory, 'provisioning.json'),
+    `${JSON.stringify(provisioning, null, 2)}\n`
+  );
   const profile = path.join(directory, 'product-profile.json');
   fs.writeFileSync(profile, `${JSON.stringify(raw, null, 2)}\n`);
   return profile;
@@ -87,13 +93,27 @@ test('fixture profiles resolve deterministically with sorted canonical content a
   assert.equal(first.profileHash, second.profileHash);
   assert.equal(first.profileJson, second.profileJson);
   assert.equal(first.profileHash.length, 64);
-  assert.deepEqual(first.profile.compatibility.requiredMethods, [...first.profile.compatibility.requiredMethods].sort());
-  assert.deepEqual(first.profile.assets.requiredTargets, [...first.profile.assets.requiredTargets].sort());
-  assert.deepEqual(Object.keys(first.assetsByTarget), ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64']);
+  assert.deepEqual(
+    first.profile.compatibility.requiredMethods,
+    [...first.profile.compatibility.requiredMethods].sort()
+  );
+  assert.deepEqual(
+    first.profile.assets.requiredTargets,
+    [...first.profile.assets.requiredTargets].sort()
+  );
+  assert.deepEqual(Object.keys(first.assetsByTarget), [
+    'linux-x64',
+    'macos-arm64',
+    'macos-x64',
+    'windows-x64',
+  ]);
   assert.deepEqual(Object.keys(first.assetsByTarget['linux-x64']), ['iconPng', 'iconSvg']);
   assert.match(first.assetsByTarget['macos-arm64'].icon, /icon\.icns$/);
   assert.match(first.assetsByTarget['windows-x64'].icon, /icon\.ico$/);
-  assert.equal(first.resolvedGoslingRevision, execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim());
+  assert.equal(
+    first.resolvedGoslingRevision,
+    execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim()
+  );
 });
 
 test('fixture identities match the frozen contract and remain non-publishable', () => {
@@ -109,40 +129,63 @@ test('fixture identities match the frozen contract and remain non-publishable', 
 });
 
 test('canonical JSON recursively sorts object keys without changing semantic array order', () => {
-  assert.equal(canonicalJson({ z: 1, a: { y: 2, b: 3 }, list: ['z', 'a'] }), '{"a":{"b":3,"y":2},"list":["z","a"],"z":1}');
+  assert.equal(
+    canonicalJson({ z: 1, a: { y: 2, b: 3 }, list: ['z', 'a'] }),
+    '{"a":{"b":3,"y":2},"list":["z","a"],"z":1}'
+  );
 });
 
 test('strict JSON parsing rejects malformed and duplicate keys without echoing content', () => {
-  assert.throws(() => parseJsonWithoutDuplicateKeys('{"schemaVersion":', 'profile'), /^Error: profile is malformed JSON$/);
-  assert.throws(() => parseJsonWithoutDuplicateKeys('{"secret-value":1,"secret-value":2}', 'profile'), (error) => {
-    assert.equal(error.message, 'profile contains a duplicate JSON key');
-    assert.doesNotMatch(error.message, /secret-value/);
-    return true;
-  });
+  assert.throws(
+    () => parseJsonWithoutDuplicateKeys('{"schemaVersion":', 'profile'),
+    /^Error: profile is malformed JSON$/
+  );
+  assert.throws(
+    () => parseJsonWithoutDuplicateKeys('{"secret-value":1,"secret-value":2}', 'profile'),
+    (error) => {
+      assert.equal(error.message, 'profile contains a duplicate JSON key');
+      assert.doesNotMatch(error.message, /secret-value/);
+      return true;
+    }
+  );
 });
 
 test('unknown versions, fields, and runtime provisioning content fail closed', () => {
-  validationError((raw) => { raw.schemaVersion = 2; });
-  validationError((raw) => { raw.unreviewed = true; });
-  validationError((raw) => { raw.workspaceId = 'workspace'; });
-  validationError((raw) => { raw.product.provider = 'example'; });
+  validationError((raw) => {
+    raw.schemaVersion = 2;
+  });
+  validationError((raw) => {
+    raw.unreviewed = true;
+  });
+  validationError((raw) => {
+    raw.workspaceId = 'workspace';
+  });
+  validationError((raw) => {
+    raw.product.provider = 'example';
+  });
 });
 
 test('secret-shaped keys and values are rejected without reflecting the value', () => {
   const raw = fixtureRaw();
   raw.product.displayName = 'bearer abcdefghijklmnopqrstuvwxyz';
-  assert.throws(() => validateProfile(raw, fixtureA), (error) => {
-    assert.match(error.message, /secret-shaped content/);
-    assert.doesNotMatch(error.message, /abcdefghijklmnopqrstuvwxyz/);
-    return true;
-  });
+  assert.throws(
+    () => validateProfile(raw, fixtureA),
+    (error) => {
+      assert.match(error.message, /secret-shaped content/);
+      assert.doesNotMatch(error.message, /abcdefghijklmnopqrstuvwxyz/);
+      return true;
+    }
+  );
   const keyed = fixtureRaw();
   keyed.update.apiToken = 'not-reflected';
-  assert.throws(() => validateProfile(keyed, fixtureA), (error) => {
-    assert.equal(error.message, 'profile.update contains a secret-shaped field');
-    assert.doesNotMatch(error.message, /apiToken|not-reflected/);
-    return true;
-  });
+  assert.throws(
+    () => validateProfile(keyed, fixtureA),
+    (error) => {
+      assert.equal(error.message, 'profile.update contains a secret-shaped field');
+      assert.doesNotMatch(error.message, /apiToken|not-reflected/);
+      return true;
+    }
+  );
 });
 
 test('all product and distribution identifiers enforce their field contracts', () => {
@@ -163,27 +206,63 @@ test('all product and distribution identifiers enforce their field contracts', (
     raw.product[field] = value;
     assert.throws(() => validateProfile(raw, fixtureA), new RegExp(`profile\\.product\\.${field}`));
   }
-  validationError((raw) => { raw.update.channel = 'UPPER'; });
-  validationError((raw) => { raw.distribution.artifactPrefix = 'ab'; });
+  validationError((raw) => {
+    raw.update.channel = 'UPPER';
+  });
+  validationError((raw) => {
+    raw.distribution.artifactPrefix = 'ab';
+  });
+});
+
+test('macOS bundle identifiers reject characters Electron Packager would silently strip', () => {
+  const raw = fixtureRaw();
+  raw.product.macosBundleId = 'io.github.repo_makeover.gosling.fixture.a';
+  assert.throws(() => validateProfile(raw, fixtureA), /profile\.product\.macosBundleId is invalid/);
 });
 
 test('compatibility fields reject unsupported schemas, methods, revisions, and duplicate methods', () => {
-  validationError((raw) => { raw.compatibility.goslingVersion = 'latest'; });
-  validationError((raw) => { raw.compatibility.goslingRevision = 'deadbeef'; });
-  validationError((raw) => { raw.compatibility.provisioningSchemaVersion = 2; });
-  validationError((raw) => { raw.compatibility.handoffSchemaVersion = 2; });
-  validationError((raw) => { raw.compatibility.requiredMethods = []; });
-  validationError((raw) => { raw.compatibility.requiredMethods.push(raw.compatibility.requiredMethods[0]); });
-  validationError((raw) => { raw.compatibility.requiredMethods = ['_gosling/unknown']; });
+  validationError((raw) => {
+    raw.compatibility.goslingVersion = 'latest';
+  });
+  validationError((raw) => {
+    raw.compatibility.goslingRevision = 'deadbeef';
+  });
+  validationError((raw) => {
+    raw.compatibility.provisioningSchemaVersion = 2;
+  });
+  validationError((raw) => {
+    raw.compatibility.handoffSchemaVersion = 2;
+  });
+  validationError((raw) => {
+    raw.compatibility.requiredMethods = [];
+  });
+  validationError((raw) => {
+    raw.compatibility.requiredMethods.push(raw.compatibility.requiredMethods[0]);
+  });
+  validationError((raw) => {
+    raw.compatibility.requiredMethods = ['_gosling/unknown'];
+  });
 });
 
 test('paths reject absolute, traversal, backslash, missing, wrong-type, and out-of-root inputs', () => {
-  validationError((raw) => { raw.provisioningPath = path.join(os.tmpdir(), 'provisioning.json'); });
-  validationError((raw) => { raw.provisioningPath = '../provisioning.json'; });
-  validationError((raw) => { raw.provisioningPath = 'fixtures\\shell-products\\fixture-a\\provisioning.json'; });
-  validationError((raw) => { raw.provisioningPath = 'fixtures/shell-products/fixture-a/missing.json'; });
-  validationError((raw) => { raw.provisioningPath = 'fixtures/shell-products/fixture-a/assets'; });
-  validationError((raw) => { raw.assets.root = 'ui/desktop/src/images'; });
+  validationError((raw) => {
+    raw.provisioningPath = path.join(os.tmpdir(), 'provisioning.json');
+  });
+  validationError((raw) => {
+    raw.provisioningPath = '../provisioning.json';
+  });
+  validationError((raw) => {
+    raw.provisioningPath = 'fixtures\\shell-products\\fixture-a\\provisioning.json';
+  });
+  validationError((raw) => {
+    raw.provisioningPath = 'fixtures/shell-products/fixture-a/missing.json';
+  });
+  validationError((raw) => {
+    raw.provisioningPath = 'fixtures/shell-products/fixture-a/assets';
+  });
+  validationError((raw) => {
+    raw.assets.root = 'ui/desktop/src/images';
+  });
 });
 
 test('profile files outside approved roots are rejected', () => {
@@ -198,10 +277,15 @@ test('profile files outside approved roots are rejected', () => {
 });
 
 test('asset inventory rejects an extension, missing target asset, and symlinked asset root', () => {
-  validationError((raw) => { raw.assets.iconBase += '.png'; });
+  validationError((raw) => {
+    raw.assets.iconBase += '.png';
+  });
   const raw = fixtureRaw();
   raw.assets.iconBase = 'fixtures/shell-products/fixture-a/assets/missing-icon';
-  assert.throws(() => validateProfile(raw, fixtureA), /iconBase\.(?:icns|ico|png|svg) does not exist/);
+  assert.throws(
+    () => validateProfile(raw, fixtureA),
+    /iconBase\.(?:icns|ico|png|svg) does not exist/
+  );
 
   const link = path.join(scratchRoot, 'asset-link');
   fs.symlinkSync(path.join(fixtureRoot, 'fixture-a', 'assets'), link, 'dir');
@@ -246,15 +330,27 @@ test('symlink escapes are rejected for referenced files', () => {
 });
 
 test('profile and provisioning identities must match exactly', () => {
-  validationError((raw) => { raw.product.displayName = 'Different Name'; });
-  validationError((raw) => { raw.product.version = '1.0.0'; });
+  validationError((raw) => {
+    raw.product.displayName = 'Different Name';
+  });
+  validationError((raw) => {
+    raw.product.version = '1.0.0';
+  });
 });
 
 test('update, signing, destination, publishability, and fixture promotion contradictions are rejected', () => {
-  validationError((raw) => { raw.update.enabled = true; });
-  validationError((raw) => { raw.update.owner = 'owner'; });
-  validationError((raw) => { raw.distribution.signingPolicy = 'required'; });
-  validationError((raw) => { raw.distribution.releaseDestination = 'production'; });
+  validationError((raw) => {
+    raw.update.enabled = true;
+  });
+  validationError((raw) => {
+    raw.update.owner = 'owner';
+  });
+  validationError((raw) => {
+    raw.distribution.signingPolicy = 'required';
+  });
+  validationError((raw) => {
+    raw.distribution.releaseDestination = 'production';
+  });
   validationError((raw) => {
     raw.distribution.publishable = true;
     raw.update.enabled = true;
@@ -278,7 +374,10 @@ test('every identity-sensitive field is collision-checked only against the same 
     const suffix = `${index}-${field.replaceAll('.', '-')}`;
     const fileA = writeProduct(`collision-${suffix}-a`, a, matchingProvisioning(a));
     const fileB = writeProduct(`collision-${suffix}-b`, b, matchingProvisioning(b));
-    assert.throws(() => resolveProfiles([fileA, fileB]), new RegExp(`collision at ${field.replaceAll('.', '\\.')} `));
+    assert.throws(
+      () => resolveProfiles([fileA, fileB]),
+      new RegExp(`collision at ${field.replaceAll('.', '\\.')} `)
+    );
   }
 
   const crossFieldA = clone(baseA);
@@ -308,7 +407,10 @@ test('manifest resolution is deterministic, target-specific, and never embeds so
   assert.equal(first.manifest.architecture, 'x64');
   assert.equal(first.manifest.profileHash, resolved.profileHash);
   assert.equal(first.manifest.compatibility.goslingRevision, resolved.resolvedGoslingRevision);
-  assert.doesNotMatch(first.manifestJson, new RegExp(repositoryRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(
+    first.manifestJson,
+    new RegExp(repositoryRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  );
   assert.throws(() => buildManifest(resolved, 'windows-arm64'), /unsupported/);
 });
 
@@ -333,6 +435,8 @@ test('build resolution writes canonical files atomically only under ignored buil
 test('approved profile discovery returns the two source-controlled fixtures without following symlinks', () => {
   const link = path.join(scratchRoot, 'fixture-link');
   fs.symlinkSync(path.join(fixtureRoot, 'fixture-a'), link, 'dir');
-  const discovered = discoverProfiles(repositoryRoot).filter((file) => !file.startsWith(scratchRoot));
+  const discovered = discoverProfiles(repositoryRoot).filter(
+    (file) => !file.startsWith(scratchRoot)
+  );
   assert.deepEqual(discovered, [fixtureA, fixtureB]);
 });

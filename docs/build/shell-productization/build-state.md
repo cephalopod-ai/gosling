@@ -1,9 +1,11 @@
 # Build state — Gosling shared shell productization
 
-Updated: 2026-08-12 Gate 4 compatibility-metadata slice
-Mode: patch-authorized; local commits only; no push, signing, publication, updater promotion, production identifiers, release destination, or domain-shell work authorized
+Updated: 2026-08-13 Gate 4 host/package-integrity checkpoint
+Mode: patch-authorized; local commits only; no push, signing identity, notarization, publication,
+updater promotion, production identifiers, release destination, or domain-shell work authorized
 Current gate: Gate 4 — shared Electron bootstrap, preload, ACP, compatibility, and diagnostics
-Current step: checkpoint canonical ACP custom-method capability metadata, then implement pure app-identity/lifecycle/compatibility modules before the shell entrypoint
+Current step: checkpoint the dedicated host and package-integrity slice, then add session
+create/resume and focused full-Gosling handoff receiving
 
 ## Intent echo
 
@@ -13,104 +15,101 @@ adapter semantics, domain UI/workflow, final branding, real publication, or upda
 
 ## Verified baseline and checkpoints
 
-| Gate | Local checkpoint | State | Evidence |
-| --- | --- | --- | --- |
-| 0 | `ee0d79ee0` | GO | `evidence/gate-0.md` |
-| 1 | `72c22f4cc` | built locally; remote Linux verification blocked | `evidence/gate-1.md`, `audits/gate-1-supply-chain.md` |
-| 2 | `e68c5791a` | GO | `evidence/gate-2.md`, `audits/gate-2-architecture-security.md` |
-| 3 | `269f04b94` | GO | `evidence/gate-3.md`, `audits/gate-3-profile-release.md` |
-| 4a | pending local checkpoint | canonical custom-method metadata unit/runtime proof green | source tests; Gate 4 evidence pending |
+| Gate | Local checkpoint         | State                                                       | Evidence                                                       |
+| ---- | ------------------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| 0    | `ee0d79ee0`              | GO                                                          | `evidence/gate-0.md`                                           |
+| 1    | `72c22f4cc`              | built locally; remote Linux verification blocked            | `evidence/gate-1.md`, `audits/gate-1-supply-chain.md`          |
+| 2    | `e68c5791a`              | GO                                                          | `evidence/gate-2.md`, `audits/gate-2-architecture-security.md` |
+| 3    | `269f04b94`              | GO                                                          | `evidence/gate-3.md`, `audits/gate-3-profile-release.md`       |
+| 4a   | `ce7586aa8`              | canonical ACP method capabilities committed                 | focused Rust/runtime evidence                                  |
+| 4b   | `842356a53`              | app identity/lifecycle/compatibility committed              | source tests                                                   |
+| 4c   | `ff4567d74`              | constrained IPC/preload committed                           | source tests                                                   |
+| 4d   | `d7e4178a5`              | main-owned ACP preflight committed                          | source tests                                                   |
+| 4e   | `48b4d5c6c`              | backend generation/cleanup owner committed                  | source tests                                                   |
+| 4f   | pending local checkpoint | dedicated host/package integrity built and locally verified | `evidence/gate-4.md`, `audits/gate-4-host-package.md`          |
 
 Live Gate 0 corrections remain binding: authoritative commands use `source bin/activate-hermit`;
-historical Linux V8 failures and current unrelated Anthropic weather replay failure are distinct.
-No remote CI evidence is claimed because no push/PR is authorized.
+historical Linux V8 failures and any current unrelated baseline failures are distinct. No remote CI
+evidence is claimed because no push/PR is authorized.
 
-## Gate 3 delivered surfaces
+## Gate 4 delivered surfaces
 
-- `ui/desktop/scripts/shell-profile.js`: strict parser, validators, approved roots, assets,
-  canonical hash, collision checks, exact revision, target manifest, ignored atomic output.
-- `ui/desktop/scripts/resolve-shell-profile.js`: check/check-all/resolve CLI.
-- `ui/desktop/scripts/shell-forge-profile.js`: thin Forge projection and retired identity override
-  denial.
-- Node test corpus: resolver/hostile paths/assets/collisions, CLI, Forge parity/isolation, and fixture
-  negative space.
-- `ui/desktop/src/shell/profile.ts`: consumer-only resolved profile/manifest types.
-- `fixtures/shell-products/fixture-{a,b}/`: frozen neutral identities, matching provisioning, and
-  distinct structural test assets.
-- `ui/desktop/forge.config.ts`: default Gosling parity with selected profile identity/resources and
-  fixture signing/updater/publisher denial.
-- package scripts and Desktop CI profile checks.
-- `docs/SHELL_PRODUCTS.md`, architecture correction, traceability/evidence/audit/ledger updates.
+- isolated pre-ready app identity, paths, persistent partition, protocol, and single-instance lock;
+- deterministic lifecycle state machine and one fenced backend generation owner;
+- exact shell IPC allowlist and dedicated frozen preload with no broad Desktop authority;
+- main-owned authenticated ACP initialization and profile/core/schema/method/provisioning preflight;
+- dedicated shell main/preload/renderer Vite and Forge entries;
+- secure bootstrap navigation/window restrictions, second-instance focus, lifecycle forwarding, and
+  cleanup-before-quit;
+- compile-time packaged resources plus runtime identity/profile-hash validation;
+- bounded redacted diagnostics and one-time explicit handoff preparation/confirmation;
+- tracked host-only non-publishable package wrapper and deterministic package verifier;
+- exact macOS arm64 readback of profile, manifest, provisioning, binary hash, dedicated entries,
+  updater absence, protocol, executable, and stable bundle identifier.
 
-No production destination is approved (`APPROVED_RELEASE_DESTINATIONS` is empty), so production
-profile activation fails closed. Fixture profile resolution is allowed in a dirty checkout;
-publishable manifest generation is not.
+The package wrapper builds `gosling-cli` through `scripts/with-rusty-v8-cache.sh`, stages that exact
+artifact, rebuilds the SDK, invokes Forge package with release credentials cleared, and rejects
+publishable/update-enabled/signing-required profiles. Electron Forge's fuses plugin applies only the
+mandatory local ad-hoc signature after changing the arm64 Electron fuse wire; no team identity,
+notarization, release signature, upload, or publication occurs.
 
 ## Latest observed validation
 
 ```text
 source bin/activate-hermit
 cd ui/desktop
-pnpm run shell:test-profile     # 34 passed, 0 failed
-pnpm run shell:check-profiles   # fixture A/B valid, deterministic hashes, no collision
+pnpm run shell:test-profile     # 41 passed, 0 failed
 pnpm run typecheck              # passed
+pnpm run lint:check             # passed; i18n checks included
+pnpm run test:run               # 100 files, 655 tests passed
+focused shell Vitest            # 10 files, 53 tests passed
+focused shell/package ESLint    # zero warnings
+focused touched-file Prettier   # passed
+shell package build/readback    # passed on macOS arm64 fixture A
+git diff --check                # passed
 ```
 
-Additional Gate 3 exit evidence: Desktop `lint:check` passed (including 21 i18n transaction tests
-and 15 locale catalogs); Desktop Vitest passed 88 files/583 tests; Prettier, Forge default/fixture
-load probe, documentation fences/index links, and `git diff --check` passed. Actual package readback
-is deliberately deferred until dedicated shell Vite entries exist in Gate 4.
+Repository-wide `pnpm run format:check` still reports 62 pre-existing unrelated source files. The
+only touched file it initially reported was formatted, and the focused touched-file check is green.
+No unrelated formatting was changed.
 
-## Gate 4 orientation and current proof
+Package evidence:
 
-Fresh inspection covered `shellHost.ts`, `goslingServe.ts` and its spawned-process tests,
-`backendProcessRegistry.ts`, `startupDiagnostics.ts`, Desktop ACP connection/transport, full preload
-and IPC channels, Vite/Forge entries, Rust shell validation/runtime, generated SDK custom methods,
-and full Desktop app identity ordering. Findings:
-
-- `createMinimalShellHost` still points at the broad `preload.js` and has no production call site;
-- `startGoslingServe` already owns loopback binding, generated-secret injection, TLS fingerprint,
-  readiness, process registration, graceful/forced cleanup, and parent-death signaling;
-- full Desktop app name/protocol/partition/single-instance behavior is hard-coded and cannot be the
-  shell entrypoint;
-- generated SDK already exposes provisioning read/validate and handoff prepare;
-- initialization shell metadata lacked the authoritative custom-method list required for pre-session
-  compatibility.
-
-The metadata gap is now patched additively: `availableMethods` is sorted directly from
-`GoslingAcpAgent::custom_method_schemas`. The focused Rust unit test passed; the CLI runtime E2E
-compiled and its actual spawned-server provisioning/session/isolation test passed.
+```text
+profileHash  bbdc328863718e3a94c2a379140bc16568bab9474be72066fb87bf0a7a9bbe75
+binaryHash   16edd16fe9995bc44c28f131fc64dd7789f8d345639884f9ec6d5708bee96cec
+bundle ID    io.github.repo-makeover.gosling.fixture.a
+team ID      absent
+```
 
 ## Next actions in strict order
 
-1. Create a local compatibility-metadata checkpoint commit; do not push.
-2. Implement and exhaustively test pure shell app-identity, lifecycle, and compatibility modules.
-3. Implement shell-only IPC channel/types and separate preload with a frozen operation snapshot.
-4. Implement ACP adapter/preflight from generated SDK types; reject identity/core/schema/method and
-   invalid provisioning before any session create/resume.
-5. Implement the dedicated shell bootstrap/main entry with one generation owner and isolated paths.
-6. Add shell renderer entry only after the main/preload contracts are green.
-7. Extend bounded/redacted diagnostics and explicit handoff, then run process failure-path tests.
+1. Create the local Gate 4 host/package checkpoint commit; do not push.
+2. Add a main-owned session create/resume seam only after compatibility succeeds.
+3. Add deterministic neutral fixture probes proving success and no durable session on failed
+   preflight; no domain semantics or live provider credential.
+4. Add full Desktop `gosling://handoff` receiving through a focused parser/router module, keeping
+   lifecycle/domain rules out of oversized `main.ts`.
+5. Re-run focused/full Desktop validation and process cleanup tests, then decide Gate 4 exit.
+6. Proceed to Gate 5 recovery/diagnostic/handoff UI only after the Gate 4 primary workflow is real.
 
 ## Open blockers / decisions
 
+- Gate 4 is not complete: session create/resume and full-Gosling handoff receiving remain absent.
 - Production release destination and identifiers remain unselected and block production profile
   activation only.
 - Signing/notarization credentials and compatible predecessor artifact remain human Gate 7/8 checks.
 - Gate 1 remote Linux cold-download/helper evidence remains blocked pending push/PR authority.
-- Existing merged-main Anthropic weather replay failure remains unrelated and may block final Gate 8
-  acceptance if unresolved.
-- Current ACP initialization lacks authoritative custom-method capabilities; Gate 4 must derive the
-  additive wire metadata from `GoslingAcpAgent::custom_method_schemas`.
-- Actual package metadata readback, tamper detection, installed coexistence, and packaged primary
-  workflow remain Gates 6/7.
+- macOS x64, Linux, and Windows package readback require matching runners and remain Gate 7 work.
+- Installed restart/coexistence and full packaged primary workflow remain Gate 6.
+- A deterministic no-live-credential session probe still needs design/validation.
 
 ## Verify-don't-trust resume commands
 
 ```bash
 cd /Users/eric/Work/vscode/forked/gosling
 git status --short --branch
-git log -5 --oneline --decorate
+git log -8 --oneline --decorate
 sed -n '1,220p' AGENTS.md
 cat docs/build/shell-productization/build-state.md
 cat docs/build/shell-productization/traceability-matrix.md
@@ -118,7 +117,9 @@ cat docs/build/shell-productization/risk-register.md
 cat docs/build/shell-productization/assumption-ledger.md
 cat docs/build/shell-productization/defects.md
 source bin/activate-hermit
-cd ui/desktop && pnpm run shell:test-profile && pnpm run shell:check-profiles && pnpm run typecheck
+cd ui/desktop && pnpm run shell:test-profile && pnpm run shell:check-profiles
+pnpm run typecheck && pnpm run lint:check && pnpm run test:run
+pnpm run shell:verify-package -- ../../fixtures/shell-products/fixture-a/product-profile.json --platform darwin --arch arm64 --package 'out/Gosling Shell Fixture A-darwin-arm64' --binary ../../target/aarch64-apple-darwin/release/gosling
 cd ../.. && git diff --check
 ```
 

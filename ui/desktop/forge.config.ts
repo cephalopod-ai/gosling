@@ -5,6 +5,43 @@ const { resolveForgeProjection } = require('./scripts/shell-forge-profile');
 const isLinuxVulkanBuild = process.env.GOSLING_DESKTOP_LINUX_VARIANT === 'vulkan';
 const product = resolveForgeProjection();
 const signingAllowed = !product.shell || product.resolved.profile.distribution.publishable;
+const viteEntries = product.shell
+  ? {
+      build: [
+        {
+          entry: 'src/shell/main.ts',
+          config: 'vite.shell.main.config.mts',
+        },
+        {
+          entry: 'src/shell/preload.ts',
+          config: 'vite.shell.preload.config.mts',
+        },
+      ],
+      renderer: [
+        {
+          name: 'shell_window',
+          config: 'vite.shell.renderer.config.mts',
+        },
+      ],
+    }
+  : {
+      build: [
+        {
+          entry: 'src/main.ts',
+          config: 'vite.main.config.mts',
+        },
+        {
+          entry: 'src/preload.ts',
+          config: 'vite.preload.config.mts',
+        },
+      ],
+      renderer: [
+        {
+          name: 'main_window',
+          config: 'vite.renderer.config.mts',
+        },
+      ],
+    };
 
 let cfg = {
   name: product.productName,
@@ -184,24 +221,7 @@ module.exports = {
   plugins: [
     {
       name: '@electron-forge/plugin-vite',
-      config: {
-        build: [
-          {
-            entry: 'src/main.ts',
-            config: 'vite.main.config.mts',
-          },
-          {
-            entry: 'src/preload.ts',
-            config: 'vite.preload.config.mts',
-          },
-        ],
-        renderer: [
-          {
-            name: 'main_window',
-            config: 'vite.renderer.config.mts',
-          },
-        ],
-      },
+      config: viteEntries,
     },
     // Fuses are used to enable/disable various Electron functionality
     // at package time, before code signing the application

@@ -7,7 +7,7 @@
     "runtimeNamespace": "shell-fixture-b",
     "protocolScheme": "gosling-fixture-b",
     "executableName": "gosling-shell-fixture-b",
-    "macosBundleId": "io.github.repo_makeover.gosling.fixture.b",
+    "macosBundleId": "io.github.repo-makeover.gosling.fixture.b",
     "windowsAppId": "Gosling.Shell.Fixture.B",
     "linuxPackageName": "gosling-shell-fixture-b",
     "flatpakId": "io.github.repo_makeover.Gosling.FixtureB"

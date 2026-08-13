@@ -19,6 +19,7 @@ const DOMAIN_KEY_PATTERN =
   /^(workspace(?:Id)?|credentialProfile(?:Id)?|provider|model|extensions?|skillIds?|deniedMethods?|domainAdapter|prompt|action|payload|handoff)$/i;
 const LOWER_KEBAB = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 const REVERSE_DNS = /^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+){2,}$/;
+const MACOS_BUNDLE_ID = /^[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+){2,}$/;
 const WINDOWS_ID = /^[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)+$/;
 const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -60,7 +61,10 @@ function string(value, label, pattern, min, max) {
 }
 
 function assertSafeValues(value, label = 'profile') {
-  if (typeof value === 'string' && (SECRET_PATTERN.test(value) || PRIVATE_KEY_PATTERN.test(value))) {
+  if (
+    typeof value === 'string' &&
+    (SECRET_PATTERN.test(value) || PRIVATE_KEY_PATTERN.test(value))
+  ) {
     fail(`${label} contains secret-shaped content`);
   }
   if (Array.isArray(value)) {
@@ -246,11 +250,19 @@ function validateIco(contents, label) {
   const height = contents[7] || 256;
   const size = contents.readUInt32LE(14);
   const offset = contents.readUInt32LE(18);
-  if (width !== height || width < 32 || offset < 22 || size < 1 || offset + size > contents.length) {
+  if (
+    width !== height ||
+    width < 32 ||
+    offset < 22 ||
+    size < 1 ||
+    offset + size > contents.length
+  ) {
     fail(`${label} is not a valid square ICO icon`);
   }
   const payload = contents.subarray(offset, offset + size);
-  if (payload.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+  if (
+    payload.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
     validatePng(payload, label);
   }
 }
@@ -269,7 +281,9 @@ function validateIcns(contents, label) {
     const size = contents.readUInt32BE(offset + 4);
     if (size < 8 || offset + size > contents.length) fail(`${label} is not a valid ICNS icon`);
     const payload = contents.subarray(offset + 8, offset + size);
-    if (payload.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    if (
+      payload.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    ) {
       validatePng(payload, label);
       iconFound = true;
     }
@@ -355,7 +369,15 @@ function checkoutIsClean(root) {
 function validateProfile(raw, profilePath) {
   exactKeys(
     raw,
-    ['schemaVersion', 'product', 'provisioningPath', 'compatibility', 'assets', 'update', 'distribution'],
+    [
+      'schemaVersion',
+      'product',
+      'provisioningPath',
+      'compatibility',
+      'assets',
+      'update',
+      'distribution',
+    ],
     [],
     'profile'
   );
@@ -386,7 +408,7 @@ function validateProfile(raw, profilePath) {
   string(product.runtimeNamespace, 'profile.product.runtimeNamespace', LOWER_KEBAB, 3, 64);
   string(product.protocolScheme, 'profile.product.protocolScheme', /^[a-z][a-z0-9-]*$/, 3, 32);
   string(product.executableName, 'profile.product.executableName', LOWER_KEBAB, 1, 64);
-  string(product.macosBundleId, 'profile.product.macosBundleId', REVERSE_DNS, 3, 255);
+  string(product.macosBundleId, 'profile.product.macosBundleId', MACOS_BUNDLE_ID, 3, 255);
   string(product.windowsAppId, 'profile.product.windowsAppId', WINDOWS_ID, 3, 128);
   string(product.linuxPackageName, 'profile.product.linuxPackageName', LOWER_KEBAB, 1, 64);
   string(product.flatpakId, 'profile.product.flatpakId', REVERSE_DNS, 3, 255);
@@ -411,10 +433,7 @@ function validateProfile(raw, profilePath) {
   ) {
     fail('profile.compatibility.goslingRevision is invalid');
   }
-  if (
-    compatibility.provisioningSchemaVersion !== 1 ||
-    compatibility.handoffSchemaVersion !== 1
-  ) {
+  if (compatibility.provisioningSchemaVersion !== 1 || compatibility.handoffSchemaVersion !== 1) {
     fail('profile compatibility schema versions must be 1');
   }
   if (
@@ -443,7 +462,13 @@ function validateProfile(raw, profilePath) {
   string(update.channel, 'profile.update.channel', LOWER_KEBAB, 3, 64);
   for (const field of ['owner', 'repository']) {
     if (update[field] !== undefined) {
-      string(update[field], `profile.update.${field}`, /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/, 1, 100);
+      string(
+        update[field],
+        `profile.update.${field}`,
+        /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/,
+        1,
+        100
+      );
     }
   }
   if (update.enabled && (!update.owner || !update.repository)) {
@@ -506,13 +531,7 @@ function validateProfile(raw, profilePath) {
     'profile.provisioningPath',
     'file'
   );
-  const assetRoot = containedPath(
-    root,
-    assets.root,
-    'profile.assets.root',
-    'directory',
-    true
-  );
+  const assetRoot = containedPath(root, assets.root, 'profile.assets.root', 'directory', true);
   const assetsByTarget = assetInventory(root, assetRoot, assets.iconBase, assets.requiredTargets);
   const provisioningJson = readJson(provisioning, 'provisioning document');
   if (
@@ -575,7 +594,8 @@ const COLLISION_FIELDS = [
 function resolveProfiles(files) {
   const resolved = files.map(resolveProfile);
   const duplicate = resolved.find(
-    (entry, index) => resolved.findIndex((candidate) => candidate.profilePath === entry.profilePath) !== index
+    (entry, index) =>
+      resolved.findIndex((candidate) => candidate.profilePath === entry.profilePath) !== index
   );
   if (duplicate) fail('profile file was provided more than once');
   resolved.sort((a, b) => a.profilePath.localeCompare(b.profilePath));
@@ -585,7 +605,9 @@ function resolveProfiles(files) {
       const value = valueFor(entry.profile);
       const displayPath = path.relative(entry.repositoryRoot, entry.profilePath);
       if (seen.has(value)) {
-        fail(`profile identity collision at ${field} between ${seen.get(value)} and ${displayPath}`);
+        fail(
+          `profile identity collision at ${field} between ${seen.get(value)} and ${displayPath}`
+        );
       }
       seen.set(value, displayPath);
     }
@@ -656,7 +678,8 @@ function writeBuildResolution(resolved, target, outputDirectory) {
   const output = outputDirectory
     ? path.resolve(resolved.repositoryRoot, outputDirectory)
     : path.join(buildRoot, 'shell-profiles', resolved.profile.product.id, target);
-  if (!isContained(buildRoot, output)) fail('build output must remain under the repository build directory');
+  if (!isContained(buildRoot, output))
+    fail('build output must remain under the repository build directory');
   const { manifest, manifestJson } = buildManifest(resolved, target);
   const profileOutput = path.join(output, 'profile.json');
   const manifestOutput = path.join(output, 'manifest.json');

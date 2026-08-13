@@ -38,16 +38,33 @@ Resolution writes deterministic canonical `profile.json` and `manifest.json` fil
 profile hash, exact checkout revision, target, architecture, schema versions, required methods,
 and safe product identity. A publishable manifest additionally requires a clean checkout.
 
-To load a reviewed profile through Forge:
+Build and verify one reviewed non-publishable profile on the current host:
 
 ```bash
-GOSLING_SHELL_PROFILE=../../fixtures/shell-products/fixture-a/product-profile.json pnpm exec electron-forge package
+pnpm run shell:package-local -- ../../fixtures/shell-products/fixture-a/product-profile.json --platform darwin --arch arm64
 ```
 
-The fixture profiles are only packaging/configuration fixtures at this gate; the dedicated shell
-main/preload/renderer entry arrives in the next implementation gate. Using a fixture profile cannot
-enable updater publication, macOS signing/notarization, or Windows signing, even if credential
-environment variables are present.
+The local wrapper requires the selected platform/architecture to match the host. It builds the exact
+`gosling-cli` target through the repository V8 helper, stages that binary, rebuilds the SDK, invokes
+Forge package with release credentials cleared, and then fails unless package resources, the complete
+manifest, binary hash, dedicated shell entries, updater absence, and target metadata read back exactly.
+It rejects publishable, update-enabled, or signing-required profiles.
+
+A previously built package can be checked independently by passing the selected profile, target,
+package directory, and the exact just-built binary:
+
+```bash
+pnpm run shell:verify-package -- ../../fixtures/shell-products/fixture-a/product-profile.json \
+  --platform darwin --arch arm64 \
+  --package "out/Gosling Shell Fixture A-darwin-arm64" \
+  --binary ../../target/aarch64-apple-darwin/release/gosling
+```
+
+The fixture profiles use the dedicated shell main/preload/renderer entries and remain permanently
+non-publishable. They cannot enable updater publication, release signing/notarization, or Windows
+release signing through environment variables. On macOS arm64, Forge's existing fuses plugin may
+restore an ad-hoc local signature after modifying Electron; this is not a release signature,
+notarization, or publication action.
 
 ## Add a profile
 

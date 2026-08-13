@@ -15,7 +15,8 @@ function fail(message) {
 function targetFor(platform = process.platform, architecture = process.arch) {
   const platformName = { darwin: 'macos', win32: 'windows', linux: 'linux' }[platform];
   const architectureName = { arm64: 'arm64', x64: 'x64' }[architecture];
-  if (!platformName || !architectureName) fail(`unsupported Forge target ${platform}/${architecture}`);
+  if (!platformName || !architectureName)
+    fail(`unsupported Forge target ${platform}/${architecture}`);
   const target = `${platformName}-${architectureName}`;
   if (target === 'windows-arm64' || target === 'linux-arm64') {
     fail(`unsupported Forge target ${platform}/${architecture}`);
@@ -45,6 +46,7 @@ function defaultProjection(env = process.env) {
       owner: env.GITHUB_OWNER || 'repo-makeover',
       repository: env.GITHUB_REPO || 'gosling',
     },
+    shellResources: undefined,
     resolved: undefined,
   };
 }
@@ -61,7 +63,8 @@ function profileProjection(profileFile, platform, architecture) {
   if (!targetAssets) fail(`profile.assets.requiredTargets does not include ${target}`);
   const profile = resolved.profile;
   const buildResolution = writeBuildResolution(resolved, target);
-  const relativeAsset = (file) => path.relative(path.join(resolved.repositoryRoot, 'ui', 'desktop'), file);
+  const relativeAsset = (file) =>
+    path.relative(path.join(resolved.repositoryRoot, 'ui', 'desktop'), file);
   return {
     shell: true,
     productName: profile.product.displayName,
@@ -87,6 +90,14 @@ function profileProjection(profileFile, platform, architecture) {
       relativeAsset(resolved.provisioningPath),
       ...Object.values(targetAssets).map(relativeAsset),
     ],
+    shellResources: {
+      profileFileName: path.basename(buildResolution.profileOutput),
+      manifestFileName: path.basename(buildResolution.manifestOutput),
+      provisioningFileName: path.basename(resolved.provisioningPath),
+      developmentProfilePath: buildResolution.profileOutput,
+      developmentManifestPath: buildResolution.manifestOutput,
+      developmentProvisioningPath: resolved.provisioningPath,
+    },
     update: {
       enabled: profile.update.enabled,
       owner: profile.update.owner,

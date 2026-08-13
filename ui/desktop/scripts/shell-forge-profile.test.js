@@ -10,7 +10,13 @@ const {
 } = require('./shell-forge-profile');
 
 const repositoryRoot = path.resolve(__dirname, '..', '..', '..');
-const fixtureA = path.join(repositoryRoot, 'fixtures', 'shell-products', 'fixture-a', 'product-profile.json');
+const fixtureA = path.join(
+  repositoryRoot,
+  'fixtures',
+  'shell-products',
+  'fixture-a',
+  'product-profile.json'
+);
 
 test('no profile preserves the existing Gosling Forge identity and resources', () => {
   assert.deepEqual(defaultProjection(), {
@@ -30,10 +36,14 @@ test('no profile preserves the existing Gosling Forge identity and resources', (
     iconSvg: 'src/images/icon.svg',
     extraResource: ['src/bin', 'src/images', 'src/app-update.yml'],
     update: { enabled: true, owner: 'repo-makeover', repository: 'gosling' },
+    shellResources: undefined,
     resolved: undefined,
   });
   assert.deepEqual(resolveForgeProjection({}, 'darwin', 'arm64'), defaultProjection({}));
-  const customPublisher = defaultProjection({ GITHUB_OWNER: 'custom-owner', GITHUB_REPO: 'custom-repo' });
+  const customPublisher = defaultProjection({
+    GITHUB_OWNER: 'custom-owner',
+    GITHUB_REPO: 'custom-repo',
+  });
   assert.equal(customPublisher.update.owner, 'custom-owner');
   assert.equal(customPublisher.update.repository, 'custom-repo');
 });
@@ -45,7 +55,7 @@ test('a selected profile projects all Forge identities from one resolved source'
   assert.equal(projection.executableName, 'gosling-shell-fixture-a');
   assert.equal(projection.version, '0.0.0-test');
   assert.equal(projection.protocolScheme, 'gosling-fixture-a');
-  assert.equal(projection.macosBundleId, 'io.github.repo_makeover.gosling.fixture.a');
+  assert.equal(projection.macosBundleId, 'io.github.repo-makeover.gosling.fixture.a');
   assert.equal(projection.windowsAppId, 'Gosling.Shell.Fixture.A');
   assert.equal(projection.linuxPackageName, 'gosling-shell-fixture-a');
   assert.equal(projection.flatpakId, 'io.github.repo_makeover.Gosling.FixtureA');
@@ -54,6 +64,21 @@ test('a selected profile projects all Forge identities from one resolved source'
   assert.equal(projection.iconIco, undefined);
   assert.equal(projection.extraResource.length, 5);
   assert.ok(projection.extraResource.every((entry) => !path.isAbsolute(entry)));
+  assert.deepEqual(
+    {
+      profileFileName: projection.shellResources.profileFileName,
+      manifestFileName: projection.shellResources.manifestFileName,
+      provisioningFileName: projection.shellResources.provisioningFileName,
+    },
+    {
+      profileFileName: 'profile.json',
+      manifestFileName: 'manifest.json',
+      provisioningFileName: 'provisioning.json',
+    }
+  );
+  assert.ok(path.isAbsolute(projection.shellResources.developmentProfilePath));
+  assert.ok(path.isAbsolute(projection.shellResources.developmentManifestPath));
+  assert.ok(path.isAbsolute(projection.shellResources.developmentProvisioningPath));
 });
 
 test('platform target selects only the required platform asset set', () => {

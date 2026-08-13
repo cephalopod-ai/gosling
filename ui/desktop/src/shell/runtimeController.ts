@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { GoslingServeStartupDiagnostics } from '../startupDiagnostics';
 import type { MinimalShellHostOptions, MinimalShellHostRuntime } from '../shellHost';
 import { createMinimalShellHost } from '../shellHost';
 import { connectShellAcp, ShellCompatibilityError, type ShellAcpConnection } from './acpRuntime';
@@ -31,6 +32,8 @@ export interface ShellRuntimeControllerOptions {
   workingDir: string;
   isPackaged: boolean;
   resourcesPath?: string;
+  preloadPath: string;
+  sessionPartition: string;
   clientName: string;
   clientVersion: string;
 }
@@ -42,6 +45,8 @@ export interface ShellRuntimeController {
   stop(expectedGeneration: number): Promise<ShellLifecycleState>;
   onChanged(listener: (state: ShellLifecycleState) => void): () => void;
   getAcp(): ShellAcpConnection | null;
+  getStartupDiagnostics(): GoslingServeStartupDiagnostics | null;
+  getExitDetails(): { code: number | null; signal: string | null } | null;
 }
 
 const defaultDependencies: ShellRuntimeControllerDependencies = {
@@ -72,6 +77,8 @@ export function createShellRuntimeController(
   let generation = 1;
   let state = initialShellLifecycle(generation, dependencies.now());
   let host: MinimalShellHostRuntime | null = null;
+  let latestStartupDiagnostics: GoslingServeStartupDiagnostics | null = null;
+  let latestExitDetails: { code: number | null; signal: string | null } | null = null;
   let acp: ShellAcpConnection | null = null;
   let startPromise: Promise<ShellLifecycleState> | null = null;
   let stopPromise: Promise<ShellLifecycleState> | null = null;
@@ -163,13 +170,21 @@ export function createShellRuntimeController(
           processRegistryPath: options.processRegistryPath,
           isPackaged: options.isPackaged,
           resourcesPath: options.resourcesPath,
+          preloadPath: options.preloadPath,
+          sessionPartition: options.sessionPartition,
         });
         if (eventGeneration !== generation || state.name !== 'booting') {
           await runtime.backend.cleanup();
           return state;
         }
         host = runtime;
-        exitListener = () => handleUnexpectedExit(eventGeneration);
+        latestStartupDiagnostics = runtime.backend.getStartupDiagnostics();
+        latestExitDetails = runtime.backend.getExitDetails();
+        exitListener = (code, signal) => {
+          latestStartupDiagnostics = runtime.backend.getStartupDiagnostics();
+          latestExitDetails = { code, signal };
+          handleUnexpectedExit(eventGeneration);
+        };
         (runtime.backend.process as BackendProcessEvents).once('exit', exitListener);
         if (!transition('validating')) {
           await clearRuntime();
@@ -193,13 +208,17 @@ export function createShellRuntimeController(
           });
         transition('ready');
       } catch (error) {
+        const failureCode = startupFailureCode(error);
+        host?.backend.recordStartupEvent('shell_preflight_failed', { code: failureCode });
+        latestStartupDiagnostics =
+          host?.backend.getStartupDiagnostics() ?? latestStartupDiagnostics;
         await clearRuntime();
         if (
           eventGeneration === generation &&
           state.name !== 'stopping' &&
           state.name !== 'stopped'
         ) {
-          transition(startupFailureName(error), startupFailureCode(error));
+          transition(startupFailureName(error), failureCode);
         }
       }
       return state;
@@ -266,5 +285,7 @@ export function createShellRuntimeController(
       return () => listeners.delete(listener);
     },
     getAcp: () => acp,
+    getStartupDiagnostics: () => host?.backend.getStartupDiagnostics() ?? latestStartupDiagnostics,
+    getExitDetails: () => host?.backend.getExitDetails() ?? latestExitDetails,
   };
 }
