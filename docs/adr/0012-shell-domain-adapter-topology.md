@@ -42,13 +42,18 @@ Specifically:
   that "Domain implementations remain responsible for their own semantics and authority" while
   Gosling remains the settings/session/policy authority.
 - **Registration and negotiation.** `build_shell_runtime` gains a real registration path: when
-  `ShellProvisioning.domain_adapter` names a descriptor, the CLI resolves and supervises the
-  out-of-process adapter and wraps it in a thin `DomainAdapter` implementation (a process-transport
-  adapter, not a domain adapter) rather than calling `ShellRuntime::new(provisioning, None)`
-  unconditionally. Before the runtime reports `ready`, the live adapter's version, schema, and
-  action set are compared against the descriptor and against what the consumer manifest (ADR-0010)
-  declares; any mismatch is `incompatible`/`degraded`, never a silently accepted descriptor-only
-  success (PG-INV-004, PG-INV-009). This directly answers PSR-004's disposition requirement: "Until
+  `ShellProvisioning.domain_adapter` names a descriptor, the CLI looks up its `domain_id` in a
+  source-controlled `AdapterProcessDescriptor` registry (frozen in
+  `shell-productization-r1-contracts.md`) — a build-time mapping from `domain_id` to executable/
+  transport parameters, not a path supplied at request time by provisioning, the consumer manifest,
+  or the renderer — then resolves and supervises the out-of-process adapter it names, wrapping it in
+  a thin `DomainAdapter` implementation (a process-transport adapter, not a domain adapter) rather
+  than calling `ShellRuntime::new(provisioning, None)` unconditionally. An unregistered `domain_id`
+  fails closed (`ADAPTER_NOT_REGISTERED`) rather than silently falling back to `None`. Before the
+  runtime reports `ready`, the live adapter's version, schema, and action set are compared against
+  the descriptor and against what the consumer manifest (ADR-0010) declares; any mismatch is
+  `incompatible`/`degraded`, never a silently accepted descriptor-only success (PG-INV-004,
+  PG-INV-009). This directly answers PSR-004's disposition requirement: "Until
   an ADR and conformance fixture prove this path, `DomainAdapter` is an unfulfilled internal seam,
   not a supported consumer capability."
 - **Authority.** `domain_snapshot` stays read-only, unchanged from today's shape. `perform_action`
