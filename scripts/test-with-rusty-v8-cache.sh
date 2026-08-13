@@ -49,6 +49,19 @@ host_target() {
   rustc -vV | sed -n 's/^host: //p' | head -n 1
 }
 
+file_mtime() {
+  local mtime
+  if mtime="$(stat -c '%Y' "$1" 2>/dev/null)" && [[ "$mtime" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$mtime"
+    return
+  fi
+  if mtime="$(stat -f '%m' "$1" 2>/dev/null)" && [[ "$mtime" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$mtime"
+    return
+  fi
+  return 1
+}
+
 printf 'Testing V8 helper with disposable archives...\n'
 seed_dir="$test_root/seed"
 make_seed_archive "$seed_dir"
@@ -103,10 +116,10 @@ assert_file "$archive.sha256"
 ar -t "$archive" >/dev/null
 [[ "$(cat "$archive.sha256")" == "$(shasum -a 256 "$archive" | awk '{print $1}')" ]] || fail 'seed checksum sidecar mismatch'
 
-mtime_before="$(stat -f '%m' "$archive" 2>/dev/null || stat -c '%Y' "$archive")"
+mtime_before="$(file_mtime "$archive")"
 sleep 1
 warm_archive="$(GOSLING_V8_CACHE_DIR="$cache" "$helper" --prepare)"
-mtime_after="$(stat -f '%m' "$archive" 2>/dev/null || stat -c '%Y' "$archive")"
+mtime_after="$(file_mtime "$archive")"
 [[ "$warm_archive" == "$archive" ]] || fail 'warm cache returned a different archive'
 [[ "$mtime_after" == "$mtime_before" ]] || fail 'warm cache rewrote the archive'
 
