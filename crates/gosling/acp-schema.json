@@ -12,10 +12,14 @@
       "properties": {
         "provisioning": {
           "$ref": "#/$defs/ShellProvisioning"
+        },
+        "validation": {
+          "$ref": "#/$defs/ShellProvisioningValidationReport"
         }
       },
       "required": [
-        "provisioning"
+        "provisioning",
+        "validation"
       ],
       "x-side": "agent",
       "x-method": "_gosling/unstable/shell/provisioning/read"
@@ -200,6 +204,159 @@
         "version"
       ]
     },
+    "ShellProvisioningValidationReport": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellProvisioningIssue"
+          },
+          "default": []
+        },
+        "resolution": {
+          "$ref": "#/$defs/ShellProvisioningResolution",
+          "default": {
+            "extensions": [],
+            "skillIds": []
+          }
+        }
+      },
+      "required": [
+        "valid"
+      ]
+    },
+    "ShellProvisioningIssue": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ShellProvisioningIssueCode"
+        },
+        "severity": {
+          "$ref": "#/$defs/ShellProvisioningIssueSeverity"
+        },
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "path",
+        "message"
+      ]
+    },
+    "ShellProvisioningIssueCode": {
+      "type": "string",
+      "enum": [
+        "unsupported_schema_version",
+        "invalid_identity",
+        "missing_workspace",
+        "invalid_workspace",
+        "missing_credential_profile",
+        "credential_profile_unavailable",
+        "credential_provider_mismatch",
+        "missing_provider",
+        "invalid_model",
+        "missing_extension",
+        "duplicate_extension",
+        "invalid_tool_selection",
+        "missing_skill",
+        "duplicate_skill",
+        "invalid_denied_method",
+        "invalid_domain_adapter"
+      ]
+    },
+    "ShellProvisioningIssueSeverity": {
+      "type": "string",
+      "enum": [
+        "error",
+        "warning"
+      ]
+    },
+    "ShellProvisioningResolution": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "credentialProfileId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellExtensionSelection"
+          },
+          "default": []
+        },
+        "skillIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "ShellProvisioningValidateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "provisioning": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShellProvisioning"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/provisioning/validate"
+    },
+    "ShellProvisioningValidateResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "provisioning": {
+          "$ref": "#/$defs/ShellProvisioning"
+        },
+        "validation": {
+          "$ref": "#/$defs/ShellProvisioningValidationReport"
+        }
+      },
+      "required": [
+        "provisioning",
+        "validation"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/provisioning/validate"
+    },
     "DomainSnapshotRequest_unstable": {
       "type": "object",
       "properties": {
@@ -382,6 +539,10 @@
     "ShellHandoffEnvelope": {
       "type": "object",
       "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
         "handoffId": {
           "type": "string"
         },
@@ -416,6 +577,7 @@
         }
       },
       "required": [
+        "schemaVersion",
         "handoffId",
         "origin",
         "sourceSessionId",
@@ -6192,6 +6354,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ShellProvisioningValidateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/provisioning/validate",
+                  "title": "ShellProvisioningValidateRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/DomainSnapshotRequest_unstable"
                     }
                   ],
@@ -7117,6 +7288,14 @@
                         }
                       ],
                       "title": "ShellProvisioningReadResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellProvisioningValidateResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellProvisioningValidateResponse_unstable"
                     },
                     {
                       "allOf": [

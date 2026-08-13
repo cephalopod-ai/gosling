@@ -9,7 +9,7 @@ use gosling::acp::custom_requests::{
 use gosling::acp::shell::ShellRuntime;
 use gosling::agents::GoslingPlatform;
 use gosling::builtin_extension::register_builtin_extensions;
-use gosling::config::paths::RuntimePaths;
+use gosling::config::paths::{Paths, RuntimePaths};
 use gosling::config::{Config, ConfigError, GoslingMode};
 use gosling::source_roots::SourceRoot;
 use gosling_mcp::mcp_server_runner::{serve, McpCommand};
@@ -723,6 +723,25 @@ enum Command {
         builtins: Vec<String>,
     },
 
+    /// Validate a shell provisioning document against main Gosling settings
+    #[command(about = "Validate a shell provisioning document")]
+    ShellValidate {
+        #[arg(long = "shell-id", value_name = "ID")]
+        shell_id: String,
+
+        #[arg(long = "shell-display-name", value_name = "NAME")]
+        shell_display_name: String,
+
+        #[arg(long = "shell-version", default_value = "1")]
+        shell_version: String,
+
+        #[arg(long = "shell-provisioning", value_name = "PATH")]
+        shell_provisioning: PathBuf,
+
+        #[arg(long = "with-builtin", value_name = "NAME", value_delimiter = ',')]
+        builtins: Vec<String>,
+    },
+
     /// Start ACP server over HTTP and WebSocket
     #[command(about = "Start ACP server over HTTP and WebSocket")]
     Serve {
@@ -1193,6 +1212,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Info { .. }) => "info",
         Some(Command::Mcp { .. }) => "mcp",
         Some(Command::Acp { .. }) => "acp",
+        Some(Command::ShellValidate { .. }) => "shell-validate",
         Some(Command::Serve { .. }) => "serve",
         Some(Command::Session { .. }) => "session",
         Some(Command::Project {}) => "project",
@@ -1337,6 +1357,45 @@ fn build_shell_runtime(
     };
     provisioning.schema_version = SHELL_PROVISIONING_SCHEMA_VERSION;
     Ok(ShellRuntime::new(provisioning, None))
+}
+
+async fn handle_shell_validate_command(
+    shell_id: String,
+    shell_display_name: String,
+    shell_version: String,
+    shell_provisioning: PathBuf,
+    builtins: Vec<String>,
+) -> Result<()> {
+    use gosling::workspace::WorkspaceService;
+
+    let runtime = build_shell_runtime(
+        Some(shell_id),
+        Some(shell_display_name),
+        shell_version,
+        Some(&shell_provisioning),
+    )?;
+    let base_paths = RuntimePaths::new(Paths::config_dir(), Paths::data_dir(), Paths::state_dir());
+    let default_working_dir = std::env::current_dir()?;
+    let workspace_service =
+        WorkspaceService::initialize(&base_paths.data_dir, &default_working_dir).await?;
+    let builtins = if builtins.is_empty() {
+        vec!["developer".to_string()]
+    } else {
+        builtins
+    };
+    let report = gosling::acp::shell_validation::validate_shell_provisioning(
+        runtime.provisioning(),
+        Config::global(),
+        &workspace_service,
+        &builtins,
+        &default_working_dir,
+    )
+    .await;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    if !report.valid {
+        anyhow::bail!("shell provisioning is invalid");
+    }
+    Ok(())
 }
 
 async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
@@ -1949,6 +2008,22 @@ pub async fn cli() -> anyhow::Result<()> {
             }
         },
         Some(Command::Acp { builtins }) => gosling::acp::server::run(builtins).await,
+        Some(Command::ShellValidate {
+            shell_id,
+            shell_display_name,
+            shell_version,
+            shell_provisioning,
+            builtins,
+        }) => {
+            handle_shell_validate_command(
+                shell_id,
+                shell_display_name,
+                shell_version,
+                shell_provisioning,
+                builtins,
+            )
+            .await
+        }
         Some(Command::Serve {
             host,
             port,

@@ -46,9 +46,35 @@
   profile application, domain adapter contract, explicit handoff envelope, minimal
   Electron host composition, shell UI primitives, package identity composition, and
   generated ACP schema and TypeScript SDK.
-- Validation: Rust formatting and targeted checks/tests passed; generated schema and SDK
-  completed. `goslingServe.test.ts` passed 15/15. Full Desktop typecheck remained blocked
-  by existing dependency/version issues in MCP Apps after package installation itself was
-  blocked by pnpm's exotic-subdependency policy.
-- Deferred: actual domain adapters and shells, shell-specific icons/updater feeds, and
-  built package artifacts.
+- Validation: Rust formatting, targeted checks/tests, and scoped clippy with warnings
+  denied passed; generated schema and SDK completed. `goslingServe.test.ts` passed 15/15
+  after its subprocess polling bound was stabilized for loaded hosts. Full SDK/Desktop
+  typecheck remained unavailable in the isolated worktree because the shared install was
+  stale/incomplete (`@agentclientprotocol/sdk` and MCP Apps entrypoints missing); the prior
+  install attempt was blocked by pnpm's exotic-subdependency policy.
+- Follow-up steps 1-4: rebased onto `origin/main` after the foundation merges landed;
+  restored a deterministic pnpm 11 install by moving pnpm 11 settings into
+  `pnpm-workspace.yaml` and declaring direct Desktop dependencies already imported by the
+  source; added structured shell provisioning validation through CLI and ACP; and added a
+  spawned-process authenticated ACP test covering runtime identity, provisioning,
+  extension/tool/skill selection, policy denial, namespace isolation, and restart
+  persistence.
+- Final follow-up validation: `cargo fmt --all -- --check`, full-workspace
+  `cargo test --workspace`, and full-workspace `cargo clippy --workspace --all-targets --
+  -D warnings` passed. After the final review corrections, the two provisioning CLI tests
+  plus the dynamic-model regression (3/3), spawned-runtime test (1/1), targeted compile,
+  scoped Clippy, and `git diff --check` passed again. The pnpm 11 frozen install,
+  generated SDK build/typechecks and 6 tests, Desktop typecheck, and 88 files / 582
+  Desktop tests passed. ACP schema and TypeScript SDK regeneration also passed.
+- Final review corrections: dynamic provider models are no longer rejected from static
+  metadata during preflight (session startup remains authoritative); extension resolution
+  now matches runtime replacement and plugin discovery; document preflight uses the
+  server's captured default working folder while session preflight uses the resolved
+  effective directory (including workspace working-directory overrides); credential-
+  catalog read failures remain visible; the ACP HTTP client feature is scoped to CLI
+  tests; and namespace isolation is asserted by querying empty session stores rather than
+  relying on absent database files. Directory regressions prove requested-directory
+  project skills load at runtime, startup-only skills are rejected before durable session
+  creation, and workspace overrides supersede the provisioned workspace for validation.
+- Deferred: actual domain adapters and shells, shell-specific icons/updater feeds, built
+  package artifacts, and an end-to-end Electron renderer-to-backend shell smoke test.

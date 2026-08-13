@@ -3,6 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub const SHELL_PROVISIONING_SCHEMA_VERSION: u32 = 1;
+pub const SHELL_HANDOFF_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -64,7 +65,7 @@ pub struct DomainAdapterDescriptor {
     pub actions: Vec<String>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ShellSettingsAuthority {
     #[default]
@@ -86,6 +87,72 @@ pub struct ShellProvisioning {
     pub domain_adapter: Option<DomainAdapterDescriptor>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellProvisioningIssueSeverity {
+    #[default]
+    Error,
+    Warning,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellProvisioningIssueCode {
+    UnsupportedSchemaVersion,
+    InvalidIdentity,
+    #[default]
+    MissingWorkspace,
+    InvalidWorkspace,
+    MissingCredentialProfile,
+    CredentialProfileUnavailable,
+    CredentialProviderMismatch,
+    MissingProvider,
+    InvalidModel,
+    MissingExtension,
+    DuplicateExtension,
+    InvalidToolSelection,
+    MissingSkill,
+    DuplicateSkill,
+    InvalidDeniedMethod,
+    InvalidDomainAdapter,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProvisioningIssue {
+    pub code: ShellProvisioningIssueCode,
+    pub severity: ShellProvisioningIssueSeverity,
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProvisioningResolution {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub extensions: Vec<ShellExtensionSelection>,
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProvisioningValidationReport {
+    pub valid: bool,
+    #[serde(default)]
+    pub issues: Vec<ShellProvisioningIssue>,
+    #[serde(default)]
+    pub resolution: ShellProvisioningResolution,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_gosling/unstable/shell/provisioning/read",
@@ -97,6 +164,25 @@ pub struct ShellProvisioningReadRequest {}
 #[serde(rename_all = "camelCase")]
 pub struct ShellProvisioningReadResponse {
     pub provisioning: ShellProvisioning,
+    pub validation: ShellProvisioningValidationReport,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/provisioning/validate",
+    response = ShellProvisioningValidateResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProvisioningValidateRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provisioning: Option<ShellProvisioning>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProvisioningValidateResponse {
+    pub provisioning: ShellProvisioning,
+    pub validation: ShellProvisioningValidationReport,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -185,6 +271,7 @@ pub struct ShellHandoffPrepareRequest {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellHandoffEnvelope {
+    pub schema_version: u32,
     pub handoff_id: String,
     pub origin: ShellIdentity,
     pub source_session_id: String,
@@ -235,5 +322,22 @@ mod tests {
         assert_eq!(json["session"]["credentialProfileId"], "profile-id");
         assert!(json.get("secrets").is_none());
         assert!(json.get("credentials").is_none());
+    }
+
+    #[test]
+    fn validation_report_contains_structured_paths_without_secret_fields() {
+        let report = ShellProvisioningValidationReport {
+            valid: false,
+            issues: vec![ShellProvisioningIssue {
+                code: ShellProvisioningIssueCode::MissingCredentialProfile,
+                severity: ShellProvisioningIssueSeverity::Error,
+                path: "session.credentialProfileId".into(),
+                message: "credential profile does not exist".into(),
+            }],
+            ..ShellProvisioningValidationReport::default()
+        };
+        let json = serde_json::to_value(report).unwrap();
+        assert_eq!(json["issues"][0]["path"], "session.credentialProfileId");
+        assert!(json.get("secrets").is_none());
     }
 }

@@ -25,7 +25,15 @@ impl GoslingAcpAgent {
     async fn dispatch_read_shell_provisioning(
         &self,
     ) -> Result<ShellProvisioningReadResponse, agent_client_protocol::Error> {
-        Ok(self.on_read_shell_provisioning())
+        Ok(self.on_read_shell_provisioning().await)
+    }
+
+    #[custom_method(ShellProvisioningValidateRequest)]
+    async fn dispatch_validate_shell_provisioning(
+        &self,
+        req: ShellProvisioningValidateRequest,
+    ) -> Result<ShellProvisioningValidateResponse, agent_client_protocol::Error> {
+        Ok(self.on_validate_shell_provisioning(req).await)
     }
 
     #[custom_method(DomainSnapshotRequest)]

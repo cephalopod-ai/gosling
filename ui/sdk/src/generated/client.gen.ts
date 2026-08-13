@@ -152,6 +152,8 @@ import type {
   ShellHandoffPrepareResponse_unstable,
   ShellProvisioningReadRequest_unstable,
   ShellProvisioningReadResponse_unstable,
+  ShellProvisioningValidateRequest_unstable,
+  ShellProvisioningValidateResponse_unstable,
   SteerSessionRequest_unstable,
   SteerSessionResponse_unstable,
   TruncateSessionConversationRequest_unstable,
@@ -236,6 +238,7 @@ import {
   zShareSessionNostrResponse_unstable,
   zShellHandoffPrepareResponse_unstable,
   zShellProvisioningReadResponse_unstable,
+  zShellProvisioningValidateResponse_unstable,
   zSteerSessionResponse_unstable,
   zUpdateSourceResponse_unstable,
   zWorkspaceDeleteResponse_unstable,
@@ -258,6 +261,18 @@ export class GoslingExtClient {
     return zShellProvisioningReadResponse_unstable.parse(
       raw,
     ) as ShellProvisioningReadResponse_unstable;
+  }
+
+  async shellProvisioningValidate_unstable(
+    params: ShellProvisioningValidateRequest_unstable,
+  ): Promise<ShellProvisioningValidateResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/provisioning/validate",
+      params,
+    );
+    return zShellProvisioningValidateResponse_unstable.parse(
+      raw,
+    ) as ShellProvisioningValidateResponse_unstable;
   }
 
   async shellDomainSnapshot_unstable(
