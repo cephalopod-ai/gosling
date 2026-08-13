@@ -1,8 +1,41 @@
 use super::*;
 
 impl GoslingAcpAgent {
-    pub(super) fn on_read_shell_provisioning(&self) -> ShellProvisioningReadResponse {
-        self.shell_runtime.read_provisioning()
+    pub(super) async fn shell_provisioning_validation(
+        &self,
+        provisioning: &ShellProvisioning,
+    ) -> ShellProvisioningValidationReport {
+        crate::acp::shell_validation::validate_shell_provisioning(
+            provisioning,
+            Config::global(),
+            &self.workspace_service,
+            &self.builtins,
+            &self.default_working_folder,
+        )
+        .await
+    }
+
+    pub(super) async fn on_read_shell_provisioning(&self) -> ShellProvisioningReadResponse {
+        let provisioning = self.shell_runtime.provisioning().clone();
+        let validation = self.shell_provisioning_validation(&provisioning).await;
+        ShellProvisioningReadResponse {
+            provisioning,
+            validation,
+        }
+    }
+
+    pub(super) async fn on_validate_shell_provisioning(
+        &self,
+        request: ShellProvisioningValidateRequest,
+    ) -> ShellProvisioningValidateResponse {
+        let provisioning = request
+            .provisioning
+            .unwrap_or_else(|| self.shell_runtime.provisioning().clone());
+        let validation = self.shell_provisioning_validation(&provisioning).await;
+        ShellProvisioningValidateResponse {
+            provisioning,
+            validation,
+        }
     }
 
     pub(super) async fn on_domain_snapshot(

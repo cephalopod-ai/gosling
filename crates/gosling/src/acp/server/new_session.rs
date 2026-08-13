@@ -29,6 +29,17 @@ impl GoslingAcpAgent {
         args: NewSessionRequest,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
         let config = Config::global();
+        let shell_validation = self
+            .shell_provisioning_validation(self.shell_runtime.provisioning())
+            .await;
+        if !shell_validation.valid {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "message": "Shell provisioning is invalid",
+                    "validation": shell_validation,
+                })),
+            );
+        }
         let project_id = meta_string(args.meta.as_ref(), "projectId")?;
         let workspace_id = meta_string(args.meta.as_ref(), "workspaceId")?.or_else(|| {
             self.shell_runtime

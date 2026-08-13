@@ -1,8 +1,8 @@
 use crate::acp::custom_requests::{
     DomainActionRequest, DomainActionResponse, DomainAdapterDescriptor, DomainSnapshotRequest,
     DomainSnapshotResponse, ShellAuthorityMode, ShellHandoffEnvelope, ShellHandoffPrepareRequest,
-    ShellIdentity, ShellProtocolPolicy, ShellProvisioning, ShellProvisioningReadResponse,
-    SHELL_HANDOFF_SCHEMA_VERSION, SHELL_PROVISIONING_SCHEMA_VERSION,
+    ShellIdentity, ShellProtocolPolicy, ShellProvisioning, SHELL_HANDOFF_SCHEMA_VERSION,
+    SHELL_PROVISIONING_SCHEMA_VERSION,
 };
 use agent_client_protocol::Error;
 use anyhow::Result;
@@ -95,12 +95,6 @@ impl ShellRuntime {
             ));
         }
         Ok(())
-    }
-
-    pub fn read_provisioning(&self) -> ShellProvisioningReadResponse {
-        ShellProvisioningReadResponse {
-            provisioning: self.provisioning.clone(),
-        }
     }
 
     pub async fn domain_snapshot(

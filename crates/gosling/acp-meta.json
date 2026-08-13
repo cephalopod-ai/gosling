@@ -6,6 +6,11 @@
       "responseType": "ShellProvisioningReadResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/shell/provisioning/validate",
+      "requestType": "ShellProvisioningValidateRequest_unstable",
+      "responseType": "ShellProvisioningValidateResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/shell/domain/snapshot",
       "requestType": "DomainSnapshotRequest_unstable",
       "responseType": "DomainSnapshotResponse_unstable"

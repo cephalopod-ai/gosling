@@ -73,8 +73,76 @@ export const zShellProvisioning = z.object({
     ]).optional()
 });
 
+export const zShellProvisioningIssueCode = z.enum([
+    'unsupported_schema_version',
+    'invalid_identity',
+    'missing_workspace',
+    'invalid_workspace',
+    'missing_credential_profile',
+    'credential_profile_unavailable',
+    'credential_provider_mismatch',
+    'missing_provider',
+    'invalid_model',
+    'missing_extension',
+    'duplicate_extension',
+    'invalid_tool_selection',
+    'missing_skill',
+    'duplicate_skill',
+    'invalid_denied_method',
+    'invalid_domain_adapter'
+]);
+
+export const zShellProvisioningIssueSeverity = z.enum(['error', 'warning']);
+
+export const zShellProvisioningIssue = z.object({
+    code: zShellProvisioningIssueCode,
+    severity: zShellProvisioningIssueSeverity,
+    path: z.string(),
+    message: z.string()
+});
+
+export const zShellProvisioningResolution = z.object({
+    workspaceId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    credentialProfileId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    provider: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    model: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    extensions: z.array(zShellExtensionSelection).optional().default([]),
+    skillIds: z.array(z.string()).optional().default([])
+});
+
+export const zShellProvisioningValidationReport = z.object({
+    valid: z.boolean(),
+    issues: z.array(zShellProvisioningIssue).optional().default([]),
+    resolution: zShellProvisioningResolution.optional().default({ extensions: [], skillIds: [] })
+});
+
 export const zShellProvisioningReadResponse_unstable = z.object({
-    provisioning: zShellProvisioning
+    provisioning: zShellProvisioning,
+    validation: zShellProvisioningValidationReport
+});
+
+export const zShellProvisioningValidateRequest_unstable = z.object({
+    provisioning: z.union([
+        zShellProvisioning,
+        z.null()
+    ]).optional()
+});
+
+export const zShellProvisioningValidateResponse_unstable = z.object({
+    provisioning: zShellProvisioning,
+    validation: zShellProvisioningValidationReport
 });
 
 export const zDomainSnapshotRequest_unstable = z.object({
@@ -2551,6 +2619,7 @@ export const zExtRequest = z.object({
     params: z.union([
         z.union([
             zShellProvisioningReadRequest_unstable,
+            zShellProvisioningValidateRequest_unstable,
             zDomainSnapshotRequest_unstable,
             zDomainActionRequest_unstable,
             zShellHandoffPrepareRequest_unstable,
@@ -2664,6 +2733,7 @@ export const zExtResponse = z.union([
         result: z.union([
             z.union([
                 zShellProvisioningReadResponse_unstable,
+                zShellProvisioningValidateResponse_unstable,
                 zDomainSnapshotResponse_unstable,
                 zDomainActionResponse_unstable,
                 zShellHandoffPrepareResponse_unstable,

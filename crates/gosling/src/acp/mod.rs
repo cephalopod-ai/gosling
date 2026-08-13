@@ -6,6 +6,7 @@ mod response_builder;
 pub mod server;
 pub mod server_factory;
 pub mod shell;
+pub mod shell_validation;
 pub(crate) mod tools;
 pub mod transport;
 

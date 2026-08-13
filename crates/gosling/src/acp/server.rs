@@ -244,6 +244,7 @@ pub struct GoslingAcpAgent {
     provider_inventory: ProviderInventoryService,
     additional_source_roots: Vec<SourceRoot>,
     workspace_service: Arc<WorkspaceService>,
+    default_working_folder: PathBuf,
     shell_runtime: ShellRuntime,
 }
 
@@ -554,7 +555,10 @@ fn same_extension_secret_destination(
     }
 }
 
-fn selected_builtin_extensions(config: &Config, builtins: &[String]) -> Vec<ExtensionConfig> {
+pub(crate) fn selected_builtin_extensions(
+    config: &Config,
+    builtins: &[String],
+) -> Vec<ExtensionConfig> {
     let mut extensions = Vec::new();
     for builtin in builtins {
         let builtin_config = builtin_to_extension_config(builtin);
@@ -566,7 +570,7 @@ fn selected_builtin_extensions(config: &Config, builtins: &[String]) -> Vec<Exte
     extensions
 }
 
-fn apply_shell_extension_selection(
+pub(crate) fn apply_shell_extension_selection(
     extensions: &mut Vec<ExtensionConfig>,
     selections: Option<&[ShellExtensionSelection]>,
 ) {
@@ -591,7 +595,10 @@ fn apply_shell_extension_selection(
     }
 }
 
-fn push_or_replace_extension(extensions: &mut Vec<ExtensionConfig>, extension: ExtensionConfig) {
+pub(crate) fn push_or_replace_extension(
+    extensions: &mut Vec<ExtensionConfig>,
+    extension: ExtensionConfig,
+) {
     let name = extension.name().to_string();
     if let Some(index) = extensions
         .iter()
@@ -1159,6 +1166,7 @@ impl GoslingAcpAgent {
                 provider_inventory,
                 additional_source_roots: options.additional_source_roots,
                 workspace_service,
+                default_working_folder,
                 shell_runtime: options.shell_runtime,
             })
         })

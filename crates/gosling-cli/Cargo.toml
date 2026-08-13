@@ -111,6 +111,8 @@ native-tls = [
 ]
 
 [dev-dependencies]
+agent-client-protocol.workspace = true
+agent-client-protocol-http = { workspace = true, features = ["client"] }
 env-lock.workspace = true
 serde_yaml.workspace = true
 tempfile = { workspace = true }

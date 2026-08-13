@@ -20,7 +20,9 @@ pub use diagnostics::{
     DiagnosticsExtensions, DiagnosticsLevel, DiagnosticsLogs, DiagnosticsPrompt, DiagnosticsReport,
     DiagnosticsTextFile, SystemInfo,
 };
-pub use extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState, TodoState};
+pub use extension_data::{
+    EnabledExtensionsState, ExtensionData, ExtensionState, ShellSkillSelectionState, TodoState,
+};
 pub(crate) use session_manager::ToolOperationStart;
 pub use session_manager::{
     Session, SessionInsights, SessionManager, SessionNameUpdate, SessionSummary,
