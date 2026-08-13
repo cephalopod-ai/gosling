@@ -56,12 +56,16 @@ const manifest: ShellBuildManifest = {
   },
 };
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function input() {
   return {
-    profile: structuredClone(profile),
-    manifest: structuredClone(manifest),
+    profile: clone(profile),
+    manifest: clone(manifest),
     runtime: {
-      identity: structuredClone(product),
+      identity: clone(product),
       coreVersion: '0.1.0',
       availableMethods: [...methods],
     },
@@ -121,6 +125,32 @@ describe('shell compatibility', () => {
     const value = input();
     mutate(value);
     expect(checkShellCompatibility(value)).toMatchObject({ compatible: false, code });
+  });
+
+  it('limits identity failures to the server-fixed identity triplet', () => {
+    const value = input();
+    value.runtime.identity.id = 'other';
+    expect(checkShellCompatibility(value)).toEqual({
+      compatible: false,
+      code: 'IDENTITY_MISMATCH',
+      expected: {
+        id: product.id,
+        displayName: product.displayName,
+        version: product.version,
+      },
+      actual: {
+        manifest: {
+          id: product.id,
+          displayName: product.displayName,
+          version: product.version,
+        },
+        runtime: {
+          id: 'other',
+          displayName: product.displayName,
+          version: product.version,
+        },
+      },
+    });
   });
 
   it('compares methods as a set and reports a sorted non-secret actual list', () => {

@@ -12,8 +12,10 @@ export type ShellCompatibilityCode =
   | 'METHOD_UNAVAILABLE'
   | 'PROVISIONING_INVALID';
 
+export type ShellRuntimeIdentity = Pick<ShellProductIdentity, 'id' | 'displayName' | 'version'>;
+
 export interface ShellRuntimeMetadata {
-  identity: ShellProductIdentity;
+  identity: ShellRuntimeIdentity;
   coreVersion: string;
   availableMethods: string[];
 }
@@ -36,7 +38,15 @@ export interface ShellCompatibilitySuccess {
 
 export type ShellCompatibilityResult = ShellCompatibilityFailure | ShellCompatibilitySuccess;
 
-function sameIdentity(expected: ShellProductIdentity, actual: ShellProductIdentity): boolean {
+function runtimeIdentity(identity: ShellRuntimeIdentity): ShellRuntimeIdentity {
+  return {
+    id: identity.id,
+    displayName: identity.displayName,
+    version: identity.version,
+  };
+}
+
+function sameIdentity(expected: ShellRuntimeIdentity, actual: ShellRuntimeIdentity): boolean {
   return (
     expected.id === actual.id &&
     expected.displayName === actual.displayName &&
@@ -59,15 +69,17 @@ export function checkShellCompatibility(input: {
       actual: { profile: profile.schemaVersion, manifest: manifest.profileSchemaVersion },
     };
   }
+  const expectedIdentity = runtimeIdentity(profile.product);
+  const manifestIdentity = runtimeIdentity(manifest.product);
   if (
-    !sameIdentity(profile.product, manifest.product) ||
-    !sameIdentity(profile.product, runtime.identity)
+    !sameIdentity(expectedIdentity, manifestIdentity) ||
+    !sameIdentity(expectedIdentity, runtime.identity)
   ) {
     return {
       compatible: false,
       code: 'IDENTITY_MISMATCH',
-      expected: profile.product,
-      actual: { manifest: manifest.product, runtime: runtime.identity },
+      expected: expectedIdentity,
+      actual: { manifest: manifestIdentity, runtime: runtimeIdentity(runtime.identity) },
     };
   }
   if (
