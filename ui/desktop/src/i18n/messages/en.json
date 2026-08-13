@@ -23,6 +23,9 @@
   "artifactMessageLinks.openDeliverable": {
     "defaultMessage": "Open {name} in Outputs"
   },
+  "artifactPane.blocked": {
+    "defaultMessage": "Blocked"
+  },
   "artifactPane.closePane": {
     "defaultMessage": "Close outputs pane"
   },
@@ -37,6 +40,9 @@
   },
   "artifactPane.loading": {
     "defaultMessage": "Loading…"
+  },
+  "artifactPane.missing": {
+    "defaultMessage": "Missing"
   },
   "artifactPane.openExternal": {
     "defaultMessage": "Open externally"
@@ -64,6 +70,9 @@
   },
   "artifactPane.savedCopy": {
     "defaultMessage": "Artifact copy saved"
+  },
+  "artifactPane.truncated": {
+    "defaultMessage": "Truncated"
   },
   "artifactPane.unsupported": {
     "defaultMessage": "This file type does not have an in-app preview yet."

@@ -1,3 +1,4 @@
+pub mod artifacts;
 mod chat_history_search;
 mod diagnostics;
 pub mod extension_data;
@@ -14,6 +15,9 @@ pub fn is_session_share_deeplink(input: &str) -> bool {
     input.trim_start().starts_with("gosling://sessions/nostr")
 }
 
+pub use artifacts::{
+    DiscoveredArtifact, SessionArtifact, SessionArtifactProvenance, SessionArtifactRelation,
+};
 pub use diagnostics::{
     config_path, generate_diagnostics, get_system_info, latest_llm_log_path,
     latest_server_log_path, read_capped, read_tail, DiagnosticsConfig, DiagnosticsError,
@@ -25,9 +29,9 @@ pub use extension_data::{
 };
 pub(crate) use session_manager::ToolOperationStart;
 pub use session_manager::{
-    Session, SessionInsights, SessionManager, SessionNameUpdate, SessionSummary,
-    SessionSummaryFact, SessionSummaryStatus, SessionType, SessionUpdateBuilder, SessionWorkflow,
-    DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
+    Session, SessionArtifactPage, SessionInsights, SessionManager, SessionNameUpdate,
+    SessionSummary, SessionSummaryFact, SessionSummaryStatus, SessionType, SessionUpdateBuilder,
+    SessionWorkflow, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 
 #[cfg(test)]

@@ -66,6 +66,7 @@ Ignore \`src/main.rs\` and [remote output](https://example.com/report.pdf).`;
       'artifacts/chart.svg',
       'docs/gcp/build/evidence/gate-1/proposals.jsonl',
       'docs/gcp/build/evidence/gate-1/review.json',
+      'src/main.rs',
     ]);
   });
 });

@@ -48,7 +48,7 @@ interface OnboardingGuardProps {
 export function resolveOnboardingModel(
   requestedModel: string | undefined,
   declaredDefault: string | null | undefined,
-  availableModels: Array<{ id: string }>,
+  availableModels: Array<{ id: string }>
 ): string | null {
   if (requestedModel) {
     return availableModels.some((model) => model.id === requestedModel) ? requestedModel : null;
@@ -74,6 +74,7 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
   );
   const [configuredModel, setConfiguredModel] = useState<string | null>(null);
   const hasTrackedOnboardingStart = useRef(false);
+  const isPlaywright = window.appConfig.get('GOSLING_PLAYWRIGHT') === true;
 
   const checkProvider = async (retries = 3, delay = 1000) => {
     setIsCheckingProvider(true);
@@ -114,12 +115,18 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
   };
 
   useEffect(() => {
+    if (isPlaywright) return;
     checkProvider();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isPlaywright]);
 
   useEffect(() => {
-    if (!isCheckingProvider && !hasProvider && !checkProviderError && !hasTrackedOnboardingStart.current) {
+    if (
+      !isCheckingProvider &&
+      !hasProvider &&
+      !checkProviderError &&
+      !hasTrackedOnboardingStart.current
+    ) {
       trackOnboardingStarted();
       hasTrackedOnboardingStart.current = true;
     }
@@ -133,7 +140,7 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
     const resolvedModel = resolveOnboardingModel(
       modelId,
       matchedProvider?.metadata.default_model,
-      availableModels,
+      availableModels
     );
     if (!resolvedModel) {
       throw new Error(`Provider ${providerName} does not have the requested model available`);
@@ -153,6 +160,10 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
     setHasProvider(true);
   };
 
+  if (isPlaywright) {
+    return <>{children}</>;
+  }
+
   if (isCheckingProvider) {
     return null;
   }
@@ -164,11 +175,13 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
           <div className="mb-4">
             <Gosling className="size-8 mx-auto" />
           </div>
-          <h1 className="text-xl font-light mb-3">{intl.formatMessage(i18n.checkProviderErrorTitle)}</h1>
-          <p className="text-text-muted mb-6">{intl.formatMessage(i18n.checkProviderErrorDescription)}</p>
-          <Button onClick={() => checkProvider()}>
-            {intl.formatMessage(i18n.retry)}
-          </Button>
+          <h1 className="text-xl font-light mb-3">
+            {intl.formatMessage(i18n.checkProviderErrorTitle)}
+          </h1>
+          <p className="text-text-muted mb-6">
+            {intl.formatMessage(i18n.checkProviderErrorDescription)}
+          </p>
+          <Button onClick={() => checkProvider()}>{intl.formatMessage(i18n.retry)}</Button>
         </div>
       </div>
     );
@@ -197,7 +210,9 @@ export default function OnboardingGuard({ children }: OnboardingGuardProps) {
               <div className="mb-4">
                 <Gosling className="size-8" />
               </div>
-              <h1 className="text-2xl sm:text-4xl font-light mb-3">{intl.formatMessage(i18n.welcomeTitle)}</h1>
+              <h1 className="text-2xl sm:text-4xl font-light mb-3">
+                {intl.formatMessage(i18n.welcomeTitle)}
+              </h1>
               <p className="text-text-muted text-base sm:text-lg">
                 {intl.formatMessage(i18n.welcomeDescription)}
               </p>

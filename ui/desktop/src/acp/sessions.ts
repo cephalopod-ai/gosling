@@ -5,7 +5,11 @@ import type {
   NewSessionRequest,
   SessionInfo,
 } from '@agentclientprotocol/sdk';
-import type { GoslingExtension, SessionImportSource } from '@repo-makeover/gosling-sdk';
+import type {
+  GoslingExtension,
+  SessionArtifactDto,
+  SessionImportSource,
+} from '@repo-makeover/gosling-sdk';
 import { getAcpClient } from './acpConnection';
 import { DEFAULT_CHAT_TITLE } from '../contexts/ChatContext';
 import type { ExtensionLoadResult } from '../types/extensions';
@@ -36,6 +40,25 @@ interface GoslingSessionInfoMeta {
 }
 
 export const COMPACTED_SESSION_TAIL_LIMIT = 50;
+const ARTIFACT_PAGE_LIMIT = 200;
+
+export async function acpListSessionArtifacts(sessionId: string): Promise<SessionArtifactDto[]> {
+  const client = await getAcpClient();
+  const artifacts: SessionArtifactDto[] = [];
+  let cursor: string | null = null;
+
+  do {
+    const response = await client.gosling.sessionArtifactsList_unstable({
+      sessionId,
+      cursor,
+      limit: ARTIFACT_PAGE_LIMIT,
+    });
+    artifacts.push(...response.artifacts);
+    cursor = response.nextCursor ?? null;
+  } while (cursor);
+
+  return artifacts;
+}
 
 export interface HistoryLoadMeta {
   mode?: 'compacted' | 'full' | string;

@@ -8,6 +8,7 @@ Desktop is unavailable.
 ---
 
 ### WS-01 — Create workspace and pin new chat
+
 - Goal: create a workspace and confirm new chats use it.
 - Category: happy path / settings
 - Preconditions: Desktop running; disposable directories for primary + optional reference folders.
@@ -22,6 +23,7 @@ Desktop is unavailable.
 - Variations: use **Show its chats** and **New chat in this workspace** from the row menu; they match the direct row and `+` actions.
 
 ### WS-02 — Credential profile bind and secret non-echo
+
 - Goal: secrets stay out of the renderer and logs; bind/unbind is explicit.
 - Category: settings / files
 - Preconditions: Desktop; test API key that can be rotated/revoked; disposable home.
@@ -37,6 +39,7 @@ Desktop is unavailable.
 - Variations: delete a profile still referenced by a workspace — confirmation + visible relink-required state.
 
 ### WS-03 — Missing primary folder / relink
+
 - Goal: deleted or moved folders produce recoverable, named errors.
 - Category: recovery / files
 - Preconditions: workspace whose primary folder is under a disposable parent you control.
@@ -49,6 +52,7 @@ Desktop is unavailable.
 - Observe: optional reference/output missing → warning vs hard-disable (docs: warning for optional).
 
 ### WS-04 — Artifact save routes to product outputs
+
 - Goal: Desktop artifact router places saves/exports in the workspace product folders.
 - Category: files / persistence
 - Preconditions: workspace with distinct document/code/export output folders that exist; a session that can produce a saveable artifact (or use session export / Save a copy).
@@ -59,3 +63,8 @@ Desktop is unavailable.
 - Expected: saves go to the **pinned** session workspace destinations by product type; collision-safe names; unavailable/deleted pin does not silently redirect to another workspace; native download failure shows a warning rather than a false success.
 - Observe: router never moves the original generated file — copies only.
 - Variations: missing output folder with "Allow explicit creation if missing" — confirm before create.
+
+The Outputs inventory is descriptive, not a save or authorization action. Successful tool outputs and
+completed assistant file references appear automatically for the current session, including common
+source files such as `.rs`, `.ts`, `.py`, and `.sh`. Selecting an entry performs the existing guarded
+preview read; merely listing it does not create the configured output folder or copy/move its source.

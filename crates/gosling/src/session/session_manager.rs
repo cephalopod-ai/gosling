@@ -4,6 +4,10 @@ use crate::conversation::message::{Message, MessageContent, SystemNotificationTy
 use crate::conversation::Conversation;
 use crate::mcp_utils::ToolResult;
 use crate::providers::base::Provider;
+use crate::session::artifacts::{
+    discover_from_assistant_markdown, discover_from_successful_tool, DiscoveredArtifact,
+    SessionArtifact, SessionArtifactProvenance,
+};
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
@@ -26,7 +30,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 25;
+pub const CURRENT_SCHEMA_VERSION: i32 = 26;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -258,6 +262,13 @@ pub struct SessionMessageSearchMatch {
 pub struct SessionMessageSearchResults {
     pub matches: Vec<SessionMessageSearchMatch>,
     pub total_matches: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionArtifactPage {
+    pub artifacts: Vec<SessionArtifact>,
+    pub next_cursor: Option<String>,
+    pub total_count: usize,
 }
 
 impl From<&Session> for TokenState {
@@ -706,6 +717,25 @@ impl SessionManager {
         self.storage.search_session_messages(id, query, limit).await
     }
 
+    pub async fn list_session_artifacts(
+        &self,
+        id: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<SessionArtifactPage> {
+        self.storage.list_session_artifacts(id, cursor, limit).await
+    }
+
+    pub async fn upsert_session_artifacts(
+        &self,
+        session_id: &str,
+        artifacts: &[DiscoveredArtifact],
+    ) -> Result<Vec<SessionArtifact>> {
+        self.storage
+            .upsert_session_artifacts(session_id, artifacts)
+            .await
+    }
+
     pub async fn get_session_summary(&self, id: &str) -> Result<Option<SessionSummary>> {
         self.storage.get_session_summary(id).await
     }
@@ -742,6 +772,16 @@ impl SessionManager {
 
     pub async fn upsert_message(&self, id: &str, message: &Message) -> Result<()> {
         self.storage.upsert_message(id, message).await
+    }
+
+    pub async fn register_completed_assistant_artifacts(
+        &self,
+        id: &str,
+        message: &Message,
+    ) -> Result<()> {
+        self.storage
+            .register_completed_assistant_artifacts(id, message)
+            .await
     }
 
     pub(crate) async fn begin_tool_operation(
@@ -1536,6 +1576,8 @@ impl SessionStorage {
         Self::create_message_search_schema(&mut tx).await?;
 
         Self::create_tool_operations_schema(&mut tx).await?;
+
+        Self::create_session_artifacts_schema(&mut tx).await?;
 
         sqlx::query(
             r#"
@@ -2474,6 +2516,10 @@ impl SessionStorage {
                 .await?;
             }
             25 => Self::create_message_search_schema(tx).await?,
+            26 => {
+                Self::create_session_artifacts_schema(tx).await?;
+                Self::backfill_session_artifacts(tx).await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -2606,6 +2652,99 @@ impl SessionStorage {
         )
         .execute(&mut **tx)
         .await?;
+        Ok(())
+    }
+
+    async fn create_session_artifacts_schema(tx: &mut sqlx::Transaction<'_, Sqlite>) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_artifacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                display_path TEXT NOT NULL,
+                resolved_path TEXT NOT NULL,
+                base_working_dir TEXT NOT NULL,
+                workspace_id TEXT,
+                mime_type TEXT,
+                relation TEXT NOT NULL CHECK(relation IN ('created', 'modified', 'referenced')),
+                provenance TEXT NOT NULL CHECK(provenance IN ('built_in_tool', 'mcp_resource_link', 'tool_metadata', 'tool_argument', 'assistant_message', 'compatibility_inference')),
+                source_id TEXT,
+                first_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(session_id, resolved_path)
+            )
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_session_artifacts_session_seen ON session_artifacts(session_id, last_seen_at DESC, id DESC)",
+        )
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    async fn backfill_session_artifacts(tx: &mut sqlx::Transaction<'_, Sqlite>) -> Result<()> {
+        let sessions = sqlx::query_as::<_, (String, String, Option<String>)>(
+            "SELECT id, working_dir, workspace_id FROM sessions",
+        )
+        .fetch_all(&mut **tx)
+        .await?;
+        for (session_id, working_dir, workspace_id) in sessions {
+            let messages = sqlx::query_as::<_, (Option<String>, String, String, Option<String>)>(
+                "SELECT message_id, role, content_json, metadata_json FROM messages WHERE session_id = ? ORDER BY id",
+            )
+            .bind(&session_id)
+            .fetch_all(&mut **tx)
+            .await?;
+            let mut requests = HashMap::new();
+            for (message_id, role, content_json, metadata_json) in messages {
+                let metadata: crate::conversation::message::MessageMetadata = metadata_json
+                    .as_deref()
+                    .map(serde_json::from_str)
+                    .transpose()?
+                    .unwrap_or_default();
+                let contents: Vec<MessageContent> = serde_json::from_str(&content_json)?;
+                for content in contents {
+                    match content {
+                        MessageContent::ToolRequest(request) => {
+                            requests.insert(request.id.clone(), request);
+                        }
+                        MessageContent::ToolResponse(response) => {
+                            if let (Some(request), Ok(result)) =
+                                (requests.get(&response.id), response.tool_result.as_ref())
+                            {
+                                if let Ok(tool_call) = request.tool_call.as_ref() {
+                                    let artifacts = discover_from_successful_tool(
+                                        tool_call,
+                                        result,
+                                        Path::new(&working_dir),
+                                        workspace_id.as_deref(),
+                                        message_id.as_deref().or(Some(response.id.as_str())),
+                                    );
+                                    Self::upsert_artifacts_in_tx(tx, &session_id, &artifacts)
+                                        .await?;
+                                }
+                            }
+                        }
+                        MessageContent::Text(text)
+                            if role == "assistant" && !metadata.imported_untrusted =>
+                        {
+                            let artifacts = discover_from_assistant_markdown(
+                                &text.text,
+                                Path::new(&working_dir),
+                                workspace_id.as_deref(),
+                                message_id.as_deref(),
+                                SessionArtifactProvenance::CompatibilityInference,
+                            );
+                            Self::upsert_artifacts_in_tx(tx, &session_id, &artifacts).await?;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -3916,6 +4055,8 @@ impl SessionStorage {
             .execute(&mut *tx)
             .await?;
 
+        Self::discover_message_artifacts_in_tx(&mut tx, session_id, message).await?;
+
         tx.commit().await?;
         Ok(())
     }
@@ -3990,7 +4131,304 @@ impl SessionStorage {
             .execute(&mut **tx)
             .await?;
 
+        Self::discover_message_artifacts_in_tx(tx, session_id, message).await?;
+
         Ok(())
+    }
+
+    async fn discover_message_artifacts_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+        message: &Message,
+    ) -> Result<()> {
+        let (working_dir, workspace_id) = sqlx::query_as::<_, (String, Option<String>)>(
+            "SELECT working_dir, workspace_id FROM sessions WHERE id = ?",
+        )
+        .bind(session_id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+        let source_id = message.id.as_deref();
+        let mut artifacts = Vec::new();
+        for content in &message.content {
+            if let MessageContent::ToolResponse(response) = content {
+                let request_json = sqlx::query_scalar::<_, String>(
+                    r#"
+                        SELECT request.value
+                        FROM messages, json_each(messages.content_json) AS request
+                        WHERE messages.session_id = ?
+                          AND json_extract(request.value, '$.type') = 'toolRequest'
+                          AND json_extract(request.value, '$.id') = ?
+                        ORDER BY messages.id DESC
+                        LIMIT 1
+                    "#,
+                )
+                .bind(session_id)
+                .bind(&response.id)
+                .fetch_optional(&mut **tx)
+                .await?;
+                if let (Some(request_json), Ok(result)) =
+                    (request_json, response.tool_result.as_ref())
+                {
+                    let MessageContent::ToolRequest(request) = serde_json::from_str(&request_json)?
+                    else {
+                        continue;
+                    };
+                    if let Ok(tool_call) = request.tool_call.as_ref() {
+                        artifacts.extend(discover_from_successful_tool(
+                            tool_call,
+                            result,
+                            Path::new(&working_dir),
+                            workspace_id.as_deref(),
+                            source_id.or(Some(response.id.as_str())),
+                        ));
+                    }
+                }
+            }
+        }
+        Self::upsert_artifacts_in_tx(tx, session_id, &artifacts).await?;
+        Ok(())
+    }
+
+    async fn register_completed_assistant_artifacts(
+        &self,
+        session_id: &str,
+        message: &Message,
+    ) -> Result<()> {
+        if message.role != Role::Assistant || message.metadata.imported_untrusted {
+            return Ok(());
+        }
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let (working_dir, workspace_id) = sqlx::query_as::<_, (String, Option<String>)>(
+            "SELECT working_dir, workspace_id FROM sessions WHERE id = ?",
+        )
+        .bind(session_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let artifacts = message
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                MessageContent::Text(text) => Some(discover_from_assistant_markdown(
+                    &text.text,
+                    Path::new(&working_dir),
+                    workspace_id.as_deref(),
+                    message.id.as_deref(),
+                    SessionArtifactProvenance::AssistantMessage,
+                )),
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        Self::upsert_artifacts_in_tx(&mut tx, session_id, &artifacts).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn upsert_artifacts_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+        artifacts: &[DiscoveredArtifact],
+    ) -> Result<()> {
+        for artifact in artifacts {
+            sqlx::query(
+                r#"
+                INSERT INTO session_artifacts (
+                    session_id, display_path, resolved_path, base_working_dir, workspace_id,
+                    mime_type, relation, provenance, source_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id, resolved_path) DO UPDATE SET
+                    display_path = CASE
+                        WHEN instr('built_in_tool,mcp_resource_link,tool_metadata,tool_argument,assistant_message,compatibility_inference', excluded.provenance)
+                           < instr('built_in_tool,mcp_resource_link,tool_metadata,tool_argument,assistant_message,compatibility_inference', session_artifacts.provenance)
+                        THEN excluded.display_path ELSE session_artifacts.display_path END,
+                    base_working_dir = CASE
+                        WHEN instr('built_in_tool,mcp_resource_link,tool_metadata,tool_argument,assistant_message,compatibility_inference', excluded.provenance)
+                           < instr('built_in_tool,mcp_resource_link,tool_metadata,tool_argument,assistant_message,compatibility_inference', session_artifacts.provenance)
+                        THEN excluded.base_working_dir ELSE session_artifacts.base_working_dir END,
+                    workspace_id = COALESCE(excluded.workspace_id, session_artifacts.workspace_id),
+                    mime_type = COALESCE(excluded.mime_type, session_artifacts.mime_type),
+                    relation = CASE
+                        WHEN instr('created,modified,referenced', excluded.relation)
+                           < instr('created,modified,referenced', session_artifacts.relation)
+                        THEN excluded.relation ELSE session_artifacts.relation END,
+                    provenance = CASE
+                        WHEN instr('built_in_tool,mcp_resource_link,tool_metadata,tool_argument,assistant_message,compatibility_inference', excluded.provenance)
+                           < instr('built_in_tool,mcp_resource_link,tool_metadata,tool_argument,assistant_message,compatibility_inference', session_artifacts.provenance)
+                        THEN excluded.provenance ELSE session_artifacts.provenance END,
+                    source_id = CASE
+                        WHEN instr('built_in_tool,mcp_resource_link,tool_metadata,tool_argument,assistant_message,compatibility_inference', excluded.provenance)
+                           < instr('built_in_tool,mcp_resource_link,tool_metadata,tool_argument,assistant_message,compatibility_inference', session_artifacts.provenance)
+                        THEN COALESCE(excluded.source_id, session_artifacts.source_id)
+                        ELSE COALESCE(session_artifacts.source_id, excluded.source_id) END,
+                    last_seen_at = CURRENT_TIMESTAMP
+                "#,
+            )
+            .bind(session_id)
+            .bind(&artifact.display_path)
+            .bind(&artifact.resolved_path)
+            .bind(&artifact.base_working_dir)
+            .bind(&artifact.workspace_id)
+            .bind(&artifact.mime_type)
+            .bind(artifact.relation.to_string())
+            .bind(artifact.provenance.to_string())
+            .bind(&artifact.source_id)
+            .execute(&mut **tx)
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn upsert_session_artifacts(
+        &self,
+        session_id: &str,
+        artifacts: &[DiscoveredArtifact],
+    ) -> Result<Vec<SessionArtifact>> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        Self::upsert_artifacts_in_tx(&mut tx, session_id, artifacts).await?;
+        tx.commit().await?;
+
+        let mut stored = Vec::with_capacity(artifacts.len());
+        for artifact in artifacts {
+            if let Some(value) = self
+                .get_session_artifact(session_id, &artifact.resolved_path)
+                .await?
+            {
+                stored.push(value);
+            }
+        }
+        Ok(stored)
+    }
+
+    async fn get_session_artifact(
+        &self,
+        session_id: &str,
+        resolved_path: &str,
+    ) -> Result<Option<SessionArtifact>> {
+        let row = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+                String,
+                String,
+                Option<String>,
+                DateTime<Utc>,
+                DateTime<Utc>,
+            ),
+        >(
+            r#"
+            SELECT session_id, display_path, resolved_path, base_working_dir, workspace_id,
+                   mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+            FROM session_artifacts WHERE session_id = ? AND resolved_path = ?
+            "#,
+        )
+        .bind(session_id)
+        .bind(resolved_path)
+        .fetch_optional(self.pool().await?)
+        .await?;
+        row.map(session_artifact_from_row).transpose()
+    }
+
+    async fn list_session_artifacts(
+        &self,
+        session_id: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<SessionArtifactPage> {
+        let pool = self.pool().await?;
+        let limit = limit.clamp(1, 200);
+        let before_id = cursor.map(str::parse::<i64>).transpose()?;
+        let total_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM session_artifacts WHERE session_id = ?",
+        )
+        .bind(session_id)
+        .fetch_one(pool)
+        .await? as usize;
+        let rows = if let Some(before_id) = before_id {
+            sqlx::query_as::<
+                _,
+                (
+                    i64,
+                    String,
+                    String,
+                    String,
+                    String,
+                    Option<String>,
+                    Option<String>,
+                    String,
+                    String,
+                    Option<String>,
+                    DateTime<Utc>,
+                    DateTime<Utc>,
+                ),
+            >(
+                r#"
+                SELECT id, session_id, display_path, resolved_path, base_working_dir, workspace_id,
+                       mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+                FROM session_artifacts
+                WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?
+                "#,
+            )
+            .bind(session_id)
+            .bind(before_id)
+            .bind((limit + 1) as i64)
+            .fetch_all(pool)
+            .await?
+        } else {
+            sqlx::query_as::<
+                _,
+                (
+                    i64,
+                    String,
+                    String,
+                    String,
+                    String,
+                    Option<String>,
+                    Option<String>,
+                    String,
+                    String,
+                    Option<String>,
+                    DateTime<Utc>,
+                    DateTime<Utc>,
+                ),
+            >(
+                r#"
+                SELECT id, session_id, display_path, resolved_path, base_working_dir, workspace_id,
+                       mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+                FROM session_artifacts
+                WHERE session_id = ? ORDER BY id DESC LIMIT ?
+                "#,
+            )
+            .bind(session_id)
+            .bind((limit + 1) as i64)
+            .fetch_all(pool)
+            .await?
+        };
+        let has_more = rows.len() > limit;
+        let page_rows = rows.into_iter().take(limit).collect::<Vec<_>>();
+        let next_cursor = has_more
+            .then(|| page_rows.last().map(|row| row.0.to_string()))
+            .flatten();
+        let artifacts = page_rows
+            .into_iter()
+            .map(|row| {
+                session_artifact_from_row((
+                    row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8, row.9, row.10, row.11,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(SessionArtifactPage {
+            artifacts,
+            next_cursor,
+            total_count,
+        })
     }
 
     async fn replace_conversation_in_tx(
@@ -4476,6 +4914,24 @@ impl SessionStorage {
                     .await?;
             }
 
+            let pool = self.pool().await?;
+            sqlx::query(
+                r#"
+                INSERT INTO session_artifacts (
+                    session_id, display_path, resolved_path, base_working_dir, workspace_id,
+                    mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+                )
+                SELECT ?, display_path, resolved_path, base_working_dir, workspace_id,
+                       mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+                FROM session_artifacts WHERE session_id = ?
+                ON CONFLICT(session_id, resolved_path) DO NOTHING
+                "#,
+            )
+            .bind(&new_session.id)
+            .bind(session_id)
+            .execute(pool)
+            .await?;
+
             Ok(())
         }
         .await;
@@ -4739,6 +5195,36 @@ fn deserialize_tool_operation_result(value: &str) -> Result<ToolResult<CallToolR
         MessageContent::ToolResponse(response) => Ok(response.tool_result),
         _ => anyhow::bail!("tool operation result is malformed"),
     }
+}
+
+type SessionArtifactRow = (
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    String,
+    Option<String>,
+    DateTime<Utc>,
+    DateTime<Utc>,
+);
+
+fn session_artifact_from_row(row: SessionArtifactRow) -> Result<SessionArtifact> {
+    Ok(SessionArtifact {
+        session_id: row.0,
+        display_path: row.1,
+        resolved_path: row.2,
+        base_working_dir: row.3,
+        workspace_id: row.4,
+        mime_type: row.5,
+        relation: row.6.parse()?,
+        provenance: row.7.parse()?,
+        source_id: row.8,
+        first_seen_at: row.9,
+        last_seen_at: row.10,
+    })
 }
 
 fn has_orphaned_tool_responses(messages: &[Message]) -> bool {
@@ -7958,5 +8444,211 @@ mod tests {
             Usage::new(Some(30), Some(15), None).with_cache_tokens(Some(2), Some(3))
         );
         assert_eq!(reloaded.accumulated_cost, Some(1.0));
+    }
+
+    #[tokio::test]
+    async fn session_artifact_inventory_persists_deduplicates_and_copies_metadata() {
+        let temp_dir = TempDir::new().unwrap();
+        let working_dir = temp_dir.path().join("workspace");
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                working_dir.clone(),
+                "Artifact inventory".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let message = Message::assistant()
+            .with_id("artifact-message")
+            .with_text("Created `src/main.rs` and [binary](output/result.bin).");
+
+        manager.upsert_message(&session.id, &message).await.unwrap();
+        assert!(manager
+            .list_session_artifacts(&session.id, None, 20)
+            .await
+            .unwrap()
+            .artifacts
+            .is_empty());
+
+        manager
+            .register_completed_assistant_artifacts(&session.id, &message)
+            .await
+            .unwrap();
+        manager
+            .register_completed_assistant_artifacts(&session.id, &message)
+            .await
+            .unwrap();
+        manager
+            .upsert_session_artifacts(
+                &session.id,
+                &[DiscoveredArtifact::from_path(
+                    "src/main.rs",
+                    &working_dir,
+                    None,
+                    None,
+                    crate::session::SessionArtifactRelation::Created,
+                    SessionArtifactProvenance::BuiltInTool,
+                    Some("tool-call"),
+                )
+                .unwrap()],
+            )
+            .await
+            .unwrap();
+        manager
+            .register_completed_assistant_artifacts(&session.id, &message)
+            .await
+            .unwrap();
+        let page = manager
+            .list_session_artifacts(&session.id, None, 20)
+            .await
+            .unwrap();
+        assert_eq!(page.total_count, 2);
+        assert!(page
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.display_path == "src/main.rs"));
+        assert!(page
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.display_path == "output/result.bin"));
+        assert_eq!(
+            page.artifacts
+                .iter()
+                .find(|artifact| artifact.display_path == "src/main.rs")
+                .unwrap()
+                .provenance,
+            SessionArtifactProvenance::BuiltInTool
+        );
+
+        drop(manager);
+        let reloaded = SessionManager::new(temp_dir.path().to_path_buf());
+        assert_eq!(
+            reloaded
+                .list_session_artifacts(&session.id, None, 20)
+                .await
+                .unwrap()
+                .total_count,
+            2
+        );
+        let copied = reloaded
+            .copy_session(&session.id, "Artifact inventory copy".to_string())
+            .await
+            .unwrap();
+        let copied_page = reloaded
+            .list_session_artifacts(&copied.id, None, 20)
+            .await
+            .unwrap();
+        assert_eq!(copied_page.total_count, 2);
+        assert!(copied_page
+            .artifacts
+            .iter()
+            .all(|artifact| artifact.session_id == copied.id));
+
+        reloaded.delete_session(&session.id).await.unwrap();
+        assert_eq!(
+            reloaded
+                .list_session_artifacts(&session.id, None, 20)
+                .await
+                .unwrap()
+                .total_count,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn session_artifact_legacy_backfill_uses_messages_and_skips_untrusted_history() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Legacy artifacts".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_message(
+                &session.id,
+                &Message::assistant()
+                    .with_id("trusted")
+                    .with_text("See `output/trusted.py`."),
+            )
+            .await
+            .unwrap();
+        let mut untrusted = Message::assistant()
+            .with_id("untrusted")
+            .with_text("See `/outside/untrusted.rs`.");
+        untrusted.metadata = untrusted.metadata.with_imported_untrusted();
+        manager.add_message(&session.id, &untrusted).await.unwrap();
+
+        let pool = manager.storage().pool().await.unwrap();
+        sqlx::query("UPDATE schema_version SET version = 25")
+            .execute(pool)
+            .await
+            .unwrap();
+        drop(manager);
+
+        let migrated = SessionManager::new(temp_dir.path().to_path_buf());
+        let page = migrated
+            .list_session_artifacts(&session.id, None, 20)
+            .await
+            .unwrap();
+        assert_eq!(page.total_count, 1);
+        assert_eq!(page.artifacts[0].display_path, "output/trusted.py");
+        assert_eq!(
+            page.artifacts[0].provenance,
+            SessionArtifactProvenance::CompatibilityInference
+        );
+    }
+
+    #[tokio::test]
+    async fn session_artifact_inventory_paginates_large_result_sets() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let working_dir = temp_dir.path().join("workspace");
+        let session = manager
+            .create_session(
+                working_dir.clone(),
+                "Many artifacts".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let artifacts = (0..205)
+            .map(|index| {
+                DiscoveredArtifact::from_path(
+                    &format!("output/{index}.txt"),
+                    &working_dir,
+                    None,
+                    Some("text/plain".to_string()),
+                    crate::session::SessionArtifactRelation::Created,
+                    SessionArtifactProvenance::BuiltInTool,
+                    Some("bulk-tool"),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        manager
+            .upsert_session_artifacts(&session.id, &artifacts)
+            .await
+            .unwrap();
+
+        let first = manager
+            .list_session_artifacts(&session.id, None, 200)
+            .await
+            .unwrap();
+        assert_eq!(first.total_count, 205);
+        assert_eq!(first.artifacts.len(), 200);
+        let second = manager
+            .list_session_artifacts(&session.id, first.next_cursor.as_deref(), 200)
+            .await
+            .unwrap();
+        assert_eq!(second.artifacts.len(), 5);
+        assert!(second.next_cursor.is_none());
     }
 }

@@ -113,6 +113,24 @@ function firstContent(message: Message): Message['content'][number] {
 }
 
 describe('createAcpSessionNotificationAdapter', () => {
+  it('maps artifact updates without changing preview state', () => {
+    const adapter = createAcpSessionNotificationAdapter();
+    const artifact = {
+      sessionId: SESSION_ID,
+      displayPath: 'src/main.rs',
+      resolvedPath: '/workspace/src/main.rs',
+      baseWorkingDir: '/workspace',
+      relation: 'created' as const,
+      provenance: 'built_in_tool' as const,
+      firstSeenAt: '2026-01-01T00:00:00Z',
+      lastSeenAt: '2026-01-01T00:00:00Z',
+    };
+
+    expect(
+      adapter.applyGosling(goslingUpdate({ sessionUpdate: 'artifact_update', artifact }))
+    ).toEqual([{ type: 'artifactUpserted', artifact }]);
+  });
+
   describe('apply', () => {
     describe('message chunks', () => {
       it('maps and merges text chunks by role', () => {

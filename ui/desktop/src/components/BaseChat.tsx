@@ -34,6 +34,7 @@ import SessionInfoSummary from './SessionInfoSummary';
 import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
+import { useAcpChatSessionSnapshot } from '../acp/chatSessionStore';
 import { useArtifactRouter } from '../contexts/ArtifactRouterContext';
 import ThreadNavigator, { THREAD_TURN_ATTRIBUTE } from './conversation/ThreadNavigator';
 
@@ -114,7 +115,9 @@ export default function BaseChat({
   const disableAnimation = location.state?.disableAnimation || false;
   const isMobile = useIsMobile();
   const navContext = useNavigationContextSafe();
-  const { isOpen: isArtifactWorkbenchOpen } = useArtifactWorkbench();
+  const { isOpen: isArtifactWorkbenchOpen, setVisibleSession: setVisibleArtifactSession } =
+    useArtifactWorkbench();
+  const acpSessionSnapshot = useAcpChatSessionSnapshot(sessionId);
   const { setVisibleSessionWorkspaceId } = useArtifactRouter();
   const setView = useNavigation();
   const isNavCollapsed = !navContext?.isNavExpanded;
@@ -153,8 +156,19 @@ export default function BaseChat({
   useEffect(() => {
     if (!isActiveSession) return;
     setVisibleSessionWorkspaceId(session?.workspace_id ?? null);
-    return () => setVisibleSessionWorkspaceId(undefined);
-  }, [isActiveSession, session?.workspace_id, setVisibleSessionWorkspaceId]);
+    setVisibleArtifactSession(sessionId, acpSessionSnapshot?.artifacts ?? []);
+    return () => {
+      setVisibleSessionWorkspaceId(undefined);
+      setVisibleArtifactSession(null, []);
+    };
+  }, [
+    acpSessionSnapshot?.artifacts,
+    isActiveSession,
+    session?.workspace_id,
+    sessionId,
+    setVisibleArtifactSession,
+    setVisibleSessionWorkspaceId,
+  ]);
 
   const handleWorkingDirChange = useCallback(
     async (newDir: string) => {

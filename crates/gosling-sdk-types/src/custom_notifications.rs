@@ -1,4 +1,4 @@
-use crate::custom_requests::CustomMethodSchema;
+use crate::custom_requests::{CustomMethodSchema, SessionArtifactDto};
 use agent_client_protocol::{JsonRpcMessage, JsonRpcNotification};
 use schemars::{JsonSchema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
@@ -25,12 +25,14 @@ pub struct GoslingSessionNotification {
     "propertyName": "sessionUpdate",
     "mapping": {
         "usage_update": "#/$defs/SessionUsageUpdate",
-        "status_message": "#/$defs/StatusMessageUpdate"
+        "status_message": "#/$defs/StatusMessageUpdate",
+        "artifact_update": "#/$defs/ArtifactUpdate"
     }
 }))]
 pub enum GoslingSessionUpdate {
     UsageUpdate(SessionUsageUpdate),
     StatusMessage(StatusMessageUpdate),
+    ArtifactUpdate(ArtifactUpdate),
 }
 
 impl Default for GoslingSessionUpdate {
@@ -49,6 +51,12 @@ pub struct SessionUsageUpdate {
     pub accumulated_output_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accumulated_cost: Option<f64>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactUpdate {
+    pub artifact: SessionArtifactDto,
 }
 
 /// Live UI/session status. This is not conversation transcript content, and
@@ -124,6 +132,30 @@ mod tests {
                     }
                 }
             })
+        );
+    }
+
+    #[test]
+    fn artifact_update_serializes_to_expected_wire_shape() {
+        let notification = GoslingSessionNotification {
+            session_id: "s1".to_string(),
+            update: GoslingSessionUpdate::ArtifactUpdate(ArtifactUpdate {
+                artifact: SessionArtifactDto {
+                    session_id: "s1".to_string(),
+                    display_path: "src/lib.rs".to_string(),
+                    resolved_path: "/workspace/src/lib.rs".to_string(),
+                    base_working_dir: "/workspace".to_string(),
+                    relation: crate::custom_requests::SessionArtifactRelationDto::Modified,
+                    provenance: crate::custom_requests::SessionArtifactProvenanceDto::BuiltInTool,
+                    first_seen_at: "2026-08-13T00:00:00Z".to_string(),
+                    last_seen_at: "2026-08-13T00:00:00Z".to_string(),
+                    ..Default::default()
+                },
+            }),
+        };
+        assert_eq!(
+            serde_json::to_value(notification).unwrap()["update"]["sessionUpdate"],
+            "artifact_update"
         );
     }
 }

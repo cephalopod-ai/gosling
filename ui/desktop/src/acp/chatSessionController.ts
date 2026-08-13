@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from 'uuid';
-import type { GoslingExtension } from '@repo-makeover/gosling-sdk';
+import type { GoslingExtension, SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 import { AppEvents } from '../constants/events';
 import { ChatState } from '../types/chatState';
 import type { Session } from '../types/session';
@@ -20,9 +20,11 @@ import {
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
 import { acpCancelPrompt, acpPromptSession } from './prompt';
 import { getAcpConnectionGeneration } from './acpConnection';
+import { viewableFilePathsFromMarkdown } from '../components/artifacts/artifactUtils';
 import {
   acpForkSession,
   acpLoadSession,
+  acpListSessionArtifacts,
   acpNewSession,
   acpTruncateSessionConversation,
   isAcpSessionLoadInFlight,
@@ -130,6 +132,7 @@ async function createSession(
     new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
   );
   acpChatSessionActions.finishSessionLoad(sessionId, session, connectionGeneration);
+  acpChatSessionActions.setArtifacts(sessionId, []);
 
   return session;
 }
@@ -159,6 +162,19 @@ async function loadSession(
 
   try {
     const { sessionInfo, meta } = await acpLoadSession(sessionId);
+    let artifacts: SessionArtifactDto[] = [];
+    try {
+      artifacts = await acpListSessionArtifacts(sessionId);
+    } catch (error) {
+      if (!/method not found/i.test(describeAcpError(error))) {
+        throw error;
+      }
+      artifacts = reconstructArtifactsFromLoadedMessages(
+        sessionId,
+        sessionInfo.cwd,
+        acpChatSessionStore.getSnapshot(sessionId)?.messages ?? []
+      );
+    }
     const loadedConnectionGeneration = getAcpConnectionGeneration();
     if (loadedConnectionGeneration === null) {
       throw new Error('ACP connection closed while loading the session');
@@ -173,6 +189,7 @@ async function loadSession(
       sessionInfoToSession(sessionInfo, meta),
       loadedConnectionGeneration
     );
+    acpChatSessionActions.setArtifacts(sessionId, artifacts);
     if (meta.historyLoad?.mode === 'compacted') {
       acpChatSessionActions.setHistoryPageState(sessionId, {
         cursor: meta.historyLoad.nextBeforeCursor ?? null,
@@ -188,6 +205,46 @@ async function loadSession(
     acpChatSessionActions.failSessionLoad(sessionId, describeAcpError(error));
     return false;
   }
+}
+
+function reconstructArtifactsFromLoadedMessages(
+  sessionId: string,
+  workingDir: string,
+  messages: Message[]
+): SessionArtifactDto[] {
+  const seen = new Set<string>();
+  const now = new Date().toISOString();
+  const artifacts: SessionArtifactDto[] = [];
+
+  for (const message of messages) {
+    if (message.role !== 'assistant' || message.metadata.importedUntrusted) continue;
+    for (const part of message.content) {
+      if (part.type !== 'text') continue;
+      for (const displayPath of viewableFilePathsFromMarkdown(part.text)) {
+        const resolvedPath = resolveCompatibilityArtifactPath(workingDir, displayPath);
+        if (seen.has(resolvedPath)) continue;
+        seen.add(resolvedPath);
+        artifacts.push({
+          sessionId,
+          displayPath,
+          resolvedPath,
+          baseWorkingDir: workingDir,
+          relation: 'referenced',
+          provenance: 'compatibility_inference',
+          sourceId: message.id,
+          firstSeenAt: now,
+          lastSeenAt: now,
+        });
+      }
+    }
+  }
+  return artifacts;
+}
+
+function resolveCompatibilityArtifactPath(workingDir: string, displayPath: string): string {
+  if (/^(?:[a-z]:[\\/]|\/)/i.test(displayPath)) return displayPath;
+  const separator = workingDir.includes('\\') ? '\\' : '/';
+  return `${workingDir.replace(/[\\/]$/, '')}${separator}${displayPath}`;
 }
 
 async function submitMessage(

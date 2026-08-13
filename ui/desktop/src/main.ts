@@ -188,6 +188,9 @@ function translateMenuLabels(items: MenuItem[]): void {
 }
 
 // Settings management
+if (process.env.ENABLE_PLAYWRIGHT && process.env.GOSLING_PLAYWRIGHT_USER_DATA_DIR) {
+  app.setPath('userData', path.resolve(process.env.GOSLING_PLAYWRIGHT_USER_DATA_DIR));
+}
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const RENDERER_DIRECTORY_GRANTS_FILE = path.join(
   app.getPath('userData'),
@@ -714,10 +717,10 @@ function handleSecondInstanceCommandLine(commandLine: string[]): void {
   });
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (!process.env.ENABLE_PLAYWRIGHT && !app.requestSingleInstanceLock()) {
   shouldQuitForSingleInstance = true;
   app.quit();
-} else {
+} else if (!process.env.ENABLE_PLAYWRIGHT) {
   app.on('second-instance', (_event, commandLine) => {
     handleSecondInstanceCommandLine(commandLine);
   });
@@ -1090,6 +1093,7 @@ const getExternalBackendForCsp = (settings: Settings) => {
 };
 
 let appConfig = {
+  GOSLING_PLAYWRIGHT: process.env.ENABLE_PLAYWRIGHT === 'true',
   GOSLING_DEFAULT_PROVIDER: defaultProvider,
   GOSLING_DEFAULT_MODEL: defaultModel,
   GOSLING_PREDEFINED_MODELS: predefinedModels,

@@ -3112,5 +3112,14 @@
   },
   "threadNavigator.turn": {
     "defaultMessage": "Turn {current} of {total}: {preview}"
+  },
+  "artifactPane.blocked": {
+    "defaultMessage": "Blocked"
+  },
+  "artifactPane.missing": {
+    "defaultMessage": "Missing"
+  },
+  "artifactPane.truncated": {
+    "defaultMessage": "Truncated"
   }
 }

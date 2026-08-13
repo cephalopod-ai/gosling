@@ -25,6 +25,8 @@ export function applyGoslingSessionNotification(
       ];
     case 'status_message':
       return applyStatusMessage(state, notification.sessionId, update);
+    case 'artifact_update':
+      return [{ type: 'artifactUpserted', artifact: update.artifact }];
     default:
       return [];
   }
@@ -33,7 +35,10 @@ export function applyGoslingSessionNotification(
 function applyStatusMessage(
   state: AdapterState,
   sessionId: string,
-  update: Extract<GoslingSessionNotification_unstable['update'], { sessionUpdate: 'status_message' }>
+  update: Extract<
+    GoslingSessionNotification_unstable['update'],
+    { sessionUpdate: 'status_message' }
+  >
 ): AcpChatStateChange[] {
   const notificationType = update.status.type === 'notice' ? 'inlineMessage' : 'thinkingMessage';
 

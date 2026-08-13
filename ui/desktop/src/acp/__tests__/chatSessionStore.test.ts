@@ -5,6 +5,7 @@ import type {
 } from '@agentclientprotocol/sdk';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 import type { Message } from '../../types/message';
 import { ChatState } from '../../types/chatState';
 import type { Session } from '../../types/session';
@@ -182,6 +183,30 @@ describe('acpChatSessionStore', () => {
       acpChatSessionActions.deleteSnapshot(id);
     }
     sessionIds.clear();
+  });
+
+  it('applies artifact notifications idempotently per session', () => {
+    const currentSessionId = sessionId('artifact-session');
+    const artifact: SessionArtifactDto = {
+      sessionId: currentSessionId,
+      displayPath: 'src/main.rs',
+      resolvedPath: '/workspace/src/main.rs',
+      baseWorkingDir: '/workspace',
+      relation: 'created',
+      provenance: 'built_in_tool',
+      firstSeenAt: '2026-01-01T00:00:00Z',
+      lastSeenAt: '2026-01-01T00:00:00Z',
+    };
+    const notification = {
+      sessionId: currentSessionId,
+      update: { sessionUpdate: 'artifact_update' as const, artifact },
+    };
+
+    acpChatSessionActions.applyAcpGoslingSessionNotification(notification);
+    acpChatSessionActions.applyAcpGoslingSessionNotification(notification);
+
+    expect(acpChatSessionStore.getSnapshot(currentSessionId)?.artifacts).toEqual([artifact]);
+    expect(acpChatSessionStore.getSnapshot('another-session')).toBeUndefined();
   });
 
   it('finishes session load with session metadata', () => {

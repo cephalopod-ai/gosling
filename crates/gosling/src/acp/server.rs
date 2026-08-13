@@ -38,7 +38,8 @@ use crate::providers::inventory::{
     RefreshSkipReason,
 };
 use crate::session::{
-    EnabledExtensionsState, ExtensionData, ExtensionState, Session, SessionManager, SessionType,
+    EnabledExtensionsState, ExtensionData, ExtensionState, Session, SessionArtifact,
+    SessionArtifactProvenance, SessionArtifactRelation, SessionManager, SessionType,
     DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 use crate::source_roots::SourceRoot;
@@ -2326,6 +2327,39 @@ fn send_status_message_update(
     Ok(())
 }
 
+fn session_artifact_dto(artifact: SessionArtifact) -> SessionArtifactDto {
+    SessionArtifactDto {
+        session_id: artifact.session_id,
+        display_path: artifact.display_path,
+        resolved_path: artifact.resolved_path,
+        base_working_dir: artifact.base_working_dir,
+        workspace_id: artifact.workspace_id,
+        mime_type: artifact.mime_type,
+        relation: match artifact.relation {
+            SessionArtifactRelation::Created => SessionArtifactRelationDto::Created,
+            SessionArtifactRelation::Modified => SessionArtifactRelationDto::Modified,
+            SessionArtifactRelation::Referenced => SessionArtifactRelationDto::Referenced,
+        },
+        provenance: match artifact.provenance {
+            SessionArtifactProvenance::BuiltInTool => SessionArtifactProvenanceDto::BuiltInTool,
+            SessionArtifactProvenance::McpResourceLink => {
+                SessionArtifactProvenanceDto::McpResourceLink
+            }
+            SessionArtifactProvenance::ToolMetadata => SessionArtifactProvenanceDto::ToolMetadata,
+            SessionArtifactProvenance::ToolArgument => SessionArtifactProvenanceDto::ToolArgument,
+            SessionArtifactProvenance::AssistantMessage => {
+                SessionArtifactProvenanceDto::AssistantMessage
+            }
+            SessionArtifactProvenance::CompatibilityInference => {
+                SessionArtifactProvenanceDto::CompatibilityInference
+            }
+        },
+        source_id: artifact.source_id,
+        first_seen_at: artifact.first_seen_at.to_rfc3339(),
+        last_seen_at: artifact.last_seen_at.to_rfc3339(),
+    }
+}
+
 fn status_message_from_system_notification(
     notification: &SystemNotificationContent,
 ) -> Option<StatusMessage> {
@@ -2979,6 +3013,21 @@ impl GoslingAcpAgent {
                 args.session_id.clone(),
                 SessionUpdate::UsageUpdate(updates.standard),
             ))?;
+        }
+        if self.supports_gosling_custom_notifications() {
+            let page = self
+                .session_manager
+                .list_session_artifacts(&session_id, None, 200)
+                .await
+                .internal_err_ctx("Failed to load session artifacts")?;
+            for artifact in page.artifacts {
+                cx.send_notification(GoslingSessionNotification {
+                    session_id: session_id.clone(),
+                    update: GoslingSessionUpdate::ArtifactUpdate(ArtifactUpdate {
+                        artifact: session_artifact_dto(artifact),
+                    }),
+                })?;
+            }
         }
 
         debug!(

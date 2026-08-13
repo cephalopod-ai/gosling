@@ -9,6 +9,9 @@ Status: accepted design for REQ-001–REQ-030. See `docs/adr/` for decisions and
 flowchart LR
     UI[Workspace React components] --> Context[WorkspaceContext]
     ArtifactUI[Exports / Outputs / downloads] --> Router[ArtifactRouterContext]
+    ArtifactUI --> ArtifactStore[Desktop session artifact state]
+    ArtifactStore --> ArtifactACP[Artifact list/update ACP]
+    ArtifactACP --> Sessions
     Router --> Context
     Router --> Electron[Electron save/download bridge]
     Context --> DesktopACP[desktop/acp/workspaces.ts]
@@ -63,25 +66,27 @@ sequenceDiagram
 
 ## Module contracts
 
-| Module                             | Layer               | Owns                                                                                                 | Must not own                                            | Allowed dependencies                                          | Public surface                                            |
-| ---------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------- |
-| `gosling-sdk-types::workspace`     | domain contract     | canonical DTOs, enums, typed requests/responses                                                      | persistence, provider construction, UI                  | serde/schemars/ACP derive                                     | workspace/profile DTOs and request types                  |
-| `gosling::workspace::model`        | domain              | store envelope and internal snapshot conversions                                                     | IO, UI, keyring calls                                   | canonical DTOs                                                | internal versioned record types                           |
-| `gosling::workspace::validation`   | domain/application  | normalization, folder status, template/import validation                                             | persistence or UI messages                              | std paths, canonical DTOs                                     | validation report and normalized workspace                |
-| `gosling::workspace::store`        | adapter             | lock/read/migrate/atomic-write of workspace metadata                                                 | secret values, session rows, provider creation          | model, fs2, std filesystem                                    | load/mutate/export/import primitives                      |
-| `gosling::workspace::credentials`  | application         | metadata lifecycle, secure key naming, scoped resolution                                             | raw keyring API, renderer response values               | store, provider registry metadata, Config                     | create/update/delete/resolve/test profile                 |
-| `gosling::workspace::context`      | domain/application  | non-secret session snapshot and prompt rendering                                                     | credentials or global active state                      | canonical DTOs                                                | snapshot builder/prompt renderer                          |
-| `gosling::workspace::service`      | application         | CRUD policy, active/default invariants, preparation for sessions                                     | transport/UI/SQLite details                             | store, validator, credentials, context                        | operations used by ACP and Agent                          |
-| `acp::server::workspaces`          | interface           | request parsing, error mapping, response mapping                                                     | domain decisions or direct file writes                  | WorkspaceService                                              | `_gosling/unstable/workspaces/*` methods                  |
-| `SessionManager` workspace fields  | adapter             | nullable session snapshot columns and queries                                                        | live workspace/profile mutation                         | canonical snapshot DTO                                        | create/copy/read/update/filter snapshot                   |
-| `ConfigResolutionScope`            | infrastructure seam | task-scoped logical config/secret resolution                                                         | workspace metadata policy                               | Config secure storage                                         | scoped async execution + typed reads                      |
-| `Agent` workspace integration      | application         | use saved profile on create/recreate/resume                                                          | active-workspace selection                              | session snapshot, WorkspaceService, providers                 | fail-closed provider restore and prompt context           |
-| `ui/desktop/src/acp/workspaces.ts` | interface adapter   | generated-client calls and no domain state                                                           | persistence, local schema copies                        | generated SDK                                                 | typed async workspace/profile operations                  |
-| `WorkspaceContext`                 | UI application      | observable workspace state, mutations, selection/filter derivation                                   | durable persistence or secrets                          | ACP adapter, Electron broadcast                               | required `useWorkspace` API                               |
-| `components/workspaces/*`          | UI interface        | accessible presentation/forms/actions                                                                | persistence, session rules, secret retrieval            | WorkspaceContext, existing UI primitives                      | sidebar/editor/profile components                         |
-| Electron workspace IPC             | adapter             | folder chooser/reveal and cross-window refresh signal                                                | workspace metadata or secrets                           | typed IPC channels                                            | existing folder APIs + change broadcast                   |
-| `ArtifactRouterContext`            | UI application      | pinned/active workspace destination selection, missing-output confirmation, single save API          | durable workspace state, direct filesystem writes       | WorkspaceContext, pure resolver, Electron bridge              | `saveArtifact`, visible-session routing                   |
-| Electron artifact bridge           | adapter             | save dialog, authorized full-file copy/content write, revisioned validated native-download placement | workspace persistence, secret data, agent file movement | renderer file-access guard, Node filesystem, Electron session | `save-artifact`, per-window routing config, failure event |
+| Module                              | Layer               | Owns                                                                                                 | Must not own                                            | Allowed dependencies                                          | Public surface                                            |
+| ----------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------- |
+| `gosling-sdk-types::workspace`      | domain contract     | canonical DTOs, enums, typed requests/responses                                                      | persistence, provider construction, UI                  | serde/schemars/ACP derive                                     | workspace/profile DTOs and request types                  |
+| `gosling::workspace::model`         | domain              | store envelope and internal snapshot conversions                                                     | IO, UI, keyring calls                                   | canonical DTOs                                                | internal versioned record types                           |
+| `gosling::workspace::validation`    | domain/application  | normalization, folder status, template/import validation                                             | persistence or UI messages                              | std paths, canonical DTOs                                     | validation report and normalized workspace                |
+| `gosling::workspace::store`         | adapter             | lock/read/migrate/atomic-write of workspace metadata                                                 | secret values, session rows, provider creation          | model, fs2, std filesystem                                    | load/mutate/export/import primitives                      |
+| `gosling::workspace::credentials`   | application         | metadata lifecycle, secure key naming, scoped resolution                                             | raw keyring API, renderer response values               | store, provider registry metadata, Config                     | create/update/delete/resolve/test profile                 |
+| `gosling::workspace::context`       | domain/application  | non-secret session snapshot and prompt rendering                                                     | credentials or global active state                      | canonical DTOs                                                | snapshot builder/prompt renderer                          |
+| `gosling::workspace::service`       | application         | CRUD policy, active/default invariants, preparation for sessions                                     | transport/UI/SQLite details                             | store, validator, credentials, context                        | operations used by ACP and Agent                          |
+| `acp::server::workspaces`           | interface           | request parsing, error mapping, response mapping                                                     | domain decisions or direct file writes                  | WorkspaceService                                              | `_gosling/unstable/workspaces/*` methods                  |
+| `SessionManager` workspace fields   | adapter             | nullable session snapshot columns and queries                                                        | live workspace/profile mutation                         | canonical snapshot DTO                                        | create/copy/read/update/filter snapshot                   |
+| `SessionManager` artifact inventory | adapter             | durable session/path metadata, discovery provenance, legacy message backfill                         | file copies, file reads, or renderer authorization      | persisted messages and successful tool results                | list/upsert/copy/delete artifact metadata                 |
+| `ConfigResolutionScope`             | infrastructure seam | task-scoped logical config/secret resolution                                                         | workspace metadata policy                               | Config secure storage                                         | scoped async execution + typed reads                      |
+| `Agent` workspace integration       | application         | use saved profile on create/recreate/resume                                                          | active-workspace selection                              | session snapshot, WorkspaceService, providers                 | fail-closed provider restore and prompt context           |
+| `ui/desktop/src/acp/workspaces.ts`  | interface adapter   | generated-client calls and no domain state                                                           | persistence, local schema copies                        | generated SDK                                                 | typed async workspace/profile operations                  |
+| `WorkspaceContext`                  | UI application      | observable workspace state, mutations, selection/filter derivation                                   | durable persistence or secrets                          | ACP adapter, Electron broadcast                               | required `useWorkspace` API                               |
+| `components/workspaces/*`           | UI interface        | accessible presentation/forms/actions                                                                | persistence, session rules, secret retrieval            | WorkspaceContext, existing UI primitives                      | sidebar/editor/profile components                         |
+| Electron workspace IPC              | adapter             | folder chooser/reveal and cross-window refresh signal                                                | workspace metadata or secrets                           | typed IPC channels                                            | existing folder APIs + change broadcast                   |
+| `ArtifactRouterContext`             | UI application      | pinned/active workspace destination selection, missing-output confirmation, single save API          | durable workspace state, direct filesystem writes       | WorkspaceContext, pure resolver, Electron bridge              | `saveArtifact`, visible-session routing                   |
+| Electron artifact bridge            | adapter             | save dialog, authorized full-file copy/content write, revisioned validated native-download placement | workspace persistence, secret data, agent file movement | renderer file-access guard, Node filesystem, Electron session | `save-artifact`, per-window routing config, failure event |
+| `ArtifactWorkbenchContext`          | UI application      | active session inventory projection plus session-scoped preview tabs/selection                       | inventory persistence or file authorization             | Desktop ACP session store, Electron artifact bridge           | inventory selection and explicit preview actions          |
 
 ## Seam catalog
 
@@ -92,13 +97,29 @@ sequenceDiagram
 | Folder kinds/access        | future folder policies                  | typed enums and centralized validator                                        |
 | Product types              | future artifact kinds                   | typed enum set and named output selection helper                             |
 | Artifact egress            | future Gosling-owned artifact producers | one `saveArtifact` call plus revision-guarded native `will-download` routing |
+| Artifact discovery         | future tool/result shapes               | ordered metadata-only discovery with session/path idempotency                |
 | Custom distributions       | additional templates                    | non-secret config template array resolved only on first initialization       |
 | Multi-window UI            | additional Desktop windows              | backend source of truth + typed invalidation broadcast                       |
-| Legacy sessions            | pre-v22 data                            | nullable snapshot fields and separate legacy fallback path                   |
+| Legacy sessions            | pre-v26 data                            | message-only artifact backfill plus existing nullable workspace fallback     |
 
 The design deliberately does not introduce a generic plugin system, arbitrary template
 expression language, secret export format, cloud synchronization port, or a second
 session store.
+
+## Session artifact inventory
+
+Schema v26 stores artifact metadata in `session_artifacts`; source files stay in place. Successful
+write/edit tool targets, local MCP resources, explicit tool metadata/output arguments, and completed
+assistant Markdown references are discovered in that order and deduplicated by session plus resolved
+path. Forking copies metadata, deleting a session cascades metadata, and missing files remain named.
+Legacy migration parses persisted messages once and never scans output directories.
+
+The Desktop loads the paginated inventory with the session and applies durable `artifact_update`
+notifications idempotently. The Outputs list is backend-owned; preview tabs and active selection are
+separate, session-scoped user state. Listing an artifact never opens the pane, reads a file, creates an
+output folder, copies a file, or grants access. Selection still traverses the Electron file guard, so
+only renderer directory grants, validated workspace output roots, and explicit picker grants can be
+read, revealed, copied, or opened externally.
 
 ## Error taxonomy
 

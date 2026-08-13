@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Copy,
   ExternalLink,
+  File,
   FileOutput,
   FolderOpen,
   PanelRightClose,
@@ -15,13 +16,21 @@ import { useArtifactWorkbench } from '../../contexts/ArtifactWorkbenchContext';
 import { cn } from '../../utils';
 import MarkdownContent from '../MarkdownContent';
 import { Button } from '../ui/button';
-import { addSandboxCsp, parseCsv } from './artifactUtils';
+import {
+  addSandboxCsp,
+  artifactKindFromMimeType,
+  artifactKindFromPath,
+  parseCsv,
+} from './artifactUtils';
 import type { ArtifactTab } from './types';
 import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
 import { errorMessage } from '../../utils/conversionUtils';
 
 const i18n = defineMessages({
   outputs: { id: 'artifactPane.outputs', defaultMessage: 'Outputs' },
+  missing: { id: 'artifactPane.missing', defaultMessage: 'Missing' },
+  blocked: { id: 'artifactPane.blocked', defaultMessage: 'Blocked' },
+  truncated: { id: 'artifactPane.truncated', defaultMessage: 'Truncated' },
   closePane: { id: 'artifactPane.closePane', defaultMessage: 'Close outputs pane' },
   openFile: { id: 'artifactPane.openFile', defaultMessage: 'Open file' },
   emptyTitle: { id: 'artifactPane.emptyTitle', defaultMessage: 'View an output or deliverable' },
@@ -205,6 +214,7 @@ function Preview({ tab, data }: { tab: ArtifactTab; data: PreviewData }) {
         />
       );
     case 'graphml':
+    case 'code':
     case 'text':
       return (
         <pre className="whitespace-pre-wrap break-words font-mono text-xs p-4">{data.content}</pre>
@@ -224,8 +234,10 @@ export function ArtifactPane() {
   const {
     activeTab,
     activeTabId,
+    artifacts,
     closeTab,
     openFile,
+    openArtifact,
     resolveFilePath,
     setActiveTabId,
     setIsOpen,
@@ -312,6 +324,20 @@ export function ArtifactPane() {
   const fileBaseDirectory =
     activeTab?.source.type === 'file' ? activeTab.source.baseDirectory : undefined;
 
+  const selectedArtifactPath =
+    activeTab?.source.type === 'file' ? activeTab.source.path : undefined;
+
+  const artifactStatus = (displayPath: string, mimeType?: string | null) => {
+    const kind = mimeType ? artifactKindFromMimeType(mimeType) : artifactKindFromPath(displayPath);
+    if (kind === 'unknown') return intl.formatMessage(i18n.unsupported);
+    if (displayPath !== selectedArtifactPath || !preview) return null;
+    if (preview.truncated) return intl.formatMessage(i18n.truncated);
+    if (!preview.error) return null;
+    return intl.formatMessage(
+      /not found|no such file|missing/i.test(preview.error) ? i18n.missing : i18n.blocked
+    );
+  };
+
   const saveCopy = async () => {
     if (!activeTab) return;
     try {
@@ -352,7 +378,9 @@ export function ArtifactPane() {
       />
       <div className="no-drag flex h-11 shrink-0 items-center gap-2 border-b border-border-primary px-2">
         <FileOutput className="h-4 w-4 text-text-secondary" />
-        <span className="text-sm font-medium">{intl.formatMessage(i18n.outputs)}</span>
+        <span className="text-sm font-medium">
+          {intl.formatMessage(i18n.outputs)} {artifacts.length}
+        </span>
         <div className="ml-auto flex items-center gap-1">
           <Button
             variant="ghost"
@@ -374,6 +402,41 @@ export function ArtifactPane() {
           </Button>
         </div>
       </div>
+
+      {artifacts.length > 0 && (
+        <div className="max-h-52 shrink-0 overflow-y-auto border-b border-border-primary py-1">
+          {artifacts.map((artifact) => {
+            const selected =
+              activeTab?.source.type === 'file' &&
+              activeTab.source.path === artifact.displayPath &&
+              activeTab.source.baseDirectory === artifact.baseWorkingDir;
+            const status = artifactStatus(artifact.displayPath, artifact.mimeType);
+            return (
+              <button
+                key={artifact.resolvedPath}
+                type="button"
+                onClick={() => openArtifact(artifact)}
+                className={cn(
+                  'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-background-secondary/60',
+                  selected && 'bg-background-secondary'
+                )}
+                title={artifact.resolvedPath}
+              >
+                <File className="h-4 w-4 shrink-0 text-text-secondary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs text-text-primary">
+                    {artifact.displayPath}
+                  </span>
+                  <span className="block truncate text-[10px] text-text-secondary">
+                    {artifact.relation} · {artifact.provenance.replace(/_/g, ' ')}
+                  </span>
+                </span>
+                {status && <span className="text-[10px] text-text-secondary">{status}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {tabs.length > 0 && (
         <div className="flex shrink-0 overflow-x-auto border-b border-border-primary">
