@@ -25,8 +25,18 @@ productProfilePath: repository-relative or consumer-relative JSON path (existing
 rendererEntry: path under an approved consumer root; rejected if it resolves outside that root, is a symlink, or targets a host main/preload file
 domainAdapter (optional)
   descriptorId: stable ID matching a DomainAdapterDescriptor.domain_id
-  protocolVersion: exact version string
-declaredCapabilities: exact sorted set of application-runtime operations (§ below) and domain actions the renderer will invoke
+  protocolVersion: exact version string identifying the domain adapter *contract* version
+                    (descriptor/snapshot/action/confirm shapes) this consumer targets — distinct
+                    from MCP's own transport protocol version, which MCP's initialize handshake
+                    already negotiates and this field does not duplicate
+  actions: non-empty sorted set of domain action names the renderer will invoke — validated by
+           live comparison against the adapter's descriptor() result (ADR-0012), never against the
+           frozen application-runtime operation table below, since these names are consumer/adapter
+           -specific and cannot be known when this document is frozen
+declaredCapabilities: exact sorted set of application-runtime operation names from the frozen table
+                       below ONLY — e.g. `domain.action` (declaring "this consumer uses domain
+                       actions" generically) belongs here; specific action names belong in
+                       domainAdapter.actions above, never mixed into this list
 assetsRoot (optional): repository-relative or consumer-relative non-symlink directory
 testFixturesRoot (optional): same containment rule as assetsRoot
 ```
@@ -34,10 +44,13 @@ testFixturesRoot (optional): same containment rule as assetsRoot
 Rejected content, in addition to everything the product profile already rejects: secrets, shell
 commands, arbitrary URLs, native-library paths, main/preload replacement paths, release/signing
 credentials, any `approvedRoot`-shaped field (the approved root is trusted resolver configuration,
-never manifest content — see ADR-0010), and any `declaredCapabilities` entry that does not name a
-frozen operation from this document. The manifest is resolved and canonically hashed the same way as
-the product profile (`shell-profile.js` pattern); the resolved hash is embedded in
-`ShellBuildManifest` alongside `profileHash`. Unknown fields and unknown `schemaVersion` fail closed
+never manifest content — see ADR-0010), `domainAdapter.actions` present without `domainAdapter`
+itself, and any `declaredCapabilities` entry that does not name a frozen operation from this
+document — domain action names are validated separately, by the rule above, precisely so this
+rejection rule does not have to (and must not) reject consumer-specific action names it cannot know
+in advance. The manifest is resolved and canonically hashed the same way as the product profile
+(`shell-profile.js` pattern); the resolved hash is embedded in `ShellBuildManifest` alongside
+`profileHash`. Unknown fields and unknown `schemaVersion` fail closed
 (`CONSUMER_SCHEMA_UNSUPPORTED`).
 
 ## Safe runtime snapshot v2 (ADR-0011)
@@ -205,18 +218,20 @@ check is enforced by the Rust server, not by main.
 
 ```text
 DomainAdapterDescriptor (existing, v1)   # crates/gosling-sdk-types/src/shell.rs:60-66
-  domain_id, display_name, version, actions: Vec<String>   # flat action names only
+  domain_id, display_name, version, actions: Vec<String>   # flat action names only; no protocolVersion field
 
 DomainAdapterDescriptor (proposed v2)    # NOT yet implemented; requires an explicit R4 DTO migration
-  domain_id, display_name, version, actions: [{ name, kind: read|mutate, schemaRef }]
+  domain_id, display_name, version, protocolVersion, actions: [{ name, kind: read|mutate, schemaRef }]
 ```
 
-The existing v1 descriptor's `actions` field is a flat `Vec<String>` — it carries no `kind`, so a
-runtime cannot yet decide which actions require a confirmation token from the descriptor alone. R4
-must version this DTO (schema bump on `DomainAdapterDescriptor`, with the client/server compatibility
-check in `compatibility.ts` extended accordingly) before the confirmation-token authorization rule
-below can be enforced; until that migration lands, the authorization rule is a frozen target, not an
-implementable one, and no R4 work may claim it works against the current v1 shape.
+The existing v1 descriptor's `actions` field is a flat `Vec<String>` — it carries no `kind`, and has
+no `protocolVersion` field at all — so a runtime cannot yet decide which actions require a
+confirmation token, nor detect a domain-adapter-contract-version mismatch, from the descriptor alone.
+R4 must version this DTO (schema bump on `DomainAdapterDescriptor`, with the client/server
+compatibility check in `compatibility.ts` extended accordingly) before the confirmation-token
+authorization rule or the `protocolVersion` comparison below can be enforced; until that migration
+lands, both are frozen targets, not implementable ones, and no R4 work may claim they work against
+the current v1 shape.
 
 New, R4-scoped:
 
@@ -225,12 +240,24 @@ AdapterRegistration             # lives in user/operator-owned Gosling settings,
   domainId: matches DomainAdapterDescriptor.domain_id exactly — the join key ShellProvisioning.domain_adapter references
   cmd, args, envs, envKeys, timeout, cwd: identical shape to the existing ExtensionConfig::Stdio fields
                                           (crates/gosling/src/agents/extension.rs:178-200) — no new field vocabulary
-  maxMessageBytes: bounded positive integer (new; MCP itself has no message-size ceiling)
+  maxMessageBytes: positive integer, schema maximum 4 MiB, default 1 MiB if unset (new; MCP itself
+                    has no message-size ceiling, so this document sets a finite hard cap rather than
+                    leaving registrations free to request effectively unbounded framing/parse
+                    allocation — the transport must frame and parse a message before any later 64 KiB
+                    response-body check could reject it, so the cap belongs at the registration/schema
+                    level, not only at the response-bound level)
 
 # The three MCP tools the adapter process exposes (ADR-0012). "descriptor" is the live negotiation
 # surface MCP's own initialize handshake does not provide; "action" deliberately excludes the
 # confirmation token, which authorizes the server's dispatch decision, not the adapter call itself.
-AdapterTool: descriptor()                      -> DomainAdapterDescriptor { domain_id, display_name, version, actions }
+AdapterTool: descriptor()                      -> DomainAdapterDescriptor { domain_id, display_name, version, actions,
+                                                     protocolVersion }  # NEW field: the domain-adapter CONTRACT version
+                                                                        # (descriptor/snapshot/action/confirm shapes),
+                                                                        # frozen at "1" by this document — distinct
+                                                                        # from `version` (the adapter's own semantic
+                                                                        # version) and from MCP's transport protocol
+                                                                        # version, which MCP's own initialize handshake
+                                                                        # already negotiates independently
 AdapterTool: snapshot(input)                   -> matches DomainSnapshotRequest/Response exactly
 AdapterTool: action(action, input)             -> AdapterActionRequest { action, input }  # NOT DomainActionRequest — no confirmation_token field
                                                 -> matches DomainActionResponse
@@ -255,15 +282,21 @@ ActionConfirmationToken        # purely internal Rust-server bookkeeping; minted
 ```
 
 Before reporting `adapter.status == ready`, the Rust server calls the adapter's `descriptor()` tool
-once and compares the live `{ domain_id, version, actions }` against `ShellProvisioning.domain_adapter`
-— both are already available to Rust today. The consumer manifest's `domainAdapter` declaration is a
-*separate*, Electron-side check: the server's authenticated `initialize` response already carries the
-live descriptor back to main today via `_meta.goslingShell.domainAdapter`
-(`shell_capabilities_meta()`, `crates/gosling/src/acp/server.rs:2506-2530` — this metadata exists now,
-this contract adds no new field to it), so `checkShellCompatibility` in Electron main compares *that*
-live descriptor against the manifest's `domainAdapter.descriptorId`/declared actions — no new trusted
-channel is needed to move manifest data into Rust, because Rust never needs to see the manifest at
-all; it only needs to compare against provisioning, which it already has. `ready` requires both
+once and compares the live `{ domain_id, version, actions, protocolVersion }` against
+`ShellProvisioning.domain_adapter` — both are already available to Rust today, and the v2 DTO
+migration (§ above) adds `protocolVersion` alongside the structured `actions` shape in the same
+schema bump. An exact `protocolVersion` mismatch is `incompatible` even if `domain_id`/`actions`
+otherwise match, since it means the two sides implement different descriptor/snapshot/action/confirm
+wire shapes. The consumer manifest's `domainAdapter` declaration is a *separate*, Electron-side check:
+the server's authenticated `initialize` response already carries the live descriptor back to main
+today via `_meta.goslingShell.domainAdapter` (`shell_capabilities_meta()`,
+`crates/gosling/src/acp/server.rs:2506-2530` — this metadata exists now, this contract adds no new
+field to *that* method, only to the `DomainAdapterDescriptor` payload it already carries), so
+`checkShellCompatibility` in Electron main compares *that* live descriptor's `protocolVersion` against
+the manifest's `domainAdapter.protocolVersion`, and its `actions` against `domainAdapter.actions` — no
+new trusted channel is needed to move manifest data into Rust, because Rust never needs to see the
+manifest at all; it only needs to compare against provisioning, which it already has. `ready` requires
+both
 independent comparisons (Rust vs. provisioning, main vs. manifest) to pass; either failing is
 `incompatible`, never a silently accepted `ready` (PG-INV-004/PG-INV-009).
 
@@ -307,6 +340,13 @@ actions require no confirmation step. Replay, cross-action, cross-session, cross
 expired confirm interactions fail with a typed `ADAPTER_ACTION_UNAUTHORIZED` error and no mutation
 occurs.
 
+**Post-ready health.** Between requests, an idle adapter crash or hang is detected by the Rust
+server's own process supervision, not by the next renderer-initiated call — pushed to Electron main as
+`_gosling/unstable/shell/domain/status` (`DomainStatusNotification`, ADR-0012 "Post-ready health"),
+which main folds into `adapter.status` on the existing safe runtime snapshot and delivers through the
+existing `runtime.changed` event. No new renderer-facing IPC operation exists for this; it is new input
+to the same push path `runtime.changed` already uses for every other lifecycle change.
+
 ## Error taxonomy additions
 
 Extends the existing table in `shell-productization-contracts.md` §"Error taxonomy":
@@ -315,7 +355,7 @@ Extends the existing table in `shell-productization-contracts.md` §"Error taxon
 | --- | --- | --- |
 | consumer manifest | schema/hash/root-containment/capability-declaration mismatch | fix reviewed manifest; no build |
 | application interaction | stale/foreign/duplicate action ID, no outstanding attempt, attempt already active | resubmit through current snapshot state |
-| adapter negotiation | descriptor/version/capability mismatch, adapter absent when required, `ADAPTER_NOT_REGISTERED` (`domain_id` has no `AdapterRegistration` settings entry) | stop, diagnostics; adapter is a build/consumer/operator-settings defect, not a user error |
+| adapter negotiation | descriptor/version/`protocolVersion`/capability mismatch, adapter absent when required, `ADAPTER_NOT_REGISTERED` (`domain_id` has no `AdapterRegistration` settings entry), post-ready `crashed`/`hung` pushed via `DomainStatusNotification` | stop, diagnostics; adapter is a build/consumer/operator-settings defect, not a user error |
 | adapter action authority | invalid/expired/replayed confirmation token | retry from a fresh snapshot; never silently retried by the client |
 
 ## Negative-space rules (carried into R2–R4 test design)
@@ -344,6 +384,19 @@ Extends the existing table in `shell-productization-contracts.md` §"Error taxon
 - `prompt.submit` after `session.resume` with `resumeIntegrity: uncertain` must surface that
   uncertainty to the renderer via the snapshot before submission, not silently behave as if resuming
   were always safe.
+- A `declaredCapabilities` entry that names a domain action rather than a frozen operation must be
+  rejected at manifest resolution; conversely a `domainAdapter.actions` entry must never be validated
+  against the frozen operation table — the two lists have different, non-overlapping validation rules
+  and mixing them is a manifest-resolver defect.
+- An `AdapterRegistration.maxMessageBytes` above the 4 MiB schema maximum must fail registration
+  before the adapter is ever spawned, not be silently clamped or accepted and enforced only later.
+- A `protocolVersion` mismatch between the live adapter descriptor and `ShellProvisioning.domain_adapter`
+  (Rust-side) or the consumer manifest's `domainAdapter.protocolVersion` (main-side) must produce
+  `incompatible`, even when `domain_id`, `version`, and `actions` all otherwise match.
+- An adapter that exits or stops responding after `ready` with no domain request in flight must not
+  leave `adapter.status`/`runtime.read` reporting stale `ready` indefinitely; R4 must wire adapter
+  health into the existing `runtime.changed` push path (§ ADR-0012 "Post-ready health") rather than
+  leaving post-ready liveness undetectable between requests.
 
 ## Status
 

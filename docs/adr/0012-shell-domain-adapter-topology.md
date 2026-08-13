@@ -113,6 +113,19 @@ Specifically:
   and overproducing adapters map to typed lifecycle/domain error codes (extending the existing error
   taxonomy in `shell-productization-contracts.md`) and always leave no orphaned process — reusing the
   same generation-owned cleanup discipline `ShellRuntime`'s host process already implements.
+- **Post-ready health.** A crash or hang detected only by the *next* `domain_snapshot`/
+  `perform_domain_action` call is not enough: an idle adapter can die with no domain request in
+  flight, and main has no other way to learn about it — main receives adapter metadata exactly once,
+  in the ACP `initialize` response. Rather than adding a polled health-check operation (more IPC
+  surface, and still only as fresh as the last poll interval), the Rust server pushes a **new custom
+  ACP notification**, `_gosling/unstable/shell/domain/status`
+  (`DomainStatusNotification { status: ready | crashed | hung | incompatible }`), whenever its own
+  process supervision observes an adapter status change outside of a request/response cycle — this
+  reuses the existing agent-to-client asynchronous notification pattern ACP already has for session
+  updates (`sessionUpdate`), rather than inventing a second async channel. Electron main folds this
+  into the safe runtime snapshot's `adapter.status` and pushes it to the renderer via the existing
+  `runtime.changed` event — no new renderer-facing operation is added, only a new input to main's
+  already-existing snapshot/push machinery.
 - **Migration of the current trait.** The current in-process `DomainAdapter` Rust trait
   (`crates/gosling/src/acp/shell.rs:14`) is retained as the **internal boundary between
   `ShellRuntime` and the process-transport implementation**, not exposed as a second production
