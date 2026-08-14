@@ -21,6 +21,11 @@
       "responseType": "DomainActionResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/shell/domain/action/confirm",
+      "requestType": "DomainActionConfirmRequest_unstable",
+      "responseType": "DomainActionConfirmResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/shell/handoff/prepare",
       "requestType": "ShellHandoffPrepareRequest_unstable",
       "responseType": "ShellHandoffPrepareResponse_unstable"
@@ -520,6 +525,10 @@
     {
       "method": "_gosling/unstable/session/update",
       "paramsType": "GoslingSessionNotification_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/domain/status",
+      "paramsType": "DomainStatusNotification_unstable"
     }
   ],
   "agentRequests": []

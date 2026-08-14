@@ -1,7 +1,9 @@
 const path = require('node:path');
 const { resolveProfile, writeBuildResolution } = require('./shell-profile');
+const { resolveConsumerManifest } = require('./shell-consumer');
 
 const SHELL_PROFILE_ENV = 'GOSLING_SHELL_PROFILE';
+const SHELL_CONSUMER_ENV = 'GOSLING_SHELL_CONSUMER_MANIFEST';
 const RETIRED_IDENTITY_ENV = [
   'GOSLING_SHELL_PRODUCT_NAME',
   'GOSLING_SHELL_PROTOCOL_SCHEME',
@@ -22,6 +24,18 @@ function targetFor(platform = process.platform, architecture = process.arch) {
     fail(`unsupported Forge target ${platform}/${architecture}`);
   }
   return target;
+}
+
+function shellBinaryStagePath(resolved, target, binaryName) {
+  return path.join(
+    resolved.repositoryRoot,
+    'build',
+    'shell-packages',
+    resolved.profile.product.id,
+    target,
+    'bin',
+    binaryName
+  );
 }
 
 function defaultProjection(env = process.env) {
@@ -56,13 +70,20 @@ function assertNoRetiredIdentityOverrides(env) {
   if (overridden) fail(`${overridden} is retired; select one source-controlled shell profile`);
 }
 
-function profileProjection(profileFile, platform, architecture) {
-  const resolved = resolveProfile(profileFile);
+function profileProjection(profileFile, platform, architecture, consumerFile) {
+  if (!consumerFile) fail('shell builds require a source-controlled consumer manifest');
+  const consumer = resolveConsumerManifest(consumerFile);
+  const resolved = consumer.profile;
+  if (profileFile && resolveProfile(profileFile).profilePath !== resolved.profilePath) {
+    fail('shell profile and consumer manifest select different product profiles');
+  }
   const target = targetFor(platform, architecture);
   const targetAssets = resolved.assetsByTarget[target];
   if (!targetAssets) fail(`profile.assets.requiredTargets does not include ${target}`);
   const profile = resolved.profile;
-  const buildResolution = writeBuildResolution(resolved, target);
+  const buildResolution = writeBuildResolution(resolved, target, undefined, consumer);
+  const binaryName = target.startsWith('windows-') ? 'gosling.exe' : 'gosling';
+  const stagedBinary = shellBinaryStagePath(resolved, target, binaryName);
   const relativeAsset = (file) =>
     path.relative(path.join(resolved.repositoryRoot, 'ui', 'desktop'), file);
   return {
@@ -84,7 +105,7 @@ function profileProjection(profileFile, platform, architecture) {
     iconFlatpak512: targetAssets.iconPng ? relativeAsset(targetAssets.iconPng) : undefined,
     iconSvg: targetAssets.iconSvg ? relativeAsset(targetAssets.iconSvg) : undefined,
     extraResource: [
-      'src/bin',
+      relativeAsset(path.dirname(stagedBinary)),
       relativeAsset(buildResolution.profileOutput),
       relativeAsset(buildResolution.manifestOutput),
       relativeAsset(resolved.provisioningPath),
@@ -97,6 +118,9 @@ function profileProjection(profileFile, platform, architecture) {
       developmentProfilePath: buildResolution.profileOutput,
       developmentManifestPath: buildResolution.manifestOutput,
       developmentProvisioningPath: resolved.provisioningPath,
+      consumerManifestPath: consumer?.manifestPath,
+      consumerRendererEntry: consumer?.rendererEntry,
+      stagedBinary,
     },
     update: {
       enabled: profile.update.enabled,
@@ -104,6 +128,7 @@ function profileProjection(profileFile, platform, architecture) {
       repository: profile.update.repository,
     },
     resolved,
+    consumer,
   };
 }
 
@@ -114,15 +139,19 @@ function resolveForgeProjection(
 ) {
   assertNoRetiredIdentityOverrides(env);
   const profileFile = env[SHELL_PROFILE_ENV];
-  if (!profileFile) return defaultProjection(env);
-  return profileProjection(profileFile, platform, architecture);
+  const consumerFile = env[SHELL_CONSUMER_ENV];
+  if (!profileFile && !consumerFile) return defaultProjection(env);
+  if (!consumerFile) fail('shell builds require a source-controlled consumer manifest');
+  return profileProjection(profileFile, platform, architecture, consumerFile);
 }
 
 module.exports = {
   RETIRED_IDENTITY_ENV,
+  SHELL_CONSUMER_ENV,
   SHELL_PROFILE_ENV,
   defaultProjection,
   profileProjection,
   resolveForgeProjection,
+  shellBinaryStagePath,
   targetFor,
 };

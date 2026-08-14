@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "build-gosling-sdk": "pnpm --filter @repo-makeover/gosling-sdk run build && pnpm run clean-vite-cache",
     "clean-vite-cache": "node scripts/clean-vite-cache.js",
-    "shell:test-profile": "node --test --test-concurrency=1 scripts/shell-profile.test.js scripts/shell-forge-profile.test.js scripts/resolve-shell-profile.test.js scripts/forge-config.test.js scripts/shell-fixture-audit.test.js scripts/package-shell.test.js scripts/shell-package-verifier.test.js",
+    "shell:test-profile": "node --test --test-concurrency=1 scripts/shell-profile.test.js scripts/shell-consumer.test.js scripts/shell-consumer-vite.test.js scripts/shell-forge-profile.test.js scripts/resolve-shell-profile.test.js scripts/forge-config.test.js scripts/shell-fixture-audit.test.js scripts/package-shell.test.js scripts/shell-package-verifier.test.js",
     "shell:check-profile": "node scripts/resolve-shell-profile.js",
     "shell:check-profiles": "node scripts/resolve-shell-profile.js check-all",
     "shell:resolve-profile": "node scripts/resolve-shell-profile.js",

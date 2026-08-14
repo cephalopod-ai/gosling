@@ -640,7 +640,7 @@ function targetParts(target) {
   return { platform, architecture };
 }
 
-function buildManifest(resolved, target) {
+function buildManifest(resolved, target, consumer) {
   const { platform, architecture } = targetParts(target);
   if (!resolved.profile.assets.requiredTargets.includes(target)) {
     fail(`profile.assets.requiredTargets does not include ${target}`);
@@ -664,6 +664,21 @@ function buildManifest(resolved, target) {
       handoffSchemaVersion: resolved.profile.compatibility.handoffSchemaVersion,
       requiredMethods: resolved.profile.compatibility.requiredMethods,
     },
+    ...(consumer
+      ? {
+          consumer: {
+            consumerId: consumer.consumer.consumerId,
+            consumerHash: consumer.consumerHash,
+            rendererHash: consumer.rendererHash,
+            declaredCapabilities: consumer.consumer.declaredCapabilities,
+            requiredAgentCapabilities: consumer.requiredAgentCapabilities,
+            requiredMethods: consumer.requiredMethods,
+            ...(consumer.consumer.domainAdapter
+              ? { domainAdapter: consumer.consumer.domainAdapter }
+              : {}),
+          },
+        }
+      : {}),
   };
   return { manifest, manifestJson: canonicalJson(manifest) };
 }
@@ -675,14 +690,14 @@ function writeAtomic(file, contents) {
   fs.renameSync(temporary, file);
 }
 
-function writeBuildResolution(resolved, target, outputDirectory) {
+function writeBuildResolution(resolved, target, outputDirectory, consumer) {
   const buildRoot = path.join(resolved.repositoryRoot, 'build');
   const output = outputDirectory
     ? path.resolve(resolved.repositoryRoot, outputDirectory)
     : path.join(buildRoot, 'shell-profiles', resolved.profile.product.id, target);
   if (!isContained(buildRoot, output))
     fail('build output must remain under the repository build directory');
-  const { manifest, manifestJson } = buildManifest(resolved, target);
+  const { manifest, manifestJson } = buildManifest(resolved, target, consumer);
   const profileOutput = path.join(output, 'profile.json');
   const manifestOutput = path.join(output, 'manifest.json');
   writeAtomic(profileOutput, resolved.profileJson);

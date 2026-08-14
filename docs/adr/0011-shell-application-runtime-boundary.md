@@ -1,8 +1,8 @@
 # ADR-0011: Main-owned application runtime and renderer capability boundary
 
 Date: 2026-08-13
-Status: proposed — pending operator acceptance (R1 architecture review; see
-`pre-gui-backend-implementation-plan.md` PG-12 and `project-shell-readiness-plan.md` §4.2)
+Status: accepted — R1 operator authorization recorded 2026-08-13; see
+`pre-gui-backend-implementation-plan.md` PG-12 and `project-shell-readiness-plan.md` §4.2
 Requirements affected: SHP-REQ-004, SHP-REQ-006, SHP-REQ-018, SHP-REQ-034, SHP-REQ-035,
 SHP-REQ-037, SHP-REQ-038, SHP-REQ-042
 
@@ -71,15 +71,13 @@ making agent workflows fake or unusable").
 Extend `runtime.read`/`runtime.changed` beyond `ShellLifecycleState` to include: verified product
 identity — `id`/`displayName`/`version`, already computed during `connectShellAcp`'s compatibility
 check (`compatibility.ts:75-150`) but currently not returned to the renderer — safe compatibility
-result, and the runtime namespace *once R3 adds it to the checked surface*. Today neither
-`ShellRuntimeIdentity` (renderer-facing) nor the Rust `ShellIdentity` DTO
-(`crates/gosling-sdk-types/src/shell.rs:10-14`) carries `runtimeNamespace`, and
-`checkShellCompatibility` never compares it — the profile's `runtimeNamespace` is trusted, not
-verified against what the spawned backend actually used. R3 must add the backend's effective
-namespace to canonical runtime metadata and to the compatibility comparison before this snapshot can
-expose it as a *verified* fact; until then, `identity` in the snapshot carries only the fields that
-are genuinely checked today (`id`/`displayName`/`version`), and namespace exposure is deferred rather
-than mislabeled.
+result, and the runtime namespace only after all three authoritative surfaces agree: the resolved
+profile/consumer manifest, ACP initialization metadata, and the server's canonical provisioning
+validation response. `ShellIdentity` carries `runtimeNamespace` in the Rust DTO and generated SDK;
+the CLI fixes it from `--shell-runtime-namespace` before server construction. A mismatch fails
+preflight before session creation, and the safe snapshot exposes the namespace only after that
+compatibility result. The renderer still receives neither the ACP endpoint nor any filesystem or
+configuration authority.
 provisioning issue codes/paths (not values — reusing the existing diagnostic redaction contract),
 session status/ID and prompt-attempt phase, negotiated domain-adapter descriptor and capability
 availability (ADR-0012), and pending permission/elicitation summaries by opaque action ID. The

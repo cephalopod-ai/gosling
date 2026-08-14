@@ -1,4 +1,5 @@
 mod common;
+pub mod domain_adapter;
 pub(crate) mod fs;
 mod mcp_app_proxy;
 mod provider;

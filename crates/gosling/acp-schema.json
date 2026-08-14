@@ -75,6 +75,10 @@
         },
         "version": {
           "type": "string"
+        },
+        "runtimeNamespace": {
+          "type": "string",
+          "default": ""
         }
       },
       "required": [
@@ -190,10 +194,13 @@
         "version": {
           "type": "string"
         },
+        "protocolVersion": {
+          "type": "string"
+        },
         "actions": {
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/DomainAdapterAction"
           },
           "default": []
         }
@@ -201,7 +208,34 @@
       "required": [
         "domainId",
         "displayName",
-        "version"
+        "version",
+        "protocolVersion"
+      ]
+    },
+    "DomainAdapterAction": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DomainAdapterActionKind"
+        },
+        "schemaRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "schemaRef"
+      ]
+    },
+    "DomainAdapterActionKind": {
+      "type": "string",
+      "enum": [
+        "read",
+        "mutate"
       ]
     },
     "ShellProvisioningValidationReport": {
@@ -418,20 +452,23 @@
     "DomainActionRequest_unstable": {
       "type": "object",
       "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
         "action": {
           "type": "string"
         },
         "input": {
           "default": null
-        },
-        "confirmationToken": {
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "required": [
+        "sessionId",
+        "generation",
         "action"
       ],
       "x-side": "agent",
@@ -455,6 +492,12 @@
             "$ref": "#/$defs/DomainResourceReference"
           },
           "default": []
+        },
+        "confirmationActionId": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -463,6 +506,62 @@
       ],
       "x-side": "agent",
       "x-method": "_gosling/unstable/shell/domain/action"
+    },
+    "DomainActionConfirmRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actionId": {
+          "type": "string"
+        },
+        "approve": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessionId",
+        "generation",
+        "actionId",
+        "approve"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/domain/action/confirm"
+    },
+    "DomainActionConfirmResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/DomainActionConfirmationStatus"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DomainActionResponse_unstable"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/domain/action/confirm"
+    },
+    "DomainActionConfirmationStatus": {
+      "type": "string",
+      "enum": [
+        "approved",
+        "denied"
+      ]
     },
     "ShellHandoffPrepareRequest_unstable": {
       "type": "object",
@@ -6514,6 +6613,29 @@
         "artifact"
       ]
     },
+    "DomainStatusNotification_unstable": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/DomainAdapterStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "description": "Server-owned adapter status that may change independently of a session request.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/domain/status"
+    },
+    "DomainAdapterStatus": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "crashed",
+        "hung",
+        "incompatible"
+      ]
+    },
     "ExtRequest": {
       "properties": {
         "id": {
@@ -6561,6 +6683,15 @@
                   ],
                   "description": "Params for _gosling/unstable/shell/domain/action",
                   "title": "DomainActionRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DomainActionConfirmRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/domain/action/confirm",
+                  "title": "DomainActionConfirmRequest_unstable"
                 },
                 {
                   "allOf": [
@@ -7518,6 +7649,14 @@
                     {
                       "allOf": [
                         {
+                          "$ref": "#/$defs/DomainActionConfirmResponse_unstable"
+                        }
+                      ],
+                      "title": "DomainActionConfirmResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
                           "$ref": "#/$defs/ShellHandoffPrepareResponse_unstable"
                         }
                       ],
@@ -8098,6 +8237,15 @@
                   ],
                   "description": "Params for _gosling/unstable/session/update",
                   "title": "GoslingSessionNotification_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DomainStatusNotification_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/domain/status",
+                  "title": "DomainStatusNotification_unstable"
                 }
               ]
             },

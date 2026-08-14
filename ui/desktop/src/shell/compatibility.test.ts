@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkShellCompatibility } from './compatibility';
+import { checkShellCompatibility, type ShellRuntimeMetadata } from './compatibility';
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
 
 const methods = [
@@ -66,8 +66,10 @@ function input() {
     manifest: clone(manifest),
     runtime: {
       identity: clone(product),
+      runtimeNamespace: product.runtimeNamespace,
       coreVersion: '0.1.0',
       availableMethods: [...methods],
+      domainAdapter: null as ShellRuntimeMetadata['domainAdapter'],
     },
     provisioning: {
       schemaVersion: 1,
@@ -76,6 +78,7 @@ function input() {
         displayName: product.displayName,
         version: product.version,
       },
+      runtimeNamespace: product.runtimeNamespace,
       valid: true,
     },
   };
@@ -97,6 +100,12 @@ describe('shell compatibility', () => {
       'IDENTITY_MISMATCH',
       (value: ReturnType<typeof input>) => {
         value.runtime.identity.id = 'other';
+      },
+    ],
+    [
+      'RUNTIME_NAMESPACE_MISMATCH',
+      (value: ReturnType<typeof input>) => {
+        value.runtime.runtimeNamespace = 'other-runtime';
       },
     ],
     [
@@ -172,6 +181,22 @@ describe('shell compatibility', () => {
     });
   });
 
+  it('reports runtime namespace mismatch without conflating it with identity', () => {
+    const value = input();
+    value.provisioning.runtimeNamespace = 'other-runtime';
+
+    expect(checkShellCompatibility(value)).toEqual({
+      compatible: false,
+      code: 'RUNTIME_NAMESPACE_MISMATCH',
+      expected: product.runtimeNamespace,
+      actual: {
+        manifest: product.runtimeNamespace,
+        runtime: product.runtimeNamespace,
+        provisioning: 'other-runtime',
+      },
+    });
+  });
+
   it('compares methods as a set and reports a sorted non-secret actual list', () => {
     const value = input();
     value.runtime.availableMethods = ['z-method', ...methods.slice(0, 2), 'a-method'];
@@ -181,5 +206,36 @@ describe('shell compatibility', () => {
       expected: methods,
       actual: ['a-method', ...methods.slice(0, 2), 'z-method'].sort(),
     });
+  });
+
+  it('fails closed when a consumer adapter declaration does not match the live descriptor', () => {
+    const value = input();
+    value.manifest.consumer = {
+      consumerId: 'fixture-consumer',
+      consumerHash: 'c'.repeat(64),
+      rendererHash: 'd'.repeat(64),
+      declaredCapabilities: ['domain.action'],
+      requiredAgentCapabilities: [],
+      requiredMethods: [...methods, '_gosling/unstable/shell/domain/action'],
+      domainAdapter: {
+        descriptorId: 'neutral-fixture',
+        protocolVersion: '1.0.0',
+        actions: ['inspect', 'toggle'],
+      },
+    };
+    value.runtime.availableMethods.push('_gosling/unstable/shell/domain/action');
+    value.runtime.domainAdapter = {
+      descriptorId: 'neutral-fixture',
+      protocolVersion: '1.0.0',
+      actions: ['inspect'],
+    };
+
+    expect(checkShellCompatibility(value)).toMatchObject({
+      compatible: false,
+      code: 'ADAPTER_MISMATCH',
+    });
+
+    value.runtime.domainAdapter.actions.push('toggle');
+    expect(checkShellCompatibility(value)).toEqual({ compatible: true });
   });
 });

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const SHELL_PROVISIONING_SCHEMA_VERSION: u32 = 1;
 pub const SHELL_HANDOFF_SCHEMA_VERSION: u32 = 1;
+pub const DOMAIN_ADAPTER_PROTOCOL_VERSION: &str = "1.0.0";
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -11,6 +12,8 @@ pub struct ShellIdentity {
     pub id: String,
     pub display_name: String,
     pub version: String,
+    #[serde(default)]
+    pub runtime_namespace: String,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -55,14 +58,41 @@ pub struct ShellSessionProvisioning {
     pub skill_ids: Option<Vec<String>>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DomainAdapterActionKind {
+    #[default]
+    Read,
+    Mutate,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DomainAdapterStatus {
+    #[default]
+    Ready,
+    Crashed,
+    Hung,
+    Incompatible,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainAdapterAction {
+    pub name: String,
+    pub kind: DomainAdapterActionKind,
+    pub schema_ref: String,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DomainAdapterDescriptor {
     pub domain_id: String,
     pub display_name: String,
     pub version: String,
+    pub protocol_version: String,
     #[serde(default)]
-    pub actions: Vec<String>,
+    pub actions: Vec<DomainAdapterAction>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -223,11 +253,11 @@ pub struct DomainSnapshotResponse {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct DomainActionRequest {
+    pub session_id: String,
+    pub generation: u64,
     pub action: String,
     #[serde(default)]
     pub input: serde_json::Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confirmation_token: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -239,6 +269,37 @@ pub struct DomainActionResponse {
     pub payload: serde_json::Value,
     #[serde(default)]
     pub resources: Vec<DomainResourceReference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmation_action_id: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DomainActionConfirmationStatus {
+    #[default]
+    Approved,
+    Denied,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/domain/action/confirm",
+    response = DomainActionConfirmResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainActionConfirmRequest {
+    pub session_id: String,
+    pub generation: u64,
+    pub action_id: String,
+    pub approve: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainActionConfirmResponse {
+    pub status: DomainActionConfirmationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<DomainActionResponse>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -310,6 +371,7 @@ mod tests {
                 id: "physics".into(),
                 display_name: "Physics".into(),
                 version: "1".into(),
+                runtime_namespace: "physics".into(),
             },
             session: ShellSessionProvisioning {
                 credential_profile_id: Some("profile-id".into()),
@@ -339,5 +401,61 @@ mod tests {
         let json = serde_json::to_value(report).unwrap();
         assert_eq!(json["issues"][0]["path"], "session.credentialProfileId");
         assert!(json.get("secrets").is_none());
+    }
+
+    #[test]
+    fn domain_adapter_descriptor_carries_protocol_and_action_authority() {
+        let descriptor = DomainAdapterDescriptor {
+            domain_id: "neutral-fixture".into(),
+            display_name: "Neutral Fixture".into(),
+            version: "0.1.0".into(),
+            protocol_version: DOMAIN_ADAPTER_PROTOCOL_VERSION.into(),
+            actions: vec![
+                DomainAdapterAction {
+                    name: "inspect".into(),
+                    kind: DomainAdapterActionKind::Read,
+                    schema_ref: "neutral-fixture/inspect@1".into(),
+                },
+                DomainAdapterAction {
+                    name: "toggle".into(),
+                    kind: DomainAdapterActionKind::Mutate,
+                    schema_ref: "neutral-fixture/toggle@1".into(),
+                },
+            ],
+        };
+
+        let json = serde_json::to_value(descriptor).unwrap();
+        assert_eq!(json["protocolVersion"], DOMAIN_ADAPTER_PROTOCOL_VERSION);
+        assert_eq!(json["actions"][0]["kind"], "read");
+        assert_eq!(json["actions"][1]["kind"], "mutate");
+        assert!(json.get("confirmationToken").is_none());
+    }
+
+    #[test]
+    fn domain_confirmation_uses_only_a_fenced_opaque_action_id() {
+        let action = DomainActionRequest {
+            session_id: "session-a".into(),
+            generation: 4,
+            action: "toggle".into(),
+            input: serde_json::json!({ "enabled": true }),
+        };
+        let confirmation = DomainActionConfirmRequest {
+            session_id: "session-a".into(),
+            generation: 4,
+            action_id: "018f0000-0000-7000-8000-000000000000".into(),
+            approve: true,
+        };
+
+        let action_json = serde_json::to_value(action).unwrap();
+        let confirmation_json = serde_json::to_value(confirmation).unwrap();
+
+        assert_eq!(action_json["sessionId"], "session-a");
+        assert_eq!(action_json["generation"], 4);
+        assert!(action_json.get("confirmationToken").is_none());
+        assert_eq!(
+            confirmation_json["actionId"],
+            "018f0000-0000-7000-8000-000000000000"
+        );
+        assert!(confirmation_json.get("token").is_none());
     }
 }

@@ -58,3 +58,29 @@ invariants:
     scope:
       - crates/gosling/src/tagteam/policy.rs
     rule: the Run Steward capability profile is an allowlist and cannot include arbitrary shell, file mutation, extension management, subagent delegation, scope widening, finding disposition, transfer, or recursive Tagteam invocation
+
+  - id: ARC-008
+    title: Shell consumers cannot alter host privilege boundaries
+    status: active
+    scope:
+      - ui/desktop/scripts
+      - ui/desktop/forge.config.ts
+      - ui/desktop/vite.shell.renderer.config.mts
+    rule: consumer manifests may select only a contained renderer and declared capabilities; they cannot select Electron main, preload, arbitrary resources, executable paths, or privileged IPC operations
+
+  - id: ARC-009
+    title: Shell application runtime remains main-owned
+    status: active
+    scope:
+      - ui/desktop/src/shell
+    rule: Electron main owns ACP credentials, session and prompt ordering, permission and elicitation mediation, and the safe runtime snapshot; renderers receive only declared bounded operations and events
+
+  - id: ARC-010
+    title: Shell domain capability is live and server-owned
+    status: active
+    scope:
+      - crates/gosling/src/acp/shell.rs
+      - crates/gosling/src/acp/server/shell_handlers.rs
+      - crates/gosling-cli/src/cli.rs
+      - crates/gosling-sdk-types/src/shell.rs
+    rule: a required domain adapter reaches ready only after Rust-server-owned live descriptor negotiation, bounded supervision, and confirmation enforcement; no named domain crate or native library is linked into generic Gosling

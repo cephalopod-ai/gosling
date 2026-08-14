@@ -65,7 +65,33 @@ impl GoslingAcpAgent {
         &self,
         request: DomainActionRequest,
     ) -> Result<DomainActionResponse, agent_client_protocol::Error> {
+        self.require_active_domain_session(&request.session_id)
+            .await?;
         self.shell_runtime.perform_domain_action(request).await
+    }
+
+    pub(super) async fn on_domain_action_confirm(
+        &self,
+        request: DomainActionConfirmRequest,
+    ) -> Result<DomainActionConfirmResponse, agent_client_protocol::Error> {
+        self.require_active_domain_session(&request.session_id)
+            .await?;
+        self.shell_runtime.confirm_domain_action(request).await
+    }
+
+    async fn require_active_domain_session(
+        &self,
+        session_id: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        if session_id.is_empty() || session_id.len() > 512 {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data(serde_json::json!({ "code": "DOMAIN_SESSION_INVALID" })));
+        }
+        if self.sessions.lock().await.contains_key(session_id) {
+            return Ok(());
+        }
+        Err(agent_client_protocol::Error::invalid_params()
+            .data(serde_json::json!({ "code": "DOMAIN_SESSION_UNAVAILABLE" })))
     }
 
     pub(super) fn on_prepare_shell_handoff(

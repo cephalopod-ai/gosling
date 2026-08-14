@@ -52,6 +52,14 @@ impl GoslingAcpAgent {
         self.on_domain_action(req).await
     }
 
+    #[custom_method(DomainActionConfirmRequest)]
+    async fn dispatch_domain_action_confirm(
+        &self,
+        req: DomainActionConfirmRequest,
+    ) -> Result<DomainActionConfirmResponse, agent_client_protocol::Error> {
+        self.on_domain_action_confirm(req).await
+    }
+
     #[custom_method(ShellHandoffPrepareRequest)]
     async fn dispatch_prepare_shell_handoff(
         &self,

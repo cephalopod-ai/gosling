@@ -25,7 +25,8 @@ pub use diagnostics::{
     DiagnosticsTextFile, SystemInfo,
 };
 pub use extension_data::{
-    EnabledExtensionsState, ExtensionData, ExtensionState, ShellSkillSelectionState, TodoState,
+    AcpPromptRunState, EnabledExtensionsState, ExtensionData, ExtensionState,
+    ShellSkillSelectionState, TodoState,
 };
 pub(crate) use session_manager::ToolOperationStart;
 pub use session_manager::{

@@ -8,7 +8,7 @@ for the relationship to cephalopod-ai/gosling.
 - [architecture.md](architecture.md) — system architecture
 - [architecture/shell-foundation.md](architecture/shell-foundation.md) — focused shell identity, provisioning, runtime, adapter, handoff, and host foundation
 - [architecture/shell-productization-contracts.md](architecture/shell-productization-contracts.md) — accepted product profile, process/preload, compatibility, lifecycle, diagnostics, release, and threat-model contracts
-- [architecture/shell-productization-r1-contracts.md](architecture/shell-productization-r1-contracts.md) — proposed R1 consumer manifest, application-runtime, and domain-adapter contracts (companion to ADR-0010–0012; pending operator acceptance)
+- [architecture/shell-productization-r1-contracts.md](architecture/shell-productization-r1-contracts.md) — accepted R1 consumer manifest, application-runtime, and domain-adapter contracts (companion to ADR-0010–0012)
 - [build/shell-productization/README.md](build/shell-productization/README.md) — index for the shell productization plan, traceability, risks, evidence, audits, and handoff state
 - [build/shell-productization/readiness-reassessment.md](build/shell-productization/readiness-reassessment.md) — post-Gate-4 source/CI reassessment and project-shell readiness blockers
 - [build/shell-productization/project-shell-readiness-plan.md](build/shell-productization/project-shell-readiness-plan.md) — superseding R0–R8 plan for consumer, application-runtime, domain-adapter, package, and onboarding readiness
@@ -20,9 +20,9 @@ for the relationship to cephalopod-ai/gosling.
 - [INTENT.md](INTENT.md) — fork intent and scope
 - [TODO.md](TODO.md) — outstanding work
 - [adr/](adr/) — architecture decision records
-- [adr/0010-project-shell-consumer-composition.md](adr/0010-project-shell-consumer-composition.md) — proposed project-shell consumer/composition topology (pending operator acceptance)
-- [adr/0011-shell-application-runtime-boundary.md](adr/0011-shell-application-runtime-boundary.md) — proposed main-owned application runtime and renderer capability boundary (pending operator acceptance)
-- [adr/0012-shell-domain-adapter-topology.md](adr/0012-shell-domain-adapter-topology.md) — proposed domain adapter lifecycle, transport, and authority (pending operator acceptance)
+- [adr/0010-project-shell-consumer-composition.md](adr/0010-project-shell-consumer-composition.md) — accepted project-shell consumer/composition topology
+- [adr/0011-shell-application-runtime-boundary.md](adr/0011-shell-application-runtime-boundary.md) — accepted main-owned application runtime and renderer capability boundary
+- [adr/0012-shell-domain-adapter-topology.md](adr/0012-shell-domain-adapter-topology.md) — accepted domain adapter lifecycle, transport, and authority
 - [adr/0013-session-artifact-inventory.md](adr/0013-session-artifact-inventory.md) — durable session-scoped Outputs inventory and preview authorization boundary
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria

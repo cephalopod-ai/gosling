@@ -7,7 +7,8 @@ export const zShellProvisioningReadRequest_unstable = z.record(z.unknown());
 export const zShellIdentity = z.object({
     id: z.string(),
     displayName: z.string(),
-    version: z.string()
+    version: z.string(),
+    runtimeNamespace: z.string().optional().default('')
 });
 
 export const zShellSettingsAuthority = z.enum(['main_gosling']);
@@ -54,11 +55,20 @@ export const zShellSessionProvisioning = z.object({
     ]).optional()
 });
 
+export const zDomainAdapterActionKind = z.enum(['read', 'mutate']);
+
+export const zDomainAdapterAction = z.object({
+    name: z.string(),
+    kind: zDomainAdapterActionKind,
+    schemaRef: z.string()
+});
+
 export const zDomainAdapterDescriptor = z.object({
     domainId: z.string(),
     displayName: z.string(),
     version: z.string(),
-    actions: z.array(z.string()).optional().default([])
+    protocolVersion: z.string(),
+    actions: z.array(zDomainAdapterAction).optional().default([])
 });
 
 export const zShellProvisioning = z.object({
@@ -166,19 +176,38 @@ export const zDomainSnapshotResponse_unstable = z.object({
 });
 
 export const zDomainActionRequest_unstable = z.object({
+    sessionId: z.string(),
+    generation: z.number().int().gte(0),
     action: z.string(),
-    input: z.unknown().optional().default(null),
-    confirmationToken: z.union([
-        z.string(),
-        z.null()
-    ]).optional()
+    input: z.unknown().optional().default(null)
 });
 
 export const zDomainActionResponse_unstable = z.object({
     domainId: z.string(),
     action: z.string(),
     payload: z.unknown().optional().default(null),
-    resources: z.array(zDomainResourceReference).optional().default([])
+    resources: z.array(zDomainResourceReference).optional().default([]),
+    confirmationActionId: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zDomainActionConfirmRequest_unstable = z.object({
+    sessionId: z.string(),
+    generation: z.number().int().gte(0),
+    actionId: z.string(),
+    approve: z.boolean()
+});
+
+export const zDomainActionConfirmationStatus = z.enum(['approved', 'denied']);
+
+export const zDomainActionConfirmResponse_unstable = z.object({
+    status: zDomainActionConfirmationStatus,
+    result: z.union([
+        zDomainActionResponse_unstable,
+        z.null()
+    ]).optional()
 });
 
 export const zShellHandoffReference = z.object({
@@ -2691,6 +2720,20 @@ export const zGoslingSessionNotification_unstable = z.object({
     update: zGoslingSessionUpdate
 });
 
+export const zDomainAdapterStatus = z.enum([
+    'ready',
+    'crashed',
+    'hung',
+    'incompatible'
+]);
+
+/**
+ * Server-owned adapter status that may change independently of a session request.
+ */
+export const zDomainStatusNotification_unstable = z.object({
+    status: zDomainAdapterStatus
+});
+
 export const zExtRequest = z.object({
     id: z.string(),
     method: z.string(),
@@ -2700,6 +2743,7 @@ export const zExtRequest = z.object({
             zShellProvisioningValidateRequest_unstable,
             zDomainSnapshotRequest_unstable,
             zDomainActionRequest_unstable,
+            zDomainActionConfirmRequest_unstable,
             zShellHandoffPrepareRequest_unstable,
             zAddSessionExtensionRequest_unstable,
             zRemoveSessionExtensionRequest_unstable,
@@ -2816,6 +2860,7 @@ export const zExtResponse = z.union([
                 zShellProvisioningValidateResponse_unstable,
                 zDomainSnapshotResponse_unstable,
                 zDomainActionResponse_unstable,
+                zDomainActionConfirmResponse_unstable,
                 zShellHandoffPrepareResponse_unstable,
                 zEmptyResponse,
                 zGetToolsResponse_unstable,
@@ -2898,7 +2943,10 @@ export const zExtResponse = z.union([
 export const zExtNotification = z.object({
     method: z.string(),
     params: z.union([
-        zGoslingSessionNotification_unstable,
+        z.union([
+            zGoslingSessionNotification_unstable,
+            zDomainStatusNotification_unstable
+        ]),
         z.union([
             z.record(z.unknown()),
             z.null()

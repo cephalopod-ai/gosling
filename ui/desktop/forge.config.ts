@@ -79,23 +79,24 @@ let cfg = {
       schemes: [product.protocolScheme],
     },
   ],
-  // macOS Info.plist extensions for drag-and-drop support
-  extendInfo: {
-    // Document types for drag-and-drop support onto dock icon
-    CFBundleDocumentTypes: [
-      {
-        CFBundleTypeName: 'Folders',
-        CFBundleTypeRole: 'Viewer',
-        LSHandlerRank: 'Alternate',
-        LSItemContentTypes: ['public.directory', 'public.folder'],
-      },
-    ],
-    // Usage descriptions for macOS TCC (Transparency, Consent, and Control)
-    NSCalendarsUsageDescription:
-      'Gosling needs access to your calendars to help manage and query calendar events.',
-    NSRemindersUsageDescription:
-      'Gosling needs access to your reminders to help manage and query reminders.',
-  },
+  ...(product.shell
+    ? {}
+    : {
+        extendInfo: {
+          CFBundleDocumentTypes: [
+            {
+              CFBundleTypeName: 'Folders',
+              CFBundleTypeRole: 'Viewer',
+              LSHandlerRank: 'Alternate',
+              LSItemContentTypes: ['public.directory', 'public.folder'],
+            },
+          ],
+          NSCalendarsUsageDescription:
+            'Gosling needs access to your calendars to help manage and query calendar events.',
+          NSRemindersUsageDescription:
+            'Gosling needs access to your reminders to help manage and query reminders.',
+        },
+      }),
 };
 
 // macOS code signing and notarization via Electron Forge
@@ -147,10 +148,14 @@ module.exports = {
       config: {
         name: product.linuxPackageName,
         bin: product.executableName,
-        maintainer: 'repo-makeover',
-        homepage: 'https://gosling-docs.ai/',
-        categories: ['Development'],
-        desktopTemplate: './forge.deb.desktop',
+        ...(!product.shell
+          ? {
+              maintainer: 'repo-makeover',
+              homepage: 'https://gosling-docs.ai/',
+              categories: ['Development'],
+              desktopTemplate: './forge.deb.desktop',
+            }
+          : {}),
         options: {
           icon: product.iconPng,
           prefix: '/opt',
@@ -163,10 +168,14 @@ module.exports = {
       config: {
         name: product.linuxPackageName,
         bin: product.executableName,
-        maintainer: 'repo-makeover',
-        homepage: 'https://gosling-docs.ai/',
-        categories: ['Development'],
-        desktopTemplate: './forge.rpm.desktop',
+        ...(!product.shell
+          ? {
+              maintainer: 'repo-makeover',
+              homepage: 'https://gosling-docs.ai/',
+              categories: ['Development'],
+              desktopTemplate: './forge.rpm.desktop',
+            }
+          : {}),
         options: {
           icon: product.iconPng,
           prefix: '/opt',
@@ -179,41 +188,41 @@ module.exports = {
       config: {
         options: {
           id: product.flatpakId,
-          categories: ['Development'],
+          ...(!product.shell ? { categories: ['Development'] } : {}),
           icon: {
             scalable: product.iconSvg,
             '512x512': product.iconFlatpak512,
           },
-          homepage: 'https://gosling-docs.ai/',
+          ...(!product.shell ? { homepage: 'https://gosling-docs.ai/' } : {}),
           runtimeVersion: '25.08',
           baseVersion: '25.08',
           bin: product.executableName,
-          modules: [
-            {
-              name: 'libbz2-shim',
-              buildsystem: 'simple',
-              'build-commands': [
-                // Create the lib directory in the app bundle
-                'mkdir -p /app/lib',
-                // Point to the actual library in the 25.08 runtime
-                // We use a wildcard to handle multi-arch paths (x86_64-linux-gnu, etc)
-                'ln -s $(find /usr/lib -name "libbz2.so.1" | head -n 1) /app/lib/libbz2.so.1.0',
-              ],
-            },
-          ],
-          finishArgs: [
-            '--share=ipc',
-            '--socket=x11',
-            '--socket=wayland',
-            '--device=dri',
-            '--share=network',
-            '--filesystem=home',
-            '--talk-name=org.freedesktop.Notifications',
-            '--socket=session-bus',
-            '--socket=system-bus',
-            // This ensures the app looks in our shim folder first
-            '--env=LD_LIBRARY_PATH=/app/lib',
-          ],
+          ...(!product.shell
+            ? {
+                modules: [
+                  {
+                    name: 'libbz2-shim',
+                    buildsystem: 'simple',
+                    'build-commands': [
+                      'mkdir -p /app/lib',
+                      'ln -s $(find /usr/lib -name "libbz2.so.1" | head -n 1) /app/lib/libbz2.so.1.0',
+                    ],
+                  },
+                ],
+                finishArgs: [
+                  '--share=ipc',
+                  '--socket=x11',
+                  '--socket=wayland',
+                  '--device=dri',
+                  '--share=network',
+                  '--filesystem=home',
+                  '--talk-name=org.freedesktop.Notifications',
+                  '--socket=session-bus',
+                  '--socket=system-bus',
+                  '--env=LD_LIBRARY_PATH=/app/lib',
+                ],
+              }
+            : { finishArgs: ['--share=ipc', '--socket=x11', '--socket=wayland', '--device=dri'] }),
         },
       },
     },

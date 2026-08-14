@@ -4,13 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { expectedPackageDirectory, verifyShellPackage } = require('./shell-package-verifier');
-const { resolveProfile } = require('./shell-profile');
-const { targetFor } = require('./shell-forge-profile');
+const { resolveConsumerManifest } = require('./shell-consumer');
+const { shellBinaryStagePath, targetFor } = require('./shell-forge-profile');
 
 function usage() {
   return [
     'Usage:',
-    '  node scripts/package-shell.js <profile> [--platform <platform>] [--arch <architecture>]',
+    '  node scripts/package-shell.js <profile> [--consumer <manifest>] [--platform <platform>] [--arch <architecture>]',
   ].join('\n');
 }
 
@@ -61,7 +61,12 @@ function packageShell(input, dependencies = {}) {
   const desktopRoot = path.resolve(__dirname, '..');
   const repositoryRoot = path.resolve(desktopRoot, '..', '..');
   const profileFile = path.resolve(input.profileFile);
-  const resolved = resolveProfile(profileFile);
+  if (!input.consumerFile) throw new Error('shell:package-local requires a consumer manifest');
+  const consumer = resolveConsumerManifest(path.resolve(input.consumerFile));
+  const resolved = consumer.profile;
+  if (resolved.profilePath !== profileFile) {
+    throw new Error('shell profile and consumer manifest select different product profiles');
+  }
   const target = targetFor(input.platform, input.architecture);
   const cargoTarget = rustTarget(input.platform, input.architecture);
   if (cargoTarget !== currentHostTarget()) {
@@ -82,7 +87,7 @@ function packageShell(input, dependencies = {}) {
 
   const binaryName = input.platform === 'win32' ? 'gosling.exe' : 'gosling';
   const builtBinary = path.join(repositoryRoot, 'target', cargoTarget, 'release', binaryName);
-  const stagedBinary = path.join(desktopRoot, 'src', 'bin', binaryName);
+  const stagedBinary = shellBinaryStagePath(resolved, target, binaryName);
   const packageDirectory = expectedPackageDirectory(
     desktopRoot,
     resolved.profile.product.displayName,
@@ -129,6 +134,7 @@ function packageShell(input, dependencies = {}) {
       env: {
         ...process.env,
         GOSLING_SHELL_PROFILE: profileFile,
+        GOSLING_SHELL_CONSUMER_MANIFEST: path.resolve(input.consumerFile),
         ELECTRON_ARCH: input.architecture,
         APPLE_TEAM_ID: '',
         APPLE_ID: '',
@@ -145,6 +151,7 @@ function packageShell(input, dependencies = {}) {
     architecture: input.architecture,
     packageDirectory,
     builtBinary,
+    consumerFile: path.resolve(input.consumerFile),
   });
 }
 
@@ -153,8 +160,9 @@ function main(argv) {
   if (args[0] === '--') args.shift();
   const platform = optionalOption(args, '--platform', process.platform);
   const architecture = optionalOption(args, '--arch', process.arch);
+  const consumerFile = optionalOption(args, '--consumer', undefined);
   if (args.length !== 1) throw new Error(usage());
-  return packageShell({ profileFile: args[0], platform, architecture });
+  return packageShell({ profileFile: args[0], consumerFile, platform, architecture });
 }
 
 if (require.main === module) {

@@ -27,6 +27,12 @@ describe('shell lifecycle', () => {
     expect(state.allowedActions).toEqual([]);
   });
 
+  it('allows a preflight incompatibility before the backend reaches validation', () => {
+    const result = transitionShellLifecycle(initialShellLifecycle(1, 'boot'), move('incompatible'));
+
+    expect(result).toMatchObject({ accepted: true, stale: false, illegal: false });
+  });
+
   it.each(['degraded', 'offline'] as const)(
     '%s retries only through stop and a fresh generation',
     (failure) => {

@@ -49,20 +49,32 @@ impl SubprocessExt for std::process::Command {
 }
 
 #[allow(unused_variables)]
-pub fn configure_subprocess(command: &mut Command) {
+fn configure_subprocess_with_process_group(command: &mut Command, isolate_process_group: bool) {
     // Kill the child when its handle is dropped (graceful shutdown, agent eviction
     // from the session LRU, or extension reconfigure) so MCP servers and spawned
     // provider CLIs don't leak. On Linux this is backstopped by PR_SET_PDEATHSIG
     // below for abnormal parent death; macOS has no in-process equivalent, so a
     // hard parent SIGKILL can still orphan children.
     command.kill_on_drop(true);
-    // Isolate subprocess into its own process group so it does not receive
-    // SIGINT when the user presses Ctrl+C in the terminal.
+    // Most subprocesses are isolated so they do not receive SIGINT when the
+    // user presses Ctrl+C in the terminal. A shell-owned adapter instead stays
+    // in its backend's group so forced desktop cleanup can terminate the whole
+    // backend tree on platforms without parent-death signals.
     #[cfg(unix)]
-    command.process_group(0);
+    if isolate_process_group {
+        command.process_group(0);
+    }
     #[cfg(target_os = "linux")]
     configure_parent_death_signal(command);
     command.set_no_window();
+}
+
+pub fn configure_subprocess(command: &mut Command) {
+    configure_subprocess_with_process_group(command, true);
+}
+
+pub fn configure_shell_owned_subprocess(command: &mut Command) {
+    configure_subprocess_with_process_group(command, false);
 }
 
 #[cfg(unix)]

@@ -3,12 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const asar = require('@electron/asar');
 const plist = require('plist');
-const {
-  buildManifest,
-  canonicalJson,
-  parseJsonWithoutDuplicateKeys,
-  resolveProfile,
-} = require('./shell-profile');
+const { buildManifest, canonicalJson, parseJsonWithoutDuplicateKeys } = require('./shell-profile');
+const { resolveConsumerManifest } = require('./shell-consumer');
 const { targetFor } = require('./shell-forge-profile');
 
 const REQUIRED_ASAR_FILES = [
@@ -27,6 +23,64 @@ const FORBIDDEN_RENDERER_SENTINELS = [
   'ws://127.0.0.1',
   'wss://127.0.0.1',
 ];
+const MACOS_ELECTRON_RESOURCE_NAMES = new Set([
+  'af.lproj',
+  'am.lproj',
+  'ar.lproj',
+  'bg.lproj',
+  'bn.lproj',
+  'ca.lproj',
+  'cs.lproj',
+  'da.lproj',
+  'de.lproj',
+  'el.lproj',
+  'electron.icns',
+  'en.lproj',
+  'en_GB.lproj',
+  'es.lproj',
+  'es_419.lproj',
+  'et.lproj',
+  'fa.lproj',
+  'fi.lproj',
+  'fil.lproj',
+  'fr.lproj',
+  'gu.lproj',
+  'he.lproj',
+  'hi.lproj',
+  'hr.lproj',
+  'hu.lproj',
+  'id.lproj',
+  'it.lproj',
+  'ja.lproj',
+  'kn.lproj',
+  'ko.lproj',
+  'lt.lproj',
+  'lv.lproj',
+  'ml.lproj',
+  'mr.lproj',
+  'ms.lproj',
+  'nb.lproj',
+  'nl.lproj',
+  'pl.lproj',
+  'pt_BR.lproj',
+  'pt_PT.lproj',
+  'ro.lproj',
+  'ru.lproj',
+  'sk.lproj',
+  'sl.lproj',
+  'sr.lproj',
+  'sv.lproj',
+  'sw.lproj',
+  'ta.lproj',
+  'te.lproj',
+  'th.lproj',
+  'tr.lproj',
+  'uk.lproj',
+  'ur.lproj',
+  'vi.lproj',
+  'zh_CN.lproj',
+  'zh_TW.lproj',
+]);
 
 function fail(message) {
   throw new Error(message);
@@ -109,6 +163,45 @@ function verifyMacMetadata(file, profile) {
     : [];
   if (!schemes.includes(product.protocolScheme))
     fail('macOS protocol scheme does not match profile');
+  for (const key of [
+    'CFBundleDocumentTypes',
+    'NSCalendarsUsageDescription',
+    'NSRemindersUsageDescription',
+  ]) {
+    if (Object.hasOwn(metadata, key)) fail(`macOS shell metadata contains inherited ${key}`);
+  }
+}
+
+function verifyResourceInventory(layout, resolved, target) {
+  const targetAssets = resolved.assetsByTarget[target];
+  const expected = new Set([
+    'app.asar',
+    'bin',
+    'manifest.json',
+    'profile.json',
+    path.basename(resolved.provisioningPath),
+    ...Object.values(targetAssets).map((file) => path.basename(file)),
+  ]);
+  const actual = fs.readdirSync(layout.resources).filter((name) => name !== '.DS_Store');
+  const electronResources = actual.filter((name) => MACOS_ELECTRON_RESOURCE_NAMES.has(name));
+  if (
+    electronResources.length > 0 &&
+    (electronResources.length !== MACOS_ELECTRON_RESOURCE_NAMES.size ||
+      electronResources.some((name) => !MACOS_ELECTRON_RESOURCE_NAMES.has(name)))
+  ) {
+    fail('packaged Electron resource inventory is not exact');
+  }
+  const applicationResources = actual.filter((name) => !MACOS_ELECTRON_RESOURCE_NAMES.has(name));
+  if (
+    applicationResources.length !== expected.size ||
+    applicationResources.some((name) => !expected.has(name))
+  ) {
+    fail('packaged shell resource inventory is not exact');
+  }
+  const binaryEntries = fs.readdirSync(path.dirname(layout.binary));
+  if (binaryEntries.length !== 1 || binaryEntries[0] !== path.basename(layout.binary)) {
+    fail('packaged shell binary directory is not exact');
+  }
 }
 
 function extractText(appAsar, file, label) {
@@ -153,7 +246,12 @@ function verifyAsar(appAsar) {
 }
 
 function verifyShellPackage(input) {
-  const resolved = resolveProfile(input.profileFile);
+  if (!input.consumerFile) fail('shell package verification requires a consumer manifest');
+  const consumer = resolveConsumerManifest(input.consumerFile);
+  const resolved = consumer.profile;
+  if (resolved.profilePath !== path.resolve(input.profileFile)) {
+    fail('shell profile and consumer manifest select different product profiles');
+  }
   const profile = resolved.profile;
   const target = targetFor(input.platform, input.architecture);
   if (!profile.assets.requiredTargets.includes(target)) fail(`profile does not support ${target}`);
@@ -185,7 +283,7 @@ function verifyShellPackage(input) {
     fail('packaged profile hash does not match manifest');
   }
   exactJson(manifest.product, profile.product, 'packaged manifest identity');
-  const expectedManifest = buildManifest(resolved, target).manifest;
+  const expectedManifest = buildManifest(resolved, target, consumer).manifest;
   if (manifest.sourceClean !== expectedManifest.sourceClean) {
     fail('packaged manifest source state does not match the checkout');
   }
@@ -209,6 +307,7 @@ function verifyShellPackage(input) {
   if (fs.existsSync(path.join(layout.resources, 'app-update.yml'))) {
     fail('non-publishable shell package contains updater configuration');
   }
+  verifyResourceInventory(layout, resolved, target);
   verifyAsar(layout.appAsar);
   if (layout.metadata) verifyMacMetadata(layout.metadata, profile);
 

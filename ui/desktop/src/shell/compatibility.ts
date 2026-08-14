@@ -10,19 +10,28 @@ export type ShellCompatibilityCode =
   | 'CORE_MISMATCH'
   | 'PROVISIONING_SCHEMA_UNSUPPORTED'
   | 'METHOD_UNAVAILABLE'
+  | 'RUNTIME_NAMESPACE_MISMATCH'
+  | 'ADAPTER_MISMATCH'
   | 'PROVISIONING_INVALID';
 
 export type ShellRuntimeIdentity = Pick<ShellProductIdentity, 'id' | 'displayName' | 'version'>;
 
 export interface ShellRuntimeMetadata {
   identity: ShellRuntimeIdentity;
+  runtimeNamespace: string;
   coreVersion: string;
   availableMethods: string[];
+  domainAdapter: {
+    descriptorId: string;
+    protocolVersion: string;
+    actions: string[];
+  } | null;
 }
 
 export interface ShellProvisioningPreflight {
   schemaVersion: number;
   identity: ShellRuntimeIdentity;
+  runtimeNamespace: string;
   valid: boolean;
 }
 
@@ -106,6 +115,22 @@ export function checkShellCompatibility(input: {
     };
   }
   if (
+    profile.product.runtimeNamespace !== manifest.product.runtimeNamespace ||
+    profile.product.runtimeNamespace !== runtime.runtimeNamespace ||
+    profile.product.runtimeNamespace !== provisioning.runtimeNamespace
+  ) {
+    return {
+      compatible: false,
+      code: 'RUNTIME_NAMESPACE_MISMATCH',
+      expected: profile.product.runtimeNamespace,
+      actual: {
+        manifest: manifest.product.runtimeNamespace,
+        runtime: runtime.runtimeNamespace,
+        provisioning: provisioning.runtimeNamespace,
+      },
+    };
+  }
+  if (
     profile.compatibility.goslingVersion !== manifest.compatibility.goslingVersion ||
     profile.compatibility.goslingVersion !== runtime.coreVersion ||
     !/^[0-9a-f]{40}$/.test(manifest.compatibility.goslingRevision)
@@ -137,6 +162,23 @@ export function checkShellCompatibility(input: {
   );
   if (!methods.compatible) {
     return methods;
+  }
+  const expectedAdapter = manifest.consumer?.domainAdapter;
+  if (expectedAdapter) {
+    const actualAdapter = runtime.domainAdapter;
+    if (
+      !actualAdapter ||
+      actualAdapter.descriptorId !== expectedAdapter.descriptorId ||
+      actualAdapter.protocolVersion !== expectedAdapter.protocolVersion ||
+      actualAdapter.actions.join('\u0000') !== expectedAdapter.actions.join('\u0000')
+    ) {
+      return {
+        compatible: false,
+        code: 'ADAPTER_MISMATCH',
+        expected: expectedAdapter,
+        actual: actualAdapter,
+      };
+    }
   }
   if (!provisioning.valid) {
     return {

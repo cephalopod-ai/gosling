@@ -380,23 +380,24 @@ pub(crate) async fn validate_shell_provisioning_for_working_dir(
         if !valid_identifier(&adapter.domain_id)
             || adapter.display_name.trim().is_empty()
             || adapter.version.trim().is_empty()
+            || adapter.protocol_version.trim().is_empty()
         {
             issues.push(issue(
                 ShellProvisioningIssueCode::InvalidDomainAdapter,
                 "domainAdapter",
-                "domain adapter requires a valid domain ID, display name, and version",
+                "domain adapter requires a valid domain ID, display name, version, and protocol version",
             ));
         }
         let mut actions = HashSet::new();
-        if adapter
-            .actions
-            .iter()
-            .any(|action| action.trim().is_empty() || !actions.insert(action))
-        {
+        if adapter.actions.iter().any(|action| {
+            !valid_identifier(&action.name)
+                || action.schema_ref.trim().is_empty()
+                || !actions.insert(&action.name)
+        }) {
             issues.push(issue(
                 ShellProvisioningIssueCode::InvalidDomainAdapter,
                 "domainAdapter.actions",
-                "domain adapter actions must be non-empty and unique",
+                "domain adapter actions require unique valid names and schema references",
             ));
         }
     }
@@ -443,6 +444,7 @@ mod tests {
                 id: "test_shell".into(),
                 display_name: "Test Shell".into(),
                 version: "1".into(),
+                runtime_namespace: "test_shell".into(),
             },
             session: ShellSessionProvisioning {
                 workspace_id: Some(workspace_id),

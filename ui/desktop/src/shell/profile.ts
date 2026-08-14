@@ -59,4 +59,17 @@ export interface ShellBuildManifest {
     handoffSchemaVersion: 1;
     requiredMethods: string[];
   };
+  consumer?: {
+    consumerId: string;
+    consumerHash: string;
+    rendererHash: string;
+    declaredCapabilities: string[];
+    requiredAgentCapabilities: string[];
+    requiredMethods: string[];
+    domainAdapter?: {
+      descriptorId: string;
+      protocolVersion: string;
+      actions: string[];
+    };
+  };
 }

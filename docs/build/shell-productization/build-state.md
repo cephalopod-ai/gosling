@@ -1,12 +1,15 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-13 after R1 ADR drafting
+Updated: 2026-08-14 after the local PG-50 evidence audit
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
-R1 draft revision: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
+R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
 Mode: architecture readiness; no named shell, production release, signing, publication, or updater activation
 Completed gate: **R0 — baseline CI restored and evidence reconciled**
-Current gate: **R1 — freeze project-shell topology and application contracts (ADR-0010–0012 and the R1 contracts addendum drafted as `proposed`; NOT yet accepted — R1 is not complete)**
+Completed gate: **R1 — project-shell topology and application contracts accepted**
+Completed gate: **R2 — copy-free consumer composition and package readback**
+Completed local gate: **R4 — adapter supervision and neutral-process failure conformance**
+Current gate: **PG-50 — pre-GUI backend acceptance (formal NO-GO pending clean revision)**
 
 ## Intent
 
@@ -22,7 +25,7 @@ The former Gate 4 process boundary is useful and merged, but the former instruct
 - [`project-shell-readiness-plan.md`](project-shell-readiness-plan.md);
 - plan change `SHP-PC-003`.
 
-Do not start `ShellRuntimeProvider`, widen preload, or create a named project shell until R1 freezes the consumer, runtime, permission, and domain-adapter contracts.
+Do not start `ShellRuntimeProvider` or create a named project shell until R2–R4 and PG-50 prove the accepted consumer, runtime, permission, and domain-adapter contracts. R4's local conformance is complete, but R6/R8 must still reproduce it in packaged and cross-platform workflows.
 
 ## Retained checkpoints
 
@@ -37,16 +40,32 @@ Do not start `ShellRuntimeProvider`, widen preload, or create a named project sh
 | R0 repair PR                                       | `436c846f0`, PR #47                   | one clean PR Linux Rust execution                                     |
 | merged main                                        | `3feffca7c`                           | second clean Linux Rust execution                                     |
 
-## Reassessment findings that block project shells
+## Reassessment findings and present status
 
-1. Hard-coded `shell.html` / `src/shell/renderer.ts`; no independently supplied renderer composition.
-2. Preload has lifecycle/diagnostics/handoff only; no safe session create/resume/prompt/cancel/update API.
-3. Focused ACP callbacks auto-cancel permissions, decline elicitations, and discard session updates.
-4. Rust `DomainAdapter` exists, but CLI always constructs `ShellRuntime::new(..., None)`.
-5. `busy`, `relink_required`, and `fatal` have no production transition source; runtime snapshot lacks verified identity/session/adapter facts.
-6. Shell packaging inherits Gosling-specific metadata/permissions and bundles broad `src/bin` resources.
-7. No packaged application workflow/restart/coexistence harness and no shell build/release workflows.
-8. Linux CI is restored; project-shell readiness remains blocked by findings 1–7, not baseline CI.
+1. **R2 closed:** strict consumer composition now replaces the hard-coded renderer path; two
+   neutral consumers build without host source edits.
+2. **R3 locally complete:** preload exposes bounded, main-owned create/resume/prompt/cancel/update
+   operations, and the live deterministic harness exercises the recovery and interaction matrix.
+3. **R3 locally complete:** ACP permission and elicitation callbacks wait for explicit single-use,
+   generation-fenced responses; recovery is tested without giving the renderer ACP authority.
+4. **R4 locally complete:** Rust has operator-owned registration, live startup negotiation, pre-decode
+   frame-size/resource-count limits, server-owned confirmation, and child-exit supervision. Electron
+   relays typed, capability-gated snapshot/action/confirmation only through main with
+   generation/session fencing and folds server-pushed adapter status into its safe snapshot. The neutral
+   failure matrix is exercised locally; packaged and cross-platform reproduction remains R6/R8.
+5. **R3 locally complete:** lifecycle producers and the safe runtime snapshot are exercised;
+   identity, compatibility, and runtime namespace are exposed only after profile, initialization,
+   and canonical server provisioning agree.
+6. **R2 closed:** package metadata, permissions, and staged resources have exact readback proof on
+   the macOS host target; cross-platform workflow evidence remains R6/R7.
+7. **R7/R8 open:** packaged restart/coexistence harnesses and reusable build/release workflows do
+   not yet exist.
+8. The local PG-50 audit collected repeated 15/15 live conformance, 152 focused Desktop tests,
+   package readback, source-negative-space review, and local check evidence. CI run 31756273340 is
+   green for committed `34920cc037d741999a0aa48540ad4d63ee296c3c`, not the dirty local worktree;
+   therefore PG-50 remains a formal NO-GO. Shared GUI is blocked until the evidence is rerun on a
+   clean exact revision, and named shells remain blocked until M5. See
+   [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md).
 
 Full details and source references are in the reassessment.
 
@@ -108,26 +127,81 @@ out-of-process domain adapter (ADR-0012). The companion schema freeze is
 snapshot v2, application-runtime operations/events, interaction records, adapter descriptor and
 confirmation token, error taxonomy additions, negative-space rules).
 
-**Status is `proposed`, not `accepted for implementation`.** Per the parent plan
-("architecture review accepts one topology and rejects alternatives explicitly... Draft ADRs are not
-R1 completion"), R1 does not exit until an independent architecture/operator review accepts these
-three ADRs and confirms no open P0 topology/authority decision remains — in particular the two
-items `assumption-ledger.md` still lists as `unresolved` (SHP-ASM-029 separate-repo vs
-isolated-workspace, SHP-ASM-031 out-of-process adapter). This session did not implement any R2–R4
-code (Vite/Forge, IPC/preload, Rust adapter registration): the plan explicitly forbids that before
-R1 schemas are frozen and accepted, and the topology/transport choices are named as human decisions
-the plan requires the operator to accept, not an agent to self-certify.
+**R1 is accepted for implementation.** The operator's 2026-08-13 request to take Gosling to
+GUI-shell readiness accepted ADR-0010–0012 and the companion contracts as the R1 topology and
+authority decision. R2 PG-21–PG-25 provide a strict consumer resolver, fixed-host Vite/Forge
+composition, two neutral consumer fixtures, target-specific one-binary staging, minimized package
+metadata/permissions, and exact package verifier coverage. A real unsigned macOS arm64 consumer
+package passed readback on this checkout.
+
+R3 is **locally implemented and exercised; it is not PG-50 acceptance**. The current desktop worktree contains a main-owned
+single-session controller with create/resume, bounded prompt submit/cancel, generation and
+attempt fencing, monotonic update sequence, typed IPC/preload exposure, and a main-owned
+permission/elicitation controller. ACP callbacks now wait for an explicit, single-use renderer
+decision and are cancelled on runtime/session teardown; they are no longer blanket-cancelled or
+declined. Their owning controller independently verifies the record generation and session before
+consuming a response, in addition to the IPC fence. Standard ACP `sessionUpdate` callbacks project only bounded text, tool progress, session
+title, and usage fields. `runtime.read` and its change event now return a safe partial snapshot:
+verified identity, compatibility, and runtime namespace after ACP preflight, bounded provisioning issue
+code/schema paths, the active session, pending interaction summaries, and the live adapter descriptor
+after a consumer-manifest comparison. The namespace is checked across the resolved profile/manifest,
+ACP initialization metadata, and canonical server provisioning validation before the snapshot can
+expose it. Raw ACP content, credentials, endpoints,
+tokens, configuration, and private paths are excluded. Prompt activity, credential relink failures,
+and cleanup failures now have runtime transition producers, with rejected lifecycle transitions
+recorded as redacted diagnostic codes. Focused tests and `pnpm run typecheck` pass locally. This is
+not a shared-GUI readiness claim: PG-50 still requires clean-revision, repeated conformance,
+traceability, and current-CI evidence. Durable
+prompt-outcome reconciliation now makes compacted resume `clean` only after a persisted terminal
+outcome and preserves `uncertain` after interruption or for legacy sessions. A Node-environment
+integration test now runs a real `gosling serve` child through compatibility, session create, a
+deterministic local OpenAI-compatible streamed prompt, in-flight cancellation, and explicit
+allow-once/deny permission decisions that respectively resume a held tool turn or prevent its
+requested side effect; it also covers a no-credential prompt attempt, a live MCP form elicitation
+that resumes after a bounded main-owned submission, unexpected child exit, retry, and explicit
+compacted resume without a renderer. The restart harness verifies both a completed prompt's `clean`
+resume and an interrupted held prompt's `uncertain` resume.
+R4 now has a bounded startup slice: the descriptor carries a protocol version and typed
+`read`/`mutate` actions; an operator-owned `domain_adapters` registration is validated before use;
+and `gosling serve` resolves a matching registration, starts it through the hardened stdio-MCP path,
+and rejects startup unless the live descriptor exactly matches provisioning. Adapter tool inputs,
+decoded tool results, and newline-delimited MCP frames are bounded by the registration value before
+JSON decoding. Rust now retains a `mutate` action only behind an opaque, session/generation-fenced,
+single-use confirmation ID and executes it inline only after the matching confirm request. Adapter
+tool calls also observe the configured deadline. Electron parses the live descriptor, compares it
+against the consumer declaration before compatibility is accepted, and projects only its bounded
+ID/protocol/action names into the runtime snapshot. Its main/preload boundary relays typed domain
+snapshot/action/confirmation requests only when the consumer declared the capability; main checks
+generation and active session before calling the server, and carries no adapter transport, process,
+payload interpretation, or confirmation authority. The supervised MCP child now sends its exit
+status through a typed custom ACP notification; Electron advertises that notification capability and
+folds `ready`/`crashed`/`hung`/`incompatible` into the safe adapter snapshot. `gosling serve` now
+uses graceful signal shutdown, which drops the server-owned adapter guard. A neutral test process
+proves descriptor negotiation, snapshot/read action calls, a confirmed mutation through
+`ShellRuntime`, malformed output rejection, a post-negotiation crash, a hang timeout, and explicit
+resource-reference overproduction rejection over stdio MCP. The real authenticated
+`gosling serve` integration harness supplies an independent neutral-consumer manifest, negotiates
+the adapter, creates a session, requests and confirms a `toggle` mutation, proves that an externally
+terminated idle adapter changes the safe snapshot to `crashed`, and verifies both an empty backend
+registry and a dead adapter PID after normal shutdown. A mismatched live adapter version fails before
+`ready` and is reaped. A non-cooperative adapter with an in-flight action receives group SIGTERM and
+is reaped after its backend exits, so forced desktop cleanup cannot leave it behind. An in-flight
+adapter crash fails the action and projects `crashed`; a backend restart reaps the old adapter, starts
+a new process, restores `ready`, and completes a snapshot. This completes local R4 conformance.
+Subsequent work must follow the accepted contract without adding a second authority or
+consumer-specific host branch.
 
 ## Strict next actions
 
 Execute the dependency-aware work packages in
 [`pre-gui-backend-implementation-plan.md`](pre-gui-backend-implementation-plan.md). In summary:
 
-1. **Obtain operator/architecture review and acceptance of ADR-0010–0012** and the R1 contracts
-   addendum drafted above. This is the remaining R1 exit criterion.
-2. Only after acceptance, implement R2 (consumer resolver/Vite/Forge) and pure R3 reducers per the
-   plan's safe-concurrency rule.
-3. Only then implement the rest of R3/R4. Shared UI is R5, not the next task.
+1. Isolate the intended R1–R4 work into a clean, exact revision, run current CI for it, and rerun
+   the PG-50 evidence/review. The local double conformance run and package readback are recorded in
+   [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md), but are not a
+   substitute for revision-bound acceptance.
+2. Do not start shared UI until PG-50 is accepted. R5 is the next implementation gate only after
+   that acceptance.
 
 ## Named-shell start policy
 
@@ -135,8 +209,6 @@ Requirements discovery may proceed in project repositories, but no named profile
 
 ## Open human decisions
 
-- separate repository consumer package versus isolated monorepo workspace consumer (R1; separate repository is preferred but not yet accepted);
-- exact out-of-process domain adapter protocol/ownership (R1);
 - production identifiers, release destination, signing/notarization, predecessor artifact, and updater policy (later human release gates);
 - which platforms require full launch E2E versus structural/readback evidence (R7).
 

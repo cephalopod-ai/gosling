@@ -11,11 +11,18 @@ const fixtureA = path.join(
   'fixture-a',
   'product-profile.json'
 );
+const consumerA = path.join(
+  repositoryRoot,
+  'fixtures',
+  'shell-consumers',
+  'consumer-a',
+  'shell-consumer.json'
+);
 
 test('local shell package wrapper builds, stages, packages, and verifies in order', () => {
   const events = [];
   const result = packageShell(
-    { profileFile: fixtureA, platform: 'darwin', architecture: 'arm64' },
+    { profileFile: fixtureA, consumerFile: consumerA, platform: 'darwin', architecture: 'arm64' },
     {
       hostTarget: () => 'aarch64-apple-darwin',
       run(command, args, options) {
@@ -48,7 +55,10 @@ test('local shell package wrapper builds, stages, packages, and verifies in orde
     'gosling',
   ]);
   assert.match(events[1].source, /target\/aarch64-apple-darwin\/release\/gosling$/);
-  assert.match(events[1].destination, /ui\/desktop\/src\/bin\/gosling$/);
+  assert.match(
+    events[1].destination,
+    /build\/shell-packages\/gosling-shell-fixture-a\/macos-arm64\/bin\/gosling$/
+  );
   assert.deepEqual(events[2].args, ['run', 'build-gosling-sdk']);
   assert.deepEqual(events[3].args, [
     'exec',
@@ -60,6 +70,7 @@ test('local shell package wrapper builds, stages, packages, and verifies in orde
     'arm64',
   ]);
   assert.equal(events[3].options.env.GOSLING_SHELL_PROFILE, fixtureA);
+  assert.equal(events[3].options.env.GOSLING_SHELL_CONSUMER_MANIFEST, consumerA);
   assert.equal(events[3].options.env.ELECTRON_ARCH, 'arm64');
   assert.equal(events[3].options.env.APPLE_TEAM_ID, '');
   assert.match(events[4].input.packageDirectory, /Gosling Shell Fixture A-darwin-arm64$/);
@@ -71,7 +82,7 @@ test('wrapper requires exactly one source-controlled profile and a supported tar
   assert.throws(
     () =>
       packageShell(
-        { profileFile: fixtureA, platform: 'linux', architecture: 'arm64' },
+        { profileFile: fixtureA, consumerFile: consumerA, platform: 'linux', architecture: 'arm64' },
         {
           hostTarget: () => 'aarch64-unknown-linux-gnu',
           run() {},
@@ -85,7 +96,7 @@ test('wrapper requires exactly one source-controlled profile and a supported tar
   assert.throws(
     () =>
       packageShell(
-        { profileFile: fixtureA, platform: 'darwin', architecture: 'x64' },
+        { profileFile: fixtureA, consumerFile: consumerA, platform: 'darwin', architecture: 'x64' },
         {
           hostTarget: () => 'aarch64-apple-darwin',
           run() {},
@@ -94,5 +105,13 @@ test('wrapper requires exactly one source-controlled profile and a supported tar
         }
       ),
     /requires the selected platform and architecture to match this host/
+  );
+  assert.throws(
+    () =>
+      packageShell(
+        { profileFile: fixtureA, platform: 'darwin', architecture: 'arm64' },
+        { hostTarget: () => 'aarch64-apple-darwin' }
+      ),
+    /requires a consumer manifest/
   );
 });

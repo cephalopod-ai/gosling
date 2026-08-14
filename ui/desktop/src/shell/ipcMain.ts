@@ -4,20 +4,42 @@ import {
   type ShellActionResult,
   type ShellDiagnosticsSaveRequest,
   type ShellDiagnosticsSaveResult,
+  type ShellDomainActionConfirmRequest,
+  type ShellDomainActionRequest,
+  type ShellDomainSnapshotRequest,
+  type ShellElicitationRespondRequest,
   type ShellGenerationRequest,
   type ShellHandoffConfirmRequest,
   type ShellHandoffPrepareRequest,
   type ShellHandoffPrepareResult,
   type ShellIpcInvokeChannel,
   type ShellOpenResult,
+  type ShellPermissionRespondRequest,
+  type ShellPromptCancelRequest,
+  type ShellPromptSubmitRequest,
+  type ShellPromptSubmitResult,
+  type ShellSessionResumeRequest,
 } from './ipc';
-import type { ShellLifecycleState } from './lifecycle';
+import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
+import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
+import type { ShellInteraction } from './interactionController';
 
 const MAX_INVOKE_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_SMALL_RESPONSE_BYTES = 8 * 1024;
 const MAX_EXTERNAL_URL_BYTES = 2 * 1024;
 const MAX_REFERENCES = 128;
+const CAPABILITY_BY_CHANNEL: Partial<Record<ShellIpcInvokeChannel, string>> = {
+  [shellIpcChannels.sessionCreate]: 'session.create',
+  [shellIpcChannels.sessionResume]: 'session.resume',
+  [shellIpcChannels.promptSubmit]: 'prompt.submit',
+  [shellIpcChannels.promptCancel]: 'prompt.cancel',
+  [shellIpcChannels.permissionRespond]: 'permission.respond',
+  [shellIpcChannels.elicitationRespond]: 'elicitation.respond',
+  [shellIpcChannels.domainSnapshot]: 'domain.snapshot',
+  [shellIpcChannels.domainAction]: 'domain.action',
+  [shellIpcChannels.confirmationRespond]: 'confirmation.respond',
+};
 
 type ShellIpcMainEvent = Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>;
 interface ShellWebContents {
@@ -35,9 +57,22 @@ export interface ShellIpcMainAdapter {
 }
 
 export interface ShellIpcOperations {
-  runtimeRead(): Promise<ShellLifecycleState> | ShellLifecycleState;
+  runtimeRead(): Promise<ShellRuntimeSnapshot> | ShellRuntimeSnapshot;
   runtimeRetry(request: ShellGenerationRequest): Promise<ShellActionResult> | ShellActionResult;
   runtimeStop(request: ShellGenerationRequest): Promise<ShellActionResult> | ShellActionResult;
+  sessionCreate(request: ShellGenerationRequest): Promise<ShellSessionRecord> | ShellSessionRecord;
+  sessionResume(
+    request: ShellSessionResumeRequest
+  ): Promise<ShellSessionRecord> | ShellSessionRecord;
+  promptSubmit(
+    request: ShellPromptSubmitRequest
+  ): Promise<ShellPromptSubmitResult> | ShellPromptSubmitResult;
+  promptCancel(request: ShellPromptCancelRequest): Promise<void> | void;
+  permissionRespond(request: ShellPermissionRespondRequest): Promise<void> | void;
+  elicitationRespond(request: ShellElicitationRespondRequest): Promise<void> | void;
+  domainSnapshot(request: ShellDomainSnapshotRequest): Promise<unknown> | unknown;
+  domainAction(request: ShellDomainActionRequest): Promise<unknown> | unknown;
+  confirmationRespond(request: ShellDomainActionConfirmRequest): Promise<unknown> | unknown;
   diagnosticsSave(
     request: ShellDiagnosticsSaveRequest
   ): Promise<ShellDiagnosticsSaveResult> | ShellDiagnosticsSaveResult;
@@ -49,7 +84,9 @@ export interface ShellIpcOperations {
 }
 
 export interface RegisteredShellIpc {
-  publishRuntimeChanged(state: ShellLifecycleState): boolean;
+  publishRuntimeChanged(state: ShellRuntimeSnapshot): boolean;
+  publishSessionUpdated(update: ShellSessionUpdate): boolean;
+  publishInteractionRequested(interaction: ShellInteraction): boolean;
   dispose(): void;
 }
 
@@ -133,6 +170,109 @@ function parseDiagnosticsSaveRequest(value: unknown): ShellDiagnosticsSaveReques
     throw new Error('diagnostics.save requires an explicit user gesture');
   }
   return { generation: value.generation, userGesture: true };
+}
+
+function parseSessionResumeRequest(value: unknown): ShellSessionResumeRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  return { generation: value.generation, sessionId: value.sessionId };
+}
+
+function parsePromptSubmitRequest(value: unknown): ShellPromptSubmitRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'text'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', MAX_SMALL_RESPONSE_BYTES);
+  assertString(value.text, 'text', MAX_INVOKE_BYTES);
+  return { generation: value.generation, sessionId: value.sessionId, text: value.text };
+}
+
+function parsePromptCancelRequest(value: unknown): ShellPromptCancelRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'promptAttemptId'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertString(value.promptAttemptId, 'promptAttemptId', 512);
+  return {
+    generation: value.generation,
+    sessionId: value.sessionId,
+    promptAttemptId: value.promptAttemptId,
+  };
+}
+
+function parsePermissionRespondRequest(value: unknown): ShellPermissionRespondRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'actionId', 'allowOnce'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertString(value.actionId, 'actionId', 512);
+  if (typeof value.allowOnce !== 'boolean') throw new Error('allowOnce must be boolean');
+  return {
+    generation: value.generation,
+    sessionId: value.sessionId,
+    actionId: value.actionId,
+    allowOnce: value.allowOnce,
+  };
+}
+
+function parseElicitationRespondRequest(value: unknown): ShellElicitationRespondRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertGeneration(value.generation);
+  assertString(value.actionId, 'actionId', 512);
+  if (value.action !== 'submit' && value.action !== 'cancel') {
+    throw new Error('action must be submit or cancel');
+  }
+  const keys =
+    value.action === 'submit'
+      ? ['generation', 'sessionId', 'actionId', 'action', 'fields']
+      : ['generation', 'sessionId', 'actionId', 'action'];
+  assertExactKeys(value, keys, 'request');
+  assertString(value.sessionId, 'sessionId', 512);
+  if (value.action === 'submit') {
+    assertObject(value.fields, 'fields');
+  }
+  return value as unknown as ShellElicitationRespondRequest;
+}
+
+function parseDomainSnapshotRequest(value: unknown): ShellDomainSnapshotRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  const keys = value.input === undefined ? ['generation'] : ['generation', 'input'];
+  assertExactKeys(value, keys, 'request');
+  assertGeneration(value.generation);
+  return value as unknown as ShellDomainSnapshotRequest;
+}
+
+function parseDomainActionRequest(value: unknown): ShellDomainActionRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  const keys =
+    value.input === undefined
+      ? ['generation', 'sessionId', 'action']
+      : ['generation', 'sessionId', 'action', 'input'];
+  assertExactKeys(value, keys, 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertString(value.action, 'action', 512);
+  return value as unknown as ShellDomainActionRequest;
+}
+
+function parseDomainActionConfirmRequest(value: unknown): ShellDomainActionConfirmRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'actionId', 'approve'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertString(value.actionId, 'actionId', 512);
+  if (typeof value.approve !== 'boolean') throw new Error('approve must be boolean');
+  return value as unknown as ShellDomainActionConfirmRequest;
 }
 
 function parseHandoffPrepareRequest(value: unknown): ShellHandoffPrepareRequest {
@@ -219,7 +359,11 @@ function assertTrustedSender(event: ShellIpcMainEvent, trusted: ShellWebContents
 }
 
 function responseLimit(channel: ShellIpcInvokeChannel): number {
-  return channel === shellIpcChannels.runtimeRead || channel === shellIpcChannels.handoffPrepare
+  return channel === shellIpcChannels.runtimeRead ||
+    channel === shellIpcChannels.handoffPrepare ||
+    channel === shellIpcChannels.domainSnapshot ||
+    channel === shellIpcChannels.domainAction ||
+    channel === shellIpcChannels.confirmationRespond
     ? MAX_RESPONSE_BYTES
     : MAX_SMALL_RESPONSE_BYTES;
 }
@@ -229,8 +373,9 @@ export function registerShellIpc(input: {
   renderer: ShellWebContents;
   operations: ShellIpcOperations;
   allowedExternalOrigins: ReadonlySet<string>;
+  declaredCapabilities?: ReadonlySet<string>;
 }): RegisteredShellIpc {
-  const { ipcMain, renderer, operations, allowedExternalOrigins } = input;
+  const { ipcMain, renderer, operations, allowedExternalOrigins, declaredCapabilities } = input;
   let lastPublishedGeneration = 0;
   const registrations: Array<
     [ShellIpcInvokeChannel, (request: unknown) => Promise<unknown> | unknown]
@@ -243,6 +388,42 @@ export function registerShellIpc(input: {
     [
       shellIpcChannels.runtimeStop,
       (request) => operations.runtimeStop(parseGenerationRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionCreate,
+      (request) => operations.sessionCreate(parseGenerationRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionResume,
+      (request) => operations.sessionResume(parseSessionResumeRequest(request)),
+    ],
+    [
+      shellIpcChannels.promptSubmit,
+      (request) => operations.promptSubmit(parsePromptSubmitRequest(request)),
+    ],
+    [
+      shellIpcChannels.promptCancel,
+      (request) => operations.promptCancel(parsePromptCancelRequest(request)),
+    ],
+    [
+      shellIpcChannels.permissionRespond,
+      (request) => operations.permissionRespond(parsePermissionRespondRequest(request)),
+    ],
+    [
+      shellIpcChannels.elicitationRespond,
+      (request) => operations.elicitationRespond(parseElicitationRespondRequest(request)),
+    ],
+    [
+      shellIpcChannels.domainSnapshot,
+      (request) => operations.domainSnapshot(parseDomainSnapshotRequest(request)),
+    ],
+    [
+      shellIpcChannels.domainAction,
+      (request) => operations.domainAction(parseDomainActionRequest(request)),
+    ],
+    [
+      shellIpcChannels.confirmationRespond,
+      (request) => operations.confirmationRespond(parseDomainActionConfirmRequest(request)),
     ],
     [
       shellIpcChannels.diagnosticsSave,
@@ -265,6 +446,10 @@ export function registerShellIpc(input: {
   for (const [channel, operation] of registrations) {
     ipcMain.handle(channel, async (event, request) => {
       assertTrustedSender(event, renderer);
+      const capability = CAPABILITY_BY_CHANNEL[channel];
+      if (capability && declaredCapabilities && !declaredCapabilities.has(capability)) {
+        throw new Error(`shell consumer did not declare ${capability}`);
+      }
       if (channel === shellIpcChannels.runtimeRead && request !== undefined) {
         throw new Error('runtime.read does not accept a request');
       }
@@ -282,6 +467,20 @@ export function registerShellIpc(input: {
       assertResponseBytes(state, MAX_RESPONSE_BYTES);
       lastPublishedGeneration = state.generation;
       renderer.send(shellIpcChannels.runtimeChanged, state);
+      return true;
+    },
+    publishSessionUpdated(update) {
+      assertResponseBytes(update, MAX_RESPONSE_BYTES);
+      renderer.send(shellIpcChannels.sessionUpdated, update);
+      return true;
+    },
+    publishInteractionRequested(interaction) {
+      assertResponseBytes(interaction, MAX_SMALL_RESPONSE_BYTES);
+      const channel =
+        interaction.kind === 'permission'
+          ? shellIpcChannels.permissionRequested
+          : shellIpcChannels.elicitationRequested;
+      renderer.send(channel, interaction);
       return true;
     },
     dispose() {

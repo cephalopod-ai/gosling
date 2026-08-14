@@ -1,8 +1,8 @@
 # ADR-0010: Project-shell consumer composition topology
 
 Date: 2026-08-13
-Status: proposed — pending operator acceptance (R1 architecture review; see
-`pre-gui-backend-implementation-plan.md` PG-11 and `project-shell-readiness-plan.md` §4.3)
+Status: accepted — R1 operator authorization recorded 2026-08-13; see
+`pre-gui-backend-implementation-plan.md` PG-11 and `project-shell-readiness-plan.md` §4.3
 Requirements affected: SHP-REQ-033, SHP-REQ-039–SHP-REQ-042
 
 ## Context

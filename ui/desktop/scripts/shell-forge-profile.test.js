@@ -17,6 +17,13 @@ const fixtureA = path.join(
   'fixture-a',
   'product-profile.json'
 );
+const consumerA = path.join(
+  repositoryRoot,
+  'fixtures',
+  'shell-consumers',
+  'consumer-a',
+  'shell-consumer.json'
+);
 
 test('no profile preserves the existing Gosling Forge identity and resources', () => {
   assert.deepEqual(defaultProjection(), {
@@ -49,7 +56,7 @@ test('no profile preserves the existing Gosling Forge identity and resources', (
 });
 
 test('a selected profile projects all Forge identities from one resolved source', () => {
-  const projection = profileProjection(fixtureA, 'darwin', 'arm64');
+  const projection = profileProjection(fixtureA, 'darwin', 'arm64', consumerA);
   assert.equal(projection.shell, true);
   assert.equal(projection.productName, 'Gosling Shell Fixture A');
   assert.equal(projection.executableName, 'gosling-shell-fixture-a');
@@ -82,12 +89,12 @@ test('a selected profile projects all Forge identities from one resolved source'
 });
 
 test('platform target selects only the required platform asset set', () => {
-  const windows = profileProjection(fixtureA, 'win32', 'x64');
+  const windows = profileProjection(fixtureA, 'win32', 'x64', consumerA);
   assert.match(windows.iconIco, /icon\.ico$/);
   assert.equal(windows.iconBase, undefined);
   assert.equal(windows.iconPng, undefined);
   assert.equal(windows.iconFlatpak512, undefined);
-  const linux = profileProjection(fixtureA, 'linux', 'x64');
+  const linux = profileProjection(fixtureA, 'linux', 'x64', consumerA);
   assert.match(linux.iconPng, /icon\.png$/);
   assert.match(linux.iconFlatpak512, /icon\.png$/);
   assert.match(linux.iconSvg, /icon\.svg$/);
@@ -114,9 +121,20 @@ test('only supported platform and architecture pairs map to profile targets', ()
 
 test('ELECTRON_ARCH selects cross-architecture profile assets', () => {
   const projection = resolveForgeProjection(
-    { GOSLING_SHELL_PROFILE: fixtureA, ELECTRON_ARCH: 'x64' },
+    {
+      GOSLING_SHELL_PROFILE: fixtureA,
+      GOSLING_SHELL_CONSUMER_MANIFEST: consumerA,
+      ELECTRON_ARCH: 'x64',
+    },
     'darwin'
   );
   assert.match(projection.iconBase, /fixture-a\/assets\/icon$/);
   assert.ok(projection.resolved.profile.assets.requiredTargets.includes('macos-x64'));
+});
+
+test('a shell profile cannot use the retired fixed-renderer fallback', () => {
+  assert.throws(
+    () => resolveForgeProjection({ GOSLING_SHELL_PROFILE: fixtureA }, 'darwin', 'arm64'),
+    /require a source-controlled consumer manifest/
+  );
 });

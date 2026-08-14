@@ -38,9 +38,9 @@ use crate::providers::inventory::{
     RefreshSkipReason,
 };
 use crate::session::{
-    EnabledExtensionsState, ExtensionData, ExtensionState, Session, SessionArtifact,
-    SessionArtifactProvenance, SessionArtifactRelation, SessionManager, SessionType,
-    DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
+    AcpPromptRunState, EnabledExtensionsState, ExtensionData, ExtensionState, Session,
+    SessionArtifact, SessionArtifactProvenance, SessionArtifactRelation, SessionManager,
+    SessionType, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
@@ -1096,6 +1096,30 @@ impl GoslingAcpAgent {
             .unwrap_or(false)
     }
 
+    fn spawn_domain_adapter_status_notifier(&self) {
+        if !self.supports_gosling_custom_notifications() {
+            return;
+        }
+        let Some(mut status) = self.shell_runtime.subscribe_domain_adapter_status() else {
+            return;
+        };
+        let Some(cx) = self.client_cx.get().cloned() else {
+            return;
+        };
+        tokio::spawn(async move {
+            while status.changed().await.is_ok() {
+                if cx
+                    .send_notification(DomainStatusNotification {
+                        status: *status.borrow(),
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        });
+    }
+
     fn supports_acp_elicitation(&self) -> bool {
         self.client_supports_acp_elicitation
             .get()
@@ -1586,6 +1610,29 @@ impl GoslingAcpAgent {
             }
         }
         message
+    }
+
+    async fn record_acp_prompt_state(
+        &self,
+        session_id: &str,
+        state: AcpPromptRunState,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let value = state.to_value().map_err(|error| {
+            agent_client_protocol::Error::internal_error()
+                .data(format!("failed to serialize ACP prompt state: {error}"))
+        })?;
+        let key = format!(
+            "{}.{}",
+            AcpPromptRunState::EXTENSION_NAME,
+            AcpPromptRunState::VERSION
+        );
+        self.session_manager
+            .merge_extension_state(session_id, &key, value)
+            .await
+            .map_err(|error| {
+                agent_client_protocol::Error::internal_error()
+                    .data(format!("failed to persist ACP prompt state: {error}"))
+            })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2575,6 +2622,7 @@ impl GoslingAcpAgent {
             )
             .mcp_capabilities(McpCapabilities::new().http(true))
             .meta(Some(shell_capabilities_meta(&self.shell_runtime)));
+        self.spawn_domain_adapter_status_notifier();
         Ok(InitializeResponse::new(protocol_version)
             .agent_info(Implementation::new("gosling", env!("CARGO_PKG_VERSION")))
             .agent_capabilities(capabilities)
@@ -2821,6 +2869,15 @@ impl GoslingAcpAgent {
             return Err(error);
         }
 
+        if let Err(error) = self
+            .record_acp_prompt_state(&session_id, AcpPromptRunState::InProgress)
+            .await
+        {
+            self.clear_active_run(&session_id, &run_id).await;
+            let _ = Self::send_active_run_update(cx, &args.session_id, None);
+            return Err(error);
+        }
+
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
         let (compacted_context, tail_limit) = {
             let sessions = self.sessions.lock().await;
@@ -2843,8 +2900,14 @@ impl GoslingAcpAgent {
         {
             Ok(stream) => stream,
             Err(error) => {
+                let persisted = self
+                    .record_acp_prompt_state(&session_id, AcpPromptRunState::Failed)
+                    .await;
                 self.clear_active_run(&session_id, &run_id).await;
                 let _ = Self::send_active_run_update(cx, &args.session_id, None);
+                if let Err(persist_error) = persisted {
+                    return Err(persist_error);
+                }
                 return Err(agent_client_protocol::Error::internal_error()
                     .data(format!("Error getting agent reply: {error}")));
             }
@@ -2993,6 +3056,15 @@ impl GoslingAcpAgent {
         self.clear_active_run(&session_id, &run_id).await;
         Self::send_active_run_update(cx, &args.session_id, None)?;
         was_cancelled |= cancel_token.is_cancelled();
+        let terminal_state = if stream_error.is_some() {
+            AcpPromptRunState::Failed
+        } else if was_cancelled {
+            AcpPromptRunState::Cancelled
+        } else {
+            AcpPromptRunState::Completed
+        };
+        self.record_acp_prompt_state(&session_id, terminal_state)
+            .await?;
         if let Some(error) = stream_error {
             return Err(error);
         }

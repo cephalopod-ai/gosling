@@ -86,9 +86,16 @@ export const SummarizerSection = () => {
       const storedEndpoint = (await read('GOSLING_SUMMARIZER_ENDPOINT', false)) as
         | string
         | undefined;
-      if (storedEndpoint) {
-        setEndpoint(storedEndpoint);
-        fetchModels(storedEndpoint);
+      // Pre-fill with a real, working default rather than leaving the field
+      // empty behind placeholder text — first-time users get a value that
+      // both the summarizer worker and model detection can actually use.
+      const effectiveEndpoint = storedEndpoint || DEFAULT_ENDPOINT_PLACEHOLDER;
+      setEndpoint(effectiveEndpoint);
+      fetchModels(effectiveEndpoint);
+      if (!storedEndpoint) {
+        upsert('GOSLING_SUMMARIZER_ENDPOINT', effectiveEndpoint, false).catch((error) => {
+          console.error('Error saving default summarizer endpoint:', error);
+        });
       }
 
       const storedModel = (await read('GOSLING_SUMMARIZER_MODEL', false)) as string | undefined;
@@ -101,7 +108,7 @@ export const SummarizerSection = () => {
     } catch (error) {
       console.error('Error loading summarizer settings:', error);
     }
-  }, [read, fetchModels]);
+  }, [read, upsert, fetchModels]);
 
   useEffect(() => {
     loadSettings();

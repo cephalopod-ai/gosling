@@ -57,10 +57,13 @@ import type {
   DictationSecretSaveRequest_unstable,
   DictationTranscribeRequest_unstable,
   DictationTranscribeResponse_unstable,
+  DomainActionConfirmRequest_unstable,
+  DomainActionConfirmResponse_unstable,
   DomainActionRequest_unstable,
   DomainActionResponse_unstable,
   DomainSnapshotRequest_unstable,
   DomainSnapshotResponse_unstable,
+  DomainStatusNotification_unstable,
   ExportSessionRequest_unstable,
   ExportSessionResponse_unstable,
   ExportSourceRequest_unstable,
@@ -200,8 +203,10 @@ import {
   zDiagnosticsGetResponse_unstable,
   zDictationConfigResponse_unstable,
   zDictationTranscribeResponse_unstable,
+  zDomainActionConfirmResponse_unstable,
   zDomainActionResponse_unstable,
   zDomainSnapshotResponse_unstable,
+  zDomainStatusNotification_unstable,
   zExportSessionResponse_unstable,
   zExportSourceResponse_unstable,
   zGetAvailableExtensionsResponse_unstable,
@@ -303,6 +308,18 @@ export class GoslingExtClient {
     return zDomainActionResponse_unstable.parse(
       raw,
     ) as DomainActionResponse_unstable;
+  }
+
+  async shellDomainActionConfirm_unstable(
+    params: DomainActionConfirmRequest_unstable,
+  ): Promise<DomainActionConfirmResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/domain/action/confirm",
+      params,
+    );
+    return zDomainActionConfirmResponse_unstable.parse(
+      raw,
+    ) as DomainActionConfirmResponse_unstable;
   }
 
   async shellHandoffPrepare_unstable(
@@ -1386,6 +1403,9 @@ export interface GoslingExtNotifications {
   unstable_sessionUpdate?: (
     notification: GoslingSessionNotification_unstable,
   ) => Promise<void>;
+  unstable_shellDomainStatus?: (
+    notification: DomainStatusNotification_unstable,
+  ) => Promise<void>;
 }
 
 export interface GoslingExtAgentRequests {}
@@ -1409,6 +1429,13 @@ export function installGoslingExtNotificationDispatcher(
             params,
           ) as GoslingSessionNotification_unstable;
           await callbacks.unstable_sessionUpdate?.(parsed);
+          return;
+        }
+        case "_gosling/unstable/shell/domain/status": {
+          const parsed = zDomainStatusNotification_unstable.parse(
+            params,
+          ) as DomainStatusNotification_unstable;
+          await callbacks.unstable_shellDomainStatus?.(parsed);
           return;
         }
         default:

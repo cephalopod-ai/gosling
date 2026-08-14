@@ -2,12 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shellIpcChannels } from './ipc';
 import { registerShellIpc } from './ipcMain';
 
-function state(generation = 1): import('./lifecycle').ShellLifecycleState {
+function state(generation = 1): import('./runtimeSnapshot').ShellRuntimeSnapshot {
   return {
     generation,
     name: 'ready' as const,
+    lifecycleState: 'ready' as const,
     enteredAt: 'now',
     allowedActions: ['stop' as const],
+    identity: null,
+    runtimeNamespace: null,
+    compatibility: { status: 'unverified' },
+    provisioningIssues: [],
+    session: null,
+    adapter: null,
+    pendingInteractions: [],
   };
 }
 
@@ -29,6 +37,33 @@ function harness() {
     runtimeRead: vi.fn(() => state()),
     runtimeRetry: vi.fn((request) => ({ accepted: true, ...request, state: 'booting' as const })),
     runtimeStop: vi.fn((request) => ({ accepted: true, ...request, state: 'stopping' as const })),
+    sessionCreate: vi.fn((request) => ({
+      sessionId: 'session',
+      status: 'active' as const,
+      resumeKind: 'fresh' as const,
+      resumeIntegrity: 'not_applicable' as const,
+      promptAttempt: null,
+      ...request,
+    })),
+    sessionResume: vi.fn((request) => ({
+      sessionId: request.sessionId,
+      status: 'active' as const,
+      resumeKind: 'resumed' as const,
+      resumeIntegrity: 'uncertain' as const,
+      promptAttempt: null,
+    })),
+    promptSubmit: vi.fn(() => ({ promptAttemptId: 'attempt' })),
+    promptCancel: vi.fn(),
+    permissionRespond: vi.fn(),
+    elicitationRespond: vi.fn(),
+    domainSnapshot: vi.fn(() => ({ domainId: 'neutral-fixture', payload: {}, resources: [] })),
+    domainAction: vi.fn(() => ({
+      domainId: 'neutral-fixture',
+      action: 'inspect',
+      payload: {},
+      resources: [],
+    })),
+    confirmationRespond: vi.fn(() => ({ status: 'denied' as const })),
     diagnosticsSave: vi.fn(() => ({ status: 'saved' as const, fileName: 'diagnostics.json' })),
     handoffPrepare: vi.fn((request) => ({
       generation: request.generation,
@@ -65,12 +100,18 @@ describe('shell IPC registration', () => {
     expect([...handlers.keys()].sort()).toEqual(
       Object.values(shellIpcChannels)
         .filter((channel) => channel !== shellIpcChannels.runtimeChanged)
+        .filter((channel) => channel !== shellIpcChannels.sessionUpdated)
+        .filter((channel) => channel !== shellIpcChannels.permissionRequested)
+        .filter((channel) => channel !== shellIpcChannels.elicitationRequested)
         .sort()
     );
     registration.dispose();
     expect(ipcMain.removeHandler.mock.calls.map(([channel]) => channel).sort()).toEqual(
       Object.values(shellIpcChannels)
         .filter((channel) => channel !== shellIpcChannels.runtimeChanged)
+        .filter((channel) => channel !== shellIpcChannels.sessionUpdated)
+        .filter((channel) => channel !== shellIpcChannels.permissionRequested)
+        .filter((channel) => channel !== shellIpcChannels.elicitationRequested)
         .sort()
     );
   });
@@ -101,6 +142,111 @@ describe('shell IPC registration', () => {
     expect(operations.runtimeRetry).not.toHaveBeenCalled();
     expect(operations.runtimeStop).not.toHaveBeenCalled();
     expect(operations.diagnosticsSave).not.toHaveBeenCalled();
+  });
+
+  it('rejects session and prompt operations absent from the consumer declaration', async () => {
+    const value = harness();
+    value.registration.dispose();
+    const registration = registerShellIpc({
+      ipcMain: value.ipcMain,
+      renderer: value.renderer,
+      operations: value.operations,
+      allowedExternalOrigins: new Set(),
+      declaredCapabilities: new Set(['session.create']),
+    });
+    const create = value.handlers.get(shellIpcChannels.sessionCreate)!;
+    const submit = value.handlers.get(shellIpcChannels.promptSubmit)!;
+    await expect(create(value.event, { generation: 1 })).resolves.toMatchObject({
+      sessionId: 'session',
+    });
+    await expect(
+      submit(value.event, { generation: 1, sessionId: 'session', text: 'hello' })
+    ).rejects.toThrow('did not declare prompt.submit');
+    registration.dispose();
+  });
+
+  it('requires a session-bound shape before dispatching interaction responses', async () => {
+    const { invoke, operations } = harness();
+    const permission = {
+      generation: 1,
+      sessionId: 'session-a',
+      actionId: 'permission-a',
+      allowOnce: true,
+    };
+    const elicitation = {
+      generation: 1,
+      sessionId: 'session-a',
+      actionId: 'elicitation-a',
+      action: 'cancel',
+    } as const;
+
+    await invoke(shellIpcChannels.permissionRespond, permission);
+    await invoke(shellIpcChannels.elicitationRespond, elicitation);
+    expect(operations.permissionRespond).toHaveBeenCalledWith(permission);
+    expect(operations.elicitationRespond).toHaveBeenCalledWith(elicitation);
+    await expect(
+      invoke(shellIpcChannels.permissionRespond, {
+        generation: 1,
+        actionId: 'permission-a',
+        allowOnce: true,
+      })
+    ).rejects.toThrow('unsupported fields');
+    await expect(
+      invoke(shellIpcChannels.elicitationRespond, {
+        generation: 1,
+        actionId: 'elicitation-a',
+        action: 'cancel',
+      })
+    ).rejects.toThrow('unsupported fields');
+  });
+
+  it('bounds, capability-gates, and relays domain requests through the main process', async () => {
+    const value = harness();
+    const snapshot = { generation: 3, input: { scope: 'neutral' } };
+    const action = {
+      generation: 3,
+      sessionId: 'session-a',
+      action: 'inspect',
+      input: { id: 'one' },
+    };
+    const confirmation = {
+      generation: 3,
+      sessionId: 'session-a',
+      actionId: 'confirm-a',
+      approve: false,
+    };
+
+    await value.invoke(shellIpcChannels.domainSnapshot, snapshot);
+    await value.invoke(shellIpcChannels.domainAction, action);
+    await value.invoke(shellIpcChannels.confirmationRespond, confirmation);
+    expect(value.operations.domainSnapshot).toHaveBeenCalledWith(snapshot);
+    expect(value.operations.domainAction).toHaveBeenCalledWith(action);
+    expect(value.operations.confirmationRespond).toHaveBeenCalledWith(confirmation);
+    await expect(
+      value.invoke(shellIpcChannels.domainAction, { ...action, extra: true })
+    ).rejects.toThrow('unsupported fields');
+    await expect(
+      value.invoke(shellIpcChannels.confirmationRespond, { ...confirmation, approve: 'yes' })
+    ).rejects.toThrow('approve must be boolean');
+
+    value.registration.dispose();
+    const registration = registerShellIpc({
+      ipcMain: value.ipcMain,
+      renderer: value.renderer,
+      operations: value.operations,
+      allowedExternalOrigins: new Set(),
+      declaredCapabilities: new Set(['domain.snapshot']),
+    });
+    await expect(value.invoke(shellIpcChannels.domainSnapshot, snapshot)).resolves.toMatchObject({
+      domainId: 'neutral-fixture',
+    });
+    await expect(value.invoke(shellIpcChannels.domainAction, action)).rejects.toThrow(
+      'did not declare domain.action'
+    );
+    await expect(value.invoke(shellIpcChannels.confirmationRespond, confirmation)).rejects.toThrow(
+      'did not declare confirmation.respond'
+    );
+    registration.dispose();
   });
 
   it('validates handoff shape and enforces the total payload ceiling', async () => {

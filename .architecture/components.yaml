@@ -81,3 +81,35 @@ components:
       - constrain the Run Steward to an explicit non-editing capability profile
     notes:
       - Tagteam transport adapters implement the workflow client port; transport DTOs do not become session or UI domain types
+
+  - id: shell.consumer_composition
+    owners: [core_maintainers]
+    paths:
+      - ui/desktop/scripts
+      - ui/desktop/forge.config.ts
+      - ui/desktop/vite.shell.renderer.config.mts
+    responsibilities:
+      - resolve trusted consumer manifests and renderer entries
+      - keep Electron host main and preload entries immutable across consumers
+      - reject consumer-supplied privilege, process, and path authority
+
+  - id: shell.application_runtime
+    owners: [core_maintainers]
+    paths:
+      - ui/desktop/src/shell
+    responsibilities:
+      - own the authenticated ACP connection in Electron main
+      - expose only bounded application capabilities to consumer renderers
+      - fence session, prompt, and interaction lifecycle state
+
+  - id: shell.domain_adapter
+    owners: [core_maintainers]
+    paths:
+      - crates/gosling/src/acp/shell.rs
+      - crates/gosling/src/acp/server/shell_handlers.rs
+      - crates/gosling-cli/src/cli.rs
+      - crates/gosling-sdk-types/src/shell.rs
+    responsibilities:
+      - negotiate and supervise registered out-of-process domain adapters
+      - keep domain authorization and confirmation in the Rust server
+      - prevent descriptor-only domain capability from reaching ready state

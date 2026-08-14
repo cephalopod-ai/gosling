@@ -1,10 +1,17 @@
 import {
   GoslingClient,
+  type DomainActionConfirmRequest_unstable,
+  type DomainActionConfirmResponse_unstable,
+  type DomainActionRequest_unstable,
+  type DomainActionResponse_unstable,
+  type DomainSnapshotRequest_unstable,
+  type DomainSnapshotResponse_unstable,
   type GetSessionInfoResponse_unstable,
   type GoslingClientCallbacks,
   type ShellHandoffPrepareRequest_unstable,
   type ShellHandoffPrepareResponse_unstable,
   type ShellProvisioningReadResponse_unstable,
+  type ShellProvisioningValidateRequest_unstable,
   type ShellProvisioningValidateResponse_unstable,
 } from '@repo-makeover/gosling-sdk';
 import {
@@ -20,6 +27,7 @@ import {
   checkShellCompatibility,
   checkShellMethods,
   type ShellCompatibilityResult,
+  type ShellRuntimeMetadata,
 } from './compatibility';
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
 
@@ -28,6 +36,7 @@ const ACP_INITIALIZE_TIMEOUT_MS = 10_000;
 export interface ShellSession {
   sessionId: string;
   workingDir: string;
+  resumeIntegrity?: 'clean' | 'uncertain';
 }
 
 export interface ShellAcpClient {
@@ -36,17 +45,28 @@ export interface ShellAcpClient {
   initialize(params: Parameters<GoslingClient['initialize']>[0]): Promise<InitializeResponse>;
   newSession(params: Parameters<GoslingClient['newSession']>[0]): Promise<NewSessionResponse>;
   loadSession(params: Parameters<GoslingClient['loadSession']>[0]): Promise<LoadSessionResponse>;
+  prompt(params: Parameters<GoslingClient['prompt']>[0]): ReturnType<GoslingClient['prompt']>;
+  cancel(params: Parameters<GoslingClient['cancel']>[0]): ReturnType<GoslingClient['cancel']>;
   gosling: {
     sessionInfo_unstable(params: { sessionId: string }): Promise<GetSessionInfoResponse_unstable>;
     shellProvisioningRead_unstable(
       params: Record<string, never>
     ): Promise<ShellProvisioningReadResponse_unstable>;
     shellProvisioningValidate_unstable(params: {
-      provisioning: ShellProvisioningReadResponse_unstable['provisioning'];
+      provisioning?: ShellProvisioningValidateRequest_unstable['provisioning'];
     }): Promise<ShellProvisioningValidateResponse_unstable>;
     shellHandoffPrepare_unstable(
       params: ShellHandoffPrepareRequest_unstable
     ): Promise<ShellHandoffPrepareResponse_unstable>;
+    shellDomainSnapshot_unstable(
+      params: DomainSnapshotRequest_unstable
+    ): Promise<DomainSnapshotResponse_unstable>;
+    shellDomainAction_unstable(
+      params: DomainActionRequest_unstable
+    ): Promise<DomainActionResponse_unstable>;
+    shellDomainActionConfirm_unstable(
+      params: DomainActionConfirmRequest_unstable
+    ): Promise<DomainActionConfirmResponse_unstable>;
   };
 }
 
@@ -55,17 +75,34 @@ export interface ShellAcpConnection {
   initializeResponse: InitializeResponse;
   provisioning: ShellProvisioningValidateResponse_unstable;
   compatibility: { compatible: true };
+  runtimeNamespace: string;
+  domainAdapter: ShellRuntimeMetadata['domainAdapter'];
   createSession(): Promise<ShellSession>;
   resumeSession(sessionId: string): Promise<ShellSession>;
+  prompt(input: { sessionId: string; text: string; messageId: string }): Promise<unknown>;
+  cancel(input: { sessionId: string }): Promise<void>;
   prepareHandoff(
     request: ShellHandoffPrepareRequest_unstable
   ): Promise<ShellHandoffPrepareResponse_unstable>;
+  domainSnapshot(input: DomainSnapshotRequest_unstable): Promise<DomainSnapshotResponse_unstable>;
+  domainAction(input: DomainActionRequest_unstable): Promise<DomainActionResponse_unstable>;
+  confirmDomainAction(
+    input: DomainActionConfirmRequest_unstable
+  ): Promise<DomainActionConfirmResponse_unstable>;
   closed: Promise<void>;
   close(): void;
 }
 
+export interface ShellProvisioningIssueSummary {
+  code: string;
+  path: string | null;
+}
+
 export class ShellCompatibilityError extends Error {
-  constructor(readonly result: Exclude<ShellCompatibilityResult, { compatible: true }>) {
+  constructor(
+    readonly result: Exclude<ShellCompatibilityResult, { compatible: true }>,
+    readonly provisioningIssues: ShellProvisioningIssueSummary[] = []
+  ) {
     super(result.code);
     this.name = 'ShellCompatibilityError';
   }
@@ -116,6 +153,7 @@ function clientCallbacks(): () => GoslingClientCallbacks {
     requestPermission: async () => ({ outcome: { outcome: 'cancelled' } }),
     unstable_createElicitation: async () => ({ action: 'decline' }),
     sessionUpdate: async () => {},
+    unstable_shellDomainStatus: async () => {},
   });
 }
 
@@ -140,7 +178,9 @@ function withTimeout<T>(
 
 function readShellMetadata(response: InitializeResponse): {
   identity: { id: string; displayName: string; version: string };
+  runtimeNamespace: string;
   availableMethods: string[];
+  domainAdapter: ShellRuntimeMetadata['domainAdapter'];
 } {
   const value = response.agentCapabilities?._meta?.goslingShell;
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -155,7 +195,8 @@ function readShellMetadata(response: InitializeResponse): {
   if (
     typeof fixed.id !== 'string' ||
     typeof fixed.displayName !== 'string' ||
-    typeof fixed.version !== 'string'
+    typeof fixed.version !== 'string' ||
+    typeof fixed.runtimeNamespace !== 'string'
   ) {
     throw new Error('ACP shell metadata returned invalid identity');
   }
@@ -165,9 +206,41 @@ function readShellMetadata(response: InitializeResponse): {
   ) {
     throw new Error('ACP shell metadata omitted available methods');
   }
+  const domainAdapter = metadata.domainAdapter;
+  let parsedDomainAdapter: ShellRuntimeMetadata['domainAdapter'] = null;
+  if (domainAdapter !== null && domainAdapter !== undefined) {
+    if (typeof domainAdapter !== 'object' || Array.isArray(domainAdapter)) {
+      throw new Error('ACP shell metadata returned invalid domain adapter');
+    }
+    const adapter = domainAdapter as Record<string, unknown>;
+    if (
+      typeof adapter.domainId !== 'string' ||
+      typeof adapter.protocolVersion !== 'string' ||
+      !Array.isArray(adapter.actions)
+    ) {
+      throw new Error('ACP shell metadata returned invalid domain adapter');
+    }
+    const actions = adapter.actions.map((action) => {
+      if (typeof action !== 'object' || action === null || Array.isArray(action)) {
+        throw new Error('ACP shell metadata returned invalid domain adapter action');
+      }
+      const name = (action as Record<string, unknown>).name;
+      if (typeof name !== 'string') {
+        throw new Error('ACP shell metadata returned invalid domain adapter action');
+      }
+      return name;
+    });
+    parsedDomainAdapter = {
+      descriptorId: adapter.domainId,
+      protocolVersion: adapter.protocolVersion,
+      actions: actions.sort(),
+    };
+  }
   return {
     identity: { id: fixed.id, displayName: fixed.displayName, version: fixed.version },
+    runtimeNamespace: fixed.runtimeNamespace,
     availableMethods: [...metadata.availableMethods],
+    domainAdapter: parsedDomainAdapter,
   };
 }
 
@@ -179,10 +252,63 @@ function agentVersion(response: InitializeResponse): string {
   return version;
 }
 
+function resumeIntegrity(info: GetSessionInfoResponse_unstable): 'clean' | 'uncertain' {
+  const meta = info.session._meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return 'uncertain';
+  const gosling = (meta as Record<string, unknown>).gosling;
+  if (!gosling || typeof gosling !== 'object' || Array.isArray(gosling)) return 'uncertain';
+  return (gosling as Record<string, unknown>).resumeIntegrity === 'clean' ? 'clean' : 'uncertain';
+}
+
+function readRuntimeNamespace(identity: unknown): string {
+  if (!identity || typeof identity !== 'object' || Array.isArray(identity)) {
+    throw new Error('ACP shell provisioning returned invalid identity');
+  }
+  const runtimeNamespace = (identity as Record<string, unknown>).runtimeNamespace;
+  if (typeof runtimeNamespace !== 'string' || runtimeNamespace.length === 0) {
+    throw new Error('ACP shell provisioning omitted runtime namespace');
+  }
+  return runtimeNamespace;
+}
+
+const SAFE_PROVISIONING_PATH = /^[A-Za-z][A-Za-z0-9.]{0,255}$/;
+
+export function provisioningIssueSummaries(value: unknown): ShellProvisioningIssueSummary[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 128).flatMap((issue) => {
+    if (!issue || typeof issue !== 'object' || Array.isArray(issue)) return [];
+    const record = issue as Record<string, unknown>;
+    if (typeof record.code !== 'string' || record.code.length === 0 || record.code.length > 256) {
+      return [];
+    }
+    return [
+      {
+        code: record.code,
+        path:
+          typeof record.path === 'string' && SAFE_PROVISIONING_PATH.test(record.path)
+            ? record.path
+            : null,
+      },
+    ];
+  });
+}
+
 function assertSessionCapabilities(response: InitializeResponse): void {
   if (response.agentCapabilities?.loadSession !== true) {
     throw new Error('ACP initialization omitted the required load-session capability');
   }
+}
+
+function requiredMethods(
+  manifest: ShellBuildManifest,
+  profile: ResolvedShellProductProfile
+): string[] {
+  return [
+    ...new Set([
+      ...profile.compatibility.requiredMethods,
+      ...(manifest.consumer?.requiredMethods ?? []),
+    ]),
+  ].sort();
 }
 
 function assertSessionId(sessionId: string): string {
@@ -218,18 +344,22 @@ export async function connectShellAcp(input: {
   workingDir: string;
   clientName: string;
   clientVersion: string;
+  callbacks?: () => GoslingClientCallbacks;
   dependencies?: ShellAcpRuntimeDependencies;
 }): Promise<ShellAcpConnection> {
   const dependencies = input.dependencies ?? defaultDependencies;
   const workingDir = assertAbsoluteWorkingDir(input.workingDir);
   const stream = dependencies.createStream(assertAuthenticatedLoopbackUrl(input.acpUrl));
-  const client = dependencies.createClient(clientCallbacks(), stream);
+  const client = dependencies.createClient(input.callbacks ?? clientCallbacks(), stream);
 
   try {
     const initializeResponse = await withTimeout(
       client.initialize({
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: {},
+        clientCapabilities: {
+          elicitation: { form: {} },
+          _meta: { gosling: { customNotifications: true } },
+        },
         clientInfo: { name: input.clientName, version: input.clientVersion },
       }),
       ACP_INITIALIZE_TIMEOUT_MS,
@@ -238,38 +368,44 @@ export async function connectShellAcp(input: {
     const metadata = readShellMetadata(initializeResponse);
     assertSessionCapabilities(initializeResponse);
     const methodCompatibility = checkShellMethods(
-      input.profile.compatibility.requiredMethods,
+      requiredMethods(input.manifest, input.profile),
       metadata.availableMethods
     );
     if (!methodCompatibility.compatible) {
       throw new ShellCompatibilityError(methodCompatibility);
     }
     const read = await client.gosling.shellProvisioningRead_unstable({});
-    const validation = await client.gosling.shellProvisioningValidate_unstable({
-      provisioning: read.provisioning,
-    });
+    const validation = await client.gosling.shellProvisioningValidate_unstable({});
     const compatibility = checkShellCompatibility({
       profile: input.profile,
       manifest: input.manifest,
       runtime: {
         identity: metadata.identity,
+        runtimeNamespace: metadata.runtimeNamespace,
         coreVersion: agentVersion(initializeResponse),
         availableMethods: metadata.availableMethods,
+        domainAdapter: metadata.domainAdapter,
       },
       provisioning: {
         schemaVersion: validation.provisioning.schemaVersion,
         identity: validation.provisioning.identity,
+        runtimeNamespace: readRuntimeNamespace(validation.provisioning.identity),
         valid: read.validation.valid && validation.validation.valid,
       },
     });
     if (!compatibility.compatible) {
-      throw new ShellCompatibilityError(compatibility);
+      throw new ShellCompatibilityError(
+        compatibility,
+        provisioningIssueSummaries(validation.validation.issues)
+      );
     }
     return {
       client,
       initializeResponse,
       provisioning: validation,
       compatibility,
+      runtimeNamespace: metadata.runtimeNamespace,
+      domainAdapter: metadata.domainAdapter,
       createSession: async () => {
         const created = await client.newSession({
           cwd: workingDir,
@@ -281,7 +417,10 @@ export async function connectShellAcp(input: {
       resumeSession: async (sessionId) => {
         const fixedSessionId = assertSessionId(sessionId);
         const info = await client.gosling.sessionInfo_unstable({ sessionId: fixedSessionId });
-        const session = asShellSession(String(info.session.sessionId), info.session.cwd);
+        const session = {
+          ...asShellSession(String(info.session.sessionId), info.session.cwd),
+          resumeIntegrity: resumeIntegrity(info),
+        };
         if (session.sessionId !== fixedSessionId) {
           throw new Error('session info returned a different sessionId');
         }
@@ -293,7 +432,17 @@ export async function connectShellAcp(input: {
         });
         return session;
       },
+      prompt: ({ sessionId, text, messageId }) =>
+        client.prompt({
+          sessionId: assertSessionId(sessionId),
+          messageId,
+          prompt: [{ type: 'text', text }],
+        }),
+      cancel: ({ sessionId }) => client.cancel({ sessionId: assertSessionId(sessionId) }),
       prepareHandoff: (request) => client.gosling.shellHandoffPrepare_unstable(request),
+      domainSnapshot: (request) => client.gosling.shellDomainSnapshot_unstable(request),
+      domainAction: (request) => client.gosling.shellDomainAction_unstable(request),
+      confirmDomainAction: (request) => client.gosling.shellDomainActionConfirm_unstable(request),
       closed: client.closed,
       close: () => stream.close(),
     };

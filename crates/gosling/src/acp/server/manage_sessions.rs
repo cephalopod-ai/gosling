@@ -412,9 +412,22 @@ impl GoslingAcpAgent {
                     .data(format!("Session not found: {}", session_id))
             })?;
 
-        Ok(GetSessionInfoResponse {
-            session: build_session_info(session),
-        })
+        let resume_integrity = if AcpPromptRunState::from_extension_data(&session.extension_data)
+            .is_some_and(|state| state.has_terminal_outcome())
+        {
+            "clean"
+        } else {
+            "uncertain"
+        };
+        let mut info = build_session_info(session);
+        let mut meta = info.meta.take().unwrap_or_default();
+        meta.insert(
+            "gosling".to_string(),
+            serde_json::json!({ "resumeIntegrity": resume_integrity }),
+        );
+        info.meta = Some(meta);
+
+        Ok(GetSessionInfoResponse { session: info })
     }
 
     pub(super) async fn on_record_session_model_switch(

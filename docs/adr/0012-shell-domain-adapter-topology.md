@@ -1,8 +1,8 @@
 # ADR-0012: Domain adapter lifecycle, transport, and authority
 
 Date: 2026-08-13
-Status: proposed — pending operator acceptance (R1 architecture review; see
-`pre-gui-backend-implementation-plan.md` PG-13 and `project-shell-readiness-plan.md` §4.2)
+Status: accepted — R1 operator authorization recorded 2026-08-13; see
+`pre-gui-backend-implementation-plan.md` PG-13 and `project-shell-readiness-plan.md` §4.2
 Requirements affected: SHP-REQ-002, SHP-REQ-006, SHP-REQ-007, SHP-REQ-010, SHP-REQ-018,
 SHP-REQ-036, SHP-REQ-042
 
@@ -49,7 +49,7 @@ Specifically:
   - `snapshot(input)` — matches `DomainSnapshotRequest`, returns the shape of `DomainSnapshotResponse`
     (`crates/gosling-sdk-types/src/shell.rs:204-217`).
   - `action(action, input)` — an **adapter-facing** request shape, deliberately narrower than the
-    canonical `DomainActionRequest`: it has no `confirmation_token` field at all, because no token ever
+    canonical `DomainActionRequest`: it has no confirmation field at all, because no token ever
     reaches this hop. For a `read` action the server calls `action` directly. For a `mutate` action the
     server never calls `action` until its internal confirm/approve step (§ "Authority" below) succeeds
     — the confirmation token, where one exists, is minted and consumed entirely inside that internal
@@ -84,22 +84,20 @@ Specifically:
   fixture prove this path, `DomainAdapter` is an unfulfilled internal seam, not a supported consumer
   capability."
 - **Authority.** `domain_snapshot` stays read-only, unchanged from today's shape. `perform_action` for
-  a `mutate` action first returns `CONFIRMATION_REQUIRED` plus a `confirm` interaction ID rather than
+  a `mutate` action first returns a bounded `confirmationActionId` rather than
   executing; the server retains the pending `action`/`input` alongside that interaction record so
   nothing needs to be resupplied later. Approval is handled entirely **inside the Rust server** through
   a **new, distinct custom ACP method**, `_gosling/unstable/shell/domain/action/confirm`
-  (`DomainActionConfirmRequest { action_id, approve: bool } → DomainActionConfirmResponse { status:
+  (`DomainActionConfirmRequest { session_id, generation, action_id, approve: bool } → DomainActionConfirmResponse { status:
   approved|denied, result: Option<DomainActionResponse> }`), not by overloading
   `perform_domain_action`/`DomainActionRequest` — that request shape has no field for an interaction's
   opaque `action_id` or an approve/deny decision, so reusing it would leave `confirmation.respond`
-  uncallable. On approval, the server mints and immediately consumes an
-  **action-bound, single-use confirmation token internally**, executes the retained pending action,
-  and returns the resulting `DomainActionResponse` shape inline as
+  uncallable. On approval, the server atomically consumes the retained pending action keyed by the
+  opaque action ID, executes it, and returns the resulting `DomainActionResponse` shape inline as
   `DomainActionConfirmResponse.result` — in the *same* response, with no second
-  `perform_domain_action` round trip. The token itself never appears on any wire DTO and never reaches
-  Electron main, the renderer, or the adapter process; `DomainActionRequest.confirmation_token`
-  (`crates/gosling-sdk-types/src/shell.rs:229-230`) is unused by this flow and remains present only for
-  API compatibility with a hypothetical future direct caller. Electron main's role is strictly to
+  `perform_domain_action` round trip. No confirmation token appears on any wire DTO or reaches
+  Electron main, the renderer, or the adapter process. `DomainActionRequest` carries the required
+  `session_id` and `generation` fences but no confirmation token or approval field. Electron main's role is strictly to
   relay `confirmation.respond` to the server and relay `DomainActionConfirmResponse` back to the
   renderer unmodified — it is not a second authority for anything in this flow. Replayed, expired,
   cross-action, cross-session, or cross-generation confirm interactions fail closed. Electron main and

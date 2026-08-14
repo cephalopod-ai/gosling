@@ -151,6 +151,9 @@ const TLS_FINGERPRINT_TIMEOUT_MS = 5000;
 const CHILD_SHUTDOWN_GRACE_MS = 5000;
 const CHILD_SHUTDOWN_DEADLINE_MS = 10000;
 
+const isMissingProcessError = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH';
+
 const normalizeFingerprint = (fingerprint: string): string =>
   fingerprint.replace(/[^a-fA-F0-9]/g, '').toUpperCase();
 
@@ -458,9 +461,7 @@ export const startGoslingServe = async ({
           shell.version ?? '1',
           '--shell-runtime-namespace',
           shell.runtimeNamespace ?? shell.id,
-          ...(shell.provisioningPath
-            ? ['--shell-provisioning', shell.provisioningPath]
-            : []),
+          ...(shell.provisioningPath ? ['--shell-provisioning', shell.provisioningPath] : []),
         ]
       : []),
     // The packaged renderer is served from file://, so its WebSocket upgrades
@@ -490,7 +491,7 @@ export const startGoslingServe = async ({
     env: buildGoslingServeEnv(secretKey, goslingPath, additionalEnv),
     cwd: workingDir,
     windowsHide: true,
-    detached: process.platform === 'win32',
+    detached: true,
     shell: false as const,
     stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
   };
@@ -651,19 +652,47 @@ export const startGoslingServe = async ({
           goslingProcess.off('close', onClose);
           resolve(didClose);
         };
-        const onClose = () => finish(true);
+        const signalBackendTree = (signal: NodeJS.Signals) => {
+          if (process.platform === 'win32') {
+            if (goslingProcess.pid) {
+              spawn('taskkill', ['/pid', goslingProcess.pid.toString(), '/f', '/t']);
+            }
+            return;
+          }
+
+          if (goslingProcess.pid) {
+            try {
+              process.kill(-goslingProcess.pid, signal);
+              return;
+            } catch (error) {
+              if (isMissingProcessError(error)) {
+                return;
+              }
+              logger.error('Error while signalling gosling serve process group:', error);
+            }
+          }
+
+          goslingProcess.kill(signal);
+        };
+
+        const onClose = () => {
+          if (process.platform !== 'win32') {
+            try {
+              signalBackendTree('SIGKILL');
+            } catch (error) {
+              if (!isMissingProcessError(error)) {
+                logger.error('Error while reaping the gosling serve process group:', error);
+              }
+            }
+          }
+          finish(true);
+        };
 
         goslingProcess.once('close', onClose);
 
         logger.info('Terminating gosling serve');
         try {
-          if (process.platform === 'win32') {
-            if (goslingProcess.pid) {
-              spawn('taskkill', ['/pid', goslingProcess.pid.toString(), '/f', '/t']);
-            }
-          } else {
-            goslingProcess.kill('SIGTERM');
-          }
+          signalBackendTree('SIGTERM');
         } catch (error) {
           logger.error('Error while terminating gosling serve process:', error);
         }
@@ -672,7 +701,7 @@ export const startGoslingServe = async ({
           forceKillTimer = setTimeout(() => {
             if (!exited) {
               try {
-                goslingProcess.kill('SIGKILL');
+                signalBackendTree('SIGKILL');
               } catch (error) {
                 logger.error('Error while force-killing gosling serve process:', error);
               }

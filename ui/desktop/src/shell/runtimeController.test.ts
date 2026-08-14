@@ -59,7 +59,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function harness() {
+function harness(withAdapter = false) {
   let tick = 0;
   const processes: EventEmitter[] = [];
   const cleanups: Array<ReturnType<typeof vi.fn>> = [];
@@ -96,6 +96,20 @@ function harness() {
         validation: { valid: true },
       },
       compatibility: { compatible: true as const },
+      runtimeNamespace: product.runtimeNamespace,
+      domainAdapter: withAdapter
+        ? {
+            descriptorId: 'neutral-fixture',
+            protocolVersion: '1.0.0',
+            actions: ['inspect', 'toggle'],
+          }
+        : null,
+      createSession: vi
+        .fn()
+        .mockResolvedValue({ sessionId: 'session-a', workingDir: '/workspace' }),
+      resumeSession: vi.fn(),
+      prompt: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
+      cancel: vi.fn().mockResolvedValue(undefined),
       prepareHandoff: vi.fn(),
       closed: new Promise<void>(() => {}),
       close,
@@ -172,6 +186,11 @@ describe('shell runtime controller', () => {
     expect((await startup.controller.start()).name).toBe('offline');
     expect(startup.controller.read().reasonCode).toBe('STARTUP_FAILED');
 
+    const adapterMismatch = harness();
+    adapterMismatch.createHost.mockRejectedValueOnce(new Error('ADAPTER_DESCRIPTOR_MISMATCH'));
+    expect((await adapterMismatch.controller.start()).name).toBe('incompatible');
+    expect(adapterMismatch.controller.read().reasonCode).toBe('ADAPTER_DESCRIPTOR_MISMATCH');
+
     const compatibility = harness();
     compatibility.connectAcp.mockRejectedValueOnce(
       new ShellCompatibilityError({
@@ -183,6 +202,175 @@ describe('shell runtime controller', () => {
     );
     expect((await compatibility.controller.start()).name).toBe('incompatible');
     expect(compatibility.cleanups[0]).toHaveBeenCalledOnce();
+
+    const relink = harness();
+    relink.connectAcp.mockRejectedValueOnce(
+      new ShellCompatibilityError(
+        {
+          compatible: false,
+          code: 'PROVISIONING_INVALID',
+          expected: true,
+          actual: false,
+        },
+        [{ code: 'credential_profile_unavailable', path: 'session.credentialProfileId' }]
+      )
+    );
+    expect((await relink.controller.start()).name).toBe('relink_required');
+    expect(relink.controller.read().provisioningIssues).toEqual([
+      { code: 'credential_profile_unavailable', path: 'session.credentialProfileId' },
+    ]);
+  });
+
+  it('creates one application session only through the compatible main-owned ACP connection', async () => {
+    const value = harness();
+    await value.controller.start();
+    const sessions = value.controller.getSessionController();
+    expect(sessions).not.toBeNull();
+    await expect(sessions!.create(1)).resolves.toMatchObject({
+      sessionId: 'session-a',
+      status: 'active',
+    });
+    const connection = value.connections[0] as unknown as {
+      createSession: ReturnType<typeof vi.fn>;
+      prompt: ReturnType<typeof vi.fn>;
+    };
+    expect(connection.createSession).toHaveBeenCalledOnce();
+    const attempt = sessions!.submit({ generation: 1, sessionId: 'session-a', text: 'hello' });
+    expect(connection.prompt).toHaveBeenCalledWith({
+      sessionId: 'session-a',
+      text: 'hello',
+      messageId: attempt.promptAttemptId,
+    });
+    await value.controller.stop(1);
+    expect(value.controller.getSessionController()).toBeNull();
+  });
+
+  it('projects ACP updates only through the active main-owned session', async () => {
+    const value = harness();
+    const updates: unknown[] = [];
+    value.controller.onSessionUpdated((update) => updates.push(update));
+    await value.controller.start();
+    const sessions = value.controller.getSessionController()!;
+    await sessions.create(1);
+    sessions.submit({ generation: 1, sessionId: 'session-a', text: 'hello' });
+
+    const connectCalls = value.connectAcp.mock.calls as unknown as Array<
+      [{ callbacks: () => { sessionUpdate(notification: unknown): Promise<void> } }]
+    >;
+    const callbacks = connectCalls[0]![0].callbacks();
+    await callbacks.sessionUpdate({
+      sessionId: 'session-a',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'message-a',
+        content: { type: 'text', text: 'response' },
+        _meta: { private: 'discarded' },
+      },
+    } as never);
+    await callbacks.sessionUpdate({
+      sessionId: 'other',
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ignored' } },
+    } as never);
+
+    expect(updates.slice(0, 2)).toEqual([
+      expect.objectContaining({ kind: 'started', updateSeq: 1 }),
+      expect.objectContaining({
+        kind: 'stream',
+        updateSeq: 2,
+        stream: { type: 'content', role: 'assistant', messageId: 'message-a', text: 'response' },
+      }),
+    ]);
+  });
+
+  it('maps prompt activity to a production busy-to-ready lifecycle transition', async () => {
+    const value = harness();
+    const observed: string[] = [];
+    value.controller.onChanged((state) => observed.push(state.name));
+    await value.controller.start();
+    const sessions = value.controller.getSessionController()!;
+    await sessions.create(1);
+    sessions.submit({ generation: 1, sessionId: 'session-a', text: 'hello' });
+    await vi.waitFor(() => expect(value.controller.read().name).toBe('ready'));
+    expect(observed).toContain('busy');
+    expect(observed[observed.length - 1]).toBe('ready');
+  });
+
+  it('returns a safe verified snapshot with active session and pending interaction facts', async () => {
+    const value = harness();
+    await value.controller.start();
+    expect(value.controller.read()).toMatchObject({
+      lifecycleState: 'ready',
+      identity: { id: product.id, displayName: product.displayName, version: product.version },
+      runtimeNamespace: product.runtimeNamespace,
+      compatibility: { status: 'compatible' },
+      session: null,
+      adapter: null,
+      pendingInteractions: [],
+    });
+    await value.controller.getSessionController()!.create(1);
+    const connectCalls = value.connectAcp.mock.calls as unknown as Array<
+      [{ callbacks: () => { requestPermission(request: unknown): Promise<unknown> } }]
+    >;
+    const callbacks = connectCalls[0]![0].callbacks();
+    const pending = callbacks.requestPermission({
+      sessionId: 'session-a',
+      toolCall: { toolCallId: 'tool-a', title: 'Read source', kind: 'read', status: 'pending' },
+      options: [
+        { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+      ],
+    });
+    expect(value.controller.read()).toMatchObject({
+      session: { sessionId: 'session-a', status: 'active' },
+      pendingInteractions: [
+        {
+          kind: 'permission',
+          generation: 1,
+          expiresAtGeneration: 1,
+          sessionId: 'session-a',
+          summary: { toolTitle: 'Read source', allowOnce: true, deny: true },
+        },
+      ],
+    });
+    const actionId = value.controller.read().pendingInteractions[0]!.actionId;
+    value.controller
+      .getInteractionController()!
+      .respondPermission({ actionId, generation: 1, sessionId: 'session-a', allowOnce: false });
+    await expect(pending).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } });
+    expect(value.controller.read().pendingInteractions).toEqual([]);
+    await expect(
+      callbacks.requestPermission({
+        sessionId: 'foreign-session',
+        toolCall: { toolCallId: 'tool-b', title: 'Foreign', kind: 'read', status: 'pending' },
+        options: [],
+      })
+    ).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(value.controller.read().pendingInteractions).toEqual([]);
+  });
+
+  it('projects server-owned adapter status changes without exposing adapter authority', async () => {
+    const value = harness(true);
+    const observed: unknown[] = [];
+    value.controller.onChanged((state) => observed.push(state.adapter));
+    await value.controller.start();
+    const connectCalls = value.connectAcp.mock.calls as unknown as Array<
+      [
+        {
+          callbacks: () => {
+            unstable_shellDomainStatus(notification: { status: 'crashed' }): Promise<void>;
+          };
+        },
+      ]
+    >;
+    await connectCalls[0]![0].callbacks().unstable_shellDomainStatus({ status: 'crashed' });
+
+    expect(value.controller.read().adapter).toEqual({
+      descriptorId: 'neutral-fixture',
+      protocolVersion: '1.0.0',
+      actions: ['inspect', 'toggle'],
+      status: 'crashed',
+    });
+    expect(observed).not.toContainEqual(expect.objectContaining({ transport: expect.anything() }));
   });
 
   it('retries recoverable failures only after cleanup with fresh generation and secret', async () => {
@@ -231,6 +419,14 @@ describe('shell runtime controller', () => {
     expect(stopped.controller.read().name).toBe('stopped');
   });
 
+  it('enters fatal when owned backend cleanup fails', async () => {
+    const value = harness();
+    await value.controller.start();
+    value.cleanups[0].mockRejectedValueOnce(new Error('cleanup failed'));
+    await value.controller.stop(1);
+    expect(value.controller.read()).toMatchObject({ name: 'fatal', reasonCode: 'CLEANUP_FAILED' });
+  });
+
   it('cleans a live child when ACP transport closes unexpectedly', async () => {
     const value = harness();
     const transport = deferred<void>();
@@ -243,6 +439,7 @@ describe('shell runtime controller', () => {
           validation: { valid: true },
         },
         compatibility: { compatible: true as const },
+        runtimeNamespace: product.runtimeNamespace,
         prepareHandoff: vi.fn(),
         closed: transport.promise,
         close: vi.fn(),

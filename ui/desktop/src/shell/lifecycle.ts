@@ -36,7 +36,7 @@ export interface ShellLifecycleResult {
 }
 
 const transitions: Record<ShellLifecycleStateName, ReadonlySet<ShellLifecycleStateName>> = {
-  booting: new Set(['validating', 'offline', 'stopping', 'fatal']),
+  booting: new Set(['validating', 'incompatible', 'offline', 'stopping', 'fatal']),
   validating: new Set([
     'ready',
     'degraded',

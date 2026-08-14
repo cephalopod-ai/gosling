@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "consumerId": "shell-consumer-b",
+  "requiredShellKit": "current",
+  "productProfilePath": "fixtures/shell-products/fixture-b/product-profile.json",
+  "rendererEntry": "renderer.ts",
+  "declaredCapabilities": [
+    "confirmation.respond",
+    "domain.action",
+    "domain.snapshot"
+  ],
+  "domainAdapter": {
+    "descriptorId": "neutral-fixture",
+    "protocolVersion": "1.0.0",
+    "actions": ["inspect", "toggle"]
+  }
+}

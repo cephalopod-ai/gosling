@@ -1,8 +1,15 @@
 import { randomBytes } from 'node:crypto';
+import type { DomainStatusNotification_unstable } from '@repo-makeover/gosling-sdk';
 import type { GoslingServeStartupDiagnostics } from '../startupDiagnostics';
 import type { MinimalShellHostOptions, MinimalShellHostRuntime } from '../shellHost';
 import { createMinimalShellHost } from '../shellHost';
-import { connectShellAcp, ShellCompatibilityError, type ShellAcpConnection } from './acpRuntime';
+import {
+  connectShellAcp,
+  provisioningIssueSummaries,
+  ShellCompatibilityError,
+  type ShellAcpConnection,
+  type ShellProvisioningIssueSummary,
+} from './acpRuntime';
 import {
   initialShellLifecycle,
   transitionShellLifecycle,
@@ -10,6 +17,17 @@ import {
   type ShellLifecycleStateName,
 } from './lifecycle';
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
+import {
+  createShellSessionController,
+  type ShellSessionController,
+  type ShellSessionUpdate,
+} from './sessionController';
+import {
+  createShellInteractionController,
+  type ShellInteraction,
+  type ShellInteractionController,
+} from './interactionController';
+import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 
 interface BackendProcessEvents {
   once(event: 'exit', listener: (code: number | null, signal: string | null) => void): unknown;
@@ -39,12 +57,16 @@ export interface ShellRuntimeControllerOptions {
 }
 
 export interface ShellRuntimeController {
-  read(): ShellLifecycleState;
+  read(): ShellRuntimeSnapshot;
   start(): Promise<ShellLifecycleState>;
   retry(expectedGeneration: number): Promise<ShellLifecycleState>;
   stop(expectedGeneration: number): Promise<ShellLifecycleState>;
-  onChanged(listener: (state: ShellLifecycleState) => void): () => void;
+  onChanged(listener: (state: ShellRuntimeSnapshot) => void): () => void;
+  onSessionUpdated(listener: (update: ShellSessionUpdate) => void): () => void;
+  onInteractionRequested(listener: (interaction: ShellInteraction) => void): () => void;
   getAcp(): ShellAcpConnection | null;
+  getSessionController(): ShellSessionController | null;
+  getInteractionController(): ShellInteractionController | null;
   getStartupDiagnostics(): GoslingServeStartupDiagnostics | null;
   getExitDetails(): { code: number | null; signal: string | null } | null;
 }
@@ -58,7 +80,19 @@ const defaultDependencies: ShellRuntimeControllerDependencies = {
 
 function startupFailureName(error: unknown): ShellLifecycleStateName {
   if (error instanceof ShellCompatibilityError) {
-    return error.result.code === 'PROVISIONING_INVALID' ? 'degraded' : 'incompatible';
+    if (error.result.code !== 'PROVISIONING_INVALID') return 'incompatible';
+    return error.provisioningIssues.some((issue) =>
+      [
+        'missing_credential_profile',
+        'credential_profile_unavailable',
+        'credential_provider_mismatch',
+      ].includes(issue.code)
+    )
+      ? 'relink_required'
+      : 'degraded';
+  }
+  if (startupFailureCode(error) === 'ADAPTER_DESCRIPTOR_MISMATCH') {
+    return 'incompatible';
   }
   return 'offline';
 }
@@ -66,6 +100,9 @@ function startupFailureName(error: unknown): ShellLifecycleStateName {
 function startupFailureCode(error: unknown): string {
   if (error instanceof ShellCompatibilityError) {
     return error.result.code;
+  }
+  if (error instanceof Error && error.message.includes('ADAPTER_DESCRIPTOR_MISMATCH')) {
+    return 'ADAPTER_DESCRIPTOR_MISMATCH';
   }
   return 'STARTUP_FAILED';
 }
@@ -79,20 +116,58 @@ export function createShellRuntimeController(
   let host: MinimalShellHostRuntime | null = null;
   let latestStartupDiagnostics: GoslingServeStartupDiagnostics | null = null;
   let latestExitDetails: { code: number | null; signal: string | null } | null = null;
+  let provisioningIssues: ShellProvisioningIssueSummary[] = [];
   let acp: ShellAcpConnection | null = null;
+  let sessions: ShellSessionController | null = null;
+  let interactions: ShellInteractionController | null = null;
+  let adapterStatus: NonNullable<ShellRuntimeSnapshot['adapter']>['status'] | null = null;
   let startPromise: Promise<ShellLifecycleState> | null = null;
   let stopPromise: Promise<ShellLifecycleState> | null = null;
   let expectedExit = false;
   let exitListener: ((code: number | null, signal: string | null) => void) | null = null;
-  const listeners = new Set<(state: ShellLifecycleState) => void>();
+  const listeners = new Set<(state: ShellRuntimeSnapshot) => void>();
+  const sessionListeners = new Set<(update: ShellSessionUpdate) => void>();
+  const interactionListeners = new Set<(interaction: ShellInteraction) => void>();
 
   const stateName = (): ShellLifecycleStateName => state.name;
 
+  const snapshot = (): ShellRuntimeSnapshot => {
+    const session = sessions?.read() ?? null;
+    return {
+      ...state,
+      lifecycleState: state.name,
+      identity: acp
+        ? {
+            id: options.profile.product.id,
+            displayName: options.profile.product.displayName,
+            version: options.profile.product.version,
+          }
+        : null,
+      runtimeNamespace: acp?.runtimeNamespace ?? null,
+      compatibility: {
+        status: acp ? 'compatible' : state.name === 'incompatible' ? 'incompatible' : 'unverified',
+      },
+      provisioningIssues: provisioningIssues.map((issue) => ({ ...issue })),
+      session: session?.status === 'none' ? null : session,
+      adapter: acp?.domainAdapter
+        ? {
+            ...acp.domainAdapter,
+            status: adapterStatus ?? 'ready',
+          }
+        : null,
+      pendingInteractions: interactions?.read() ?? [],
+    };
+  };
+
+  const notify = () => {
+    for (const listener of listeners) {
+      listener(snapshot());
+    }
+  };
+
   const publish = (next: ShellLifecycleState) => {
     state = next;
-    for (const listener of listeners) {
-      listener(state);
-    }
+    notify();
   };
 
   const transition = (name: ShellLifecycleStateName, reasonCode?: string) => {
@@ -103,6 +178,9 @@ export function createShellRuntimeController(
       ...(reasonCode ? { reasonCode } : {}),
     });
     if (!result.accepted) {
+      host?.backend.recordStartupEvent('shell_lifecycle_transition_rejected', {
+        code: result.stale ? 'STALE_LIFECYCLE_EVENT' : 'ILLEGAL_LIFECYCLE_EVENT',
+      });
       return false;
     }
     publish(result.state);
@@ -118,6 +196,10 @@ export function createShellRuntimeController(
 
   const clearRuntime = async () => {
     detachExitListener();
+    interactions?.clear();
+    interactions = null;
+    sessions?.close();
+    sessions = null;
     acp?.close();
     acp = null;
     const currentHost = host;
@@ -131,17 +213,26 @@ export function createShellRuntimeController(
     if (expectedExit || eventGeneration !== generation || state.name === 'stopped') {
       return;
     }
+    transition('offline', 'BACKEND_EXITED');
     acp?.close();
     acp = null;
+    interactions?.clear();
+    interactions = null;
+    sessions?.close('failed');
+    sessions = null;
     const failedHost = host;
     detachExitListener();
-    transition('offline', 'BACKEND_EXITED');
     if (failedHost) {
-      void failedHost.backend.cleanup().finally(() => {
-        if (host === failedHost) {
-          host = null;
-        }
-      });
+      void failedHost.backend
+        .cleanup()
+        .finally(() => {
+          if (host === failedHost) host = null;
+        })
+        .catch(() => {
+          if (eventGeneration === generation && state.name === 'offline') {
+            transition('fatal', 'CLEANUP_FAILED');
+          }
+        });
     }
   };
 
@@ -155,6 +246,8 @@ export function createShellRuntimeController(
     const eventGeneration = generation;
     startPromise = (async () => {
       expectedExit = false;
+      provisioningIssues = [];
+      adapterStatus = null;
       try {
         const runtime = await dependencies.createHost({
           profile: {
@@ -190,6 +283,18 @@ export function createShellRuntimeController(
           await clearRuntime();
           return state;
         }
+        interactions = createShellInteractionController({
+          generation: () => generation,
+          promptAttemptId: () => sessions?.read().promptAttempt?.id ?? null,
+        });
+        interactions.onChanged(notify);
+        interactions.onRequested((interaction) => {
+          for (const listener of interactionListeners) listener(interaction);
+        });
+        const acceptsInteraction = (sessionId: string) => {
+          const session = sessions?.read();
+          return session?.status === 'active' && session.sessionId === sessionId;
+        };
         acp = await dependencies.connectAcp({
           acpUrl: runtime.backend.acpUrl,
           profile: options.profile,
@@ -197,11 +302,45 @@ export function createShellRuntimeController(
           workingDir: options.workingDir,
           clientName: options.clientName,
           clientVersion: options.clientVersion,
+          callbacks: () => ({
+            requestPermission: (request) =>
+              acceptsInteraction(request.sessionId) && interactions
+                ? interactions.requestPermission(request)
+                : Promise.resolve({ outcome: { outcome: 'cancelled' } }),
+            unstable_createElicitation: (request) =>
+              'sessionId' in request && acceptsInteraction(request.sessionId) && interactions
+                ? interactions.requestElicitation(request)
+                : Promise.resolve({ action: 'cancel' }),
+            sessionUpdate: async (notification) => sessions?.ingestUpdate(notification),
+            unstable_shellDomainStatus: async (notification: DomainStatusNotification_unstable) => {
+              adapterStatus = notification.status;
+              notify();
+            },
+          }),
         });
         if (eventGeneration !== generation || stateName() !== 'validating') {
           await clearRuntime();
           return state;
         }
+        provisioningIssues = provisioningIssueSummaries(acp.provisioning.validation.issues);
+        sessions = createShellSessionController({
+          transport: acp,
+          generation: () => generation,
+        });
+        sessions.onChanged(notify);
+        sessions.onUpdate((update) => {
+          if (update.kind === 'started' && state.name === 'ready') transition('busy');
+          if (
+            (update.kind === 'completed' ||
+              update.kind === 'cancelled' ||
+              update.kind === 'failed') &&
+            state.name === 'busy'
+          ) {
+            transition('ready');
+          }
+          if (update.kind !== 'started') interactions?.clearSession(update.sessionId);
+          for (const listener of sessionListeners) listener(update);
+        });
         void acp.closed
           .then(() => handleUnexpectedExit(eventGeneration))
           .catch(() => {
@@ -209,11 +348,20 @@ export function createShellRuntimeController(
           });
         transition('ready');
       } catch (error) {
+        provisioningIssues =
+          error instanceof ShellCompatibilityError ? error.provisioningIssues : provisioningIssues;
         const failureCode = startupFailureCode(error);
         host?.backend.recordStartupEvent('shell_preflight_failed', { code: failureCode });
         latestStartupDiagnostics =
           host?.backend.getStartupDiagnostics() ?? latestStartupDiagnostics;
-        await clearRuntime();
+        try {
+          await clearRuntime();
+        } catch {
+          if (eventGeneration === generation && state.name !== 'stopped') {
+            transition('fatal', 'CLEANUP_FAILED');
+          }
+          return state;
+        }
         if (
           eventGeneration === generation &&
           state.name !== 'stopping' &&
@@ -244,7 +392,12 @@ export function createShellRuntimeController(
       if (state.name !== 'stopping') {
         transition('stopping');
       }
-      await clearRuntime();
+      try {
+        await clearRuntime();
+      } catch {
+        transition('fatal', 'CLEANUP_FAILED');
+        return state;
+      }
       transition('stopped');
       return state;
     })().finally(() => {
@@ -277,7 +430,7 @@ export function createShellRuntimeController(
   };
 
   return {
-    read: () => state,
+    read: snapshot,
     start,
     retry,
     stop,
@@ -285,7 +438,17 @@ export function createShellRuntimeController(
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    onSessionUpdated(listener) {
+      sessionListeners.add(listener);
+      return () => sessionListeners.delete(listener);
+    },
+    onInteractionRequested(listener) {
+      interactionListeners.add(listener);
+      return () => interactionListeners.delete(listener);
+    },
     getAcp: () => acp,
+    getSessionController: () => sessions,
+    getInteractionController: () => interactions,
     getStartupDiagnostics: () => host?.backend.getStartupDiagnostics() ?? latestStartupDiagnostics,
     getExitDetails: () => host?.backend.getExitDetails() ?? latestExitDetails,
   };

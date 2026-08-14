@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -13,6 +14,15 @@ const fixtureA = path.resolve(
   'fixture-a',
   'product-profile.json'
 );
+const consumerA = path.resolve(
+  desktopRoot,
+  '..',
+  '..',
+  'fixtures',
+  'shell-consumers',
+  'consumer-a',
+  'shell-consumer.json'
+);
 const controlledEnvironment = [
   'APPLE_TEAM_ID',
   'APPLE_ID',
@@ -21,6 +31,7 @@ const controlledEnvironment = [
   'WINDOWS_CERTIFICATE_FILE',
   'WINDOW_SIGNING_ROLE',
   'GOSLING_SHELL_PROFILE',
+  'GOSLING_SHELL_CONSUMER_MANIFEST',
   'GOSLING_SHELL_PRODUCT_NAME',
   'GOSLING_SHELL_PROTOCOL_SCHEME',
   'GOSLING_SHELL_PACKAGE_ID',
@@ -76,6 +87,7 @@ test('default Gosling Forge config preserves packaging, updater, and signing beh
 test('fixture Forge config cannot enable signing, notarization, updater, or publication through environment', () => {
   const config = loadConfig({
     GOSLING_SHELL_PROFILE: fixtureA,
+    GOSLING_SHELL_CONSUMER_MANIFEST: consumerA,
     APPLE_TEAM_ID: 'team',
     APPLE_ID: 'operator@example.invalid',
     APPLE_ID_PASSWORD: 'credential-reference',
@@ -90,6 +102,7 @@ test('fixture Forge config cannot enable signing, notarization, updater, or publ
   assert.equal(config.packagerConfig.win32.certificateFile, undefined);
   assert.equal(config.packagerConfig.win32.signingRole, undefined);
   assert.deepEqual(config.publishers, []);
+  assert.equal(config.packagerConfig.extendInfo, undefined);
   assert.ok(config.packagerConfig.extraResource.some((entry) => entry.endsWith('manifest.json')));
   assert.ok(
     config.packagerConfig.extraResource.every((entry) => !entry.includes('app-update.yml'))
@@ -101,6 +114,39 @@ test('fixture Forge config cannot enable signing, notarization, updater, or publ
     ],
     renderer: [{ name: 'shell_window', config: 'vite.shell.renderer.config.mts' }],
   });
+  const flatpak = config.makers.find((maker) => maker.name === '@electron-forge/maker-flatpak');
+  assert.deepEqual(flatpak.config.options.finishArgs, [
+    '--share=ipc',
+    '--socket=x11',
+    '--socket=wayland',
+    '--device=dri',
+  ]);
+  assert.equal(flatpak.config.options.modules, undefined);
+});
+
+test('consumer manifest selects the profile and embeds only its declared renderer capabilities', () => {
+  const config = loadConfig({ GOSLING_SHELL_CONSUMER_MANIFEST: consumerA });
+  assert.equal(config.packagerConfig.name, 'Gosling Shell Fixture A');
+  const manifestResource = config.packagerConfig.extraResource.find((entry) =>
+    entry.endsWith('manifest.json')
+  );
+  assert.ok(manifestResource);
+  const manifest = JSON.parse(fs.readFileSync(path.resolve(desktopRoot, manifestResource), 'utf8'));
+  assert.deepEqual(manifest.consumer, {
+    consumerId: 'shell-consumer-a',
+    consumerHash: manifest.consumer.consumerHash,
+    rendererHash: manifest.consumer.rendererHash,
+    declaredCapabilities: ['session.create'],
+    requiredAgentCapabilities: ['loadSession'],
+    requiredMethods: [
+      '_gosling/unstable/session/info',
+      '_gosling/unstable/shell/handoff/prepare',
+      '_gosling/unstable/shell/provisioning/read',
+      '_gosling/unstable/shell/provisioning/validate',
+    ],
+  });
+  assert.match(manifest.consumer.consumerHash, /^[0-9a-f]{64}$/);
+  assert.match(manifest.consumer.rendererHash, /^[0-9a-f]{64}$/);
 });
 
 test('Forge config rejects retired independent shell identity overrides', () => {

@@ -7,6 +7,7 @@ const test = require('node:test');
 const asar = require('@electron/asar');
 const plist = require('plist');
 const { buildManifest, resolveProfile } = require('./shell-profile');
+const { resolveConsumerManifest } = require('./shell-consumer');
 const { verifyShellPackage } = require('./shell-package-verifier');
 
 const repositoryRoot = path.resolve(__dirname, '..', '..', '..');
@@ -17,8 +18,15 @@ const fixtureA = path.join(
   'fixture-a',
   'product-profile.json'
 );
+const consumerA = path.join(
+  repositoryRoot,
+  'fixtures',
+  'shell-consumers',
+  'consumer-a',
+  'shell-consumer.json'
+);
 
-async function syntheticPackage() {
+async function syntheticPackage(consumerFile = consumerA) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gosling-shell-package-'));
   const packageDirectory = path.join(root, 'Gosling Shell Fixture A-darwin-arm64');
   const app = path.join(packageDirectory, 'Gosling Shell Fixture A.app');
@@ -32,11 +40,13 @@ async function syntheticPackage() {
   fs.writeFileSync(path.join(resources, 'bin', 'gosling'), binary);
   fs.writeFileSync(path.join(app, 'Contents', 'MacOS', 'gosling-shell-fixture-a'), 'app');
 
-  const resolved = resolveProfile(fixtureA);
-  const { manifestJson } = buildManifest(resolved, 'macos-arm64');
+  const consumer = consumerFile ? resolveConsumerManifest(consumerFile) : undefined;
+  const resolved = consumer ? consumer.profile : resolveProfile(fixtureA);
+  const { manifestJson } = buildManifest(resolved, 'macos-arm64', consumer);
   fs.writeFileSync(path.join(resources, 'profile.json'), resolved.profileJson);
   fs.writeFileSync(path.join(resources, 'manifest.json'), manifestJson);
   fs.copyFileSync(resolved.provisioningPath, path.join(resources, 'provisioning.json'));
+  fs.copyFileSync(resolved.assetsByTarget['macos-arm64'].icon, path.join(resources, 'icon.icns'));
   fs.writeFileSync(
     path.join(app, 'Contents', 'Info.plist'),
     plist.build({
@@ -72,12 +82,13 @@ async function syntheticPackage() {
     'window.goslingShell.runtime.read()'
   );
   await asar.createPackage(asarSource, path.join(resources, 'app.asar'));
-  return { app, builtBinary, packageDirectory, resources, root };
+  return { app, builtBinary, consumerFile, packageDirectory, resources, root };
 }
 
 function verify(value) {
   return verifyShellPackage({
     profileFile: fixtureA,
+    ...(value.consumerFile ? { consumerFile: value.consumerFile } : {}),
     platform: 'darwin',
     architecture: 'arm64',
     packageDirectory: value.packageDirectory,
@@ -133,6 +144,30 @@ test('tampered binary, updater resource, or package identity fails closed', asyn
   metadata.CFBundleIdentifier = 'io.invalid.fixture';
   fs.writeFileSync(metadataPath, plist.build(metadata));
   assert.throws(() => verify(identity), /bundle identifier does not match/);
+});
+
+test('unexpected resources, inherited macOS metadata, and consumer renderer provenance fail closed', async (t) => {
+  const resource = await syntheticPackage();
+  t.after(() => fs.rmSync(resource.root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(resource.resources, 'unapproved-resource'), 'unexpected');
+  assert.throws(() => verify(resource), /resource inventory is not exact/);
+
+  const metadata = await syntheticPackage();
+  t.after(() => fs.rmSync(metadata.root, { recursive: true, force: true }));
+  const metadataPath = path.join(metadata.app, 'Contents', 'Info.plist');
+  const parsed = plist.parse(fs.readFileSync(metadataPath, 'utf8'));
+  parsed.NSCalendarsUsageDescription = 'inherited';
+  fs.writeFileSync(metadataPath, plist.build(parsed));
+  assert.throws(() => verify(metadata), /inherited NSCalendarsUsageDescription/);
+
+  const consumer = await syntheticPackage(consumerA);
+  t.after(() => fs.rmSync(consumer.root, { recursive: true, force: true }));
+  assert.doesNotThrow(() => verify(consumer));
+  const manifestPath = path.join(consumer.resources, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.consumer.rendererHash = '0'.repeat(64);
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.throws(() => verify(consumer), /packaged manifest does not match/);
 });
 
 test('broad preload and renderer authority sentinels fail closed', async (t) => {

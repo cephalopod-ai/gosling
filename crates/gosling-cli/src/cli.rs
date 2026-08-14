@@ -6,11 +6,12 @@ use gosling::acp::custom_requests::{
     ShellAuthorityMode, ShellIdentity, ShellProtocolPolicy, ShellProvisioning,
     ShellSessionProvisioning, SHELL_PROVISIONING_SCHEMA_VERSION,
 };
-use gosling::acp::shell::ShellRuntime;
+use gosling::acp::domain_adapter::McpDomainAdapter;
+use gosling::acp::shell::{DomainAdapter, ShellRuntime};
 use gosling::agents::GoslingPlatform;
 use gosling::builtin_extension::register_builtin_extensions;
 use gosling::config::paths::{Paths, RuntimePaths};
-use gosling::config::{Config, ConfigError, GoslingMode};
+use gosling::config::{get_domain_adapter_registration, Config, ConfigError, GoslingMode};
 use gosling::source_roots::SourceRoot;
 use gosling_mcp::mcp_server_runner::{serve, McpCommand};
 use gosling_mcp::{AutoVisualiserRouter, ComputerControllerServer};
@@ -1318,11 +1319,13 @@ fn validate_shell_id(shell_id: &str) -> Result<()> {
     }
 }
 
-fn build_shell_runtime(
+async fn build_shell_runtime(
     shell_id: Option<String>,
     shell_display_name: Option<String>,
     shell_version: String,
     provisioning_path: Option<&std::path::Path>,
+    shell_runtime_namespace: Option<&str>,
+    working_dir: PathBuf,
 ) -> Result<ShellRuntime> {
     let Some(shell_id) = shell_id else {
         return Ok(ShellRuntime::default());
@@ -1330,6 +1333,8 @@ fn build_shell_runtime(
     validate_shell_id(&shell_id)?;
     let display_name = shell_display_name
         .ok_or_else(|| anyhow::anyhow!("--shell-display-name is required with --shell-id"))?;
+    let runtime_namespace = shell_runtime_namespace.unwrap_or(&shell_id).to_owned();
+    validate_shell_id(&runtime_namespace)?;
     let mut provisioning = match provisioning_path {
         Some(path) => serde_json::from_slice::<ShellProvisioning>(&std::fs::read(path)?)?,
         None => ShellProvisioning {
@@ -1354,9 +1359,24 @@ fn build_shell_runtime(
         id: shell_id,
         display_name,
         version: shell_version,
+        runtime_namespace,
     };
     provisioning.schema_version = SHELL_PROVISIONING_SCHEMA_VERSION;
-    Ok(ShellRuntime::new(provisioning, None))
+    let domain_adapter: Option<std::sync::Arc<dyn DomainAdapter>> = match provisioning
+        .domain_adapter
+        .clone()
+    {
+        Some(expected_descriptor) => {
+            let registration =
+                get_domain_adapter_registration(Config::global(), &expected_descriptor.domain_id)?
+                    .ok_or_else(|| anyhow::anyhow!("ADAPTER_NOT_REGISTERED"))?;
+            Some(std::sync::Arc::new(
+                McpDomainAdapter::connect(registration, expected_descriptor, working_dir).await?,
+            ))
+        }
+        None => None,
+    };
+    Ok(ShellRuntime::new(provisioning, domain_adapter))
 }
 
 async fn handle_shell_validate_command(
@@ -1368,14 +1388,17 @@ async fn handle_shell_validate_command(
 ) -> Result<()> {
     use gosling::workspace::WorkspaceService;
 
+    let default_working_dir = std::env::current_dir()?;
     let runtime = build_shell_runtime(
-        Some(shell_id),
+        Some(shell_id.clone()),
         Some(shell_display_name),
         shell_version,
         Some(&shell_provisioning),
-    )?;
+        Some(&shell_id),
+        default_working_dir.clone(),
+    )
+    .await?;
     let base_paths = RuntimePaths::new(Paths::config_dir(), Paths::data_dir(), Paths::state_dir());
-    let default_working_dir = std::env::current_dir()?;
     let workspace_service =
         WorkspaceService::initialize(&base_paths.data_dir, &default_working_dir).await?;
     let builtins = if builtins.is_empty() {
@@ -1437,12 +1460,16 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         }
         None => base_paths.clone(),
     };
+    let default_working_dir = std::env::current_dir()?;
     let shell_runtime = build_shell_runtime(
         shell_id,
         shell_display_name,
         shell_version,
         shell_provisioning.as_deref(),
-    )?;
+        shell_runtime_namespace.as_deref(),
+        default_working_dir,
+    )
+    .await?;
 
     let additional_source_roots = Config::global()
         .get_param::<String>("ADDITIONAL_AGENT_SOURCE_ROOTS")
@@ -1522,14 +1549,22 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
             )
             .await?;
             info!("Starting ACP server on https://{}", addr);
+            let shutdown_handle = axum_server::Handle::new();
+            let signal_handle = shutdown_handle.clone();
+            tokio::spawn(async move {
+                crate::signal::shutdown_signal().await;
+                signal_handle.graceful_shutdown(Some(std::time::Duration::from_secs(5)));
+            });
 
             #[cfg(feature = "rustls-tls")]
             axum_server::bind_rustls(addr, tls_setup.config)
+                .handle(shutdown_handle)
                 .serve(router.into_make_service_with_connect_info::<SocketAddr>())
                 .await?;
 
             #[cfg(feature = "native-tls")]
             axum_server::bind_openssl(addr, tls_setup.config)
+                .handle(shutdown_handle)
                 .serve(router.into_make_service_with_connect_info::<SocketAddr>())
                 .await?;
         }
@@ -1549,6 +1584,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
             listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
+        .with_graceful_shutdown(crate::signal::shutdown_signal())
         .await?;
     }
 

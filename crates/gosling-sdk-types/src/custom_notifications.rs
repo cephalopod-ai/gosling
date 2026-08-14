@@ -1,4 +1,5 @@
 use crate::custom_requests::{CustomMethodSchema, SessionArtifactDto};
+use crate::shell::DomainAdapterStatus;
 use agent_client_protocol::{JsonRpcMessage, JsonRpcNotification};
 use schemars::{JsonSchema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,14 @@ use serde::{Deserialize, Serialize};
 pub struct GoslingSessionNotification {
     pub session_id: String,
     pub update: GoslingSessionUpdate,
+}
+
+/// Server-owned adapter status that may change independently of a session request.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcNotification)]
+#[notification(method = "_gosling/unstable/shell/domain/status")]
+#[serde(rename_all = "camelCase")]
+pub struct DomainStatusNotification {
+    pub status: DomainAdapterStatus,
 }
 
 /// Discriminated union of gosling-specific session update payloads.
@@ -99,7 +108,10 @@ where
 /// notification, define the struct above (with `JsonRpcNotification` +
 /// `Default`) and add one line below.
 pub fn custom_notification_schemas(generator: &mut SchemaGenerator) -> Vec<CustomMethodSchema> {
-    vec![notification_schema::<GoslingSessionNotification>(generator)]
+    vec![
+        notification_schema::<GoslingSessionNotification>(generator),
+        notification_schema::<DomainStatusNotification>(generator),
+    ]
 }
 
 #[cfg(test)]
@@ -156,6 +168,17 @@ mod tests {
         assert_eq!(
             serde_json::to_value(notification).unwrap()["update"]["sessionUpdate"],
             "artifact_update"
+        );
+    }
+
+    #[test]
+    fn domain_status_serializes_to_expected_wire_shape() {
+        assert_eq!(
+            serde_json::to_value(DomainStatusNotification {
+                status: DomainAdapterStatus::Crashed,
+            })
+            .unwrap(),
+            json!({ "status": "crashed" })
         );
     }
 }

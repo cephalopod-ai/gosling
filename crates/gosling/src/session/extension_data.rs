@@ -96,6 +96,30 @@ impl ExtensionState for ShellSkillSelectionState {
     const VERSION: &'static str = "v0";
 }
 
+/// The durable outcome of the latest ACP prompt for a session.
+///
+/// An in-progress record survives an unexpected process loss. Consumers can then distinguish a
+/// known terminal turn from one whose effects may have completed without a response reaching them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AcpPromptRunState {
+    InProgress,
+    Completed,
+    Cancelled,
+    Failed,
+}
+
+impl AcpPromptRunState {
+    pub fn has_terminal_outcome(&self) -> bool {
+        !matches!(self, Self::InProgress)
+    }
+}
+
+impl ExtensionState for AcpPromptRunState {
+    const EXTENSION_NAME: &'static str = "acp_prompt_run";
+    const VERSION: &'static str = "v1";
+}
+
 /// TODO extension state implementation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoState {
@@ -224,6 +248,22 @@ mod tests {
             Some(&todo_state)
         );
         assert_eq!(extension_data.get_extension_state("todo", "v1"), None);
+    }
+
+    #[test]
+    fn acp_prompt_run_state_keeps_incomplete_runs_distinct_from_terminal_outcomes() {
+        let mut extension_data = ExtensionData::new();
+        AcpPromptRunState::InProgress
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+        let in_progress = AcpPromptRunState::from_extension_data(&extension_data).unwrap();
+        assert!(!in_progress.has_terminal_outcome());
+
+        AcpPromptRunState::Completed
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+        let completed = AcpPromptRunState::from_extension_data(&extension_data).unwrap();
+        assert!(completed.has_terminal_outcome());
     }
 
     #[test]

@@ -6,13 +6,24 @@ const { verifyShellPackage } = require('./shell-package-verifier');
 function usage() {
   return [
     'Usage:',
-    '  node scripts/verify-shell-package.js <profile> --platform <platform> --arch <architecture> --package <directory> --binary <file>',
+    '  node scripts/verify-shell-package.js <profile> [--consumer <manifest>] --platform <platform> --arch <architecture> --package <directory> --binary <file>',
   ].join('\n');
 }
 
 function option(args, name) {
   const indexes = args.flatMap((entry, index) => (entry === name ? [index] : []));
   if (indexes.length !== 1) throw new Error(`${name} must be provided exactly once`);
+  const index = indexes[0];
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
+  args.splice(index, 2);
+  return value;
+}
+
+function optionalOption(args, name) {
+  const indexes = args.flatMap((entry, index) => (entry === name ? [index] : []));
+  if (indexes.length === 0) return undefined;
+  if (indexes.length > 1) throw new Error(`${name} may be provided only once`);
   const index = indexes[0];
   const value = args[index + 1];
   if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
@@ -27,9 +38,11 @@ function main(argv) {
   const architecture = option(args, '--arch');
   const packageDirectory = option(args, '--package');
   const builtBinary = option(args, '--binary');
+  const consumerFile = optionalOption(args, '--consumer');
   if (args.length !== 1) throw new Error(usage());
   return verifyShellPackage({
     profileFile: path.resolve(args[0]),
+    ...(consumerFile ? { consumerFile: path.resolve(consumerFile) } : {}),
     platform,
     architecture,
     packageDirectory: path.resolve(packageDirectory),

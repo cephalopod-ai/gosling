@@ -1,5 +1,6 @@
 pub mod base;
 pub mod declarative_providers;
+pub mod domain_adapters;
 mod experiments;
 pub mod extensions;
 mod migrations;
@@ -17,6 +18,10 @@ pub use base::{
     GOSLING_CODE_EXECUTION_RUNTIME_KEY,
 };
 pub use declarative_providers::DeclarativeProviderConfig;
+pub use domain_adapters::{
+    get_domain_adapter_registration, AdapterRegistration, DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
+    MAX_ADAPTER_MAX_MESSAGE_BYTES,
+};
 pub use experiments::ExperimentManager;
 pub use extensions::{
     get_all_extension_names, get_all_extensions, get_available_extensions, get_enabled_extensions,

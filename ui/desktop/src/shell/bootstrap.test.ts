@@ -18,6 +18,10 @@ const controller = vi.hoisted(() => {
       retry: vi.fn(async () => state),
       stop: vi.fn(async () => ({ ...state, name: 'stopped' as const, allowedActions: [] })),
       onChanged: vi.fn(() => vi.fn()),
+      onSessionUpdated: vi.fn(() => vi.fn()),
+      onInteractionRequested: vi.fn(() => vi.fn()),
+      getSessionController: vi.fn(() => null),
+      getInteractionController: vi.fn(() => null),
       getAcp: vi.fn(() => null),
       getStartupDiagnostics: vi.fn(() => null),
       getExitDetails: vi.fn(() => null),
@@ -37,6 +41,8 @@ const roots: string[] = [];
 afterEach(() => {
   vi.clearAllMocks();
   controller.create.mockReturnValue(controller.value);
+  controller.value.getAcp.mockReturnValue(null);
+  controller.value.getSessionController.mockReturnValue(null);
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -255,6 +261,9 @@ describe('shell bootstrap', () => {
     expect([...value.handlers.keys()].sort()).toEqual(
       Object.values(shellIpcChannels)
         .filter((channel) => channel !== shellIpcChannels.runtimeChanged)
+        .filter((channel) => channel !== shellIpcChannels.sessionUpdated)
+        .filter((channel) => channel !== shellIpcChannels.permissionRequested)
+        .filter((channel) => channel !== shellIpcChannels.elicitationRequested)
         .sort()
     );
     const response = await value.handlers.get(shellIpcChannels.runtimeRead)!({
@@ -263,6 +272,95 @@ describe('shell bootstrap', () => {
     });
     expect(response).toEqual(controller.value.read());
     expect(JSON.stringify(response)).not.toMatch(/token|secret|acp/i);
+  });
+
+  it('relays domain reads, actions, and confirmation through the verified active session only', async () => {
+    const snapshot = vi.fn(async () => ({
+      domainId: 'neutral-fixture',
+      payload: {},
+      resources: [],
+    }));
+    const action = vi.fn(async () => ({
+      domainId: 'neutral-fixture',
+      action: 'toggle',
+      confirmationActionId: 'confirm-a',
+    }));
+    const confirm = vi.fn(async () => ({ status: 'denied' as const }));
+    controller.value.getAcp.mockReturnValue({
+      domainAdapter: {
+        descriptorId: 'neutral-fixture',
+        protocolVersion: '1.0.0',
+        actions: ['toggle'],
+      },
+      domainSnapshot: snapshot,
+      domainAction: action,
+      confirmDomainAction: confirm,
+    } as never);
+    controller.value.getSessionController.mockReturnValue({
+      read: () => ({ sessionId: 'session-a', status: 'active' }),
+    } as never);
+    const value = harness();
+    const manifestPath = path.join(value.value.root, 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.consumer = {
+      consumerId: 'fixture-consumer',
+      consumerHash: 'c'.repeat(64),
+      rendererHash: 'd'.repeat(64),
+      declaredCapabilities: ['domain.snapshot', 'domain.action', 'confirmation.respond'],
+      requiredAgentCapabilities: [],
+      requiredMethods: [],
+    };
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+
+    await value.handlers.get(shellIpcChannels.domainSnapshot)!(event, {
+      generation: 1,
+      input: { scope: 'neutral' },
+    });
+    await value.handlers.get(shellIpcChannels.domainAction)!(event, {
+      generation: 1,
+      sessionId: 'session-a',
+      action: 'toggle',
+      input: { enabled: true },
+    });
+    await value.handlers.get(shellIpcChannels.confirmationRespond)!(event, {
+      generation: 1,
+      sessionId: 'session-a',
+      actionId: 'confirm-a',
+      approve: false,
+    });
+    expect(snapshot).toHaveBeenCalledWith({ input: { scope: 'neutral' } });
+    expect(action).toHaveBeenCalledWith({
+      sessionId: 'session-a',
+      generation: 1,
+      action: 'toggle',
+      input: { enabled: true },
+    });
+    expect(confirm).toHaveBeenCalledWith({
+      sessionId: 'session-a',
+      generation: 1,
+      actionId: 'confirm-a',
+      approve: false,
+    });
+    await expect(
+      value.handlers.get(shellIpcChannels.domainAction)!(event, {
+        generation: 2,
+        sessionId: 'session-a',
+        action: 'toggle',
+      })
+    ).rejects.toThrow('generation is stale');
+    await expect(
+      value.handlers.get(shellIpcChannels.confirmationRespond)!(event, {
+        generation: 1,
+        sessionId: 'foreign-session',
+        actionId: 'confirm-a',
+        approve: false,
+      })
+    ).rejects.toThrow('session is stale');
   });
 
   it('focuses a second instance and waits for runtime cleanup before final quit', async () => {

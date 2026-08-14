@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { GoslingClientCallbacks } from '@repo-makeover/gosling-sdk';
+import type {
+  DomainActionConfirmResponse_unstable,
+  DomainActionResponse_unstable,
+  DomainSnapshotResponse_unstable,
+  GoslingClientCallbacks,
+} from '@repo-makeover/gosling-sdk';
 import type { InitializeResponse } from '@agentclientprotocol/sdk';
-import { connectShellAcp, ShellCompatibilityError } from './acpRuntime';
+import { connectShellAcp, provisioningIssueSummaries, ShellCompatibilityError } from './acpRuntime';
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
 
 const sessionInfoMethod = '_gosling/unstable/session/info';
@@ -73,6 +78,7 @@ function response(): InitializeResponse {
             id: product.id,
             displayName: product.displayName,
             version: product.version,
+            runtimeNamespace: product.runtimeNamespace,
           },
           availableMethods: methods,
         },
@@ -92,36 +98,65 @@ function harness() {
           id: product.id,
           displayName: product.displayName,
           version: product.version,
+          runtimeNamespace: product.runtimeNamespace,
         },
       },
       validation: { valid: true, issues: [] },
     })
   );
-  const validate = vi.fn((request) =>
-    Promise.resolve({ provisioning: request.provisioning, validation: { valid: true, issues: [] } })
+  const validate = vi.fn(() =>
+    Promise.resolve({
+      provisioning: {
+        schemaVersion: 1,
+        identity: {
+          id: product.id,
+          displayName: product.displayName,
+          version: product.version,
+          runtimeNamespace: product.runtimeNamespace,
+        },
+      },
+      validation: { valid: true, issues: [] },
+    })
   );
   const newSession = vi.fn(() => Promise.resolve({ sessionId: 'session-1' }));
   const loadSession = vi.fn(() => Promise.resolve({}));
+  const prompt = vi.fn(() => Promise.resolve({ stopReason: 'end_turn' as const }));
+  const cancel = vi.fn(() => Promise.resolve());
   const sessionInfo = vi.fn(() =>
     Promise.resolve({
       session: {
         sessionId: 'session-1',
         cwd: '/workspace/saved',
+        _meta: { gosling: { resumeIntegrity: 'clean' } },
       },
     })
   );
   const prepare = vi.fn(() => Promise.reject(new Error('not used')));
+  const snapshot = vi.fn<() => Promise<DomainSnapshotResponse_unstable>>(() =>
+    Promise.reject(new Error('not used'))
+  );
+  const action = vi.fn<() => Promise<DomainActionResponse_unstable>>(() =>
+    Promise.reject(new Error('not used'))
+  );
+  const confirmAction = vi.fn<() => Promise<DomainActionConfirmResponse_unstable>>(() =>
+    Promise.reject(new Error('not used'))
+  );
   const client = {
     signal: new AbortController().signal,
     closed: new Promise<void>(() => {}),
     initialize,
     newSession,
     loadSession,
+    prompt,
+    cancel,
     gosling: {
       sessionInfo_unstable: sessionInfo,
       shellProvisioningRead_unstable: read,
       shellProvisioningValidate_unstable: validate,
       shellHandoffPrepare_unstable: prepare,
+      shellDomainSnapshot_unstable: snapshot,
+      shellDomainAction_unstable: action,
+      shellDomainActionConfirm_unstable: confirmAction,
     },
   };
   const createStream = vi.fn(() => ({
@@ -148,8 +183,13 @@ function harness() {
     initialize,
     loadSession,
     newSession,
+    prompt,
+    cancel,
     read,
     sessionInfo,
+    snapshot,
+    action,
+    confirmAction,
     validate,
   };
 }
@@ -170,17 +210,36 @@ function connect(value = harness()) {
 }
 
 describe('shell ACP runtime', () => {
+  it('projects only bounded schema paths from provisioning issues', () => {
+    expect(
+      provisioningIssueSummaries([
+        { code: 'credential_profile_unavailable', path: 'session.credentialProfileId' },
+        { code: 'invalid_path', path: '/Users/eric/.config/gosling.json' },
+        { code: 'also_invalid', path: 'credential profile' },
+        { code: 'no_path' },
+      ])
+    ).toEqual([
+      { code: 'credential_profile_unavailable', path: 'session.credentialProfileId' },
+      { code: 'invalid_path', path: null },
+      { code: 'also_invalid', path: null },
+      { code: 'no_path', path: null },
+    ]);
+  });
+
   it('initializes, reads, validates, and checks compatibility without creating a session', async () => {
     const { promise, value } = connect();
     const connection = await promise;
     expect(value.createStream).toHaveBeenCalledWith('ws://127.0.0.1:7777/acp?token=private');
     expect(value.initialize).toHaveBeenCalledWith({
       protocolVersion: 1,
-      clientCapabilities: {},
+      clientCapabilities: {
+        elicitation: { form: {} },
+        _meta: { gosling: { customNotifications: true } },
+      },
       clientInfo: { name: 'fixture-shell', version: '0.0.0-test' },
     });
     expect(value.read).toHaveBeenCalledWith({});
-    expect(value.validate).toHaveBeenCalledTimes(1);
+    expect(value.validate).toHaveBeenCalledWith({});
     expect(value.newSession).not.toHaveBeenCalled();
     expect(value.loadSession).not.toHaveBeenCalled();
     const callbacks = value.createClient.mock.calls[0][0]();
@@ -188,6 +247,7 @@ describe('shell ACP runtime', () => {
       'requestPermission',
       'sessionUpdate',
       'unstable_createElicitation',
+      'unstable_shellDomainStatus',
     ]);
     expect(await callbacks.requestPermission({} as never)).toEqual({
       outcome: { outcome: 'cancelled' },
@@ -198,6 +258,83 @@ describe('shell ACP runtime', () => {
     expect(value.loadSession).not.toHaveBeenCalled();
     expect(value.close).not.toHaveBeenCalled();
     connection.close();
+    expect(value.close).toHaveBeenCalledOnce();
+  });
+
+  it('reads and requires the consumer-declared live domain adapter descriptor', async () => {
+    const value = harness();
+    const initialized = response();
+    const shell = initialized.agentCapabilities!._meta!.goslingShell as {
+      availableMethods: string[];
+      domainAdapter?: unknown;
+    };
+    shell.availableMethods.push('_gosling/unstable/shell/domain/action');
+    shell.domainAdapter = {
+      domainId: 'neutral-fixture',
+      displayName: 'Neutral Fixture',
+      version: '0.1.0',
+      protocolVersion: '1.0.0',
+      actions: [
+        { name: 'inspect', kind: 'read', schemaRef: 'neutral-fixture/inspect@1' },
+        { name: 'toggle', kind: 'mutate', schemaRef: 'neutral-fixture/toggle@1' },
+      ],
+    };
+    value.initialize.mockResolvedValue(initialized);
+    const adapterManifest = { ...manifest };
+    adapterManifest.consumer = {
+      consumerId: 'fixture-consumer',
+      consumerHash: 'c'.repeat(64),
+      rendererHash: 'd'.repeat(64),
+      declaredCapabilities: ['domain.action'],
+      requiredAgentCapabilities: [],
+      requiredMethods: [...methods, '_gosling/unstable/shell/domain/action'],
+      domainAdapter: {
+        descriptorId: 'neutral-fixture',
+        protocolVersion: '1.0.0',
+        actions: ['inspect', 'toggle'],
+      },
+    };
+
+    const connection = await connectShellAcp({
+      acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+      profile,
+      manifest: adapterManifest,
+      workingDir: '/workspace/current',
+      clientName: 'fixture-shell',
+      clientVersion: '0.0.0-test',
+      dependencies: value.dependencies,
+    });
+
+    expect(connection.domainAdapter).toEqual({
+      descriptorId: 'neutral-fixture',
+      protocolVersion: '1.0.0',
+      actions: ['inspect', 'toggle'],
+    });
+  });
+
+  it('rejects a consumer-declared custom method that the live server did not advertise', async () => {
+    const value = harness();
+    const consumerManifest = { ...manifest };
+    consumerManifest.consumer = {
+      consumerId: 'fixture-consumer',
+      consumerHash: 'c'.repeat(64),
+      rendererHash: 'd'.repeat(64),
+      declaredCapabilities: ['confirmation.respond'],
+      requiredAgentCapabilities: [],
+      requiredMethods: [...methods, '_gosling/unstable/shell/domain/action/confirm'],
+    };
+
+    await expect(
+      connectShellAcp({
+        acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+        profile,
+        manifest: consumerManifest,
+        workingDir: '/workspace/current',
+        clientName: 'fixture-shell',
+        clientVersion: '0.0.0-test',
+        dependencies: value.dependencies,
+      })
+    ).rejects.toMatchObject({ name: 'ShellCompatibilityError', message: 'METHOD_UNAVAILABLE' });
     expect(value.close).toHaveBeenCalledOnce();
   });
 
@@ -218,6 +355,7 @@ describe('shell ACP runtime', () => {
     await expect(connection.resumeSession('session-1')).resolves.toEqual({
       sessionId: 'session-1',
       workingDir: '/workspace/saved',
+      resumeIntegrity: 'clean',
     });
     expect(value.sessionInfo).toHaveBeenCalledWith({ sessionId: 'session-1' });
     expect(value.loadSession).toHaveBeenCalledWith({
@@ -225,6 +363,61 @@ describe('shell ACP runtime', () => {
       cwd: '/workspace/saved',
       mcpServers: [],
       _meta: { gosling: { loadMode: 'compacted', tailLimit: 50 } },
+    });
+  });
+
+  it('submits bounded text and cancels only through the main-owned ACP connection', async () => {
+    const { promise, value } = connect();
+    const connection = await promise;
+
+    await connection.prompt({ sessionId: 'session-1', text: 'hello', messageId: 'attempt-1' });
+    await connection.cancel({ sessionId: 'session-1' });
+
+    expect(value.prompt).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      messageId: 'attempt-1',
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+    expect(value.cancel).toHaveBeenCalledWith({ sessionId: 'session-1' });
+  });
+
+  it('relays domain actions and confirmation only through the main-owned connection', async () => {
+    const { promise, value } = connect();
+    value.snapshot.mockResolvedValue({ domainId: 'neutral-fixture', payload: {}, resources: [] });
+    value.action.mockResolvedValue({
+      domainId: 'neutral-fixture',
+      action: 'toggle',
+      confirmationActionId: 'confirm-a',
+    });
+    value.confirmAction.mockResolvedValue({ status: 'denied' });
+    const connection = await promise;
+
+    await connection.domainSnapshot({ input: { scope: 'neutral' } });
+    await connection.domainAction({
+      sessionId: 'session-1',
+      generation: 1,
+      action: 'toggle',
+      input: { enabled: true },
+    });
+    await connection.confirmDomainAction({
+      sessionId: 'session-1',
+      generation: 1,
+      actionId: 'confirm-a',
+      approve: false,
+    });
+
+    expect(value.snapshot).toHaveBeenCalledWith({ input: { scope: 'neutral' } });
+    expect(value.action).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      generation: 1,
+      action: 'toggle',
+      input: { enabled: true },
+    });
+    expect(value.confirmAction).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      generation: 1,
+      actionId: 'confirm-a',
+      approve: false,
     });
   });
 
@@ -346,6 +539,22 @@ describe('shell ACP runtime', () => {
     expect(value.close).toHaveBeenCalledOnce();
   });
 
+  it('rejects a backend runtime namespace that differs from the consumer profile', async () => {
+    const value = harness();
+    const incompatible = response();
+    const shell = incompatible.agentCapabilities!._meta!.goslingShell as {
+      identity: { runtimeNamespace: string };
+      availableMethods: string[];
+    };
+    shell.identity.runtimeNamespace = 'other-runtime';
+    value.initialize.mockResolvedValue(incompatible);
+
+    await expect(connect(value).promise).rejects.toMatchObject({
+      result: { compatible: false, code: 'RUNTIME_NAMESPACE_MISMATCH' },
+    });
+    expect(value.close).toHaveBeenCalledOnce();
+  });
+
   it('fails closed when either server validation report is invalid', async () => {
     const value = harness();
     value.read.mockResolvedValue({
@@ -355,6 +564,7 @@ describe('shell ACP runtime', () => {
           id: product.id,
           displayName: product.displayName,
           version: product.version,
+          runtimeNamespace: product.runtimeNamespace,
         },
       },
       validation: { valid: false, issues: [] },

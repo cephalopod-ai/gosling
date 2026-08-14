@@ -133,6 +133,7 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
     ipcMain: adapter.ipcMain,
     renderer: window.webContents as never,
     allowedExternalOrigins: adapter.allowedExternalOrigins ?? new Set(),
+    declaredCapabilities: new Set(loaded.manifest.consumer?.declaredCapabilities ?? []),
     operations: {
       runtimeRead: () => controller.read(),
       runtimeRetry: async (request) => {
@@ -146,6 +147,84 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         const prior = controller.read();
         const state = await controller.stop(request.generation);
         return actionResult(state, state !== prior || state.name === 'stopped');
+      },
+      sessionCreate: (request) => {
+        const sessions = controller.getSessionController();
+        if (!sessions) throw new Error('session runtime is unavailable');
+        return sessions.create(request.generation);
+      },
+      sessionResume: (request) => {
+        const sessions = controller.getSessionController();
+        if (!sessions) throw new Error('session runtime is unavailable');
+        return sessions.resume(request.generation, request.sessionId);
+      },
+      promptSubmit: (request) => {
+        const sessions = controller.getSessionController();
+        if (!sessions) throw new Error('session runtime is unavailable');
+        return sessions.submit(request);
+      },
+      promptCancel: (request) => {
+        const sessions = controller.getSessionController();
+        if (!sessions) throw new Error('session runtime is unavailable');
+        return sessions.cancel(request);
+      },
+      permissionRespond: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('permission action generation is stale');
+        }
+        const interactions = controller.getInteractionController();
+        if (!interactions) throw new Error('interaction runtime is unavailable');
+        interactions.respondPermission(request);
+      },
+      elicitationRespond: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('elicitation action generation is stale');
+        }
+        const interactions = controller.getInteractionController();
+        if (!interactions) throw new Error('interaction runtime is unavailable');
+        interactions.respondElicitation(request);
+      },
+      domainSnapshot: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('domain snapshot generation is stale');
+        }
+        const acp = controller.getAcp();
+        if (!acp || !acp.domainAdapter) throw new Error('domain adapter is unavailable');
+        return acp.domainSnapshot({ input: request.input ?? null });
+      },
+      domainAction: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('domain action generation is stale');
+        }
+        const session = controller.getSessionController()?.read();
+        if (session?.status !== 'active' || session.sessionId !== request.sessionId) {
+          throw new Error('domain action session is stale');
+        }
+        const acp = controller.getAcp();
+        if (!acp || !acp.domainAdapter) throw new Error('domain adapter is unavailable');
+        return acp.domainAction({
+          sessionId: request.sessionId,
+          generation: request.generation,
+          action: request.action,
+          input: request.input ?? null,
+        });
+      },
+      confirmationRespond: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('confirmation action generation is stale');
+        }
+        const session = controller.getSessionController()?.read();
+        if (session?.status !== 'active' || session.sessionId !== request.sessionId) {
+          throw new Error('confirmation action session is stale');
+        }
+        const acp = controller.getAcp();
+        if (!acp || !acp.domainAdapter) throw new Error('domain adapter is unavailable');
+        return acp.confirmDomainAction({
+          sessionId: request.sessionId,
+          generation: request.generation,
+          actionId: request.actionId,
+          approve: request.approve,
+        });
       },
       diagnosticsSave: async (request) => {
         if (request.generation !== controller.read().generation) {
@@ -191,6 +270,12 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
     },
   });
   const removeChangedListener = controller.onChanged((state) => ipc.publishRuntimeChanged(state));
+  const removeSessionListener = controller.onSessionUpdated((update) =>
+    ipc.publishSessionUpdated(update)
+  );
+  const removeInteractionListener = controller.onInteractionRequested((interaction) =>
+    ipc.publishInteractionRequested(interaction)
+  );
 
   let stopPromise: Promise<void> | null = null;
   const stop = () => {
@@ -199,6 +284,8 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
       const current = controller.read();
       await controller.stop(current.generation);
       removeChangedListener();
+      removeSessionListener();
+      removeInteractionListener();
       ipc.dispose();
     })();
     return stopPromise;

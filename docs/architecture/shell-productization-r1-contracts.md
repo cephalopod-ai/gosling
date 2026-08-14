@@ -1,7 +1,7 @@
 # Project-shell R1 contracts (consumer, application-runtime, domain-adapter)
 
-Status: proposed — companion schema freeze for ADR-0010, ADR-0011, ADR-0012; pending operator
-acceptance per `pre-gui-backend-implementation-plan.md` PG-14/PG-15
+Status: accepted — companion schema freeze for ADR-0010, ADR-0011, ADR-0012; R1 operator
+authorization recorded 2026-08-13 per `pre-gui-backend-implementation-plan.md` PG-14/PG-15
 Date: 2026-08-13
 Authority: proposed extension of `shell-productization-contracts.md` (accepted Gate 2 contract);
 this document freezes only the new R1 inputs/boundaries and does not itself implement or claim any
@@ -89,20 +89,16 @@ consequence for session/prompt/interaction state explicit, since the Gate 2 cont
   `booting` completes on the new generation, the renderer calls `session.resume` with the known
   `sessionId`. The resulting snapshot's `session.resumeKind` is `resumed` (as opposed to `fresh` for
   `session.create`), and `promptAttempt` is always `null` immediately after resume.
-- **Open problem, explicitly deferred, not silently resolved.** "The renderer must just call
-  `prompt.submit` again" is unsound on its own: if the prior attempt's tool call or mutation already
-  executed and committed server-side before the transport dropped — only the response never reached
-  the client — blind resubmission risks repeating that side effect; the reverse failure (rejecting a
-  legitimate resubmit because the server still considers the old attempt active) is equally possible.
-  Resolving this fully requires an idempotency fence R1 is not positioned to invent correctly without
-  an implementation to test against (PG-12/PG-32 assign this design work to R3). This document instead
-  freezes the minimum truthful signal: `session` gains `resumeIntegrity: clean | uncertain`, computed
-  server-side from whether the resumed session's last turn reached a persisted terminal state before
-  the disconnect. `resumeIntegrity: clean` means `prompt.submit` after resume is safe exactly as a
-  fresh submit would be. `resumeIntegrity: uncertain` means the renderer must be told — via this field,
-  never silently — that resubmission carries a known repeat-side-effect risk; R3 owns building the
-  actual reconciliation (durable attempt outcome query, cancellation-and-terminal-ack rule, or
-  equivalent) before `uncertain` can be eliminated. This contract does not claim that work is done.
+- Blind resubmission is unsound: if the prior attempt's tool call or mutation committed server-side
+  before the transport dropped, only the response may be missing and repeating the prompt can repeat
+  that side effect. R3 therefore persists a bounded state for the latest ACP prompt before agent work
+  begins and replaces it only after a terminal completion, cancellation, or failure. `session.info`
+  projects `resumeIntegrity: clean | uncertain` from that durable state before compacted load:
+  `clean` means the prior prompt reached a known terminal outcome, while `uncertain` means a prompt
+  was in progress (or predates this record) when the connection was lost. The renderer receives that
+  fact through the safe snapshot and must not treat `uncertain` as permission to silently resubmit.
+  This is an outcome fence, not an automatic replay or an idempotency guarantee for an operator who
+  chooses to repeat a completed prompt.
 - `session.updates` carries a monotonic per-session `updateSeq` (added to the event payload) that
   resets to 1 on every `session.create`/`session.resume`. This gives the renderer a way to detect a
   gap (a jump in `updateSeq`) without this contract committing to a replay/backfill buffer, which is
@@ -127,12 +123,12 @@ already are:
 | `prompt.submit` | invoke | bounded text, <=64 KiB | prompt-attempt ID <=1 KiB | rejects if an attempt is already outstanding |
 | `prompt.cancel` | invoke | prompt-attempt ID | status <=1 KiB | idempotent no-op success if the named ID is the current attempt (whether or not it was already cancelled); rejects with a stale-ID error if the ID was never issued or belongs to a different session/generation |
 | `session.updates` | event | main only | bounded update <=64 KiB, attempt-fenced, carries monotonic per-session `updateSeq` (resets on create/resume) | streamed model/tool output |
-| `permission.respond` | invoke | action ID + allow_once\|deny | status <=1 KiB | rejects replay/expired/foreign action ID |
-| `elicitation.respond` | invoke | action ID + submit(bounded fields)\|cancel | status <=8 KiB | rejects replay/expired/foreign action ID |
+| `permission.respond` | invoke | generation + session ID + action ID + allow_once\|deny | status <=1 KiB | rejects replay/expired/foreign action ID |
+| `elicitation.respond` | invoke | generation + session ID + action ID + submit(bounded fields)\|cancel | status <=8 KiB | rejects replay/expired/foreign action ID |
 | `permission.requested` | event | main only | action summary <=8 KiB | opaque action ID, allowlisted fields only |
 | `elicitation.requested` | event | main only | action summary <=8 KiB | opaque action ID, allowlisted fields only |
 | `domain.snapshot` | invoke | none beyond generation | bounded payload <=64 KiB (matches the safe-snapshot ceiling; the R4 neutral fixture's snapshot must fit this bound, and an adapter that would exceed it fails as overproducing) | only when `adapter.status == ready` |
-| `domain.action` | invoke | action name + args, <=16 KiB | bounded payload <=64 KiB, or `CONFIRMATION_REQUIRED` + interaction actionId for an unapproved `mutate` action | `read` actions execute directly; `mutate` actions execute only once their `confirm` interaction (below) is approved |
+| `domain.action` | invoke | session ID + generation + action name + args, <=16 KiB | bounded payload <=64 KiB, or bounded `confirmationActionId` for an unapproved `mutate` action | `read` actions execute directly; `mutate` actions execute only once their `confirm` interaction (below) is approved |
 | `confirmation.requested` | event | main only | interaction summary <=8 KiB | opaque action ID, allowlisted action-name/args summary only |
 | `confirmation.respond` | invoke | action ID + approve\|deny | on approve: bounded `DomainActionResponse` payload <=64 KiB; on deny/reject: status <=1 KiB | main relays to the Rust server, which rejects replay/expired/foreign action ID and, on approve, executes the already-pending action immediately (it retained the action/input from the original `domain.action` call) and returns the result inline — there is no second `perform_domain_action` round trip and no token ever crosses the main/server boundary |
 
@@ -217,21 +213,24 @@ check is enforced by the Rust server, not by main.
 ## Domain adapter descriptor and confirmation token (ADR-0012)
 
 ```text
-DomainAdapterDescriptor (existing, v1)   # crates/gosling-sdk-types/src/shell.rs:60-66
+DomainAdapterDescriptor (legacy v1)
   domain_id, display_name, version, actions: Vec<String>   # flat action names only; no protocolVersion field
 
-DomainAdapterDescriptor (proposed v2)    # NOT yet implemented; requires an explicit R4 DTO migration
+DomainAdapterDescriptor (v2, implemented as the R4 schema slice)
   domain_id, display_name, version, protocolVersion, actions: [{ name, kind: read|mutate, schemaRef }]
 ```
 
-The existing v1 descriptor's `actions` field is a flat `Vec<String>` — it carries no `kind`, and has
-no `protocolVersion` field at all — so a runtime cannot yet decide which actions require a
-confirmation token, nor detect a domain-adapter-contract-version mismatch, from the descriptor alone.
-R4 must version this DTO (schema bump on `DomainAdapterDescriptor`, with the client/server
-compatibility check in `compatibility.ts` extended accordingly) before the confirmation-token
-authorization rule or the `protocolVersion` comparison below can be enforced; until that migration
-lands, both are frozen targets, not implementable ones, and no R4 work may claim they work against
-the current v1 shape.
+The legacy v1 descriptor's `actions` field was a flat `Vec<String>` and carried no `protocolVersion`,
+so it could not identify mutations or detect a domain-adapter-contract-version mismatch. The R4 DTO
+migration now provides `protocolVersion` and typed action kinds in
+`crates/gosling-sdk-types/src/shell.rs`. A first runtime slice also validates an operator-owned
+`domain_adapters` registration, starts the process through the existing hardened stdio-MCP path, and
+rejects server startup unless its live `descriptor` tool exactly equals provisioning. The configured
+size cap is enforced on newline-delimited MCP frames before JSON decoding as well as on tool values.
+Electron now compares the live descriptor with the consumer declaration and relays typed,
+capability-gated snapshot/action/confirmation calls through Electron main. R4 adds post-ready
+supervision/status notification and local neutral-process failure conformance; packaged and
+cross-platform reproduction remains R6/R8.
 
 New, R4-scoped:
 
@@ -253,17 +252,18 @@ AdapterRegistration             # lives in user/operator-owned Gosling settings,
 AdapterTool: descriptor()                      -> DomainAdapterDescriptor { domain_id, display_name, version, actions,
                                                      protocolVersion }  # NEW field: the domain-adapter CONTRACT version
                                                                         # (descriptor/snapshot/action/confirm shapes),
-                                                                        # frozen at "1" by this document — distinct
+                                                                        # frozen at "1.0.0" by this document — distinct
                                                                         # from `version` (the adapter's own semantic
                                                                         # version) and from MCP's transport protocol
                                                                         # version, which MCP's own initialize handshake
                                                                         # already negotiates independently
 AdapterTool: snapshot(input)                   -> matches DomainSnapshotRequest/Response exactly
-AdapterTool: action(action, input)             -> AdapterActionRequest { action, input }  # NOT DomainActionRequest — no confirmation_token field
+AdapterTool: action(action, input)             -> AdapterActionRequest { action, input }  # NOT DomainActionRequest — no confirmation field
                                                 -> matches DomainActionResponse
 
 # New custom ACP method (main <-> Rust server), distinct from perform_domain_action:
 DomainActionConfirmRequest      # method: _gosling/unstable/shell/domain/action/confirm
+  session_id, generation: must exactly match the server-retained action
   action_id: the confirm interaction's opaque actionId
   approve: boolean
 DomainActionConfirmResponse
@@ -273,12 +273,11 @@ DomainActionConfirmResponse
                                           # result inline — there is no second perform_domain_action
                                           # call and no token is ever serialized to main or the renderer
 
-ActionConfirmationToken        # purely internal Rust-server bookkeeping; minted and consumed atomically
-                                # in the same request that handles approval — never appears on any wire
-                                # DTO, never reaches Electron main, the renderer, or the adapter process
-  actionName, adapterVersion, sessionId, generation: binds the token to exactly one action/session/generation
-  nonce: single-use, server-minted
-  expiresAtGeneration: fails closed on generation rollover
+PendingDomainAction            # purely internal Rust-server bookkeeping, keyed by the opaque actionId
+                                # and atomically consumed by the matching confirm request; no confirmation
+                                # token reaches Electron main, the renderer, or the adapter process
+  actionName, input, sessionId, generation: binds exactly one retained action/session/generation
+  actionId: single-use server-minted nonce; removed on approval or denial
 ```
 
 Before reporting `adapter.status == ready`, the Rust server calls the adapter's `descriptor()` tool
@@ -317,24 +316,22 @@ spawns the registered adapter through the existing `ExtensionConfig::Stdio` chil
 fails closed (`ADAPTER_NOT_REGISTERED`) if `domain_id` has no registry entry, rather than falling
 back to `None` silently.
 
-`domain.action` for any action whose descriptor marks it `mutate` first returns `CONFIRMATION_REQUIRED`
-plus a `confirm` interaction `actionId` rather than executing (the server retains the pending
+`domain.action` for any action whose descriptor marks it `mutate` first returns a bounded
+`DomainActionResponse.confirmationActionId` rather than executing (the server retains the pending
 `action`/`input` alongside that interaction record). Consistent with ADR-0012's
 server-owned-authorization decision, approval is handled entirely **inside the Rust server** through
 the dedicated `_gosling/unstable/shell/domain/action/confirm` method (new;
 `DomainActionConfirmRequest`/`DomainActionConfirmResponse`, defined above) — `confirmation.respond`
 maps to *this* method, not to `perform_domain_action`, since `DomainActionRequest` has no field for an
-interaction's `action_id` or an approve/deny decision. On approval the server mints and immediately
-consumes an `ActionConfirmationToken` internally, executes the retained pending action, and returns
+interaction's `action_id` or an approve/deny decision. On approval the server atomically consumes the
+matching retained pending action, executes it, and returns
 the resulting `DomainActionResponse` shape as `DomainActionConfirmResponse.result` in the *same*
 response — there is no second `perform_domain_action` call, no token relay through Electron main, and
 no wire field anywhere carries the token value; main's role is strictly to relay the
 `confirmation.respond` invoke to the server and relay `DomainActionConfirmResponse` back to the
-renderer unmodified. `DomainActionRequest.confirmation_token`
-(`crates/gosling-sdk-types/src/shell.rs:229-230`) remains present on that DTO for API compatibility
-but is unused by this flow; a future direct (non-confirmation-mediated) caller of
-`perform_domain_action` could still populate it, which is why the field is not removed. The renderer,
-in turn, only answers a yes/no confirmation prompt and never sees a token at all, closing the same
+renderer unmodified. The canonical `DomainActionRequest` contains its session and generation fences
+but no confirmation token or approval field. The renderer, in turn, only answers a yes/no confirmation
+prompt and never sees a token at all, closing the same
 "opaque action ID, not a raw credential" pattern already used for permission/elicitation. `read`
 actions require no confirmation step. Replay, cross-action, cross-session, cross-generation, or
 expired confirm interactions fail with a typed `ADAPTER_ACTION_UNAUTHORIZED` error and no mutation
@@ -376,7 +373,7 @@ Extends the existing table in `shell-productization-contracts.md` §"Error taxon
 - A generation change (reconnect/retry) must not silently replay, duplicate, or auto-resume a prior
   generation's prompt attempt or pending interaction; the renderer must observe the new generation,
   call `session.resume` explicitly, and resubmit any prompt it wants continued.
-- An `ActionConfirmationToken` value must never be observed on any wire DTO, IPC payload, or log —
+- A confirmation token value must never be observed on any wire DTO, IPC payload, or log —
   including in transit through Electron main. It is minted, consumed, and discarded entirely inside
   the Rust server's handling of one `_gosling/unstable/shell/domain/action/confirm` call; a token
   reaching main, the renderer, or the adapter process at all would be a regression of ADR-0012's
@@ -400,8 +397,7 @@ Extends the existing table in `shell-productization-contracts.md` §"Error taxon
 
 ## Status
 
-This document and ADR-0010–0012 collectively answer PG-15 (traceability review) at the schema level.
-They do not close R1: R1 exit still requires architecture review acceptance of the topology choices,
-and no P0 decision may remain open per `project-shell-readiness-plan.md` §6 exit criteria. Until that
-review, no R2–R4 work package may treat these field names as final without re-reading this file for
-drift, and no implementation may cite this document as "R1 complete."
+This document and ADR-0010–0012 collectively close R1's schema-level architecture review. The
+operator accepted the topology choices on 2026-08-13 and no P0 ownership or authority decision remains
+open for R2–R4. R2–R4 implementation must still re-read this document for drift and cannot claim its
+own gate is complete without its specified live conformance evidence.
