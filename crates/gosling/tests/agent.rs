@@ -1773,6 +1773,89 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn test_grind_nudge_cap_terminates_before_max_turns() -> Result<()> {
+            // A grind goal that is never satisfied must not self-feed "keep working"
+            // nudges forever, relying only on the shared (much larger) max_turns cap
+            // to end the loop. GoalTextProvider never calls a tool, so every turn
+            // takes the `no_tools_called` grind-nudge branch.
+            let temp_dir = TempDir::new()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
+            let provider = Arc::new(GoalTextProvider::new());
+
+            let session = session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "grind-cap-test".to_string(),
+                    SessionType::Hidden,
+                    GoslingMode::default(),
+                )
+                .await?;
+
+            agent
+                .update_provider(
+                    provider.clone(),
+                    ModelConfig::new("mock-model"),
+                    &session.id,
+                )
+                .await?;
+            agent
+                .set_grind(Some("Never-satisfied grind goal".to_string()))
+                .await;
+
+            // max_turns is set well above the grind-nudge cap so the test proves the
+            // *grind* cap stopped the loop, not the unrelated turn limit.
+            let session_config = SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(60),
+                compacted_context: false,
+                tail_limit: None,
+            };
+
+            let reply_stream = agent
+                .reply(Message::user().with_text("Hello"), session_config, None)
+                .await?;
+            tokio::pin!(reply_stream);
+
+            let mut messages = Vec::new();
+            while let Some(event) = reply_stream.next().await {
+                match event {
+                    Ok(AgentEvent::Message(msg)) => messages.push(msg),
+                    Ok(_) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+
+            let call_count = provider.call_count.load(Ordering::SeqCst);
+            assert_eq!(
+                call_count, 51,
+                "Expected 1 initial call + 50 grind-nudged retries before the cap stops \
+                 the loop, got {call_count} provider calls (max_turns was 60, so hitting \
+                 that instead would mean the grind cap never fired)"
+            );
+
+            let stop_messages: Vec<_> = messages
+                .iter()
+                .filter(|m| m.as_concat_text().contains("unbounded loop"))
+                .collect();
+            assert_eq!(
+                stop_messages.len(),
+                1,
+                "Expected exactly one user-visible message explaining the grind cap \
+                 stopped the loop, found {}",
+                stop_messages.len()
+            );
+
+            assert_eq!(
+                agent.get_grind().await,
+                None,
+                "Grind goal should be cleared once the nudge cap is hit"
+            );
+
+            Ok(())
+        }
+
+        #[tokio::test]
         async fn test_goal_command_set_and_clear() -> Result<()> {
             let temp_dir = TempDir::new()?;
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));

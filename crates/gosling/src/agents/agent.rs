@@ -75,8 +75,13 @@ use tracing::{debug, error, instrument, warn};
 
 const DEFAULT_MAX_TURNS: u32 = 1000;
 const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
+// Bounds the "grind" nudge independently of `max_turns`: without its own cap, a
+// grind goal that never completes re-injects "keep working" on every no-tool
+// turn, run after run, relying solely on the shared 1000-turn ceiling to end it.
+const DEFAULT_MAX_GRIND_NUDGES: u32 = 50;
 const COMPACTION_THINKING_TEXT: &str = "gosling is compacting the conversation...";
 const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
+const MAX_GRIND_NUDGES_MESSAGE: &str = "I've kept working on the grind goal without completing it after many attempts. Stopping to avoid an unbounded loop — let me know if you'd like me to continue.";
 const DEFAULT_FRONTEND_INSTRUCTIONS: &str = "The following tools are provided directly by the frontend and will be executed by the frontend when called.";
 const STREAM_CHECKPOINT_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -2272,6 +2277,7 @@ impl Agent {
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
             let mut goal_check_pending = false;
+            let mut grind_nudges_sent = 0u32;
             let mut tool_pair_summarization_done = false;
             let mut stop_hook_handled_for_exit = false;
             let mut retrying_after_stop_hook_denial = false;
@@ -3065,20 +3071,30 @@ impl Agent {
                                 )
                             );
                         } else if let Some(grind) = grind_nudge {
-                            let nudge = format!(
-                                "Keep working. The grind goal is not yet complete:\n\n\
-                                 **Goal:** {grind}\n\n\
-                                 Continue until it is fully done."
-                            );
-                            let message = Message::user().with_text(&nudge)
-                                .with_visibility(false, true);
-                            messages_to_add.push(message);
-                            yield AgentEvent::Message(
-                                Message::assistant().with_system_notification(
-                                    SystemNotificationType::InlineMessage,
-                                    format!("Grind: {grind}"),
-                                )
-                            );
+                            if grind_nudges_sent < DEFAULT_MAX_GRIND_NUDGES {
+                                grind_nudges_sent += 1;
+                                let nudge = format!(
+                                    "Keep working. The grind goal is not yet complete:\n\n\
+                                     **Goal:** {grind}\n\n\
+                                     Continue until it is fully done."
+                                );
+                                let message = Message::user().with_text(&nudge)
+                                    .with_visibility(false, true);
+                                messages_to_add.push(message);
+                                yield AgentEvent::Message(
+                                    Message::assistant().with_system_notification(
+                                        SystemNotificationType::InlineMessage,
+                                        format!("Grind: {grind}"),
+                                    )
+                                );
+                            } else {
+                                self.set_goal(None).await;
+                                self.set_grind(None).await;
+                                yield AgentEvent::Message(
+                                    Message::assistant().with_text(MAX_GRIND_NUDGES_MESSAGE)
+                                );
+                                exit_chat = true;
+                            }
                         } else {
                             self.set_goal(None).await;
                             self.set_grind(None).await;
