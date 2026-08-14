@@ -1,6 +1,6 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-14 after the local PG-50 evidence audit
+Updated: 2026-08-14 after PG-50 acceptance on exact revision `b921e6ee1299dba2207ab27ab6fd9452cc57aa26`
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -8,8 +8,8 @@ Mode: architecture readiness; no named shell, production release, signing, publi
 Completed gate: **R0 — baseline CI restored and evidence reconciled**
 Completed gate: **R1 — project-shell topology and application contracts accepted**
 Completed gate: **R2 — copy-free consumer composition and package readback**
-Completed local gate: **R4 — adapter supervision and neutral-process failure conformance**
-Current gate: **PG-50 — pre-GUI backend acceptance (formal NO-GO pending clean revision)**
+Completed gate: **R3/R4 — main-owned application runtime and live neutral domain adapter, revision-bound**
+Current gate: **PG-50 — pre-GUI backend acceptance: ACCEPTED (see `audits/pg-50-pre-gui-acceptance.md`). R5 shared GUI shell kit implementation is authorized to begin.**
 
 ## Intent
 
@@ -193,15 +193,18 @@ consumer-specific host branch.
 
 ## Strict next actions
 
-Execute the dependency-aware work packages in
-[`pre-gui-backend-implementation-plan.md`](pre-gui-backend-implementation-plan.md). In summary:
+PG-50 is accepted on exact revision `b921e6ee1299dba2207ab27ab6fd9452cc57aa26` (PR #50); see
+[`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md) for the full
+condition-by-condition disposition, current-CI result, and the one residual gap (macOS
+package-readback could not be reproduced in the accepting sandbox; `linux-x64` readback stands in
+as the supported-host-target proof).
 
-1. Isolate the intended R1–R4 work into a clean, exact revision, run current CI for it, and rerun
-   the PG-50 evidence/review. The local double conformance run and package readback are recorded in
-   [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md), but are not a
-   substitute for revision-bound acceptance.
-2. Do not start shared UI until PG-50 is accepted. R5 is the next implementation gate only after
-   that acceptance.
+1. R5 — build the shared shell GUI application kit — is now the active gate. It must consume only
+   the R1–R4 contracts frozen in ADR-0010–0012 and exercised above; it must not add GUI behavior to
+   compensate for missing backend state/action, and it must not begin any named-shell (DAWES, math,
+   physics/CST, or other) implementation, which remains blocked until M5.
+2. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
+   publication) remain open and unauthorized by this acceptance.
 
 ## Named-shell start policy
 
