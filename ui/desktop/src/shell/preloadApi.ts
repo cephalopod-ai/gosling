@@ -15,8 +15,13 @@ import type {
   ShellPromptSubmitResult,
   ShellPermissionRespondRequest,
   ShellElicitationRespondRequest,
+  ShellCredentialSelectRequest,
+  ShellDirectorySelectRequest,
+  ShellSessionDetachResult,
   ShellSessionResumeRequest,
 } from './ipc';
+import type { ShellCredentialSnapshot } from './credentialController';
+import type { ShellDirectorySelectResult } from './directoryController';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
 import type { ShellInteraction } from './interactionController';
@@ -33,9 +38,16 @@ export interface GoslingShellAPI {
     stop(request: ShellGenerationRequest): Promise<ShellActionResult>;
     onChanged(listener: (state: ShellRuntimeSnapshot) => void): () => void;
   };
+  directory: {
+    select(request: ShellDirectorySelectRequest): Promise<ShellDirectorySelectResult>;
+  };
+  credential: {
+    select(request: ShellCredentialSelectRequest): Promise<ShellCredentialSnapshot>;
+  };
   session: {
     create(request: ShellGenerationRequest): Promise<ShellSessionRecord>;
     resume(request: ShellSessionResumeRequest): Promise<ShellSessionRecord>;
+    detach(request: ShellGenerationRequest): Promise<ShellSessionDetachResult>;
     onUpdated(listener: (update: ShellSessionUpdate) => void): () => void;
   };
   prompt: {

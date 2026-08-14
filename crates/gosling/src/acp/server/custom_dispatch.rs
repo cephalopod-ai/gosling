@@ -36,6 +36,28 @@ impl GoslingAcpAgent {
         Ok(self.on_validate_shell_provisioning(req).await)
     }
 
+    #[custom_method(ShellDirectoryValidateRequest)]
+    async fn dispatch_validate_shell_directory(
+        &self,
+        req: ShellDirectoryValidateRequest,
+    ) -> Result<ShellDirectoryValidateResponse, agent_client_protocol::Error> {
+        Ok(self.on_validate_shell_directory(req))
+    }
+
+    #[custom_method(ShellCredentialListRequest)]
+    async fn dispatch_list_shell_credentials(
+        &self,
+    ) -> Result<ShellCredentialListResponse, agent_client_protocol::Error> {
+        Ok(self.on_list_shell_credentials().await)
+    }
+
+    #[custom_method(ShellModuleListRequest)]
+    async fn dispatch_list_shell_modules(
+        &self,
+    ) -> Result<ShellModuleListResponse, agent_client_protocol::Error> {
+        Ok(self.on_list_shell_modules().await)
+    }
+
     #[custom_method(DomainSnapshotRequest)]
     async fn dispatch_domain_snapshot(
         &self,

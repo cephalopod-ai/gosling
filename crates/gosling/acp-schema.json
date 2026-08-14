@@ -38,6 +38,14 @@
           "$ref": "#/$defs/ShellSettingsAuthority",
           "default": "main_gosling"
         },
+        "settingsSchemaVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Version of the product-local settings document this shell expects.\n\nAbsent means the contract default; a version this build does not know fails closed rather\nthan silently migrating an operator's document.",
+          "minimum": 0
+        },
         "protocolPolicy": {
           "$ref": "#/$defs/ShellProtocolPolicy",
           "default": {
@@ -46,7 +54,9 @@
         },
         "session": {
           "$ref": "#/$defs/ShellSessionProvisioning",
-          "default": {}
+          "default": {
+            "credentialPolicy": "fixed"
+          }
         },
         "instructions": {
           "anyOf": [
@@ -134,6 +144,10 @@
             "null"
           ]
         },
+        "credentialPolicy": {
+          "$ref": "#/$defs/ShellCredentialPolicy",
+          "default": "fixed"
+        },
         "credentialProfileId": {
           "type": [
             "string",
@@ -171,6 +185,14 @@
           }
         }
       }
+    },
+    "ShellCredentialPolicy": {
+      "type": "string",
+      "enum": [
+        "fixed",
+        "selectable_catalog"
+      ],
+      "description": "Governs whether a shell may read Gosling's credential catalog and select a profile.\n\n`Fixed` keeps the pre-DS-4 behavior: the provisioned `credential_profile_id` is the only\npermitted profile and no catalog method is available. Absence of the field defaults to `Fixed`\nso an unmodified provisioning document never silently widens credential access."
     },
     "ShellExtensionSelection": {
       "type": "object",
@@ -275,6 +297,7 @@
         "resolution": {
           "$ref": "#/$defs/ShellProvisioningResolution",
           "default": {
+            "credentialPolicy": "fixed",
             "extensions": [],
             "skillIds": []
           }
@@ -326,7 +349,9 @@
         "duplicate_skill",
         "invalid_denied_method",
         "invalid_instructions",
-        "invalid_domain_adapter"
+        "invalid_domain_adapter",
+        "invalid_credential_policy",
+        "unsupported_settings_schema_version"
       ]
     },
     "ShellProvisioningIssueSeverity": {
@@ -344,6 +369,10 @@
             "string",
             "null"
           ]
+        },
+        "credentialPolicy": {
+          "$ref": "#/$defs/ShellCredentialPolicy",
+          "default": "fixed"
         },
         "credentialProfileId": {
           "type": [
@@ -412,6 +441,206 @@
       ],
       "x-side": "agent",
       "x-method": "_gosling/unstable/shell/provisioning/validate"
+    },
+    "ShellDirectoryValidateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/directory/validate"
+    },
+    "ShellDirectoryValidateResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ShellDirectoryStatus"
+        },
+        "canonicalPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShellDirectoryReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/directory/validate"
+    },
+    "ShellDirectoryStatus": {
+      "type": "string",
+      "enum": [
+        "valid",
+        "invalid",
+        "unavailable"
+      ]
+    },
+    "ShellDirectoryReason": {
+      "type": "string",
+      "enum": [
+        "not_absolute",
+        "not_found",
+        "not_a_directory",
+        "inaccessible",
+        "path_too_long",
+        "invalid_path"
+      ]
+    },
+    "ShellCredentialListRequest_unstable": {
+      "type": "object",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/credentials/list"
+    },
+    "ShellCredentialListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ShellCredentialCatalogStatus"
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellCredentialSummary"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/credentials/list"
+    },
+    "ShellCredentialCatalogStatus": {
+      "type": "string",
+      "enum": [
+        "available",
+        "denied",
+        "unavailable"
+      ]
+    },
+    "ShellCredentialSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "providerOrServiceId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ShellCredentialStatus"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "providerOrServiceId",
+        "status"
+      ],
+      "description": "The only credential facts a shell may observe. Auth kind, source, configured secret-field names,\nnon-secret provider parameters, timestamps, and usage stay inside main Gosling."
+    },
+    "ShellCredentialStatus": {
+      "type": "string",
+      "enum": [
+        "configured",
+        "relink_required"
+      ]
+    },
+    "ShellModuleListRequest_unstable": {
+      "type": "object",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/modules/list"
+    },
+    "ShellModuleListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "contractVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellModuleSummary"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "contractVersion"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/modules/list"
+    },
+    "ShellModuleSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ShellModuleKind"
+        },
+        "status": {
+          "$ref": "#/$defs/ShellModuleStatus"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status"
+      ]
+    },
+    "ShellModuleKind": {
+      "type": "string",
+      "enum": [
+        "core",
+        "extension",
+        "skill",
+        "adapter"
+      ]
+    },
+    "ShellModuleStatus": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "unavailable",
+        "incompatible"
+      ]
     },
     "DomainSnapshotRequest_unstable": {
       "type": "object",
@@ -6703,6 +6932,33 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ShellDirectoryValidateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/directory/validate",
+                  "title": "ShellDirectoryValidateRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ShellCredentialListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/credentials/list",
+                  "title": "ShellCredentialListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ShellModuleListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/modules/list",
+                  "title": "ShellModuleListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/DomainSnapshotRequest_unstable"
                     }
                   ],
@@ -7663,6 +7919,30 @@
                         }
                       ],
                       "title": "ShellProvisioningValidateResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellDirectoryValidateResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellDirectoryValidateResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellCredentialListResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellCredentialListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellModuleListResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellModuleListResponse_unstable"
                     },
                     {
                       "allOf": [

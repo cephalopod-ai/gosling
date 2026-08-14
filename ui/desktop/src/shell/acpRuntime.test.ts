@@ -131,6 +131,13 @@ function harness() {
       },
     })
   );
+  const validateDirectory = vi.fn((params: { path: string }) =>
+    Promise.resolve({ status: 'valid' as const, canonicalPath: params.path })
+  );
+  const listCredentials = vi.fn(() =>
+    Promise.resolve({ status: 'denied' as const, profiles: [] })
+  );
+  const listModules = vi.fn(() => Promise.resolve({ contractVersion: 1, modules: [] }));
   const prepare = vi.fn(() => Promise.reject(new Error('not used')));
   const snapshot = vi.fn<() => Promise<DomainSnapshotResponse_unstable>>(() =>
     Promise.reject(new Error('not used'))
@@ -153,6 +160,9 @@ function harness() {
       sessionInfo_unstable: sessionInfo,
       shellProvisioningRead_unstable: read,
       shellProvisioningValidate_unstable: validate,
+      shellDirectoryValidate_unstable: validateDirectory,
+      shellCredentialsList_unstable: listCredentials,
+      shellModulesList_unstable: listModules,
       shellHandoffPrepare_unstable: prepare,
       shellDomainSnapshot_unstable: snapshot,
       shellDomainAction_unstable: action,
@@ -201,7 +211,6 @@ function connect(value = harness()) {
       acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
       profile,
       manifest,
-      workingDir: '/workspace/current',
       clientName: 'fixture-shell',
       clientVersion: '0.0.0-test',
       dependencies: value.dependencies,
@@ -299,7 +308,6 @@ describe('shell ACP runtime', () => {
       acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
       profile,
       manifest: adapterManifest,
-      workingDir: '/workspace/current',
       clientName: 'fixture-shell',
       clientVersion: '0.0.0-test',
       dependencies: value.dependencies,
@@ -329,7 +337,6 @@ describe('shell ACP runtime', () => {
         acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
         profile,
         manifest: consumerManifest,
-        workingDir: '/workspace/current',
         clientName: 'fixture-shell',
         clientVersion: '0.0.0-test',
         dependencies: value.dependencies,
@@ -342,7 +349,7 @@ describe('shell ACP runtime', () => {
     const { promise, value } = connect();
     const connection = await promise;
 
-    await expect(connection.createSession()).resolves.toEqual({
+    await expect(connection.createSession({ workingDir: '/workspace/current' })).resolves.toEqual({
       sessionId: 'session-1',
       workingDir: '/workspace/current',
     });
@@ -421,20 +428,17 @@ describe('shell ACP runtime', () => {
     });
   });
 
-  it('rejects a relative main-owned working directory before opening a transport', async () => {
-    const value = harness();
-    await expect(
-      connectShellAcp({
-        acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
-        profile,
-        manifest,
-        workingDir: 'relative',
-        clientName: 'fixture-shell',
-        clientVersion: '0.0.0-test',
-        dependencies: value.dependencies,
-      })
-    ).rejects.toThrow('workingDir must be an absolute path');
-    expect(value.createStream).not.toHaveBeenCalled();
+  it('rejects a relative main-supplied working directory before reaching the server', async () => {
+    const { promise, value } = connect();
+    const connection = await promise;
+
+    await expect(connection.createSession({ workingDir: 'relative' })).rejects.toThrow(
+      'workingDir must be an absolute path'
+    );
+    await expect(connection.validateDirectory('relative')).rejects.toThrow(
+      'workingDir must be an absolute path'
+    );
+    expect(value.newSession).not.toHaveBeenCalled();
   });
 
   it('rejects invalid resume IDs before contacting the backend', async () => {
@@ -490,7 +494,6 @@ describe('shell ACP runtime', () => {
         acpUrl,
         profile,
         manifest,
-        workingDir: '/workspace/current',
         clientName: 'fixture-shell',
         clientVersion: '0.0.0-test',
         dependencies: value.dependencies,

@@ -8,8 +8,11 @@ import {
   type DomainSnapshotResponse_unstable,
   type GetSessionInfoResponse_unstable,
   type GoslingClientCallbacks,
+  type ShellCredentialListResponse_unstable,
+  type ShellDirectoryValidateResponse_unstable,
   type ShellHandoffPrepareRequest_unstable,
   type ShellHandoffPrepareResponse_unstable,
+  type ShellModuleListResponse_unstable,
   type ShellProvisioningReadResponse_unstable,
   type ShellProvisioningValidateRequest_unstable,
   type ShellProvisioningValidateResponse_unstable,
@@ -55,6 +58,15 @@ export interface ShellAcpClient {
     shellProvisioningValidate_unstable(params: {
       provisioning?: ShellProvisioningValidateRequest_unstable['provisioning'];
     }): Promise<ShellProvisioningValidateResponse_unstable>;
+    shellDirectoryValidate_unstable(params: {
+      path: string;
+    }): Promise<ShellDirectoryValidateResponse_unstable>;
+    shellCredentialsList_unstable(
+      params: Record<string, never>
+    ): Promise<ShellCredentialListResponse_unstable>;
+    shellModulesList_unstable(
+      params: Record<string, never>
+    ): Promise<ShellModuleListResponse_unstable>;
     shellHandoffPrepare_unstable(
       params: ShellHandoffPrepareRequest_unstable
     ): Promise<ShellHandoffPrepareResponse_unstable>;
@@ -77,8 +89,14 @@ export interface ShellAcpConnection {
   compatibility: { compatible: true };
   runtimeNamespace: string;
   domainAdapter: ShellRuntimeMetadata['domainAdapter'];
-  createSession(): Promise<ShellSession>;
+  createSession(input: {
+    workingDir: string;
+    credentialProfileId?: string | null;
+  }): Promise<ShellSession>;
   resumeSession(sessionId: string): Promise<ShellSession>;
+  validateDirectory(directory: string): Promise<ShellDirectoryValidateResponse_unstable>;
+  listCredentials(): Promise<ShellCredentialListResponse_unstable>;
+  listModules(): Promise<ShellModuleListResponse_unstable>;
   prompt(input: { sessionId: string; text: string; messageId: string }): Promise<unknown>;
   cancel(input: { sessionId: string }): Promise<void>;
   prepareHandoff(
@@ -341,14 +359,12 @@ export async function connectShellAcp(input: {
   acpUrl: string;
   profile: ResolvedShellProductProfile;
   manifest: ShellBuildManifest;
-  workingDir: string;
   clientName: string;
   clientVersion: string;
   callbacks?: () => GoslingClientCallbacks;
   dependencies?: ShellAcpRuntimeDependencies;
 }): Promise<ShellAcpConnection> {
   const dependencies = input.dependencies ?? defaultDependencies;
-  const workingDir = assertAbsoluteWorkingDir(input.workingDir);
   const stream = dependencies.createStream(assertAuthenticatedLoopbackUrl(input.acpUrl));
   const client = dependencies.createClient(input.callbacks ?? clientCallbacks(), stream);
 
@@ -406,13 +422,17 @@ export async function connectShellAcp(input: {
       compatibility,
       runtimeNamespace: metadata.runtimeNamespace,
       domainAdapter: metadata.domainAdapter,
-      createSession: async () => {
+      createSession: async ({ workingDir: requested, credentialProfileId }) => {
+        const cwd = assertAbsoluteWorkingDir(requested);
         const created = await client.newSession({
-          cwd: workingDir,
+          cwd,
           mcpServers: [],
-          _meta: { client: 'gosling-shell' },
+          _meta: {
+            client: 'gosling-shell',
+            ...(credentialProfileId ? { shellCredentialProfileId: credentialProfileId } : {}),
+          },
         });
-        return asShellSession(String(created.sessionId), workingDir);
+        return asShellSession(String(created.sessionId), cwd);
       },
       resumeSession: async (sessionId) => {
         const fixedSessionId = assertSessionId(sessionId);
@@ -439,6 +459,12 @@ export async function connectShellAcp(input: {
           prompt: [{ type: 'text', text }],
         }),
       cancel: ({ sessionId }) => client.cancel({ sessionId: assertSessionId(sessionId) }),
+      validateDirectory: async (directory) =>
+        client.gosling.shellDirectoryValidate_unstable({
+          path: assertAbsoluteWorkingDir(directory),
+        }),
+      listCredentials: () => client.gosling.shellCredentialsList_unstable({}),
+      listModules: () => client.gosling.shellModulesList_unstable({}),
       prepareHandoff: (request) => client.gosling.shellHandoffPrepare_unstable(request),
       domainSnapshot: (request) => client.gosling.shellDomainSnapshot_unstable(request),
       domainAction: (request) => client.gosling.shellDomainAction_unstable(request),

@@ -60,6 +60,9 @@ Extends (does not replace) the existing `runtime.read`/`runtime.changed` payload
 ```text
 generation, lifecycleState, reasonCode, allowedActions          # unchanged from Gate 2 contract
 identity: { id, displayName, version }                            # newly exposed, already computed during compatibility check
+directory: { state: unselected|selected|missing|invalid, path: string|null, label: string|null, reasonCode: string|null }
+credentials: { catalogStatus: available|denied|unavailable, profiles: [{ id, name, providerOrServiceId, status: configured|relink_required }], selectedProfileId: string|null, selectionStatus: none|configured|relink_required|missing }
+modules: [{ id: "core:<name>"|"extension:<name>"|"skill:<id>"|"adapter:<domainId>", kind, status: ready|unavailable|incompatible, version?, capabilities: string[] }]
 runtimeNamespace: string | null                                   # null until R3 adds it to ShellIdentity/checkShellCompatibility; only ever non-null once genuinely verified, never trusted-but-unlabeled
 compatibility: { expectedVsActual summary, no raw values }
 provisioningIssues: [{ code, path }]                              # codes only, matches existing diagnostic redaction
@@ -130,7 +133,15 @@ already are:
 | `domain.snapshot` | invoke | none beyond generation | bounded payload <=64 KiB (matches the safe-snapshot ceiling; the R4 neutral fixture's snapshot must fit this bound, and an adapter that would exceed it fails as overproducing) | only when `adapter.status == ready` |
 | `domain.action` | invoke | session ID + generation + action name + args, <=16 KiB | bounded payload <=64 KiB, or bounded `confirmationActionId` for an unapproved `mutate` action | `read` actions execute directly; `mutate` actions execute only once their `confirm` interaction (below) is approved |
 | `confirmation.requested` | event | main only | interaction summary <=8 KiB | opaque action ID, allowlisted action-name/args summary only |
+| `directory.select` | invoke | generation + `userGesture: true`; **never a path** | typed result <=8 KiB | main opens Electron's native directory chooser, sends the operator-confirmed path to the authenticated loopback backend for canonicalization, and keeps only an accepted canonical path; cancel is `{status: "cancelled"}`, not an error; rejected paths return a stable reason code and no path |
+| `credential.select` | invoke | generation + opaque profile ID from the current safe catalog, or `null` | safe catalog snapshot <=64 KiB | rejects unknown/stale/policy-disallowed IDs; persists only the opaque ID; never returns a secret, auth kind, source, secret-field name, provider parameter, or timestamp |
+| `session.detach` | invoke | none beyond generation | typed result <=8 KiB | releases the local one-session slot so a different directory can be chosen; refuses while a prompt attempt streams or an interaction is pending; never deletes or mutates the server session, which stays resumable by ID |
 | `confirmation.respond` | invoke | action ID + approve\|deny | on approve: bounded `DomainActionResponse` payload <=64 KiB; on deny/reject: status <=1 KiB | main relays to the Rust server, which rejects replay/expired/foreign action ID and, on approve, executes the already-pending action immediately (it retained the action/input from the original `domain.action` call) and returns the result inline — there is no second `perform_domain_action` round trip and no token ever crosses the main/server boundary |
+
+`session.create` requires `directory.select` and `session.detach` requires `session.create`: a
+consumer that can open a session must be able to choose the directory that session runs in, and a
+consumer that can release a session must be able to open one. The resolver rejects a declaration
+that omits a prerequisite rather than silently widening it.
 
 Explicitly still absent, unchanged from the Gate 2 contract: arbitrary file/settings/clipboard/
 notification/updater access, raw ACP URL/token, MCP proxy URL, server secret, and arbitrary IPC
@@ -155,6 +166,8 @@ derivations instead of one mixed list:
 
 ```text
 Custom-method operations -> derive into requiredMethods (checked by exact string membership):
+  directory.select                               -> _gosling/unstable/shell/directory/validate
+  credential.select                              -> _gosling/unstable/shell/credentials/list
   domain.snapshot                                -> _gosling/unstable/shell/domain/snapshot
   domain.action                                  -> _gosling/unstable/shell/domain/action
   confirmation.respond                           -> _gosling/unstable/shell/domain/action/confirm

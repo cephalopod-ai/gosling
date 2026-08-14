@@ -28,6 +28,11 @@ import {
   type ShellInteractionController,
 } from './interactionController';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
+import type { ShellDirectoryController } from './directoryController';
+import type { ShellCredentialController } from './credentialController';
+import type { ShellModuleSummary } from '@repo-makeover/gosling-sdk';
+
+const MAX_SHELL_MODULES = 64;
 
 interface BackendProcessEvents {
   once(event: 'exit', listener: (code: number | null, signal: string | null) => void): unknown;
@@ -48,6 +53,8 @@ export interface ShellRuntimeControllerOptions {
   diagnosticsDir: string;
   processRegistryPath: string;
   workingDir: string;
+  directory: ShellDirectoryController;
+  credentials: ShellCredentialController;
   isPackaged: boolean;
   resourcesPath?: string;
   preloadPath: string;
@@ -97,6 +104,14 @@ function startupFailureName(error: unknown): ShellLifecycleStateName {
   return 'offline';
 }
 
+async function readModules(connection: ShellAcpConnection): Promise<ShellModuleSummary[]> {
+  const response = await connection.listModules();
+  return (response.modules ?? []).slice(0, MAX_SHELL_MODULES).map((module) => ({
+    ...module,
+    capabilities: [...(module.capabilities ?? [])],
+  }));
+}
+
 function startupFailureCode(error: unknown): string {
   if (error instanceof ShellCompatibilityError) {
     return error.result.code;
@@ -121,6 +136,7 @@ export function createShellRuntimeController(
   let sessions: ShellSessionController | null = null;
   let interactions: ShellInteractionController | null = null;
   let adapterStatus: NonNullable<ShellRuntimeSnapshot['adapter']>['status'] | null = null;
+  let modules: ShellModuleSummary[] = [];
   let startPromise: Promise<ShellLifecycleState> | null = null;
   let stopPromise: Promise<ShellLifecycleState> | null = null;
   let expectedExit = false;
@@ -148,6 +164,9 @@ export function createShellRuntimeController(
         status: acp ? 'compatible' : state.name === 'incompatible' ? 'incompatible' : 'unverified',
       },
       provisioningIssues: provisioningIssues.map((issue) => ({ ...issue })),
+      directory: options.directory.read(),
+      credentials: options.credentials.read(),
+      modules: modules.map((module) => ({ ...module, capabilities: [...(module.capabilities ?? [])] })),
       session: session?.status === 'none' ? null : session,
       adapter: acp?.domainAdapter
         ? {
@@ -164,6 +183,9 @@ export function createShellRuntimeController(
       listener(snapshot());
     }
   };
+
+  options.directory.onChanged(notify);
+  options.credentials.onChanged(notify);
 
   const publish = (next: ShellLifecycleState) => {
     state = next;
@@ -196,6 +218,9 @@ export function createShellRuntimeController(
 
   const clearRuntime = async () => {
     detachExitListener();
+    modules = [];
+    options.directory.clear();
+    options.credentials.clear();
     interactions?.clear();
     interactions = null;
     sessions?.close();
@@ -216,6 +241,9 @@ export function createShellRuntimeController(
     transition('offline', 'BACKEND_EXITED');
     acp?.close();
     acp = null;
+    modules = [];
+    options.directory.clear();
+    options.credentials.clear();
     interactions?.clear();
     interactions = null;
     sessions?.close('failed');
@@ -248,6 +276,7 @@ export function createShellRuntimeController(
       expectedExit = false;
       provisioningIssues = [];
       adapterStatus = null;
+      modules = [];
       try {
         const runtime = await dependencies.createHost({
           profile: {
@@ -299,7 +328,6 @@ export function createShellRuntimeController(
           acpUrl: runtime.backend.acpUrl,
           profile: options.profile,
           manifest: options.manifest,
-          workingDir: options.workingDir,
           clientName: options.clientName,
           clientVersion: options.clientVersion,
           callbacks: () => ({
@@ -323,8 +351,30 @@ export function createShellRuntimeController(
           return state;
         }
         provisioningIssues = provisioningIssueSummaries(acp.provisioning.validation.issues);
+        const connection = acp;
+        await options.directory.restore();
+        await options.credentials.refresh();
+        modules = await readModules(connection);
+        if (eventGeneration !== generation || stateName() !== 'validating') {
+          await clearRuntime();
+          return state;
+        }
         sessions = createShellSessionController({
-          transport: acp,
+          transport: {
+            createSession: () => {
+              const accepted = options.directory.accepted();
+              if (!accepted) {
+                throw new Error('no working directory is selected');
+              }
+              return connection.createSession({
+                workingDir: accepted,
+                credentialProfileId: options.credentials.selected(),
+              });
+            },
+            resumeSession: (sessionId) => connection.resumeSession(sessionId),
+            prompt: (input) => connection.prompt(input),
+            cancel: (input) => connection.cancel(input),
+          },
           generation: () => generation,
         });
         sessions.onChanged(notify);

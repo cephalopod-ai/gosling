@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 pub const SHELL_PROVISIONING_SCHEMA_VERSION: u32 = 1;
 pub const SHELL_HANDOFF_SCHEMA_VERSION: u32 = 1;
+pub const SHELL_MODULE_CONTRACT_VERSION: u32 = 1;
+pub const SHELL_SETTINGS_SCHEMA_VERSION: u32 = 1;
 pub const DOMAIN_ADAPTER_PROTOCOL_VERSION: &str = "1.0.0";
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -41,11 +43,26 @@ pub struct ShellExtensionSelection {
     pub available_tools: Option<Vec<String>>,
 }
 
+/// Governs whether a shell may read Gosling's credential catalog and select a profile.
+///
+/// `Fixed` keeps the pre-DS-4 behavior: the provisioned `credential_profile_id` is the only
+/// permitted profile and no catalog method is available. Absence of the field defaults to `Fixed`
+/// so an unmodified provisioning document never silently widens credential access.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellCredentialPolicy {
+    #[default]
+    Fixed,
+    SelectableCatalog,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellSessionProvisioning {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub credential_policy: ShellCredentialPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential_profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,6 +132,12 @@ pub struct ShellProvisioning {
     pub identity: ShellIdentity,
     #[serde(default)]
     pub settings_authority: ShellSettingsAuthority,
+    /// Version of the product-local settings document this shell expects.
+    ///
+    /// Absent means the contract default; a version this build does not know fails closed rather
+    /// than silently migrating an operator's document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_schema_version: Option<u32>,
     #[serde(default)]
     pub protocol_policy: ShellProtocolPolicy,
     #[serde(default)]
@@ -154,6 +177,8 @@ pub enum ShellProvisioningIssueCode {
     InvalidDeniedMethod,
     InvalidInstructions,
     InvalidDomainAdapter,
+    InvalidCredentialPolicy,
+    UnsupportedSettingsSchemaVersion,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -170,6 +195,8 @@ pub struct ShellProvisioningIssue {
 pub struct ShellProvisioningResolution {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub credential_policy: ShellCredentialPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential_profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -222,6 +249,142 @@ pub struct ShellProvisioningValidateRequest {
 pub struct ShellProvisioningValidateResponse {
     pub provisioning: ShellProvisioning,
     pub validation: ShellProvisioningValidationReport,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellDirectoryStatus {
+    #[default]
+    Valid,
+    Invalid,
+    Unavailable,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellDirectoryReason {
+    #[default]
+    NotAbsolute,
+    NotFound,
+    NotADirectory,
+    Inaccessible,
+    PathTooLong,
+    InvalidPath,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/directory/validate",
+    response = ShellDirectoryValidateResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellDirectoryValidateRequest {
+    pub path: String,
+}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellDirectoryValidateResponse {
+    pub status: ShellDirectoryStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<ShellDirectoryReason>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellCredentialStatus {
+    Configured,
+    #[default]
+    RelinkRequired,
+}
+
+/// The only credential facts a shell may observe. Auth kind, source, configured secret-field names,
+/// non-secret provider parameters, timestamps, and usage stay inside main Gosling.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellCredentialSummary {
+    pub id: String,
+    pub name: String,
+    pub provider_or_service_id: String,
+    pub status: ShellCredentialStatus,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellCredentialCatalogStatus {
+    #[default]
+    Available,
+    Denied,
+    Unavailable,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/credentials/list",
+    response = ShellCredentialListResponse
+)]
+pub struct ShellCredentialListRequest {}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellCredentialListResponse {
+    pub status: ShellCredentialCatalogStatus,
+    #[serde(default)]
+    pub profiles: Vec<ShellCredentialSummary>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellModuleKind {
+    #[default]
+    Core,
+    Extension,
+    Skill,
+    Adapter,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellModuleStatus {
+    #[default]
+    Ready,
+    Unavailable,
+    Incompatible,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellModuleSummary {
+    pub id: String,
+    pub kind: ShellModuleKind,
+    pub status: ShellModuleStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/modules/list",
+    response = ShellModuleListResponse
+)]
+pub struct ShellModuleListRequest {}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellModuleListResponse {
+    pub contract_version: u32,
+    #[serde(default)]
+    pub modules: Vec<ShellModuleSummary>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -433,6 +596,77 @@ mod tests {
         let json = serde_json::to_value(report).unwrap();
         assert_eq!(json["issues"][0]["path"], "session.credentialProfileId");
         assert!(json.get("secrets").is_none());
+    }
+
+    #[test]
+    fn credential_policy_defaults_to_fixed_when_absent() {
+        let session: ShellSessionProvisioning =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(session.credential_policy, ShellCredentialPolicy::Fixed);
+        assert!(session.credential_profile_id.is_none());
+    }
+
+    #[test]
+    fn credential_summary_excludes_every_non_shell_credential_field() {
+        let summary = ShellCredentialSummary {
+            id: "profile-id".into(),
+            name: "Work account".into(),
+            provider_or_service_id: "anthropic".into(),
+            status: ShellCredentialStatus::Configured,
+        };
+
+        let json = serde_json::to_value(summary).unwrap();
+        let object = json.as_object().unwrap();
+        assert_eq!(
+            object.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["id", "name", "providerOrServiceId", "status"]
+        );
+        for excluded in [
+            "authKind",
+            "source",
+            "configuredSecretFields",
+            "nonSecretFields",
+            "createdAt",
+            "updatedAt",
+        ] {
+            assert!(object.get(excluded).is_none(), "{excluded} leaked");
+        }
+    }
+
+    #[test]
+    fn directory_validation_never_echoes_a_path_on_failure() {
+        let response = ShellDirectoryValidateResponse {
+            status: ShellDirectoryStatus::Invalid,
+            canonical_path: None,
+            reason: Some(ShellDirectoryReason::NotFound),
+        };
+
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["status"], "invalid");
+        assert_eq!(json["reason"], "not_found");
+        assert!(json.get("canonicalPath").is_none());
+    }
+
+    #[test]
+    fn module_summary_carries_identity_and_status_without_transport_details() {
+        let response = ShellModuleListResponse {
+            contract_version: SHELL_MODULE_CONTRACT_VERSION,
+            modules: vec![ShellModuleSummary {
+                id: "adapter:neutral-fixture".into(),
+                kind: ShellModuleKind::Adapter,
+                status: ShellModuleStatus::Ready,
+                version: Some("0.1.0".into()),
+                capabilities: vec!["inspect".into(), "toggle".into()],
+            }],
+        };
+
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["contractVersion"], SHELL_MODULE_CONTRACT_VERSION);
+        assert_eq!(json["modules"][0]["kind"], "adapter");
+        let module = json["modules"][0].as_object().unwrap();
+        for excluded in ["command", "args", "env", "uri", "transport", "pid"] {
+            assert!(module.get(excluded).is_none(), "{excluded} leaked");
+        }
     }
 
     #[test]

@@ -5,6 +5,7 @@
   "productProfilePath": "fixtures/shell-products/fixture-a/product-profile.json",
   "rendererEntry": "renderer.ts",
   "declaredCapabilities": [
+    "directory.select",
     "session.create"
   ]
 }

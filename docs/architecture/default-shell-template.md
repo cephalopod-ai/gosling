@@ -93,8 +93,10 @@ do not expose a generic settings bridge.
 Exit: two identities cannot observe or overwrite each other's settings; malformed, oversized,
 unknown, secret-shaped, relative-path, interrupted-write, old-schema, and permission cases pass.
 
-Current worktree: schema, isolated path, parser, reader/writer, and initial bounds/isolation tests
-implemented and passing locally; IPC, migration, and crash-interruption proof remain.
+Current worktree: schema, isolated path, parser, reader/writer, schema-recovery load, narrow
+per-field store, and bounds/isolation/recovery tests implemented and passing locally. The store
+refuses to overwrite an unparseable document until an explicit reset. Crash-interruption proof on
+each supported platform remains for R6.
 
 ### DS-3 — Working-directory authority
 
@@ -106,7 +108,10 @@ errors. Persist only the validated last directory in shell-local settings.
 Exit: typed IPC/preload negative-space tests and integration tests cover select, cancel, stale
 generation, invalid sender, removed/inaccessible directory, relaunch, and workspace/session pinning.
 
-Current worktree: not implemented.
+Current worktree: built. `_gosling/unstable/shell/directory/validate` canonicalizes without side
+effects; `directory.select`/`session.detach` are typed main-owned operations that never accept a
+renderer path; session creation uses the accepted canonical path and the backend canonicalizes
+again. Local Rust, Desktop, and live-child evidence passes; revision-bound acceptance remains.
 
 ### DS-4 — Credential metadata and use-without-ownership
 
@@ -118,8 +123,10 @@ backend. Missing/revoked/mismatched profiles fail closed and offer explicit full
 Exit: sentinel secrets never cross ACP, main snapshot, preload, diagnostics, settings, or logs;
 revoke, relink, provider mismatch, stale selection, and shell coexistence tests pass.
 
-Current worktree: backend reference resolution and session pinning exist; safe catalog projection
-and focused shell operation are not implemented.
+Current worktree: built. `session.credentialPolicy` gates a four-field Rust-owned safe projection
+behind `_gosling/unstable/shell/credentials/list`; selection persists only an opaque ID and the
+backend re-resolves it at session creation. Sentinel-secret and revoke/relink/mismatch tests pass
+locally; revision-bound acceptance remains.
 
 ### DS-5 — Module and backend composition
 
@@ -131,8 +138,10 @@ authorities. The consumer may render declared data but cannot introduce a backen
 Exit: no undeclared module becomes reachable; absent, incompatible, crashing, hanging, malformed,
 overproducing, permission-requiring, and mutating modules have deterministic recovery behavior.
 
-Current worktree: extension selection and one supervised domain-adapter contract exist; the generic
-registry projection and multiple-module policy remain to be specified and tested.
+Current worktree: built. `_gosling/unstable/shell/modules/list` reports the intersection of
+provisioned selection and live backend resolution as one bounded inventory; v1's one-adapter limit
+is explicit rather than assumed. Local unit and live-child evidence passes; the full DS-5.4 crash,
+hang, and malformed-adapter matrix remains for R6.
 
 ### DS-6 — Launcher, icon, identity, and scaffold
 
@@ -145,8 +154,10 @@ development template, not a production or named-domain product.
 Exit: generating a second neutral shell changes only consumer/profile/provisioning/assets; host
 source hashes stay fixed and the strict resolver rejects incomplete or colliding identities/assets.
 
-Current worktree: existing neutral consumer/product fixtures prove parts of composition and identity;
-the Default Shell scaffold command and sample are not implemented.
+Current worktree: built. `pnpm run shell:scaffold` generates a non-destructive neutral template into
+an approved root through a staged temporary directory, and `pnpm run shell:conformance` refuses to
+certify an incomplete one. `fixtures/shell-{products,consumers}/default-shell-template` is the
+committed neutral sample. A packaged host readback for the template remains for DS-7/R6.
 
 ### DS-7 — Nonvisual acceptance gate
 
@@ -158,8 +169,10 @@ Exit: DS-1–DS-6 are revision-bound and green; no critical/high open finding ap
 accepts GUI implementation. Only then begin the Default Shell renderer. Named shells remain blocked
 until the generic GUI passes M5.
 
-Current worktree: not accepted. Historical PG-50 evidence applies only to its recorded revision;
-the current local additions require fresh validation and CI binding.
+Current worktree: not accepted. Historical PG-50 evidence applies only to its recorded revision.
+DS-3–DS-6 carry local evidence recorded in `docs/logs/session/2026-08-14-default-shell-ds3-ds6.md`;
+the exact clean revision, current CI binding, host package readback, and operator acceptance
+required by DS-7 are all still open, so the gate decision remains NO-GO.
 
 ## GUI implementation order after DS-7
 

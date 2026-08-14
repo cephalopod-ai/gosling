@@ -54,6 +54,78 @@ impl GoslingAcpAgent {
         }
     }
 
+    pub(super) fn on_validate_shell_directory(
+        &self,
+        request: ShellDirectoryValidateRequest,
+    ) -> ShellDirectoryValidateResponse {
+        crate::acp::shell_directory::canonicalize_shell_directory(&request.path)
+    }
+
+    pub(super) async fn on_list_shell_credentials(&self) -> ShellCredentialListResponse {
+        if self.shell_runtime.credential_policy() != ShellCredentialPolicy::SelectableCatalog {
+            return ShellCredentialListResponse {
+                status: ShellCredentialCatalogStatus::Denied,
+                profiles: Vec::new(),
+            };
+        }
+        let Ok(profiles) = self.workspace_service.credential_profiles() else {
+            return ShellCredentialListResponse {
+                status: ShellCredentialCatalogStatus::Unavailable,
+                profiles: Vec::new(),
+            };
+        };
+        let provider = self.shell_runtime.provisioning().session.provider.clone();
+        ShellCredentialListResponse {
+            status: ShellCredentialCatalogStatus::Available,
+            profiles: crate::acp::shell_validation::shell_credential_summaries(
+                &profiles,
+                provider.as_deref(),
+            ),
+        }
+    }
+
+    pub(super) async fn on_list_shell_modules(&self) -> ShellModuleListResponse {
+        let provisioning = self.shell_runtime.provisioning().clone();
+        let working_dir = self.default_working_folder.clone();
+        let validation = self
+            .shell_provisioning_validation(&provisioning)
+            .await
+            .resolution;
+
+        let mut available_extensions = std::collections::HashSet::new();
+        for extension in crate::config::extensions::get_enabled_extensions_with_config_for_cwd(
+            Config::global(),
+            &working_dir,
+        ) {
+            available_extensions.insert(extension.name().to_string());
+        }
+        for extension in super::selected_builtin_extensions(Config::global(), &self.builtins) {
+            available_extensions.insert(extension.name().to_string());
+        }
+        let available_skills = crate::skills::discover_skills(Some(&working_dir))
+            .into_iter()
+            .map(|skill| skill.name)
+            .collect::<std::collections::HashSet<_>>();
+        let skills_extension_available = available_extensions.contains("skills");
+        let adapter = self.shell_runtime.domain_adapter_descriptor();
+
+        ShellModuleListResponse {
+            contract_version: SHELL_MODULE_CONTRACT_VERSION,
+            modules: crate::acp::shell_modules::resolve_shell_modules(
+                crate::acp::shell_modules::ShellModuleInputs {
+                    session_capabilities: &["prompt".to_string(), "resume".to_string()],
+                    selected_extensions: &validation.extensions,
+                    available_extensions: &available_extensions,
+                    selected_skills: &validation.skill_ids,
+                    available_skills: &available_skills,
+                    skills_extension_available,
+                    adapter: adapter.as_ref(),
+                    adapter_status: self.shell_runtime.domain_adapter_status(),
+                },
+            ),
+        }
+    }
+
     pub(super) async fn on_domain_snapshot(
         &self,
         request: DomainSnapshotRequest,

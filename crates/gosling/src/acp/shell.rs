@@ -1,9 +1,9 @@
 use crate::acp::custom_requests::{
     DomainActionConfirmRequest, DomainActionConfirmResponse, DomainActionConfirmationStatus,
     DomainActionRequest, DomainActionResponse, DomainAdapterDescriptor, DomainSnapshotRequest,
-    DomainSnapshotResponse, ShellAuthorityMode, ShellHandoffEnvelope, ShellHandoffPrepareRequest,
-    ShellIdentity, ShellProtocolPolicy, ShellProvisioning, SHELL_HANDOFF_SCHEMA_VERSION,
-    SHELL_PROVISIONING_SCHEMA_VERSION,
+    DomainSnapshotResponse, ShellAuthorityMode, ShellCredentialPolicy, ShellHandoffEnvelope,
+    ShellHandoffPrepareRequest, ShellIdentity, ShellProtocolPolicy, ShellProvisioning,
+    SHELL_HANDOFF_SCHEMA_VERSION, SHELL_PROVISIONING_SCHEMA_VERSION,
 };
 use agent_client_protocol::Error;
 use anyhow::Result;
@@ -67,11 +67,12 @@ pub struct ShellRuntime {
     denied_methods: Arc<HashSet<String>>,
     domain_adapter: Option<Arc<dyn DomainAdapter>>,
     pending_domain_actions: Arc<std::sync::Mutex<HashMap<String, PendingDomainAction>>>,
+    shell_product: bool,
 }
 
 impl ShellRuntime {
     pub fn main_gosling() -> Self {
-        Self::new(
+        let mut runtime = Self::new(
             ShellProvisioning {
                 identity: ShellIdentity {
                     id: "gosling".into(),
@@ -82,7 +83,9 @@ impl ShellRuntime {
                 ..ShellProvisioning::default()
             },
             None,
-        )
+        );
+        runtime.shell_product = false;
+        runtime
     }
 
     pub fn new(
@@ -106,11 +109,38 @@ impl ShellRuntime {
             denied_methods: Arc::new(denied_methods),
             domain_adapter,
             pending_domain_actions: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            shell_product: true,
         }
     }
 
     pub fn provisioning(&self) -> &ShellProvisioning {
         &self.provisioning
+    }
+
+    /// True for a provisioned shell product, false for the full Gosling desktop/CLI runtime.
+    pub fn is_shell_product(&self) -> bool {
+        self.shell_product
+    }
+
+    pub fn credential_policy(&self) -> ShellCredentialPolicy {
+        self.provisioning.session.credential_policy
+    }
+
+    pub fn domain_adapter_descriptor(&self) -> Option<DomainAdapterDescriptor> {
+        self.domain_adapter
+            .as_ref()
+            .map(|adapter| adapter.descriptor())
+    }
+
+    /// Resolves which credential profile a session launch may use.
+    ///
+    /// `Fixed` provisioning ignores any selection so pre-DS-4 products behave identically; a
+    /// `SelectableCatalog` product uses the selection and falls back to nothing when none is made.
+    pub fn effective_credential_profile_id(&self, selected: Option<&str>) -> Option<String> {
+        match self.credential_policy() {
+            ShellCredentialPolicy::Fixed => self.provisioning.session.credential_profile_id.clone(),
+            ShellCredentialPolicy::SelectableCatalog => selected.map(str::to_string),
+        }
     }
 
     pub fn identity(&self) -> &ShellIdentity {
