@@ -1,7 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ShellCredentialListResponse_unstable } from '@repo-makeover/gosling-sdk';
 import { createShellCredentialController } from './credentialController';
-import { defaultShellLocalSettings, type ShellSettingsStore } from './localSettings';
+import {
+  defaultShellLocalSettings,
+  type ShellLocalSettings,
+  type ShellSettingsStore,
+} from './localSettings';
+
+function copySettings(settings: ShellLocalSettings): ShellLocalSettings {
+  return {
+    schemaVersion: settings.schemaVersion,
+    appearance: { ...settings.appearance },
+    workspace: { ...settings.workspace },
+  };
+}
 
 function memorySettingsStore(preferredCredentialProfileId: string | null): ShellSettingsStore {
   let settings = {
@@ -9,18 +21,18 @@ function memorySettingsStore(preferredCredentialProfileId: string | null): Shell
     workspace: { lastWorkingDirectory: null as string | null, preferredCredentialProfileId },
   };
   return {
-    read: () => structuredClone(settings),
+    read: () => copySettings(settings),
     recovery: () => ({ status: 'loaded' as const, schemaVersion: 1 }),
-    setAppearance: () => structuredClone(settings),
-    setLastWorkingDirectory: () => structuredClone(settings),
+    setAppearance: () => copySettings(settings),
+    setLastWorkingDirectory: () => copySettings(settings),
     setPreferredCredentialProfileId(profileId) {
       settings = {
         ...settings,
         workspace: { ...settings.workspace, preferredCredentialProfileId: profileId },
       };
-      return structuredClone(settings);
+      return copySettings(settings);
     },
-    reset: () => structuredClone(settings),
+    reset: () => copySettings(settings),
   };
 }
 

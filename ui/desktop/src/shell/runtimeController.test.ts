@@ -10,7 +10,19 @@ import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile'
 import { createShellRuntimeController, type ShellRuntimeController } from './runtimeController';
 import { createShellDirectoryController } from './directoryController';
 import { createShellCredentialController } from './credentialController';
-import { defaultShellLocalSettings, type ShellSettingsStore } from './localSettings';
+import {
+  defaultShellLocalSettings,
+  type ShellLocalSettings,
+  type ShellSettingsStore,
+} from './localSettings';
+
+function copySettings(settings: ShellLocalSettings): ShellLocalSettings {
+  return {
+    schemaVersion: settings.schemaVersion,
+    appearance: { ...settings.appearance },
+    workspace: { ...settings.workspace },
+  };
+}
 
 function memorySettingsStore(lastWorkingDirectory: string | null): ShellSettingsStore {
   let settings = {
@@ -21,21 +33,21 @@ function memorySettingsStore(lastWorkingDirectory: string | null): ShellSettings
     },
   };
   return {
-    read: () => structuredClone(settings),
+    read: () => copySettings(settings),
     recovery: () => ({ status: 'loaded' as const, schemaVersion: 1 }),
-    setAppearance: () => structuredClone(settings),
+    setAppearance: () => copySettings(settings),
     setLastWorkingDirectory(directory) {
       settings = { ...settings, workspace: { ...settings.workspace, lastWorkingDirectory: directory } };
-      return structuredClone(settings);
+      return copySettings(settings);
     },
     setPreferredCredentialProfileId(profileId) {
       settings = {
         ...settings,
         workspace: { ...settings.workspace, preferredCredentialProfileId: profileId },
       };
-      return structuredClone(settings);
+      return copySettings(settings);
     },
-    reset: () => structuredClone(settings),
+    reset: () => copySettings(settings),
   };
 }
 
