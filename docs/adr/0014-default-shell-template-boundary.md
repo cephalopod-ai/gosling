@@ -63,8 +63,10 @@ operator-confirmed path to the authenticated loopback backend, which canonicaliz
 creating a workspace, mutating global Gosling configuration, or creating any directory. Only the
 accepted canonical path is held in main memory, persisted to shell-local settings, and used for
 session creation, where the backend canonicalizes again. Cancel is a successful typed result.
-Switching directories while a session exists requires an explicit `session.detach` first; that
-operation releases the local one-session slot and never deletes or mutates the server session.
+Switching directories while a session exists requires an explicit `session.detach` first. That
+operation releases the local one-session slot and never deletes or mutates the server session; it is
+permitted only from `active`, because a create or resume still awaiting the backend would otherwise
+complete afterwards and reinstate a session nobody holds.
 
 **Credential catalog access is opt-in per product.** Provisioning gains
 `session.credentialPolicy`. Absent or `fixed` preserves the pre-DS-4 behavior exactly: the
@@ -86,11 +88,12 @@ selected-but-invalid rather than being silently replaced with another profile.
 and skills are project-local, so the inventory is resolved against the accepted working directory
 rather than the backend's startup directory, and is re-read whenever that directory changes. It uses
 the same discovery the provisioning validation and session construction use, including
-plugin-supplied MCP servers, so a module cannot be reported unavailable while a session runs it. The registry reports `core:session`, the selected
-extensions that the backend also resolved, the selected skills that resolve through the skills
-extension, and at most one supervised domain adapter. A module the product never provisioned is
-never listed; a provisioned module the backend could not resolve is listed as `unavailable` rather
-than dropped, so recovery stays visible. No `module.call`, backend URL, process descriptor, or
+plugin-supplied MCP servers, so a module cannot be reported unavailable while a session runs it.
+
+The registry reports `core:session`, the selected extensions that the backend also resolved, the
+selected skills that resolve through the skills extension, and at most one supervised domain
+adapter. A module the product never provisioned is never listed; a provisioned module the backend
+could not resolve is listed as `unavailable` rather than dropped, so recovery stays visible. No `module.call`, backend URL, process descriptor, or
 generic payload passthrough is added; extension tools stay agent-invoked and adapter actions keep
 their existing typed snapshot/action/confirmation routes.
 
