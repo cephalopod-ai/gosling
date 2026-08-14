@@ -250,7 +250,7 @@ async fn spawned_shell_runtime_applies_provisioning_and_isolates_sessions() {
     let provisioning: ShellProvisioningReadResponse = custom(
         &cx,
         "_gosling/unstable/shell/provisioning/read",
-        serde_json::to_value(ShellProvisioningReadRequest {}).unwrap(),
+        serde_json::to_value(ShellProvisioningReadRequest::default()).unwrap(),
     )
     .await;
     assert!(
@@ -380,7 +380,7 @@ async fn session_preflight_and_runtime_use_the_requested_working_directory() {
     let startup_preflight: ShellProvisioningReadResponse = custom(
         &cx,
         "_gosling/unstable/shell/provisioning/read",
-        serde_json::to_value(ShellProvisioningReadRequest {}).unwrap(),
+        serde_json::to_value(ShellProvisioningReadRequest::default()).unwrap(),
     )
     .await;
     assert!(!startup_preflight.validation.valid);
@@ -388,6 +388,20 @@ async fn session_preflight_and_runtime_use_the_requested_working_directory() {
         issue.code == ShellProvisioningIssueCode::MissingSkill
             && issue.path == "session.skillIds[0]"
     }));
+
+    // The same provisioning is valid once judged against the directory the shell selected, which is
+    // what lets a shell restore its remembered directory instead of failing the compatibility gate.
+    let scoped_preflight: ShellProvisioningReadResponse = custom(
+        &cx,
+        "_gosling/unstable/shell/provisioning/read",
+        serde_json::json!({ "workingDir": requested_dir.path() }),
+    )
+    .await;
+    assert!(
+        scoped_preflight.validation.valid,
+        "{:?}",
+        scoped_preflight.validation.issues
+    );
 
     let session = cx
         .send_request(NewSessionRequest::new(requested_dir.path()))
@@ -480,7 +494,7 @@ async fn session_preflight_rejects_skills_available_only_in_the_startup_director
     let startup_preflight: ShellProvisioningReadResponse = custom(
         &cx,
         "_gosling/unstable/shell/provisioning/read",
-        serde_json::to_value(ShellProvisioningReadRequest {}).unwrap(),
+        serde_json::to_value(ShellProvisioningReadRequest::default()).unwrap(),
     )
     .await;
     assert!(startup_preflight.validation.valid);

@@ -68,6 +68,15 @@ operation releases the local one-session slot and never deletes or mutates the s
 permitted only from `active`, because a create or resume still awaiting the backend would otherwise
 complete afterwards and reinstate a session nobody holds.
 
+**Provisioning is judged against the directory the shell will actually use.** Extensions and skills
+can be project-local, so the connect sequence restores the remembered directory *before* the
+compatibility gate and validates provisioning against it: `shell/provisioning/read` and
+`shell/provisioning/validate` take an optional `workingDir`, canonicalized through the same helper
+the session path uses. Without this a product provisioning project-local modules would fail
+`PROVISIONING_INVALID` against the backend's startup directory and could never reach the directory
+that makes it valid. Session creation still revalidates, so the gate is unchanged in strength — only
+in which directory it means.
+
 **Credential catalog access is opt-in per product.** Provisioning gains
 `session.credentialPolicy`. Absent or `fixed` preserves the pre-DS-4 behavior exactly: the
 provisioned `credentialProfileId` is the only permitted profile and the catalog method returns

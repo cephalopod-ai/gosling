@@ -2,7 +2,14 @@
 
 
 export type ShellProvisioningReadRequest_unstable = {
-    [key: string]: unknown;
+    /**
+     * The accepted working directory this provisioning should be validated against.
+     *
+     * Extensions and skills can be project-local, so a shell whose selected directory differs from
+     * the backend's startup directory must be judged against the directory its sessions will use.
+     * Absent falls back to the startup directory.
+     */
+    workingDir?: string | null;
 };
 
 export type ShellProvisioningReadResponse_unstable = {
@@ -116,6 +123,10 @@ export type ShellProvisioningResolution = {
 
 export type ShellProvisioningValidateRequest_unstable = {
     provisioning?: ShellProvisioning | null;
+    /**
+     * See `ShellProvisioningReadRequest::working_dir`.
+     */
+    workingDir?: string | null;
 };
 
 export type ShellProvisioningValidateResponse_unstable = {

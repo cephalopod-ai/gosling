@@ -2,7 +2,12 @@
 
 import { z } from 'zod';
 
-export const zShellProvisioningReadRequest_unstable = z.record(z.unknown());
+export const zShellProvisioningReadRequest_unstable = z.object({
+    workingDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
 
 export const zShellIdentity = z.object({
     id: z.string(),
@@ -176,6 +181,10 @@ export const zShellProvisioningReadResponse_unstable = z.object({
 export const zShellProvisioningValidateRequest_unstable = z.object({
     provisioning: z.union([
         zShellProvisioning,
+        z.null()
+    ]).optional(),
+    workingDir: z.union([
+        z.string(),
         z.null()
     ]).optional()
 });

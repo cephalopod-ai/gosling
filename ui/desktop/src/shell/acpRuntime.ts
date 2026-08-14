@@ -52,11 +52,12 @@ export interface ShellAcpClient {
   cancel(params: Parameters<GoslingClient['cancel']>[0]): ReturnType<GoslingClient['cancel']>;
   gosling: {
     sessionInfo_unstable(params: { sessionId: string }): Promise<GetSessionInfoResponse_unstable>;
-    shellProvisioningRead_unstable(
-      params: Record<string, never>
-    ): Promise<ShellProvisioningReadResponse_unstable>;
+    shellProvisioningRead_unstable(params: {
+      workingDir?: string;
+    }): Promise<ShellProvisioningReadResponse_unstable>;
     shellProvisioningValidate_unstable(params: {
       provisioning?: ShellProvisioningValidateRequest_unstable['provisioning'];
+      workingDir?: string;
     }): Promise<ShellProvisioningValidateResponse_unstable>;
     shellDirectoryValidate_unstable(params: {
       path: string;
@@ -362,6 +363,14 @@ export async function connectShellAcp(input: {
   clientName: string;
   clientVersion: string;
   callbacks?: () => GoslingClientCallbacks;
+  /// Resolves the working directory provisioning must be judged against.
+  ///
+  /// It runs after the method check and before provisioning is validated, because extensions and
+  /// skills can be project-local: judging a shell against the backend's startup directory would
+  /// fail a product whose selected directory is the one that makes its provisioning valid.
+  resolveWorkingDir?: (
+    validate: (directory: string) => Promise<ShellDirectoryValidateResponse_unstable>
+  ) => Promise<string | null>;
   dependencies?: ShellAcpRuntimeDependencies;
 }): Promise<ShellAcpConnection> {
   const dependencies = input.dependencies ?? defaultDependencies;
@@ -390,8 +399,14 @@ export async function connectShellAcp(input: {
     if (!methodCompatibility.compatible) {
       throw new ShellCompatibilityError(methodCompatibility);
     }
-    const read = await client.gosling.shellProvisioningRead_unstable({});
-    const validation = await client.gosling.shellProvisioningValidate_unstable({});
+    const validateDirectory = async (directory: string) =>
+      client.gosling.shellDirectoryValidate_unstable({
+        path: assertAbsoluteWorkingDir(directory),
+      });
+    const workingDir = (await input.resolveWorkingDir?.(validateDirectory)) ?? null;
+    const provisioningScope = workingDir === null ? {} : { workingDir };
+    const read = await client.gosling.shellProvisioningRead_unstable(provisioningScope);
+    const validation = await client.gosling.shellProvisioningValidate_unstable(provisioningScope);
     const compatibility = checkShellCompatibility({
       profile: input.profile,
       manifest: input.manifest,
@@ -459,10 +474,7 @@ export async function connectShellAcp(input: {
           prompt: [{ type: 'text', text }],
         }),
       cancel: ({ sessionId }) => client.cancel({ sessionId: assertSessionId(sessionId) }),
-      validateDirectory: async (directory) =>
-        client.gosling.shellDirectoryValidate_unstable({
-          path: assertAbsoluteWorkingDir(directory),
-        }),
+      validateDirectory,
       listCredentials: () => client.gosling.shellCredentialsList_unstable({}),
       listModules: async (workingDir) =>
         client.gosling.shellModulesList_unstable(

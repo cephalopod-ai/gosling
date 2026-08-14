@@ -139,6 +139,10 @@ already are:
 | `session.detach` | invoke | none beyond generation | typed result <=8 KiB | releases the local one-session slot so a different directory can be chosen; permitted only from `active` — a create or resume still awaiting the backend would otherwise finish afterwards and reinstate a session nobody holds — and refuses while a prompt attempt streams or an interaction is pending; never deletes or mutates the server session, which stays resumable by ID |
 | `confirmation.respond` | invoke | action ID + approve\|deny | on approve: bounded `DomainActionResponse` payload <=64 KiB; on deny/reject: status <=1 KiB | main relays to the Rust server, which rejects replay/expired/foreign action ID and, on approve, executes the already-pending action immediately (it retained the action/input from the original `domain.action` call) and returns the result inline — there is no second `perform_domain_action` round trip and no token ever crosses the main/server boundary |
 
+Provisioning read/validate accept an optional `workingDir`; main restores the remembered directory
+before the compatibility gate so a product with project-local extensions or skills is judged against
+the directory its sessions will run in rather than the backend's startup directory.
+
 `session.create` requires `directory.select` and `session.detach` requires `session.create`: a
 consumer that can open a session must be able to choose the directory that session runs in, and a
 consumer that can release a session must be able to open one. The resolver rejects a declaration

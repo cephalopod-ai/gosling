@@ -174,6 +174,9 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
     },
     loaded.manifest.compatibility.handoffSchemaVersion
   );
+  // Domain confirmations are Rust-owned, so main tracks only the fact that one is outstanding.
+  // Detaching with a mutation awaiting approval would strand it server-side.
+  const pendingConfirmations = new Set<string>();
   const now = adapter.now ?? (() => new Date().toISOString());
   let ipc: RegisteredShellIpc;
   ipc = registerShellIpc({
@@ -185,12 +188,14 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
       runtimeRead: () => controller.read(),
       runtimeRetry: async (request) => {
         handoffs.clear();
+        pendingConfirmations.clear();
         const prior = controller.read();
         const state = await controller.retry(request.generation);
         return actionResult(state, state !== prior);
       },
       runtimeStop: async (request) => {
         handoffs.clear();
+        pendingConfirmations.clear();
         const prior = controller.read();
         const state = await controller.stop(request.generation);
         return actionResult(state, state !== prior || state.name === 'stopped');
@@ -235,6 +240,9 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         }
         if ((controller.getInteractionController()?.read() ?? []).length > 0) {
           throw new Error('cannot detach while an interaction is pending');
+        }
+        if (pendingConfirmations.size > 0) {
+          throw new Error('cannot detach while a domain confirmation is pending');
         }
         sessions.close();
         return { detached: true, sessionId: session.sessionId };
@@ -283,12 +291,19 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         }
         const acp = controller.getAcp();
         if (!acp || !acp.domainAdapter) throw new Error('domain adapter is unavailable');
-        return acp.domainAction({
-          sessionId: request.sessionId,
-          generation: request.generation,
-          action: request.action,
-          input: request.input ?? null,
-        });
+        return acp
+          .domainAction({
+            sessionId: request.sessionId,
+            generation: request.generation,
+            action: request.action,
+            input: request.input ?? null,
+          })
+          .then((response) => {
+            if (response.confirmationActionId) {
+              pendingConfirmations.add(response.confirmationActionId);
+            }
+            return response;
+          });
       },
       confirmationRespond: (request) => {
         if (request.generation !== controller.read().generation) {
@@ -300,12 +315,14 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         }
         const acp = controller.getAcp();
         if (!acp || !acp.domainAdapter) throw new Error('domain adapter is unavailable');
-        return acp.confirmDomainAction({
-          sessionId: request.sessionId,
-          generation: request.generation,
-          actionId: request.actionId,
-          approve: request.approve,
-        });
+        return acp
+          .confirmDomainAction({
+            sessionId: request.sessionId,
+            generation: request.generation,
+            actionId: request.actionId,
+            approve: request.approve,
+          })
+          .finally(() => pendingConfirmations.delete(request.actionId));
       },
       diagnosticsSave: async (request) => {
         if (request.generation !== controller.read().generation) {

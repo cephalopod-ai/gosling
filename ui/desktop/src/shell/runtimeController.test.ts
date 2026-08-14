@@ -141,8 +141,14 @@ function harness(withAdapter = false) {
       windowOptions: {},
     } as never;
   });
-  const connectAcp = vi.fn(async () => {
+  const connectAcp = vi.fn(async (input) => {
     const close = vi.fn();
+    const validateDirectory = vi.fn(async (candidate: string) => ({
+      status: 'valid' as const,
+      canonicalPath: candidate,
+    }));
+    // The real connect resolves the working directory before provisioning is validated.
+    await input.resolveWorkingDir?.(validateDirectory);
     const connection = {
       client: {},
       initializeResponse: { protocolVersion: 1 },
@@ -166,12 +172,7 @@ function harness(withAdapter = false) {
       prompt: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
       cancel: vi.fn().mockResolvedValue(undefined),
       prepareHandoff: vi.fn(),
-      validateDirectory: vi
-        .fn()
-        .mockImplementation(async (candidate: string) => ({
-          status: 'valid' as const,
-          canonicalPath: candidate,
-        })),
+      validateDirectory,
       listCredentials: vi.fn().mockResolvedValue({ status: 'denied' as const, profiles: [] }),
       listModules: vi.fn().mockResolvedValue({ contractVersion: 1, modules: [] }),
       closed: new Promise<void>(() => {}),

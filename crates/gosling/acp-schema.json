@@ -4,6 +4,15 @@
   "$defs": {
     "ShellProvisioningReadRequest_unstable": {
       "type": "object",
+      "properties": {
+        "workingDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The accepted working directory this provisioning should be validated against.\n\nExtensions and skills can be project-local, so a shell whose selected directory differs from\nthe backend's startup directory must be judged against the directory its sessions will use.\nAbsent falls back to the startup directory."
+        }
+      },
       "x-side": "agent",
       "x-method": "_gosling/unstable/shell/provisioning/read"
     },
@@ -420,6 +429,13 @@
               "type": "null"
             }
           ]
+        },
+        "workingDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "See `ShellProvisioningReadRequest::working_dir`."
         }
       },
       "x-side": "agent",

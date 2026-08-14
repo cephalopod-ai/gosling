@@ -23,7 +23,9 @@ export type ShellDirectorySelectResult =
 export interface ShellDirectoryController {
   read(): ShellDirectorySnapshot;
   accepted(): string | null;
-  restore(): Promise<ShellDirectorySnapshot>;
+  restore(
+    validate?: (directory: string) => Promise<ShellDirectoryValidateResponse_unstable>
+  ): Promise<ShellDirectorySnapshot>;
   select(generation: number): Promise<ShellDirectorySelectResult>;
   clear(): void;
   onChanged(listener: (directory: ShellDirectorySnapshot) => void): () => void;
@@ -128,13 +130,15 @@ export function createShellDirectoryController(
   return {
     read: () => ({ ...directory }),
     accepted: () => (directory.state === 'selected' ? directory.path : null),
-    async restore() {
+    async restore(validate) {
       const generation = dependencies.generation();
       const remembered = dependencies.settings.read().workspace.lastWorkingDirectory;
       if (!isAcceptablePath(remembered)) {
         return publish(unselected());
       }
-      const validated = projectValidation(await dependencies.validate(remembered));
+      // During connect the established connection does not exist yet, so the caller supplies the
+      // validator bound to the client it is still negotiating with.
+      const validated = projectValidation(await (validate ?? dependencies.validate)(remembered));
       if (generation !== dependencies.generation()) {
         return { ...directory };
       }

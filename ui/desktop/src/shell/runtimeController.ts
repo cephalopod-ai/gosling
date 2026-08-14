@@ -335,6 +335,10 @@ export function createShellRuntimeController(
           acpUrl: runtime.backend.acpUrl,
           profile: options.profile,
           manifest: options.manifest,
+          resolveWorkingDir: async (validate) => {
+            await options.directory.restore(validate);
+            return options.directory.accepted();
+          },
           clientName: options.clientName,
           clientVersion: options.clientVersion,
           callbacks: () => ({
@@ -359,7 +363,8 @@ export function createShellRuntimeController(
         }
         provisioningIssues = provisioningIssueSummaries(acp.provisioning.validation.issues);
         const connection = acp;
-        await options.directory.restore();
+        // The directory was already restored inside connect, because provisioning had to be judged
+        // against it before the compatibility gate.
         await options.credentials.refresh();
         modules = await readModules(connection, options.directory.accepted());
         if (eventGeneration !== generation || stateName() !== 'validating') {
@@ -507,8 +512,17 @@ export function createShellRuntimeController(
       const connection = acp;
       if (!connection) return;
       const eventGeneration = generation;
-      const resolved = await readModules(connection, options.directory.accepted());
-      if (eventGeneration !== generation || acp !== connection) return;
+      const requested = options.directory.accepted();
+      const resolved = await readModules(connection, requested);
+      // The inventory is directory-specific, so a slower refresh for a directory that is no longer
+      // selected must not overwrite the one the shell actually holds.
+      if (
+        eventGeneration !== generation ||
+        acp !== connection ||
+        requested !== options.directory.accepted()
+      ) {
+        return;
+      }
       modules = resolved;
       notify();
     },

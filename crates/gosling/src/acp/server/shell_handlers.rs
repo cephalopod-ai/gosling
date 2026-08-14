@@ -31,27 +31,68 @@ impl GoslingAcpAgent {
         .await
     }
 
-    pub(super) async fn on_read_shell_provisioning(&self) -> ShellProvisioningReadResponse {
+    /// Resolves the directory a provisioning request should be judged against.
+    ///
+    /// A caller-supplied directory is canonicalized through the same accepted-directory helper the
+    /// session path uses, so validation and session creation cannot disagree about which directory
+    /// they mean.
+    fn requested_working_dir(
+        &self,
+        requested: Option<&str>,
+    ) -> Result<Option<std::path::PathBuf>, agent_client_protocol::Error> {
+        requested
+            .map(|requested| {
+                crate::acp::shell_directory::accepted_shell_directory(std::path::Path::new(
+                    requested,
+                ))
+                .map_err(|reason| {
+                    agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                        "code": "SHELL_DIRECTORY_UNAVAILABLE",
+                        "reason": reason,
+                    }))
+                })
+            })
+            .transpose()
+    }
+
+    pub(super) async fn on_read_shell_provisioning(
+        &self,
+        request: ShellProvisioningReadRequest,
+    ) -> Result<ShellProvisioningReadResponse, agent_client_protocol::Error> {
+        let working_dir = self.requested_working_dir(request.working_dir.as_deref())?;
         let provisioning = self.shell_runtime.provisioning().clone();
-        let validation = self.shell_provisioning_validation(&provisioning).await;
-        ShellProvisioningReadResponse {
+        let validation = match working_dir.as_deref() {
+            Some(working_dir) => {
+                self.shell_provisioning_validation_for_working_dir(&provisioning, working_dir)
+                    .await
+            }
+            None => self.shell_provisioning_validation(&provisioning).await,
+        };
+        Ok(ShellProvisioningReadResponse {
             provisioning,
             validation,
-        }
+        })
     }
 
     pub(super) async fn on_validate_shell_provisioning(
         &self,
         request: ShellProvisioningValidateRequest,
-    ) -> ShellProvisioningValidateResponse {
+    ) -> Result<ShellProvisioningValidateResponse, agent_client_protocol::Error> {
+        let working_dir = self.requested_working_dir(request.working_dir.as_deref())?;
         let provisioning = request
             .provisioning
             .unwrap_or_else(|| self.shell_runtime.provisioning().clone());
-        let validation = self.shell_provisioning_validation(&provisioning).await;
-        ShellProvisioningValidateResponse {
+        let validation = match working_dir.as_deref() {
+            Some(working_dir) => {
+                self.shell_provisioning_validation_for_working_dir(&provisioning, working_dir)
+                    .await
+            }
+            None => self.shell_provisioning_validation(&provisioning).await,
+        };
+        Ok(ShellProvisioningValidateResponse {
             provisioning,
             validation,
-        }
+        })
     }
 
     pub(super) fn on_validate_shell_directory(

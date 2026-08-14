@@ -224,7 +224,16 @@ pub struct ShellProvisioningValidationReport {
     method = "_gosling/unstable/shell/provisioning/read",
     response = ShellProvisioningReadResponse
 )]
-pub struct ShellProvisioningReadRequest {}
+#[serde(rename_all = "camelCase")]
+pub struct ShellProvisioningReadRequest {
+    /// The accepted working directory this provisioning should be validated against.
+    ///
+    /// Extensions and skills can be project-local, so a shell whose selected directory differs from
+    /// the backend's startup directory must be judged against the directory its sessions will use.
+    /// Absent falls back to the startup directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
@@ -242,6 +251,9 @@ pub struct ShellProvisioningReadResponse {
 pub struct ShellProvisioningValidateRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provisioning: Option<ShellProvisioning>,
+    /// See `ShellProvisioningReadRequest::working_dir`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
