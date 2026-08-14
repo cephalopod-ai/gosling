@@ -89,9 +89,26 @@ campaign's evidence rules (`pre-gui-backend-implementation-plan.md#10-testing-an
   in the prior (NO-GO) audit. This matches the plan's own test-layer table, which lists "spawned
   neutral adapter integration" and "non-visual conformance workflow" as local layers distinct from
   "current CI."
-- Package build and readback for the `linux-x64` target (`gosling-shell-fixture-a` profile):
-  `node scripts/package-shell.js` then `node scripts/verify-shell-package.js` both succeed; the
-  verifier confirms exact profile/manifest identity, target-specific staged binary hash
+- Package build and readback for the `linux-x64` target (`gosling-shell-fixture-a` profile), run
+  from `ui/desktop` after `cargo build --release --target x86_64-unknown-linux-gnu`:
+
+  ```sh
+  node scripts/package-shell.js \
+    /home/user/gosling/fixtures/shell-products/fixture-a/product-profile.json \
+    --consumer /home/user/gosling/fixtures/shell-consumers/consumer-a/shell-consumer.json \
+    --platform linux --arch x64
+
+  node scripts/verify-shell-package.js \
+    /home/user/gosling/fixtures/shell-products/fixture-a/product-profile.json \
+    --consumer /home/user/gosling/fixtures/shell-consumers/consumer-a/shell-consumer.json \
+    --platform linux --arch x64 \
+    --package "/home/user/gosling/ui/desktop/out/Gosling Shell Fixture A-linux-x64" \
+    --binary /home/user/gosling/target/x86_64-unknown-linux-gnu/release/gosling
+  ```
+
+  Both succeed; the verifier's JSON output confirms exact profile/manifest identity
+  (`profileHash: c99e5901a56664291976a7e1b5d49583aabf9ebfab6e185b4cc5e5ea9bdb6375`), the
+  target-specific staged binary hash
   (`4f2af733dc688ed2f6b22b6207a1c0630c5dbeb8f0c23d61fba106673ae46ab0`), and no unexpected package
   content.
 - **Residual gap, disclosed rather than hidden:** this sandbox has no macOS host, so the
