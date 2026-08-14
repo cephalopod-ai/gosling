@@ -355,7 +355,15 @@ impl GcpAuth {
     pub async fn new() -> Result<Self, AuthError> {
         Ok(Self {
             credentials: RwLock::new(AdcCredentials::load().await?),
-            client: reqwest::Client::new(),
+            // Without a timeout, a stalled token/metadata endpoint hangs the
+            // calling turn indefinitely; other providers already default to
+            // `DEFAULT_PROVIDER_TIMEOUT_SECS` for the same reason.
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(
+                    super::base::DEFAULT_PROVIDER_TIMEOUT_SECS,
+                ))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             cached_token: Arc::new(RwLock::new(None)),
         })
     }

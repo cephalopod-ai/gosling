@@ -118,9 +118,14 @@ impl BedrockProvider {
             Err(_) => None,
         };
 
-        // Use load_defaults() which supports AWS SSO, profiles, and environment variables
+        // Use load_defaults() which supports AWS SSO, profiles, and environment variables.
+        // The AWS SDK's own retry loop is disabled here because `ProviderRetry`/`RetryConfig`
+        // below already wraps every call in its own bounded retry budget; leaving both retry
+        // layers active multiplies the worst-case call count (BEDROCK_DEFAULT_MAX_RETRIES times
+        // the SDK's own retries) for the same class of transient error.
         let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .http_client(ReqwestHttpClient::new());
+            .http_client(ReqwestHttpClient::new())
+            .retry_config(aws_config::retry::RetryConfig::disabled());
 
         if let Ok(profile_name) = config.get_param::<String>("AWS_PROFILE") {
             if !profile_name.is_empty() {
