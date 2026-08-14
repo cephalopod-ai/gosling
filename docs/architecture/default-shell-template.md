@@ -4,6 +4,9 @@ Status: active pre-GUI foundation; no Default Shell GUI or named shell is implem
 Date: 2026-08-14
 Authority: ADR-0007–0012 and ADR-0014
 
+Detailed execution for DS-3 through DS-7 is frozen in
+[`../build/shell-productization/default-shell-ds3-ds7-implementation-plan.md`](../build/shell-productization/default-shell-ds3-ds7-implementation-plan.md).
+
 ## Outcome
 
 The next MVP is a reusable, generic Default Shell template. It is a reduced Gosling application and

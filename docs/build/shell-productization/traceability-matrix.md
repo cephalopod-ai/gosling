@@ -10,6 +10,9 @@ The focused execution mapping for every pre-GUI R1–R4 requirement is in
 [`pre-gui-backend-implementation-plan.md`](pre-gui-backend-implementation-plan.md). This matrix
 remains the canonical SHP-REQ inventory and status vocabulary.
 
+The detailed Default Shell mapping for SHP-REQ-044–053 is in
+[`default-shell-ds3-ds7-implementation-plan.md`](default-shell-ds3-ds7-implementation-plan.md).
+
 ## Requirements
 
 | REQ         | Pri | Requirement                                                                                                                                  | Design/module refs                              | Planned implementation                                                                | Planned verification                                                                                                              | Evidence target | Status                                                                                                                                                                                                                   |

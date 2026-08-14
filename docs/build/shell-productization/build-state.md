@@ -26,6 +26,13 @@ define the active DS-1–DS-7 sequence. The Default Shell must use its own instr
 inside its product data root, use credential references without owning secrets, start without
 developer tools, and remain a front end to declared supervised backends.
 
+The implementation-ready DS-3–DS-7 breakdown is
+[`default-shell-ds3-ds7-implementation-plan.md`](default-shell-ds3-ds7-implementation-plan.md).
+It makes the remaining DS-1/DS-2 proof an entry gate, then orders directory/session authority, safe
+credential projection and pinning, the v1 module registry, the neutral scaffold, and exact-revision
+acceptance. Its v1 boundary permits multiple extensions/skills and one supervised domain adapter;
+multiple adapter processes remain a later schema/lifecycle decision.
+
 PG-50 remains valid historical evidence only for exact revision
 `b921e6ee1299dba2207ab27ab6fd9452cc57aa26`. The current dirty worktree contains later foundation
 changes and therefore does not inherit that acceptance. The local audit is recorded in
@@ -224,11 +231,12 @@ condition-by-condition disposition, current-CI result, and the one residual gap 
 package-readback could not be reproduced in the accepting sandbox; `linux-x64` readback stands in
 as the supported-host-target proof).
 
-1. Complete DS-1–DS-6 from `default-shell-template.md`: instruction/tool isolation, shell-local
-   settings, working-directory authority, safe credential metadata, module composition, and the
-   neutral scaffold.
-2. Run DS-7 on one exact clean revision with current CI before beginning the Default Shell GUI.
-3. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
+1. Close the remaining DS-1/DS-2 live proof and settings migration/recovery entry gate recorded in
+   `default-shell-ds3-ds7-implementation-plan.md`.
+2. Execute DS-3–DS-6 in dependency order: working-directory/session authority, safe credential
+   metadata and backend pinning, bounded module inventory, then the neutral scaffold.
+3. Run DS-7 on one exact clean revision with current CI before beginning the Default Shell GUI.
+4. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
    publication) remain open and unauthorized by this acceptance.
 
 ## Named-shell start policy

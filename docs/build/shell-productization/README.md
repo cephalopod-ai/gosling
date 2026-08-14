@@ -19,6 +19,7 @@ This package is the durable, resumable plan for turning the merged Gosling shell
 13. [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md) — the accepted,
     revision-bound PG-50 evidence and GO decision authorizing R5.
 14. [`../../architecture/default-shell-template.md`](../../architecture/default-shell-template.md) — the operator-directed generic Default Shell pre-GUI milestone that now precedes renderer work.
+15. [`default-shell-ds3-ds7-implementation-plan.md`](default-shell-ds3-ds7-implementation-plan.md) — detailed execution units, contract-freeze steps, tests, rollback, and exact GO/NO-GO gate for the remaining Default Shell foundation.
 
 ## Current status
 
