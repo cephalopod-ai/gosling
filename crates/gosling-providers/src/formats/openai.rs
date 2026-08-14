@@ -1031,12 +1031,20 @@ where
         // ends normally) without ever setting this is a 200 response that
         // said and did nothing — see the check after the loop below.
         let mut yielded_any_content = false;
+        // Distinguishes a stream that ran to completion (saw the `[DONE]`
+        // sentinel) from one whose connection simply ended early. Without
+        // this, a truncated stream that had already yielded partial content
+        // — a dropped connection mid-message, no `[DONE]`, no terminal
+        // `finish_reason` — was indistinguishable from a normal completed
+        // turn and committed as if it were the whole response.
+        let mut saw_done = false;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
             let line = strip_data_prefix(&response_str);
 
             if line.is_some_and(|l| l == "[DONE]") {
+                saw_done = true;
                 break 'outer;
             }
 
@@ -1089,6 +1097,7 @@ where
                             let response_str = response_chunk?;
                             if let Some(line) = strip_data_prefix(&response_str) {
                                 if line == "[DONE]" {
+                                    saw_done = true;
                                     break 'outer;
                                 }
 
@@ -1370,6 +1379,17 @@ where
         if !yielded_any_content {
             Err(anyhow::anyhow!(
                 "Provider returned an empty response: no text, reasoning, or tool calls"
+            ))?;
+        }
+
+        // The stream produced real content but its connection ended without
+        // ever seeing `[DONE]` — a dropped/truncated connection, not a
+        // completed turn. Committing partial content as if it were the full
+        // message would silently hand the caller (and the model on its next
+        // turn) an incomplete response with no signal anything was cut off.
+        if !saw_done {
+            Err(anyhow::anyhow!(
+                "Provider stream ended without a completion signal ([DONE]); the response may be truncated"
             ))?;
         }
     }
@@ -3815,6 +3835,36 @@ data: [DONE]"#;
             }
         }
         assert!(saw_error, "empty turn must surface as an error");
+    }
+
+    #[tokio::test]
+    async fn test_streaming_connection_drop_without_done_is_error() {
+        // A stream that yielded real text content but whose connection ended
+        // without ever seeing `[DONE]` (and no terminal `finish_reason`) must
+        // surface as an error rather than silently committing the partial
+        // text as if it were the complete response.
+        let response_lines = concat!(
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" wor\"},\"finish_reason\":null}]}"
+        );
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut saw_error = false;
+        while let Some(result) = messages.next().await {
+            if let Err(e) = result {
+                assert!(
+                    e.to_string().contains("truncated"),
+                    "unexpected error text: {e}"
+                );
+                saw_error = true;
+            }
+        }
+        assert!(
+            saw_error,
+            "a connection drop mid-stream (no [DONE]) must surface as an error"
+        );
     }
 
     #[tokio::test]

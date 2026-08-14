@@ -1,5 +1,8 @@
 use super::api_client::{ApiClient, AuthMethod, AuthProvider};
-use super::base::{ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata,
+    DEFAULT_PROVIDER_TIMEOUT_SECS,
+};
 use super::openai_compatible::OpenAiCompatibleProvider;
 use super::xai::{SUPERGROK_API_HOST, SUPERGROK_DEFAULT_MODEL, SUPERGROK_MODELS};
 use crate::config::paths::Paths;
@@ -52,6 +55,19 @@ const OAUTH_REDIRECT_PATH: &str = "/callback";
 
 const OAUTH_TIMEOUT_SECS: u64 = 300;
 const HTML_AUTO_CLOSE_TIMEOUT_MS: u64 = 2000;
+
+/// Builds the HTTP client used for the token-exchange/refresh/device-code
+/// requests below. Without a timeout, a stalled xAI auth endpoint hangs the
+/// calling turn indefinitely (unlike the provider's own API client, which
+/// already sets `DEFAULT_PROVIDER_TIMEOUT_SECS`).
+fn oauth_http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(
+            DEFAULT_PROVIDER_TIMEOUT_SECS,
+        ))
+        .build()
+        .map_err(|e| anyhow!("Failed to build xAI OAuth HTTP client: {}", e))
+}
 
 // Refresh skew: refresh tokens this long before stored expiry so a single
 // long-running tool call doesn't have to recover from a mid-flight 401.
@@ -285,7 +301,7 @@ struct TokenResponse {
 }
 
 async fn exchange_code_for_tokens(code: &str, pkce: &PkceChallenge) -> Result<TokenResponse> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let redirect = redirect_uri();
     let params = [
         ("grant_type", "authorization_code"),
@@ -313,7 +329,7 @@ async fn exchange_code_for_tokens(code: &str, pkce: &PkceChallenge) -> Result<To
 }
 
 async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let params = [
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
@@ -359,7 +375,7 @@ struct DeviceTokenErrorBody {
 }
 
 async fn request_device_code() -> Result<DeviceCodeResponse> {
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let scopes = OAUTH_SCOPES.join(" ");
     let params = [("client_id", CLIENT_ID), ("scope", scopes.as_str())];
     let resp = client
@@ -393,7 +409,7 @@ async fn poll_device_code_token(device: &DeviceCodeResponse) -> Result<TokenResp
         .unwrap_or(DEVICE_CODE_DEFAULT_INTERVAL_SECS)
         .max(DEVICE_CODE_MIN_INTERVAL_SECS);
 
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     loop {
         if tokio::time::Instant::now() >= deadline {
             return Err(anyhow!("xAI device authorization timed out"));

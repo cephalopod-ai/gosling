@@ -1,3 +1,4 @@
+use super::base::DEFAULT_PROVIDER_TIMEOUT_SECS;
 use crate::config::paths::Paths;
 use crate::utils::bytes_to_hex;
 use anyhow::Result;
@@ -14,6 +15,19 @@ use url::Url;
 
 static OAUTH_MUTEX: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
 const UNKNOWN_TOKEN_EXPIRY_SECS: i64 = 300;
+
+/// Builds the HTTP client used for OIDC discovery and token exchange/refresh
+/// below. Without a timeout, a stalled OAuth/OIDC endpoint hangs the calling
+/// turn indefinitely (unlike the provider's own API client, which already
+/// sets `DEFAULT_PROVIDER_TIMEOUT_SECS`).
+fn oauth_http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(
+            DEFAULT_PROVIDER_TIMEOUT_SECS,
+        ))
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build OAuth HTTP client: {}", e))
+}
 
 #[derive(Debug, Clone)]
 struct OidcEndpoints {
@@ -108,7 +122,7 @@ async fn get_workspace_endpoints(host: &str) -> Result<OidcEndpoints> {
         .join("oidc/.well-known/oauth-authorization-server")
         .map_err(|error| anyhow::anyhow!("Invalid Databricks OIDC URL for {host:?}: {error}"))?;
 
-    let client = reqwest::Client::new();
+    let client = oauth_http_client()?;
     let resp = client.get(oidc_url.clone()).send().await?;
 
     if !resp.status().is_success() {
@@ -256,7 +270,7 @@ impl OAuthFlow {
             ("client_id", &self.client_id),
         ];
 
-        let client = reqwest::Client::new();
+        let client = oauth_http_client()?;
         let resp = client
             .post(&self.endpoints.token_endpoint)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -285,7 +299,7 @@ impl OAuthFlow {
 
         tracing::debug!("Refreshing token using refresh_token");
 
-        let client = reqwest::Client::new();
+        let client = oauth_http_client()?;
         let resp = client
             .post(&self.endpoints.token_endpoint)
             .header("Content-Type", "application/x-www-form-urlencoded")

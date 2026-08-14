@@ -42,6 +42,11 @@ pub type Error = rmcp::ServiceError;
 
 const MCP_APPS_UI_EXTENSION_ID: &str = "io.modelcontextprotocol/ui";
 const MCP_APPS_UI_MIME_TYPE: &str = "text/html;profile=mcp-app";
+// Bounds how long `McpClient::close` waits for the underlying transport task
+// to finish during extension removal. A misbehaving server that ignores the
+// cancellation signal should not block removal forever; the drop-guard-driven
+// async cleanup (already in place) still runs to completion in the background.
+const MCP_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn resolve_sampling_model_config() -> anyhow::Result<gosling_providers::model::ModelConfig> {
     let config = crate::config::Config::global();
@@ -153,6 +158,14 @@ pub trait McpClientTrait: Send + Sync {
     ) -> Result<(), Error> {
         Ok(())
     }
+
+    /// Explicitly, synchronously tear down the underlying transport/subprocess
+    /// before the extension is removed. The default no-op suits in-process
+    /// implementors (platform extensions) that own no external resource;
+    /// `McpClient` overrides this to await its `RunningService` shutdown so a
+    /// stdio-spawned MCP server is confirmed gone (not just eventually reaped
+    /// by drop) before `remove_extension` returns.
+    async fn close(&self) {}
 }
 
 struct ActiveToolCallGuard {
@@ -754,6 +767,23 @@ async fn send_cancel_message(
 impl McpClientTrait for McpClient {
     fn get_info(&self) -> Option<&InitializeResult> {
         self.server_info.as_ref()
+    }
+
+    async fn close(&self) {
+        let mut client = self.client.lock().await;
+        match client.close_with_timeout(MCP_CLOSE_TIMEOUT).await {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                tracing::warn!(
+                    "MCP client shutdown did not complete within {:?}; the transport task \
+                     will keep cleaning up in the background",
+                    MCP_CLOSE_TIMEOUT
+                );
+            }
+            Err(e) => {
+                tracing::warn!("MCP client shutdown task panicked: {}", e);
+            }
+        }
     }
 
     async fn list_resources(
@@ -1568,5 +1598,51 @@ mod tests {
         assert_eq!(result.roots[1].name.as_deref(), Some("working_directory_2"));
         assert_eq!(result.roots[2].uri, "file:///tmp/third-project");
         assert_eq!(result.roots[2].name.as_deref(), Some("working_directory_3"));
+    }
+
+    struct NoopServer;
+    impl rmcp::ServerHandler for NoopServer {}
+
+    /// Extension removal previously returned as soon as the extension was
+    /// dropped from the manager's map, with no explicit, awaited teardown of
+    /// the MCP transport for stdio-spawned servers (only the Docker branch
+    /// had one) — cleanup relied entirely on rmcp's async drop-guard
+    /// cancellation, so a caller had no guarantee the transport task had
+    /// actually finished by the time removal returned. `close()` must join
+    /// that task (bounded by `MCP_CLOSE_TIMEOUT`), so this proves it
+    /// completes promptly against a healthy peer instead of silently
+    /// relying on eventual drop-driven cleanup, and that calling it twice
+    /// (as both `Extension::shutdown` and a stray extra call would) is safe.
+    #[tokio::test]
+    async fn test_close_awaits_transport_shutdown() {
+        let (server_transport, client_transport) = tokio::io::duplex(4096);
+        tokio::spawn(async move {
+            let server = NoopServer.serve(server_transport).await?;
+            server.waiting().await?;
+            anyhow::Ok(())
+        });
+
+        let client = McpClient::connect(
+            client_transport,
+            std::time::Duration::from_secs(5),
+            Arc::new(Mutex::new(None)),
+            "test-client".to_string(),
+            GoslingMcpClientCapabilities {
+                mcpui: false,
+                host_info: None,
+            },
+            std::env::current_dir().unwrap_or_default(),
+        )
+        .await
+        .expect("connect should succeed against a no-op server");
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), client.close())
+            .await
+            .expect("close() must join the transport task rather than hang");
+
+        // Idempotent: a second close (e.g. a stray extra call) must not panic.
+        tokio::time::timeout(std::time::Duration::from_secs(2), client.close())
+            .await
+            .expect("a second close() call must also complete without hanging");
     }
 }

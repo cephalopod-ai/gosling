@@ -286,6 +286,11 @@ impl Extension {
     }
 
     async fn shutdown(mut self) {
+        // Await the MCP transport's own teardown (stdio child, SSE/HTTP task)
+        // before the docker branch below, so callers of `remove_extension`
+        // get a real guarantee the extension's resources are gone rather than
+        // relying solely on eventual cleanup via `Drop`.
+        self.client.close().await;
         if let Some(docker_process) = self.docker_process.take() {
             docker_process.kill().await;
         }
