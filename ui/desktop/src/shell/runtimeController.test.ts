@@ -101,7 +101,7 @@ interface TestConnection {
   closed: Promise<void>;
   validateDirectory(candidate: string): Promise<ShellDirectoryValidateResponse_unstable>;
   listCredentials(): Promise<ShellCredentialListResponse_unstable>;
-  listModules(): Promise<ShellModuleListResponse_unstable>;
+  listModules(workingDir: string | null): Promise<ShellModuleListResponse_unstable>;
 }
 
 function deferred<T>() {

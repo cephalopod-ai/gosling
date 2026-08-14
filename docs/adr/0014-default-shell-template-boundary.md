@@ -82,7 +82,11 @@ provider, and status; a session launch carrying a selection under `fixed` provis
 with `SHELL_CREDENTIAL_SELECTION_DENIED`. A deleted or revoked profile stays visibly
 selected-but-invalid rather than being silently replaced with another profile.
 
-**Module v1 is an intersection, not a union.** The registry reports `core:session`, the selected
+**Module v1 is an intersection, not a union, resolved against the selected directory.** Extensions
+and skills are project-local, so the inventory is resolved against the accepted working directory
+rather than the backend's startup directory, and is re-read whenever that directory changes. It uses
+the same discovery the provisioning validation and session construction use, including
+plugin-supplied MCP servers, so a module cannot be reported unavailable while a session runs it. The registry reports `core:session`, the selected
 extensions that the backend also resolved, the selected skills that resolve through the skills
 extension, and at most one supervised domain adapter. A module the product never provisioned is
 never listed; a provisioned module the backend could not resolve is listed as `unavailable` rather

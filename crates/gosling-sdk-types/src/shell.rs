@@ -375,7 +375,16 @@ pub struct ShellModuleSummary {
     method = "_gosling/unstable/shell/modules/list",
     response = ShellModuleListResponse
 )]
-pub struct ShellModuleListRequest {}
+#[serde(rename_all = "camelCase")]
+pub struct ShellModuleListRequest {
+    /// The accepted working directory this inventory should be resolved against.
+    ///
+    /// Project-local extensions and skills exist per directory, so resolving against the backend's
+    /// startup directory would report modules a session in the selected directory does not get.
+    /// Absent falls back to the startup directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+}
 
 #[derive(
     Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,

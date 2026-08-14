@@ -73,6 +73,7 @@ export interface ShellRuntimeController {
   onChanged(listener: (state: ShellRuntimeSnapshot) => void): () => void;
   onSessionUpdated(listener: (update: ShellSessionUpdate) => void): () => void;
   onInteractionRequested(listener: (interaction: ShellInteraction) => void): () => void;
+  refreshModules(): Promise<void>;
   getAcp(): ShellAcpConnection | null;
   getSessionController(): ShellSessionController | null;
   getInteractionController(): ShellInteractionController | null;
@@ -106,8 +107,11 @@ function startupFailureName(error: unknown): ShellLifecycleStateName {
   return 'offline';
 }
 
-async function readModules(connection: ShellAcpConnection): Promise<ShellModuleSummary[]> {
-  const response = await connection.listModules();
+async function readModules(
+  connection: ShellAcpConnection,
+  workingDir: string | null
+): Promise<ShellModuleSummary[]> {
+  const response = await connection.listModules(workingDir);
   return (response.modules ?? []).slice(0, MAX_SHELL_MODULES).map((module) => ({
     ...module,
     capabilities: [...(module.capabilities ?? [])],
@@ -357,7 +361,7 @@ export function createShellRuntimeController(
         const connection = acp;
         await options.directory.restore();
         await options.credentials.refresh();
-        modules = await readModules(connection);
+        modules = await readModules(connection, options.directory.accepted());
         if (eventGeneration !== generation || stateName() !== 'validating') {
           await clearRuntime();
           return state;
@@ -498,6 +502,15 @@ export function createShellRuntimeController(
     onInteractionRequested(listener) {
       interactionListeners.add(listener);
       return () => interactionListeners.delete(listener);
+    },
+    async refreshModules() {
+      const connection = acp;
+      if (!connection) return;
+      const eventGeneration = generation;
+      const resolved = await readModules(connection, options.directory.accepted());
+      if (eventGeneration !== generation || acp !== connection) return;
+      modules = resolved;
+      notify();
     },
     getAcp: () => acp,
     getSessionController: () => sessions,

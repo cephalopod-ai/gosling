@@ -64,9 +64,9 @@ export interface ShellAcpClient {
     shellCredentialsList_unstable(
       params: Record<string, never>
     ): Promise<ShellCredentialListResponse_unstable>;
-    shellModulesList_unstable(
-      params: Record<string, never>
-    ): Promise<ShellModuleListResponse_unstable>;
+    shellModulesList_unstable(params: {
+      workingDir?: string;
+    }): Promise<ShellModuleListResponse_unstable>;
     shellHandoffPrepare_unstable(
       params: ShellHandoffPrepareRequest_unstable
     ): Promise<ShellHandoffPrepareResponse_unstable>;
@@ -96,7 +96,7 @@ export interface ShellAcpConnection {
   resumeSession(sessionId: string): Promise<ShellSession>;
   validateDirectory(directory: string): Promise<ShellDirectoryValidateResponse_unstable>;
   listCredentials(): Promise<ShellCredentialListResponse_unstable>;
-  listModules(): Promise<ShellModuleListResponse_unstable>;
+  listModules(workingDir: string | null): Promise<ShellModuleListResponse_unstable>;
   prompt(input: { sessionId: string; text: string; messageId: string }): Promise<unknown>;
   cancel(input: { sessionId: string }): Promise<void>;
   prepareHandoff(
@@ -464,7 +464,10 @@ export async function connectShellAcp(input: {
           path: assertAbsoluteWorkingDir(directory),
         }),
       listCredentials: () => client.gosling.shellCredentialsList_unstable({}),
-      listModules: () => client.gosling.shellModulesList_unstable({}),
+      listModules: async (workingDir) =>
+        client.gosling.shellModulesList_unstable(
+          workingDir === null ? {} : { workingDir: assertAbsoluteWorkingDir(workingDir) }
+        ),
       prepareHandoff: (request) => client.gosling.shellHandoffPrepare_unstable(request),
       domainSnapshot: (request) => client.gosling.shellDomainSnapshot_unstable(request),
       domainAction: (request) => client.gosling.shellDomainAction_unstable(request),

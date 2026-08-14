@@ -242,7 +242,12 @@ export const zShellCredentialListResponse_unstable = z.object({
     profiles: z.array(zShellCredentialSummary).optional().default([])
 });
 
-export const zShellModuleListRequest_unstable = z.record(z.unknown());
+export const zShellModuleListRequest_unstable = z.object({
+    workingDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
 
 export const zShellModuleKind = z.enum([
     'core',

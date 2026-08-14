@@ -54,8 +54,9 @@ impl GoslingAcpAgent {
     #[custom_method(ShellModuleListRequest)]
     async fn dispatch_list_shell_modules(
         &self,
+        req: ShellModuleListRequest,
     ) -> Result<ShellModuleListResponse, agent_client_protocol::Error> {
-        Ok(self.on_list_shell_modules().await)
+        self.on_list_shell_modules(req).await
     }
 
     #[custom_method(DomainSnapshotRequest)]

@@ -569,6 +569,15 @@
     },
     "ShellModuleListRequest_unstable": {
       "type": "object",
+      "properties": {
+        "workingDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The accepted working directory this inventory should be resolved against.\n\nProject-local extensions and skills exist per directory, so resolving against the backend's\nstartup directory would report modules a session in the selected directory does not get.\nAbsent falls back to the startup directory."
+        }
+      },
       "x-side": "agent",
       "x-method": "_gosling/unstable/shell/modules/list"
     },

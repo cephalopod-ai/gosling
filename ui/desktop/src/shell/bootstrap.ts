@@ -195,7 +195,15 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         const state = await controller.stop(request.generation);
         return actionResult(state, state !== prior || state.name === 'stopped');
       },
-      directorySelect: (request) => directory.select(request.generation),
+      directorySelect: async (request) => {
+        const result = await directory.select(request.generation);
+        if (result.status === 'selected') {
+          // Project-local extensions and skills are per directory, so the inventory the renderer
+          // holds must be re-resolved against the directory just accepted.
+          await controller.refreshModules();
+        }
+        return result;
+      },
       credentialSelect: (request) => credentials.select(request.generation, request.profileId),
       sessionCreate: (request) => {
         const sessions = controller.getSessionController();
@@ -216,6 +224,11 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         const session = sessions.read();
         if (session.status === 'none') {
           return { detached: false, sessionId: null };
+        }
+        if (session.status !== 'active') {
+          // A create or resume awaiting the backend would finish after this reset and reinstate an
+          // active session, leaving a second server session reachable by nobody.
+          throw new Error('cannot detach while a session is still opening');
         }
         if (session.promptAttempt) {
           throw new Error('cannot detach while a prompt attempt is streaming');

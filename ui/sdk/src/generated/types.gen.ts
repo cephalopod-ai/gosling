@@ -162,7 +162,14 @@ export type ShellCredentialSummary = {
 export type ShellCredentialStatus = 'configured' | 'relink_required';
 
 export type ShellModuleListRequest_unstable = {
-    [key: string]: unknown;
+    /**
+     * The accepted working directory this inventory should be resolved against.
+     *
+     * Project-local extensions and skills exist per directory, so resolving against the backend's
+     * startup directory would report modules a session in the selected directory does not get.
+     * Absent falls back to the startup directory.
+     */
+    workingDir?: string | null;
 };
 
 export type ShellModuleListResponse_unstable = {
