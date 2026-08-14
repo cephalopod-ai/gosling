@@ -169,6 +169,34 @@ test('refuses secret-shaped and named-domain identities before writing anything'
   }
 });
 
+test('refuses an identity that collides with an existing product profile', () => {
+  for (const overrides of [
+    { productId: 'gosling-shell-fixture-a' },
+    { runtimeNamespace: 'shell-fixture-a' },
+    { protocolScheme: 'gosling-fixture-a' },
+    { macosBundleId: 'io.github.repo-makeover.gosling.fixture.a' },
+  ]) {
+    const input = inputs(overrides);
+    assert.throws(() => scaffoldShell(input), /collides with an existing shell product profile/);
+    assert.equal(fs.existsSync(path.join(repositoryRoot, input.productDestination)), false);
+    assert.equal(fs.existsSync(path.join(repositoryRoot, input.consumerDestination)), false);
+  }
+});
+
+test('escapes a display name that would otherwise break the generated renderer', () => {
+  const { result } = create({ displayName: "Bob's \\ Shell" });
+  try {
+    const renderer = fs.readFileSync(
+      path.join(repositoryRoot, result.consumerDirectory, 'renderer.ts'),
+      'utf8'
+    );
+    assert.match(renderer, /root\.textContent = "Bob's \\\\ Shell conformance surface";/);
+    assert.equal(checkShellConformance.length, 1);
+  } finally {
+    cleanup();
+  }
+});
+
 test('a fresh second neutral identity is fully disjoint from the first', () => {
   const first = create();
   const second = create();

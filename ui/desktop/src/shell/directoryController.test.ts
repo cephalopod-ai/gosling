@@ -205,6 +205,30 @@ describe('shell working-directory controller', () => {
     expect(controller.read().state).toBe('unselected');
   });
 
+  it('discards a selection whose generation changed while validation was pending', async () => {
+    const settings = memorySettingsStore(null);
+    let generation = 1;
+    let release!: (value: ShellDirectoryValidateResponse_unstable) => void;
+    const controller = createShellDirectoryController({
+      settings,
+      showOpenDialog: async () => ({ canceled: false, filePaths: ['/chosen/alias'] }),
+      validate: () =>
+        new Promise<ShellDirectoryValidateResponse_unstable>((resolve) => (release = resolve)),
+      generation: () => generation,
+      isSelectable: () => ({ allowed: true }),
+    });
+
+    const selecting = controller.select(1);
+    await Promise.resolve();
+    generation = 2;
+    release({ status: 'valid', canonicalPath: '/chosen/alias' });
+
+    await expect(selecting).rejects.toThrow('generation is stale');
+    expect(controller.read().state).toBe('unselected');
+    expect(controller.accepted()).toBeNull();
+    expect(settings.read().workspace.lastWorkingDirectory).toBeNull();
+  });
+
   it('clears the live selection on teardown without deleting the remembered setting', async () => {
     const { controller, settings } = harness();
     await controller.select(1);

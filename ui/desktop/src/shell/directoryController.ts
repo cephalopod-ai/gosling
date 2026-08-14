@@ -102,8 +102,16 @@ export function createShellDirectoryController(
     return { ...directory };
   };
 
-  const accept = async (candidate: string): Promise<ShellDirectorySnapshot> => {
+  const accept = async (
+    candidate: string,
+    generation: number
+  ): Promise<ShellDirectorySnapshot> => {
     const validated = projectValidation(await dependencies.validate(candidate));
+    // Validation is a round trip: the runtime may have torn down or retried while it was pending,
+    // and a stale acceptance must not persist or reappear in a newer generation.
+    if (generation !== dependencies.generation()) {
+      throw new Error('directory selection generation is stale');
+    }
     if (validated.state === 'selected' && validated.path) {
       // A settings document this build refuses to overwrite must not make the shell unusable:
       // the selection still applies to this run, it just is not remembered. The recovery status
@@ -121,11 +129,16 @@ export function createShellDirectoryController(
     read: () => ({ ...directory }),
     accepted: () => (directory.state === 'selected' ? directory.path : null),
     async restore() {
+      const generation = dependencies.generation();
       const remembered = dependencies.settings.read().workspace.lastWorkingDirectory;
       if (!isAcceptablePath(remembered)) {
         return publish(unselected());
       }
-      return publish(projectValidation(await dependencies.validate(remembered)));
+      const validated = projectValidation(await dependencies.validate(remembered));
+      if (generation !== dependencies.generation()) {
+        return { ...directory };
+      }
+      return publish(validated);
     },
     select(generation) {
       if (outstanding) {
@@ -160,7 +173,7 @@ export function createShellDirectoryController(
             reasonCode: 'invalid_path',
           };
         }
-        const validated = await accept(candidate);
+        const validated = await accept(candidate, generation);
         if (validated.state !== 'selected') {
           return {
             status: 'rejected',

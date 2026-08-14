@@ -1,7 +1,12 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { APPROVED_PROFILE_ROOTS } = require('./shell-profile');
+const {
+  APPROVED_PROFILE_ROOTS,
+  COLLISION_FIELDS,
+  discoverProfiles,
+  parseJsonWithoutDuplicateKeys,
+} = require('./shell-profile');
 const { APPROVED_CONSUMER_ROOTS, resolveConsumerManifest } = require('./shell-consumer');
 
 const LOWER_KEBAB = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
@@ -204,7 +209,7 @@ function rendererEntry(input) {
   return `const root = document.querySelector<HTMLElement>('#root');
 
 if (root) {
-  root.textContent = '${input.displayName} conformance surface';
+  root.textContent = ${JSON.stringify(`${input.displayName} conformance surface`)};
 }
 `;
 }
@@ -225,6 +230,35 @@ policy, settings schema version, and the conformance renderer entry — is alrea
 Run \`pnpm run shell:conformance ${input.consumerRelative}/shell-consumer.json\` after adding the
 icons.
 `;
+}
+
+/// Rejects an identity that already belongs to another source-controlled product profile.
+///
+/// This reuses the resolver's own `COLLISION_FIELDS` rather than a second hand-maintained list, and
+/// runs before anything is written, so the scaffold cannot report success and leave a repository
+/// that `shell:check-profiles` then rejects.
+function assertNoIdentityCollision(root, candidate) {
+  // Existing profiles are compared as raw documents rather than resolved ones: a template whose
+  // operator has not supplied icons yet cannot resolve, and that incompleteness is not a reason to
+  // stop checking the identity it already claims.
+  const existing = discoverProfiles(root).flatMap((file) => {
+    try {
+      return [parseJsonWithoutDuplicateKeys(fs.readFileSync(file, 'utf8'), 'product profile')];
+    } catch {
+      return [];
+    }
+  });
+  for (const [field, valueFor] of COLLISION_FIELDS) {
+    const value = valueFor(candidate);
+    const claimed = existing.some((profile) => {
+      try {
+        return valueFor(profile) === value;
+      } catch {
+        return false;
+      }
+    });
+    if (claimed) fail(`${field} collides with an existing shell product profile`);
+  }
 }
 
 function writeJson(file, value) {
@@ -292,6 +326,8 @@ function scaffoldShell(input) {
       128
     ),
   };
+
+  assertNoIdentityCollision(root, productProfile(context));
 
   const productStaging = `${product.resolved}.tmp-scaffold`;
   const consumerStaging = `${consumer.resolved}.tmp-scaffold`;
