@@ -86,9 +86,17 @@ export const SummarizerSection = () => {
       const storedEndpoint = (await read('GOSLING_SUMMARIZER_ENDPOINT', false)) as
         | string
         | undefined;
-      if (storedEndpoint) {
-        setEndpoint(storedEndpoint);
-        fetchModels(storedEndpoint);
+      // SummarizerConfig::from_config_with (crates/gosling/src/context_mgmt/summarizer/mod.rs)
+      // returns None, and the worker skips entirely, when the endpoint config value is unset —
+      // the displayed placeholder is not itself a stored value. Persist the suggested default so
+      // enabling Shadow/On without retyping it still produces a working summarizer.
+      const effectiveEndpoint = storedEndpoint || DEFAULT_ENDPOINT_PLACEHOLDER;
+      setEndpoint(effectiveEndpoint);
+      fetchModels(effectiveEndpoint);
+      if (!storedEndpoint) {
+        upsert('GOSLING_SUMMARIZER_ENDPOINT', effectiveEndpoint, false).catch((error) => {
+          console.error('Error saving default summarizer endpoint:', error);
+        });
       }
 
       const storedModel = (await read('GOSLING_SUMMARIZER_MODEL', false)) as string | undefined;
@@ -101,7 +109,7 @@ export const SummarizerSection = () => {
     } catch (error) {
       console.error('Error loading summarizer settings:', error);
     }
-  }, [read, fetchModels]);
+  }, [read, upsert, fetchModels]);
 
   useEffect(() => {
     loadSettings();
