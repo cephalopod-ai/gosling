@@ -5682,6 +5682,13 @@
         },
         "access": {
           "$ref": "#/$defs/WorkspaceFolderAccess"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A short, one-line note on why this folder is here and how the agent should treat\nit, e.g. \"Similar code lives here for comparison, but it's not meant to be kept\nidentical.\" Most useful for `reference`/`source` folders, which otherwise look\nlike ordinary project directories with no indication they're not the working copy."
         }
       },
       "required": [

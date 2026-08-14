@@ -1,10 +1,22 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { acpListProviderDetails, acpListProviderModels } from '../../acp/providers';
 import { IntlTestWrapper } from '../../i18n/test-utils';
 import { WorkspaceEditorDialog } from './WorkspaceEditorDialog';
+
+// The dialog's "Configure other providers" option navigates via useNavigate(),
+// which requires Router context (see GroupedExtensionLoadingToast.test.tsx for
+// the same pattern).
+function TestWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <IntlTestWrapper>
+      <MemoryRouter>{children}</MemoryRouter>
+    </IntlTestWrapper>
+  );
+}
 
 vi.mock('../../contexts/WorkspaceContext', () => ({
   useWorkspace: vi.fn(),
@@ -137,7 +149,7 @@ describe('WorkspaceEditorDialog', () => {
 
   it('preselects Codex Terra with medium effort in ~/Work for new drafts', async () => {
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
-      wrapper: IntlTestWrapper,
+      wrapper: TestWrapper,
     });
 
     expect(screen.getByLabelText('Primary working folder')).toHaveValue('/Users/tester/Work');
@@ -154,7 +166,7 @@ describe('WorkspaceEditorDialog', () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
     render(<WorkspaceEditorDialog open onOpenChange={onOpenChange} />, {
-      wrapper: IntlTestWrapper,
+      wrapper: TestWrapper,
     });
 
     await user.type(screen.getByLabelText('Name'), 'Annual Meeting');
@@ -185,10 +197,87 @@ describe('WorkspaceEditorDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it('includes a folder note in the saved workspace', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
+      wrapper: TestWrapper,
+    });
+
+    await user.type(screen.getByLabelText('Name'), 'Annual Meeting');
+    await user.click(screen.getByRole('button', { name: 'Add source/reference folder' }));
+    await user.type(
+      screen.getByLabelText('Folder note for the agent'),
+      "Similar code lives here for comparison, but it's not meant to be kept identical"
+    );
+    await user.click(screen.getByRole('button', { name: 'Save workspace' }));
+
+    expect(validateWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folders: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'reference',
+            description:
+              "Similar code lives here for comparison, but it's not meant to be kept identical",
+          }),
+        ]),
+      }),
+      undefined
+    );
+  });
+
+  it('hides unconfigured providers behind a configure-providers escape hatch', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    vi.mocked(acpListProviderDetails).mockResolvedValueOnce([
+      {
+        name: 'chatgpt_codex',
+        is_configured: true,
+        provider_type: 'Preferred',
+        metadata: {
+          name: 'chatgpt_codex',
+          display_name: 'ChatGPT Codex',
+          description: 'Codex via ChatGPT',
+          default_model: 'gpt-5.6-sol',
+          known_models: [],
+          model_doc_link: '',
+          config_keys: [],
+        },
+      },
+      {
+        name: 'anthropic',
+        is_configured: false,
+        provider_type: 'Preferred',
+        metadata: {
+          name: 'anthropic',
+          display_name: 'Anthropic',
+          description: 'Anthropic API',
+          default_model: 'claude',
+          known_models: [],
+          model_doc_link: '',
+          config_keys: [],
+        },
+      },
+    ]);
+
+    render(<WorkspaceEditorDialog open onOpenChange={onOpenChange} />, {
+      wrapper: TestWrapper,
+    });
+
+    await screen.findByRole('option', { name: 'ChatGPT Codex' });
+    expect(screen.queryByRole('option', { name: 'Anthropic' })).not.toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByLabelText('Default provider (optional)'),
+      'Configure other providers…'
+    );
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it('clears effort when the selected model does not support reasoning', async () => {
     const user = userEvent.setup();
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
-      wrapper: IntlTestWrapper,
+      wrapper: TestWrapper,
     });
 
     await screen.findByRole('option', { name: 'Local Fast' });
@@ -221,7 +310,7 @@ describe('WorkspaceEditorDialog', () => {
     });
 
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
-      wrapper: IntlTestWrapper,
+      wrapper: TestWrapper,
     });
 
     await screen.findByRole('option', { name: 'gpt-5.6-terra' });
@@ -242,7 +331,7 @@ describe('WorkspaceEditorDialog', () => {
     vi.mocked(acpListProviderDetails).mockRejectedValueOnce(new Error('inventory unavailable'));
 
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
-      wrapper: IntlTestWrapper,
+      wrapper: TestWrapper,
     });
 
     expect(await screen.findByText('inventory unavailable')).toBeInTheDocument();
@@ -253,7 +342,7 @@ describe('WorkspaceEditorDialog', () => {
     const user = userEvent.setup();
     updateWorkspace.mockResolvedValue(activeWorkspace);
     render(<WorkspaceEditorDialog open workspace={activeWorkspace} onOpenChange={vi.fn()} />, {
-      wrapper: IntlTestWrapper,
+      wrapper: TestWrapper,
     });
 
     await user.clear(screen.getByLabelText('Name'));
@@ -270,7 +359,7 @@ describe('WorkspaceEditorDialog', () => {
   it('validates a draft without persisting it', async () => {
     const user = userEvent.setup();
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
-      wrapper: IntlTestWrapper,
+      wrapper: TestWrapper,
     });
 
     await user.type(screen.getByLabelText('Name'), 'Validated workspace');
@@ -288,7 +377,7 @@ describe('WorkspaceEditorDialog', () => {
   it('reassigns the default before removing the current default output', async () => {
     const user = userEvent.setup();
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
-      wrapper: IntlTestWrapper,
+      wrapper: TestWrapper,
     });
 
     await user.click(screen.getByRole('button', { name: 'Add output destination' }));
@@ -317,7 +406,7 @@ describe('WorkspaceEditorDialog', () => {
         }}
         onOpenChange={vi.fn()}
       />,
-      { wrapper: IntlTestWrapper }
+      { wrapper: TestWrapper }
     );
 
     expect(

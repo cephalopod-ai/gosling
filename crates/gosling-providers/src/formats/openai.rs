@@ -882,12 +882,21 @@ pub fn validate_tool_schemas(tools: &mut [Value]) {
 
 /// Ensures that the given JSON value follows the expected JSON Schema structure.
 fn ensure_valid_json_schema(schema: &mut Value) {
+    normalize_nullable(schema);
     if let Some(params_obj) = schema.as_object_mut() {
+        // A root anyOf/oneOf that normalize_nullable couldn't collapse (i.e. a real
+        // union of shapes, not just an optional wrapper) is not an object schema —
+        // forcing `type: object` onto it would leave the union in place and produce
+        // a self-contradictory schema, so leave it untouched rather than corrupt it.
+        let has_unresolved_union =
+            params_obj.contains_key("anyOf") || params_obj.contains_key("oneOf");
+
         // Check if this is meant to be an object type schema
-        let is_object_type = params_obj
-            .get("type")
-            .and_then(|t| t.as_str())
-            .is_none_or(|t| t == "object"); // Default to true if no type is specified
+        let is_object_type = !has_unresolved_union
+            && params_obj
+                .get("type")
+                .and_then(|t| t.as_str())
+                .is_none_or(|t| t == "object"); // Default to true if no type is specified
 
         // Only apply full schema validation to object types
         if is_object_type {
@@ -913,12 +922,15 @@ fn ensure_valid_json_schema(schema: &mut Value) {
     }
 }
 
-/// Normalizes nullable type representations that some providers (e.g. Vertex Gemini via Bifrost)
-/// don't support:
+/// Normalizes nullable type representations that some providers (e.g. Vertex Gemini via Bifrost,
+/// or a strict OpenAI-compatible tool-schema validator) don't support:
 /// - `"type": ["integer", "null"]` → `"type": "integer"` (drops the null variant)
 /// - `"anyOf": [T, {"type": "null"}]` → T (unwraps to the non-null schema)
+/// - `"oneOf": [T, {"type": "null"}]` → T (same, for generators that emit `oneOf` instead)
 ///
-/// Optional-ness is already conveyed by the field being absent from `required`.
+/// Optional-ness is already conveyed by the field being absent from `required`. Applies to any
+/// schema object, including the tool's root parameters schema, since `schemars`-style generators
+/// commonly wrap an `Option<Params>` root the same way they wrap an optional property.
 fn normalize_nullable(schema: &mut Value) {
     let Some(obj) = schema.as_object_mut() else {
         return;
@@ -939,33 +951,43 @@ fn normalize_nullable(schema: &mut Value) {
         }
     }
 
-    // Handle anyOf: [T, {type: "null"}] form — merge the non-null variant's fields
+    // Handle anyOf/oneOf: [T, {type: "null"}] form — merge the non-null variant's fields
     // into the current object (preserving sibling keys like "description" or "default")
     // rather than replacing the whole schema.
-    if let Some(any_of) = obj.remove("anyOf") {
-        if let Some(variants) = any_of.as_array() {
-            if variants.len() == 2 {
-                let is_null = |v: &Value| v.get("type").and_then(|t| t.as_str()) == Some("null");
-                let non_null = if is_null(&variants[0]) {
-                    Some(&variants[1])
-                } else if is_null(&variants[1]) {
-                    Some(&variants[0])
-                } else {
-                    None
-                };
-                if let Some(replacement) = non_null {
-                    if let Some(replacement_obj) = replacement.as_object() {
-                        for (k, v) in replacement_obj {
-                            obj.entry(k.clone()).or_insert(v.clone());
-                        }
-                        return;
+    collapse_nullable_union(obj, "anyOf");
+    collapse_nullable_union(obj, "oneOf");
+}
+
+/// Collapses `obj[key]: [T, {"type": "null"}]` into `T`'s fields merged onto `obj`, removing
+/// `key`. Leaves `obj` unchanged (including putting `key` back) if it isn't that exact
+/// two-variant nullable shape, since an arbitrary multi-shape union can't be safely reduced to a
+/// single object schema.
+fn collapse_nullable_union(obj: &mut serde_json::Map<String, Value>, key: &str) {
+    let Some(union_val) = obj.remove(key) else {
+        return;
+    };
+    if let Some(variants) = union_val.as_array() {
+        if variants.len() == 2 {
+            let is_null = |v: &Value| v.get("type").and_then(|t| t.as_str()) == Some("null");
+            let non_null = if is_null(&variants[0]) {
+                Some(&variants[1])
+            } else if is_null(&variants[1]) {
+                Some(&variants[0])
+            } else {
+                None
+            };
+            if let Some(replacement) = non_null {
+                if let Some(replacement_obj) = replacement.as_object() {
+                    for (k, v) in replacement_obj {
+                        obj.entry(k.clone()).or_insert(v.clone());
                     }
+                    return;
                 }
             }
         }
-        // Put it back if we couldn't simplify
-        obj.insert("anyOf".to_string(), any_of);
     }
+    // Put it back if we couldn't simplify.
+    obj.insert(key.to_string(), union_val);
 }
 
 fn strip_data_prefix(line: &str) -> Option<&str> {
@@ -1759,6 +1781,83 @@ mod tests {
         let timeout_schema = &tools[0]["function"]["parameters"]["properties"]["timeout_secs"];
         assert_eq!(timeout_schema["type"], "integer");
         assert!(!timeout_schema["type"].is_array());
+    }
+
+    #[test]
+    fn test_validate_tool_schemas_root_nullable_union() {
+        // A root parameters schema with no "type" key but an anyOf/oneOf wrapping an
+        // optional object (schemars-style `Option<Params>`) must collapse to a plain
+        // object schema, not gain a bogus `type: object` alongside the untouched union
+        // (which is what a strict provider like xAI rejects as "root schema is an
+        // anyOf/oneOf union with a non-object branch").
+        let mut tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "brainstorm_fleet",
+                "description": "brainstorm",
+                "parameters": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": { "topic": { "type": "string" } },
+                            "required": ["topic"]
+                        },
+                        { "type": "null" }
+                    ]
+                }
+            }
+        })];
+        validate_tool_schemas(&mut tools);
+        let parameters = &tools[0]["function"]["parameters"];
+        assert_eq!(parameters["type"], "object");
+        assert!(parameters.get("anyOf").is_none());
+        assert_eq!(parameters["properties"]["topic"]["type"], "string");
+        assert_eq!(parameters["required"], json!(["topic"]));
+
+        // Same shape via oneOf instead of anyOf.
+        let mut tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "brainstorm_fleet",
+                "description": "brainstorm",
+                "parameters": {
+                    "oneOf": [
+                        { "type": "null" },
+                        {
+                            "type": "object",
+                            "properties": { "topic": { "type": "string" } },
+                            "required": ["topic"]
+                        }
+                    ]
+                }
+            }
+        })];
+        validate_tool_schemas(&mut tools);
+        let parameters = &tools[0]["function"]["parameters"];
+        assert_eq!(parameters["type"], "object");
+        assert!(parameters.get("oneOf").is_none());
+        assert_eq!(parameters["properties"]["topic"]["type"], "string");
+
+        // A genuine multi-shape union (not just an optional wrapper) can't be safely
+        // reduced to one object schema — it must be left as-is rather than gain a
+        // corrupting `type: object` next to the untouched union.
+        let mut tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "ambiguous",
+                "description": "ambiguous",
+                "parameters": {
+                    "anyOf": [
+                        { "type": "object", "properties": { "a": { "type": "string" } } },
+                        { "type": "string" }
+                    ]
+                }
+            }
+        })];
+        validate_tool_schemas(&mut tools);
+        let parameters = &tools[0]["function"]["parameters"];
+        assert!(parameters.get("type").is_none());
+        assert!(parameters.get("anyOf").is_some());
     }
 
     const OPENAI_TOOL_USE_RESPONSE: &str = r#"{

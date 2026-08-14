@@ -126,6 +126,12 @@ pub struct WorkspaceFolder {
     pub path: String,
     pub kind: WorkspaceFolderKind,
     pub access: WorkspaceFolderAccess,
+    /// A short, one-line note on why this folder is here and how the agent should treat
+    /// it, e.g. "Similar code lives here for comparison, but it's not meant to be kept
+    /// identical." Most useful for `reference`/`source` folders, which otherwise look
+    /// like ordinary project directories with no indication they're not the working copy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

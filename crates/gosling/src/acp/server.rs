@@ -3187,6 +3187,27 @@ impl GoslingAcpAgent {
         Ok(())
     }
 
+    /// Blocks until `session_id` has no active prompt run. A provider/model switch
+    /// applied while a turn is mid-flight can race an in-flight request that already
+    /// captured the pre-switch provider/model pair (e.g. the request is sent to the
+    /// newly-switched provider's endpoint but still carries the old model name), so
+    /// callers changing provider or model wait here first and apply the change
+    /// between turns instead. Unblocks on normal completion, error, or cancellation,
+    /// since all of those paths clear the session's active run.
+    async fn wait_for_session_idle(&self, session_id: &str) {
+        loop {
+            let busy = self
+                .active_prompt_runs
+                .lock()
+                .await
+                .contains_key(session_id);
+            if !busy {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        }
+    }
+
     async fn on_set_model(
         &self,
         session_id: &str,

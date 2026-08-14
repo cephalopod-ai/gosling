@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderOpen, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { v7 as uuidv7 } from 'uuid';
 import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 import type {
   CredentialBinding,
   ProductOutputFolder,
@@ -45,6 +46,7 @@ const PRODUCT_TYPES: ProductType[] = [
 const DEFAULT_WORKSPACE_PROVIDER = 'chatgpt_codex';
 const DEFAULT_WORKSPACE_MODEL = 'gpt-5.6-terra';
 const DEFAULT_WORKSPACE_EFFORT: WorkspaceThinkingEffort = 'medium';
+const CONFIGURE_PROVIDERS_OPTION = '__configure_providers__';
 
 interface WorkspaceModelOption {
   id: string;
@@ -62,6 +64,7 @@ export function WorkspaceEditorDialog({
   workspace,
   onOpenChange,
 }: WorkspaceEditorDialogProps) {
+  const navigate = useNavigate();
   const { credentialProfiles, createWorkspace, updateWorkspace, validateWorkspace } =
     useWorkspace();
   const [draft, setDraft] = useState<WorkspaceMutation>(() => createDraft(workspace));
@@ -93,12 +96,16 @@ export function WorkspaceEditorDialog({
     void acpListProviderDetails()
       .then((items) => {
         if (cancelled) return;
+        // Mirror what a chat session's own provider switcher shows (see
+        // SwitchModelModal): only providers the user has actually set up are real
+        // choices here. Anything else is reached through "Configure other providers"
+        // instead of a long, mostly-inapplicable list of "— setup required" entries.
         setProviders(
-          [...items].sort(
-            (left, right) =>
-              Number(right.is_configured) - Number(left.is_configured) ||
+          items
+            .filter((item) => item.is_configured)
+            .sort((left, right) =>
               left.metadata.display_name.localeCompare(right.metadata.display_name)
-          )
+            )
         );
       })
       .catch((cause) => {
@@ -447,6 +454,11 @@ export function WorkspaceEditorDialog({
                     aria-label="Default provider (optional)"
                     value={draft.defaultProvider ?? ''}
                     onChange={(event) => {
+                      if (event.target.value === CONFIGURE_PROVIDERS_OPTION) {
+                        onOpenChange(false);
+                        navigate('/configure-providers');
+                        return;
+                      }
                       setModels([]);
                       setModelsProviderId(null);
                       setModelsLoading(Boolean(event.target.value));
@@ -474,9 +486,9 @@ export function WorkspaceEditorDialog({
                     {providers.map((provider) => (
                       <option key={provider.name} value={provider.name}>
                         {provider.metadata.display_name}
-                        {provider.is_configured ? '' : ' — setup required'}
                       </option>
                     ))}
+                    <option value={CONFIGURE_PROVIDERS_OPTION}>Configure other providers…</option>
                   </select>
                 </Field>
                 <Field label="Default model (optional)">
@@ -733,6 +745,21 @@ export function WorkspaceEditorDialog({
                     }
                     onReveal={() => void reveal(folder.path)}
                   />
+                  <Field label="Note for the agent (optional)">
+                    <Input
+                      value={folder.description ?? ''}
+                      onChange={(event) =>
+                        updateFolder(folder.id, { description: event.target.value || null })
+                      }
+                      maxLength={280}
+                      placeholder={
+                        folder.kind === 'reference'
+                          ? "e.g. Similar code lives here for comparison, but it's not meant to be kept identical"
+                          : 'Why this folder is here and how it should be treated'
+                      }
+                      aria-label="Folder note for the agent"
+                    />
+                  </Field>
                 </div>
               ))}
               <div className="flex flex-wrap gap-2">

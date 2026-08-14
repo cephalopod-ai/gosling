@@ -2336,7 +2336,11 @@ export const zWorkspaceFolder = z.object({
     label: z.string(),
     path: z.string(),
     kind: zWorkspaceFolderKind,
-    access: zWorkspaceFolderAccess
+    access: zWorkspaceFolderAccess,
+    description: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
 });
 
 export const zProductType = z.enum([
