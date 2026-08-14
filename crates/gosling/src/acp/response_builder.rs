@@ -529,6 +529,7 @@ mod tests {
             last_refresh_attempt_at: None,
             last_refresh_error: None,
             model_selection_hint: None,
+            manages_own_context: false,
         };
         build_model_state("unused", &inventory)
     }

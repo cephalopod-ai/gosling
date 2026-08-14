@@ -36,6 +36,7 @@ describe('shell app identity', () => {
         logs: path.join(userData, 'logs'),
         diagnostics: path.join(userData, 'diagnostics'),
         processRegistry: path.join(userData, 'backend-processes.json'),
+        localSettings: path.join(userData, 'shell-settings.json'),
       },
     });
   });

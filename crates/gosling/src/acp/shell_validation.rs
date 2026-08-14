@@ -11,6 +11,8 @@ use crate::workspace::{CredentialProfileStatus, WorkspaceService};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+const MAX_SHELL_SYSTEM_PROMPT_BYTES: usize = 64 * 1024;
+
 fn issue(
     code: ShellProvisioningIssueCode,
     path: impl Into<String>,
@@ -97,6 +99,18 @@ pub(crate) async fn validate_shell_provisioning_for_working_dir(
             "identity.version",
             "identity version cannot be empty",
         ));
+    }
+    if let Some(instructions) = &provisioning.instructions {
+        if instructions.system_prompt.trim().is_empty()
+            || instructions.system_prompt.len() > MAX_SHELL_SYSTEM_PROMPT_BYTES
+            || instructions.system_prompt.contains('\0')
+        {
+            issues.push(issue(
+                ShellProvisioningIssueCode::InvalidInstructions,
+                "instructions.systemPrompt",
+                "shell system prompt must be non-empty, contain no NUL bytes, and be at most 64 KiB",
+            ));
+        }
     }
 
     let session = &provisioning.session;
@@ -413,7 +427,8 @@ pub(crate) async fn validate_shell_provisioning_for_working_dir(
 mod tests {
     use super::*;
     use crate::acp::custom_requests::{
-        ShellIdentity, ShellSessionProvisioning, SHELL_PROVISIONING_SCHEMA_VERSION,
+        ShellIdentity, ShellInstructionProfile, ShellSessionProvisioning,
+        SHELL_PROVISIONING_SCHEMA_VERSION,
     };
     use tempfile::TempDir;
 
@@ -477,5 +492,44 @@ mod tests {
         )
         .await;
         assert!(override_report.valid, "{:?}", override_report.issues);
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_shell_instruction_profiles_without_exposing_prompt_text() {
+        let data = TempDir::new().unwrap();
+        let working_dir = TempDir::new().unwrap();
+        let workspace_service = WorkspaceService::initialize(data.path(), working_dir.path())
+            .await
+            .unwrap();
+        let provisioning = ShellProvisioning {
+            schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
+            identity: ShellIdentity {
+                id: "default_shell".into(),
+                display_name: "Default Shell".into(),
+                version: "1".into(),
+                runtime_namespace: "default_shell".into(),
+            },
+            instructions: Some(ShellInstructionProfile {
+                system_prompt: "  ".into(),
+            }),
+            ..ShellProvisioning::default()
+        };
+
+        let report = validate_shell_provisioning(
+            &provisioning,
+            Config::global(),
+            &workspace_service,
+            &[],
+            working_dir.path(),
+        )
+        .await;
+
+        let issue = report
+            .issues
+            .iter()
+            .find(|issue| issue.code == ShellProvisioningIssueCode::InvalidInstructions)
+            .unwrap();
+        assert_eq!(issue.path, "instructions.systemPrompt");
+        assert!(!issue.message.contains("  "));
     }
 }

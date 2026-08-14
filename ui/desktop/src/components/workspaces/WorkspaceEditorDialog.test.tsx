@@ -64,6 +64,7 @@ describe('WorkspaceEditorDialog', () => {
       {
         name: 'chatgpt_codex',
         is_configured: true,
+        manages_own_context: false,
         provider_type: 'Preferred',
         metadata: {
           name: 'chatgpt_codex',
@@ -78,6 +79,7 @@ describe('WorkspaceEditorDialog', () => {
       {
         name: 'local_fast',
         is_configured: true,
+        manages_own_context: false,
         provider_type: 'Custom',
         metadata: {
           name: 'local_fast',
@@ -232,6 +234,7 @@ describe('WorkspaceEditorDialog', () => {
       {
         name: 'chatgpt_codex',
         is_configured: true,
+        manages_own_context: false,
         provider_type: 'Preferred',
         metadata: {
           name: 'chatgpt_codex',
@@ -246,6 +249,7 @@ describe('WorkspaceEditorDialog', () => {
       {
         name: 'anthropic',
         is_configured: false,
+        manages_own_context: false,
         provider_type: 'Preferred',
         metadata: {
           name: 'anthropic',

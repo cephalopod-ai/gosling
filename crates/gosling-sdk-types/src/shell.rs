@@ -58,6 +58,12 @@ pub struct ShellSessionProvisioning {
     pub skill_ids: Option<Vec<String>>,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellInstructionProfile {
+    pub system_prompt: String,
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DomainAdapterActionKind {
@@ -114,6 +120,8 @@ pub struct ShellProvisioning {
     #[serde(default)]
     pub session: ShellSessionProvisioning,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<ShellInstructionProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain_adapter: Option<DomainAdapterDescriptor>,
 }
 
@@ -144,6 +152,7 @@ pub enum ShellProvisioningIssueCode {
     MissingSkill,
     DuplicateSkill,
     InvalidDeniedMethod,
+    InvalidInstructions,
     InvalidDomainAdapter,
 }
 
@@ -384,6 +393,29 @@ mod tests {
         assert_eq!(json["session"]["credentialProfileId"], "profile-id");
         assert!(json.get("secrets").is_none());
         assert!(json.get("credentials").is_none());
+    }
+
+    #[test]
+    fn instruction_profile_is_shell_owned() {
+        let provisioning = ShellProvisioning {
+            schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
+            identity: ShellIdentity {
+                id: "default_shell".into(),
+                display_name: "Default Shell".into(),
+                version: "1".into(),
+                runtime_namespace: "default_shell".into(),
+            },
+            instructions: Some(ShellInstructionProfile {
+                system_prompt: "You are the Default Shell assistant.".into(),
+            }),
+            ..ShellProvisioning::default()
+        };
+
+        let json = serde_json::to_value(provisioning).unwrap();
+        assert_eq!(
+            json["instructions"]["systemPrompt"],
+            "You are the Default Shell assistant."
+        );
     }
 
     #[test]

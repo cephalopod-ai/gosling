@@ -43,6 +43,7 @@ impl gosling_providers::base::ProviderDescriptor for CopilotAcpProvider {
 
 impl ProviderDef for CopilotAcpProvider {
     type Provider = AcpProvider;
+    const MANAGES_OWN_CONTEXT: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

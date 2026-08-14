@@ -34,6 +34,7 @@ pub struct ProviderEntry {
     pub(crate) cleanup: Option<ProviderCleanup>,
     provider_type: ProviderType,
     supports_inventory_refresh: bool,
+    manages_own_context: bool,
     tls_config: Option<TlsConfig>,
 }
 
@@ -48,6 +49,14 @@ impl ProviderEntry {
 
     pub fn supports_inventory_refresh(&self) -> bool {
         self.supports_inventory_refresh
+    }
+
+    /// Whether this provider's live instances manage their own conversation
+    /// context (see `Provider::MANAGES_OWN_CONTEXT`) — read from the
+    /// registered type's associated const, so it's available without
+    /// constructing a provider instance.
+    pub fn manages_own_context(&self) -> bool {
+        self.manages_own_context
     }
 
     pub fn inventory_identity(&self) -> Result<InventoryIdentityInput> {
@@ -179,6 +188,7 @@ impl ProviderRegistry {
                     ProviderType::Builtin
                 },
                 supports_inventory_refresh: inventory.supports_refresh,
+                manages_own_context: F::MANAGES_OWN_CONTEXT,
                 tls_config: self.tls_config.clone(),
             },
         );
@@ -349,6 +359,7 @@ impl ProviderRegistry {
                 cleanup: None,
                 provider_type,
                 supports_inventory_refresh,
+                manages_own_context: P::MANAGES_OWN_CONTEXT,
                 tls_config: self.tls_config.clone(),
             },
         );

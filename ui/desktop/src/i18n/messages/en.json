@@ -212,6 +212,9 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Gosling finished the task."
   },
+  "chatInput.contextManagedExternally": {
+    "defaultMessage": "Context is managed by the connected CLI tool, not Gosling — there's nothing for Gosling to compact here."
+  },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
   },

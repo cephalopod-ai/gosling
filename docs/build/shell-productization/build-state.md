@@ -1,6 +1,6 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-14 after PG-50 acceptance on exact revision `b921e6ee1299dba2207ab27ab6fd9452cc57aa26`
+Updated: 2026-08-14 after operator selection of a generic Default Shell pre-GUI milestone
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -9,7 +9,7 @@ Completed gate: **R0 — baseline CI restored and evidence reconciled**
 Completed gate: **R1 — project-shell topology and application contracts accepted**
 Completed gate: **R2 — copy-free consumer composition and package readback**
 Completed gate: **R3/R4 — main-owned application runtime and live neutral domain adapter, revision-bound**
-Current gate: **PG-50 — pre-GUI backend acceptance: ACCEPTED (see `audits/pg-50-pre-gui-acceptance.md`). R5 shared GUI shell kit implementation is authorized to begin.**
+Current gate: **DS-1–DS-7 — Default Shell nonvisual foundation and fresh revision-bound acceptance. No renderer or named shell is authorized in the current worktree.**
 
 ## Intent
 
@@ -17,7 +17,19 @@ Finish a copy-free, least-privilege shared foundation before DAWES, math, Projec
 
 ## Current decision
 
-**Host substrate: ready. Project-shell consumer foundation: ready — PG-50 accepted, R5 authorized.**
+**Historical host substrate: accepted on its recorded revision. Current Default Shell additions: in progress and not yet revision-bound.**
+
+The operator has narrowed the next MVP to a generic Default Shell template and explicitly deferred
+all renderer and named-shell work until its pre-GUI boundaries are complete. ADR-0014 and
+[`../../architecture/default-shell-template.md`](../../architecture/default-shell-template.md)
+define the active DS-1–DS-7 sequence. The Default Shell must use its own instructions, keep settings
+inside its product data root, use credential references without owning secrets, start without
+developer tools, and remain a front end to declared supervised backends.
+
+PG-50 remains valid historical evidence only for exact revision
+`b921e6ee1299dba2207ab27ab6fd9452cc57aa26`. The current dirty worktree contains later foundation
+changes and therefore does not inherit that acceptance. The local audit is recorded in
+[`../../logs/session/2026-08-14-shell-pg50-local-audit.md`](../../logs/session/2026-08-14-shell-pg50-local-audit.md).
 
 This supersedes the "not ready" decision recorded here before 2026-08-14. The former Gate 4
 process boundary is useful and merged; the former instruction to begin Gate 5 UI was superseded by:
@@ -29,9 +41,8 @@ process boundary is useful and merged; the former instruction to begin Gate 5 UI
 and that R2–R4/PG-50 gate is itself now closed — see
 [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md).
 
-`ShellRuntimeProvider` (R5, the shared GUI shell kit) may now begin, consuming only the accepted
-consumer/runtime/permission/domain-adapter contracts. Do not start any named project shell (DAWES,
-math, physics/CST, or other) before M5. R4's conformance is revision-bound and local: the desktop
+`ShellRuntimeProvider` and all renderer work are paused until DS-7. Do not start any named project
+shell (DAWES, math, physics/CST, or other) before M5. R4's conformance is revision-bound and local: the desktop
 CI job runs only the default `vitest.config.ts` (`src/**`), not `vitest.integration.config.ts`, so
 the non-visual consumer/runtime/adapter conformance suite's evidence is local-only, not CI-backed
 (see `audits/pg-50-pre-gui-acceptance.md`). R6/R8 must still reproduce it in packaged and
@@ -144,8 +155,8 @@ composition, two neutral consumer fixtures, target-specific one-binary staging, 
 metadata/permissions, and exact package verifier coverage. A real unsigned macOS arm64 consumer
 package passed readback on this checkout.
 
-*(Historical, as recorded on 2026-08-13/14 before the PG-50 rerun — preserved for the evidence
-trail; the acceptance decision at the top of this document is current.)*
+_(Historical, as recorded on 2026-08-13/14 before the PG-50 rerun — preserved for the evidence
+trail; the acceptance decision at the top of this document is current.)_
 
 R3 is **locally implemented and exercised; it is not PG-50 acceptance**. The current desktop worktree contains a main-owned
 single-session controller with create/resume, bounded prompt submit/cancel, generation and
@@ -213,11 +224,11 @@ condition-by-condition disposition, current-CI result, and the one residual gap 
 package-readback could not be reproduced in the accepting sandbox; `linux-x64` readback stands in
 as the supported-host-target proof).
 
-1. R5 — build the shared shell GUI application kit — is now the active gate. It must consume only
-   the R1–R4 contracts frozen in ADR-0010–0012 and exercised above; it must not add GUI behavior to
-   compensate for missing backend state/action, and it must not begin any named-shell (DAWES, math,
-   physics/CST, or other) implementation, which remains blocked until M5.
-2. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
+1. Complete DS-1–DS-6 from `default-shell-template.md`: instruction/tool isolation, shell-local
+   settings, working-directory authority, safe credential metadata, module composition, and the
+   neutral scaffold.
+2. Run DS-7 on one exact clean revision with current CI before beginning the Default Shell GUI.
+3. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
    publication) remain open and unauthorized by this acceptance.
 
 ## Named-shell start policy

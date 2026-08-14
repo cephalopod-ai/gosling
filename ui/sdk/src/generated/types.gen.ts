@@ -16,6 +16,7 @@ export type ShellProvisioning = {
     settingsAuthority?: ShellSettingsAuthority;
     protocolPolicy?: ShellProtocolPolicy;
     session?: ShellSessionProvisioning;
+    instructions?: ShellInstructionProfile | null;
     domainAdapter?: DomainAdapterDescriptor | null;
 };
 
@@ -49,6 +50,10 @@ export type ShellExtensionSelection = {
     availableTools?: Array<string> | null;
 };
 
+export type ShellInstructionProfile = {
+    systemPrompt: string;
+};
+
 export type DomainAdapterDescriptor = {
     domainId: string;
     displayName: string;
@@ -78,7 +83,7 @@ export type ShellProvisioningIssue = {
     message: string;
 };
 
-export type ShellProvisioningIssueCode = 'unsupported_schema_version' | 'invalid_identity' | 'missing_workspace' | 'invalid_workspace' | 'missing_credential_profile' | 'credential_profile_unavailable' | 'credential_provider_mismatch' | 'missing_provider' | 'invalid_model' | 'missing_extension' | 'duplicate_extension' | 'invalid_tool_selection' | 'missing_skill' | 'duplicate_skill' | 'invalid_denied_method' | 'invalid_domain_adapter';
+export type ShellProvisioningIssueCode = 'unsupported_schema_version' | 'invalid_identity' | 'missing_workspace' | 'invalid_workspace' | 'missing_credential_profile' | 'credential_profile_unavailable' | 'credential_provider_mismatch' | 'missing_provider' | 'invalid_model' | 'missing_extension' | 'duplicate_extension' | 'invalid_tool_selection' | 'missing_skill' | 'duplicate_skill' | 'invalid_denied_method' | 'invalid_instructions' | 'invalid_domain_adapter';
 
 export type ShellProvisioningIssueSeverity = 'error' | 'warning';
 
@@ -1106,6 +1111,13 @@ export type ProviderInventoryEntryDto = {
      * Guidance message shown when this provider manages its own model selection externally.
      */
     modelSelectionHint?: string | null;
+    /**
+     * Whether this provider manages its own conversation context (e.g. a persistent
+     * CLI/ACP session like Claude Code) rather than relying on Gosling to resend
+     * history each turn. Clients use this to decide whether Gosling-side
+     * context/compaction UI applies to a session using this provider.
+     */
+    managesOwnContext?: boolean;
 };
 
 /**

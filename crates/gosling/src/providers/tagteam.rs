@@ -323,6 +323,7 @@ impl gosling_providers::base::ProviderDescriptor for TagteamProvider {
 
 impl ProviderDef for TagteamProvider {
     type Provider = Self;
+    const MANAGES_OWN_CONTEXT: bool = true;
 
     fn from_env(
         _extensions: Vec<ExtensionConfig>,

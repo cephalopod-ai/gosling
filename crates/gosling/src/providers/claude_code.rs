@@ -666,6 +666,7 @@ impl gosling_providers::base::ProviderDescriptor for ClaudeCodeProvider {
 
 impl ProviderDef for ClaudeCodeProvider {
     type Provider = Self;
+    const MANAGES_OWN_CONTEXT: bool = true;
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,

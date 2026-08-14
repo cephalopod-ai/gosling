@@ -2001,6 +2001,12 @@ pub struct ProviderInventoryEntryDto {
     /// Guidance message shown when this provider manages its own model selection externally.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_selection_hint: Option<String>,
+    /// Whether this provider manages its own conversation context (e.g. a persistent
+    /// CLI/ACP session like Claude Code) rather than relying on Gosling to resend
+    /// history each turn. Clients use this to decide whether Gosling-side
+    /// context/compaction UI applies to a session using this provider.
+    #[serde(default)]
+    pub manages_own_context: bool,
 }
 
 /// Empty success response for operations that return no data.

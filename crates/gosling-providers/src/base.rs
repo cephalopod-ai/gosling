@@ -719,6 +719,13 @@ pub trait Provider: Send + Sync {
     /// wrappers like Claude Code or Gemini CLI). When true, gosling-side
     /// context management such as tool-pair summarization is skipped because
     /// the provider's internal state is the source of truth.
+    ///
+    /// `Provider` is used as `dyn Provider` throughout gosling, so this can't
+    /// be an associated const here (associated consts aren't dyn-compatible).
+    /// `gosling::providers::base::ProviderDef` carries a matching
+    /// `MANAGES_OWN_CONTEXT` associated const for callers that need this
+    /// value without constructing a provider instance (e.g. the provider
+    /// registry) — keep the two in sync for a given provider type.
     fn manages_own_context(&self) -> bool {
         false
     }

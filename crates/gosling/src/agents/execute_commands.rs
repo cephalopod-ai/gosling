@@ -141,6 +141,18 @@ impl Agent {
     }
 
     async fn handle_compact_command(&self, session_id: &str) -> Result<Option<Message>> {
+        let provider = self.provider().await?;
+        if provider.manages_own_context() {
+            // Gosling's own message array is a display-only mirror for these providers
+            // (see manages_own_context's doc comment); summarizing it wouldn't touch the
+            // connected CLI tool's actual context, and the summarization request itself
+            // would just become another turn in that tool's own session. There's nothing
+            // useful for /compact to do here.
+            return Ok(Some(user_only_assistant_text(
+                "This session's context is managed by the connected CLI tool itself, not by Gosling, so there's nothing here for /compact to trim. If the conversation feels too large, start a new session instead.",
+            )));
+        }
+
         let manager = self.config.session_manager.clone();
         let session = manager.get_session(session_id, true).await?;
         let conversation = session
@@ -149,7 +161,7 @@ impl Agent {
 
         let model_config = self.model_config_for_session(session_id).await?;
         let (compacted_conversation, usage) = match compact_messages(
-            self.provider().await?.as_ref(),
+            provider.as_ref(),
             &model_config,
             session_id,
             &conversation,

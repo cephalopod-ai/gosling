@@ -41,6 +41,7 @@ impl gosling_providers::base::ProviderDescriptor for PiAcpProvider {
 
 impl ProviderDef for PiAcpProvider {
     type Provider = AcpProvider;
+    const MANAGES_OWN_CONTEXT: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

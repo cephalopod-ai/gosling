@@ -1381,6 +1381,11 @@ impl GoslingAcpAgent {
             .get_or_create_session_agent_with_results(cx, session.id.clone())
             .await?;
         let agent = agent_result.agent.clone();
+        if let Some(instructions) = &self.shell_runtime.provisioning().instructions {
+            agent
+                .configure_shell_instructions(instructions.system_prompt.clone())
+                .await;
+        }
         if let Some(context) = &session.workspace_context {
             agent
                 .extend_system_prompt(

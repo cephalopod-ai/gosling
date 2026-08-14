@@ -9,6 +9,7 @@ export interface ShellAppPaths {
   logs: string;
   diagnostics: string;
   processRegistry: string;
+  localSettings: string;
 }
 
 export interface ShellAppIdentity {
@@ -43,6 +44,7 @@ export function deriveShellAppIdentity(
       logs: path.join(userData, 'logs'),
       diagnostics: path.join(userData, 'diagnostics'),
       processRegistry: path.join(userData, 'backend-processes.json'),
+      localSettings: path.join(userData, 'shell-settings.json'),
     },
   };
 }

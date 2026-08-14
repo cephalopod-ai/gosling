@@ -30,6 +30,14 @@ pub(crate) fn current_working_dir() -> PathBuf {
 pub trait ProviderDef: ProviderDescriptor + Send + Sync {
     type Provider: Provider + 'static;
 
+    /// Mirrors `Self::Provider`'s `Provider::manages_own_context()` for a given
+    /// provider type, but as an associated const readable at provider-registry
+    /// registration time without constructing an instance (`Provider` is used as
+    /// `dyn Provider`, so it can't carry this as an associated const itself).
+    /// Keep this in sync with the corresponding `Provider` impl's
+    /// `manages_own_context()` override.
+    const MANAGES_OWN_CONTEXT: bool = false;
+
     fn from_env(
         extensions: Vec<ExtensionConfig>,
         tls_config: Option<TlsConfig>,

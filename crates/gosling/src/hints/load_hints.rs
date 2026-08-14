@@ -254,6 +254,23 @@ pub fn load_hint_files(
     hints_filenames: &[String],
     ignore_patterns: &Gitignore,
 ) -> String {
+    load_hint_files_with_global(cwd, hints_filenames, ignore_patterns, true)
+}
+
+pub fn load_project_hint_files(
+    cwd: &Path,
+    hints_filenames: &[String],
+    ignore_patterns: &Gitignore,
+) -> String {
+    load_hint_files_with_global(cwd, hints_filenames, ignore_patterns, false)
+}
+
+fn load_hint_files_with_global(
+    cwd: &Path,
+    hints_filenames: &[String],
+    ignore_patterns: &Gitignore,
+    include_global: bool,
+) -> String {
     let mut global_hints_contents = Vec::with_capacity(hints_filenames.len());
     let mut local_hints_contents = Vec::with_capacity(hints_filenames.len());
 
@@ -269,7 +286,7 @@ pub fn load_hint_files(
     }
 
     for global_hints_path in &global_hints_paths {
-        if global_hints_path.is_file() {
+        if include_global && global_hints_path.is_file() {
             let mut visited = HashSet::new();
             let hints_dir = global_hints_path.parent().unwrap();
             let global_ignore_patterns = GitignoreBuilder::new(hints_dir)
@@ -397,6 +414,39 @@ mod tests {
 
         assert!(hints.contains("Global Hints"));
         assert!(hints.contains("Global agents home instructions"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn project_hint_loader_excludes_global_agents_home() {
+        let root = TempDir::new().unwrap();
+        std::env::set_var("GOSLING_PATH_ROOT", root.path());
+
+        let agents_home = root.path().join(".agents");
+        fs::create_dir_all(&agents_home).unwrap();
+        fs::write(
+            agents_home.join(AGENTS_MD_FILENAME),
+            "Global agents home instructions",
+        )
+        .unwrap();
+
+        let project = TempDir::new().unwrap();
+        fs::write(
+            project.path().join(AGENTS_MD_FILENAME),
+            "Project agents instructions",
+        )
+        .unwrap();
+        let gitignore = create_dummy_gitignore();
+        let hints = load_project_hint_files(
+            project.path(),
+            &[AGENTS_MD_FILENAME.to_string()],
+            &gitignore,
+        );
+
+        std::env::remove_var("GOSLING_PATH_ROOT");
+
+        assert!(!hints.contains("Global agents home instructions"));
+        assert!(hints.contains("Project agents instructions"));
     }
 
     #[test]

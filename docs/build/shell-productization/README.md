@@ -18,6 +18,7 @@ This package is the durable, resumable plan for turning the merged Gosling shell
 12. [`evidence/gate-4.md`](evidence/gate-4.md) and [`audits/gate-4-host-package.md`](audits/gate-4-host-package.md) — historical Gate 4 process-boundary evidence, audit, and residual limits.
 13. [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md) — the accepted,
     revision-bound PG-50 evidence and GO decision authorizing R5.
+14. [`../../architecture/default-shell-template.md`](../../architecture/default-shell-template.md) — the operator-directed generic Default Shell pre-GUI milestone that now precedes renderer work.
 
 ## Current status
 
@@ -36,3 +37,8 @@ authorizing R5 shared GUI shell kit work. Named project shells and production re
 blocked until M5 and R6–R8 respectively.
 
 No production signing, notarization, publication, updater promotion, production identifier, release destination, or named project shell is authorized or implemented. Resume from `build-state.md` and verify the current repository instead of trusting an earlier checkpoint blindly.
+
+The current operator direction narrows the next MVP to the generic Default Shell template. Complete
+its DS-1–DS-7 nonvisual gates before implementing its renderer. The historical PG-50 acceptance is
+valid only for its exact recorded revision; later local foundation changes require their own clean,
+CI-bound acceptance.

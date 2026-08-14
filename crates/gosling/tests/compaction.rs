@@ -455,6 +455,119 @@ fn assert_conversation_compacted(conversation: &Conversation) {
     }
 }
 
+/// A provider that manages its own conversation context (e.g. a persistent CLI/ACP
+/// session like Claude Code) — `/compact` should refuse to summarize the gosling-side
+/// message array for these, since doing so wouldn't touch the provider's real context
+/// and the summarization request itself would become another turn in that provider's
+/// own session.
+struct ManagesOwnContextProvider;
+
+#[async_trait]
+impl Provider for ManagesOwnContextProvider {
+    async fn stream(
+        &self,
+        _model_config: &ModelConfig,
+        _system_prompt: &str,
+        _messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        panic!("manages_own_context providers must not be sent a compaction/summarization call");
+    }
+
+    fn get_name(&self) -> &str {
+        "mock-manages-own-context"
+    }
+
+    fn manages_own_context(&self) -> bool {
+        true
+    }
+}
+
+impl gosling::providers::base::ProviderDescriptor for ManagesOwnContextProvider {
+    fn metadata() -> ProviderMetadata {
+        ProviderMetadata {
+            name: "mock-manages-own-context".to_string(),
+            display_name: "Mock Manages-Own-Context Provider".to_string(),
+            description: "Mock provider that manages its own conversation context".to_string(),
+            default_model: "mock-model".to_string(),
+            known_models: vec![],
+            model_doc_link: "".to_string(),
+            config_keys: vec![],
+            setup_steps: vec![],
+            model_selection_hint: None,
+            fast_model: None,
+        }
+    }
+}
+
+impl ProviderDef for ManagesOwnContextProvider {
+    type Provider = Self;
+
+    fn from_env(
+        _extensions: Vec<gosling::config::ExtensionConfig>,
+        _tls_config: Option<gosling::providers::api_client::TlsConfig>,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
+        Box::pin(async { Ok(Self) })
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn test_manual_compaction_is_a_noop_for_providers_that_manage_their_own_context() -> Result<()>
+{
+    let temp_dir = TempDir::new()?;
+    let agent = Agent::new();
+
+    let messages = vec![
+        Message::user().with_text("Hello"),
+        Message::assistant().with_text("Hi there"),
+    ];
+    let session = setup_test_session(
+        &agent,
+        &temp_dir,
+        "manages-own-context-compact-test",
+        messages,
+    )
+    .await?;
+
+    let provider = Arc::new(ManagesOwnContextProvider);
+    agent
+        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .await?;
+
+    let result = agent.execute_command("/compact", &session.id).await?;
+    let message = result.expect("compact should return an explanatory message");
+    let text = message
+        .content
+        .iter()
+        .find_map(|content| match content {
+            MessageContent::Text(text) => Some(text.text.clone()),
+            _ => None,
+        })
+        .expect("message should contain text");
+    assert!(
+        text.contains("managed by the connected CLI tool"),
+        "expected an explanation that context is externally managed, got: {text}"
+    );
+
+    // The conversation must be untouched — no summary, no provider call.
+    let unchanged = agent
+        .config
+        .session_manager
+        .get_session(&session.id, true)
+        .await?;
+    let conversation = unchanged
+        .conversation
+        .expect("session should still have a conversation");
+    assert_eq!(
+        conversation.messages().len(),
+        2,
+        "conversation should be unchanged, not compacted"
+    );
+
+    Ok(())
+}
+
 #[tokio::test]
 #[serial]
 async fn test_manual_compaction_updates_token_counts_and_conversation() -> Result<()> {

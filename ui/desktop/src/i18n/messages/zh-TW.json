@@ -3121,5 +3121,8 @@
   },
   "artifactPane.truncated": {
     "defaultMessage": "Truncated"
+  },
+  "chatInput.contextManagedExternally": {
+    "defaultMessage": "Context is managed by the connected CLI tool, not Gosling — there's nothing for Gosling to compact here."
   }
 }

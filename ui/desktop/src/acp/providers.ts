@@ -105,6 +105,7 @@ async function fetchProviderDetails(): Promise<ProviderDetails[]> {
   return entries.map((entry) => ({
     name: entry.providerId,
     is_configured: entry.configured,
+    manages_own_context: entry.managesOwnContext ?? false,
     provider_type: parseProviderType(entry.providerType),
     metadata: {
       name: entry.providerId,

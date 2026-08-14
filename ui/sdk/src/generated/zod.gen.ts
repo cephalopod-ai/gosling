@@ -55,6 +55,10 @@ export const zShellSessionProvisioning = z.object({
     ]).optional()
 });
 
+export const zShellInstructionProfile = z.object({
+    systemPrompt: z.string()
+});
+
 export const zDomainAdapterActionKind = z.enum(['read', 'mutate']);
 
 export const zDomainAdapterAction = z.object({
@@ -77,6 +81,10 @@ export const zShellProvisioning = z.object({
     settingsAuthority: zShellSettingsAuthority.optional().default('main_gosling'),
     protocolPolicy: zShellProtocolPolicy.optional().default({ mode: 'inherit' }),
     session: zShellSessionProvisioning.optional().default({}),
+    instructions: z.union([
+        zShellInstructionProfile,
+        z.null()
+    ]).optional(),
     domainAdapter: z.union([
         zDomainAdapterDescriptor,
         z.null()
@@ -99,6 +107,7 @@ export const zShellProvisioningIssueCode = z.enum([
     'missing_skill',
     'duplicate_skill',
     'invalid_denied_method',
+    'invalid_instructions',
     'invalid_domain_adapter'
 ]);
 
@@ -1076,7 +1085,8 @@ export const zProviderInventoryEntryDto = z.object({
     modelSelectionHint: z.union([
         z.string(),
         z.null()
-    ]).optional()
+    ]).optional(),
+    managesOwnContext: z.boolean().optional().default(false)
 });
 
 /**

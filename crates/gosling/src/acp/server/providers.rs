@@ -85,6 +85,7 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
         last_refresh_error: entry.last_refresh_error,
         stale,
         model_selection_hint: entry.model_selection_hint,
+        manages_own_context: entry.manages_own_context,
     }
 }
 

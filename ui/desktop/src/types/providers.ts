@@ -38,6 +38,7 @@ export type ProviderMetadata = {
 
 export type ProviderDetails = {
   is_configured: boolean;
+  manages_own_context: boolean;
   metadata: ProviderMetadata;
   name: string;
   provider_type: ProviderType;

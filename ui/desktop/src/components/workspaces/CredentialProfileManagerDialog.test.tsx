@@ -31,6 +31,7 @@ describe('CredentialProfileManagerDialog', () => {
         name: 'anthropic',
         provider_type: 'Builtin',
         is_configured: false,
+        manages_own_context: false,
         metadata: {
           name: 'anthropic',
           display_name: 'Anthropic',

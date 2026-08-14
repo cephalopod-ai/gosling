@@ -40,6 +40,7 @@ impl gosling_providers::base::ProviderDescriptor for ClaudeAcpProvider {
 
 impl ProviderDef for ClaudeAcpProvider {
     type Provider = AcpProvider;
+    const MANAGES_OWN_CONTEXT: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

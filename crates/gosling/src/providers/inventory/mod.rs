@@ -45,6 +45,11 @@ pub struct ProviderInventoryEntry {
     pub last_refresh_attempt_at: Option<DateTime<Utc>>,
     pub last_refresh_error: Option<String>,
     pub model_selection_hint: Option<String>,
+    /// Whether this provider manages its own conversation context (e.g. a
+    /// persistent CLI/ACP session like Claude Code) rather than relying on
+    /// gosling to resend history each turn. Frontends use this to decide
+    /// whether gosling-side context/compaction UI applies to a session.
+    pub manages_own_context: bool,
 }
 
 /// Families whose latest model should be surfaced in the compact picker.
@@ -267,6 +272,7 @@ struct ProviderDescriptor {
     supports_refresh: bool,
     static_models: Vec<ModelInfo>,
     model_selection_hint: Option<String>,
+    manages_own_context: bool,
 }
 
 impl ProviderInventoryService {
@@ -317,6 +323,7 @@ impl ProviderInventoryService {
                 .and_then(|snapshot| snapshot.last_refresh_attempt_at),
             last_refresh_error: snapshot.and_then(|snapshot| snapshot.last_refresh_error),
             model_selection_hint: descriptor.model_selection_hint,
+            manages_own_context: descriptor.manages_own_context,
         }))
     }
 
@@ -726,6 +733,7 @@ impl ProviderInventoryService {
             supports_refresh: entry.supports_inventory_refresh(),
             static_models: metadata.known_models,
             model_selection_hint: metadata.model_selection_hint,
+            manages_own_context: entry.manages_own_context(),
         }))
     }
 

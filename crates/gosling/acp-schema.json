@@ -48,6 +48,16 @@
           "$ref": "#/$defs/ShellSessionProvisioning",
           "default": {}
         },
+        "instructions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShellInstructionProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "domainAdapter": {
           "anyOf": [
             {
@@ -182,6 +192,17 @@
         "name"
       ]
     },
+    "ShellInstructionProfile": {
+      "type": "object",
+      "properties": {
+        "systemPrompt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "systemPrompt"
+      ]
+    },
     "DomainAdapterDescriptor": {
       "type": "object",
       "properties": {
@@ -304,6 +325,7 @@
         "missing_skill",
         "duplicate_skill",
         "invalid_denied_method",
+        "invalid_instructions",
         "invalid_domain_adapter"
       ]
     },
@@ -2397,6 +2419,11 @@
             "null"
           ],
           "description": "Guidance message shown when this provider manages its own model selection externally."
+        },
+        "managesOwnContext": {
+          "type": "boolean",
+          "description": "Whether this provider manages its own conversation context (e.g. a persistent\nCLI/ACP session like Claude Code) rather than relying on Gosling to resend\nhistory each turn. Clients use this to decide whether Gosling-side\ncontext/compaction UI applies to a session using this provider.",
+          "default": false
         }
       },
       "required": [

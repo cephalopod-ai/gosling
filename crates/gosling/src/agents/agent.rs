@@ -3601,6 +3601,11 @@ impl Agent {
         prompt_manager.set_system_prompt_override(template);
     }
 
+    pub async fn configure_shell_instructions(&self, template: String) {
+        let mut prompt_manager = self.prompt_manager.lock().await;
+        prompt_manager.configure_shell_instructions(template);
+    }
+
     pub async fn clear_system_prompt_override(&self) {
         let mut prompt_manager = self.prompt_manager.lock().await;
         prompt_manager.clear_system_prompt_override();

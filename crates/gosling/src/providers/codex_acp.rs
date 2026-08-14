@@ -39,6 +39,7 @@ impl gosling_providers::base::ProviderDescriptor for CodexAcpProvider {
 
 impl ProviderDef for CodexAcpProvider {
     type Provider = AcpProvider;
+    const MANAGES_OWN_CONTEXT: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

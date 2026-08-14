@@ -75,6 +75,14 @@ fn generate_serve_secret_key() -> String {
     )
 }
 
+fn resolve_serve_builtins(builtins: Vec<String>, shell: bool) -> Vec<String> {
+    if builtins.is_empty() && !shell {
+        vec!["developer".to_string()]
+    } else {
+        builtins
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum ServePlatform {
     #[default]
@@ -1401,11 +1409,7 @@ async fn handle_shell_validate_command(
     let base_paths = RuntimePaths::new(Paths::config_dir(), Paths::data_dir(), Paths::state_dir());
     let workspace_service =
         WorkspaceService::initialize(&base_paths.data_dir, &default_working_dir).await?;
-    let builtins = if builtins.is_empty() {
-        vec!["developer".to_string()]
-    } else {
-        builtins
-    };
+    let builtins = resolve_serve_builtins(builtins, true);
     let report = gosling::acp::shell_validation::validate_shell_provisioning(
         runtime.provisioning(),
         Config::global(),
@@ -1447,11 +1451,8 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         allowed_origins,
     } = args;
 
-    let builtins = if builtins.is_empty() {
-        vec!["developer".to_string()]
-    } else {
-        builtins
-    };
+    let shell = shell_id.is_some();
+    let builtins = resolve_serve_builtins(builtins, shell);
 
     let base_paths = RuntimePaths::new(Paths::config_dir(), Paths::data_dir(), Paths::state_dir());
     let runtime_paths = match shell_runtime_namespace.as_deref() {
@@ -2420,6 +2421,19 @@ mod tests {
         assert_eq!(shell_display_name.as_deref(), Some("Math"));
         assert_eq!(shell_runtime_namespace.as_deref(), Some("math_mcp"));
         assert_eq!(shell_version, "1");
+    }
+
+    #[test]
+    fn shell_serve_does_not_enable_developer_by_default() {
+        assert!(resolve_serve_builtins(Vec::new(), true).is_empty());
+        assert_eq!(
+            resolve_serve_builtins(Vec::new(), false),
+            vec!["developer".to_string()]
+        );
+        assert_eq!(
+            resolve_serve_builtins(vec!["developer".to_string()], true),
+            vec!["developer".to_string()]
+        );
     }
 
     #[test]

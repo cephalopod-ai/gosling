@@ -3,7 +3,10 @@ use serde::Serialize;
 
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::{get_context_filenames, load_hint_files};
+use crate::hints::{
+    get_context_filenames, load_hint_files, load_project_hint_files, AGENTS_MD_FILENAME,
+    GOSLING_HINTS_FILENAME,
+};
 use crate::{
     config::{Config, GoslingMode},
     prompt_template,
@@ -17,6 +20,8 @@ const MAX_TOOLS: usize = 50;
 pub struct PromptManager {
     system_prompt_override: Option<String>,
     system_prompt_extras: IndexMap<String, String>,
+    include_global_hints: bool,
+    hint_filenames_override: Option<Vec<String>>,
 }
 
 impl Default for PromptManager {
@@ -85,14 +90,23 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
     }
 
     pub fn with_hints(mut self, working_dir: &Path, additional_working_dirs: &[PathBuf]) -> Self {
-        let hints_filenames = get_context_filenames();
+        let hints_filenames = self
+            .manager
+            .hint_filenames_override
+            .clone()
+            .unwrap_or_else(get_context_filenames);
         let ignore_patterns = build_gitignore(working_dir);
 
-        let mut hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
+        let load = if self.manager.include_global_hints {
+            load_hint_files
+        } else {
+            load_project_hint_files
+        };
+        let mut hints = load(working_dir, &hints_filenames, &ignore_patterns);
 
         for extra_dir in additional_working_dirs {
             let extra_ignore_patterns = build_gitignore(extra_dir);
-            let extra_hints = load_hint_files(extra_dir, &hints_filenames, &extra_ignore_patterns);
+            let extra_hints = load(extra_dir, &hints_filenames, &extra_ignore_patterns);
             if !extra_hints.is_empty() {
                 if !hints.is_empty() {
                     hints.push_str("\n\n");
@@ -213,6 +227,8 @@ impl PromptManager {
         PromptManager {
             system_prompt_override: None,
             system_prompt_extras: IndexMap::new(),
+            include_global_hints: true,
+            hint_filenames_override: None,
         }
     }
 
@@ -229,6 +245,15 @@ impl PromptManager {
     /// Override the system prompt with custom text
     pub fn set_system_prompt_override(&mut self, template: String) {
         self.system_prompt_override = Some(template);
+    }
+
+    pub fn configure_shell_instructions(&mut self, template: String) {
+        self.system_prompt_override = Some(template);
+        self.include_global_hints = false;
+        self.hint_filenames_override = Some(vec![
+            GOSLING_HINTS_FILENAME.to_string(),
+            AGENTS_MD_FILENAME.to_string(),
+        ]);
     }
 
     pub fn clear_system_prompt_override(&mut self) {
@@ -275,6 +300,27 @@ mod tests {
         assert!(system_prompt.contains("Primary hints"));
         assert!(system_prompt.contains("Extra dir hints"));
         assert!(system_prompt.contains("Additional Working Directory"));
+    }
+
+    #[test]
+    fn shell_instructions_use_the_shell_prompt_and_project_hints() {
+        use crate::hints::load_hints::GOSLING_HINTS_FILENAME;
+
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(
+            project.path().join(GOSLING_HINTS_FILENAME),
+            "Project only hints",
+        )
+        .unwrap();
+
+        let mut manager = PromptManager::new();
+        manager.configure_shell_instructions("Default Shell prompt".to_string());
+        let system_prompt = manager.builder().with_hints(project.path(), &[]).build();
+
+        assert!(system_prompt.contains("Default Shell prompt"));
+        assert!(system_prompt.contains("Project only hints"));
+        assert!(!system_prompt.contains("general-purpose AI agent called gosling"));
+        assert!(!system_prompt.contains("Global Hints"));
     }
 
     #[test]

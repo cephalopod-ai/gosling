@@ -115,6 +115,10 @@ const i18n = defineMessages({
     id: 'chatInput.contextWindow',
     defaultMessage: 'Context window',
   },
+  contextManagedExternally: {
+    id: 'chatInput.contextManagedExternally',
+    defaultMessage: "Context is managed by the connected CLI tool, not Gosling — there's nothing for Gosling to compact here.",
+  },
   waitingForImages: {
     id: 'chatInput.waitingForImages',
     defaultMessage: 'Waiting for images to save...',
@@ -314,6 +318,10 @@ export default function ChatInput({
   }, [sessionModel, sessionProvider, configModel, configProvider, sessionId, modelOverride]);
   const [tokenLimit, setTokenLimit] = useState<number>(TOKEN_LIMIT_DEFAULT);
   const [isTokenLimitLoaded, setIsTokenLimitLoaded] = useState(false);
+  // Persistent-session CLI/ACP providers (e.g. Claude Code) keep their own
+  // conversation state and only ever receive the newest turn from Gosling, so
+  // Gosling's own compaction has nothing to trim here — see manages_own_context.
+  const [managesOwnContext, setManagesOwnContext] = useState(false);
   const [workingDirOverride, setWorkingDirOverride] = useState<string | null>(null);
   const currentWorkingDir = workingDirOverride ?? workingDir ?? getInitialWorkingDir();
 
@@ -602,8 +610,15 @@ export default function ChatInput({
       }
       if (!model || !provider) {
         setIsTokenLimitLoaded(true);
+        setManagesOwnContext(false);
         return;
       }
+
+      const providerDetails = await acpListProviderDetails();
+      setManagesOwnContext(
+        providerDetails.find((candidate) => candidate.name === provider)?.manages_own_context ??
+          false
+      );
 
       const predefinedModels = getPredefinedModelsFromEnv();
       const resolvedLimit = await resolveContextLimit(
@@ -641,14 +656,21 @@ export default function ChatInput({
 
     // Show alert when either there is registered token usage, or we know the limit
     if ((totalTokens && totalTokens > 0) || (isTokenLimitLoaded && tokenLimit)) {
+      // For a provider that manages its own context (a persistent CLI/ACP session
+      // like Claude Code), Gosling only ever sends it the newest turn — Gosling's
+      // own /compact has nothing here to trim, and would just add another turn to
+      // that provider's own session instead of shrinking anything. Surface the
+      // number without offering an action that can't do what it implies.
       addAlert({
         type: getContextAlertType(totalTokens || 0, tokenLimit),
-        message: intl.formatMessage(i18n.contextWindow),
+        message: managesOwnContext
+          ? intl.formatMessage(i18n.contextManagedExternally)
+          : intl.formatMessage(i18n.contextWindow),
         progress: {
           current: totalTokens || 0,
           total: tokenLimit,
         },
-        showCompactButton: true,
+        showCompactButton: !managesOwnContext,
         compactButtonDisabled: !totalTokens || isLoading,
         onCompact: () => {
           window.dispatchEvent(new CustomEvent(AppEvents.HIDE_ALERT_POPOVER));
@@ -659,7 +681,15 @@ export default function ChatInput({
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalTokens, tokenLimit, isTokenLimitLoaded, isLoading, addAlert, clearAlerts]);
+  }, [
+    totalTokens,
+    tokenLimit,
+    isTokenLimitLoaded,
+    isLoading,
+    managesOwnContext,
+    addAlert,
+    clearAlerts,
+  ]);
 
   // Cleanup effect for component unmount - prevent memory leaks
   useEffect(() => {
