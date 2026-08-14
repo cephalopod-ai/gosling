@@ -31,8 +31,11 @@ and that R2–R4/PG-50 gate is itself now closed — see
 
 `ShellRuntimeProvider` (R5, the shared GUI shell kit) may now begin, consuming only the accepted
 consumer/runtime/permission/domain-adapter contracts. Do not start any named project shell (DAWES,
-math, physics/CST, or other) before M5. R4's conformance is revision-bound locally and in CI;
-R6/R8 must still reproduce it in packaged and cross-platform workflows.
+math, physics/CST, or other) before M5. R4's conformance is revision-bound and local: the desktop
+CI job runs only the default `vitest.config.ts` (`src/**`), not `vitest.integration.config.ts`, so
+the non-visual consumer/runtime/adapter conformance suite's evidence is local-only, not CI-backed
+(see `audits/pg-50-pre-gui-acceptance.md`). R6/R8 must still reproduce it in packaged and
+cross-platform workflows.
 
 ## Retained checkpoints
 
