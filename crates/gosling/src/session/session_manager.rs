@@ -2757,7 +2757,26 @@ impl SessionStorage {
     ) -> Result<Session> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let session =
+            Self::create_session_in_tx(&mut tx, working_dir, name, session_type, gosling_mode)
+                .await?;
+        tx.commit().await?;
+        #[cfg(feature = "telemetry")]
+        crate::posthog::emit_session_started();
+        Ok(session)
+    }
 
+    /// Same insert as `create_session`, against a caller-owned transaction so
+    /// multi-step operations (import, copy) can commit session creation
+    /// together with their follow-up writes instead of each being its own
+    /// independently committed transaction.
+    async fn create_session_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        working_dir: PathBuf,
+        name: String,
+        session_type: SessionType,
+        gosling_mode: GoslingMode,
+    ) -> Result<Session> {
         let today = chrono::Utc::now().format("%Y%m%d").to_string();
         let session = sqlx::query_as(
             r#"
@@ -2784,12 +2803,9 @@ impl SessionStorage {
             .bind(session_type.to_string())
             .bind(&*working_dir.to_string_lossy())
             .bind(gosling_mode.to_string())
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?;
 
-        tx.commit().await?;
-        #[cfg(feature = "telemetry")]
-        crate::posthog::emit_session_started();
         Ok(session)
     }
 
@@ -2842,8 +2858,24 @@ impl SessionStorage {
         Ok(session)
     }
 
-    #[allow(clippy::too_many_lines)]
     async fn apply_update(&self, builder: SessionUpdateBuilder<'_>) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        Self::apply_update_in_tx(&mut tx, builder).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Same guarded UPDATE as `apply_update`, against a caller-owned
+    /// transaction so `import_session`/`copy_session` can commit it together
+    /// with session creation and conversation replacement instead of each
+    /// being its own independently committed transaction. Never commits or
+    /// rolls back itself — that's the caller's decision.
+    #[allow(clippy::too_many_lines)]
+    async fn apply_update_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        builder: SessionUpdateBuilder<'_>,
+    ) -> Result<()> {
         let mut updates = Vec::new();
         let mut query = String::from("UPDATE sessions SET ");
 
@@ -2996,10 +3028,8 @@ impl SessionStorage {
             q = q.bind(project_id.as_ref());
         }
 
-        let pool = self.pool().await?;
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         q = q.bind(&builder.session_id);
-        let result = q.execute(&mut *tx).await?;
+        let result = q.execute(&mut **tx).await?;
 
         if result.rows_affected() == 0 {
             if guard_on_user_set_name {
@@ -3012,9 +3042,8 @@ impl SessionStorage {
                 // (or being reported as failing to touch) the user's rename.
                 let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM sessions WHERE id = ?")
                     .bind(&builder.session_id)
-                    .fetch_optional(&mut *tx)
+                    .fetch_optional(&mut **tx)
                     .await?;
-                tx.commit().await?;
                 if exists.is_some() {
                     return Ok(());
                 }
@@ -3023,7 +3052,6 @@ impl SessionStorage {
             return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
         }
 
-        tx.commit().await?;
         Ok(())
     }
 
@@ -4806,48 +4834,44 @@ impl SessionStorage {
             ))
         });
 
-        let session = self
-            .create_session(
-                effective_working_dir,
-                import.name.clone(),
-                session_type_override.unwrap_or(import.session_type),
-                GoslingMode::Approve,
-            )
-            .await?;
+        // Session creation, the metadata update, and the conversation replace
+        // all run in one transaction so a process interruption between them
+        // can't leave an empty, partially-imported session stray behind — a
+        // single commit makes the whole import atomic instead of each step
+        // being its own independently committed transaction.
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        // If any step after create_session fails, delete the just-created
-        // session rather than leaving an empty, partially-imported stray
-        // behind: create_session, this metadata update, and the conversation
-        // replace are each their own committed transaction, so an
-        // interruption between them is not otherwise atomic.
-        let result: Result<()> = async {
-            let mut builder = session_manager
-                .update(&session.id)
-                .extension_data(extension_data)
-                .restrict_tools_to_working_dirs(true)
-                .usage(import.usage)
-                .accumulated_usage(import.accumulated_usage)
-                .accumulated_cost(import.accumulated_cost);
+        let session = Self::create_session_in_tx(
+            &mut tx,
+            effective_working_dir,
+            import.name.clone(),
+            session_type_override.unwrap_or(import.session_type),
+            GoslingMode::Approve,
+        )
+        .await?;
 
-            if import.user_set_name {
-                builder = builder.user_provided_name(import.name.clone());
-            }
+        let mut builder = session_manager
+            .update(&session.id)
+            .extension_data(extension_data)
+            .restrict_tools_to_working_dirs(true)
+            .usage(import.usage)
+            .accumulated_usage(import.accumulated_usage)
+            .accumulated_cost(import.accumulated_cost);
 
-            builder.apply().await?;
-
-            if let Some(conversation) = imported_conversation {
-                self.replace_conversation(&session.id, &conversation)
-                    .await?;
-            }
-
-            Ok(())
+        if import.user_set_name {
+            builder = builder.user_provided_name(import.name.clone());
         }
-        .await;
 
-        if let Err(e) = result {
-            let _ = self.delete_session(&session.id).await;
-            return Err(e);
+        Self::apply_update_in_tx(&mut tx, builder).await?;
+
+        if let Some(conversation) = imported_conversation {
+            Self::replace_conversation_in_tx(&mut tx, &session.id, &conversation).await?;
         }
+
+        tx.commit().await?;
+        #[cfg(feature = "telemetry")]
+        crate::posthog::emit_session_started();
 
         self.get_session(&session.id, true).await
     }
@@ -4860,86 +4884,81 @@ impl SessionStorage {
     ) -> Result<Session> {
         let original_session = self.get_session(session_id, true).await?;
 
-        let new_session = self
-            .create_session(
-                original_session.working_dir.clone(),
-                new_name,
-                original_session.session_type,
-                original_session.gosling_mode,
-            )
-            .await?;
+        // Session creation, the metadata update, the conversation replace,
+        // and the artifact copy all run in one transaction so a process
+        // interruption between them can't leave an empty stray copy behind —
+        // see import_session's identical comment.
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        // See import_session's identical rollback comment: create_session,
-        // this metadata update, and the conversation replace are each their
-        // own committed transaction, so clean up the just-created session on
-        // any failure in between rather than leaving an empty stray copy.
-        let result: Result<()> = async {
-            let mut builder = session_manager
-                .update(&new_session.id)
-                .extension_data(original_session.extension_data)
-                .restrict_tools_to_working_dirs(original_session.restrict_tools_to_working_dirs);
+        let new_session = Self::create_session_in_tx(
+            &mut tx,
+            original_session.working_dir.clone(),
+            new_name,
+            original_session.session_type,
+            original_session.gosling_mode,
+        )
+        .await?;
 
-            if !original_session.additional_working_dirs.is_empty() {
-                builder = builder.additional_working_dirs(original_session.additional_working_dirs);
-            }
+        let mut builder = session_manager
+            .update(&new_session.id)
+            .extension_data(original_session.extension_data)
+            .restrict_tools_to_working_dirs(original_session.restrict_tools_to_working_dirs);
 
-            if let Some(project_id) = original_session.project_id {
-                builder = builder.project_id(Some(project_id));
-            }
-            if let Some(provider_name) = original_session.provider_name {
-                builder = builder.provider_name(provider_name);
-            }
-            if let Some(model_config) = original_session.model_config {
-                builder = builder.model_config(model_config);
-            }
-            if let (Some(workspace_id), Some(workspace_name), Some(context)) = (
-                original_session.workspace_id,
-                original_session.workspace_name,
-                original_session.workspace_context,
-            ) {
-                builder = builder.workspace_snapshot(
-                    workspace_id,
-                    workspace_name,
-                    original_session.credential_profile_id,
-                    original_session.credential_profile_name,
-                    original_session.credential_binding_id,
-                    context,
-                );
-            }
-            builder = builder.gosling_mode(original_session.gosling_mode);
-            builder.apply().await?;
-
-            if let Some(conversation) = original_session.conversation {
-                self.replace_conversation(&new_session.id, &conversation)
-                    .await?;
-            }
-
-            let pool = self.pool().await?;
-            sqlx::query(
-                r#"
-                INSERT INTO session_artifacts (
-                    session_id, display_path, resolved_path, base_working_dir, workspace_id,
-                    mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
-                )
-                SELECT ?, display_path, resolved_path, base_working_dir, workspace_id,
-                       mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
-                FROM session_artifacts WHERE session_id = ?
-                ON CONFLICT(session_id, resolved_path) DO NOTHING
-                "#,
-            )
-            .bind(&new_session.id)
-            .bind(session_id)
-            .execute(pool)
-            .await?;
-
-            Ok(())
+        if !original_session.additional_working_dirs.is_empty() {
+            builder = builder.additional_working_dirs(original_session.additional_working_dirs);
         }
-        .await;
 
-        if let Err(e) = result {
-            let _ = self.delete_session(&new_session.id).await;
-            return Err(e);
+        if let Some(project_id) = original_session.project_id {
+            builder = builder.project_id(Some(project_id));
         }
+        if let Some(provider_name) = original_session.provider_name {
+            builder = builder.provider_name(provider_name);
+        }
+        if let Some(model_config) = original_session.model_config {
+            builder = builder.model_config(model_config);
+        }
+        if let (Some(workspace_id), Some(workspace_name), Some(context)) = (
+            original_session.workspace_id,
+            original_session.workspace_name,
+            original_session.workspace_context,
+        ) {
+            builder = builder.workspace_snapshot(
+                workspace_id,
+                workspace_name,
+                original_session.credential_profile_id,
+                original_session.credential_profile_name,
+                original_session.credential_binding_id,
+                context,
+            );
+        }
+        builder = builder.gosling_mode(original_session.gosling_mode);
+        Self::apply_update_in_tx(&mut tx, builder).await?;
+
+        if let Some(conversation) = original_session.conversation {
+            Self::replace_conversation_in_tx(&mut tx, &new_session.id, &conversation).await?;
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO session_artifacts (
+                session_id, display_path, resolved_path, base_working_dir, workspace_id,
+                mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+            )
+            SELECT ?, display_path, resolved_path, base_working_dir, workspace_id,
+                   mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+            FROM session_artifacts WHERE session_id = ?
+            ON CONFLICT(session_id, resolved_path) DO NOTHING
+            "#,
+        )
+        .bind(&new_session.id)
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        #[cfg(feature = "telemetry")]
+        crate::posthog::emit_session_started();
 
         self.get_session(&new_session.id, true).await
     }
@@ -7179,7 +7198,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_copy_session_deletes_stray_session_when_post_create_step_fails() {
+    async fn test_copy_session_rolls_back_atomically_when_post_create_step_fails() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
         let original = sm
@@ -7206,12 +7225,10 @@ mod tests {
         // Breaking inserts into `messages` (not `sessions`) isolates the
         // failure to copy_session's final replace_conversation step,
         // *after* create_session and the extension_data/metadata update
-        // have already succeeded — simulating an interruption partway
-        // through the copy rather than one before it even starts. A trigger
-        // is used instead of dropping a column because the message_search
-        // triggers reference content_json, which makes SQLite reject the
-        // drop; aborting only inserts also keeps the cleanup path's deletes
-        // working.
+        // have already run — simulating an interruption partway through the
+        // copy rather than one before it even starts. A trigger is used
+        // instead of dropping a column because the message_search triggers
+        // reference content_json, which makes SQLite reject the drop.
         sqlx::query(
             r#"
             CREATE TRIGGER break_messages_insert BEFORE INSERT ON messages
@@ -7234,7 +7251,75 @@ mod tests {
             .unwrap();
         assert_eq!(
             after_count, before_count,
-            "the partially-created copy must be deleted, not left as an empty stray session"
+            "create_session, the metadata update, and the conversation replace share one \
+             transaction, so a failure partway through must roll the whole copy back rather \
+             than leaving an empty stray session"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_import_session_rolls_back_atomically_when_post_create_step_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let original = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "original".into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        // import_session only reaches replace_conversation (the step broken
+        // below) when the imported document has a conversation to restore.
+        sm.add_message(&original.id, &Message::user().with_text("hello"))
+            .await
+            .unwrap();
+        let exported = sm.export_session(&original.id).await.unwrap();
+
+        let pool = sm.storage().pool().await.unwrap();
+        let before_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+
+        // Same technique as the analogous copy_session test above: break
+        // inserts into `messages` to isolate the failure to import_session's
+        // final replace_conversation step, after create_session and the
+        // metadata update have already run in the same shared transaction.
+        sqlx::query(
+            r#"
+            CREATE TRIGGER break_messages_insert_on_import BEFORE INSERT ON messages
+            BEGIN SELECT RAISE(ABORT, 'forced test failure'); END
+            "#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let result = sm
+            .import_session(
+                &exported,
+                None,
+                temp_dir.path().to_path_buf(),
+                crate::session::import_formats::SessionImportTransport::Json,
+            )
+            .await;
+        assert!(
+            result.is_err(),
+            "the forced trigger failure must surface as an error"
+        );
+
+        let after_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            after_count, before_count,
+            "create_session, the metadata update, and the conversation replace share one \
+             transaction, so a failure partway through must roll the whole import back \
+             rather than leaving an empty stray session — including on a hard interrupt, \
+             not just a handled error"
         );
     }
 
