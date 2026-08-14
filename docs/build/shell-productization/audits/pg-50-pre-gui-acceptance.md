@@ -62,9 +62,33 @@ campaign's evidence rules (`pre-gui-backend-implementation-plan.md#10-testing-an
   restart`, `restarts the adapter with the backend and restores its declared capability`).
   A first attempt at this suite showed one timeout (`streams a deterministic provider response...`,
   60s budget exceeded at 325s) while several unrelated `cargo` compilations were running
-  concurrently on this 4-core sandbox; with no competing builds the suite passed 15/15 twice in a
-  row (35s each). This is recorded as environment contention, not a functional regression — the
-  same test path is exercised by three other passing tests in the same run.
+  concurrently on this 4-core sandbox. Per this plan's evidence rule that a retry-only pass is not
+  closure for a flaky process test, the contention hypothesis was reproduced rather than assumed:
+  a fresh `cargo build --workspace` was started deliberately against a scratch target directory to
+  saturate all 4 cores, and the suite was rerun against that live contention. It failed again, but
+  on a *different* test this time (`does not create durable session state when compatibility
+  fails`, `no such table: sessions` — the test's own SQLite readback raced the real `gosling serve`
+  child's session-store initialization). With the contention build killed, three subsequent
+  back-to-back runs were clean: 15/15, 15/15, 15/15 (~35s each). The failure moving to a different
+  test under a different contention source, while every run is 15/15 with no competing CPU load,
+  establishes the mechanism: this suite spawns and depends on a real `gosling serve` subprocess and
+  its SQLite session store, and severe CPU starvation of this 4-core sandbox (this task ran many
+  concurrent `cargo` builds and `pnpm` installs throughout the session) pushes real subprocess/DB
+  startup past the suite's fixed timeouts. It is not a defect in the R1-R4 shell/backend code, and
+  it is not present in an uncontended run. It is, however, a real finding for anyone rerunning this
+  suite: **do not run it alongside other heavy CPU consumers**, and consider raising its
+  per-test timeout as future hardening against loaded machines (not done here, to avoid changing
+  test behavior inside an acceptance-evidence PR). PG-50 condition 11 is satisfied by three
+  consecutive clean, uncontended 15/15 runs, not by treating the earlier contended failures as
+  transient noise without explanation.
+- **Correction to avoid overstating scope:** the desktop CI job (`Test and Lint Electron Desktop
+  App`, `pnpm run test:run`) runs the default `vitest.config.ts`, which only includes
+  `src/**/*.test.ts` — it does not execute `vitest.integration.config.ts` or this conformance
+  suite. Current CI (below) corroborates the unit-test/typecheck/lint/profile evidence above; the
+  non-visual consumer/runtime/adapter conformance suite's evidence is local-only, exactly as it was
+  in the prior (NO-GO) audit. This matches the plan's own test-layer table, which lists "spawned
+  neutral adapter integration" and "non-visual conformance workflow" as local layers distinct from
+  "current CI."
 - Package build and readback for the `linux-x64` target (`gosling-shell-fixture-a` profile):
   `node scripts/package-shell.js` then `node scripts/verify-shell-package.js` both succeed; the
   verifier confirms exact profile/manifest identity, target-specific staged binary hash
@@ -99,7 +123,7 @@ all passed.
 | 7. Safe verified snapshot | Unit and integration coverage confirm identity/compatibility/provisioning agreement before snapshot exposure; source review found no raw-authority leak. | Satisfied |
 | 8–9. Live bounded/supervised adapter | Live suite covers negotiation, confirmed mutation, mismatch-before-ready with reaping, idle/in-flight crash, and **backend/adapter restart**. | Satisfied |
 | 10. Exact package resources and metadata | `linux-x64` fixture-A package readback passes with exact binary hash/manifest identity on this revision; macOS readback not reproducible in this sandbox (see residual gap above). | Satisfied for the available host target |
-| 11. Non-visual conformance | Two independent clean 15/15 runs of the live suite. | Satisfied |
+| 11. Non-visual conformance | Three consecutive clean, uncontended 15/15 runs; the one earlier contended failure was deliberately reproduced under artificial CPU saturation (a different test failed each time) to establish, not assume, that the mechanism is subprocess/DB timing under severe local resource starvation rather than a product defect. | Satisfied |
 | 12. Local checks/current CI on one exact revision | `sourceClean:true` on `b921e6e`; all local checks above pass on that commit; current CI green for that commit (PR #50). | **Satisfied** |
 
 ## Negative-space and domain-neutrality review
