@@ -42,15 +42,33 @@
   - Ran the full local evidence set on that commit: `cargo fmt`/`clippy`/`test -p gosling`;
     `cargo test -p gosling-cli --test shell_runtime_e2e_test`/`shell_provisioning_validation_test`
     twice each; ACP schema generation twice (no diff); `pnpm typecheck`/`lint:check`; full desktop
-    `vitest` (729/729); `shell:test-profile` (47/47); the non-visual consumer/runtime/adapter
-    conformance suite `tests/integration/shell_session_runtime.test.ts` twice independently
-    (15/15 both times, including backend/adapter restart coverage — one earlier attempt timed out
-    on its first test under concurrent background `cargo` builds on this 4-core sandbox and is
-    recorded as environment contention, not a regression, given the immediate clean 15/15 rerun);
-    a `linux-x64` package build + verifier readback (exact binary hash/manifest match).
+    `vitest` (729/729); `shell:test-profile` (47/47); a `linux-x64` package build + verifier
+    readback (exact binary hash/manifest match).
+  - The non-visual consumer/runtime/adapter conformance suite
+    (`tests/integration/shell_session_runtime.test.ts`, `vitest.integration.config.ts`) is not
+    exercised by CI (CI's Desktop job runs only the default `vitest.config.ts`, `src/**`); its
+    evidence is local-only. First attempt: 14/15, a 60s timeout on the first test, while several
+    unrelated `cargo` compilations ran concurrently on this 4-core sandbox. Per the plan's rule
+    that a retry-only pass does not close a flaky-test finding, the contention hypothesis was
+    reproduced rather than assumed: a fresh `cargo build --workspace` was started against a scratch
+    target directory to saturate all 4 cores, and the suite reran under that live load. It failed
+    again but on a *different* test (`does not create durable session state when compatibility
+    fails`, a SQLite readback race against the real `gosling serve` child's session-store init),
+    which established the mechanism (subprocess/DB timing under severe local CPU starvation, not a
+    single flaky test or a product defect) rather than merely asserting it. With the contention
+    build killed, three further consecutive runs were clean: 15/15, 15/15, 15/15. PG-50 condition
+    11 rests on those three uncontended runs, not on the earlier contended failures.
   - Opened PR #50, which triggered current CI (`ci.yml` only fires on `pull_request`/push-to-`main`,
     so no CI had run against this branch before); all required/attached checks completed
     green (22/22, with expected path-filtered skips such as the Windows Rust build).
+  - Codex review on the PR surfaced, and this session fixed, four further issues: a missing
+    session log (this file), stale post-acceptance "NO-GO"/"not ready" language left in
+    `build-state.md` and `README.md` after the audit flipped to GO, an incomplete AGENTS.md read
+    order (this entry), and a real regression the summarizer-edit revert had reintroduced
+    (`SummarizerConfig::from_config_with` returns `None` on an unset endpoint, so enabling
+    summarization without retyping the suggested endpoint silently no-ops) — fixed as its own
+    dedicated commit (`a3b0dd9`), kept out of the PG-50 acceptance revision since it is unrelated
+    to shell productization.
   - Negative-space re-review: no DAWES/physics/CST/Project ABC domain implementation (only the
     pre-existing `dawes`/`math` namespace-isolation unit-test labels in `paths.rs`), no
     `nodeIntegration`/`contextIsolation` violations, no raw ACP token/endpoint in the preload
