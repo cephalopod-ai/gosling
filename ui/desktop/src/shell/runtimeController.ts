@@ -30,6 +30,7 @@ import {
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type { ShellDirectoryController } from './directoryController';
 import type { ShellCredentialController } from './credentialController';
+import type { ShellSettingsStore } from './localSettings';
 import type { ShellModuleSummary } from '@repo-makeover/gosling-sdk';
 
 const MAX_SHELL_MODULES = 64;
@@ -55,6 +56,7 @@ export interface ShellRuntimeControllerOptions {
   workingDir: string;
   directory: ShellDirectoryController;
   credentials: ShellCredentialController;
+  settings: ShellSettingsStore;
   isPackaged: boolean;
   resourcesPath?: string;
   preloadPath: string;
@@ -165,6 +167,7 @@ export function createShellRuntimeController(
       },
       provisioningIssues: provisioningIssues.map((issue) => ({ ...issue })),
       directory: options.directory.read(),
+      settingsRecovery: options.settings.recovery(),
       credentials: options.credentials.read(),
       modules: modules.map((module) => ({ ...module, capabilities: [...(module.capabilities ?? [])] })),
       session: session?.status === 'none' ? null : session,

@@ -204,6 +204,7 @@ function harness(withAdapter = false) {
       workingDir: '/workspace',
       directory,
       credentials,
+      settings,
       isPackaged: true,
       resourcesPath: '/resources',
       preloadPath: '/app/shell-preload.js',
@@ -236,6 +237,7 @@ describe('shell runtime controller', () => {
       path: '/workspace',
       label: 'workspace',
       reasonCode: null,
+      remembered: true,
     });
     expect(value.createHost).toHaveBeenCalledWith({
       profile: {

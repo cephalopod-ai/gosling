@@ -20,9 +20,30 @@ struct InitialSessionConfig {
     extension_data: ExtensionData,
     project_id: Option<String>,
     workspace: Option<PreparedWorkspaceSession>,
+    shell_credential_profile_id: Option<String>,
 }
 
 impl GoslingAcpAgent {
+    /// Resolves which credential profile this session launch may use, enforcing the shell policy.
+    ///
+    /// `fixed` provisioning ignores any caller selection and refuses one outright, so a product
+    /// that never opted into catalog selection cannot be switched by an ACP caller.
+    fn shell_credential_profile_id(
+        &self,
+        meta: Option<&Meta>,
+    ) -> Result<Option<String>, agent_client_protocol::Error> {
+        let selected = meta_string(meta, "shellCredentialProfileId")?;
+        if selected.is_some()
+            && self.shell_runtime.credential_policy() != ShellCredentialPolicy::SelectableCatalog
+        {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data(serde_json::json!({ "code": "SHELL_CREDENTIAL_SELECTION_DENIED" })));
+        }
+        Ok(self
+            .shell_runtime
+            .effective_credential_profile_id(selected.as_deref()))
+    }
+
     pub(super) async fn handle_new_session(
         &self,
         cx: &ConnectionTo<Client>,
@@ -38,18 +59,20 @@ impl GoslingAcpAgent {
                 .clone()
         });
         let mut workspace_overrides = workspace_launch_overrides(args.meta.as_ref())?;
-        let selected_credential_profile_id =
-            meta_string(args.meta.as_ref(), "shellCredentialProfileId")?;
-        if selected_credential_profile_id.is_some()
-            && self.shell_runtime.credential_policy() != ShellCredentialPolicy::SelectableCatalog
+        if self.shell_runtime.is_shell_product()
+            && workspace_overrides.credential_profile_id.is_some()
         {
+            // A shell product's credential authority is its provisioned policy. Honoring the full
+            // Gosling per-chat credential override here would let any ACP caller replace a fixed
+            // profile, so shells select through `shellCredentialProfileId` or not at all.
             return Err(agent_client_protocol::Error::invalid_params()
                 .data(serde_json::json!({ "code": "SHELL_CREDENTIAL_SELECTION_DENIED" })));
         }
-        if workspace_overrides.credential_profile_id.is_none() {
-            workspace_overrides.credential_profile_id = self
-                .shell_runtime
-                .effective_credential_profile_id(selected_credential_profile_id.as_deref());
+        let shell_credential_profile_id = self.shell_credential_profile_id(args.meta.as_ref())?;
+        // Without a workspace the shell profile is pinned directly by the shell-specific paths
+        // below; putting it here would make a workspace-free launch fail the overrides check.
+        if workspace_overrides.credential_profile_id.is_none() && workspace_id.is_some() {
+            workspace_overrides.credential_profile_id = shell_credential_profile_id.clone();
         }
         let workspace = match workspace_id.as_deref() {
             Some(workspace_id) => Some(
@@ -208,6 +231,8 @@ impl GoslingAcpAgent {
                 extension_data,
                 project_id,
                 workspace,
+                shell_credential_profile_id: self
+                    .shell_credential_profile_id(args.meta.as_ref())?,
             },
         )
         .await?;
@@ -270,7 +295,7 @@ impl GoslingAcpAgent {
                 return Ok((provider, model_config));
             }
         }
-        if let Some(profile_id) = shell_session.credential_profile_id.as_deref() {
+        if let Some(profile_id) = self.shell_credential_profile_id(meta)?.as_deref() {
             let provider = self
                 .workspace_service
                 .profile_resolution(profile_id)
@@ -322,13 +347,7 @@ impl GoslingAcpAgent {
                 workspace.credential_binding_id,
                 workspace.context,
             );
-        } else if let Some(profile_id) = self
-            .shell_runtime
-            .provisioning()
-            .session
-            .credential_profile_id
-            .as_deref()
-        {
+        } else if let Some(profile_id) = config.shell_credential_profile_id.as_deref() {
             let profile = self
                 .workspace_service
                 .credential_profiles()

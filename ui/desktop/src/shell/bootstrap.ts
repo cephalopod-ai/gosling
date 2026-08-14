@@ -141,6 +141,7 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
     workingDir: adapter.workingDir,
     directory,
     credentials,
+    settings,
     isPackaged: adapter.app.isPackaged,
     resourcesPath: adapter.resourcesPath,
     preloadPath: adapter.preloadPath,

@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 const { checkShellConformance, scaffoldShell } = require('./shell-scaffold');
@@ -138,6 +139,20 @@ test('refuses destinations outside the approved roots and unsafe paths', () => {
     () => scaffoldShell(inputs({ consumerDestination: 'fixtures/shell-products/wrong-root' })),
     /approved roots/
   );
+});
+
+test('refuses a destination reached through a symlinked ancestor', () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gosling-scaffold-outside-'));
+  const link = path.join(repositoryRoot, 'fixtures/shell-products/scaffold-link');
+  fs.symlinkSync(outside, link, 'dir');
+  const input = inputs({ productDestination: 'fixtures/shell-products/scaffold-link/escaped' });
+  try {
+    assert.throws(() => scaffoldShell(input), /symlink|outside the approved roots/);
+    assert.deepEqual(fs.readdirSync(outside), []);
+  } finally {
+    fs.unlinkSync(link);
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
 });
 
 test('refuses secret-shaped and named-domain identities before writing anything', () => {

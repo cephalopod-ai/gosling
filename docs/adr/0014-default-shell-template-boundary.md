@@ -90,9 +90,17 @@ than dropped, so recovery stays visible. No `module.call`, backend URL, process 
 generic payload passthrough is added; extension tools stay agent-invoked and adapter actions keep
 their existing typed snapshot/action/confirmation routes.
 
+A shell product's credential authority is its provisioned policy, so the full Gosling per-chat
+`workspaceCredentialProfileId` override is refused for any shell product rather than silently
+replacing a fixed profile; full Gosling keeps that override unchanged. Without a workspace the
+selected profile is pinned through the existing shell-specific session paths instead of the
+workspace launch overrides, so a directory-based shell can use a selected credential.
+
 Provisioning also gains an optional `settingsSchemaVersion`. A version this build does not know
 fails validation closed instead of migrating an operator's document, and the local settings store
-refuses to overwrite a document it could not parse until an explicit reset.
+refuses to overwrite a document it could not parse until an explicit reset. That refusal must not
+strand the shell: a directory selection still applies to the running process, reports
+`remembered: false`, and the recovery status travels in the runtime snapshot.
 
 ## Consequences
 

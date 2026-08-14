@@ -130,6 +130,38 @@ describe('shell credential controller', () => {
     });
   });
 
+  it('never lets a slower earlier selection overwrite a later committed one', async () => {
+    const settings = memorySettingsStore(null);
+    const releases: Array<() => void> = [];
+    const list = vi.fn(
+      () =>
+        new Promise<ShellCredentialListResponse_unstable>((resolve) => {
+          releases.push(() => resolve(catalog));
+        })
+    );
+    const controller = createShellCredentialController({
+      settings,
+      list,
+      generation: () => 1,
+    });
+
+    const initial = controller.refresh();
+    releases.shift()!();
+    await initial;
+
+    const first = controller.select(1, 'work');
+    const second = controller.select(1, 'lapsed');
+    // Resolve the later request first, then let the earlier one land.
+    releases.pop()!();
+    await second;
+    releases.pop()!();
+    await first;
+
+    expect(controller.read().selectedProfileId).toBe('lapsed');
+    expect(controller.selected()).toBe('lapsed');
+    expect(settings.read().workspace.preferredCredentialProfileId).toBe('lapsed');
+  });
+
   it('drops any catalog entry carrying a field outside the safe projection', async () => {
     const { controller } = harness({
       response: {

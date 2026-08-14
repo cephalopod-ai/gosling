@@ -12,6 +12,7 @@ export interface ShellDirectorySnapshot {
   path: string | null;
   label: string | null;
   reasonCode: string | null;
+  remembered: boolean;
 }
 
 export type ShellDirectorySelectResult =
@@ -41,7 +42,7 @@ export interface ShellDirectoryDependencies {
 }
 
 function unselected(): ShellDirectorySnapshot {
-  return { state: 'unselected', path: null, label: null, reasonCode: null };
+  return { state: 'unselected', path: null, label: null, reasonCode: null, remembered: false };
 }
 
 function label(directory: string): string {
@@ -50,11 +51,17 @@ function label(directory: string): string {
 }
 
 function selected(directory: string): ShellDirectorySnapshot {
-  return { state: 'selected', path: directory, label: label(directory), reasonCode: null };
+  return {
+    state: 'selected',
+    path: directory,
+    label: label(directory),
+    reasonCode: null,
+    remembered: true,
+  };
 }
 
 function unusable(state: 'missing' | 'invalid', reasonCode: string): ShellDirectorySnapshot {
-  return { state, path: null, label: null, reasonCode };
+  return { state, path: null, label: null, reasonCode, remembered: false };
 }
 
 function isAcceptablePath(value: unknown): value is string {
@@ -98,7 +105,14 @@ export function createShellDirectoryController(
   const accept = async (candidate: string): Promise<ShellDirectorySnapshot> => {
     const validated = projectValidation(await dependencies.validate(candidate));
     if (validated.state === 'selected' && validated.path) {
-      dependencies.settings.setLastWorkingDirectory(validated.path);
+      // A settings document this build refuses to overwrite must not make the shell unusable:
+      // the selection still applies to this run, it just is not remembered. The recovery status
+      // travels in the runtime snapshot so the operator is told why.
+      try {
+        dependencies.settings.setLastWorkingDirectory(validated.path);
+      } catch {
+        return { ...validated, remembered: false };
+      }
     }
     return validated;
   };

@@ -52,21 +52,66 @@ function safeRelative(candidate, label) {
   return candidate;
 }
 
+/// Rejects a destination whose *real* location is not inside an approved root.
+///
+/// Checking only the immediate parent is not enough: a directory symlink at any component below an
+/// approved root keeps `path.resolve` looking contained while `mkdirSync` would follow the link out
+/// of the repository. Every component is walked, and the nearest existing ancestor is compared by
+/// its real path.
 function approvedDestination(root, candidate, approvedRoots, label) {
   const relative = safeRelative(candidate, label);
   const resolved = path.resolve(root, relative);
   if (!isContained(root, resolved)) fail(`${label} escapes the repository`);
-  if (!approvedRoots.some((approved) => isContained(path.resolve(root, approved), resolved))) {
+  const approved = approvedRoots
+    .map((entry) => path.resolve(root, entry))
+    .filter((entry) => isContained(entry, resolved));
+  if (approved.length === 0) {
     fail(`${label} is outside the approved roots (${approvedRoots.join(', ')})`);
   }
-  const parent = path.dirname(resolved);
-  if (fs.existsSync(parent) && fs.lstatSync(parent).isSymbolicLink()) {
-    fail(`${label} resolves through a symlink`);
+  for (const component of walkAncestors(root, resolved)) {
+    if (fs.lstatSync(component).isSymbolicLink()) {
+      fail(`${label} resolves through a symlink`);
+    }
+  }
+  const existingAncestor = nearestExistingAncestor(resolved);
+  const realAncestor = fs.realpathSync(existingAncestor);
+  if (
+    !approved.some((entry) =>
+      isContained(fs.existsSync(entry) ? fs.realpathSync(entry) : entry, realAncestor)
+    )
+  ) {
+    fail(`${label} resolves outside the approved roots`);
   }
   if (fs.existsSync(resolved) || fs.existsSync(`${resolved}.tmp-scaffold`)) {
     fail(`${label} already exists; the scaffold never merges into or overwrites existing work`);
   }
   return { relative, resolved };
+}
+
+function walkAncestors(root, resolved) {
+  const components = [];
+  let current = resolved;
+  while (current !== root && isContained(root, current) && current !== path.dirname(current)) {
+    if (fs.existsSync(current) || isSymbolicLink(current)) components.push(current);
+    current = path.dirname(current);
+  }
+  return components.reverse();
+}
+
+function isSymbolicLink(candidate) {
+  try {
+    return fs.lstatSync(candidate).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function nearestExistingAncestor(resolved) {
+  let current = resolved;
+  while (!fs.existsSync(current) && current !== path.dirname(current)) {
+    current = path.dirname(current);
+  }
+  return current;
 }
 
 function identifier(value, label, pattern, minimum, maximum) {
@@ -251,6 +296,7 @@ function scaffoldShell(input) {
   const productStaging = `${product.resolved}.tmp-scaffold`;
   const consumerStaging = `${consumer.resolved}.tmp-scaffold`;
   const created = [];
+  const finalized = [];
   try {
     fs.mkdirSync(path.join(productStaging, 'assets'), { recursive: true, mode: 0o755 });
     fs.mkdirSync(consumerStaging, { recursive: true, mode: 0o755 });
@@ -272,8 +318,16 @@ function scaffoldShell(input) {
     );
 
     fs.renameSync(productStaging, product.resolved);
+    finalized.push(product.resolved);
     fs.renameSync(consumerStaging, consumer.resolved);
+    finalized.push(consumer.resolved);
   } catch (error) {
+    // A failure between the two renames would otherwise leave a finalized half behind and block a
+    // clean retry. Only directories this call created are removed, and only after the destination
+    // was proven not to exist beforehand.
+    for (const directory of finalized) {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
     fs.rmSync(productStaging, { recursive: true, force: true });
     fs.rmSync(consumerStaging, { recursive: true, force: true });
     throw error;

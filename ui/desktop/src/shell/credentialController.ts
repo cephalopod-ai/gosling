@@ -102,8 +102,19 @@ export function createShellCredentialController(
     return copySnapshot(snapshot);
   };
 
+  // Every publish carries the sequence of the request that produced it, so a slower earlier
+  // selection can never overwrite the snapshot a later one already committed and persisted.
+  let issued = 0;
+  let published = 0;
+
   const load = async (selectedProfileId: string | null) => {
+    issued += 1;
+    const sequence = issued;
     const response = await dependencies.list();
+    if (sequence < published) {
+      return copySnapshot(snapshot);
+    }
+    published = sequence;
     const catalogStatus: ShellCredentialCatalogStatus =
       response.status === 'available'
         ? 'available'
@@ -140,6 +151,8 @@ export function createShellCredentialController(
       return load(profileId);
     },
     clear() {
+      issued += 1;
+      published = issued;
       publish(emptySnapshot());
     },
     onChanged(listener) {

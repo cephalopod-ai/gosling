@@ -87,10 +87,11 @@ impl GoslingAcpAgent {
     pub(super) async fn on_list_shell_modules(&self) -> ShellModuleListResponse {
         let provisioning = self.shell_runtime.provisioning().clone();
         let working_dir = self.default_working_folder.clone();
-        let validation = self
-            .shell_provisioning_validation(&provisioning)
-            .await
-            .resolution;
+        // The provisioned selection is the "selected" side of the intersection, not the validation
+        // resolution: the resolution has already dropped anything the backend could not resolve,
+        // which is exactly the case that must surface as `unavailable`.
+        let selected_extensions = provisioning.session.extensions.clone().unwrap_or_default();
+        let selected_skills = provisioning.session.skill_ids.clone().unwrap_or_default();
 
         let mut available_extensions = std::collections::HashSet::new();
         for extension in crate::config::extensions::get_enabled_extensions_with_config_for_cwd(
@@ -114,9 +115,9 @@ impl GoslingAcpAgent {
             modules: crate::acp::shell_modules::resolve_shell_modules(
                 crate::acp::shell_modules::ShellModuleInputs {
                     session_capabilities: &["prompt".to_string(), "resume".to_string()],
-                    selected_extensions: &validation.extensions,
+                    selected_extensions: &selected_extensions,
                     available_extensions: &available_extensions,
-                    selected_skills: &validation.skill_ids,
+                    selected_skills: &selected_skills,
                     available_skills: &available_skills,
                     skills_extension_available,
                     adapter: adapter.as_ref(),

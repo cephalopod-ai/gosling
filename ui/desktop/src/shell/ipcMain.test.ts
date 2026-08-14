@@ -13,7 +13,14 @@ function state(generation = 1): import('./runtimeSnapshot').ShellRuntimeSnapshot
     runtimeNamespace: null,
     compatibility: { status: 'unverified' },
     provisioningIssues: [],
-    directory: { state: 'unselected' as const, path: null, label: null, reasonCode: null },
+    directory: {
+      state: 'unselected' as const,
+      path: null,
+      label: null,
+      reasonCode: null,
+      remembered: false,
+    },
+    settingsRecovery: { status: 'loaded' as const, schemaVersion: 1 },
     credentials: {
       catalogStatus: 'denied' as const,
       profiles: [],
@@ -88,7 +95,13 @@ function harness() {
     externalOpen: vi.fn(() => ({ opened: true })),
     directorySelect: vi.fn(() => ({
       status: 'cancelled' as const,
-      directory: { state: 'unselected' as const, path: null, label: null, reasonCode: null },
+      directory: {
+        state: 'unselected' as const,
+        path: null,
+        label: null,
+        reasonCode: null,
+        remembered: false,
+      },
     })),
     credentialSelect: vi.fn(() => ({
       catalogStatus: 'available' as const,

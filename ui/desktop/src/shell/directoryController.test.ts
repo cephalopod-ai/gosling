@@ -77,6 +77,7 @@ describe('shell working-directory controller', () => {
       path: null,
       label: null,
       reasonCode: null,
+      remembered: false,
     });
     expect(controller.accepted()).toBeNull();
     expect(validate).not.toHaveBeenCalled();
@@ -95,6 +96,7 @@ describe('shell working-directory controller', () => {
         path: '/chosen/alias-canonical',
         label: 'alias-canonical',
         reasonCode: null,
+        remembered: true,
       },
     });
     expect(controller.accepted()).toBe('/chosen/alias-canonical');
@@ -106,7 +108,13 @@ describe('shell working-directory controller', () => {
 
     await expect(controller.select(1)).resolves.toEqual({
       status: 'cancelled',
-      directory: { state: 'unselected', path: null, label: null, reasonCode: null },
+      directory: {
+        state: 'unselected',
+        path: null,
+        label: null,
+        reasonCode: null,
+        remembered: false,
+      },
     });
     expect(validate).not.toHaveBeenCalled();
     expect(settings.read().workspace.lastWorkingDirectory).toBeNull();
@@ -119,7 +127,13 @@ describe('shell working-directory controller', () => {
 
     await expect(controller.select(1)).resolves.toEqual({
       status: 'rejected',
-      directory: { state: 'unselected', path: null, label: null, reasonCode: null },
+      directory: {
+        state: 'unselected',
+        path: null,
+        label: null,
+        reasonCode: null,
+        remembered: false,
+      },
       reasonCode: 'not_found',
     });
     expect(settings.read().workspace.lastWorkingDirectory).toBeNull();
@@ -136,6 +150,7 @@ describe('shell working-directory controller', () => {
       path: null,
       label: null,
       reasonCode: 'not_found',
+      remembered: false,
     });
     expect(controller.accepted()).toBeNull();
     expect(settings.read().workspace.lastWorkingDirectory).toBe('/removed/project');
@@ -164,6 +179,30 @@ describe('shell working-directory controller', () => {
     await expect(concurrent.controller.select(1)).rejects.toThrow('already outstanding');
     await first;
     expect(concurrent.showOpenDialog).toHaveBeenCalledOnce();
+  });
+
+  it('still selects a directory when the settings document cannot be written', async () => {
+    const { controller } = harness();
+    const failing = {
+      ...memorySettingsStore(null),
+      setLastWorkingDirectory: () => {
+        throw new Error('shell settings are in a recovery state and were not overwritten');
+      },
+    };
+    const unwritable = createShellDirectoryController({
+      settings: failing,
+      showOpenDialog: async () => ({ canceled: false, filePaths: ['/chosen/alias'] }),
+      validate: async (candidate) => ({ status: 'valid', canonicalPath: candidate }),
+      generation: () => 1,
+      isSelectable: () => ({ allowed: true }),
+    });
+
+    const result = await unwritable.select(1);
+
+    expect(result.status).toBe('selected');
+    expect(unwritable.accepted()).toBe('/chosen/alias');
+    expect(unwritable.read().remembered).toBe(false);
+    expect(controller.read().state).toBe('unselected');
   });
 
   it('clears the live selection on teardown without deleting the remembered setting', async () => {

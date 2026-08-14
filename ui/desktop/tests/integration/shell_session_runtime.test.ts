@@ -371,6 +371,7 @@ function createController(
     workingDir: fixture.workingDir,
     directory,
     credentials,
+    settings,
     isPackaged: false,
     preloadPath: path.join(fixture.root, 'shell-preload.js'),
     sessionPartition: 'persist:gosling-shell-session-integration',

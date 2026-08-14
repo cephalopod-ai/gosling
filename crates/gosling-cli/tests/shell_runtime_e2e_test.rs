@@ -642,25 +642,33 @@ async fn shell_directory_credential_and_module_surfaces_are_live_and_bounded() {
             .collect::<Vec<_>>()
     );
 
-    let denied = cx
-        .send_request(
-            agent_client_protocol::UntypedMessage::new(
-                "session/new",
-                serde_json::json!({
-                    "cwd": work.path(),
-                    "mcpServers": [],
-                    "_meta": { "shellCredentialProfileId": "smuggled-profile" }
-                }),
+    for smuggled in [
+        serde_json::json!({ "shellCredentialProfileId": "smuggled-profile" }),
+        serde_json::json!({
+            "workspaceId": "any-workspace",
+            "workspaceCredentialProfileId": "smuggled-profile"
+        }),
+    ] {
+        let denied = cx
+            .send_request(
+                agent_client_protocol::UntypedMessage::new(
+                    "session/new",
+                    serde_json::json!({
+                        "cwd": work.path(),
+                        "mcpServers": [],
+                        "_meta": smuggled
+                    }),
+                )
+                .unwrap(),
             )
-            .unwrap(),
-        )
-        .block_task()
-        .await
-        .expect_err("fixed provisioning must refuse a renderer-selected credential");
-    assert_eq!(
-        denied.data.unwrap()["code"],
-        "SHELL_CREDENTIAL_SELECTION_DENIED"
-    );
+            .block_task()
+            .await
+            .expect_err("fixed provisioning must refuse any caller-selected credential");
+        assert_eq!(
+            denied.data.unwrap()["code"],
+            "SHELL_CREDENTIAL_SELECTION_DENIED"
+        );
+    }
 
     client_task.abort();
 }
