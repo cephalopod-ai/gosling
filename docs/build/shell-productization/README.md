@@ -16,8 +16,8 @@ This package is the durable, resumable plan for turning the merged Gosling shell
 10. [`evidence/planning.md`](evidence/planning.md) and [`audits/plan-review.md`](audits/plan-review.md) — what was observed and how the original plan was challenged.
 11. [`evidence/r0.md`](evidence/r0.md) — merged Linux baseline repair, two clean Rust CI executions, and reopened Gate 4 acceptance.
 12. [`evidence/gate-4.md`](evidence/gate-4.md) and [`audits/gate-4-host-package.md`](audits/gate-4-host-package.md) — historical Gate 4 process-boundary evidence, audit, and residual limits.
-13. [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md) — current local
-    PG-50 evidence and the formal clean-revision NO-GO.
+13. [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md) — the accepted,
+    revision-bound PG-50 evidence and GO decision authorizing R5.
 
 ## Current status
 
@@ -28,10 +28,11 @@ As of 2026-08-13, ADR-0010–0012 and a companion R1 contracts addendum
 [`../../adr/0011-shell-application-runtime-boundary.md`](../../adr/0011-shell-application-runtime-boundary.md),
 [`../../adr/0012-shell-domain-adapter-topology.md`](../../adr/0012-shell-domain-adapter-topology.md),
 [`../../architecture/shell-productization-r1-contracts.md`](../../architecture/shell-productization-r1-contracts.md))
-are accepted for implementation — see `build-state.md` for the current disposition. R2 and local R4
-conformance are complete. R3's main-owned interaction/recovery contract is now locally exercised,
-including a server-verified runtime namespace; the current PG-50 audit records strong local
-evidence but remains a formal NO-GO until it is rerun on a clean exact revision with current CI.
-Shared GUI, named project shells, and production release work remain blocked until that gate passes.
+are accepted for implementation — see `build-state.md` for the current disposition. R2 and R4
+conformance are complete. R3's main-owned interaction/recovery contract is exercised, including a
+server-verified runtime namespace; PG-50 is **accepted** on exact revision
+`b921e6ee1299dba2207ab27ab6fd9452cc57aa26` with current CI green (`audits/pg-50-pre-gui-acceptance.md`),
+authorizing R5 shared GUI shell kit work. Named project shells and production release work remain
+blocked until M5 and R6–R8 respectively.
 
 No production signing, notarization, publication, updater promotion, production identifier, release destination, or named project shell is authorized or implemented. Resume from `build-state.md` and verify the current repository instead of trusting an earlier checkpoint blindly.

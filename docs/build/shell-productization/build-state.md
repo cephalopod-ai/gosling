@@ -60,11 +60,11 @@ Do not start `ShellRuntimeProvider` or create a named project shell until R2–R
    the macOS host target; cross-platform workflow evidence remains R6/R7.
 7. **R7/R8 open:** packaged restart/coexistence harnesses and reusable build/release workflows do
    not yet exist.
-8. The local PG-50 audit collected repeated 15/15 live conformance, 152 focused Desktop tests,
-   package readback, source-negative-space review, and local check evidence. CI run 31756273340 is
-   green for committed `34920cc037d741999a0aa48540ad4d63ee296c3c`, not the dirty local worktree;
-   therefore PG-50 remains a formal NO-GO. Shared GUI is blocked until the evidence is rerun on a
-   clean exact revision, and named shells remain blocked until M5. See
+8. PG-50 is **accepted** on exact revision `b921e6ee1299dba2207ab27ab6fd9452cc57aa26` (PR #50):
+   repeated 15/15 live conformance including backend/adapter restart, the full Desktop suite,
+   `linux-x64` package readback, source-negative-space review, all local checks, and green current
+   CI were all reproduced on that one committed revision with `sourceClean:true`. Shared GUI (R5)
+   is authorized to begin; named shells remain blocked until M5. See
    [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md).
 
 Full details and source references are in the reassessment.
