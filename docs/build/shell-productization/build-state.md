@@ -17,15 +17,22 @@ Finish a copy-free, least-privilege shared foundation before DAWES, math, Projec
 
 ## Current decision
 
-**Host substrate: partially ready. Project-shell consumer foundation: not ready.**
+**Host substrate: ready. Project-shell consumer foundation: ready — PG-50 accepted, R5 authorized.**
 
-The former Gate 4 process boundary is useful and merged, but the former instruction to begin Gate 5 UI is superseded by:
+This supersedes the "not ready" decision recorded here before 2026-08-14. The former Gate 4
+process boundary is useful and merged; the former instruction to begin Gate 5 UI was superseded by:
 
 - [`readiness-reassessment.md`](readiness-reassessment.md);
 - [`project-shell-readiness-plan.md`](project-shell-readiness-plan.md);
-- plan change `SHP-PC-003`.
+- plan change `SHP-PC-003`;
 
-Do not start `ShellRuntimeProvider` or create a named project shell until R2–R4 and PG-50 prove the accepted consumer, runtime, permission, and domain-adapter contracts. R4's local conformance is complete, but R6/R8 must still reproduce it in packaged and cross-platform workflows.
+and that R2–R4/PG-50 gate is itself now closed — see
+[`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md).
+
+`ShellRuntimeProvider` (R5, the shared GUI shell kit) may now begin, consuming only the accepted
+consumer/runtime/permission/domain-adapter contracts. Do not start any named project shell (DAWES,
+math, physics/CST, or other) before M5. R4's conformance is revision-bound locally and in CI;
+R6/R8 must still reproduce it in packaged and cross-platform workflows.
 
 ## Retained checkpoints
 
@@ -134,6 +141,9 @@ composition, two neutral consumer fixtures, target-specific one-binary staging, 
 metadata/permissions, and exact package verifier coverage. A real unsigned macOS arm64 consumer
 package passed readback on this checkout.
 
+*(Historical, as recorded on 2026-08-13/14 before the PG-50 rerun — preserved for the evidence
+trail; the acceptance decision at the top of this document is current.)*
+
 R3 is **locally implemented and exercised; it is not PG-50 acceptance**. The current desktop worktree contains a main-owned
 single-session controller with create/resume, bounded prompt submit/cancel, generation and
 attempt fencing, monotonic update sequence, typed IPC/preload exposure, and a main-owned
@@ -149,9 +159,10 @@ ACP initialization metadata, and canonical server provisioning validation before
 expose it. Raw ACP content, credentials, endpoints,
 tokens, configuration, and private paths are excluded. Prompt activity, credential relink failures,
 and cleanup failures now have runtime transition producers, with rejected lifecycle transitions
-recorded as redacted diagnostic codes. Focused tests and `pnpm run typecheck` pass locally. This is
-not a shared-GUI readiness claim: PG-50 still requires clean-revision, repeated conformance,
-traceability, and current-CI evidence. Durable
+recorded as redacted diagnostic codes. Focused tests and `pnpm run typecheck` pass locally. At the
+time this paragraph was written, this was not yet a shared-GUI readiness claim; PG-50 has since
+been accepted on a clean, revision-bound rerun of this evidence (see
+[`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md)). Durable
 prompt-outcome reconciliation now makes compacted resume `clean` only after a persisted terminal
 outcome and preserves `uncertain` after interruption or for legacy sessions. A Node-environment
 integration test now runs a real `gosling serve` child through compatibility, session create, a
