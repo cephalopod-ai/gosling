@@ -2905,9 +2905,7 @@ impl GoslingAcpAgent {
                     .await;
                 self.clear_active_run(&session_id, &run_id).await;
                 let _ = Self::send_active_run_update(cx, &args.session_id, None);
-                if let Err(persist_error) = persisted {
-                    return Err(persist_error);
-                }
+                persisted?;
                 return Err(agent_client_protocol::Error::internal_error()
                     .data(format!("Error getting agent reply: {error}")));
             }

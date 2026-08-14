@@ -1,6 +1,6 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-14 after the local PG-50 evidence audit
+Updated: 2026-08-14 after PG-50 acceptance on exact revision `b921e6ee1299dba2207ab27ab6fd9452cc57aa26`
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -8,8 +8,8 @@ Mode: architecture readiness; no named shell, production release, signing, publi
 Completed gate: **R0 — baseline CI restored and evidence reconciled**
 Completed gate: **R1 — project-shell topology and application contracts accepted**
 Completed gate: **R2 — copy-free consumer composition and package readback**
-Completed local gate: **R4 — adapter supervision and neutral-process failure conformance**
-Current gate: **PG-50 — pre-GUI backend acceptance (formal NO-GO pending clean revision)**
+Completed gate: **R3/R4 — main-owned application runtime and live neutral domain adapter, revision-bound**
+Current gate: **PG-50 — pre-GUI backend acceptance: ACCEPTED (see `audits/pg-50-pre-gui-acceptance.md`). R5 shared GUI shell kit implementation is authorized to begin.**
 
 ## Intent
 
@@ -17,15 +17,25 @@ Finish a copy-free, least-privilege shared foundation before DAWES, math, Projec
 
 ## Current decision
 
-**Host substrate: partially ready. Project-shell consumer foundation: not ready.**
+**Host substrate: ready. Project-shell consumer foundation: ready — PG-50 accepted, R5 authorized.**
 
-The former Gate 4 process boundary is useful and merged, but the former instruction to begin Gate 5 UI is superseded by:
+This supersedes the "not ready" decision recorded here before 2026-08-14. The former Gate 4
+process boundary is useful and merged; the former instruction to begin Gate 5 UI was superseded by:
 
 - [`readiness-reassessment.md`](readiness-reassessment.md);
 - [`project-shell-readiness-plan.md`](project-shell-readiness-plan.md);
-- plan change `SHP-PC-003`.
+- plan change `SHP-PC-003`;
 
-Do not start `ShellRuntimeProvider` or create a named project shell until R2–R4 and PG-50 prove the accepted consumer, runtime, permission, and domain-adapter contracts. R4's local conformance is complete, but R6/R8 must still reproduce it in packaged and cross-platform workflows.
+and that R2–R4/PG-50 gate is itself now closed — see
+[`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md).
+
+`ShellRuntimeProvider` (R5, the shared GUI shell kit) may now begin, consuming only the accepted
+consumer/runtime/permission/domain-adapter contracts. Do not start any named project shell (DAWES,
+math, physics/CST, or other) before M5. R4's conformance is revision-bound and local: the desktop
+CI job runs only the default `vitest.config.ts` (`src/**`), not `vitest.integration.config.ts`, so
+the non-visual consumer/runtime/adapter conformance suite's evidence is local-only, not CI-backed
+(see `audits/pg-50-pre-gui-acceptance.md`). R6/R8 must still reproduce it in packaged and
+cross-platform workflows.
 
 ## Retained checkpoints
 
@@ -60,11 +70,11 @@ Do not start `ShellRuntimeProvider` or create a named project shell until R2–R
    the macOS host target; cross-platform workflow evidence remains R6/R7.
 7. **R7/R8 open:** packaged restart/coexistence harnesses and reusable build/release workflows do
    not yet exist.
-8. The local PG-50 audit collected repeated 15/15 live conformance, 152 focused Desktop tests,
-   package readback, source-negative-space review, and local check evidence. CI run 31756273340 is
-   green for committed `34920cc037d741999a0aa48540ad4d63ee296c3c`, not the dirty local worktree;
-   therefore PG-50 remains a formal NO-GO. Shared GUI is blocked until the evidence is rerun on a
-   clean exact revision, and named shells remain blocked until M5. See
+8. PG-50 is **accepted** on exact revision `b921e6ee1299dba2207ab27ab6fd9452cc57aa26` (PR #50):
+   repeated 15/15 live conformance including backend/adapter restart, the full Desktop suite,
+   `linux-x64` package readback, source-negative-space review, all local checks, and green current
+   CI were all reproduced on that one committed revision with `sourceClean:true`. Shared GUI (R5)
+   is authorized to begin; named shells remain blocked until M5. See
    [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md).
 
 Full details and source references are in the reassessment.
@@ -134,6 +144,9 @@ composition, two neutral consumer fixtures, target-specific one-binary staging, 
 metadata/permissions, and exact package verifier coverage. A real unsigned macOS arm64 consumer
 package passed readback on this checkout.
 
+*(Historical, as recorded on 2026-08-13/14 before the PG-50 rerun — preserved for the evidence
+trail; the acceptance decision at the top of this document is current.)*
+
 R3 is **locally implemented and exercised; it is not PG-50 acceptance**. The current desktop worktree contains a main-owned
 single-session controller with create/resume, bounded prompt submit/cancel, generation and
 attempt fencing, monotonic update sequence, typed IPC/preload exposure, and a main-owned
@@ -149,9 +162,10 @@ ACP initialization metadata, and canonical server provisioning validation before
 expose it. Raw ACP content, credentials, endpoints,
 tokens, configuration, and private paths are excluded. Prompt activity, credential relink failures,
 and cleanup failures now have runtime transition producers, with rejected lifecycle transitions
-recorded as redacted diagnostic codes. Focused tests and `pnpm run typecheck` pass locally. This is
-not a shared-GUI readiness claim: PG-50 still requires clean-revision, repeated conformance,
-traceability, and current-CI evidence. Durable
+recorded as redacted diagnostic codes. Focused tests and `pnpm run typecheck` pass locally. At the
+time this paragraph was written, this was not yet a shared-GUI readiness claim; PG-50 has since
+been accepted on a clean, revision-bound rerun of this evidence (see
+[`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md)). Durable
 prompt-outcome reconciliation now makes compacted resume `clean` only after a persisted terminal
 outcome and preserves `uncertain` after interruption or for legacy sessions. A Node-environment
 integration test now runs a real `gosling serve` child through compatibility, session create, a
@@ -193,15 +207,18 @@ consumer-specific host branch.
 
 ## Strict next actions
 
-Execute the dependency-aware work packages in
-[`pre-gui-backend-implementation-plan.md`](pre-gui-backend-implementation-plan.md). In summary:
+PG-50 is accepted on exact revision `b921e6ee1299dba2207ab27ab6fd9452cc57aa26` (PR #50); see
+[`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md) for the full
+condition-by-condition disposition, current-CI result, and the one residual gap (macOS
+package-readback could not be reproduced in the accepting sandbox; `linux-x64` readback stands in
+as the supported-host-target proof).
 
-1. Isolate the intended R1–R4 work into a clean, exact revision, run current CI for it, and rerun
-   the PG-50 evidence/review. The local double conformance run and package readback are recorded in
-   [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md), but are not a
-   substitute for revision-bound acceptance.
-2. Do not start shared UI until PG-50 is accepted. R5 is the next implementation gate only after
-   that acceptance.
+1. R5 — build the shared shell GUI application kit — is now the active gate. It must consume only
+   the R1–R4 contracts frozen in ADR-0010–0012 and exercised above; it must not add GUI behavior to
+   compensate for missing backend state/action, and it must not begin any named-shell (DAWES, math,
+   physics/CST, or other) implementation, which remains blocked until M5.
+2. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
+   publication) remain open and unauthorized by this acceptance.
 
 ## Named-shell start policy
 

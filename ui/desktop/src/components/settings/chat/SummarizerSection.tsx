@@ -86,9 +86,10 @@ export const SummarizerSection = () => {
       const storedEndpoint = (await read('GOSLING_SUMMARIZER_ENDPOINT', false)) as
         | string
         | undefined;
-      // Pre-fill with a real, working default rather than leaving the field
-      // empty behind placeholder text — first-time users get a value that
-      // both the summarizer worker and model detection can actually use.
+      // SummarizerConfig::from_config_with (crates/gosling/src/context_mgmt/summarizer/mod.rs)
+      // returns None, and the worker skips entirely, when the endpoint config value is unset —
+      // the displayed placeholder is not itself a stored value. Persist the suggested default so
+      // enabling Shadow/On without retyping it still produces a working summarizer.
       const effectiveEndpoint = storedEndpoint || DEFAULT_ENDPOINT_PLACEHOLDER;
       setEndpoint(effectiveEndpoint);
       fetchModels(effectiveEndpoint);
