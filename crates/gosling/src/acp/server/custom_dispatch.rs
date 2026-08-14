@@ -266,6 +266,14 @@ impl GoslingAcpAgent {
         self.on_list_provider_supported_models(req).await
     }
 
+    #[custom_method(SummarizerModelsListRequest)]
+    async fn dispatch_list_summarizer_models(
+        &self,
+        req: SummarizerModelsListRequest,
+    ) -> Result<SummarizerModelsListResponse, agent_client_protocol::Error> {
+        self.on_list_summarizer_models(req).await
+    }
+
     #[custom_method(ProviderCatalogListRequest)]
     async fn dispatch_list_provider_catalog(
         &self,

@@ -156,6 +156,11 @@
       "responseType": "ProviderSupportedModelsListResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/summarizer/supported-models/list",
+      "requestType": "SummarizerModelsListRequest_unstable",
+      "responseType": "SummarizerModelsListResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/providers/catalog/list",
       "requestType": "ProviderCatalogListRequest_unstable",
       "responseType": "ProviderCatalogListResponse_unstable"

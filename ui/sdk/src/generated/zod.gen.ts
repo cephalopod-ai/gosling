@@ -1070,6 +1070,18 @@ export const zProviderSupportedModelsListResponse_unstable = z.object({
 });
 
 /**
+ * List the raw model identifiers from an ad hoc OpenAI-compatible endpoint
+ * (e.g. a local Ollama instance) that isn't a registered provider.
+ */
+export const zSummarizerModelsListRequest_unstable = z.object({
+    endpoint: z.string()
+});
+
+export const zSummarizerModelsListResponse_unstable = z.object({
+    models: z.array(z.string())
+});
+
+/**
  * List custom-provider catalog entries. Omit `format` to list all formats.
  */
 export const zProviderCatalogListRequest_unstable = z.object({
@@ -2715,6 +2727,7 @@ export const zExtRequest = z.object({
             zGetSessionExtensionsRequest_unstable,
             zListProvidersRequest_unstable,
             zProviderSupportedModelsListRequest_unstable,
+            zSummarizerModelsListRequest_unstable,
             zProviderCatalogListRequest_unstable,
             zProviderSetupCatalogListRequest_unstable,
             zProviderCatalogTemplateRequest_unstable,
@@ -2820,6 +2833,7 @@ export const zExtResponse = z.union([
                 zGetSessionExtensionsResponse_unstable,
                 zListProvidersResponse_unstable,
                 zProviderSupportedModelsListResponse_unstable,
+                zSummarizerModelsListResponse_unstable,
                 zProviderCatalogListResponse_unstable,
                 zProviderSetupCatalogListResponse_unstable,
                 zProviderCatalogTemplateResponse_unstable,

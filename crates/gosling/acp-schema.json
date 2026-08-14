@@ -2470,6 +2470,36 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/providers/supported-models/list"
     },
+    "SummarizerModelsListRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "description": "List the raw model identifiers from an ad hoc OpenAI-compatible endpoint\n(e.g. a local Ollama instance) that isn't a registered provider.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/summarizer/supported-models/list"
+    },
+    "SummarizerModelsListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/summarizer/supported-models/list"
+    },
     "ProviderCatalogListRequest_unstable": {
       "type": "object",
       "properties": {
@@ -6778,6 +6808,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/SummarizerModelsListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/summarizer/supported-models/list",
+                  "title": "SummarizerModelsListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ProviderCatalogListRequest_unstable"
                     }
                   ],
@@ -7611,6 +7650,14 @@
                         }
                       ],
                       "title": "ProviderSupportedModelsListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/SummarizerModelsListResponse_unstable"
+                        }
+                      ],
+                      "title": "SummarizerModelsListResponse_unstable"
                     },
                     {
                       "allOf": [

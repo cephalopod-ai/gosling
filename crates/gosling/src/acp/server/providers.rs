@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::declarative_providers;
-use crate::providers::base::ProviderType;
+use crate::providers::base::{Provider, ProviderType};
 use crate::providers::inventory::ensure_refresh_identity_current;
 use crate::providers::provider_secrets;
 use std::str::FromStr;
@@ -541,6 +541,20 @@ impl GoslingAcpAgent {
             provider_id: req.provider_id,
             models,
         })
+    }
+
+    pub(super) async fn on_list_summarizer_models(
+        &self,
+        req: SummarizerModelsListRequest,
+    ) -> Result<SummarizerModelsListResponse, agent_client_protocol::Error> {
+        let provider = crate::context_mgmt::summarizer::worker::build_provider(&req.endpoint)
+            .internal_err_ctx("Failed to initialize summarizer endpoint")?;
+        let models = provider
+            .fetch_supported_models()
+            .await
+            .internal_err_ctx("Failed to fetch summarizer models")?;
+
+        Ok(SummarizerModelsListResponse { models })
     }
 
     pub(super) async fn on_list_provider_catalog(

@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { acpListSummarizerModels } from '../../../acp/providers';
 import { useConfig } from '../../ConfigContext';
+import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
+import { Select } from '../../ui/Select';
+
+interface ModelOption {
+  value: string;
+  label: string;
+}
 
 interface SummarizerModeOption {
   key: string;
@@ -42,6 +51,33 @@ export const SummarizerSection = () => {
   const [model, setModel] = useState('');
   const [timeoutMs, setTimeoutMs] = useState<string>(String(DEFAULT_TIMEOUT_MS));
 
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [visibleModelOptions, setVisibleModelOptions] = useState<ModelOption[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelFetchError, setModelFetchError] = useState<string | null>(null);
+  const [lastFetchedEndpoint, setLastFetchedEndpoint] = useState<string | null>(null);
+
+  const fetchModels = useCallback(async (endpointToFetch: string) => {
+    const trimmed = endpointToFetch.trim();
+    if (!trimmed) return;
+    setLoadingModels(true);
+    setModelFetchError(null);
+    try {
+      const models = await acpListSummarizerModels(trimmed);
+      const options = models.map((id) => ({ value: id, label: id }));
+      setModelOptions(options);
+      setVisibleModelOptions(options);
+      setLastFetchedEndpoint(trimmed);
+    } catch (error) {
+      console.error('Error listing summarizer models:', error);
+      setModelOptions([]);
+      setVisibleModelOptions([]);
+      setModelFetchError('Could not list models from this endpoint.');
+    } finally {
+      setLoadingModels(false);
+    }
+  }, []);
+
   const loadSettings = useCallback(async () => {
     try {
       const storedMode = (await read('GOSLING_SUMMARIZER', false)) as string | undefined;
@@ -50,7 +86,10 @@ export const SummarizerSection = () => {
       const storedEndpoint = (await read('GOSLING_SUMMARIZER_ENDPOINT', false)) as
         | string
         | undefined;
-      if (storedEndpoint) setEndpoint(storedEndpoint);
+      if (storedEndpoint) {
+        setEndpoint(storedEndpoint);
+        fetchModels(storedEndpoint);
+      }
 
       const storedModel = (await read('GOSLING_SUMMARIZER_MODEL', false)) as string | undefined;
       if (storedModel) setModel(storedModel);
@@ -62,7 +101,7 @@ export const SummarizerSection = () => {
     } catch (error) {
       console.error('Error loading summarizer settings:', error);
     }
-  }, [read]);
+  }, [read, fetchModels]);
 
   useEffect(() => {
     loadSettings();
@@ -78,11 +117,38 @@ export const SummarizerSection = () => {
   };
 
   const persistEndpoint = async () => {
+    const trimmed = endpoint.trim();
     try {
-      await upsert('GOSLING_SUMMARIZER_ENDPOINT', endpoint.trim(), false);
+      await upsert('GOSLING_SUMMARIZER_ENDPOINT', trimmed, false);
     } catch (error) {
       console.error('Error updating summarizer endpoint:', error);
     }
+    if (trimmed && trimmed !== lastFetchedEndpoint) {
+      fetchModels(trimmed);
+    }
+  };
+
+  const handleModelSelect = (newValue: unknown) => {
+    const option = newValue as ModelOption | null;
+    const nextModel = option?.value ?? '';
+    setModel(nextModel);
+    upsert('GOSLING_SUMMARIZER_MODEL', nextModel.trim(), false).catch((error) => {
+      console.error('Error updating summarizer model:', error);
+    });
+  };
+
+  const handleModelInputChange = (inputValue: string) => {
+    const trimmed = inputValue.trim();
+    if (!trimmed) {
+      setVisibleModelOptions(modelOptions);
+      return;
+    }
+    const matches = modelOptions.filter((option) =>
+      option.value.toLowerCase().includes(trimmed.toLowerCase())
+    );
+    setVisibleModelOptions(
+      matches.length > 0 ? matches : [{ value: trimmed, label: `Use: "${trimmed}"` }]
+    );
   };
 
   const persistModel = async () => {
@@ -167,14 +233,41 @@ export const SummarizerSection = () => {
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium mb-1 block text-text-primary">Model</label>
-            <Input
-              value={model}
-              placeholder={DEFAULT_MODEL_PLACEHOLDER}
-              onChange={(e) => setModel(e.target.value)}
-              onBlur={persistModel}
-              className="text-text-primary"
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-text-primary">Model</label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={!endpoint.trim() || loadingModels}
+                onClick={() => fetchModels(endpoint)}
+                className="text-text-secondary"
+              >
+                <RefreshCw className={`h-3 w-3 ${loadingModels ? 'animate-spin' : ''}`} />
+                {loadingModels ? 'Detecting…' : 'Detect models'}
+              </Button>
+            </div>
+            {modelOptions.length > 0 ? (
+              <Select
+                options={visibleModelOptions}
+                value={model ? { value: model, label: model } : null}
+                onChange={handleModelSelect}
+                onInputChange={handleModelInputChange}
+                placeholder={DEFAULT_MODEL_PLACEHOLDER}
+                isClearable
+              />
+            ) : (
+              <Input
+                value={model}
+                placeholder={DEFAULT_MODEL_PLACEHOLDER}
+                onChange={(e) => setModel(e.target.value)}
+                onBlur={persistModel}
+                className="text-text-primary"
+              />
+            )}
+            {modelFetchError && (
+              <p className="text-xs text-text-secondary mt-1">{modelFetchError}</p>
+            )}
           </div>
 
           <div className="flex flex-col">

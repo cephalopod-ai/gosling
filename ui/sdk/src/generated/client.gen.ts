@@ -158,6 +158,8 @@ import type {
   ShellProvisioningValidateResponse_unstable,
   SteerSessionRequest_unstable,
   SteerSessionResponse_unstable,
+  SummarizerModelsListRequest_unstable,
+  SummarizerModelsListResponse_unstable,
   TruncateSessionConversationRequest_unstable,
   UnarchiveSessionRequest_unstable,
   UpdateSessionProjectRequest_unstable,
@@ -243,6 +245,7 @@ import {
   zShellProvisioningReadResponse_unstable,
   zShellProvisioningValidateResponse_unstable,
   zSteerSessionResponse_unstable,
+  zSummarizerModelsListResponse_unstable,
   zUpdateSourceResponse_unstable,
   zWorkspaceDeleteResponse_unstable,
   zWorkspaceExportResponse_unstable,
@@ -588,6 +591,18 @@ export class GoslingExtClient {
     return zProviderSupportedModelsListResponse_unstable.parse(
       raw,
     ) as ProviderSupportedModelsListResponse_unstable;
+  }
+
+  async summarizerSupportedModelsList_unstable(
+    params: SummarizerModelsListRequest_unstable,
+  ): Promise<SummarizerModelsListResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/summarizer/supported-models/list",
+      params,
+    );
+    return zSummarizerModelsListResponse_unstable.parse(
+      raw,
+    ) as SummarizerModelsListResponse_unstable;
   }
 
   async providersCatalogList_unstable(

@@ -169,6 +169,18 @@ export async function acpListProviderModels(providerId: string) {
   throw supportedModelsResult.reason;
 }
 
+/**
+ * Lists model identifiers from an ad hoc OpenAI-compatible endpoint (e.g. a
+ * local Ollama instance) rather than a registered provider — used to
+ * populate the Context Summarizer's model picker from whatever endpoint the
+ * user has typed in, without requiring it to be configured as a provider.
+ */
+export async function acpListSummarizerModels(endpoint: string): Promise<string[]> {
+  const client = await getAcpClient();
+  const { models } = await client.gosling.summarizerSupportedModelsList_unstable({ endpoint });
+  return models;
+}
+
 export async function acpListProviderCatalogEntries(
   format?: string
 ): Promise<ProviderTemplateCatalogEntryDto[]> {

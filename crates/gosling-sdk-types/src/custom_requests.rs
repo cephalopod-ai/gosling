@@ -1875,6 +1875,24 @@ pub struct ProviderSupportedModelsListResponse {
     pub models: Vec<String>,
 }
 
+/// List the raw model identifiers from an ad hoc OpenAI-compatible endpoint
+/// (e.g. a local Ollama instance) that isn't a registered provider.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/summarizer/supported-models/list",
+    response = SummarizerModelsListResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SummarizerModelsListRequest {
+    pub endpoint: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SummarizerModelsListResponse {
+    pub models: Vec<String>,
+}
+
 /// Trigger a background refresh of provider inventories.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
