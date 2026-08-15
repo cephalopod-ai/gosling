@@ -1747,6 +1747,7 @@ export default function ChatInput({
               totalTokens={totalTokens || 0}
               tokenLimit={tokenLimit}
               alerts={alerts}
+              managesOwnContext={managesOwnContext}
             />
 
             {/* Right: extension selector */}
