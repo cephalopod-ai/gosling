@@ -403,10 +403,19 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         if (request.generation !== controller.read().generation) {
           throw new Error('settings request generation is stale');
         }
-        const appearance = confirmation.confirmed
-          ? settings.reset().appearance
-          : settings.read().appearance;
-        return { appearance, recovery: settings.recovery() };
+        if (!confirmation.confirmed) {
+          return { appearance: settings.read().appearance, recovery: settings.recovery() };
+        }
+        const reset = settings.reset();
+        // The settings file is now cleared, but directory/credentials keep their own in-memory
+        // selection for session creation (runtimeController.ts reads `.accepted()`/`.selected()`,
+        // not the settings file) — without this, a session created before the next restart would
+        // still use the directory/credential the operator just reset. clear() is the same
+        // teardown call runtimeController.ts already uses when the backend itself is lost, and it
+        // publishes through the existing onChanged wiring so the renderer's snapshot updates too.
+        directory.clear();
+        credentials.clear();
+        return { appearance: reset.appearance, recovery: settings.recovery() };
       },
     },
   });

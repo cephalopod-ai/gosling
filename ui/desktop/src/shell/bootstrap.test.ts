@@ -32,6 +32,35 @@ const controller = vi.hoisted(() => {
 controller.create.mockReturnValue(controller.value);
 vi.mock('./runtimeController', () => ({ createShellRuntimeController: controller.create }));
 
+const directoryController = vi.hoisted(() => ({
+  read: vi.fn(() => ({ state: 'unselected', path: null, label: null, reasonCode: null, remembered: false })),
+  accepted: vi.fn(() => null),
+  restore: vi.fn(),
+  select: vi.fn(),
+  clear: vi.fn(),
+  onChanged: vi.fn(() => vi.fn()),
+}));
+vi.mock('./directoryController', () => ({
+  createShellDirectoryController: vi.fn(() => directoryController),
+}));
+
+const credentialController = vi.hoisted(() => ({
+  read: vi.fn(() => ({
+    catalogStatus: 'denied',
+    profiles: [],
+    selectedProfileId: null,
+    selectionStatus: 'none',
+  })),
+  selected: vi.fn(() => null),
+  refresh: vi.fn(),
+  select: vi.fn(),
+  clear: vi.fn(),
+  onChanged: vi.fn(() => vi.fn()),
+}));
+vi.mock('./credentialController', () => ({
+  createShellCredentialController: vi.fn(() => credentialController),
+}));
+
 import type Electron from 'electron';
 import type { ShellBootstrapAdapter } from './bootstrap';
 import { bootstrapShell } from './bootstrap';
@@ -43,6 +72,8 @@ afterEach(() => {
   controller.create.mockReturnValue(controller.value);
   controller.value.getAcp.mockReturnValue(null);
   controller.value.getSessionController.mockReturnValue(null);
+  directoryController.accepted.mockReturnValue(null);
+  credentialController.selected.mockReturnValue(null);
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -336,6 +367,31 @@ describe('shell bootstrap', () => {
     expect(value.adapter.showConfirmDialog).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Reset local settings' })
     );
+  });
+
+  it('clears the live directory and credential selection on a confirmed reset, not on cancel', async () => {
+    const value = harness();
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+
+    value.adapter.showConfirmDialog.mockResolvedValueOnce({ confirmed: false });
+    await value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+      generation: 1,
+      userGesture: true,
+    });
+    expect(directoryController.clear).not.toHaveBeenCalled();
+    expect(credentialController.clear).not.toHaveBeenCalled();
+
+    value.adapter.showConfirmDialog.mockResolvedValueOnce({ confirmed: true });
+    await value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+      generation: 1,
+      userGesture: true,
+    });
+    expect(directoryController.clear).toHaveBeenCalledTimes(1);
+    expect(credentialController.clear).toHaveBeenCalledTimes(1);
   });
 
   it('rejects settings mutations carrying a stale generation, like every other mutating channel', async () => {

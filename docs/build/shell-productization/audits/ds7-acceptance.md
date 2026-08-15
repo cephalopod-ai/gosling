@@ -111,8 +111,8 @@ All commands run with `source bin/activate-hermit` from repository root unless n
 Per the operator's explicit request to "validate previous work, do a walkthrough, and patch any
 issues surfaced before I make a GO decision," an independent multi-agent review ran against the
 CA-2–CA-5 diff (branch `claude/ca2-ca5-default-shell-gaps`, on top of the `e5d407f37e` commit
-audited above). It surfaced real findings, all fixed in a follow-up commit on the same branch (see
-`git log` for the exact SHA):
+audited above). It surfaced real findings, all fixed in commit
+`0fa837e4f0bd81be9ec2cb90b80c323ceb386463` on the same branch:
 
 - **Generation-fencing gap (most severe, cross-corroborated by 5 independent reviewers)**:
   `bootstrap.ts`'s `settingsAppearanceUpdate` and `settingsReset` operations did not check
@@ -162,6 +162,34 @@ audited above). It surfaced real findings, all fixed in a follow-up commit on th
 
 This pass found and closed real gaps; it does not change the CA-7 decision below, which remains the
 operator's to make.
+
+### Automated review on `0fa837e4f` — three more findings, fixed
+
+The repository's Codex reviewer (`chatgpt-codex-connector`) automatically reviewed PR #54 at
+`0fa837e4f` and opened three review threads that were resolved before merge, each fixed on top:
+
+- **`settings.reset` did not sync the live directory/credential controllers.** `store.reset()`
+  clears `workspace.lastWorkingDirectory`/`preferredCredentialProfileId` in the settings file, but
+  `runtimeController.ts` reads session-creation values from the in-memory `directory.accepted()`/
+  `credentials.selected()` controllers, not the file — so a session created after a confirmed reset
+  but before an app restart would still use the directory/credential the operator just cleared.
+  Fixed: `settingsReset` now calls `directory.clear()`/`credentials.clear()` after a confirmed
+  reset — the same teardown calls `runtimeController.ts` already uses when the backend itself is
+  lost — which publishes through the existing `onChanged` wiring so the runtime snapshot updates
+  too, with no new IPC surface.
+- **The idle-crash test's fix in `0fa837e4f` widened a race instead of closing it.** Bumping the
+  fixture's self-destruct timer from 50ms to 300ms made the `tokio::watch` subscribe-after-change
+  race (a receiver created after the crash won't see that transition) less likely, not impossible,
+  under CI scheduler contention. Fixed properly: the test now checks `status.borrow()` before
+  awaiting `status.changed()`, so it passes whether the crash lands before or after
+  `subscribe_status()` is called; the fixture's delay was reverted to 50ms since correctness no
+  longer depends on winning a timing race.
+- **This audit's own "Post-audit validation pass" section named `git log` instead of the exact
+  SHA** for the fixes it described. Corrected above to name `0fa837e4f0bd81be9ec2cb90b80c323ceb386463`
+  directly, per this document's own evidence rule.
+
+These three fixes, plus the two above, landed together in one further commit on this branch before
+merge to `main` (see the merge commit recorded in Current CI below for the exact SHA).
 
 ## Current CI
 

@@ -487,12 +487,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (request.method === 'tools/call' && request.params.name === 'descriptor') {
     reply(request.id, { content: [], structuredContent: descriptor, isError: false });
     // Exits on its own once negotiated, independent of any subsequent call — an idle crash
-    // rather than one triggered by an in-flight snapshot/action request. The delay is generous
-    // (well beyond local IPC latency) so the test's subscribe_status() call, which happens
-    // immediately after connect() returns, cannot lose the race against this timer even under
-    // CI scheduler contention — tokio::watch receivers only observe changes sent after they
-    // subscribe, so a too-tight margin here could make the test hang until its own timeout.
-    setTimeout(() => process.exit(23), 300);
+    // rather than one triggered by an in-flight snapshot/action request.
+    setTimeout(() => process.exit(23), 50);
   }
 });
 "#,
@@ -751,10 +747,16 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
             .expect("MCP adapter exposes a process status subscription");
 
         // No snapshot/action call is ever made — the fixture exits on its own once negotiated.
-        tokio::time::timeout(Duration::from_secs(2), status.changed())
-            .await
-            .expect("adapter exit status arrived")
-            .expect("adapter status channel remained open");
+        // The crash may already have landed before subscribe_status() above runs, in which case
+        // this receiver starts caught up to Crashed and changed() would wait forever for a
+        // transition that already happened (tokio::watch only notifies of changes sent after a
+        // receiver subscribes). Check the current value before waiting for a future one.
+        if *status.borrow() != DomainAdapterStatus::Crashed {
+            tokio::time::timeout(Duration::from_secs(2), status.changed())
+                .await
+                .expect("adapter exit status arrived")
+                .expect("adapter status channel remained open");
+        }
         assert_eq!(*status.borrow(), DomainAdapterStatus::Crashed);
     }
 
