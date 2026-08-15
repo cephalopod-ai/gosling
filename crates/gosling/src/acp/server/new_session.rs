@@ -20,7 +20,14 @@ struct InitialSessionConfig {
     extension_data: ExtensionData,
     project_id: Option<String>,
     workspace: Option<PreparedWorkspaceSession>,
-    shell_credential_profile_id: Option<String>,
+    shell_credential_profile: Option<crate::workspace::CredentialProfile>,
+}
+
+struct NewSessionSetup {
+    args: NewSessionRequest,
+    project_id: Option<String>,
+    workspace: Option<PreparedWorkspaceSession>,
+    shell_credential_profile: Option<crate::workspace::CredentialProfile>,
 }
 
 impl GoslingAcpAgent {
@@ -42,6 +49,50 @@ impl GoslingAcpAgent {
         Ok(self
             .shell_runtime
             .effective_credential_profile_id(selected.as_deref()))
+    }
+
+    async fn resolve_shell_credential_profile(
+        &self,
+        meta: Option<&Meta>,
+    ) -> Result<Option<crate::workspace::CredentialProfile>, agent_client_protocol::Error> {
+        let Some(profile_id) = self.shell_credential_profile_id(meta)? else {
+            return Ok(None);
+        };
+        let profiles = self.shell_credential_profiles().await.ok_or_else(|| {
+            agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                "code": "SHELL_CREDENTIAL_CATALOG_UNAVAILABLE"
+            }))
+        })?;
+        let profile = profiles
+            .into_iter()
+            .find(|profile| profile.id == profile_id)
+            .ok_or_else(|| {
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "code": "SHELL_CREDENTIAL_PROFILE_UNAVAILABLE"
+                }))
+            })?;
+        if profile.status != crate::workspace::CredentialProfileStatus::Configured {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "code": "SHELL_CREDENTIAL_PROFILE_UNAVAILABLE"
+                })),
+            );
+        }
+        if self
+            .shell_runtime
+            .provisioning()
+            .session
+            .provider
+            .as_deref()
+            .is_some_and(|provider| provider != profile.provider_or_service_id)
+        {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "code": "SHELL_CREDENTIAL_PROVIDER_MISMATCH"
+                })),
+            );
+        }
+        Ok(Some(profile))
     }
 
     pub(super) async fn handle_new_session(
@@ -68,11 +119,15 @@ impl GoslingAcpAgent {
             return Err(agent_client_protocol::Error::invalid_params()
                 .data(serde_json::json!({ "code": "SHELL_CREDENTIAL_SELECTION_DENIED" })));
         }
-        let shell_credential_profile_id = self.shell_credential_profile_id(args.meta.as_ref())?;
+        let shell_credential_profile = self
+            .resolve_shell_credential_profile(args.meta.as_ref())
+            .await?;
         // Without a workspace the shell profile is pinned directly by the shell-specific paths
         // below; putting it here would make a workspace-free launch fail the overrides check.
         if workspace_overrides.credential_profile_id.is_none() && workspace_id.is_some() {
-            workspace_overrides.credential_profile_id = shell_credential_profile_id.clone();
+            workspace_overrides.credential_profile_id = shell_credential_profile
+                .as_ref()
+                .map(|profile| profile.id.clone());
         }
         let workspace = match workspace_id.as_deref() {
             Some(workspace_id) => Some(
@@ -131,7 +186,17 @@ impl GoslingAcpAgent {
             .await
             .internal_err_ctx("Failed to create session")?;
         match self
-            .finish_new_session_setup(cx, config, &session, args, project_id, workspace)
+            .finish_new_session_setup(
+                cx,
+                config,
+                &session,
+                NewSessionSetup {
+                    args,
+                    project_id,
+                    workspace,
+                    shell_credential_profile,
+                },
+            )
             .await
         {
             Ok(response) => Ok(response),
@@ -147,12 +212,9 @@ impl GoslingAcpAgent {
         cx: &ConnectionTo<Client>,
         config: &Config,
         session: &Session,
-        args: NewSessionRequest,
-        project_id: Option<String>,
-        workspace: Option<PreparedWorkspaceSession>,
+        setup: NewSessionSetup,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
-        self.configure_new_session(config, session, args, project_id, workspace)
-            .await?;
+        self.configure_new_session(config, session, setup).await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let (_agent, extension_results) = self
@@ -197,13 +259,22 @@ impl GoslingAcpAgent {
         &self,
         config: &Config,
         session: &Session,
-        args: NewSessionRequest,
-        project_id: Option<String>,
-        workspace: Option<PreparedWorkspaceSession>,
+        setup: NewSessionSetup,
     ) -> Result<(), agent_client_protocol::Error> {
         let (provider, model_config) = self
-            .resolve_provider_and_model(config, args.meta.as_ref(), workspace.as_ref())
+            .resolve_provider_and_model(
+                config,
+                setup.args.meta.as_ref(),
+                setup.workspace.as_ref(),
+                setup.shell_credential_profile.as_ref(),
+            )
             .await?;
+        let NewSessionSetup {
+            args,
+            project_id,
+            workspace,
+            shell_credential_profile,
+        } = setup;
 
         let gosling_extensions = if self
             .shell_runtime
@@ -231,8 +302,7 @@ impl GoslingAcpAgent {
                 extension_data,
                 project_id,
                 workspace,
-                shell_credential_profile_id: self
-                    .shell_credential_profile_id(args.meta.as_ref())?,
+                shell_credential_profile,
             },
         )
         .await?;
@@ -255,6 +325,7 @@ impl GoslingAcpAgent {
         config: &Config,
         meta: Option<&Meta>,
         workspace: Option<&PreparedWorkspaceSession>,
+        shell_credential_profile: Option<&crate::workspace::CredentialProfile>,
     ) -> Result<(String, ModelConfig), agent_client_protocol::Error> {
         let shell_session = &self.shell_runtime.provisioning().session;
         if let Some(provider) =
@@ -295,12 +366,8 @@ impl GoslingAcpAgent {
                 return Ok((provider, model_config));
             }
         }
-        if let Some(profile_id) = self.shell_credential_profile_id(meta)?.as_deref() {
-            let provider = self
-                .workspace_service
-                .profile_resolution(profile_id)
-                .invalid_params_err_ctx("Shell credential profile is unavailable")?
-                .provider;
+        if let Some(profile) = shell_credential_profile {
+            let provider = profile.provider_or_service_id.clone();
             let model_config = if let Some(model) = shell_session.model.as_deref() {
                 crate::model_config::model_config_from_user_config(&provider, model)
                     .invalid_params_err_ctx("Shell model is invalid")?
@@ -347,21 +414,7 @@ impl GoslingAcpAgent {
                 workspace.credential_binding_id,
                 workspace.context,
             );
-        } else if let Some(profile_id) = config.shell_credential_profile_id.as_deref() {
-            let profile = self
-                .workspace_service
-                .credential_profiles()
-                .internal_err_ctx("Failed to read shell credential profile")?
-                .into_iter()
-                .find(|profile| profile.id == profile_id)
-                .ok_or_else(|| {
-                    agent_client_protocol::Error::invalid_params()
-                        .data("shell credential profile must be relinked in Gosling")
-                })?;
-            if profile.status != crate::workspace::CredentialProfileStatus::Configured {
-                return Err(agent_client_protocol::Error::invalid_params()
-                    .data("shell credential profile must be configured in Gosling"));
-            }
+        } else if let Some(profile) = config.shell_credential_profile {
             builder = builder.credential_profile_snapshot(profile.id, profile.name);
         }
         builder

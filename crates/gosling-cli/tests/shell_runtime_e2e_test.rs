@@ -692,6 +692,11 @@ async fn selectable_catalog_credential_policy_opens_the_catalog_and_caller_selec
     let root = TempDir::new().unwrap();
     let work = TempDir::new().unwrap();
     let provisioning_path = write_neutral_provisioning(root.path(), "selectable_catalog");
+    std::fs::write(
+        root.path().join("config/secrets.yaml"),
+        "OPENAI_API_KEY: shell-profile-test-key\n",
+    )
+    .unwrap();
 
     let port = free_port();
     let _server = spawn_server(
@@ -712,13 +717,14 @@ async fn selectable_catalog_credential_policy_opens_the_catalog_and_caller_selec
     )
     .await;
     assert_eq!(credentials.status, ShellCredentialCatalogStatus::Available);
+    let profile = credentials
+        .profiles
+        .iter()
+        .find(|profile| profile.provider_or_service_id == "openai")
+        .expect("test configuration must produce a safe OpenAI profile summary")
+        .clone();
 
-    // A caller-selected credential is no longer blanket-denied the way it is under `fixed` — it
-    // may still fail for other reasons (e.g. the profile doesn't exist), but never with the
-    // fixed-policy denial code, which would incorrectly claim this shell never opted into
-    // selection at all. Assert something concrete on both branches so a regression that makes
-    // this silently succeed-without-effect, or silently fail some other way, is still caught.
-    let result = cx
+    let unknown = cx
         .send_request(
             agent_client_protocol::UntypedMessage::new(
                 "session/new",
@@ -731,26 +737,38 @@ async fn selectable_catalog_credential_policy_opens_the_catalog_and_caller_selec
             .unwrap(),
         )
         .block_task()
-        .await;
-    match result {
-        Ok(value) => {
-            // `effective_credential_profile_id` passes the selected id through unchecked for
-            // `selectable_catalog` (crates/gosling/src/acp/shell.rs) — existence is resolved at
-            // use time, not session creation — so a real session must still come back.
-            assert!(
-                value.get("sessionId").and_then(|id| id.as_str()).is_some(),
-                "selectable_catalog must create a real session even for an unresolved \
-                 credential reference: {value:?}"
-            );
-        }
-        Err(error) => {
-            assert_ne!(
-                error.data.as_ref().and_then(|data| data["code"].as_str()),
-                Some("SHELL_CREDENTIAL_SELECTION_DENIED"),
-                "selectable_catalog must not reuse the fixed-policy blanket denial: {error:?}"
-            );
-        }
-    }
+        .await
+        .expect_err("an unknown selected profile must fail closed before session creation");
+    assert_eq!(
+        unknown.data.unwrap()["code"],
+        "SHELL_CREDENTIAL_PROFILE_UNAVAILABLE"
+    );
+
+    let created = cx
+        .send_request(
+            agent_client_protocol::UntypedMessage::new(
+                "session/new",
+                serde_json::json!({
+                    "cwd": work.path(),
+                    "mcpServers": [],
+                    "_meta": { "shellCredentialProfileId": profile.id.clone() }
+                }),
+            )
+            .unwrap(),
+        )
+        .block_task()
+        .await
+        .expect("a configured catalog profile must create a session");
+    let session_id = created["sessionId"].as_str().unwrap();
+    let stored = read_session(root.path(), "selectable-credential", session_id).await;
+    assert_eq!(
+        stored.credential_profile_id.as_deref(),
+        Some(profile.id.as_str())
+    );
+    assert_eq!(
+        stored.credential_profile_name.as_deref(),
+        Some(profile.name.as_str())
+    );
 
     client_task.abort();
 }

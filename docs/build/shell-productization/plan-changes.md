@@ -26,6 +26,8 @@ Material changes to scope, requirements, architecture, sequencing, platform supp
 
 | SHP-PC-008 | 2026-08-14 | L1 | DS-3–DS-7 | Decompose the remaining Default Shell foundation into contract, backend, main/preload, conformance, and acceptance units | The short DS outline did not resolve directory/session switching, safe credential projection, module multiplicity, scaffold overwrite policy, or exact acceptance evidence | No scope expansion: SHP-REQ-044–053 retain priority and authority; v1 is clarified as multiple extensions/skills plus one supervised domain adapter; remaining DS-1/DS-2 proof is an explicit entry gate | operator requested a DS-3–DS-7 implementation plan; no runtime or GUI work authorized by this record |
 
+| SHP-PC-010 | 2026-08-15 | L1 | DS-4/DS-7 | Bound shell credential discovery and require selected-profile re-resolution before session creation | A real packaged renderer stalled in provisioning on macOS Keychain access, then code/test review found that an unknown selected ID was not fail-closed | SHP-REQ-046/053 and SHP-RSK-041/042/046 gain explicit timeout, unavailable-state, and live session-pinning evidence; no credential authority or GUI scope is added | operator directed continued corrective patching and audit until a GO recommendation is supportable |
+
 ## Record template
 
 ### SHP-PC-NNN — title

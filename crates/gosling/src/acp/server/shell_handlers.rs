@@ -1,16 +1,56 @@
 use super::*;
 
+const SHELL_CREDENTIAL_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 impl GoslingAcpAgent {
+    pub(super) async fn shell_credential_profiles(
+        &self,
+    ) -> Option<Vec<crate::workspace::CredentialProfile>> {
+        use std::sync::atomic::Ordering;
+
+        if self
+            .shell_credential_lookup_disabled
+            .load(Ordering::Relaxed)
+        {
+            return None;
+        }
+        let workspace_service = std::sync::Arc::clone(&self.workspace_service);
+        let lookup = tokio::task::spawn_blocking(move || workspace_service.credential_profiles());
+        match tokio::time::timeout(SHELL_CREDENTIAL_LOOKUP_TIMEOUT, lookup).await {
+            Ok(Ok(Ok(profiles))) => Some(profiles),
+            Ok(Ok(Err(_))) | Ok(Err(_)) | Err(_) => {
+                self.shell_credential_lookup_disabled
+                    .store(true, Ordering::Relaxed);
+                None
+            }
+        }
+    }
+
+    async fn provisioning_credential_profiles(
+        &self,
+        provisioning: &ShellProvisioning,
+    ) -> Option<Result<Vec<crate::workspace::CredentialProfile>, String>> {
+        provisioning.session.credential_profile_id.as_ref()?;
+        Some(
+            self.shell_credential_profiles()
+                .await
+                .ok_or_else(|| "credential profile lookup timed out or failed".to_string()),
+        )
+    }
+
     pub(super) async fn shell_provisioning_validation(
         &self,
         provisioning: &ShellProvisioning,
     ) -> ShellProvisioningValidationReport {
-        crate::acp::shell_validation::validate_shell_provisioning(
+        let profiles = self.provisioning_credential_profiles(provisioning).await;
+        crate::acp::shell_validation::validate_shell_provisioning_for_working_dir_with_profiles(
             provisioning,
             Config::global(),
             &self.workspace_service,
             &self.builtins,
             &self.default_working_folder,
+            None,
+            profiles,
         )
         .await
     }
@@ -20,13 +60,15 @@ impl GoslingAcpAgent {
         provisioning: &ShellProvisioning,
         working_dir: &std::path::Path,
     ) -> ShellProvisioningValidationReport {
-        crate::acp::shell_validation::validate_shell_provisioning_for_working_dir(
+        let profiles = self.provisioning_credential_profiles(provisioning).await;
+        crate::acp::shell_validation::validate_shell_provisioning_for_working_dir_with_profiles(
             provisioning,
             Config::global(),
             &self.workspace_service,
             &self.builtins,
             &self.default_working_folder,
             Some(working_dir),
+            profiles,
         )
         .await
     }
@@ -109,7 +151,7 @@ impl GoslingAcpAgent {
                 profiles: Vec::new(),
             };
         }
-        let Ok(profiles) = self.workspace_service.credential_profiles() else {
+        let Some(profiles) = self.shell_credential_profiles().await else {
             return ShellCredentialListResponse {
                 status: ShellCredentialCatalogStatus::Unavailable,
                 profiles: Vec::new(),

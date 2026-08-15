@@ -173,7 +173,10 @@ export function createShellRuntimeController(
       directory: options.directory.read(),
       settingsRecovery: options.settings.recovery(),
       credentials: options.credentials.read(),
-      modules: modules.map((module) => ({ ...module, capabilities: [...(module.capabilities ?? [])] })),
+      modules: modules.map((module) => ({
+        ...module,
+        capabilities: [...(module.capabilities ?? [])],
+      })),
       session: session?.status === 'none' ? null : session,
       adapter: acp?.domainAdapter
         ? {
@@ -335,6 +338,8 @@ export function createShellRuntimeController(
           acpUrl: runtime.backend.acpUrl,
           profile: options.profile,
           manifest: options.manifest,
+          onPreflightPhase: (phase) =>
+            runtime.backend.recordStartupEvent('shell_preflight_phase', { phase }),
           resolveWorkingDir: async (validate) => {
             await options.directory.restore(validate);
             return options.directory.accepted();
@@ -373,12 +378,13 @@ export function createShellRuntimeController(
         }
         sessions = createShellSessionController({
           transport: {
-            createSession: () => {
+            createSession: async () => {
+              await options.credentials.refresh();
               const accepted = options.directory.accepted();
               if (!accepted) {
                 throw new Error('no working directory is selected');
               }
-              return connection.createSession({
+              return await connection.createSession({
                 workingDir: accepted,
                 credentialProfileId: options.credentials.selected(),
               });

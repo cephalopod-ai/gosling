@@ -37,7 +37,10 @@ function memorySettingsStore(lastWorkingDirectory: string | null): ShellSettings
     recovery: () => ({ status: 'loaded' as const, schemaVersion: 1 }),
     setAppearance: () => copySettings(settings),
     setLastWorkingDirectory(directory) {
-      settings = { ...settings, workspace: { ...settings.workspace, lastWorkingDirectory: directory } };
+      settings = {
+        ...settings,
+        workspace: { ...settings.workspace, lastWorkingDirectory: directory },
+      };
       return copySettings(settings);
     },
     setPreferredCredentialProfileId(profileId) {
@@ -220,7 +223,16 @@ function harness(withAdapter = false) {
       now: () => `2026-08-13T00:00:${String(tick++).padStart(2, '0')}Z`,
     }
   );
-  return { cleanups, connectAcp, connections, controller, createHost, credentials, directory, processes };
+  return {
+    cleanups,
+    connectAcp,
+    connections,
+    controller,
+    createHost,
+    credentials,
+    directory,
+    processes,
+  };
 }
 
 describe('shell runtime controller', () => {
@@ -322,9 +334,11 @@ describe('shell runtime controller', () => {
     });
     const connection = value.connections[0] as unknown as {
       createSession: ReturnType<typeof vi.fn>;
+      listCredentials: ReturnType<typeof vi.fn>;
       prompt: ReturnType<typeof vi.fn>;
     };
     expect(connection.createSession).toHaveBeenCalledOnce();
+    expect(connection.listCredentials).toHaveBeenCalledTimes(2);
     const attempt = sessions!.submit({ generation: 1, sessionId: 'session-a', text: 'hello' });
     expect(connection.prompt).toHaveBeenCalledWith({
       sessionId: 'session-a',

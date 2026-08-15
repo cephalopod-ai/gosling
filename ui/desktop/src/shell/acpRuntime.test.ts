@@ -140,9 +140,7 @@ function harness() {
   const validateDirectory = vi.fn((params: { path: string }) =>
     Promise.resolve({ status: 'valid' as const, canonicalPath: params.path })
   );
-  const listCredentials = vi.fn(() =>
-    Promise.resolve({ status: 'denied' as const, profiles: [] })
-  );
+  const listCredentials = vi.fn(() => Promise.resolve({ status: 'denied' as const, profiles: [] }));
   const listModules = vi.fn(() => Promise.resolve({ contractVersion: 1, modules: [] }));
   const prepare = vi.fn(() => Promise.reject(new Error('not used')));
   const snapshot = vi.fn<() => Promise<DomainSnapshotResponse_unstable>>(() =>
@@ -274,6 +272,34 @@ describe('shell ACP runtime', () => {
     expect(value.close).not.toHaveBeenCalled();
     connection.close();
     expect(value.close).toHaveBeenCalledOnce();
+  });
+
+  it('bounds every startup preflight request and reports the phase that stalled', async () => {
+    vi.useFakeTimers();
+    try {
+      const value = harness();
+      value.read.mockImplementation(() => new Promise(() => {}));
+      const phases: string[] = [];
+      const connection = connectShellAcp({
+        acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+        profile,
+        manifest,
+        clientName: 'fixture-shell',
+        clientVersion: '0.0.0-test',
+        onPreflightPhase: (phase) => phases.push(phase),
+        dependencies: value.dependencies,
+      });
+      const rejection = expect(connection).rejects.toThrow('ACP provisioning_read timed out');
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await rejection;
+      expect(phases).toEqual(['initialize', 'methods', 'directory', 'provisioning_read']);
+      expect(value.validate).not.toHaveBeenCalled();
+      expect(value.close).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reads and requires the consumer-declared live domain adapter descriptor', async () => {

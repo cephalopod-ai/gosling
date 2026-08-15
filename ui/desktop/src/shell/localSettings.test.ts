@@ -192,4 +192,48 @@ describe('shell local settings recovery and store', () => {
     expect(first.read().workspace.lastWorkingDirectory).toBe(path.join(root, 'a-project'));
     expect(second.read().workspace.lastWorkingDirectory).toBe(path.join(root, 'b-project'));
   });
+
+  it('preserves the committed document and recovers after an interrupted temporary write', () => {
+    const root = temporaryRoot();
+    const file = path.join(root, 'shell-settings.json');
+    const initial = defaultShellLocalSettings();
+    initial.appearance.theme = 'dark';
+    writeShellLocalSettings(file, initial);
+
+    const interrupted = path.join(root, `.shell-settings.json.${process.pid}.tmp`);
+    fs.writeFileSync(interrupted, '{"schemaVersion":', { mode: 0o600 });
+    const replacement = defaultShellLocalSettings();
+    replacement.appearance.theme = 'light';
+
+    expect(() => writeShellLocalSettings(file, replacement)).toThrow();
+    expect(readShellLocalSettings(file)).toEqual(initial);
+    expect(fs.existsSync(interrupted)).toBe(false);
+
+    writeShellLocalSettings(file, replacement);
+    expect(readShellLocalSettings(file)).toEqual(replacement);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'preserves the committed document and recovers after directory permission denial',
+    () => {
+      const root = temporaryRoot();
+      const file = path.join(root, 'shell-settings.json');
+      const initial = defaultShellLocalSettings();
+      initial.appearance.theme = 'dark';
+      writeShellLocalSettings(file, initial);
+
+      const replacement = defaultShellLocalSettings();
+      replacement.appearance.theme = 'light';
+      fs.chmodSync(root, 0o500);
+      try {
+        expect(() => writeShellLocalSettings(file, replacement)).toThrow();
+        expect(readShellLocalSettings(file)).toEqual(initial);
+      } finally {
+        fs.chmodSync(root, 0o700);
+      }
+
+      writeShellLocalSettings(file, replacement);
+      expect(readShellLocalSettings(file)).toEqual(replacement);
+    }
+  );
 });

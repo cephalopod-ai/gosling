@@ -17,7 +17,18 @@ Finish a copy-free, least-privilege shared foundation before DAWES, math, Projec
 
 ## Current decision
 
-**Historical host substrate: accepted on its recorded revision. Current Default Shell additions: in progress and not yet revision-bound.**
+**Historical host substrate: accepted on its recorded revision. Current Default Shell additions: isolated on a clean candidate; exact-SHA CI and the operator decision are external gate evidence.**
+
+2026-08-15 corrective status: merged `main` at
+`0140e8169c231539c61a4dce98d4e713eccd07ce` is green, and supported-host package/readback,
+packaged renderer-to-backend startup, and full-Gosling-plus-two-shell coexistence now pass. The
+packaged startup replay found and locally fixed an unbounded credential/Keychain stall; the
+follow-up audit also fixed unknown selected-profile acceptance and strengthened live session
+pinning. The corrected candidate is isolated as one clean local revision and its profiles report
+`sourceClean:true`. The final handoff must bind a successful mandatory CI run to that exact SHA and
+record the operator's explicit decision; this source document does not infer those post-commit
+facts, and the gate is **NO-GO** without both. See
+[`audits/ds7-acceptance.md`](audits/ds7-acceptance.md) for the superseding reassessment.
 
 The operator has narrowed the next MVP to a generic Default Shell template and explicitly deferred
 all renderer and named-shell work until its pre-GUI boundaries are complete. ADR-0014 and
