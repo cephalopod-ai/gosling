@@ -10,11 +10,17 @@ import { connectShellAcp, provisioningIssueSummaries, ShellCompatibilityError } 
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
 
 const sessionInfoMethod = '_gosling/unstable/session/info';
+const mainOwnedMethods = [
+  '_gosling/unstable/shell/credentials/list',
+  '_gosling/unstable/shell/directory/validate',
+  '_gosling/unstable/shell/modules/list',
+];
 const methods = [
   sessionInfoMethod,
   '_gosling/unstable/shell/handoff/prepare',
   '_gosling/unstable/shell/provisioning/read',
   '_gosling/unstable/shell/provisioning/validate',
+  ...mainOwnedMethods,
 ];
 const product = {
   id: 'gosling-shell-fixture-a',
@@ -526,6 +532,39 @@ describe('shell ACP runtime', () => {
     });
     expect(value.read).not.toHaveBeenCalled();
     expect(value.close).toHaveBeenCalledOnce();
+  });
+
+  it('requires the methods main always uses, even when nothing declares them', async () => {
+    const declaredNothing: ShellBuildManifest = {
+      ...manifest,
+      compatibility: { ...manifest.compatibility, requiredMethods: [sessionInfoMethod] },
+    };
+    const bareProfile: ResolvedShellProductProfile = {
+      ...profile,
+      compatibility: { ...profile.compatibility, requiredMethods: [sessionInfoMethod] },
+    };
+
+    for (const missing of mainOwnedMethods) {
+      const value = harness();
+      const incompatible = response();
+      const shell = incompatible.agentCapabilities!._meta!.goslingShell as {
+        availableMethods: string[];
+      };
+      shell.availableMethods = shell.availableMethods.filter((method) => method !== missing);
+      value.initialize.mockResolvedValue(incompatible);
+
+      await expect(
+        connectShellAcp({
+          acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+          profile: bareProfile,
+          manifest: declaredNothing,
+          clientName: 'fixture-shell',
+          clientVersion: '0.0.0-test',
+          dependencies: value.dependencies,
+        })
+      ).rejects.toMatchObject({ result: { compatible: false, code: 'METHOD_UNAVAILABLE' } });
+      expect(value.read).not.toHaveBeenCalled();
+    }
   });
 
   it('rejects runtime identity after provisioning confirms the fixed identity', async () => {

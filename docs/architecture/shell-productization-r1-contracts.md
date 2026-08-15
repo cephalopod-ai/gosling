@@ -139,6 +139,12 @@ already are:
 | `session.detach` | invoke | none beyond generation | typed result <=8 KiB | releases the local one-session slot so a different directory can be chosen; permitted only from `active` — a create or resume still awaiting the backend would otherwise finish afterwards and reinstate a session nobody holds — and refuses while a prompt attempt streams or an interaction is pending; never deletes or mutates the server session, which stays resumable by ID |
 | `confirmation.respond` | invoke | action ID + approve\|deny | on approve: bounded `DomainActionResponse` payload <=64 KiB; on deny/reject: status <=1 KiB | main relays to the Rust server, which rejects replay/expired/foreign action ID and, on approve, executes the already-pending action immediately (it retained the action/input from the original `domain.action` call) and returns the result inline — there is no second `perform_domain_action` round trip and no token ever crosses the main/server boundary |
 
+Three methods are required of the backend regardless of what a consumer declares, because main uses
+them on every startup: `_gosling/unstable/shell/directory/validate`,
+`_gosling/unstable/shell/credentials/list`, and `_gosling/unstable/shell/modules/list`. A backend
+without them is `METHOD_UNAVAILABLE` at the compatibility gate rather than a generic startup failure
+once the call is attempted.
+
 Provisioning read/validate accept an optional `workingDir`; main restores the remembered directory
 before the compatibility gate so a product with project-local extensions or skills is judged against
 the directory its sessions will run in rather than the backend's startup directory.

@@ -318,12 +318,24 @@ function assertSessionCapabilities(response: InitializeResponse): void {
   }
 }
 
+/// Methods main uses on every startup, whatever the consumer declares.
+///
+/// The directory is restored and the credential catalog and module inventory are read before the
+/// shell is ready, so a backend missing them is incompatible rather than merely failing later:
+/// without this the call would surface as a generic startup failure instead of METHOD_UNAVAILABLE.
+const MAIN_OWNED_METHODS = [
+  '_gosling/unstable/shell/credentials/list',
+  '_gosling/unstable/shell/directory/validate',
+  '_gosling/unstable/shell/modules/list',
+];
+
 function requiredMethods(
   manifest: ShellBuildManifest,
   profile: ResolvedShellProductProfile
 ): string[] {
   return [
     ...new Set([
+      ...MAIN_OWNED_METHODS,
       ...profile.compatibility.requiredMethods,
       ...(manifest.consumer?.requiredMethods ?? []),
     ]),
