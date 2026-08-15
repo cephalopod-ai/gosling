@@ -188,8 +188,12 @@ The repository's Codex reviewer (`chatgpt-codex-connector`) automatically review
   SHA** for the fixes it described. Corrected above to name `0fa837e4f0bd81be9ec2cb90b80c323ceb386463`
   directly, per this document's own evidence rule.
 
-These three fixes, plus the two above, landed together in one further commit on this branch before
-merge to `main` (see the merge commit recorded in Current CI below for the exact SHA).
+These three fixes landed in commit `c7d18e110219f45ef87fc81decb0212f4a3e7e03` on the same branch.
+Re-ran the full verification set on that commit: `cargo test -p gosling --lib domain_adapter`
+(15/15, including 20 repeated runs of the idle-crash test alone to stress the race fix),
+`pnpm run typecheck` (clean), `pnpm exec vitest run src/shell` (18 files, 166/166, including the
+new directory/credential-clear regression test), `cargo fmt --all -- --check` (clean),
+`cargo clippy --workspace --all-targets --exclude v8 -- -D warnings` (clean).
 
 ## Current CI
 
