@@ -106,6 +106,63 @@ All commands run with `source bin/activate-hermit` from repository root unless n
   "package the committed Default Shell template" requirement for the current host target.
   Signing, notarization, and other-platform readback remain R6/R7, as scoped.
 
+## Post-audit validation pass (operator-requested, before CA-7 decision)
+
+Per the operator's explicit request to "validate previous work, do a walkthrough, and patch any
+issues surfaced before I make a GO decision," an independent multi-agent review ran against the
+CA-2–CA-5 diff (branch `claude/ca2-ca5-default-shell-gaps`, on top of the `e5d407f37e` commit
+audited above). It surfaced real findings, all fixed in a follow-up commit on the same branch (see
+`git log` for the exact SHA):
+
+- **Generation-fencing gap (most severe, cross-corroborated by 5 independent reviewers)**:
+  `bootstrap.ts`'s `settingsAppearanceUpdate` and `settingsReset` operations did not check
+  `request.generation` against the live controller generation before mutating settings — every
+  other mutating shell IPC channel in this codebase enforces this fencing, but the CA-2 settings
+  wiring omitted it. Fixed: both operations now throw `settings request generation is stale` when
+  stale, matching the established pattern; `settingsReset` also re-checks after its
+  `showConfirmDialog` await, the same hazard `directoryController.ts` already guards against. New
+  regression test added to `bootstrap.test.ts`.
+- Smaller correctness/duplication fixes: `process_is_alive` deduped against
+  `crates/gosling/src/subprocess.rs` instead of a second implementation in
+  `domain_adapter.rs`/`shell_runtime_e2e_test.rs`; an idle-crash test race from `tokio::watch`'s
+  subscribe-after-change semantics; missing `multi_thread` tokio flavor on two e2e tests that need
+  it; a `free_port()` collision guard in the coexistence test; a credential-selection test that
+  only asserted its `Err` branch now also asserts a real session on `Ok`; `AdapterRegistration`
+  and `write_neutral_provisioning` boilerplate deduped across fixture writers/tests; settings
+  validation constants (`theme` enum, `textScale` bounds) deduped between `ipcMain.ts` and
+  `localSettings.ts` into shared exports; `PARAMETERLESS_READ_CHANNELS` simplified from a `Set` to
+  match the file's existing inline-`||` idiom; boundary-value (`0`, `0.8`, `2`) test coverage added
+  for `textScale`.
+- **CA-3 packaging evidence gap**: CA-5's fresh package+verify pass exercised only
+  `default-shell-template`, which CA-3 had flipped to `selectable_catalog` — leaving no committed,
+  packaged, independently-verified evidence that the `fixed` policy (the pre-DS-4 default, and
+  still the default for any provisioning document that omits `credentialPolicy`) packages and
+  verifies correctly. Closed by packaging and independently verifying `fixture-a`, which declares
+  no `credentialPolicy` and therefore exercises `ShellCredentialPolicy::Fixed`
+  (`crates/gosling-sdk-types/src/shell.rs:53-56`):
+  ```
+  node scripts/package-shell.js fixtures/shell-products/fixture-a/product-profile.json \
+    --consumer fixtures/shell-consumers/consumer-a/shell-consumer.json \
+    --platform darwin --arch arm64
+  # -> profileHash c99e5901a56664291976a7e1b5d49583aabf9ebfab6e185b4cc5e5ea9bdb6375
+  #    binaryHash  b1457546544e8cdcd83608f0d419f4ad075eae3aa3aafe0f719a11d964e15e0c
+
+  node scripts/verify-shell-package.js fixtures/shell-products/fixture-a/product-profile.json \
+    --consumer fixtures/shell-consumers/consumer-a/shell-consumer.json \
+    --platform darwin --arch arm64 \
+    --package "out/Gosling Shell Fixture A-darwin-arm64" \
+    --binary build/shell-packages/gosling-shell-fixture-a/macos-arm64/bin/gosling
+  # -> independently re-derives the identical profileHash/binaryHash; exit 0
+  ```
+- Re-ran the full verification set after all fixes: `cargo test -p gosling --lib domain_adapter`
+  (15/15), `cargo test -p gosling-cli --test shell_runtime_e2e_test` (6/6), `pnpm run typecheck`
+  (clean), `pnpm exec vitest run src/shell` (18 files, 165/165, including the new generation-fencing
+  regression and the new `textScale` boundary cases), `cargo fmt --all -- --check` (clean),
+  `cargo clippy --workspace --all-targets --exclude v8 -- -D warnings` (clean).
+
+This pass found and closed real gaps; it does not change the CA-7 decision below, which remains the
+operator's to make.
+
 ## Current CI
 
 - **PR #53** (`7c66c590`): GitHub Actions run

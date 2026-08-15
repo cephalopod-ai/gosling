@@ -421,6 +421,12 @@ describe('shell IPC registration', () => {
       invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0.1 })
     ).rejects.toThrow('textScale must be');
     await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0 })
+    ).rejects.toThrow('textScale must be');
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 2.1 })
+    ).rejects.toThrow('textScale must be');
+    await expect(
       invoke(shellIpcChannels.settingsAppearanceUpdate, {
         generation: 1,
         theme: 'dark',
@@ -435,6 +441,12 @@ describe('shell IPC registration', () => {
     await expect(
       invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1 })
     ).resolves.toMatchObject({ appearance: { theme: 'system' } });
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0.8 })
+    ).resolves.toMatchObject({ appearance: { textScale: 0.8 } });
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 2 })
+    ).resolves.toMatchObject({ appearance: { textScale: 2 } });
   });
 
   it('requires an explicit user gesture before settings.reset dispatches', async () => {

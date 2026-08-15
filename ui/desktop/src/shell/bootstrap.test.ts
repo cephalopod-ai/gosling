@@ -338,6 +338,29 @@ describe('shell bootstrap', () => {
     );
   });
 
+  it('rejects settings mutations carrying a stale generation, like every other mutating channel', async () => {
+    const value = harness();
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+
+    await expect(
+      value.handlers.get(shellIpcChannels.settingsAppearanceUpdate)!(event, {
+        generation: 2,
+        theme: 'dark',
+      })
+    ).rejects.toThrow('generation is stale');
+    await expect(
+      value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+        generation: 2,
+        userGesture: true,
+      })
+    ).rejects.toThrow('generation is stale');
+    expect(value.adapter.showConfirmDialog).not.toHaveBeenCalled();
+  });
+
   it('relays domain reads, actions, and confirmation through the verified active session only', async () => {
     const snapshot = vi.fn(async () => ({
       domainId: 'neutral-fixture',

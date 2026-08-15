@@ -78,14 +78,14 @@ pub fn configure_shell_owned_subprocess(command: &mut Command) {
 }
 
 #[cfg(unix)]
-async fn process_is_alive(pid: u32) -> bool {
+pub async fn process_is_alive(pid: u32) -> bool {
     // SAFETY: kill(pid, 0) only probes for the process's existence; it sends no signal.
     let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
     result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 #[cfg(windows)]
-async fn process_is_alive(pid: u32) -> bool {
+pub async fn process_is_alive(pid: u32) -> bool {
     let mut command = Command::new("tasklist");
     command
         .args(["/FI", &format!("PID eq {pid}"), "/NH"])

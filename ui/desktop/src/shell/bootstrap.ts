@@ -377,11 +377,17 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         recovery: settings.recovery(),
       }),
       settingsAppearanceUpdate: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('settings request generation is stale');
+        }
         const { theme, textScale } = request;
         const updated = settings.setAppearance({ theme, textScale });
         return { appearance: updated.appearance, recovery: settings.recovery() };
       },
-      settingsReset: async () => {
+      settingsReset: async (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('settings request generation is stale');
+        }
         const confirmation = await adapter.showConfirmDialog({
           title: 'Reset local settings',
           message: `Reset ${loaded.profile.product.displayName} settings?`,
@@ -391,11 +397,16 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
           confirmLabel: 'Reset',
           cancelLabel: 'Cancel',
         });
-        if (!confirmation.confirmed) {
-          return { appearance: settings.read().appearance, recovery: settings.recovery() };
+        // Re-check after the await: the runtime may have torn down or retried while the native
+        // dialog was open, the same hazard directoryController.ts guards for around its own
+        // showOpenDialog await.
+        if (request.generation !== controller.read().generation) {
+          throw new Error('settings request generation is stale');
         }
-        const reset = settings.reset();
-        return { appearance: reset.appearance, recovery: settings.recovery() };
+        const appearance = confirmation.confirmed
+          ? settings.reset().appearance
+          : settings.read().appearance;
+        return { appearance, recovery: settings.recovery() };
       },
     },
   });

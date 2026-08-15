@@ -31,6 +31,7 @@ import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController
 import type { ShellInteraction } from './interactionController';
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
+import { isValidShellTheme, isValidShellTextScale } from './localSettings';
 
 const MAX_INVOKE_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -391,19 +392,11 @@ function parseSettingsAppearanceUpdateRequest(
   const optionalKeys = ['theme', 'textScale'].filter((key) => key in value);
   assertExactKeys(value, ['generation', ...optionalKeys], 'request');
   assertGeneration(value.generation);
-  if ('theme' in value && !['system', 'light', 'dark'].includes(value.theme as string)) {
+  if ('theme' in value && !isValidShellTheme(value.theme)) {
     throw new Error('theme must be system, light, or dark');
   }
-  if ('textScale' in value) {
-    const textScale = value.textScale;
-    if (
-      typeof textScale !== 'number' ||
-      !Number.isFinite(textScale) ||
-      textScale < 0.8 ||
-      textScale > 2
-    ) {
-      throw new Error('textScale must be a number between 0.8 and 2');
-    }
+  if ('textScale' in value && !isValidShellTextScale(value.textScale)) {
+    throw new Error('textScale must be a number between 0.8 and 2');
   }
   return value as unknown as ShellSettingsAppearanceUpdateRequest;
 }
@@ -551,11 +544,6 @@ export function registerShellIpc(input: {
     ],
   ];
 
-  const PARAMETERLESS_READ_CHANNELS: ReadonlySet<ShellIpcInvokeChannel> = new Set([
-    shellIpcChannels.runtimeRead,
-    shellIpcChannels.settingsRead,
-  ]);
-
   for (const [channel, operation] of registrations) {
     ipcMain.handle(channel, async (event, request) => {
       assertTrustedSender(event, renderer);
@@ -563,7 +551,9 @@ export function registerShellIpc(input: {
       if (capability && declaredCapabilities && !declaredCapabilities.has(capability)) {
         throw new Error(`shell consumer did not declare ${capability}`);
       }
-      if (PARAMETERLESS_READ_CHANNELS.has(channel) && request !== undefined) {
+      const isParameterlessReadChannel =
+        channel === shellIpcChannels.runtimeRead || channel === shellIpcChannels.settingsRead;
+      if (isParameterlessReadChannel && request !== undefined) {
         throw new Error(`${channel} does not accept a request`);
       }
       const response = await operation(request);

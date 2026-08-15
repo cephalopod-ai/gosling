@@ -9,6 +9,23 @@ export const SHELL_SETTINGS_SCHEMA_VERSION = 1;
 
 export type ShellTheme = 'system' | 'light' | 'dark';
 
+export const SHELL_THEME_VALUES: readonly ShellTheme[] = ['system', 'light', 'dark'];
+const MIN_SHELL_TEXT_SCALE = 0.8;
+const MAX_SHELL_TEXT_SCALE = 2;
+
+export function isValidShellTheme(value: unknown): value is ShellTheme {
+  return typeof value === 'string' && (SHELL_THEME_VALUES as readonly string[]).includes(value);
+}
+
+export function isValidShellTextScale(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= MIN_SHELL_TEXT_SCALE &&
+    value <= MAX_SHELL_TEXT_SCALE
+  );
+}
+
 export interface ShellLocalSettings {
   schemaVersion: 1;
   appearance: {
@@ -60,11 +77,8 @@ export function parseShellLocalSettings(value: unknown): ShellLocalSettings {
     throw new Error('invalid shell appearance settings');
   }
   if (
-    !['system', 'light', 'dark'].includes(value.appearance.theme as string) ||
-    typeof value.appearance.textScale !== 'number' ||
-    !Number.isFinite(value.appearance.textScale) ||
-    value.appearance.textScale < 0.8 ||
-    value.appearance.textScale > 2
+    !isValidShellTheme(value.appearance.theme) ||
+    !isValidShellTextScale(value.appearance.textScale)
   ) {
     throw new Error('invalid shell appearance settings');
   }

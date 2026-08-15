@@ -251,6 +251,19 @@ mod tests {
         }
     }
 
+    fn registration(args: Vec<String>, timeout_secs: u64) -> AdapterRegistration {
+        AdapterRegistration {
+            domain_id: "neutral-fixture".to_string(),
+            cmd: "node".to_string(),
+            args,
+            envs: Default::default(),
+            env_keys: Vec::new(),
+            timeout: Some(timeout_secs),
+            cwd: None,
+            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
+        }
+    }
+
     fn write_fixture(directory: &TempDir) -> AdapterRegistration {
         let script = directory.path().join("adapter.mjs");
         fs::write(
@@ -310,16 +323,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 "#,
         )
         .unwrap();
-        AdapterRegistration {
-            domain_id: "neutral-fixture".to_string(),
-            cmd: "node".to_string(),
-            args: vec![script.display().to_string()],
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            timeout: Some(10),
-            cwd: None,
-            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
-        }
+        registration(vec![script.display().to_string()], 10)
     }
 
     fn write_hanging_fixture(directory: &TempDir) -> AdapterRegistration {
@@ -358,16 +362,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 "#,
         )
         .unwrap();
-        AdapterRegistration {
-            domain_id: "neutral-fixture".to_string(),
-            cmd: "node".to_string(),
-            args: vec![script.display().to_string()],
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            timeout: Some(1),
-            cwd: None,
-            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
-        }
+        registration(vec![script.display().to_string()], 1)
     }
 
     fn write_malformed_fixture(directory: &TempDir) -> AdapterRegistration {
@@ -410,16 +405,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 "#,
         )
         .unwrap();
-        AdapterRegistration {
-            domain_id: "neutral-fixture".to_string(),
-            cmd: "node".to_string(),
-            args: vec![script.display().to_string()],
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            timeout: Some(10),
-            cwd: None,
-            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
-        }
+        registration(vec![script.display().to_string()], 10)
     }
 
     fn write_crashing_fixture(directory: &TempDir) -> AdapterRegistration {
@@ -460,31 +446,13 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 "#,
         )
         .unwrap();
-        AdapterRegistration {
-            domain_id: "neutral-fixture".to_string(),
-            cmd: "node".to_string(),
-            args: vec![script.display().to_string()],
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            timeout: Some(10),
-            cwd: None,
-            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
-        }
+        registration(vec![script.display().to_string()], 10)
     }
 
     fn write_startup_crashing_fixture(directory: &TempDir) -> AdapterRegistration {
         let script = directory.path().join("startup-crashing-adapter.mjs");
         fs::write(&script, "process.exit(9);\n").unwrap();
-        AdapterRegistration {
-            domain_id: "neutral-fixture".to_string(),
-            cmd: "node".to_string(),
-            args: vec![script.display().to_string()],
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            timeout: Some(10),
-            cwd: None,
-            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
-        }
+        registration(vec![script.display().to_string()], 10)
     }
 
     fn write_idle_crashing_fixture(directory: &TempDir) -> AdapterRegistration {
@@ -519,23 +487,18 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (request.method === 'tools/call' && request.params.name === 'descriptor') {
     reply(request.id, { content: [], structuredContent: descriptor, isError: false });
     // Exits on its own once negotiated, independent of any subsequent call — an idle crash
-    // rather than one triggered by an in-flight snapshot/action request.
-    setTimeout(() => process.exit(23), 50);
+    // rather than one triggered by an in-flight snapshot/action request. The delay is generous
+    // (well beyond local IPC latency) so the test's subscribe_status() call, which happens
+    // immediately after connect() returns, cannot lose the race against this timer even under
+    // CI scheduler contention — tokio::watch receivers only observe changes sent after they
+    // subscribe, so a too-tight margin here could make the test hang until its own timeout.
+    setTimeout(() => process.exit(23), 300);
   }
 });
 "#,
         )
         .unwrap();
-        AdapterRegistration {
-            domain_id: "neutral-fixture".to_string(),
-            cmd: "node".to_string(),
-            args: vec![script.display().to_string()],
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            timeout: Some(10),
-            cwd: None,
-            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
-        }
+        registration(vec![script.display().to_string()], 10)
     }
 
     fn write_idle_fixture(directory: &TempDir, pid_file: &Path) -> AdapterRegistration {
@@ -577,24 +540,10 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 "#,
         )
         .unwrap();
-        AdapterRegistration {
-            domain_id: "neutral-fixture".to_string(),
-            cmd: "node".to_string(),
-            args: vec![script.display().to_string(), pid_file.display().to_string()],
-            envs: Default::default(),
-            env_keys: Vec::new(),
-            timeout: Some(10),
-            cwd: None,
-            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
-        }
-    }
-
-    fn process_is_alive(pid: &str) -> bool {
-        std::process::Command::new("kill")
-            .args(["-0", pid])
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
+        registration(
+            vec![script.display().to_string(), pid_file.display().to_string()],
+            10,
+        )
     }
 
     #[test]
@@ -865,12 +814,12 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
         .await
         .unwrap();
 
-        let pid = tokio::time::timeout(Duration::from_secs(2), async {
+        let pid: u32 = tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 if let Ok(contents) = fs::read_to_string(&pid_file) {
                     let trimmed = contents.trim();
-                    if !trimmed.is_empty() {
-                        return trimmed.to_string();
+                    if let Ok(pid) = trimmed.parse() {
+                        return pid;
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
@@ -879,18 +828,17 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
         .await
         .expect("adapter wrote its pid before timing out");
         assert!(
-            process_is_alive(&pid),
+            crate::subprocess::process_is_alive(pid).await,
             "adapter process should be running before shutdown"
         );
 
         drop(adapter);
         // OperatorChildGuard::drop spawns an async reap task on the current runtime; give it a
         // bounded window rather than asserting immediately.
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while process_is_alive(&pid) {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            crate::subprocess::wait_for_process_exit(pid, Duration::from_millis(20)),
+        )
         .await
         .expect("adapter process must not survive a forced shutdown");
     }
