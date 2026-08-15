@@ -20,6 +20,7 @@ This package is the durable, resumable plan for turning the merged Gosling shell
     revision-bound PG-50 evidence and GO decision authorizing R5.
 14. [`../../architecture/default-shell-template.md`](../../architecture/default-shell-template.md) — the operator-directed generic Default Shell pre-GUI milestone that now precedes renderer work.
 15. [`default-shell-ds3-ds7-implementation-plan.md`](default-shell-ds3-ds7-implementation-plan.md) — detailed execution units, contract-freeze steps, tests, rollback, and exact GO/NO-GO gate for the remaining Default Shell foundation.
+16. [`audits/default-shell-pre-gui-corrective-audit.md`](audits/default-shell-pre-gui-corrective-audit.md) — fresh audit of session discovery/replay, interactions, failures, privacy, and the current GUI gate.
 
 ## Current status
 
@@ -40,6 +41,7 @@ blocked until M5 and R6–R8 respectively.
 No production signing, notarization, publication, updater promotion, production identifier, release destination, or named project shell is authorized or implemented. Resume from `build-state.md` and verify the current repository instead of trusting an earlier checkpoint blindly.
 
 The current operator direction narrows the next MVP to the generic Default Shell template. Complete
-its DS-1–DS-7 nonvisual gates before implementing its renderer. The historical PG-50 acceptance is
-valid only for its exact recorded revision; later local foundation changes require their own clean,
-CI-bound acceptance.
+its DS-1–DS-7 nonvisual gates before implementing its renderer. A 2026-08-15 corrective workflow and
+data-flow patch is locally validated but not yet committed or bound to current CI; consequently the
+current decision remains **NO-GO for GUI implementation**. The historical PG-50 and earlier DS-7
+evidence remain valid only for their exact recorded revisions.

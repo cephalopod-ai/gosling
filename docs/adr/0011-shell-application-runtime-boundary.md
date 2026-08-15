@@ -41,7 +41,7 @@ Extend `ShellAcpConnection` and the IPC allowlist with:
 - `prompt.submit` — bounded text prompt, tagged with a main-generated **prompt-attempt ID**; only
   one attempt may be outstanding per session (per `SHP-ASM-032`, one active session initially).
 - `prompt.cancel` — cancels the current attempt by ID; repeating the call for the same still-current
-  attempt is an idempotent no-op success (it does not silently accept a *different* or *foreign*
+  attempt is an idempotent no-op success (it does not silently accept a _different_ or _foreign_
   attempt ID as if it matched — an ID that was never issued, or that names a prior generation/
   session/attempt, is rejected as stale). This is the same idempotency posture `runtime.stop` already
   uses.
@@ -98,13 +98,13 @@ vocabulary (SHP-REQ-037).
 
 ## Alternatives considered
 
-| Alternative | Why rejected |
-| --- | --- |
-| Expose ACP directly to the renderer (drop main-owned proxying) | Reverses ADR-0008's trust boundary and SHP-ASM-030; renderer code is the least-trusted consumer-supplied surface (ADR-0010) and must not hold the loopback token. |
-| Generic RPC/passthrough channel forwarding arbitrary ACP method names | PG-INV-001/PG-INV-004 forbid undeclared method invocation and require capability equality; a passthrough channel cannot be sender/field/state validated per-operation. |
-| Auto-approve permissions/elicitations for "trusted" first-party consumers to unblock UX | SHP-RSK-034 and this repo's no-fake-success rule forbid silent approval; there is no mechanism to distinguish a "trusted" consumer at the IPC layer once ADR-0010's external consumers exist. |
-| Support N concurrent sessions in the first contract | `SHP-ASM-032` records one session as the conservative initial default; concurrency multiplies the cancel/reconnect/permission state space this ADR must prove before any UI exists. Deferred pending two-consumer evidence. |
-| Reuse full-Desktop's broad preload/global ACP singleton for callbacks | AGENTS.md and PSR-003's disposition explicitly forbid importing broad full-Desktop preload/global architecture; only pure, contract-fitting reducers may be reused (per `SHP-ASM-034`, still to validate at R3). |
+| Alternative                                                                             | Why rejected                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Expose ACP directly to the renderer (drop main-owned proxying)                          | Reverses ADR-0008's trust boundary and SHP-ASM-030; renderer code is the least-trusted consumer-supplied surface (ADR-0010) and must not hold the loopback token.                                                           |
+| Generic RPC/passthrough channel forwarding arbitrary ACP method names                   | PG-INV-001/PG-INV-004 forbid undeclared method invocation and require capability equality; a passthrough channel cannot be sender/field/state validated per-operation.                                                      |
+| Auto-approve permissions/elicitations for "trusted" first-party consumers to unblock UX | SHP-RSK-034 and this repo's no-fake-success rule forbid silent approval; there is no mechanism to distinguish a "trusted" consumer at the IPC layer once ADR-0010's external consumers exist.                               |
+| Support N concurrent sessions in the first contract                                     | `SHP-ASM-032` records one session as the conservative initial default; concurrency multiplies the cancel/reconnect/permission state space this ADR must prove before any UI exists. Deferred pending two-consumer evidence. |
+| Reuse full-Desktop's broad preload/global ACP singleton for callbacks                   | AGENTS.md and PSR-003's disposition explicitly forbid importing broad full-Desktop preload/global architecture; only pure, contract-fitting reducers may be reused (per `SHP-ASM-034`, still to validate at R3).            |
 
 ## Consequences
 
@@ -121,3 +121,27 @@ claim the workflow works.
 No new dependency is approved. Implementation reuses the existing generated
 `@repo-makeover/gosling-sdk` types and the existing `ShellGenerationRequest`/compatibility/
 diagnostics machinery.
+
+## 2026-08-15 corrective clarification
+
+The generic Default Shell readiness audit found four implementation gaps in this accepted boundary:
+consumers could submit prompts without declaring permission/elicitation response channels; compacted
+resume updates arrived while the controller was `resuming` and were discarded; the renderer had no
+bounded session discovery or event-gap repair operation; and invoke failures still required parsing
+arbitrary exception text. The corrective implementation therefore adds, without changing ACP
+ownership:
+
+- manifest prerequisites that pair prompt submission with both interaction response channels and
+  pair domain actions with confirmation responses;
+- current-directory `session.list` capability negotiation and safe provider/model session context;
+- explicit `history`/`live` update delivery, a 256-update/48-KiB active-session ledger, and
+  `session.transcript.read` with honest truncation/integrity facts;
+- structured permission/form summaries, schema-validated elicitation responses, and a safe main
+  mirror of the Rust-owned domain-confirmation record;
+- stable bounded `ShellOperationFailure` envelopes; and
+- rejection of `agent_thought_chunk` so private reasoning is not a renderer content role.
+
+The renderer still receives no ACP connection, credential value, raw tool input/output, full path in
+permission context, raw backend error, or authority to enumerate sessions outside the accepted
+working directory. ADR-0013's durable artifact inventory remains the source of truth for Outputs;
+its existing Electron artifact guard must mediate any later GUI open/reveal action.

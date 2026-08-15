@@ -20,8 +20,11 @@ import {
 import {
   PROTOCOL_VERSION,
   type InitializeResponse,
+  type ListSessionsRequest,
+  type ListSessionsResponse,
   type LoadSessionResponse,
   type NewSessionResponse,
+  type SessionInfo,
 } from '@agentclientprotocol/sdk';
 import path from 'node:path';
 import type { ClosableAcpStream } from '../acp/createWebSocketStream';
@@ -34,12 +37,28 @@ import {
 } from './compatibility';
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
 
-const ACP_INITIALIZE_TIMEOUT_MS = 10_000;
+const ACP_PREFLIGHT_TIMEOUT_MS = 10_000;
+
+export type ShellAcpPreflightPhase =
+  | 'initialize'
+  | 'methods'
+  | 'directory'
+  | 'provisioning_read'
+  | 'provisioning_validate'
+  | 'compatibility';
 
 export interface ShellSession {
   sessionId: string;
   workingDir: string;
+  title: string | null;
+  providerId: string | null;
+  modelId: string | null;
   resumeIntegrity?: 'clean' | 'uncertain';
+}
+
+export interface ShellSessionSummary extends ShellSession {
+  updatedAt: string | null;
+  messageCount: number | null;
 }
 
 export interface ShellAcpClient {
@@ -48,6 +67,7 @@ export interface ShellAcpClient {
   initialize(params: Parameters<GoslingClient['initialize']>[0]): Promise<InitializeResponse>;
   newSession(params: Parameters<GoslingClient['newSession']>[0]): Promise<NewSessionResponse>;
   loadSession(params: Parameters<GoslingClient['loadSession']>[0]): Promise<LoadSessionResponse>;
+  listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse>;
   prompt(params: Parameters<GoslingClient['prompt']>[0]): ReturnType<GoslingClient['prompt']>;
   cancel(params: Parameters<GoslingClient['cancel']>[0]): ReturnType<GoslingClient['cancel']>;
   gosling: {
@@ -94,7 +114,8 @@ export interface ShellAcpConnection {
     workingDir: string;
     credentialProfileId?: string | null;
   }): Promise<ShellSession>;
-  resumeSession(sessionId: string): Promise<ShellSession>;
+  resumeSession(sessionId: string, workingDir: string): Promise<ShellSession>;
+  listSessions(workingDir: string): Promise<ShellSessionSummary[]>;
   validateDirectory(directory: string): Promise<ShellDirectoryValidateResponse_unstable>;
   listCredentials(): Promise<ShellCredentialListResponse_unstable>;
   listModules(workingDir: string | null): Promise<ShellModuleListResponse_unstable>;
@@ -179,14 +200,12 @@ function clientCallbacks(): () => GoslingClientCallbacks {
 function withTimeout<T>(
   promise: Promise<T>,
   milliseconds: number,
+  message: string,
   dependencies: ShellAcpRuntimeDependencies
 ): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<T>((_, reject) => {
-    timeoutId = dependencies.setTimeout(
-      () => reject(new Error('ACP initialization timed out')),
-      milliseconds
-    );
+    timeoutId = dependencies.setTimeout(() => reject(new Error(message)), milliseconds);
   });
   return Promise.race([promise, timeout]).finally(() => {
     if (timeoutId !== undefined) {
@@ -312,9 +331,17 @@ export function provisioningIssueSummaries(value: unknown): ShellProvisioningIss
   });
 }
 
-function assertSessionCapabilities(response: InitializeResponse): void {
-  if (response.agentCapabilities?.loadSession !== true) {
-    throw new Error('ACP initialization omitted the required load-session capability');
+function assertSessionCapabilities(
+  response: InitializeResponse,
+  required: readonly string[]
+): void {
+  for (const capability of required) {
+    if (capability === 'loadSession' && response.agentCapabilities?.loadSession !== true) {
+      throw new Error('ACP initialization omitted the required load-session capability');
+    }
+    if (capability === 'sessionList' && !response.agentCapabilities?.sessionCapabilities?.list) {
+      throw new Error('ACP initialization omitted the required session-list capability');
+    }
   }
 }
 
@@ -361,10 +388,48 @@ function assertAbsoluteWorkingDir(workingDir: string): string {
   return path.normalize(workingDir);
 }
 
-function asShellSession(sessionId: string, workingDir: string): ShellSession {
+function boundedNullable(value: unknown, maximum: number): string | null {
+  return typeof value === 'string' && value.length > 0 && value.length <= maximum ? value : null;
+}
+
+function sessionMetadata(info: SessionInfo): { providerId: string | null; modelId: string | null } {
+  const meta = info._meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return { providerId: null, modelId: null };
+  }
+  return {
+    providerId: boundedNullable(meta.providerId, 256),
+    modelId: boundedNullable(meta.modelId, 512),
+  };
+}
+
+function asShellSession(
+  sessionId: string,
+  workingDir: string,
+  details?: { title?: unknown; providerId?: unknown; modelId?: unknown }
+): ShellSession {
   return {
     sessionId: assertSessionId(sessionId),
     workingDir: assertAbsoluteWorkingDir(workingDir),
+    title: boundedNullable(details?.title, 4 * 1024),
+    providerId: boundedNullable(details?.providerId, 256),
+    modelId: boundedNullable(details?.modelId, 512),
+  };
+}
+
+function asShellSessionSummary(info: SessionInfo): ShellSessionSummary {
+  const metadata = sessionMetadata(info);
+  const messageCount = info._meta?.messageCount;
+  return {
+    ...asShellSession(String(info.sessionId), info.cwd, {
+      title: boundedNullable(info.title, 512),
+      ...metadata,
+    }),
+    updatedAt: boundedNullable(info.updatedAt, 128),
+    messageCount:
+      typeof messageCount === 'number' && Number.isSafeInteger(messageCount) && messageCount >= 0
+        ? messageCount
+        : null,
   };
 }
 
@@ -383,14 +448,19 @@ export async function connectShellAcp(input: {
   resolveWorkingDir?: (
     validate: (directory: string) => Promise<ShellDirectoryValidateResponse_unstable>
   ) => Promise<string | null>;
+  onPreflightPhase?: (phase: ShellAcpPreflightPhase) => void;
   dependencies?: ShellAcpRuntimeDependencies;
 }): Promise<ShellAcpConnection> {
   const dependencies = input.dependencies ?? defaultDependencies;
   const stream = dependencies.createStream(assertAuthenticatedLoopbackUrl(input.acpUrl));
   const client = dependencies.createClient(input.callbacks ?? clientCallbacks(), stream);
+  const preflight = <T>(promise: Promise<T>, phase: ShellAcpPreflightPhase) => {
+    input.onPreflightPhase?.(phase);
+    return withTimeout(promise, ACP_PREFLIGHT_TIMEOUT_MS, `ACP ${phase} timed out`, dependencies);
+  };
 
   try {
-    const initializeResponse = await withTimeout(
+    const initializeResponse = await preflight(
       client.initialize({
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
@@ -399,11 +469,14 @@ export async function connectShellAcp(input: {
         },
         clientInfo: { name: input.clientName, version: input.clientVersion },
       }),
-      ACP_INITIALIZE_TIMEOUT_MS,
-      dependencies
+      'initialize'
     );
     const metadata = readShellMetadata(initializeResponse);
-    assertSessionCapabilities(initializeResponse);
+    assertSessionCapabilities(
+      initializeResponse,
+      input.manifest.consumer?.requiredAgentCapabilities ?? ['loadSession']
+    );
+    input.onPreflightPhase?.('methods');
     const methodCompatibility = checkShellMethods(
       requiredMethods(input.manifest, input.profile),
       metadata.availableMethods
@@ -415,10 +488,21 @@ export async function connectShellAcp(input: {
       client.gosling.shellDirectoryValidate_unstable({
         path: assertAbsoluteWorkingDir(directory),
       });
-    const workingDir = (await input.resolveWorkingDir?.(validateDirectory)) ?? null;
+    const workingDir =
+      (await preflight(
+        input.resolveWorkingDir?.(validateDirectory) ?? Promise.resolve(null),
+        'directory'
+      )) ?? null;
     const provisioningScope = workingDir === null ? {} : { workingDir };
-    const read = await client.gosling.shellProvisioningRead_unstable(provisioningScope);
-    const validation = await client.gosling.shellProvisioningValidate_unstable(provisioningScope);
+    const read = await preflight(
+      client.gosling.shellProvisioningRead_unstable(provisioningScope),
+      'provisioning_read'
+    );
+    const validation = await preflight(
+      client.gosling.shellProvisioningValidate_unstable(provisioningScope),
+      'provisioning_validate'
+    );
+    input.onPreflightPhase?.('compatibility');
     const compatibility = checkShellCompatibility({
       profile: input.profile,
       manifest: input.manifest,
@@ -459,17 +543,27 @@ export async function connectShellAcp(input: {
             ...(credentialProfileId ? { shellCredentialProfileId: credentialProfileId } : {}),
           },
         });
-        return asShellSession(String(created.sessionId), cwd);
+        return asShellSession(String(created.sessionId), cwd, {
+          modelId: created.models?.currentModelId,
+        });
       },
-      resumeSession: async (sessionId) => {
+      resumeSession: async (sessionId, workingDir) => {
         const fixedSessionId = assertSessionId(sessionId);
+        const expectedWorkingDir = assertAbsoluteWorkingDir(workingDir);
         const info = await client.gosling.sessionInfo_unstable({ sessionId: fixedSessionId });
+        const metadata = sessionMetadata(info.session);
         const session = {
-          ...asShellSession(String(info.session.sessionId), info.session.cwd),
+          ...asShellSession(String(info.session.sessionId), info.session.cwd, {
+            title: info.session.title,
+            ...metadata,
+          }),
           resumeIntegrity: resumeIntegrity(info),
         };
         if (session.sessionId !== fixedSessionId) {
           throw new Error('session info returned a different sessionId');
+        }
+        if (session.workingDir !== expectedWorkingDir) {
+          throw new Error('session working directory does not match the selected directory');
         }
         await client.loadSession({
           sessionId: session.sessionId,
@@ -479,6 +573,25 @@ export async function connectShellAcp(input: {
         });
         return session;
       },
+      listSessions: async (workingDir) => {
+        const cwd = assertAbsoluteWorkingDir(workingDir);
+        const response = await withTimeout(
+          client.listSessions({
+            cwd,
+            _meta: {
+              types: ['acp'],
+              gosling: { archiveState: 'active', includeLastMessageSnippet: false },
+            },
+          }),
+          ACP_PREFLIGHT_TIMEOUT_MS,
+          'ACP session list timed out',
+          dependencies
+        );
+        return response.sessions
+          .map(asShellSessionSummary)
+          .filter((session) => session.workingDir === cwd)
+          .slice(0, 20);
+      },
       prompt: ({ sessionId, text, messageId }) =>
         client.prompt({
           sessionId: assertSessionId(sessionId),
@@ -486,11 +599,28 @@ export async function connectShellAcp(input: {
           prompt: [{ type: 'text', text }],
         }),
       cancel: ({ sessionId }) => client.cancel({ sessionId: assertSessionId(sessionId) }),
-      validateDirectory,
-      listCredentials: () => client.gosling.shellCredentialsList_unstable({}),
+      validateDirectory: (directory) =>
+        withTimeout(
+          validateDirectory(directory),
+          ACP_PREFLIGHT_TIMEOUT_MS,
+          'ACP directory validation timed out',
+          dependencies
+        ),
+      listCredentials: () =>
+        withTimeout(
+          client.gosling.shellCredentialsList_unstable({}),
+          ACP_PREFLIGHT_TIMEOUT_MS,
+          'ACP credential catalog timed out',
+          dependencies
+        ),
       listModules: async (workingDir) =>
-        client.gosling.shellModulesList_unstable(
-          workingDir === null ? {} : { workingDir: assertAbsoluteWorkingDir(workingDir) }
+        withTimeout(
+          client.gosling.shellModulesList_unstable(
+            workingDir === null ? {} : { workingDir: assertAbsoluteWorkingDir(workingDir) }
+          ),
+          ACP_PREFLIGHT_TIMEOUT_MS,
+          'ACP module inventory timed out',
+          dependencies
         ),
       prepareHandoff: (request) => client.gosling.shellHandoffPrepare_unstable(request),
       domainSnapshot: (request) => client.gosling.shellDomainSnapshot_unstable(request),

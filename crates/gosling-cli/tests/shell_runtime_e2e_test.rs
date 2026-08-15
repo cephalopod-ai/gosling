@@ -1,4 +1,6 @@
-use agent_client_protocol::schema::v1::{ClientCapabilities, InitializeRequest, NewSessionRequest};
+use agent_client_protocol::schema::v1::{
+    ClientCapabilities, InitializeRequest, LoadSessionRequest, NewSessionRequest,
+};
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo};
 use agent_client_protocol_http::HttpClient;
@@ -688,10 +690,135 @@ async fn shell_directory_credential_and_module_surfaces_are_live_and_bounded() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn resumed_shell_session_reapplies_current_directory_and_tool_policy() {
+    let root = TempDir::new().unwrap();
+    let work = TempDir::new().unwrap();
+    let other = TempDir::new().unwrap();
+    std::fs::create_dir_all(root.path().join("config")).unwrap();
+    std::fs::write(
+        root.path().join("config/config.yaml"),
+        "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\nGOSLING_DISABLE_KEYRING: true\n",
+    )
+    .unwrap();
+    let provisioning_path = root.path().join("provisioning.json");
+    let write_provisioning = |extensions: serde_json::Value, skill_ids: serde_json::Value| {
+        std::fs::write(
+            &provisioning_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schemaVersion": 1,
+                "identity": { "id": "ignored", "displayName": "Ignored", "version": "0" },
+                "session": { "extensions": extensions, "skillIds": skill_ids }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    };
+    write_provisioning(
+        serde_json::json!([
+            { "name": "developer", "availableTools": ["shell"] }
+        ]),
+        serde_json::json!([]),
+    );
+
+    let first_port = free_port();
+    let first_server = spawn_server(root.path(), "resume-policy", &provisioning_path, first_port);
+    wait_for_server(first_port).await;
+    let (first_cx, first_client_task) = connect(first_port).await;
+    let created = first_cx
+        .send_request(NewSessionRequest::new(work.path()))
+        .block_task()
+        .await
+        .unwrap();
+    let initial_tools: GetToolsResponse = custom(
+        &first_cx,
+        "_gosling/unstable/tools/list",
+        serde_json::to_value(GetToolsRequest {
+            session_id: created.session_id.0.to_string(),
+            extension_name: None,
+        })
+        .unwrap(),
+    )
+    .await;
+    assert!(
+        initial_tools
+            .tools
+            .iter()
+            .any(|tool| tool.name.contains("shell")),
+        "the first provisioning must establish the developer shell fixture: {:?}",
+        initial_tools.tools
+    );
+    first_client_task.abort();
+    drop(first_server);
+
+    write_provisioning(serde_json::json!([]), serde_json::Value::Null);
+    let second_port = free_port();
+    let _second_server = spawn_server(
+        root.path(),
+        "resume-policy",
+        &provisioning_path,
+        second_port,
+    );
+    wait_for_server(second_port).await;
+    let (second_cx, second_client_task) = connect(second_port).await;
+    let mismatch = second_cx
+        .send_request(LoadSessionRequest::new(
+            created.session_id.clone(),
+            other.path(),
+        ))
+        .block_task()
+        .await
+        .expect_err("a shell session must not move to another directory during resume");
+    assert_eq!(
+        mismatch.data.unwrap()["code"],
+        "SHELL_SESSION_DIRECTORY_MISMATCH"
+    );
+
+    second_cx
+        .send_request(LoadSessionRequest::new(
+            created.session_id.clone(),
+            std::fs::canonicalize(work.path()).unwrap(),
+        ))
+        .block_task()
+        .await
+        .expect("the stored canonical directory must remain resumable");
+    let resumed_tools: GetToolsResponse = custom(
+        &second_cx,
+        "_gosling/unstable/tools/list",
+        serde_json::to_value(GetToolsRequest {
+            session_id: created.session_id.0.to_string(),
+            extension_name: None,
+        })
+        .unwrap(),
+    )
+    .await;
+    assert!(
+        resumed_tools.tools.is_empty(),
+        "resume must replace the stored extension selection with current shell provisioning"
+    );
+    let stored = read_session(root.path(), "resume-policy", &created.session_id.0).await;
+    assert!(
+        EnabledExtensionsState::from_extension_data(&stored.extension_data)
+            .expect("resume must persist the current extension selection")
+            .extensions
+            .is_empty()
+    );
+    assert!(
+        ShellSkillSelectionState::from_extension_data(&stored.extension_data).is_none(),
+        "resume must remove an obsolete persisted shell skill selection"
+    );
+    second_client_task.abort();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn selectable_catalog_credential_policy_opens_the_catalog_and_caller_selection() {
     let root = TempDir::new().unwrap();
     let work = TempDir::new().unwrap();
     let provisioning_path = write_neutral_provisioning(root.path(), "selectable_catalog");
+    std::fs::write(
+        root.path().join("config/secrets.yaml"),
+        "OPENAI_API_KEY: shell-profile-test-key\n",
+    )
+    .unwrap();
 
     let port = free_port();
     let _server = spawn_server(
@@ -712,13 +839,14 @@ async fn selectable_catalog_credential_policy_opens_the_catalog_and_caller_selec
     )
     .await;
     assert_eq!(credentials.status, ShellCredentialCatalogStatus::Available);
+    let profile = credentials
+        .profiles
+        .iter()
+        .find(|profile| profile.provider_or_service_id == "openai")
+        .expect("test configuration must produce a safe OpenAI profile summary")
+        .clone();
 
-    // A caller-selected credential is no longer blanket-denied the way it is under `fixed` — it
-    // may still fail for other reasons (e.g. the profile doesn't exist), but never with the
-    // fixed-policy denial code, which would incorrectly claim this shell never opted into
-    // selection at all. Assert something concrete on both branches so a regression that makes
-    // this silently succeed-without-effect, or silently fail some other way, is still caught.
-    let result = cx
+    let unknown = cx
         .send_request(
             agent_client_protocol::UntypedMessage::new(
                 "session/new",
@@ -731,26 +859,38 @@ async fn selectable_catalog_credential_policy_opens_the_catalog_and_caller_selec
             .unwrap(),
         )
         .block_task()
-        .await;
-    match result {
-        Ok(value) => {
-            // `effective_credential_profile_id` passes the selected id through unchecked for
-            // `selectable_catalog` (crates/gosling/src/acp/shell.rs) — existence is resolved at
-            // use time, not session creation — so a real session must still come back.
-            assert!(
-                value.get("sessionId").and_then(|id| id.as_str()).is_some(),
-                "selectable_catalog must create a real session even for an unresolved \
-                 credential reference: {value:?}"
-            );
-        }
-        Err(error) => {
-            assert_ne!(
-                error.data.as_ref().and_then(|data| data["code"].as_str()),
-                Some("SHELL_CREDENTIAL_SELECTION_DENIED"),
-                "selectable_catalog must not reuse the fixed-policy blanket denial: {error:?}"
-            );
-        }
-    }
+        .await
+        .expect_err("an unknown selected profile must fail closed before session creation");
+    assert_eq!(
+        unknown.data.unwrap()["code"],
+        "SHELL_CREDENTIAL_PROFILE_UNAVAILABLE"
+    );
+
+    let created = cx
+        .send_request(
+            agent_client_protocol::UntypedMessage::new(
+                "session/new",
+                serde_json::json!({
+                    "cwd": work.path(),
+                    "mcpServers": [],
+                    "_meta": { "shellCredentialProfileId": profile.id.clone() }
+                }),
+            )
+            .unwrap(),
+        )
+        .block_task()
+        .await
+        .expect("a configured catalog profile must create a session");
+    let session_id = created["sessionId"].as_str().unwrap();
+    let stored = read_session(root.path(), "selectable-credential", session_id).await;
+    assert_eq!(
+        stored.credential_profile_id.as_deref(),
+        Some(profile.id.as_str())
+    );
+    assert_eq!(
+        stored.credential_profile_name.as_deref(),
+        Some(profile.name.as_str())
+    );
 
     client_task.abort();
 }

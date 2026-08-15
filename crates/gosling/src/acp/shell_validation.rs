@@ -8,7 +8,7 @@ use crate::agents::ExtensionConfig;
 use crate::config::extensions::get_enabled_extensions_with_config_for_cwd;
 use crate::config::Config;
 use crate::skills::discover_skills;
-use crate::workspace::{CredentialProfileStatus, WorkspaceService};
+use crate::workspace::{CredentialProfile, CredentialProfileStatus, WorkspaceService};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -66,6 +66,27 @@ pub(crate) async fn validate_shell_provisioning_for_working_dir(
     builtins: &[String],
     default_working_dir: &Path,
     effective_working_dir: Option<&Path>,
+) -> ShellProvisioningValidationReport {
+    validate_shell_provisioning_for_working_dir_with_profiles(
+        provisioning,
+        config,
+        workspace_service,
+        builtins,
+        default_working_dir,
+        effective_working_dir,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn validate_shell_provisioning_for_working_dir_with_profiles(
+    provisioning: &ShellProvisioning,
+    config: &Config,
+    workspace_service: &WorkspaceService,
+    builtins: &[String],
+    default_working_dir: &Path,
+    effective_working_dir: Option<&Path>,
+    credential_profiles: Option<Result<Vec<CredentialProfile>, String>>,
 ) -> ShellProvisioningValidationReport {
     let mut issues = Vec::new();
     let mut resolution = ShellProvisioningResolution::default();
@@ -186,18 +207,24 @@ pub(crate) async fn validate_shell_provisioning_for_working_dir(
             }
         });
 
-    let profiles = match workspace_service.credential_profiles() {
-        Ok(profiles) => profiles,
-        Err(error) => {
-            if session.credential_profile_id.is_some() {
+    let profiles = if session.credential_profile_id.is_some() {
+        match credential_profiles.unwrap_or_else(|| {
+            workspace_service
+                .credential_profiles()
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(profiles) => profiles,
+            Err(error) => {
                 issues.push(issue(
                     ShellProvisioningIssueCode::CredentialProfileUnavailable,
                     "session.credentialProfileId",
                     format!("credential profile catalog is unavailable: {error}"),
                 ));
+                Vec::new()
             }
-            Vec::new()
         }
+    } else {
+        Vec::new()
     };
     let profile = session
         .credential_profile_id
@@ -689,6 +716,81 @@ mod tests {
             report.resolution.credential_policy,
             ShellCredentialPolicy::SelectableCatalog
         );
+    }
+
+    #[tokio::test]
+    async fn provisioning_without_a_fixed_profile_never_requires_the_credential_catalog() {
+        let data = TempDir::new().unwrap();
+        let working_dir = TempDir::new().unwrap();
+        let workspace_service = WorkspaceService::initialize(data.path(), working_dir.path())
+            .await
+            .unwrap();
+        let provisioning = ShellProvisioning {
+            schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
+            identity: ShellIdentity {
+                id: "default_shell".into(),
+                display_name: "Default Shell".into(),
+                version: "1".into(),
+                runtime_namespace: "default_shell".into(),
+            },
+            session: ShellSessionProvisioning {
+                credential_policy: ShellCredentialPolicy::SelectableCatalog,
+                ..ShellSessionProvisioning::default()
+            },
+            ..ShellProvisioning::default()
+        };
+
+        let report = validate_shell_provisioning_for_working_dir_with_profiles(
+            &provisioning,
+            Config::global(),
+            &workspace_service,
+            &[],
+            working_dir.path(),
+            None,
+            Some(Err("credential catalog must not be read".into())),
+        )
+        .await;
+
+        assert!(report.valid, "{:?}", report.issues);
+    }
+
+    #[tokio::test]
+    async fn fixed_profile_reports_a_bounded_catalog_failure() {
+        let data = TempDir::new().unwrap();
+        let working_dir = TempDir::new().unwrap();
+        let workspace_service = WorkspaceService::initialize(data.path(), working_dir.path())
+            .await
+            .unwrap();
+        let provisioning = ShellProvisioning {
+            schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
+            identity: ShellIdentity {
+                id: "default_shell".into(),
+                display_name: "Default Shell".into(),
+                version: "1".into(),
+                runtime_namespace: "default_shell".into(),
+            },
+            session: ShellSessionProvisioning {
+                credential_profile_id: Some("fixed-profile".into()),
+                ..ShellSessionProvisioning::default()
+            },
+            ..ShellProvisioning::default()
+        };
+
+        let report = validate_shell_provisioning_for_working_dir_with_profiles(
+            &provisioning,
+            Config::global(),
+            &workspace_service,
+            &[],
+            working_dir.path(),
+            None,
+            Some(Err("lookup timed out".into())),
+        )
+        .await;
+
+        assert!(report.issues.iter().any(|issue| {
+            issue.code == ShellProvisioningIssueCode::CredentialProfileUnavailable
+                && issue.message.contains("lookup timed out")
+        }));
     }
 
     #[tokio::test]

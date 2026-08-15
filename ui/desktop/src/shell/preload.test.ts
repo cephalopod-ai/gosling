@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 describe('shell preload surface', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    electron.invoke.mockResolvedValue(undefined);
   });
 
   it('exposes one frozen API with exactly the approved operations', async () => {
@@ -53,7 +54,9 @@ describe('shell preload surface', () => {
     expect(Object.keys(goslingShellAPI.session).sort()).toEqual([
       'create',
       'detach',
+      'list',
       'onUpdated',
+      'readTranscript',
       'resume',
     ]);
     expect(Object.keys(goslingShellAPI.directory)).toEqual(['select']);
@@ -61,7 +64,12 @@ describe('shell preload surface', () => {
     expect(Object.keys(goslingShellAPI.prompt).sort()).toEqual(['cancel', 'submit']);
     expect(Object.keys(goslingShellAPI.permission).sort()).toEqual(['onRequested', 'respond']);
     expect(Object.keys(goslingShellAPI.elicitation).sort()).toEqual(['onRequested', 'respond']);
-    expect(Object.keys(goslingShellAPI.domain).sort()).toEqual(['action', 'confirm', 'snapshot']);
+    expect(Object.keys(goslingShellAPI.domain).sort()).toEqual([
+      'action',
+      'confirm',
+      'onConfirmationRequested',
+      'snapshot',
+    ]);
     expect(Object.keys(goslingShellAPI.settings).sort()).toEqual([
       'read',
       'reset',
@@ -120,7 +128,9 @@ describe('shell preload surface', () => {
     await goslingShellAPI.directory.select(directorySelect);
     await goslingShellAPI.credential.select(credentialSelect);
     await goslingShellAPI.session.create(generation);
+    await goslingShellAPI.session.list(generation);
     await goslingShellAPI.session.resume(resume);
+    await goslingShellAPI.session.readTranscript(resume);
     await goslingShellAPI.session.detach(generation);
     await goslingShellAPI.prompt.submit(submit);
     await goslingShellAPI.prompt.cancel(cancel);
@@ -144,7 +154,9 @@ describe('shell preload surface', () => {
       [shellIpcChannels.directorySelect, directorySelect],
       [shellIpcChannels.credentialSelect, credentialSelect],
       [shellIpcChannels.sessionCreate, generation],
+      [shellIpcChannels.sessionList, generation],
       [shellIpcChannels.sessionResume, resume],
+      [shellIpcChannels.sessionTranscriptRead, resume],
       [shellIpcChannels.sessionDetach, generation],
       [shellIpcChannels.promptSubmit, submit],
       [shellIpcChannels.promptCancel, cancel],
@@ -181,5 +193,23 @@ describe('shell preload surface', () => {
     expect(listener).toHaveBeenCalledWith(state);
     dispose();
     expect(electron.removeListener).toHaveBeenCalledWith(shellIpcChannels.runtimeChanged, wrapped);
+  });
+
+  it('decodes a main-process failure envelope into a stable renderer recovery object', async () => {
+    electron.invoke.mockRejectedValueOnce(
+      new Error(
+        'GOSLING_SHELL_FAILURE:{"code":"STALE_REQUEST","message":"The shell changed while this action was pending.","retrySafe":false,"recovery":"refresh","preservesDraft":true}'
+      )
+    );
+    vi.resetModules();
+    const { goslingShellAPI } = await import('./preload');
+
+    await expect(goslingShellAPI.runtime.retry({ generation: 1 })).rejects.toEqual({
+      code: 'STALE_REQUEST',
+      message: 'The shell changed while this action was pending.',
+      retrySafe: false,
+      recovery: 'refresh',
+      preservesDraft: true,
+    });
   });
 });

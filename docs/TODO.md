@@ -1,5 +1,12 @@
 # TODO
 
+## Provider authentication follow-up — observed 2026-08-15
+
+- [ ] Investigate and repair Gemini provider OAuth configuration failing with
+      `OAuth login failed: Internal error`. The operator supplied a Desktop provider-configuration
+      screenshot showing the failure. This item is recorded only; no diagnosis or login-flow change was
+      attempted as part of the Default Shell pre-GUI corrective work.
+
 ## Shared project-shell readiness — reassessed 2026-08-13
 
 The host/process ACP foundation is merged, but the post-Gate-4
@@ -31,15 +38,15 @@ end to end, unless the operator explicitly accepts a narrower development-only e
 ## Chat reliability and CLI usage backlog — 2026-07-17
 
 - [ ] Keep the chat view pinned to the bottom while a new user input is typed
-  and while new content is appended, so the most recent chat item remains
-  visible instead of the scroll position jumping to the middle of the window.
+      and while new content is appended, so the most recent chat item remains
+      visible instead of the scroll position jumping to the middle of the window.
 - [x] Make chat persistence incremental and crash-resilient: store each user
-  message as soon as Enter is submitted, and store assistant output as it is
-  written to the chat window, so an abrupt Gosling exit does not erase the last
-  chat item.
+      message as soon as Enter is submitted, and store assistant output as it is
+      written to the chat window, so an abrupt Gosling exit does not erase the last
+      chat item.
 - [ ] For CLI usage with subscription-backed providers where usage data is
-  available, including Codex and Claude, add a way to inspect current usage
-  during a session.
+      available, including Codex and Claude, add a way to inspect current usage
+      during a session.
 
 ## Tagteam workflow, MCP control plane, and Run Steward
 
@@ -72,75 +79,75 @@ contract; the steward only monitors, explains, reports, and prepares recovery.
 ### Deferred live implementation horizon
 
 - [x] Add a typed Unix-socket MCP control client for Tagteam's published
-  control-plane contract. The feature-gated adapter covers validate,
-  prepare-start, start, status, plan, findings, prepare-resume, resume, cancel,
-  diagnostics, structured producer errors, and reconnecting a fresh client to
-  the same daemon fixture.
+      control-plane contract. The feature-gated adapter covers validate,
+      prepare-start, start, status, plan, findings, prepare-resume, resume, cancel,
+      diagnostics, structured producer errors, and reconnecting a fresh client to
+      the same daemon fixture.
 - [ ] Add a `Standard` versus `Tagteam` session-workflow distinction without
-  overloading Gosling's existing tool-permission mode. Keep the selected Run
-  Steward provider/model in the normal session model configuration.
+      overloading Gosling's existing tool-permission mode. Keep the selected Run
+      Steward provider/model in the normal session model configuration.
 - [ ] Replace the current hardcoded Tagteam-profile/provider path with a typed
-  workflow service that consumes the typed MCP control client and reason codes.
-  Do not copy Tagteam's profile registry, model catalog, flag validation, or
-  recovery state machine into Gosling.
+      workflow service that consumes the typed MCP control client and reason codes.
+      Do not copy Tagteam's profile registry, model catalog, flag validation, or
+      recovery state machine into Gosling.
 - [ ] Persist a versioned launch specification and run binding containing the
-  Gosling session, repository identity, Tagteam run ID, run directory, state
-  root, sanitized normalized arguments, last event sequence, and last
-  trustworthy snapshot. Do not treat a persisted PID as execution authority.
+      Gosling session, repository identity, Tagteam run ID, run directory, state
+      root, sanitized normalized arguments, last event sequence, and last
+      trustworthy snapshot. Do not treat a persisted PID as execution authority.
 - [ ] Add a setup surface with four explicit groups: Workflow, Run Steward,
-  Tagteam Team, and Execution. Show role labels that change with supervisor,
-  relay, adversarial, and solo modes so users can always see which model edits,
-  reviews, supervises, or scouts.
+      Tagteam Team, and Execution. Show role labels that change with supervisor,
+      relay, adversarial, and solo modes so users can always see which model edits,
+      reviews, supervises, or scouts.
 - [ ] Include repository root, explicit allowed paths, rounds, invocation and
-  watchdog timeouts, bounded test presets, and Assist recovery policy in the
-  execution setup. Do not accept model-authored shell or unrestricted flag
-  strings.
+      watchdog timeouts, bounded test presets, and Assist recovery policy in the
+      execution setup. Do not accept model-authored shell or unrestricted flag
+      strings.
 - [ ] Restrict Tagteam workflow sessions to the dedicated Tagteam MCP tools.
-  Do not expose Developer, arbitrary shell/edit tools, subagent delegation,
-  extension management, or unrelated external MCP tools to the Run Steward.
+      Do not expose Developer, arbitrary shell/edit tools, subagent delegation,
+      extension management, or unrelated external MCP tools to the Run Steward.
 - [ ] Launch the validated Tagteam action from the user's Run action rather
-  than depending on the steward to select the correct tool. Feed the steward
-  normalized updates only when phase, role, diff, test, finding, fallback,
-  stall, approval need, or terminal state materially changes.
+      than depending on the steward to select the correct tool. Feed the steward
+      normalized updates only when phase, role, diff, test, finding, fallback,
+      stall, approval need, or terminal state materially changes.
 - [ ] Render a persistent live run card in Desktop and the text UI: mode and
-  role assignments, current phase/round, elapsed and idle time, diff counts,
-  tests, findings, degraded/blocking reason, and artifact references. Keep raw
-  transcripts and repository content opt-in and bounded.
+      role assignments, current phase/round, elapsed and idle time, diff counts,
+      tests, findings, degraded/blocking reason, and artifact references. Keep raw
+      transcripts and repository content opt-in and bounded.
 - [ ] Implement Assist-only recovery first. The steward may inspect status,
-  plan, findings, diagnostics, and prepare-resume results. Resume and cancel
-  require an action-bound user approval; scope widening, finding deferral,
-  transfer, branch cleanup, and unsafe Tagteam flags remain unavailable.
+      plan, findings, diagnostics, and prepare-resume results. Resume and cancel
+      require an action-bound user approval; scope widening, finding deferral,
+      transfer, branch cleanup, and unsafe Tagteam flags remain unavailable.
 - [ ] Add deterministic fallback messages so monitoring still works if the Run
-  Steward is unavailable or returns invalid output. The steward is never on the
-  critical execution path.
+      Steward is unavailable or returns invalid output. The steward is never on the
+      critical execution path.
 - [ ] Validate the real Tagteam daemon with scratch-repository runs across all
-  Tagteam modes. The current socket fixture covers protocol/capability checks,
-  canonical-root matching, structured terminal errors, approval forwarding,
-  malformed producer data, and reconnect. Include Ollama/low-capability,
-  mid-tier, and frontier stewards; restart/reconnect, duplicate-launch,
-  cancellation, stalled run, blocking findings, test failure, and unsafe resume
-  cases before activation. The ignored `live_tagteam_socket_smoke_test` can
-  validate the read-only adapter boundary against a locally started daemon with
-  `TAGTEAM_MCP_SOCKET=<socket>`; it deliberately never launches a run.
+      Tagteam modes. The current socket fixture covers protocol/capability checks,
+      canonical-root matching, structured terminal errors, approval forwarding,
+      malformed producer data, and reconnect. Include Ollama/low-capability,
+      mid-tier, and frontier stewards; restart/reconnect, duplicate-launch,
+      cancellation, stalled run, blocking findings, test failure, and unsafe resume
+      cases before activation. The ignored `live_tagteam_socket_smoke_test` can
+      validate the read-only adapter boundary against a locally started daemon with
+      `TAGTEAM_MCP_SOCKET=<socket>`; it deliberately never launches a run.
 
 ### Future vision
 
 - [ ] Connect Gosling to a durable Tagteam daemon for background execution,
-  reconnectable event streaming, safe cross-restart cancellation, and one
-  authoritative observer lease per run.
+      reconnectable event streaming, safe cross-restart cancellation, and one
+      authoritative observer lease per run.
 - [ ] Add local-first steward escalation policies: deterministic templates,
-  then Ollama, then an optional explicitly configured cloud model for ambiguous
-  diagnosis. Preserve strict per-run cost, call, timeout, and contention
-  budgets.
+      then Ollama, then an optional explicitly configured cloud model for ambiguous
+      diagnosis. Preserve strict per-run cost, call, timeout, and contention
+      budgets.
 - [ ] Add saved team configurations and organization policies only after
-  Tagteam exposes machine-readable capability and profile provenance. Display
-  resolved roles and versions rather than trusting stale labels.
+      Tagteam exposes machine-readable capability and profile provenance. Display
+      resolved roles and versions rather than trusting stale labels.
 - [ ] Add fleet monitoring for active, waiting, stalled, blocked, degraded, and
-  recoverable runs while keeping repository content, prompts, secrets, and
-  private reasoning local by default.
+      recoverable runs while keeping repository content, prompts, secrets, and
+      private reasoning local by default.
 - [ ] Generalize the workflow/controller boundary for other long-running
-  external orchestrators only after the Tagteam implementation demonstrates a
-  stable contract; do not create a generic arbitrary-process launcher.
+      external orchestrators only after the Tagteam implementation demonstrates a
+      stable contract; do not create a generic arbitrary-process launcher.
 
 ### Acceptance boundary
 
@@ -170,26 +177,26 @@ checkpoint is synchronized to the remote. All repair and closeout commits are
 local until a separate push is authorized.
 
 - [x] AUD-031: sessions.db schema v23 adds a durable tool-operation ledger with
-  stable operation identities, explicit in-doubt recovery, terminal-result
-  replay, and MCP operation-id propagation for servers that support external
-  deduplication. Tool requests are checkpointed before dispatch and terminal
-  responses are linked back to the ledger transactionally.
-  Residual risk: Gosling cannot prove whether a non-idempotent external server
-  committed an operation before a transport or process failure. Such operations
-  remain visibly in doubt and require external verification; Gosling does not
-  retry them automatically.
+      stable operation identities, explicit in-doubt recovery, terminal-result
+      replay, and MCP operation-id propagation for servers that support external
+      deduplication. Tool requests are checkpointed before dispatch and terminal
+      responses are linked back to the ledger transactionally.
+      Residual risk: Gosling cannot prove whether a non-idempotent external server
+      committed an operation before a transport or process failure. Such operations
+      remain visibly in doubt and require external verification; Gosling does not
+      retry them automatically.
 - [ ] Modularize the routed >=2000-line files in dedicated changes, preserving
-  behavior and avoiding mixed repair/refactor commits:
-  `crates/gosling/src/session/session_manager.rs`,
-  `crates/gosling/src/acp/server.rs`,
-  `crates/gosling/src/agents/agent.rs`,
-  `crates/gosling/src/agents/extension_manager.rs`,
-  `crates/gosling/src/agents/platform_extensions/summon.rs`, and
-  `ui/desktop/src/main.ts`.
+      behavior and avoiding mixed repair/refactor commits:
+      `crates/gosling/src/session/session_manager.rs`,
+      `crates/gosling/src/acp/server.rs`,
+      `crates/gosling/src/agents/agent.rs`,
+      `crates/gosling/src/agents/extension_manager.rs`,
+      `crates/gosling/src/agents/platform_extensions/summon.rs`, and
+      `ui/desktop/src/main.ts`.
 - [x] Run the added Rust regression suite, workspace build, and Clippy before
-  merge when explicitly authorized. The 2026-07-18 twelve-lens follow-up ran
-  the workspace build, serialized `gosling` library suite, related crate suites,
-  and all-target Clippy successfully.
+      merge when explicitly authorized. The 2026-07-18 twelve-lens follow-up ran
+      the workspace build, serialized `gosling` library suite, related crate suites,
+      and all-target Clippy successfully.
 
 ## Defect-repair campaign — 2026-07-16
 
@@ -246,7 +253,6 @@ The reports retain the full threat analysis, repair stages, regression proof,
 and the one upstream Nostr allocation limitation. No campaign commit or remote
 mutation was performed.
 
-
 ## Open-defect campaign reconciliation (2026-07-20)
 
 - [x] Chat auto-follow remains enabled while the user is at the bottom and pauses after upward user scrolling.
@@ -259,7 +265,6 @@ mutation was performed.
 - [ ] Session Handoff and expanded Tagteam remain feature backlog items, not open defects.
 - [ ] Giles's internal uniqueness-constraint failure remains external tool debt.
 - [ ] Release execution remains maintainer-owned.
-
 
 ### Provider inventory concurrency closure (2026-07-20)
 
@@ -280,14 +285,14 @@ Full inventory and repair evidence:
 [`reports/2026-08-12-six-lens-agent-skills-audit-repair.md`](../reports/2026-08-12-six-lens-agent-skills-audit-repair.md).
 
 - [x] On explicit CLI turn cancellation, close undispatched sibling tool requests with terminal,
-  idempotent responses while preserving ledger-only reconnect recovery and the existing in-doubt
-  boundary after dispatch.
+      idempotent responses while preserving ledger-only reconnect recovery and the existing in-doubt
+      boundary after dispatch.
 - [x] Bound diagnostics disk reads as well as returned content, report real truncation, and
-  create full diagnostic bundles owner-only with an explicit sharing warning.
+      create full diagnostic bundles owner-only with an explicit sharing warning.
 - [x] Serialize `projects.json` read-modify-write operations and atomically replace private
-  tracker state.
+      tracker state.
 - [x] Coordinate shared memory JSONL readers and batch writers with file locks and durable
-  flushes.
+      flushes.
 - [ ] Replace Bedrock/SageMaker process-global AWS environment export with provider-instance
-  AWS SDK configuration. Preserve and test environment/config precedence, live reload,
-  concurrent different credentials, and subagent construction before deleting the adapter.
+      AWS SDK configuration. Preserve and test environment/config precedence, live reload,
+      concurrent different credentials, and subagent construction before deleting the adapter.

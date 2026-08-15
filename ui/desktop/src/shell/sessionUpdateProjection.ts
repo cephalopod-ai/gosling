@@ -6,7 +6,7 @@ const MAX_TITLE_BYTES = 4 * 1024;
 export type ShellSessionStream =
   | {
       type: 'content';
-      role: 'user' | 'assistant' | 'thought';
+      role: 'user' | 'assistant';
       messageId: string | null;
       text: string;
     }
@@ -34,17 +34,12 @@ function boundedNumber(value: unknown): number | null {
 }
 
 export function projectShellSessionUpdate(update: SessionUpdate): ShellSessionStream | null {
+  if (update.sessionUpdate === 'agent_thought_chunk') return null;
   if (
     update.sessionUpdate === 'user_message_chunk' ||
-    update.sessionUpdate === 'agent_message_chunk' ||
-    update.sessionUpdate === 'agent_thought_chunk'
+    update.sessionUpdate === 'agent_message_chunk'
   ) {
-    const role =
-      update.sessionUpdate === 'user_message_chunk'
-        ? 'user'
-        : update.sessionUpdate === 'agent_message_chunk'
-          ? 'assistant'
-          : 'thought';
+    const role = update.sessionUpdate === 'user_message_chunk' ? 'user' : 'assistant';
     if (update.content.type !== 'text') return null;
     const text = boundedString(update.content.text, MAX_TEXT_BYTES);
     if (text === null) return null;

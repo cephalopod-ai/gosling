@@ -1,6 +1,6 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-14 after operator selection of a generic Default Shell pre-GUI milestone
+Updated: 2026-08-15 after the Default Shell workflow/data-flow corrective audit
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -17,7 +17,38 @@ Finish a copy-free, least-privilege shared foundation before DAWES, math, Projec
 
 ## Current decision
 
-**Historical host substrate: accepted on its recorded revision. Current Default Shell additions: in progress and not yet revision-bound.**
+**Historical host substrate: accepted on its recorded revision. Current corrective candidate:
+locally green; clean-source package/readback, exact-SHA CI, and a new operator decision are still
+required.**
+
+2026-08-15 corrective status: merged `main` at
+`0140e8169c231539c61a4dce98d4e713eccd07ce` is green, and supported-host package/readback,
+packaged renderer-to-backend startup, and full-Gosling-plus-two-shell coexistence now pass. The
+packaged startup replay found and locally fixed an unbounded credential/Keychain stall; the
+follow-up audit also fixed unknown selected-profile acceptance and strengthened live session
+pinning. That earlier candidate was pushed at `1e608283b`; the current candidate adds the later
+workflow/data-flow corrective patch. It closes capability-response, compacted-resume,
+session-discovery, transcript-repair, stable-error, structured-interaction, confirmation-mirror,
+private-reasoning, destroyed-renderer shutdown, and stale process-registry reconciliation gaps.
+The final interaction-lifecycle pass also ensures streamed tool/content progress cannot erase a
+pending permission or form; interaction cleanup is restricted to terminal session outcomes.
+The follow-up authority audits also close a cross-directory resume bypass before `loadSession` and
+the deeper Rust activation path that could relocate a workspace-less shell session or retain tools
+removed from current provisioning. Electron main and Rust now independently bind resume to the
+accepted/stored canonical directory, and Rust reapplies the current extension/skill allowlist.
+The exact-final full Rust workspace, shell-runtime E2E, Desktop, consumer/scaffold, lint, and local
+package checks pass, including a rebuilt packaged close/restart replay that leaves no shell backend
+and an empty product-local registry. The prior full-workspace stall was traced to unit tests reading
+the operator's real macOS Keychain; test builds now use file-backed secrets, and the workspace
+passes with the system-keyring feature enabled and no disable override. A later exact-source package
+replay found that a timed-out interactive Keychain lookup could survive and force shutdown to
+`SIGKILL`; managed backends now use noninteractive protected-store access and bounded ACP-close
+settling. The same live replay reports an available credential catalog, stops in 6 ms, and exits the
+backend with code 0. This candidate does not inherit the earlier exact-revision acceptance. The
+final handoff must repeat clean-source package/readback on the containing revision, bind successful
+mandatory CI to that exact SHA, and record the operator's explicit decision. The gate is **NO-GO**
+until those facts exist. See
+[`audits/default-shell-pre-gui-corrective-audit.md`](audits/default-shell-pre-gui-corrective-audit.md).
 
 The operator has narrowed the next MVP to a generic Default Shell template and explicitly deferred
 all renderer and named-shell work until its pre-GUI boundaries are complete. ADR-0014 and
@@ -34,8 +65,8 @@ acceptance. Its v1 boundary permits multiple extensions/skills and one supervise
 multiple adapter processes remain a later schema/lifecycle decision.
 
 PG-50 remains valid historical evidence only for exact revision
-`b921e6ee1299dba2207ab27ab6fd9452cc57aa26`. The current dirty worktree contains later foundation
-changes and therefore does not inherit that acceptance. The local audit is recorded in
+`b921e6ee1299dba2207ab27ab6fd9452cc57aa26`. The current candidate contains later foundation changes
+and therefore does not inherit that acceptance. The local audit is recorded in
 [`../../logs/session/2026-08-14-shell-pg50-local-audit.md`](../../logs/session/2026-08-14-shell-pg50-local-audit.md).
 
 This supersedes the "not ready" decision recorded here before 2026-08-14. The former Gate 4

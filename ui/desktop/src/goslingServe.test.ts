@@ -282,6 +282,40 @@ describe('startGoslingServe', () => {
     }
   );
 
+  it.skipIf(process.platform === 'win32')(
+    'disables interactive credential-store prompts in the managed backend',
+    async () => {
+      const tempDir = makeTempDir();
+      const keyringModePath = path.join(tempDir, 'keyring-mode.txt');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        [
+          '#!/usr/bin/env sh',
+          'printf "%s" "$GOSLING_KEYRING_NONINTERACTIVE" > "$TEST_KEYRING_MODE_PATH"',
+          'while true; do sleep 1; done',
+          '',
+        ].join('\n')
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+
+      const result = await startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        env: {
+          GOSLING_KEYRING_NONINTERACTIVE: 'false',
+          TEST_KEYRING_MODE_PATH: keyringModePath,
+        },
+        readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+      });
+
+      try {
+        await expect(waitForFileLines(keyringModePath)).resolves.toEqual(['true']);
+      } finally {
+        await result.cleanup();
+      }
+    }
+  );
+
   it.skipIf(process.platform === 'win32')('captures the TLS fingerprint from stdout', async () => {
     const tempDir = makeTempDir();
     const goslingPath = makeExecutable(

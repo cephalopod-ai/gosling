@@ -7,10 +7,14 @@
   "declaredCapabilities": [
     "credential.select",
     "directory.select",
+    "elicitation.respond",
+    "permission.respond",
     "prompt.cancel",
     "prompt.submit",
     "session.create",
     "session.detach",
-    "session.resume"
+    "session.list",
+    "session.resume",
+    "session.transcript.read"
   ]
 }

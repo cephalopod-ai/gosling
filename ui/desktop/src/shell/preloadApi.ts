@@ -26,13 +26,20 @@ import type {
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
-import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
+import type { ShellSessionSummary } from './acpRuntime';
+import type {
+  ShellSessionRecord,
+  ShellSessionUpdate,
+  ShellTranscriptSnapshot,
+} from './sessionController';
 import type { ShellInteraction } from './interactionController';
 import type {
   DomainActionConfirmResponse_unstable,
   DomainActionResponse_unstable,
   DomainSnapshotResponse_unstable,
 } from '@repo-makeover/gosling-sdk';
+
+export type { ShellOperationFailure, ShellRecoveryAction } from './operationFailure';
 
 export interface GoslingShellAPI {
   runtime: {
@@ -49,7 +56,9 @@ export interface GoslingShellAPI {
   };
   session: {
     create(request: ShellGenerationRequest): Promise<ShellSessionRecord>;
+    list(request: ShellGenerationRequest): Promise<ShellSessionSummary[]>;
     resume(request: ShellSessionResumeRequest): Promise<ShellSessionRecord>;
+    readTranscript(request: ShellSessionResumeRequest): Promise<ShellTranscriptSnapshot>;
     detach(request: ShellGenerationRequest): Promise<ShellSessionDetachResult>;
     onUpdated(listener: (update: ShellSessionUpdate) => void): () => void;
   };
@@ -75,6 +84,9 @@ export interface GoslingShellAPI {
     confirm(
       request: ShellDomainActionConfirmRequest
     ): Promise<DomainActionConfirmResponse_unstable>;
+    onConfirmationRequested(
+      listener: (interaction: Extract<ShellInteraction, { kind: 'confirm' }>) => void
+    ): () => void;
   };
   diagnostics: {
     save(request: ShellDiagnosticsSaveRequest): Promise<ShellDiagnosticsSaveResult>;
@@ -88,9 +100,7 @@ export interface GoslingShellAPI {
   };
   settings: {
     read(): Promise<ShellSettingsSnapshot>;
-    updateAppearance(
-      request: ShellSettingsAppearanceUpdateRequest
-    ): Promise<ShellSettingsSnapshot>;
+    updateAppearance(request: ShellSettingsAppearanceUpdateRequest): Promise<ShellSettingsSnapshot>;
     reset(request: ShellSettingsResetRequest): Promise<ShellSettingsSnapshot>;
   };
 }

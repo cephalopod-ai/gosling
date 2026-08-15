@@ -123,6 +123,79 @@ describe('shell session controller', () => {
     });
   });
 
+  it('buffers compacted resume history and exposes a bounded repair snapshot after activation', async () => {
+    const resumed = deferred<{ sessionId: string; resumeIntegrity: 'clean' }>();
+    const controller = createShellSessionController({
+      generation: () => 1,
+      transport: {
+        createSession: vi.fn(),
+        resumeSession: vi.fn(() => resumed.promise),
+        prompt: vi.fn(),
+        cancel: vi.fn(),
+      },
+    });
+    const updates: unknown[] = [];
+    controller.onUpdate((update) => updates.push(update));
+
+    const opening = controller.resume(1, 'session-a');
+    controller.ingestUpdate({
+      sessionId: 'session-a',
+      update: {
+        sessionUpdate: 'user_message_chunk',
+        messageId: 'message-a',
+        content: { type: 'text', text: 'Earlier request' },
+      },
+    } as never);
+    resumed.resolve({ sessionId: 'session-a', resumeIntegrity: 'clean' });
+    await opening;
+
+    expect(updates).toEqual([
+      expect.objectContaining({
+        kind: 'stream',
+        delivery: 'history',
+        promptAttemptId: null,
+        updateSeq: 1,
+        stream: { type: 'content', role: 'user', messageId: 'message-a', text: 'Earlier request' },
+      }),
+    ]);
+    expect(controller.readTranscript(1, 'session-a')).toMatchObject({
+      integrity: 'complete',
+      firstSeq: 1,
+      lastSeq: 1,
+      truncated: false,
+      updates: [expect.objectContaining({ delivery: 'history', updateSeq: 1 })],
+    });
+  });
+
+  it('publishes a safe prompt failure with draft-preserving recovery metadata', async () => {
+    const controller = createShellSessionController({
+      generation: () => 1,
+      createAttemptId: () => 'attempt-a',
+      transport: {
+        createSession: vi.fn().mockResolvedValue({ sessionId: 'session-a' }),
+        resumeSession: vi.fn(),
+        prompt: vi.fn().mockRejectedValue(new Error('transport closed')),
+        cancel: vi.fn(),
+      },
+    });
+    const updates: unknown[] = [];
+    controller.onUpdate((update) => updates.push(update));
+    await controller.create(1);
+    controller.submit({ generation: 1, sessionId: 'session-a', text: 'keep this draft' });
+    await vi.waitFor(() => expect(controller.read().promptAttempt).toBeNull());
+    expect(updates).toContainEqual(
+      expect.objectContaining({
+        kind: 'failed',
+        failure: expect.objectContaining({
+          code: 'RUNTIME_UNAVAILABLE',
+          retrySafe: true,
+          recovery: 'retry',
+          preservesDraft: true,
+        }),
+      })
+    );
+  });
+
   it('publishes a terminal failure before clearing an interrupted prompt attempt', async () => {
     const controller = createShellSessionController({
       generation: () => 1,

@@ -107,11 +107,7 @@ test('emits a complete, non-production template and reports the operator inputs 
 test('refuses an existing destination without changing what is already there', () => {
   const { input, result } = create();
   try {
-    const manifest = path.join(
-      repositoryRoot,
-      result.consumerDirectory,
-      'shell-consumer.json'
-    );
+    const manifest = path.join(repositoryRoot, result.consumerDirectory, 'shell-consumer.json');
     const before = fs.readFileSync(manifest);
 
     assert.throws(() => scaffoldShell(input), /already exists/);
@@ -264,12 +260,17 @@ test('the committed neutral Default Shell sample stays conformant', () => {
   assert.deepEqual(report.declaredCapabilities, [
     'credential.select',
     'directory.select',
+    'elicitation.respond',
+    'permission.respond',
     'prompt.cancel',
     'prompt.submit',
     'session.create',
     'session.detach',
+    'session.list',
     'session.resume',
+    'session.transcript.read',
   ]);
+  assert.deepEqual(report.requiredAgentCapabilities, ['loadSession', 'sessionList']);
   assert.ok(report.requiredMethods.includes('_gosling/unstable/shell/directory/validate'));
   assert.ok(report.requiredMethods.includes('_gosling/unstable/shell/credentials/list'));
 });

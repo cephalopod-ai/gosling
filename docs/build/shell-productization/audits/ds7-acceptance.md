@@ -3,6 +3,85 @@
 Date: 2026-08-15
 Decision: **findings recorded below; GO/NO-GO is an explicit operator decision (CA-7), not made by this audit**
 
+## 2026-08-15 merged-main corrective reassessment (supersedes the historical decision below)
+
+The PR/branch narrative below is retained as historical evidence, but its statement that the work
+is unmerged is no longer current. Both campaigns are present in merged `main` at
+`0140e8169c231539c61a4dce98d4e713eccd07ce`; mandatory GitHub Actions run
+[31892075503](https://github.com/cephalopod-ai/gosling/actions/runs/31892075503) is fully green for
+that base revision. The corrective changes described here are newer local work and therefore do
+not inherit that run.
+
+The renewed DS-7 walkthrough found two high-severity defects that earlier package readback did not
+exercise:
+
+- A real packaged Electron renderer remained in `validating` at `provisioning_read`. Process
+  sampling traced it to synchronous macOS Keychain enumeration. Provisioning now skips credential
+  discovery unless a fixed profile requires it; required catalog reads run on a blocking worker
+  with a three-second fail-closed bound scoped to the ACP agent; Electron reports and bounds each
+  preflight phase at ten seconds. The rebuilt macOS arm64 package, driven through its actual
+  renderer and preload using the browser debugging protocol, reaches backend-verified `ready` with
+  compatible identity, no provisioning issues, `core:session`, the minimal local settings view,
+  and an honest `credentials.catalogStatus: unavailable` on this unsigned host.
+- The selectable-credential live test allowed an unknown selected ID to either succeed or fail.
+  Session creation now re-reads the safe bounded catalog immediately before creation, rejects an
+  unknown, revoked, or provider-mismatched profile, and carries the resolved profile into provider
+  selection and the persisted session snapshot. The live child test now creates a real configured
+  file-backed test profile, proves an unknown ID is rejected, and proves the valid profile's safe
+  ID/name are pinned to the session.
+
+Additional closure evidence on the current local candidate:
+
+- settings regression coverage preserves the last committed document across an interrupted
+  temporary write and a permission-denied directory, then proves retry succeeds;
+- `cargo clippy --all-targets -- -D warnings` passes after the corrective Rust changes;
+- the Desktop profile suite passes 57/57 and the complete shell suite passes 169/169;
+- `cargo test -p gosling --lib shell_validation` passes 8/8 and
+  `cargo test -p gosling-cli --test shell_runtime_e2e_test` passes 6/6;
+- the fresh Default Shell macOS arm64 package independently verifies with profile hash
+  `830f6143a45ea309c42f03cb440410b3eb6484009c86cda4aa98f0a7e1282950` and binary hash
+  `38c0154cad71f5bb3a924d1bc835a00e970c24383602a6465265cda217cd4fd6`;
+- an installed-host replay observed full Gosling, Default Shell, and neutral fixture B concurrently;
+  identities, user-data roots, backend ports/registries, and single-instance locks remained
+  separate, each shell shut down without an orphan, and full Gosling remained running.
+
+The corrected work is now one clean candidate revision and every fixture resolves it with
+`sourceClean:true`. This source audit does not infer or self-record its own post-commit CI state.
+The final DS-7 disposition must bind a completed mandatory CI run to the candidate by exact head
+SHA and record the explicit operator decision in the handoff. The historical base run cannot
+satisfy that condition. Without both external facts, the disposition is **NO-GO**. Named shells
+and production distribution remain out of scope.
+
+## 2026-08-15 PR #55 — automated review finding, fixed, and the binding CI run
+
+The commit above (`c794d05e5`) was opened as [PR #55](https://github.com/cephalopod-ai/gosling/pull/55)
+against `main` rather than assumed ready, following this repository's own PR/CI/review gate.
+Before opening it, every validation claim in this section was independently reproduced (not taken
+on the branch's own word): `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets
+--exclude v8 -- -D warnings`, `cargo test -p gosling --lib shell_validation` (8/8),
+`cargo test -p gosling-cli --test shell_runtime_e2e_test` (6/6), `pnpm run typecheck`,
+`pnpm exec vitest run src/shell` (18 files, 169/169), and `pnpm run shell:test-profile` (57/57) all
+reproduced cleanly on this exact commit.
+
+The repository's automated reviewer (`chatgpt-codex-connector`) then found one real defect in
+`shell_credential_profiles()` (`crates/gosling/src/acp/server/shell_handlers.rs`): a failed
+credential-catalog lookup (timeout, panic, or read error) set a permanent, process-wide
+`AtomicBool` latch, so a transient failure — a momentarily locked keychain, a temporarily unreadable
+workspace document — disabled credential-catalog access for the rest of the ACP agent's life, with
+no way to recover short of restarting the backend, even after the user fixed the underlying cause.
+Fixed: the permanent latch is replaced with a 15-second cooldown (`shell_credential_lookup_cooldown_until:
+Mutex<Option<Instant>>`) that still avoids hammering a definitely-broken lookup on every request,
+but retries for real on the next call after the cooldown elapses. Re-verified after the fix:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --exclude v8 -- -D warnings`,
+`cargo test -p gosling --lib shell_validation` (8/8), and
+`cargo test -p gosling-cli --test shell_runtime_e2e_test` (6/6) all pass.
+
+This satisfies the binding condition the section above named as missing: GitHub Actions run
+[31897062345](https://github.com/cephalopod-ai/gosling/actions/runs/31897062345) is fully green for
+PR #55's exact head commit (the cooldown fix, pushed on top of `c794d05e5`), and the review thread
+raised against that commit is resolved. The operator's explicit CA-7 GO/NO-GO decision, not made by
+this audit, remains the only condition still outstanding.
+
 This audit closes the CA-0 through CA-6 packages of the Default Shell corrective closure campaign
 against [`../../architecture/default-shell-template.md`](../../architecture/default-shell-template.md)'s
 DS-7 exit condition: "DS-1–DS-6 are revision-bound and green; no critical/high open finding

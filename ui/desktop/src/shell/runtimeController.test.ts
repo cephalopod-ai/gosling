@@ -37,7 +37,10 @@ function memorySettingsStore(lastWorkingDirectory: string | null): ShellSettings
     recovery: () => ({ status: 'loaded' as const, schemaVersion: 1 }),
     setAppearance: () => copySettings(settings),
     setLastWorkingDirectory(directory) {
-      settings = { ...settings, workspace: { ...settings.workspace, lastWorkingDirectory: directory } };
+      settings = {
+        ...settings,
+        workspace: { ...settings.workspace, lastWorkingDirectory: directory },
+      };
       return copySettings(settings);
     },
     setPreferredCredentialProfileId(profileId) {
@@ -94,6 +97,14 @@ const manifest = {
     handoffSchemaVersion: 1,
     requiredMethods: ['provisioning/read'],
   },
+  consumer: {
+    consumerId: 'fixture-consumer',
+    consumerHash: 'c'.repeat(64),
+    rendererHash: 'd'.repeat(64),
+    declaredCapabilities: ['elicitation.respond', 'permission.respond'],
+    requiredAgentCapabilities: [],
+    requiredMethods: [],
+  },
 } satisfies ShellBuildManifest;
 
 interface TestConnection {
@@ -114,7 +125,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function harness(withAdapter = false) {
+function harness(
+  withAdapter = false,
+  declaredCapabilities = manifest.consumer.declaredCapabilities
+) {
   let tick = 0;
   const processes: EventEmitter[] = [];
   const cleanups: Array<ReturnType<typeof vi.fn>> = [];
@@ -142,7 +156,8 @@ function harness(withAdapter = false) {
     } as never;
   });
   const connectAcp = vi.fn(async (input) => {
-    const close = vi.fn();
+    const transport = deferred<void>();
+    const close = vi.fn(() => transport.resolve());
     const validateDirectory = vi.fn(async (candidate: string) => ({
       status: 'valid' as const,
       canonicalPath: candidate,
@@ -175,7 +190,7 @@ function harness(withAdapter = false) {
       validateDirectory,
       listCredentials: vi.fn().mockResolvedValue({ status: 'denied' as const, profiles: [] }),
       listModules: vi.fn().mockResolvedValue({ contractVersion: 1, modules: [] }),
-      closed: new Promise<void>(() => {}),
+      closed: transport.promise,
       close,
     };
     connections.push(connection as unknown as TestConnection);
@@ -198,7 +213,10 @@ function harness(withAdapter = false) {
   controller = createShellRuntimeController(
     {
       profile,
-      manifest,
+      manifest: {
+        ...manifest,
+        consumer: { ...manifest.consumer, declaredCapabilities: [...declaredCapabilities] },
+      },
       provisioningPath: '/resources/provisioning.json',
       diagnosticsDir: '/user/diagnostics',
       processRegistryPath: '/user/backend-processes.json',
@@ -220,7 +238,16 @@ function harness(withAdapter = false) {
       now: () => `2026-08-13T00:00:${String(tick++).padStart(2, '0')}Z`,
     }
   );
-  return { cleanups, connectAcp, connections, controller, createHost, credentials, directory, processes };
+  return {
+    cleanups,
+    connectAcp,
+    connections,
+    controller,
+    createHost,
+    credentials,
+    directory,
+    processes,
+  };
 }
 
 describe('shell runtime controller', () => {
@@ -266,6 +293,22 @@ describe('shell runtime controller', () => {
     );
     await value.controller.stop(1);
     expect(value.connections[0].close).toHaveBeenCalledOnce();
+    expect(value.cleanups[0]).toHaveBeenCalledOnce();
+    expect(value.controller.read().name).toBe('stopped');
+  });
+
+  it('waits for ACP transport closure before terminating the owned backend', async () => {
+    const value = harness();
+    await value.controller.start();
+    const transport = deferred<void>();
+    value.connections[0].closed = transport.promise;
+
+    const stopping = value.controller.stop(1);
+    await vi.waitFor(() => expect(value.connections[0].close).toHaveBeenCalledOnce());
+    expect(value.cleanups[0]).not.toHaveBeenCalled();
+
+    transport.resolve();
+    await stopping;
     expect(value.cleanups[0]).toHaveBeenCalledOnce();
     expect(value.controller.read().name).toBe('stopped');
   });
@@ -322,9 +365,11 @@ describe('shell runtime controller', () => {
     });
     const connection = value.connections[0] as unknown as {
       createSession: ReturnType<typeof vi.fn>;
+      listCredentials: ReturnType<typeof vi.fn>;
       prompt: ReturnType<typeof vi.fn>;
     };
     expect(connection.createSession).toHaveBeenCalledOnce();
+    expect(connection.listCredentials).toHaveBeenCalledTimes(2);
     const attempt = sessions!.submit({ generation: 1, sessionId: 'session-a', text: 'hello' });
     expect(connection.prompt).toHaveBeenCalledWith({
       sessionId: 'session-a',
@@ -333,6 +378,24 @@ describe('shell runtime controller', () => {
     });
     await value.controller.stop(1);
     expect(value.controller.getSessionController()).toBeNull();
+  });
+
+  it('pins resume to the main-accepted working directory', async () => {
+    const value = harness();
+    await value.controller.start();
+    const connection = value.connections[0] as unknown as {
+      resumeSession: ReturnType<typeof vi.fn>;
+    };
+    connection.resumeSession.mockResolvedValue({
+      sessionId: 'session-saved',
+      workingDir: '/workspace',
+      resumeIntegrity: 'clean',
+    });
+
+    await expect(
+      value.controller.getSessionController()!.resume(1, 'session-saved')
+    ).resolves.toMatchObject({ sessionId: 'session-saved', workingDir: '/workspace' });
+    expect(connection.resumeSession).toHaveBeenCalledWith('session-saved', '/workspace');
   });
 
   it('projects ACP updates only through the active main-owned session', async () => {
@@ -435,6 +498,144 @@ describe('shell runtime controller', () => {
         options: [],
       })
     ).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(value.controller.read().pendingInteractions).toEqual([]);
+  });
+
+  it('keeps an interaction pending while tool progress continues streaming', async () => {
+    const value = harness();
+    await value.controller.start();
+    const sessions = value.controller.getSessionController()!;
+    await sessions.create(1);
+    const prompt = deferred<unknown>();
+    const connection = value.connections[0] as unknown as {
+      prompt: ReturnType<typeof vi.fn>;
+    };
+    connection.prompt.mockReturnValue(prompt.promise);
+    sessions.submit({ generation: 1, sessionId: 'session-a', text: 'inspect the workspace' });
+
+    const connectCalls = value.connectAcp.mock.calls as unknown as Array<
+      [
+        {
+          callbacks: () => {
+            requestPermission(request: unknown): Promise<unknown>;
+            sessionUpdate(notification: unknown): Promise<void>;
+          };
+        },
+      ]
+    >;
+    const callbacks = connectCalls[0]![0].callbacks();
+    const pending = callbacks.requestPermission({
+      sessionId: 'session-a',
+      toolCall: { toolCallId: 'tool-a', title: 'Read source', kind: 'read', status: 'pending' },
+      options: [
+        { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+      ],
+    });
+    const actionId = value.controller.read().pendingInteractions[0]!.actionId;
+
+    await callbacks.sessionUpdate({
+      sessionId: 'session-a',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tool-a',
+        title: 'Read source',
+        kind: 'read',
+        status: 'pending',
+      },
+    } as never);
+
+    expect(value.controller.read().pendingInteractions).toEqual([
+      expect.objectContaining({ actionId, kind: 'permission', sessionId: 'session-a' }),
+    ]);
+    value.controller
+      .getInteractionController()!
+      .respondPermission({ actionId, generation: 1, sessionId: 'session-a', allowOnce: false });
+    await expect(pending).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'deny' } });
+    prompt.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(value.controller.read().name).toBe('ready'));
+  });
+
+  it('keeps an elicitation pending while content continues streaming', async () => {
+    const value = harness();
+    await value.controller.start();
+    const sessions = value.controller.getSessionController()!;
+    await sessions.create(1);
+    const prompt = deferred<unknown>();
+    const connection = value.connections[0] as unknown as {
+      prompt: ReturnType<typeof vi.fn>;
+    };
+    connection.prompt.mockReturnValue(prompt.promise);
+    sessions.submit({ generation: 1, sessionId: 'session-a', text: 'prepare a choice' });
+
+    const connectCalls = value.connectAcp.mock.calls as unknown as Array<
+      [
+        {
+          callbacks: () => {
+            unstable_createElicitation(request: unknown): Promise<unknown>;
+            sessionUpdate(notification: unknown): Promise<void>;
+          };
+        },
+      ]
+    >;
+    const callbacks = connectCalls[0]![0].callbacks();
+    const pending = callbacks.unstable_createElicitation({
+      mode: 'form',
+      sessionId: 'session-a',
+      message: 'Choose a mode',
+      requestedSchema: {
+        properties: { mode: { type: 'string', enum: ['safe', 'fast'] } },
+        required: ['mode'],
+      },
+    });
+    const actionId = value.controller.read().pendingInteractions[0]!.actionId;
+
+    await callbacks.sessionUpdate({
+      sessionId: 'session-a',
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Working' } },
+    } as never);
+
+    expect(value.controller.read().pendingInteractions).toEqual([
+      expect.objectContaining({ actionId, kind: 'elicitation', sessionId: 'session-a' }),
+    ]);
+    value.controller.getInteractionController()!.respondElicitation({
+      actionId,
+      generation: 1,
+      sessionId: 'session-a',
+      action: 'decline',
+    });
+    await expect(pending).resolves.toEqual({ action: 'decline' });
+    prompt.resolve({ stopReason: 'end_turn' });
+    await vi.waitFor(() => expect(value.controller.read().name).toBe('ready'));
+  });
+
+  it('cancels backend interactions when the consumer lacks the matching response capability', async () => {
+    const value = harness(false, []);
+    await value.controller.start();
+    await value.controller.getSessionController()!.create(1);
+    const connectCalls = value.connectAcp.mock.calls as unknown as Array<
+      [
+        {
+          callbacks: () => {
+            requestPermission(request: unknown): Promise<unknown>;
+            unstable_createElicitation(request: unknown): Promise<unknown>;
+          };
+        },
+      ]
+    >;
+    const callbacks = connectCalls[0]![0].callbacks();
+
+    await expect(
+      callbacks.requestPermission({ sessionId: 'session-a', toolCall: {}, options: [] })
+    ).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    await expect(
+      callbacks.unstable_createElicitation({
+        mode: 'form',
+        sessionId: 'session-a',
+        message: 'Choose',
+        requestedSchema: { properties: { choice: { type: 'string' } } },
+      })
+    ).resolves.toEqual({ action: 'cancel' });
     expect(value.controller.read().pendingInteractions).toEqual([]);
   });
 

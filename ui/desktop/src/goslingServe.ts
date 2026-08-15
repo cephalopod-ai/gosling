@@ -393,6 +393,7 @@ const buildGoslingServeEnv = (
   }
 
   env.GOSLING_SERVER__SECRET_KEY = serverSecret;
+  env.GOSLING_KEYRING_NONINTERACTIVE = 'true';
   // Lets goslingd detect this app dying without a graceful quit (force-quit,
   // crash, OS kill) and self-terminate instead of surviving as an orphan.
   // See crates/gosling-server/src/commands/agent.rs `parent_exit_wait`.

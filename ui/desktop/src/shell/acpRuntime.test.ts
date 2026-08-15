@@ -126,6 +126,7 @@ function harness() {
   );
   const newSession = vi.fn(() => Promise.resolve({ sessionId: 'session-1' }));
   const loadSession = vi.fn(() => Promise.resolve({}));
+  const listSessions = vi.fn(() => Promise.resolve({ sessions: [] }));
   const prompt = vi.fn(() => Promise.resolve({ stopReason: 'end_turn' as const }));
   const cancel = vi.fn(() => Promise.resolve());
   const sessionInfo = vi.fn(() =>
@@ -140,9 +141,7 @@ function harness() {
   const validateDirectory = vi.fn((params: { path: string }) =>
     Promise.resolve({ status: 'valid' as const, canonicalPath: params.path })
   );
-  const listCredentials = vi.fn(() =>
-    Promise.resolve({ status: 'denied' as const, profiles: [] })
-  );
+  const listCredentials = vi.fn(() => Promise.resolve({ status: 'denied' as const, profiles: [] }));
   const listModules = vi.fn(() => Promise.resolve({ contractVersion: 1, modules: [] }));
   const prepare = vi.fn(() => Promise.reject(new Error('not used')));
   const snapshot = vi.fn<() => Promise<DomainSnapshotResponse_unstable>>(() =>
@@ -160,6 +159,7 @@ function harness() {
     initialize,
     newSession,
     loadSession,
+    listSessions,
     prompt,
     cancel,
     gosling: {
@@ -198,6 +198,7 @@ function harness() {
     dependencies,
     initialize,
     loadSession,
+    listSessions,
     newSession,
     prompt,
     cancel,
@@ -274,6 +275,34 @@ describe('shell ACP runtime', () => {
     expect(value.close).not.toHaveBeenCalled();
     connection.close();
     expect(value.close).toHaveBeenCalledOnce();
+  });
+
+  it('bounds every startup preflight request and reports the phase that stalled', async () => {
+    vi.useFakeTimers();
+    try {
+      const value = harness();
+      value.read.mockImplementation(() => new Promise(() => {}));
+      const phases: string[] = [];
+      const connection = connectShellAcp({
+        acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+        profile,
+        manifest,
+        clientName: 'fixture-shell',
+        clientVersion: '0.0.0-test',
+        onPreflightPhase: (phase) => phases.push(phase),
+        dependencies: value.dependencies,
+      });
+      const rejection = expect(connection).rejects.toThrow('ACP provisioning_read timed out');
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await rejection;
+      expect(phases).toEqual(['initialize', 'methods', 'directory', 'provisioning_read']);
+      expect(value.validate).not.toHaveBeenCalled();
+      expect(value.close).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reads and requires the consumer-declared live domain adapter descriptor', async () => {
@@ -358,6 +387,9 @@ describe('shell ACP runtime', () => {
     await expect(connection.createSession({ workingDir: '/workspace/current' })).resolves.toEqual({
       sessionId: 'session-1',
       workingDir: '/workspace/current',
+      title: null,
+      providerId: null,
+      modelId: null,
     });
     expect(value.newSession).toHaveBeenCalledWith({
       cwd: '/workspace/current',
@@ -365,9 +397,12 @@ describe('shell ACP runtime', () => {
       _meta: { client: 'gosling-shell' },
     });
 
-    await expect(connection.resumeSession('session-1')).resolves.toEqual({
+    await expect(connection.resumeSession('session-1', '/workspace/saved')).resolves.toEqual({
       sessionId: 'session-1',
       workingDir: '/workspace/saved',
+      title: null,
+      providerId: null,
+      modelId: null,
       resumeIntegrity: 'clean',
     });
     expect(value.sessionInfo).toHaveBeenCalledWith({ sessionId: 'session-1' });
@@ -376,6 +411,58 @@ describe('shell ACP runtime', () => {
       cwd: '/workspace/saved',
       mcpServers: [],
       _meta: { gosling: { loadMode: 'compacted', tailLimit: 50 } },
+    });
+  });
+
+  it('refuses to load a session outside the main-selected working directory', async () => {
+    const { promise, value } = connect();
+    const connection = await promise;
+
+    await expect(connection.resumeSession('session-1', '/workspace/current')).rejects.toThrow(
+      'does not match the selected directory'
+    );
+    expect(value.sessionInfo).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    expect(value.loadSession).not.toHaveBeenCalled();
+  });
+
+  it('lists only bounded current-directory ACP session summaries without message snippets', async () => {
+    const { promise, value } = connect();
+    value.listSessions.mockResolvedValueOnce({
+      sessions: [
+        {
+          sessionId: 'session-1',
+          cwd: '/workspace/current',
+          title: 'Current task',
+          updatedAt: '2026-08-15T12:00:00Z',
+          _meta: { providerId: 'provider-a', modelId: 'model-a', messageCount: 4 },
+        },
+        {
+          sessionId: 'session-other-workspace',
+          cwd: '/workspace/other',
+          title: 'Must not cross the selected workspace boundary',
+          updatedAt: '2026-08-14T11:00:00Z',
+        },
+      ],
+    } as never);
+    const connection = await promise;
+
+    await expect(connection.listSessions('/workspace/current')).resolves.toEqual([
+      {
+        sessionId: 'session-1',
+        workingDir: '/workspace/current',
+        title: 'Current task',
+        providerId: 'provider-a',
+        modelId: 'model-a',
+        updatedAt: '2026-08-15T12:00:00Z',
+        messageCount: 4,
+      },
+    ]);
+    expect(value.listSessions).toHaveBeenCalledWith({
+      cwd: '/workspace/current',
+      _meta: {
+        types: ['acp'],
+        gosling: { archiveState: 'active', includeLastMessageSnippet: false },
+      },
     });
   });
 
@@ -451,7 +538,9 @@ describe('shell ACP runtime', () => {
     const { promise, value } = connect();
     const connection = await promise;
 
-    await expect(connection.resumeSession(' padded ')).rejects.toThrow('sessionId');
+    await expect(connection.resumeSession(' padded ', '/workspace/current')).rejects.toThrow(
+      'sessionId'
+    );
     expect(value.sessionInfo).not.toHaveBeenCalled();
     expect(value.loadSession).not.toHaveBeenCalled();
   });

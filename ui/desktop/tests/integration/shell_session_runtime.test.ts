@@ -85,6 +85,14 @@ function manifest(version = '0.1.0'): ShellBuildManifest {
       handoffSchemaVersion: 1,
       requiredMethods: methods,
     },
+    consumer: {
+      consumerId: 'shell-session-integration',
+      consumerHash: 'c'.repeat(64),
+      rendererHash: 'd'.repeat(64),
+      declaredCapabilities: ['elicitation.respond', 'permission.respond'],
+      requiredAgentCapabilities: [],
+      requiredMethods: [],
+    },
   };
 }
 
@@ -842,7 +850,18 @@ describe('shell session runtime integration', () => {
         kind: 'elicitation',
         generation: 1,
         sessionId: session.sessionId,
-        summary: { message: 'Provide fixture input', fields: ['answer'] },
+        summary: {
+          message: 'Provide fixture input',
+          fields: [
+            {
+              name: 'answer',
+              label: 'answer',
+              description: null,
+              type: 'string',
+              required: true,
+            },
+          ],
+        },
       });
       expect(controller.read().pendingInteractions).toEqual([pending]);
 
@@ -877,8 +896,15 @@ describe('shell session runtime integration', () => {
 
     const second = createController(fixture);
     await expect(second.start()).resolves.toMatchObject({ name: 'ready' });
-    await expect(second.getAcp()!.resumeSession(created.sessionId)).resolves.toEqual({
-      ...created,
+    await expect(
+      second.getAcp()!.resumeSession(created.sessionId, path.join(fixture.root, 'other'))
+    ).rejects.toThrow('does not match the selected directory');
+    const acceptedWorkingDir = second.read().directory.path!;
+    await expect(
+      second.getSessionController()!.resume(1, created.sessionId)
+    ).resolves.toMatchObject({
+      sessionId: created.sessionId,
+      workingDir: acceptedWorkingDir,
       resumeIntegrity: 'uncertain',
     });
     await stopController(second);

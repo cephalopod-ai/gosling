@@ -15,6 +15,7 @@ import {
   type ShellHandoffConfirmRequest,
   type ShellHandoffPrepareRequest,
   type ShellHandoffPrepareResult,
+  type ShellIpcEventChannel,
   type ShellIpcInvokeChannel,
   type ShellOpenResult,
   type ShellPermissionRespondRequest,
@@ -27,11 +28,17 @@ import {
   type ShellSettingsSnapshot,
 } from './ipc';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
-import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
+import type { ShellSessionSummary } from './acpRuntime';
+import type {
+  ShellSessionRecord,
+  ShellSessionUpdate,
+  ShellTranscriptSnapshot,
+} from './sessionController';
 import type { ShellInteraction } from './interactionController';
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
 import { isValidShellTheme, isValidShellTextScale } from './localSettings';
+import { classifyShellOperationFailure, encodeShellOperationFailure } from './operationFailure';
 
 const MAX_INVOKE_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -42,7 +49,9 @@ const CAPABILITY_BY_CHANNEL: Partial<Record<ShellIpcInvokeChannel, string>> = {
   [shellIpcChannels.directorySelect]: 'directory.select',
   [shellIpcChannels.credentialSelect]: 'credential.select',
   [shellIpcChannels.sessionCreate]: 'session.create',
+  [shellIpcChannels.sessionList]: 'session.list',
   [shellIpcChannels.sessionResume]: 'session.resume',
+  [shellIpcChannels.sessionTranscriptRead]: 'session.transcript.read',
   [shellIpcChannels.sessionDetach]: 'session.detach',
   [shellIpcChannels.promptSubmit]: 'prompt.submit',
   [shellIpcChannels.promptCancel]: 'prompt.cancel',
@@ -57,6 +66,7 @@ type ShellIpcMainEvent = Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFra
 interface ShellWebContents {
   id: number;
   mainFrame: unknown;
+  isDestroyed(): boolean;
   send(channel: string, ...args: unknown[]): void;
 }
 
@@ -79,9 +89,15 @@ export interface ShellIpcOperations {
     request: ShellCredentialSelectRequest
   ): Promise<ShellCredentialSnapshot> | ShellCredentialSnapshot;
   sessionCreate(request: ShellGenerationRequest): Promise<ShellSessionRecord> | ShellSessionRecord;
+  sessionList(
+    request: ShellGenerationRequest
+  ): Promise<ShellSessionSummary[]> | ShellSessionSummary[];
   sessionResume(
     request: ShellSessionResumeRequest
   ): Promise<ShellSessionRecord> | ShellSessionRecord;
+  sessionTranscriptRead(
+    request: ShellSessionResumeRequest
+  ): Promise<ShellTranscriptSnapshot> | ShellTranscriptSnapshot;
   sessionDetach(
     request: ShellGenerationRequest
   ): Promise<ShellSessionDetachResult> | ShellSessionDetachResult;
@@ -276,8 +292,8 @@ function parseElicitationRespondRequest(value: unknown): ShellElicitationRespond
   assertObject(value, 'request');
   assertGeneration(value.generation);
   assertString(value.actionId, 'actionId', 512);
-  if (value.action !== 'submit' && value.action !== 'cancel') {
-    throw new Error('action must be submit or cancel');
+  if (value.action !== 'submit' && value.action !== 'decline' && value.action !== 'cancel') {
+    throw new Error('action must be submit, decline, or cancel');
   }
   const keys =
     value.action === 'submit'
@@ -439,6 +455,8 @@ function assertTrustedSender(event: ShellIpcMainEvent, trusted: ShellWebContents
 function responseLimit(channel: ShellIpcInvokeChannel): number {
   return channel === shellIpcChannels.runtimeRead ||
     channel === shellIpcChannels.credentialSelect ||
+    channel === shellIpcChannels.sessionList ||
+    channel === shellIpcChannels.sessionTranscriptRead ||
     channel === shellIpcChannels.handoffPrepare ||
     channel === shellIpcChannels.domainSnapshot ||
     channel === shellIpcChannels.domainAction ||
@@ -456,6 +474,15 @@ export function registerShellIpc(input: {
 }): RegisteredShellIpc {
   const { ipcMain, renderer, operations, allowedExternalOrigins, declaredCapabilities } = input;
   let lastPublishedGeneration = 0;
+  const publish = (channel: ShellIpcEventChannel, value: unknown): boolean => {
+    if (renderer.isDestroyed()) return false;
+    try {
+      renderer.send(channel, value);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const registrations: Array<
     [ShellIpcInvokeChannel, (request: unknown) => Promise<unknown> | unknown]
   > = [
@@ -481,8 +508,16 @@ export function registerShellIpc(input: {
       (request) => operations.sessionCreate(parseGenerationRequest(request)),
     ],
     [
+      shellIpcChannels.sessionList,
+      (request) => operations.sessionList(parseGenerationRequest(request)),
+    ],
+    [
       shellIpcChannels.sessionResume,
       (request) => operations.sessionResume(parseSessionResumeRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionTranscriptRead,
+      (request) => operations.sessionTranscriptRead(parseSessionResumeRequest(request)),
     ],
     [
       shellIpcChannels.sessionDetach,
@@ -547,18 +582,22 @@ export function registerShellIpc(input: {
   for (const [channel, operation] of registrations) {
     ipcMain.handle(channel, async (event, request) => {
       assertTrustedSender(event, renderer);
-      const capability = CAPABILITY_BY_CHANNEL[channel];
-      if (capability && declaredCapabilities && !declaredCapabilities.has(capability)) {
-        throw new Error(`shell consumer did not declare ${capability}`);
+      try {
+        const capability = CAPABILITY_BY_CHANNEL[channel];
+        if (capability && declaredCapabilities && !declaredCapabilities.has(capability)) {
+          throw new Error(`shell consumer did not declare ${capability}`);
+        }
+        const isParameterlessReadChannel =
+          channel === shellIpcChannels.runtimeRead || channel === shellIpcChannels.settingsRead;
+        if (isParameterlessReadChannel && request !== undefined) {
+          throw new Error(`${channel} does not accept a request`);
+        }
+        const response = await operation(request);
+        assertResponseBytes(response, responseLimit(channel));
+        return response;
+      } catch (error) {
+        throw new Error(encodeShellOperationFailure(classifyShellOperationFailure(channel, error)));
       }
-      const isParameterlessReadChannel =
-        channel === shellIpcChannels.runtimeRead || channel === shellIpcChannels.settingsRead;
-      if (isParameterlessReadChannel && request !== undefined) {
-        throw new Error(`${channel} does not accept a request`);
-      }
-      const response = await operation(request);
-      assertResponseBytes(response, responseLimit(channel));
-      return response;
     });
   }
 
@@ -568,23 +607,23 @@ export function registerShellIpc(input: {
         return false;
       }
       assertResponseBytes(state, MAX_RESPONSE_BYTES);
+      if (!publish(shellIpcChannels.runtimeChanged, state)) return false;
       lastPublishedGeneration = state.generation;
-      renderer.send(shellIpcChannels.runtimeChanged, state);
       return true;
     },
     publishSessionUpdated(update) {
       assertResponseBytes(update, MAX_RESPONSE_BYTES);
-      renderer.send(shellIpcChannels.sessionUpdated, update);
-      return true;
+      return publish(shellIpcChannels.sessionUpdated, update);
     },
     publishInteractionRequested(interaction) {
       assertResponseBytes(interaction, MAX_SMALL_RESPONSE_BYTES);
       const channel =
         interaction.kind === 'permission'
           ? shellIpcChannels.permissionRequested
-          : shellIpcChannels.elicitationRequested;
-      renderer.send(channel, interaction);
-      return true;
+          : interaction.kind === 'elicitation'
+            ? shellIpcChannels.elicitationRequested
+            : shellIpcChannels.confirmationRequested;
+      return publish(channel, interaction);
     },
     dispose() {
       for (const [channel] of registrations) {

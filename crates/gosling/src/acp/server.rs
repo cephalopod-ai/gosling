@@ -247,6 +247,7 @@ pub struct GoslingAcpAgent {
     workspace_service: Arc<WorkspaceService>,
     default_working_folder: PathBuf,
     shell_runtime: ShellRuntime,
+    shell_credential_lookup_cooldown_until: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -1193,6 +1194,7 @@ impl GoslingAcpAgent {
                 workspace_service,
                 default_working_folder,
                 shell_runtime: options.shell_runtime,
+                shell_credential_lookup_cooldown_until: std::sync::Mutex::new(None),
             })
         })
         .await
@@ -1417,13 +1419,41 @@ impl GoslingAcpAgent {
     async fn prepare_session_for_activation(
         &self,
         mut session: Session,
-        cwd: std::path::PathBuf,
+        mut cwd: std::path::PathBuf,
         mcp_servers: Vec<McpServer>,
         include_messages_on_reload: bool,
     ) -> Result<Session, agent_client_protocol::Error> {
         let config = Config::global();
         let mut builder = self.session_manager.update(&session.id);
         let mut session_needs_update = false;
+
+        if self.shell_runtime.is_shell_product() {
+            cwd =
+                crate::acp::shell_directory::accepted_shell_directory(&cwd).map_err(|reason| {
+                    agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                        "code": "SHELL_DIRECTORY_UNAVAILABLE",
+                        "reason": reason,
+                    }))
+                })?;
+            if cwd != session.working_dir {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data(serde_json::json!({ "code": "SHELL_SESSION_DIRECTORY_MISMATCH" })));
+            }
+            let validation = self
+                .shell_provisioning_validation_for_working_dir(
+                    self.shell_runtime.provisioning(),
+                    &cwd,
+                )
+                .await;
+            if !validation.valid {
+                return Err(agent_client_protocol::Error::invalid_params().data(
+                    serde_json::json!({
+                        "message": "Shell provisioning is invalid",
+                        "validation": validation,
+                    }),
+                ));
+            }
+        }
 
         if session.workspace_id.is_none() && cwd != session.working_dir {
             builder = builder.working_dir(cwd);
@@ -1448,7 +1478,8 @@ impl GoslingAcpAgent {
             session_needs_update = true;
         }
 
-        if !mcp_servers.is_empty()
+        if self.shell_runtime.is_shell_product()
+            || !mcp_servers.is_empty()
             || EnabledExtensionsState::from_extension_data(&session.extension_data).is_none()
         {
             let extension_data =
@@ -1502,6 +1533,11 @@ impl GoslingAcpAgent {
             }
             .to_extension_data(&mut extension_data)
             .internal_err_ctx("Failed to initialize shell skill selection")?;
+        } else if self.shell_runtime.is_shell_product() {
+            extension_data.remove_extension_state(
+                crate::session::extension_data::ShellSkillSelectionState::EXTENSION_NAME,
+                crate::session::extension_data::ShellSkillSelectionState::VERSION,
+            );
         }
         Ok(extension_data)
     }

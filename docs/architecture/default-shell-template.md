@@ -1,7 +1,8 @@
 # Default Shell template: pre-GUI contract and implementation plan
 
-Status: active pre-GUI foundation; no Default Shell GUI or named shell is implemented
-Date: 2026-08-14
+Status: nonvisual foundation implemented; corrective pre-GUI replay/recovery contracts locally
+validated but not revision-bound; no Default Shell GUI or named shell is implemented
+Date: 2026-08-15
 Authority: ADR-0007–0012 and ADR-0014
 
 Detailed execution for DS-3 through DS-7 is frozen in
@@ -10,8 +11,9 @@ Detailed execution for DS-3 through DS-7 is frozen in
 ## Outcome
 
 The next MVP is a reusable, generic Default Shell template. It is a reduced Gosling application and
-a superset of workspace chat: it can choose a working directory, create or resume one session,
-exchange prompts, mediate permissions and elicitations, show bounded status and recovery, use a
+a superset of workspace chat: it can choose a working directory, discover/create/resume one session,
+exchange prompts, repair a bounded transcript event gap, mediate permissions, elicitations, and
+domain confirmations, show bounded status and recovery, use a
 referenced Gosling credential profile, and optionally present declared backend modules. It does not
 load developer tools by default and cannot edit global Gosling settings.
 
@@ -20,16 +22,16 @@ DAWES, math, Physics/CST, and all other named shells remain outside the mileston
 
 ## Ownership matrix
 
-| Surface            | Owner                                              | Renderer may receive                                       | Renderer must never receive                            |
-| ------------------ | -------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------ |
-| Launcher and icon  | product profile/package                            | verified display identity and safe icon asset              | bundle/protocol mutation authority                     |
-| Shell instructions | provisioning                                       | no raw prompt is required                                  | Gosling global prompt control                          |
-| Credentials        | Gosling protected credential service               | profile ID, label, provider/service, status, relink action | secret value, token, environment, config scope         |
-| Local settings     | product-specific main process store                | the fixed safe settings document                           | arbitrary keys, global settings API, credential values |
-| Working directory  | main-owned native selection and backend validation | selected display path and stable workspace/session facts   | arbitrary filesystem operations                        |
-| Tools and skills   | provisioning plus backend validation               | declared availability and permission requests              | undeclared builtin, raw MCP/ACP connection             |
-| Optional modules   | Gosling extension or supervised adapter contracts  | declared bounded snapshots/actions                         | arbitrary process launch or RPC routing                |
-| Conversation       | Gosling session runtime                            | bounded updates, prompt state, interaction summaries       | server secret or transport endpoint                    |
+| Surface            | Owner                                              | Renderer may receive                                                        | Renderer must never receive                                           |
+| ------------------ | -------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Launcher and icon  | product profile/package                            | verified display identity and safe icon asset                               | bundle/protocol mutation authority                                    |
+| Shell instructions | provisioning                                       | no raw prompt is required                                                   | Gosling global prompt control                                         |
+| Credentials        | Gosling protected credential service               | profile ID, label, provider/service, status, relink action                  | secret value, token, environment, config scope                        |
+| Local settings     | product-specific main process store                | the fixed safe settings document                                            | arbitrary keys, global settings API, credential values                |
+| Working directory  | main-owned native selection and backend validation | selected display path and stable workspace/session facts                    | arbitrary filesystem operations                                       |
+| Tools and skills   | provisioning plus backend validation               | declared availability and permission requests                               | undeclared builtin, raw MCP/ACP connection                            |
+| Optional modules   | Gosling extension or supervised adapter contracts  | declared bounded snapshots/actions                                          | arbitrary process launch or RPC routing                               |
+| Conversation       | Gosling session runtime                            | bounded updates/replay, session/provider/model facts, interaction summaries | server secret, transport endpoint, private reasoning, raw tool values |
 
 “Read credentials” means that the backend may resolve a selected profile and use the credential for
 a provider request. The shell UI reads only safe catalog metadata; it never reads secret bytes.
@@ -40,8 +42,11 @@ Required capabilities:
 
 - lifecycle and compatibility status;
 - native working-directory selection with cancel and inaccessible-path handling;
-- one active session, create/resume, prompt submit/cancel, and bounded conversation updates;
-- explicit permission and elicitation responses;
+- one active session, bounded current-directory discovery, create/resume, prompt submit/cancel,
+  history/live delivery markers, monotonic update sequence, and bounded transcript repair;
+- explicit permission, elicitation, and domain-confirmation responses with sufficient safe context;
+- stable operation-failure codes and recovery actions that preserve a prompt draft when retrying is
+  safe;
 - safe credential-profile listing/selection/status and full-Gosling relink handoff;
 - diagnostics export and explicit full-Gosling handoff;
 - local theme, text scale, last working directory, and preferred credential-profile reference;
@@ -80,8 +85,8 @@ its existing developer default.
 Exit: tests prove shell prompt replacement, project instruction inclusion, global-hint exclusion,
 invalid prompt rejection, empty shell tools, and unchanged non-shell defaults.
 
-Current worktree: implemented with targeted local tests passing; full matrix and revision-bound
-acceptance remain.
+Current source: implemented with targeted and merged-main CI evidence; final DS-7 revision binding
+remains.
 
 ### DS-2 — Product-scoped settings service
 
@@ -93,10 +98,11 @@ do not expose a generic settings bridge.
 Exit: two identities cannot observe or overwrite each other's settings; malformed, oversized,
 unknown, secret-shaped, relative-path, interrupted-write, old-schema, and permission cases pass.
 
-Current worktree: schema, isolated path, parser, reader/writer, schema-recovery load, narrow
-per-field store, and bounds/isolation/recovery tests implemented and passing locally. The store
-refuses to overwrite an unparseable document until an explicit reset. Crash-interruption proof on
-each supported platform remains for R6.
+Current source: schema, isolated path, parser, atomic reader/writer, schema-recovery load, narrow
+per-field store, and typed `settings.read`, `settings.appearance.update`, and confirmed
+`settings.reset` operations are implemented. Tests cover bounds, identity isolation, recovery-state
+refusal/reset, interrupted temporary writes, and permission-denied writes without losing the last
+committed document. Cross-platform packaged interruption depth remains R6.
 
 ### DS-3 — Working-directory authority
 
@@ -108,7 +114,7 @@ errors. Persist only the validated last directory in shell-local settings.
 Exit: typed IPC/preload negative-space tests and integration tests cover select, cancel, stale
 generation, invalid sender, removed/inaccessible directory, relaunch, and workspace/session pinning.
 
-Current worktree: built. `_gosling/unstable/shell/directory/validate` canonicalizes without side
+Current source: built. `_gosling/unstable/shell/directory/validate` canonicalizes without side
 effects; `directory.select`/`session.detach` are typed main-owned operations that never accept a
 renderer path; session creation uses the accepted canonical path and the backend canonicalizes
 again. Local Rust, Desktop, and live-child evidence passes; revision-bound acceptance remains.
@@ -123,10 +129,12 @@ backend. Missing/revoked/mismatched profiles fail closed and offer explicit full
 Exit: sentinel secrets never cross ACP, main snapshot, preload, diagnostics, settings, or logs;
 revoke, relink, provider mismatch, stale selection, and shell coexistence tests pass.
 
-Current worktree: built. `session.credentialPolicy` gates a four-field Rust-owned safe projection
+Current source: built. `session.credentialPolicy` gates a four-field Rust-owned safe projection
 behind `_gosling/unstable/shell/credentials/list`; selection persists only an opaque ID and the
-backend re-resolves it at session creation. Sentinel-secret and revoke/relink/mismatch tests pass
-locally; revision-bound acceptance remains.
+backend re-resolves it immediately before session creation. Catalog access runs outside the async
+worker with a bounded fail-closed result, and provisioning does not touch credential storage when
+no fixed profile is declared. Sentinel-secret, unknown/revoked/relink/mismatch, configured-profile
+pinning, and packaged unavailable-state evidence pass locally; revision-bound acceptance remains.
 
 ### DS-5 — Module and backend composition
 
@@ -138,7 +146,7 @@ authorities. The consumer may render declared data but cannot introduce a backen
 Exit: no undeclared module becomes reachable; absent, incompatible, crashing, hanging, malformed,
 overproducing, permission-requiring, and mutating modules have deterministic recovery behavior.
 
-Current worktree: built. `_gosling/unstable/shell/modules/list` reports the intersection of
+Current source: built. `_gosling/unstable/shell/modules/list` reports the intersection of
 provisioned selection and live backend resolution as one bounded inventory; v1's one-adapter limit
 is explicit rather than assumed. Local unit and live-child evidence passes; the full DS-5.4 crash,
 hang, and malformed-adapter matrix remains for R6.
@@ -154,10 +162,11 @@ development template, not a production or named-domain product.
 Exit: generating a second neutral shell changes only consumer/profile/provisioning/assets; host
 source hashes stay fixed and the strict resolver rejects incomplete or colliding identities/assets.
 
-Current worktree: built. `pnpm run shell:scaffold` generates a non-destructive neutral template into
+Current source: built. `pnpm run shell:scaffold` generates a non-destructive neutral template into
 an approved root through a staged temporary directory, and `pnpm run shell:conformance` refuses to
-certify an incomplete one. `fixtures/shell-{products,consumers}/default-shell-template` is the
-committed neutral sample. A packaged host readback for the template remains for DS-7/R6.
+certify an incomplete one. A second fresh neutral identity is generated and validated without host
+source edits. `fixtures/shell-{products,consumers}/default-shell-template` is the committed neutral
+sample, and macOS arm64 package/readback has been reproduced during DS-7.
 
 ### DS-7 — Nonvisual acceptance gate
 
@@ -169,21 +178,36 @@ Exit: DS-1–DS-6 are revision-bound and green; no critical/high open finding ap
 accepts GUI implementation. Only then begin the Default Shell renderer. Named shells remain blocked
 until the generic GUI passes M5.
 
-Current worktree: not accepted. Historical PG-50 evidence applies only to its recorded revision.
-DS-3–DS-6 carry local evidence recorded in `docs/logs/session/2026-08-14-default-shell-ds3-ds6.md`;
-the exact clean revision, current CI binding, host package readback, and operator acceptance
-required by DS-7 are all still open, so the gate decision remains NO-GO.
+Current status: a fresh corrective audit is complete locally. Merged `main` revision
+`0140e8169c231539c61a4dce98d4e713eccd07ce` has a fully green mandatory CI run. The Default Shell
+and second neutral fixture package/readback, a live full-Gosling-plus-two-shell coexistence replay,
+and an actual packaged Electron renderer/preload/backend startup replay pass on the supported macOS
+arm64 host. That last replay found and closed a blocking credential/Keychain stall and a follow-up
+audit closed unknown selected-profile acceptance. That clean candidate was pushed at `1e608283b`.
+The later workflow/data-flow corrective patch is locally green but currently uncommitted, so it is
+not revision-bound and does not inherit that candidate's `sourceClean:true` evidence. DS-7
+acceptance requires a clean commit, a repeated clean-source package/readback, a successful mandatory
+CI run whose reported head SHA matches that commit, and an explicit operator decision. Without
+those facts, DS-7 remains NO-GO. The corrective patch adds capability-gated interaction response
+channels, safe structured form/permission summaries, current-directory session discovery,
+provider/model session context, compacted-resume history replay, bounded transcript repair, stable
+renderer failure envelopes, a safe mirror of server-owned domain confirmations, and a
+main-enforced accepted-directory comparison before any resumed session is loaded. These additions
+are recorded in the fresh corrective audit; prior acceptance evidence does not automatically cover
+them.
 
 ## GUI implementation order after DS-7
 
-1. lifecycle/recovery frame and verified product identity;
+1. lifecycle/recovery frame, verified product identity, and draft-preserving error recovery;
 2. working-directory and credential-profile selection;
-3. single-session conversation and prompt cancellation;
-4. permission and elicitation surfaces;
-5. reduced local settings;
-6. optional declared module slots;
-7. diagnostics and full-Gosling handoff;
-8. accessibility, restart, coexistence, and packaged failure matrix.
+3. bounded session picker plus create/resume and explicit provider/model context;
+4. single-session conversation, history/live reconciliation, transcript-gap repair, and prompt
+   cancellation;
+5. permission, elicitation, and domain-confirmation surfaces;
+6. durable session Outputs inventory through the existing artifact guard, without directory scans;
+7. reduced local settings and optional declared module slots;
+8. diagnostics and full-Gosling handoff;
+9. accessibility, restart, coexistence, and packaged failure matrix.
 
 No named shell begins merely because the Default Shell scaffold exists. The reusable GUI and its
 conformance workflow must pass M5 first.
@@ -201,3 +225,6 @@ conformance workflow must pass M5 first.
   are acceptance requirements, not post-MVP cleanup.
 - Product uninstall/reset must remove only that shell's state and never Gosling's credential catalog
   or another shell's settings.
+- Gemini OAuth provider configuration currently has a separately tracked login failure in
+  `docs/TODO.md`. It is not a Default Shell implementation change, but provider setup/relink workflow
+  testing must include it before claiming a polished credential-selection experience.
