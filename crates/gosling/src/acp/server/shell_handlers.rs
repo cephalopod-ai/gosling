@@ -1,26 +1,30 @@
 use super::*;
 
 const SHELL_CREDENTIAL_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+// A failed lookup (timeout, panic, or read error) is usually transient — a locked keychain or a
+// momentarily unreadable workspace document — so callers back off for this long instead of
+// retrying on every request, but still retry on the next call after it elapses rather than
+// disabling credential selection for the rest of the process's life.
+const SHELL_CREDENTIAL_LOOKUP_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(15);
 
 impl GoslingAcpAgent {
     pub(super) async fn shell_credential_profiles(
         &self,
     ) -> Option<Vec<crate::workspace::CredentialProfile>> {
-        use std::sync::atomic::Ordering;
-
-        if self
-            .shell_credential_lookup_disabled
-            .load(Ordering::Relaxed)
-        {
+        let cooldown_until = *self.shell_credential_lookup_cooldown_until.lock().unwrap();
+        if cooldown_until.is_some_and(|until| std::time::Instant::now() < until) {
             return None;
         }
         let workspace_service = std::sync::Arc::clone(&self.workspace_service);
         let lookup = tokio::task::spawn_blocking(move || workspace_service.credential_profiles());
         match tokio::time::timeout(SHELL_CREDENTIAL_LOOKUP_TIMEOUT, lookup).await {
-            Ok(Ok(Ok(profiles))) => Some(profiles),
+            Ok(Ok(Ok(profiles))) => {
+                *self.shell_credential_lookup_cooldown_until.lock().unwrap() = None;
+                Some(profiles)
+            }
             Ok(Ok(Err(_))) | Ok(Err(_)) | Err(_) => {
-                self.shell_credential_lookup_disabled
-                    .store(true, Ordering::Relaxed);
+                *self.shell_credential_lookup_cooldown_until.lock().unwrap() =
+                    Some(std::time::Instant::now() + SHELL_CREDENTIAL_LOOKUP_COOLDOWN);
                 None
             }
         }

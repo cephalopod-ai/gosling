@@ -247,7 +247,7 @@ pub struct GoslingAcpAgent {
     workspace_service: Arc<WorkspaceService>,
     default_working_folder: PathBuf,
     shell_runtime: ShellRuntime,
-    shell_credential_lookup_disabled: std::sync::atomic::AtomicBool,
+    shell_credential_lookup_cooldown_until: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 /// Shorten a session/thread id for perf log correlation.
@@ -1194,7 +1194,7 @@ impl GoslingAcpAgent {
                 workspace_service,
                 default_working_folder,
                 shell_runtime: options.shell_runtime,
-                shell_credential_lookup_disabled: std::sync::atomic::AtomicBool::new(false),
+                shell_credential_lookup_cooldown_until: std::sync::Mutex::new(None),
             })
         })
         .await

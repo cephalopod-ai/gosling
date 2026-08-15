@@ -52,6 +52,36 @@ SHA and record the explicit operator decision in the handoff. The historical bas
 satisfy that condition. Without both external facts, the disposition is **NO-GO**. Named shells
 and production distribution remain out of scope.
 
+## 2026-08-15 PR #55 — automated review finding, fixed, and the binding CI run
+
+The commit above (`c794d05e5`) was opened as [PR #55](https://github.com/cephalopod-ai/gosling/pull/55)
+against `main` rather than assumed ready, following this repository's own PR/CI/review gate.
+Before opening it, every validation claim in this section was independently reproduced (not taken
+on the branch's own word): `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets
+--exclude v8 -- -D warnings`, `cargo test -p gosling --lib shell_validation` (8/8),
+`cargo test -p gosling-cli --test shell_runtime_e2e_test` (6/6), `pnpm run typecheck`,
+`pnpm exec vitest run src/shell` (18 files, 169/169), and `pnpm run shell:test-profile` (57/57) all
+reproduced cleanly on this exact commit.
+
+The repository's automated reviewer (`chatgpt-codex-connector`) then found one real defect in
+`shell_credential_profiles()` (`crates/gosling/src/acp/server/shell_handlers.rs`): a failed
+credential-catalog lookup (timeout, panic, or read error) set a permanent, process-wide
+`AtomicBool` latch, so a transient failure — a momentarily locked keychain, a temporarily unreadable
+workspace document — disabled credential-catalog access for the rest of the ACP agent's life, with
+no way to recover short of restarting the backend, even after the user fixed the underlying cause.
+Fixed: the permanent latch is replaced with a 15-second cooldown (`shell_credential_lookup_cooldown_until:
+Mutex<Option<Instant>>`) that still avoids hammering a definitely-broken lookup on every request,
+but retries for real on the next call after the cooldown elapses. Re-verified after the fix:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --exclude v8 -- -D warnings`,
+`cargo test -p gosling --lib shell_validation` (8/8), and
+`cargo test -p gosling-cli --test shell_runtime_e2e_test` (6/6) all pass.
+
+This satisfies the binding condition the section above named as missing: GitHub Actions run
+[31897062345](https://github.com/cephalopod-ai/gosling/actions/runs/31897062345) is fully green for
+PR #55's exact head commit (the cooldown fix, pushed on top of `c794d05e5`), and the review thread
+raised against that commit is resolved. The operator's explicit CA-7 GO/NO-GO decision, not made by
+this audit, remains the only condition still outstanding.
+
 This audit closes the CA-0 through CA-6 packages of the Default Shell corrective closure campaign
 against [`../../architecture/default-shell-template.md`](../../architecture/default-shell-template.md)'s
 DS-7 exit condition: "DS-1–DS-6 are revision-bound and green; no critical/high open finding
