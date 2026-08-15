@@ -41,6 +41,15 @@ When you reach the auto-compaction threshold:
   2. Once complete, you'll see a confirmation message that the conversation was compacted and summarized.
   3. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for gosling.
 
+To keep the exchange you're actively working in fully intact, gosling never summarizes the most recent turns — by default the last 10 real turns (a turn is one user message plus gosling's response) are kept verbatim, and everything older is folded into the summary. Adjust this with `GOSLING_COMPACT_PROTECT_LAST_N_TURNS`:
+
+```
+# Keep the last 20 turns verbatim instead of the default 10
+export GOSLING_COMPACT_PROTECT_LAST_N_TURNS=20
+```
+
+History older than the protected turns isn't compressed evenly either. It's summarized in fixed-size blocks going backward from that cutoff, and each block gets progressively less summarization budget the further back it is — so turns from a few blocks ago keep noticeably more detail than turns from deep in the session's past, instead of the whole history being diluted to one flat, evenly-terse summary.
+
 Compaction requests are bounded independently from the conversation that triggered
 them. Gosling sends fixed-size instructions, splits large histories into ordered
 chunks, summarizes those chunks, and reduces the summaries into one continuation

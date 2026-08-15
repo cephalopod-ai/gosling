@@ -11,6 +11,11 @@ segments. Preserve chronology and merge all supplied material into one coherent
 continuation summary. Aim for no more than {{ summary_target_characters }}
 characters so multiple summaries can be reduced safely.
 
+Weight detail by recency: compress the earliest parts of the history the most,
+and keep concrete specifics (the exact proposal, decision, file, or open
+question) for the most recent portion, since the very next message is most
+likely to refer back to it directly.
+
 Compatibility note for customized templates: {{ messages }}
 
 Wrap reasoning in `<analysis>` tags:  

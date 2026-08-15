@@ -173,6 +173,7 @@ These variables control how gosling manages conversation sessions and context.
 | `GOSLING_TRUNCATED_SHOW_LINES` | Number of lines shown before the "... (N more lines)" message when a code block is truncated | Positive integer | 20 |
 | `GOSLING_NO_CODE_TRUNCATION` | Disable code block truncation entirely — all code blocks are shown in full | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which gosling [automatically summarizes your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float between 0.0 and 1.0 (disabled at 0.0) | 0.8 |
+| `GOSLING_COMPACT_PROTECT_LAST_N_TURNS` | Number of most-recent turns [auto-compaction keeps verbatim](/docs/guides/sessions/smart-context-management#automatic-compaction) instead of folding into the summary | Integer (e.g., 0, 5, 20) | 10 |
 | `GOSLING_TOOL_CALL_CUTOFF` | Number of tool calls to keep in full detail before summarizing older tool outputs to help maintain efficient context usage  | Integer (e.g., 5, 10, 20) | 10 |
 | `GOSLING_MOIM_MESSAGE_TEXT` | Injects persistent text into gosling's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Useful for behavioral guardrails or persistent reminders. | Any text string | Not set |
 | `GOSLING_MOIM_MESSAGE_FILE` | Path to a file whose contents are injected into gosling's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Supports `~/`. Max 64 KB per file. | File path | Not set |
@@ -235,6 +236,9 @@ export GOSLING_NO_CODE_TRUNCATION=true
 
 # Automatically compact sessions when 60% of available tokens are used
 export GOSLING_AUTO_COMPACT_THRESHOLD=0.6
+
+# Keep the last 5 turns verbatim across auto-compaction instead of the default 2
+export GOSLING_COMPACT_PROTECT_LAST_N_TURNS=20
 
 # Keep more tool calls in full detail (useful for debugging or verbose workflows)
 export GOSLING_TOOL_CALL_CUTOFF=20

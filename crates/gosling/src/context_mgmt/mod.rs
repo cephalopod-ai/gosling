@@ -46,11 +46,93 @@ const COMPACTION_MIN_INPUT_BYTES: usize = 24 * 1024;
 const COMPACTION_MAX_INPUT_TOKENS: usize = 60_000;
 const COMPACTION_SUMMARY_TARGET_CHARACTERS: usize = 12_000;
 const COMPACTION_MAX_REDUCTION_ROUNDS: usize = 12;
+const COMPACT_BAND_BASE_CHARACTERS: usize = 4_000;
+const COMPACT_BAND_STEP_CHARACTERS: usize = 600;
+const COMPACT_BAND_MIN_CHARACTERS: usize = 400;
 
 fn tool_pair_summarization_enabled() -> bool {
     Config::global()
         .get_param::<bool>("GOSLING_TOOL_PAIR_SUMMARIZATION")
         .unwrap_or(true)
+}
+
+const DEFAULT_COMPACT_PROTECT_LAST_N_TURNS: usize = 10;
+
+/// Number of most-recent real turns (a turn starts at a genuine user prompt,
+/// not a tool response) that auto-compaction keeps verbatim instead of folding
+/// into the summary. Without this, the exchange the user is actively replying
+/// to could be compacted away just like everything older, leaving the agent
+/// unable to resolve a direct follow-up ("that idea") without re-deriving it
+/// from files. Turns older than this still get summarized, but with linearly
+/// decreasing detail the further back they are — see `compaction_bands`.
+fn compact_protect_last_n_turns() -> usize {
+    Config::global()
+        .get_param::<usize>("GOSLING_COMPACT_PROTECT_LAST_N_TURNS")
+        .unwrap_or(DEFAULT_COMPACT_PROTECT_LAST_N_TURNS)
+}
+
+/// A turn starts at an agent-visible user message that isn't itself a tool
+/// response delivery (tool responses are represented as Role::User messages).
+fn is_turn_start(msg: &Message) -> bool {
+    msg.is_agent_visible()
+        && matches!(msg.role, rmcp::model::Role::User)
+        && !msg
+            .content
+            .iter()
+            .any(|c| matches!(c, MessageContent::ToolResponse(_)))
+}
+
+#[derive(Debug)]
+struct CompactionBand {
+    start_idx: usize,
+    end_idx: usize,
+    target_characters: usize,
+}
+
+/// Partitions `messages[..compact_end]` into equal-width blocks of
+/// `block_width_turns` turns, counting backward from `compact_end` (the
+/// oldest block may be narrower). Each block's summarization budget decreases
+/// linearly by `COMPACT_BAND_STEP_CHARACTERS` per block-distance from the
+/// cutoff, floored at `COMPACT_BAND_MIN_CHARACTERS`, so a block right before
+/// the protected tail keeps far more detail than one from deep history
+/// instead of both being diluted evenly across one flat summary.
+fn compaction_bands(
+    turn_starts: &[usize],
+    compact_end: usize,
+    block_width_turns: usize,
+) -> Vec<CompactionBand> {
+    let eligible: Vec<usize> = turn_starts
+        .iter()
+        .copied()
+        .filter(|&idx| idx < compact_end)
+        .collect();
+    if eligible.is_empty() {
+        return Vec::new();
+    }
+
+    let block_width = block_width_turns.max(1);
+    let mut bands = Vec::new();
+    let mut remaining = eligible.len();
+    let mut end_idx = compact_end;
+
+    while remaining > 0 {
+        let take = block_width.min(remaining);
+        let start_turn = remaining - take;
+        let start_idx = eligible[start_turn];
+        let target_characters = COMPACT_BAND_BASE_CHARACTERS
+            .saturating_sub(bands.len() * COMPACT_BAND_STEP_CHARACTERS)
+            .max(COMPACT_BAND_MIN_CHARACTERS);
+        bands.push(CompactionBand {
+            start_idx,
+            end_idx,
+            target_characters,
+        });
+        end_idx = start_idx;
+        remaining = start_turn;
+    }
+
+    bands.reverse();
+    bands
 }
 
 const CONVERSATION_CONTINUATION_TEXT: &str =
@@ -141,8 +223,28 @@ pub async fn compact_messages(
         }
     };
 
-    // Find and preserve the most recent user message for non-manual compacts
-    let (preserved_user_message, is_most_recent) = if !manual_compact {
+    // Manual /compact intentionally summarizes everything the user asked to compact.
+    // Auto-compaction protects the last few real turns (see compact_protect_last_n_turns)
+    // so the exchange the user is actively replying to survives with full fidelity.
+    let protect_last_n = if manual_compact {
+        0
+    } else {
+        compact_protect_last_n_turns()
+    };
+
+    let turn_starts: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, msg)| is_turn_start(msg))
+        .map(|(idx, _)| idx)
+        .collect();
+
+    let protected_start = (protect_last_n > 0 && turn_starts.len() > protect_last_n)
+        .then(|| turn_starts[turn_starts.len() - protect_last_n]);
+
+    // Fallback for conversations too short to have `protect_last_n` full turns:
+    // preserve just the most recent user text message, as before.
+    let (preserved_user_message, is_most_recent) = if protected_start.is_none() && !manual_compact {
         let found_msg = messages.iter().enumerate().rev().find(|(_, msg)| {
             msg.is_agent_visible()
                 && matches!(msg.role, rmcp::model::Role::User)
@@ -159,10 +261,49 @@ pub async fn compact_messages(
         (None, false)
     };
 
-    let messages_to_compact = messages.as_slice();
+    let messages_to_compact = match protected_start {
+        Some(split) => &messages[..split],
+        None => messages.as_slice(),
+    };
 
-    let (summary_message, summarization_usage) =
-        do_compact(provider, model_config, session_id, messages_to_compact).await?;
+    let bands = protected_start
+        .map(|split| compaction_bands(&turn_starts, split, protect_last_n.max(1)))
+        .unwrap_or_default();
+
+    let (summary_message, summarization_usage) = if bands.is_empty() {
+        do_compact(
+            provider,
+            model_config,
+            session_id,
+            messages_to_compact,
+            COMPACTION_SUMMARY_TARGET_CHARACTERS,
+        )
+        .await?
+    } else {
+        let mut combined = String::new();
+        let mut total_usage: Option<ProviderUsage> = None;
+        for band in &bands {
+            let (band_msg, band_usage) = do_compact(
+                provider,
+                model_config,
+                session_id,
+                &messages[band.start_idx..band.end_idx],
+                band.target_characters,
+            )
+            .await?;
+            combine_usage(&mut total_usage, band_usage);
+            if let Some(text) = extract_text(&band_msg) {
+                if !combined.is_empty() {
+                    combined.push_str("\n\n");
+                }
+                combined.push_str(&text);
+            }
+        }
+        (
+            Message::user().with_text(combined),
+            total_usage.expect("at least one band ran when bands is non-empty"),
+        )
+    };
 
     // Create the final message list with updated visibility metadata:
     // 1. Original messages become user_visible but not agent_visible
@@ -188,8 +329,19 @@ pub async fn compact_messages(
 
     let mut continuation_messages = vec![summary_msg];
 
+    let tail_is_fresh_user_message = messages
+        .last()
+        .map(|m| is_turn_start(m) && has_text_only(m))
+        .unwrap_or(false);
+
     let continuation_text = if manual_compact {
         MANUAL_COMPACT_CONTINUATION_TEXT
+    } else if protected_start.is_some() {
+        if tail_is_fresh_user_message {
+            CONVERSATION_CONTINUATION_TEXT
+        } else {
+            TOOL_LOOP_CONTINUATION_TEXT
+        }
     } else if is_most_recent {
         CONVERSATION_CONTINUATION_TEXT
     } else {
@@ -204,7 +356,11 @@ pub async fn compact_messages(
     let (merged_continuation, _issues) = merge_consecutive_messages(continuation_messages);
     final_messages.extend(merged_continuation);
 
-    if let Some(user_msg) = preserved_user_message {
+    if let Some(split) = protected_start {
+        // Keep the protected tail exactly as-is: real tool calls, attachments,
+        // and all, rather than a reconstructed text-only stand-in.
+        final_messages.extend(messages[split..].iter().cloned());
+    } else if let Some(user_msg) = preserved_user_message {
         if let Some(text) = extract_text(&user_msg) {
             final_messages.push(
                 Message::user()
@@ -556,6 +712,7 @@ async fn do_compact(
     model_config: &ModelConfig,
     session_id: &str,
     messages: &[Message],
+    target_characters: usize,
 ) -> Result<(Message, ProviderUsage), anyhow::Error> {
     let agent_visible_messages: Vec<Message> = messages
         .iter()
@@ -565,7 +722,7 @@ async fn do_compact(
 
     let context = SummarizeContext {
         messages: "Conversation history is supplied in bounded user-message chunks.".to_string(),
-        summary_target_characters: COMPACTION_SUMMARY_TARGET_CHARACTERS,
+        summary_target_characters: target_characters,
     };
     let system_prompt = render_template("compaction.md", &context)?;
     let token_counter = crate::token_counter::shared_token_counter()
@@ -1026,6 +1183,149 @@ mod tests {
 
         let _ = Conversation::new(agent_conversation)
             .expect("compaction should produce a valid conversation");
+    }
+
+    fn turns(count: usize) -> Vec<Message> {
+        let mut messages = Vec::new();
+        for i in 1..=count {
+            messages.push(Message::user().with_text(format!("turn{i} request")));
+            messages.push(Message::assistant().with_text(format!("turn{i} response")));
+        }
+        messages
+    }
+
+    #[tokio::test]
+    async fn test_protects_last_n_turns_verbatim() {
+        let response_message = Message::assistant().with_text("<mock summary>");
+        let provider = MockProvider::new(response_message, 10_000);
+
+        // 13 real turns; default protect_last_n_turns is 10, so turns 4-13
+        // should survive untouched while turns 1-3 get folded into the summary.
+        let conversation = Conversation::new_unvalidated(turns(13));
+        let model_config = provider.config.clone();
+        let (compacted_conversation, _usage) = compact_messages(
+            &provider,
+            &model_config,
+            "test-session-id",
+            &conversation,
+            false,
+        )
+        .await
+        .unwrap();
+
+        let agent_visible_text: Vec<&str> = compacted_conversation
+            .messages()
+            .iter()
+            .filter(|m| m.is_agent_visible())
+            .flat_map(|m| m.content.iter())
+            .filter_map(MessageContent::as_text)
+            .collect();
+
+        for protected in [4, 13] {
+            assert!(
+                agent_visible_text
+                    .iter()
+                    .any(|t| t.contains(&format!("turn{protected} request"))),
+                "protected turn {protected} request should remain agent-visible verbatim: {agent_visible_text:?}"
+            );
+            assert!(
+                agent_visible_text
+                    .iter()
+                    .any(|t| t.contains(&format!("turn{protected} response"))),
+                "protected turn {protected} response should remain agent-visible verbatim: {agent_visible_text:?}"
+            );
+        }
+        for summarized in [1, 2, 3] {
+            assert!(
+                !agent_visible_text
+                    .iter()
+                    .any(|t| t.contains(&format!("turn{summarized} request"))),
+                "turn {summarized} should have been summarized away: {agent_visible_text:?}"
+            );
+        }
+
+        // The pre-compaction history remains visible to the user even though it's
+        // no longer agent-visible.
+        let user_visible_text: Vec<&str> = compacted_conversation
+            .messages()
+            .iter()
+            .flat_map(|m| m.content.iter())
+            .filter_map(MessageContent::as_text)
+            .collect();
+        assert!(user_visible_text
+            .iter()
+            .any(|t| t.contains("turn1 request")));
+    }
+
+    #[test]
+    fn test_compaction_bands_decay_with_distance() {
+        // 35 pre-cutoff turns starting at message index 0, one turn per index
+        // for simplicity (a real conversation interleaves assistant replies,
+        // but compaction_bands only cares about turn_starts positions).
+        let turn_starts: Vec<usize> = (0..35).collect();
+        let compact_end = 35;
+
+        let bands = compaction_bands(&turn_starts, compact_end, 10);
+
+        // Fixed-width (10-turn) blocks counting back from the cutoff; the
+        // oldest block is whatever remains (5 turns here).
+        assert_eq!(bands.len(), 4, "expected four blocks: {bands:?}");
+        assert_eq!(bands[0].start_idx, 0);
+        assert_eq!(bands[0].end_idx, 5);
+        assert_eq!(bands[1].start_idx, 5);
+        assert_eq!(bands[1].end_idx, 15);
+        assert_eq!(bands[2].start_idx, 15);
+        assert_eq!(bands[2].end_idx, 25);
+        assert_eq!(bands[3].start_idx, 25);
+        assert_eq!(bands[3].end_idx, 35);
+
+        // Budget decreases linearly with distance from the cutoff.
+        for pair in bands.windows(2) {
+            assert!(
+                pair[0].target_characters < pair[1].target_characters,
+                "each older block should have a strictly smaller budget than the next: {bands:?}"
+            );
+        }
+        assert_eq!(bands[3].target_characters, COMPACT_BAND_BASE_CHARACTERS);
+        assert_eq!(
+            bands[2].target_characters,
+            COMPACT_BAND_BASE_CHARACTERS - COMPACT_BAND_STEP_CHARACTERS
+        );
+    }
+
+    #[test]
+    fn test_compaction_bands_floors_at_minimum_characters() {
+        // Enough turns to produce many halvings, which should floor out at
+        // COMPACT_BAND_MIN_CHARACTERS rather than reaching zero.
+        let turn_starts: Vec<usize> = (0..2000).collect();
+        let bands = compaction_bands(&turn_starts, 2000, 1);
+
+        assert!(bands
+            .iter()
+            .all(|b| b.target_characters >= COMPACT_BAND_MIN_CHARACTERS));
+        assert_eq!(
+            bands.first().unwrap().target_characters,
+            COMPACT_BAND_MIN_CHARACTERS
+        );
+    }
+
+    #[test]
+    fn test_compaction_bands_empty_when_nothing_before_cutoff() {
+        let turn_starts: Vec<usize> = vec![5, 10];
+        assert!(compaction_bands(&turn_starts, 5, 10).is_empty());
+    }
+
+    fn bands_debug(bands: &[CompactionBand]) -> String {
+        bands
+            .iter()
+            .map(|b| {
+                format!(
+                    "[{}, {}) -> {} chars",
+                    b.start_idx, b.end_idx, b.target_characters
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     #[tokio::test]
