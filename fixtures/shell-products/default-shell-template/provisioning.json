@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "id": "gosling-default-shell-template",
+    "displayName": "Default Shell Template",
+    "version": "0.0.0-template",
+    "runtimeNamespace": "default-shell-template"
+  },
+  "settingsAuthority": "main_gosling",
+  "settingsSchemaVersion": 1,
+  "protocolPolicy": {
+    "mode": "restricted",
+    "deniedMethods": [
+      "_gosling/unstable/config/upsert"
+    ]
+  },
+  "session": {
+    "credentialPolicy": "fixed",
+    "extensions": [],
+    "skillIds": []
+  },
+  "instructions": {
+    "systemPrompt": "You are the Default Shell Template assistant. Work only inside the folder the operator selected, explain what you are about to change before changing it, and ask for confirmation when an action is not reversible."
+  }
+}

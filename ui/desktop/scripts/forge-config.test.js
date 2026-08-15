@@ -136,10 +136,11 @@ test('consumer manifest selects the profile and embeds only its declared rendere
     consumerId: 'shell-consumer-a',
     consumerHash: manifest.consumer.consumerHash,
     rendererHash: manifest.consumer.rendererHash,
-    declaredCapabilities: ['session.create'],
+    declaredCapabilities: ['directory.select', 'session.create'],
     requiredAgentCapabilities: ['loadSession'],
     requiredMethods: [
       '_gosling/unstable/session/info',
+      '_gosling/unstable/shell/directory/validate',
       '_gosling/unstable/shell/handoff/prepare',
       '_gosling/unstable/shell/provisioning/read',
       '_gosling/unstable/shell/provisioning/validate',

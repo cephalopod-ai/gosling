@@ -13,6 +13,21 @@ function state(generation = 1): import('./runtimeSnapshot').ShellRuntimeSnapshot
     runtimeNamespace: null,
     compatibility: { status: 'unverified' },
     provisioningIssues: [],
+    directory: {
+      state: 'unselected' as const,
+      path: null,
+      label: null,
+      reasonCode: null,
+      remembered: false,
+    },
+    settingsRecovery: { status: 'loaded' as const, schemaVersion: 1 },
+    credentials: {
+      catalogStatus: 'denied' as const,
+      profiles: [],
+      selectedProfileId: null,
+      selectionStatus: 'none' as const,
+    },
+    modules: [],
     session: null,
     adapter: null,
     pendingInteractions: [],
@@ -78,6 +93,23 @@ function harness() {
     })),
     handoffConfirm: vi.fn(() => ({ opened: true })),
     externalOpen: vi.fn(() => ({ opened: true })),
+    directorySelect: vi.fn(() => ({
+      status: 'cancelled' as const,
+      directory: {
+        state: 'unselected' as const,
+        path: null,
+        label: null,
+        reasonCode: null,
+        remembered: false,
+      },
+    })),
+    credentialSelect: vi.fn(() => ({
+      catalogStatus: 'available' as const,
+      profiles: [],
+      selectedProfileId: null,
+      selectionStatus: 'none' as const,
+    })),
+    sessionDetach: vi.fn(() => ({ detached: false, sessionId: null })),
   };
   const registration = registerShellIpc({
     ipcMain,
@@ -162,6 +194,68 @@ describe('shell IPC registration', () => {
     await expect(
       submit(value.event, { generation: 1, sessionId: 'session', text: 'hello' })
     ).rejects.toThrow('did not declare prompt.submit');
+    registration.dispose();
+  });
+
+  it('never accepts a renderer-supplied path or an unexpected selection field', async () => {
+    const { invoke, operations } = harness();
+
+    await expect(
+      invoke(shellIpcChannels.directorySelect, {
+        generation: 1,
+        userGesture: true,
+        path: '/etc',
+      })
+    ).rejects.toThrow('unsupported fields');
+    await expect(
+      invoke(shellIpcChannels.directorySelect, { generation: 1, userGesture: false })
+    ).rejects.toThrow('explicit user gesture');
+    await expect(
+      invoke(shellIpcChannels.credentialSelect, { generation: 1, profileId: 'a'.repeat(257) })
+    ).rejects.toThrow('bounded string');
+    await expect(
+      invoke(shellIpcChannels.credentialSelect, { generation: 1, profileId: 'work', secret: 'x' })
+    ).rejects.toThrow('unsupported fields');
+    expect(operations.directorySelect).not.toHaveBeenCalled();
+    expect(operations.credentialSelect).not.toHaveBeenCalled();
+
+    await expect(
+      invoke(shellIpcChannels.directorySelect, { generation: 1, userGesture: true })
+    ).resolves.toMatchObject({ status: 'cancelled' });
+    await expect(
+      invoke(shellIpcChannels.credentialSelect, { generation: 1, profileId: null })
+    ).resolves.toMatchObject({ selectedProfileId: null });
+    await expect(
+      invoke(shellIpcChannels.sessionDetach, { generation: 1 })
+    ).resolves.toEqual({ detached: false, sessionId: null });
+  });
+
+  it('gates directory, credential, and detach operations on the consumer declaration', async () => {
+    const value = harness();
+    value.registration.dispose();
+    const registration = registerShellIpc({
+      ipcMain: value.ipcMain,
+      renderer: value.renderer,
+      operations: value.operations,
+      allowedExternalOrigins: new Set(),
+      declaredCapabilities: new Set(['directory.select']),
+    });
+
+    await expect(
+      value.handlers.get(shellIpcChannels.directorySelect)!(value.event, {
+        generation: 1,
+        userGesture: true,
+      })
+    ).resolves.toMatchObject({ status: 'cancelled' });
+    await expect(
+      value.handlers.get(shellIpcChannels.credentialSelect)!(value.event, {
+        generation: 1,
+        profileId: null,
+      })
+    ).rejects.toThrow('did not declare credential.select');
+    await expect(
+      value.handlers.get(shellIpcChannels.sessionDetach)!(value.event, { generation: 1 })
+    ).rejects.toThrow('did not declare session.detach');
     registration.dispose();
   });
 

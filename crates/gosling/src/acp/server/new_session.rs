@@ -1,4 +1,4 @@
-use crate::acp::custom_requests::GoslingExtension;
+use crate::acp::custom_requests::{GoslingExtension, ShellCredentialPolicy};
 use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
@@ -20,9 +20,30 @@ struct InitialSessionConfig {
     extension_data: ExtensionData,
     project_id: Option<String>,
     workspace: Option<PreparedWorkspaceSession>,
+    shell_credential_profile_id: Option<String>,
 }
 
 impl GoslingAcpAgent {
+    /// Resolves which credential profile this session launch may use, enforcing the shell policy.
+    ///
+    /// `fixed` provisioning ignores any caller selection and refuses one outright, so a product
+    /// that never opted into catalog selection cannot be switched by an ACP caller.
+    fn shell_credential_profile_id(
+        &self,
+        meta: Option<&Meta>,
+    ) -> Result<Option<String>, agent_client_protocol::Error> {
+        let selected = meta_string(meta, "shellCredentialProfileId")?;
+        if selected.is_some()
+            && self.shell_runtime.credential_policy() != ShellCredentialPolicy::SelectableCatalog
+        {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data(serde_json::json!({ "code": "SHELL_CREDENTIAL_SELECTION_DENIED" })));
+        }
+        Ok(self
+            .shell_runtime
+            .effective_credential_profile_id(selected.as_deref()))
+    }
+
     pub(super) async fn handle_new_session(
         &self,
         cx: &ConnectionTo<Client>,
@@ -38,13 +59,20 @@ impl GoslingAcpAgent {
                 .clone()
         });
         let mut workspace_overrides = workspace_launch_overrides(args.meta.as_ref())?;
-        if workspace_overrides.credential_profile_id.is_none() {
-            workspace_overrides.credential_profile_id = self
-                .shell_runtime
-                .provisioning()
-                .session
-                .credential_profile_id
-                .clone();
+        if self.shell_runtime.is_shell_product()
+            && workspace_overrides.credential_profile_id.is_some()
+        {
+            // A shell product's credential authority is its provisioned policy. Honoring the full
+            // Gosling per-chat credential override here would let any ACP caller replace a fixed
+            // profile, so shells select through `shellCredentialProfileId` or not at all.
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data(serde_json::json!({ "code": "SHELL_CREDENTIAL_SELECTION_DENIED" })));
+        }
+        let shell_credential_profile_id = self.shell_credential_profile_id(args.meta.as_ref())?;
+        // Without a workspace the shell profile is pinned directly by the shell-specific paths
+        // below; putting it here would make a workspace-free launch fail the overrides check.
+        if workspace_overrides.credential_profile_id.is_none() && workspace_id.is_some() {
+            workspace_overrides.credential_profile_id = shell_credential_profile_id.clone();
         }
         let workspace = match workspace_id.as_deref() {
             Some(workspace_id) => Some(
@@ -58,11 +86,20 @@ impl GoslingAcpAgent {
             }
             None => None,
         };
-        let effective_cwd = workspace
+        let mut effective_cwd = workspace
             .as_ref()
             .map(|workspace| workspace.working_folder.clone())
             .unwrap_or_else(|| args.cwd.clone());
         validate_absolute_cwd(&effective_cwd)?;
+        if self.shell_runtime.is_shell_product() {
+            effective_cwd = crate::acp::shell_directory::accepted_shell_directory(&effective_cwd)
+                .map_err(|reason| {
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "code": "SHELL_DIRECTORY_UNAVAILABLE",
+                    "reason": reason,
+                }))
+            })?;
+        }
         let shell_validation = self
             .shell_provisioning_validation_for_working_dir(
                 self.shell_runtime.provisioning(),
@@ -194,6 +231,8 @@ impl GoslingAcpAgent {
                 extension_data,
                 project_id,
                 workspace,
+                shell_credential_profile_id: self
+                    .shell_credential_profile_id(args.meta.as_ref())?,
             },
         )
         .await?;
@@ -256,7 +295,7 @@ impl GoslingAcpAgent {
                 return Ok((provider, model_config));
             }
         }
-        if let Some(profile_id) = shell_session.credential_profile_id.as_deref() {
+        if let Some(profile_id) = self.shell_credential_profile_id(meta)?.as_deref() {
             let provider = self
                 .workspace_service
                 .profile_resolution(profile_id)
@@ -308,13 +347,7 @@ impl GoslingAcpAgent {
                 workspace.credential_binding_id,
                 workspace.context,
             );
-        } else if let Some(profile_id) = self
-            .shell_runtime
-            .provisioning()
-            .session
-            .credential_profile_id
-            .as_deref()
-        {
+        } else if let Some(profile_id) = config.shell_credential_profile_id.as_deref() {
             let profile = self
                 .workspace_service
                 .credential_profiles()

@@ -1,8 +1,55 @@
 import { EventEmitter } from 'node:events';
+import type {
+  ShellCredentialListResponse_unstable,
+  ShellDirectoryValidateResponse_unstable,
+  ShellModuleListResponse_unstable,
+} from '@repo-makeover/gosling-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { ShellCompatibilityError } from './acpRuntime';
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
-import { createShellRuntimeController } from './runtimeController';
+import { createShellRuntimeController, type ShellRuntimeController } from './runtimeController';
+import { createShellDirectoryController } from './directoryController';
+import { createShellCredentialController } from './credentialController';
+import {
+  defaultShellLocalSettings,
+  type ShellLocalSettings,
+  type ShellSettingsStore,
+} from './localSettings';
+
+function copySettings(settings: ShellLocalSettings): ShellLocalSettings {
+  return {
+    schemaVersion: settings.schemaVersion,
+    appearance: { ...settings.appearance },
+    workspace: { ...settings.workspace },
+  };
+}
+
+function memorySettingsStore(lastWorkingDirectory: string | null): ShellSettingsStore {
+  let settings = {
+    ...defaultShellLocalSettings(),
+    workspace: {
+      lastWorkingDirectory,
+      preferredCredentialProfileId: null as string | null,
+    },
+  };
+  return {
+    read: () => copySettings(settings),
+    recovery: () => ({ status: 'loaded' as const, schemaVersion: 1 }),
+    setAppearance: () => copySettings(settings),
+    setLastWorkingDirectory(directory) {
+      settings = { ...settings, workspace: { ...settings.workspace, lastWorkingDirectory: directory } };
+      return copySettings(settings);
+    },
+    setPreferredCredentialProfileId(profileId) {
+      settings = {
+        ...settings,
+        workspace: { ...settings.workspace, preferredCredentialProfileId: profileId },
+      };
+      return copySettings(settings);
+    },
+    reset: () => copySettings(settings),
+  };
+}
 
 const product = {
   id: 'gosling-shell-fixture-a',
@@ -49,6 +96,14 @@ const manifest = {
   },
 } satisfies ShellBuildManifest;
 
+interface TestConnection {
+  close: ReturnType<typeof vi.fn>;
+  closed: Promise<void>;
+  validateDirectory(candidate: string): Promise<ShellDirectoryValidateResponse_unstable>;
+  listCredentials(): Promise<ShellCredentialListResponse_unstable>;
+  listModules(workingDir: string | null): Promise<ShellModuleListResponse_unstable>;
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -63,7 +118,7 @@ function harness(withAdapter = false) {
   let tick = 0;
   const processes: EventEmitter[] = [];
   const cleanups: Array<ReturnType<typeof vi.fn>> = [];
-  const connections: Array<{ close: ReturnType<typeof vi.fn>; closed: Promise<void> }> = [];
+  const connections: TestConnection[] = [];
   const createHost = vi.fn(async (options) => {
     const process = new EventEmitter();
     const cleanup = vi.fn(async () => {});
@@ -86,8 +141,14 @@ function harness(withAdapter = false) {
       windowOptions: {},
     } as never;
   });
-  const connectAcp = vi.fn(async () => {
+  const connectAcp = vi.fn(async (input) => {
     const close = vi.fn();
+    const validateDirectory = vi.fn(async (candidate: string) => ({
+      status: 'valid' as const,
+      canonicalPath: candidate,
+    }));
+    // The real connect resolves the working directory before provisioning is validated.
+    await input.resolveWorkingDir?.(validateDirectory);
     const connection = {
       client: {},
       initializeResponse: { protocolVersion: 1 },
@@ -111,13 +172,30 @@ function harness(withAdapter = false) {
       prompt: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
       cancel: vi.fn().mockResolvedValue(undefined),
       prepareHandoff: vi.fn(),
+      validateDirectory,
+      listCredentials: vi.fn().mockResolvedValue({ status: 'denied' as const, profiles: [] }),
+      listModules: vi.fn().mockResolvedValue({ contractVersion: 1, modules: [] }),
       closed: new Promise<void>(() => {}),
       close,
     };
-    connections.push(connection);
+    connections.push(connection as unknown as TestConnection);
     return connection as never;
   });
-  const controller = createShellRuntimeController(
+  let controller: ShellRuntimeController;
+  const settings = memorySettingsStore('/workspace');
+  const directory = createShellDirectoryController({
+    settings,
+    showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] })),
+    validate: (candidate) => connections[connections.length - 1].validateDirectory(candidate),
+    generation: () => controller.read().generation,
+    isSelectable: () => ({ allowed: true }),
+  });
+  const credentials = createShellCredentialController({
+    settings,
+    list: () => connections[connections.length - 1].listCredentials(),
+    generation: () => controller.read().generation,
+  });
+  controller = createShellRuntimeController(
     {
       profile,
       manifest,
@@ -125,6 +203,9 @@ function harness(withAdapter = false) {
       diagnosticsDir: '/user/diagnostics',
       processRegistryPath: '/user/backend-processes.json',
       workingDir: '/workspace',
+      directory,
+      credentials,
+      settings,
       isPackaged: true,
       resourcesPath: '/resources',
       preloadPath: '/app/shell-preload.js',
@@ -139,16 +220,26 @@ function harness(withAdapter = false) {
       now: () => `2026-08-13T00:00:${String(tick++).padStart(2, '0')}Z`,
     }
   );
-  return { cleanups, connectAcp, connections, controller, createHost, processes };
+  return { cleanups, connectAcp, connections, controller, createHost, credentials, directory, processes };
 }
 
 describe('shell runtime controller', () => {
   it('owns boot, validation, ready, and bounded stop with exact host inputs', async () => {
     const value = harness();
     const observed: string[] = [];
-    value.controller.onChanged((state) => observed.push(`${state.generation}:${state.name}`));
+    value.controller.onChanged((state) => {
+      const entry = `${state.generation}:${state.name}`;
+      if (observed[observed.length - 1] !== entry) observed.push(entry);
+    });
     await value.controller.start();
     expect(observed).toEqual(['1:validating', '1:ready']);
+    expect(value.controller.read().directory).toEqual({
+      state: 'selected',
+      path: '/workspace',
+      label: 'workspace',
+      reasonCode: null,
+      remembered: true,
+    });
     expect(value.createHost).toHaveBeenCalledWith({
       profile: {
         id: product.id,
@@ -171,7 +262,6 @@ describe('shell runtime controller', () => {
         acpUrl: 'ws://127.0.0.1:7001/acp?token=secret',
         profile,
         manifest,
-        workingDir: '/workspace',
       })
     );
     await value.controller.stop(1);
@@ -441,10 +531,16 @@ describe('shell runtime controller', () => {
         compatibility: { compatible: true as const },
         runtimeNamespace: product.runtimeNamespace,
         prepareHandoff: vi.fn(),
+        validateDirectory: vi.fn(async (candidate: string) => ({
+          status: 'valid' as const,
+          canonicalPath: candidate,
+        })),
+        listCredentials: vi.fn(async () => ({ status: 'denied' as const, profiles: [] })),
+        listModules: vi.fn(async () => ({ contractVersion: 1, modules: [] })),
         closed: transport.promise,
         close: vi.fn(),
       };
-      value.connections.push(connection);
+      value.connections.push(connection as unknown as TestConnection);
       return connection as never;
     });
     await value.controller.start();

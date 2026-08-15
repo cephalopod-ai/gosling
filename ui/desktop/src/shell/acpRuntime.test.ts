@@ -10,11 +10,17 @@ import { connectShellAcp, provisioningIssueSummaries, ShellCompatibilityError } 
 import type { ResolvedShellProductProfile, ShellBuildManifest } from './profile';
 
 const sessionInfoMethod = '_gosling/unstable/session/info';
+const mainOwnedMethods = [
+  '_gosling/unstable/shell/credentials/list',
+  '_gosling/unstable/shell/directory/validate',
+  '_gosling/unstable/shell/modules/list',
+];
 const methods = [
   sessionInfoMethod,
   '_gosling/unstable/shell/handoff/prepare',
   '_gosling/unstable/shell/provisioning/read',
   '_gosling/unstable/shell/provisioning/validate',
+  ...mainOwnedMethods,
 ];
 const product = {
   id: 'gosling-shell-fixture-a',
@@ -131,6 +137,13 @@ function harness() {
       },
     })
   );
+  const validateDirectory = vi.fn((params: { path: string }) =>
+    Promise.resolve({ status: 'valid' as const, canonicalPath: params.path })
+  );
+  const listCredentials = vi.fn(() =>
+    Promise.resolve({ status: 'denied' as const, profiles: [] })
+  );
+  const listModules = vi.fn(() => Promise.resolve({ contractVersion: 1, modules: [] }));
   const prepare = vi.fn(() => Promise.reject(new Error('not used')));
   const snapshot = vi.fn<() => Promise<DomainSnapshotResponse_unstable>>(() =>
     Promise.reject(new Error('not used'))
@@ -153,6 +166,9 @@ function harness() {
       sessionInfo_unstable: sessionInfo,
       shellProvisioningRead_unstable: read,
       shellProvisioningValidate_unstable: validate,
+      shellDirectoryValidate_unstable: validateDirectory,
+      shellCredentialsList_unstable: listCredentials,
+      shellModulesList_unstable: listModules,
       shellHandoffPrepare_unstable: prepare,
       shellDomainSnapshot_unstable: snapshot,
       shellDomainAction_unstable: action,
@@ -201,7 +217,6 @@ function connect(value = harness()) {
       acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
       profile,
       manifest,
-      workingDir: '/workspace/current',
       clientName: 'fixture-shell',
       clientVersion: '0.0.0-test',
       dependencies: value.dependencies,
@@ -299,7 +314,6 @@ describe('shell ACP runtime', () => {
       acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
       profile,
       manifest: adapterManifest,
-      workingDir: '/workspace/current',
       clientName: 'fixture-shell',
       clientVersion: '0.0.0-test',
       dependencies: value.dependencies,
@@ -329,7 +343,6 @@ describe('shell ACP runtime', () => {
         acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
         profile,
         manifest: consumerManifest,
-        workingDir: '/workspace/current',
         clientName: 'fixture-shell',
         clientVersion: '0.0.0-test',
         dependencies: value.dependencies,
@@ -342,7 +355,7 @@ describe('shell ACP runtime', () => {
     const { promise, value } = connect();
     const connection = await promise;
 
-    await expect(connection.createSession()).resolves.toEqual({
+    await expect(connection.createSession({ workingDir: '/workspace/current' })).resolves.toEqual({
       sessionId: 'session-1',
       workingDir: '/workspace/current',
     });
@@ -421,20 +434,17 @@ describe('shell ACP runtime', () => {
     });
   });
 
-  it('rejects a relative main-owned working directory before opening a transport', async () => {
-    const value = harness();
-    await expect(
-      connectShellAcp({
-        acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
-        profile,
-        manifest,
-        workingDir: 'relative',
-        clientName: 'fixture-shell',
-        clientVersion: '0.0.0-test',
-        dependencies: value.dependencies,
-      })
-    ).rejects.toThrow('workingDir must be an absolute path');
-    expect(value.createStream).not.toHaveBeenCalled();
+  it('rejects a relative main-supplied working directory before reaching the server', async () => {
+    const { promise, value } = connect();
+    const connection = await promise;
+
+    await expect(connection.createSession({ workingDir: 'relative' })).rejects.toThrow(
+      'workingDir must be an absolute path'
+    );
+    await expect(connection.validateDirectory('relative')).rejects.toThrow(
+      'workingDir must be an absolute path'
+    );
+    expect(value.newSession).not.toHaveBeenCalled();
   });
 
   it('rejects invalid resume IDs before contacting the backend', async () => {
@@ -490,7 +500,6 @@ describe('shell ACP runtime', () => {
         acpUrl,
         profile,
         manifest,
-        workingDir: '/workspace/current',
         clientName: 'fixture-shell',
         clientVersion: '0.0.0-test',
         dependencies: value.dependencies,
@@ -523,6 +532,39 @@ describe('shell ACP runtime', () => {
     });
     expect(value.read).not.toHaveBeenCalled();
     expect(value.close).toHaveBeenCalledOnce();
+  });
+
+  it('requires the methods main always uses, even when nothing declares them', async () => {
+    const declaredNothing: ShellBuildManifest = {
+      ...manifest,
+      compatibility: { ...manifest.compatibility, requiredMethods: [sessionInfoMethod] },
+    };
+    const bareProfile: ResolvedShellProductProfile = {
+      ...profile,
+      compatibility: { ...profile.compatibility, requiredMethods: [sessionInfoMethod] },
+    };
+
+    for (const missing of mainOwnedMethods) {
+      const value = harness();
+      const incompatible = response();
+      const shell = incompatible.agentCapabilities!._meta!.goslingShell as {
+        availableMethods: string[];
+      };
+      shell.availableMethods = shell.availableMethods.filter((method) => method !== missing);
+      value.initialize.mockResolvedValue(incompatible);
+
+      await expect(
+        connectShellAcp({
+          acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+          profile: bareProfile,
+          manifest: declaredNothing,
+          clientName: 'fixture-shell',
+          clientVersion: '0.0.0-test',
+          dependencies: value.dependencies,
+        })
+      ).rejects.toMatchObject({ result: { compatible: false, code: 'METHOD_UNAVAILABLE' } });
+      expect(value.read).not.toHaveBeenCalled();
+    }
   });
 
   it('rejects runtime identity after provisioning confirms the fixed identity', async () => {

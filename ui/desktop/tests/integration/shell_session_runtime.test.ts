@@ -11,6 +11,9 @@ import {
   type ShellRuntimeController,
 } from '../../src/shell/runtimeController';
 import type { ResolvedShellProductProfile, ShellBuildManifest } from '../../src/shell/profile';
+import { createShellSettingsStore } from '../../src/shell/localSettings';
+import { createShellDirectoryController } from '../../src/shell/directoryController';
+import { createShellCredentialController } from '../../src/shell/credentialController';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '../../../..');
 const binaryPath = path.join(repositoryRoot, 'target', 'debug', 'gosling');
@@ -344,13 +347,31 @@ function createController(
   process.env.GOSLING_BINARY = binaryPath;
   process.env.GOSLING_PATH_ROOT = fixture.root;
   process.env.GOSLING_DISABLE_KEYRING = '1';
-  const controller = createShellRuntimeController({
+  const settings = createShellSettingsStore(path.join(fixture.root, 'shell-settings.json'));
+  settings.setLastWorkingDirectory(fixture.workingDir);
+  let controller: ShellRuntimeController;
+  const directory = createShellDirectoryController({
+    settings,
+    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+    validate: (candidate) => controller.getAcp()!.validateDirectory(candidate),
+    generation: () => controller.read().generation,
+    isSelectable: () => ({ allowed: true }),
+  });
+  const credentials = createShellCredentialController({
+    settings,
+    list: () => controller.getAcp()!.listCredentials(),
+    generation: () => controller.read().generation,
+  });
+  controller = createShellRuntimeController({
     profile,
     manifest: build,
     provisioningPath: fixture.provisioningPath,
     diagnosticsDir: path.join(fixture.root, 'diagnostics'),
     processRegistryPath: path.join(fixture.root, 'backend-processes.json'),
     workingDir: fixture.workingDir,
+    directory,
+    credentials,
+    settings,
     isPackaged: false,
     preloadPath: path.join(fixture.root, 'shell-preload.js'),
     sessionPartition: 'persist:gosling-shell-session-integration',
@@ -850,7 +871,7 @@ describe('shell session runtime integration', () => {
     const fixture = writeFixtureRoot();
     const first = createController(fixture);
     await expect(first.start()).resolves.toMatchObject({ name: 'ready' });
-    const created = await first.getAcp()!.createSession();
+    const created = await first.getAcp()!.createSession({ workingDir: fixture.workingDir });
     expect(created.workingDir).toBe(fixture.workingDir);
     await stopController(first);
 
@@ -951,7 +972,7 @@ describe('shell session runtime integration', () => {
     await eventually(() => fs.existsSync(path.join(fixture.root, 'neutral-adapter.pid')));
     const adapterPid = adapterProcessId(fixture.root);
     expect(processIsAlive(adapterPid)).toBe(true);
-    const session = await acp.createSession();
+    const session = await acp.createSession({ workingDir: fixture.workingDir });
     await expect(acp.domainSnapshot({ input: { scope: 'neutral' } })).resolves.toMatchObject({
       domainId: 'neutral-fixture',
       payload: { scope: 'neutral' },
@@ -1008,7 +1029,7 @@ describe('shell session runtime integration', () => {
     await eventually(() => fs.existsSync(path.join(fixture.root, 'neutral-adapter.pid')));
     const adapterPid = adapterProcessId(fixture.root);
     const acp = controller.getAcp()!;
-    const session = await acp.createSession();
+    const session = await acp.createSession({ workingDir: fixture.workingDir });
     const action = acp.domainAction({
       sessionId: session.sessionId,
       generation: 1,
@@ -1062,7 +1083,7 @@ describe('shell session runtime integration', () => {
     await eventually(() => fs.existsSync(path.join(fixture.root, 'neutral-adapter.pid')));
     const adapterPid = adapterProcessId(fixture.root);
     const acp = controller.getAcp()!;
-    const session = await acp.createSession();
+    const session = await acp.createSession({ workingDir: fixture.workingDir });
     void acp
       .domainAction({
         sessionId: session.sessionId,

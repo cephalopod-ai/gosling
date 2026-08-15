@@ -11,6 +11,21 @@
       "responseType": "ShellProvisioningValidateResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/shell/directory/validate",
+      "requestType": "ShellDirectoryValidateRequest_unstable",
+      "responseType": "ShellDirectoryValidateResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/credentials/list",
+      "requestType": "ShellCredentialListRequest_unstable",
+      "responseType": "ShellCredentialListResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/modules/list",
+      "requestType": "ShellModuleListRequest_unstable",
+      "responseType": "ShellModuleListResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/shell/domain/snapshot",
       "requestType": "DomainSnapshotRequest_unstable",
       "responseType": "DomainSnapshotResponse_unstable"

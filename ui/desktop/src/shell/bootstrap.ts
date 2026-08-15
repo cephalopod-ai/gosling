@@ -11,7 +11,10 @@ import { ShellHandoffStore } from './handoff';
 import { registerShellIpc, type RegisteredShellIpc, type ShellIpcMainAdapter } from './ipcMain';
 import type { ShellLifecycleState } from './lifecycle';
 import { loadShellResources, type ShellResourceFiles } from './resources';
-import { createShellRuntimeController } from './runtimeController';
+import { createShellRuntimeController, type ShellRuntimeController } from './runtimeController';
+import { createShellSettingsStore } from './localSettings';
+import { createShellDirectoryController } from './directoryController';
+import { createShellCredentialController } from './credentialController';
 
 interface ShellWebContents {
   id: number;
@@ -55,6 +58,12 @@ export interface ShellBootstrapAdapter {
     buttonLabel: string;
     message: string;
   }): Promise<{ canceled: boolean; filePath?: string }>;
+  showOpenDialog(options: {
+    title: string;
+    buttonLabel: string;
+    message: string;
+    properties: ReadonlyArray<'openDirectory' | 'createDirectory' | 'dontAddToRecent'>;
+  }): Promise<{ canceled: boolean; filePaths: string[] }>;
   openExternal(url: string): Promise<void>;
   resourcesPath: string;
   preloadPath: string;
@@ -88,13 +97,51 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
   adapter.app.setAsDefaultProtocolClient(identity.protocolScheme);
   await adapter.app.whenReady();
 
-  const controller = createShellRuntimeController({
+  const settings = createShellSettingsStore(identity.paths.localSettings);
+  let controller: ShellRuntimeController;
+  const requireAcp = () => {
+    const acp = controller.getAcp();
+    if (!acp) throw new Error('shell runtime is unavailable');
+    return acp;
+  };
+  const directory = createShellDirectoryController({
+    settings,
+    showOpenDialog: (options) =>
+      adapter.showOpenDialog({
+        ...options,
+        properties: ['openDirectory', 'dontAddToRecent'],
+      }),
+    validate: (candidate) => requireAcp().validateDirectory(candidate),
+    generation: () => controller.read().generation,
+    isSelectable: () => {
+      const snapshot = controller.read();
+      if (snapshot.lifecycleState !== 'ready') {
+        return { allowed: false, reasonCode: 'shell runtime is not ready' };
+      }
+      if (snapshot.session?.promptAttempt || snapshot.pendingInteractions.length > 0) {
+        return { allowed: false, reasonCode: 'an interaction is in progress' };
+      }
+      if (snapshot.session) {
+        return { allowed: false, reasonCode: 'detach the current session before switching' };
+      }
+      return { allowed: true };
+    },
+  });
+  const credentials = createShellCredentialController({
+    settings,
+    list: () => requireAcp().listCredentials(),
+    generation: () => controller.read().generation,
+  });
+  controller = createShellRuntimeController({
     profile: loaded.profile,
     manifest: loaded.manifest,
     provisioningPath: loaded.provisioningPath,
     diagnosticsDir: identity.paths.diagnostics,
     processRegistryPath: identity.paths.processRegistry,
     workingDir: adapter.workingDir,
+    directory,
+    credentials,
+    settings,
     isPackaged: adapter.app.isPackaged,
     resourcesPath: adapter.resourcesPath,
     preloadPath: adapter.preloadPath,
@@ -127,6 +174,9 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
     },
     loaded.manifest.compatibility.handoffSchemaVersion
   );
+  // Domain confirmations are Rust-owned, so main tracks only the fact that one is outstanding.
+  // Detaching with a mutation awaiting approval would strand it server-side.
+  const pendingConfirmations = new Set<string>();
   const now = adapter.now ?? (() => new Date().toISOString());
   let ipc: RegisteredShellIpc;
   ipc = registerShellIpc({
@@ -138,16 +188,28 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
       runtimeRead: () => controller.read(),
       runtimeRetry: async (request) => {
         handoffs.clear();
+        pendingConfirmations.clear();
         const prior = controller.read();
         const state = await controller.retry(request.generation);
         return actionResult(state, state !== prior);
       },
       runtimeStop: async (request) => {
         handoffs.clear();
+        pendingConfirmations.clear();
         const prior = controller.read();
         const state = await controller.stop(request.generation);
         return actionResult(state, state !== prior || state.name === 'stopped');
       },
+      directorySelect: async (request) => {
+        const result = await directory.select(request.generation);
+        if (result.status === 'selected') {
+          // Project-local extensions and skills are per directory, so the inventory the renderer
+          // holds must be re-resolved against the directory just accepted.
+          await controller.refreshModules();
+        }
+        return result;
+      },
+      credentialSelect: (request) => credentials.select(request.generation, request.profileId),
       sessionCreate: (request) => {
         const sessions = controller.getSessionController();
         if (!sessions) throw new Error('session runtime is unavailable');
@@ -157,6 +219,33 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         const sessions = controller.getSessionController();
         if (!sessions) throw new Error('session runtime is unavailable');
         return sessions.resume(request.generation, request.sessionId);
+      },
+      sessionDetach: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('session detach generation is stale');
+        }
+        const sessions = controller.getSessionController();
+        if (!sessions) throw new Error('session runtime is unavailable');
+        const session = sessions.read();
+        if (session.status === 'none') {
+          return { detached: false, sessionId: null };
+        }
+        if (session.status !== 'active') {
+          // A create or resume awaiting the backend would finish after this reset and reinstate an
+          // active session, leaving a second server session reachable by nobody.
+          throw new Error('cannot detach while a session is still opening');
+        }
+        if (session.promptAttempt) {
+          throw new Error('cannot detach while a prompt attempt is streaming');
+        }
+        if ((controller.getInteractionController()?.read() ?? []).length > 0) {
+          throw new Error('cannot detach while an interaction is pending');
+        }
+        if (pendingConfirmations.size > 0) {
+          throw new Error('cannot detach while a domain confirmation is pending');
+        }
+        sessions.close();
+        return { detached: true, sessionId: session.sessionId };
       },
       promptSubmit: (request) => {
         const sessions = controller.getSessionController();
@@ -202,12 +291,19 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         }
         const acp = controller.getAcp();
         if (!acp || !acp.domainAdapter) throw new Error('domain adapter is unavailable');
-        return acp.domainAction({
-          sessionId: request.sessionId,
-          generation: request.generation,
-          action: request.action,
-          input: request.input ?? null,
-        });
+        return acp
+          .domainAction({
+            sessionId: request.sessionId,
+            generation: request.generation,
+            action: request.action,
+            input: request.input ?? null,
+          })
+          .then((response) => {
+            if (response.confirmationActionId) {
+              pendingConfirmations.add(response.confirmationActionId);
+            }
+            return response;
+          });
       },
       confirmationRespond: (request) => {
         if (request.generation !== controller.read().generation) {
@@ -219,12 +315,14 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         }
         const acp = controller.getAcp();
         if (!acp || !acp.domainAdapter) throw new Error('domain adapter is unavailable');
-        return acp.confirmDomainAction({
-          sessionId: request.sessionId,
-          generation: request.generation,
-          actionId: request.actionId,
-          approve: request.approve,
-        });
+        return acp
+          .confirmDomainAction({
+            sessionId: request.sessionId,
+            generation: request.generation,
+            actionId: request.actionId,
+            approve: request.approve,
+          })
+          .finally(() => pendingConfirmations.delete(request.actionId));
       },
       diagnosticsSave: async (request) => {
         if (request.generation !== controller.read().generation) {

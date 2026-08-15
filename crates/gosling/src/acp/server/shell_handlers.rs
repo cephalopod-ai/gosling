@@ -31,27 +31,162 @@ impl GoslingAcpAgent {
         .await
     }
 
-    pub(super) async fn on_read_shell_provisioning(&self) -> ShellProvisioningReadResponse {
+    /// Resolves the directory a provisioning request should be judged against.
+    ///
+    /// A caller-supplied directory is canonicalized through the same accepted-directory helper the
+    /// session path uses, so validation and session creation cannot disagree about which directory
+    /// they mean.
+    fn requested_working_dir(
+        &self,
+        requested: Option<&str>,
+    ) -> Result<Option<std::path::PathBuf>, agent_client_protocol::Error> {
+        requested
+            .map(|requested| {
+                crate::acp::shell_directory::accepted_shell_directory(std::path::Path::new(
+                    requested,
+                ))
+                .map_err(|reason| {
+                    agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                        "code": "SHELL_DIRECTORY_UNAVAILABLE",
+                        "reason": reason,
+                    }))
+                })
+            })
+            .transpose()
+    }
+
+    pub(super) async fn on_read_shell_provisioning(
+        &self,
+        request: ShellProvisioningReadRequest,
+    ) -> Result<ShellProvisioningReadResponse, agent_client_protocol::Error> {
+        let working_dir = self.requested_working_dir(request.working_dir.as_deref())?;
         let provisioning = self.shell_runtime.provisioning().clone();
-        let validation = self.shell_provisioning_validation(&provisioning).await;
-        ShellProvisioningReadResponse {
+        let validation = match working_dir.as_deref() {
+            Some(working_dir) => {
+                self.shell_provisioning_validation_for_working_dir(&provisioning, working_dir)
+                    .await
+            }
+            None => self.shell_provisioning_validation(&provisioning).await,
+        };
+        Ok(ShellProvisioningReadResponse {
             provisioning,
             validation,
-        }
+        })
     }
 
     pub(super) async fn on_validate_shell_provisioning(
         &self,
         request: ShellProvisioningValidateRequest,
-    ) -> ShellProvisioningValidateResponse {
+    ) -> Result<ShellProvisioningValidateResponse, agent_client_protocol::Error> {
+        let working_dir = self.requested_working_dir(request.working_dir.as_deref())?;
         let provisioning = request
             .provisioning
             .unwrap_or_else(|| self.shell_runtime.provisioning().clone());
-        let validation = self.shell_provisioning_validation(&provisioning).await;
-        ShellProvisioningValidateResponse {
+        let validation = match working_dir.as_deref() {
+            Some(working_dir) => {
+                self.shell_provisioning_validation_for_working_dir(&provisioning, working_dir)
+                    .await
+            }
+            None => self.shell_provisioning_validation(&provisioning).await,
+        };
+        Ok(ShellProvisioningValidateResponse {
             provisioning,
             validation,
+        })
+    }
+
+    pub(super) fn on_validate_shell_directory(
+        &self,
+        request: ShellDirectoryValidateRequest,
+    ) -> ShellDirectoryValidateResponse {
+        crate::acp::shell_directory::canonicalize_shell_directory(&request.path)
+    }
+
+    pub(super) async fn on_list_shell_credentials(&self) -> ShellCredentialListResponse {
+        if self.shell_runtime.credential_policy() != ShellCredentialPolicy::SelectableCatalog {
+            return ShellCredentialListResponse {
+                status: ShellCredentialCatalogStatus::Denied,
+                profiles: Vec::new(),
+            };
         }
+        let Ok(profiles) = self.workspace_service.credential_profiles() else {
+            return ShellCredentialListResponse {
+                status: ShellCredentialCatalogStatus::Unavailable,
+                profiles: Vec::new(),
+            };
+        };
+        let provider = self.shell_runtime.provisioning().session.provider.clone();
+        ShellCredentialListResponse {
+            status: ShellCredentialCatalogStatus::Available,
+            profiles: crate::acp::shell_validation::shell_credential_summaries(
+                &profiles,
+                provider.as_deref(),
+            ),
+        }
+    }
+
+    pub(super) async fn on_list_shell_modules(
+        &self,
+        request: ShellModuleListRequest,
+    ) -> Result<ShellModuleListResponse, agent_client_protocol::Error> {
+        let provisioning = self.shell_runtime.provisioning().clone();
+        let working_dir = match request.working_dir.as_deref() {
+            Some(requested) => crate::acp::shell_directory::accepted_shell_directory(
+                std::path::Path::new(requested),
+            )
+            .map_err(|reason| {
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "code": "SHELL_DIRECTORY_UNAVAILABLE",
+                    "reason": reason,
+                }))
+            })?,
+            None => self.default_working_folder.clone(),
+        };
+        // The provisioned selection is the "selected" side of the intersection, not the validation
+        // resolution: the resolution has already dropped anything the backend could not resolve,
+        // which is exactly the case that must surface as `unavailable`.
+        let selected_extensions = provisioning.session.extensions.clone().unwrap_or_default();
+        let selected_skills = provisioning.session.skill_ids.clone().unwrap_or_default();
+
+        let mut available_extensions = std::collections::HashSet::new();
+        for extension in crate::config::extensions::get_enabled_extensions_with_config_for_cwd(
+            Config::global(),
+            &working_dir,
+        ) {
+            available_extensions.insert(extension.name().to_string());
+        }
+        for extension in super::selected_builtin_extensions(Config::global(), &self.builtins) {
+            available_extensions.insert(extension.name().to_string());
+        }
+        // Provisioning validation and session construction both resolve plugin-supplied MCP
+        // servers, so omitting them here would report a plugin extension as unavailable while the
+        // session actually runs it.
+        for extension in crate::plugins::mcp_servers::enabled_plugin_mcp_servers(Some(&working_dir))
+        {
+            available_extensions.insert(extension.name().to_string());
+        }
+        let available_skills = crate::skills::discover_skills(Some(&working_dir))
+            .into_iter()
+            .map(|skill| skill.name)
+            .collect::<std::collections::HashSet<_>>();
+        let skills_extension_available = available_extensions.contains("skills");
+        let adapter = self.shell_runtime.domain_adapter_descriptor();
+
+        Ok(ShellModuleListResponse {
+            contract_version: SHELL_MODULE_CONTRACT_VERSION,
+            modules: crate::acp::shell_modules::resolve_shell_modules(
+                crate::acp::shell_modules::ShellModuleInputs {
+                    session_capabilities: &["prompt".to_string(), "resume".to_string()],
+                    selected_extensions: &selected_extensions,
+                    available_extensions: &available_extensions,
+                    selected_skills: &selected_skills,
+                    available_skills: &available_skills,
+                    skills_extension_available,
+                    adapter: adapter.as_ref(),
+                    adapter_status: self.shell_runtime.domain_adapter_status(),
+                },
+            ),
+        })
     }
 
     pub(super) async fn on_domain_snapshot(

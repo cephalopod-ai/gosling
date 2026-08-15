@@ -51,6 +51,73 @@ The first UI may be implemented only after the nonvisual gates in
 instructions, renderers, adapters, and domain behavior remain deferred until the generic template
 passes its acceptance gate.
 
+## Amendment 2026-08-14 (DS-3, DS-4, DS-5 contract freeze)
+
+Implementing DS-3–DS-5 required four decisions this ADR had left open. They extend the decision
+above; they do not replace it.
+
+**Working-directory selection is main-owned and backend-canonicalized.** The renderer asks for a
+chooser with its current generation and an explicit user gesture; it never sends a path and never
+gains a filesystem operation. Main opens Electron's native directory chooser and sends only the
+operator-confirmed path to the authenticated loopback backend, which canonicalizes it without
+creating a workspace, mutating global Gosling configuration, or creating any directory. Only the
+accepted canonical path is held in main memory, persisted to shell-local settings, and used for
+session creation, where the backend canonicalizes again. Cancel is a successful typed result.
+Switching directories while a session exists requires an explicit `session.detach` first. That
+operation releases the local one-session slot and never deletes or mutates the server session; it is
+permitted only from `active`, because a create or resume still awaiting the backend would otherwise
+complete afterwards and reinstate a session nobody holds.
+
+**Provisioning is judged against the directory the shell will actually use.** Extensions and skills
+can be project-local, so the connect sequence restores the remembered directory *before* the
+compatibility gate and validates provisioning against it: `shell/provisioning/read` and
+`shell/provisioning/validate` take an optional `workingDir`, canonicalized through the same helper
+the session path uses. Without this a product provisioning project-local modules would fail
+`PROVISIONING_INVALID` against the backend's startup directory and could never reach the directory
+that makes it valid. Session creation still revalidates, so the gate is unchanged in strength — only
+in which directory it means.
+
+**Credential catalog access is opt-in per product.** Provisioning gains
+`session.credentialPolicy`. Absent or `fixed` preserves the pre-DS-4 behavior exactly: the
+provisioned `credentialProfileId` is the only permitted profile and the catalog method returns
+`denied`. `selectable_catalog` permits a shell to read a four-field safe projection — opaque ID,
+display name, provider/service ID, and `configured`/`relink_required` status — built field by field
+in Rust so a future catalog field cannot reach a shell by merely existing. Declaring both a fixed
+profile and `selectable_catalog` is a validation error. The optional field is a compatible addition
+within provisioning schema v1; it does not require v2, because absence is a valid document that
+means "fixed".
+
+**A selected credential is a session input, never a copied credential.** Shell-local settings hold
+only the opaque profile ID. The backend re-resolves that ID at session creation and checks policy,
+provider, and status; a session launch carrying a selection under `fixed` provisioning is refused
+with `SHELL_CREDENTIAL_SELECTION_DENIED`. A deleted or revoked profile stays visibly
+selected-but-invalid rather than being silently replaced with another profile.
+
+**Module v1 is an intersection, not a union, resolved against the selected directory.** Extensions
+and skills are project-local, so the inventory is resolved against the accepted working directory
+rather than the backend's startup directory, and is re-read whenever that directory changes. It uses
+the same discovery the provisioning validation and session construction use, including
+plugin-supplied MCP servers, so a module cannot be reported unavailable while a session runs it.
+
+The registry reports `core:session`, the selected extensions that the backend also resolved, the
+selected skills that resolve through the skills extension, and at most one supervised domain
+adapter. A module the product never provisioned is never listed; a provisioned module the backend
+could not resolve is listed as `unavailable` rather than dropped, so recovery stays visible. No `module.call`, backend URL, process descriptor, or
+generic payload passthrough is added; extension tools stay agent-invoked and adapter actions keep
+their existing typed snapshot/action/confirmation routes.
+
+A shell product's credential authority is its provisioned policy, so the full Gosling per-chat
+`workspaceCredentialProfileId` override is refused for any shell product rather than silently
+replacing a fixed profile; full Gosling keeps that override unchanged. Without a workspace the
+selected profile is pinned through the existing shell-specific session paths instead of the
+workspace launch overrides, so a directory-based shell can use a selected credential.
+
+Provisioning also gains an optional `settingsSchemaVersion`. A version this build does not know
+fails validation closed instead of migrating an operator's document, and the local settings store
+refuses to overwrite a document it could not parse until an explicit reset. That refusal must not
+strand the shell: a directory selection still applies to the running process, reports
+`remembered: false`, and the recovery status travels in the runtime snapshot.
+
 ## Consequences
 
 - Future shells can replace identity, icon, instructions, capabilities, and optional adapter without

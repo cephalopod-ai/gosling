@@ -7,7 +7,10 @@ import {
   type ShellDomainActionConfirmRequest,
   type ShellDomainActionRequest,
   type ShellDomainSnapshotRequest,
+  type ShellCredentialSelectRequest,
+  type ShellDirectorySelectRequest,
   type ShellElicitationRespondRequest,
+  type ShellSessionDetachResult,
   type ShellGenerationRequest,
   type ShellHandoffConfirmRequest,
   type ShellHandoffPrepareRequest,
@@ -23,6 +26,8 @@ import {
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
 import type { ShellInteraction } from './interactionController';
+import type { ShellCredentialSnapshot } from './credentialController';
+import type { ShellDirectorySelectResult } from './directoryController';
 
 const MAX_INVOKE_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -30,8 +35,11 @@ const MAX_SMALL_RESPONSE_BYTES = 8 * 1024;
 const MAX_EXTERNAL_URL_BYTES = 2 * 1024;
 const MAX_REFERENCES = 128;
 const CAPABILITY_BY_CHANNEL: Partial<Record<ShellIpcInvokeChannel, string>> = {
+  [shellIpcChannels.directorySelect]: 'directory.select',
+  [shellIpcChannels.credentialSelect]: 'credential.select',
   [shellIpcChannels.sessionCreate]: 'session.create',
   [shellIpcChannels.sessionResume]: 'session.resume',
+  [shellIpcChannels.sessionDetach]: 'session.detach',
   [shellIpcChannels.promptSubmit]: 'prompt.submit',
   [shellIpcChannels.promptCancel]: 'prompt.cancel',
   [shellIpcChannels.permissionRespond]: 'permission.respond',
@@ -60,10 +68,19 @@ export interface ShellIpcOperations {
   runtimeRead(): Promise<ShellRuntimeSnapshot> | ShellRuntimeSnapshot;
   runtimeRetry(request: ShellGenerationRequest): Promise<ShellActionResult> | ShellActionResult;
   runtimeStop(request: ShellGenerationRequest): Promise<ShellActionResult> | ShellActionResult;
+  directorySelect(
+    request: ShellDirectorySelectRequest
+  ): Promise<ShellDirectorySelectResult> | ShellDirectorySelectResult;
+  credentialSelect(
+    request: ShellCredentialSelectRequest
+  ): Promise<ShellCredentialSnapshot> | ShellCredentialSnapshot;
   sessionCreate(request: ShellGenerationRequest): Promise<ShellSessionRecord> | ShellSessionRecord;
   sessionResume(
     request: ShellSessionResumeRequest
   ): Promise<ShellSessionRecord> | ShellSessionRecord;
+  sessionDetach(
+    request: ShellGenerationRequest
+  ): Promise<ShellSessionDetachResult> | ShellSessionDetachResult;
   promptSubmit(
     request: ShellPromptSubmitRequest
   ): Promise<ShellPromptSubmitResult> | ShellPromptSubmitResult;
@@ -170,6 +187,28 @@ function parseDiagnosticsSaveRequest(value: unknown): ShellDiagnosticsSaveReques
     throw new Error('diagnostics.save requires an explicit user gesture');
   }
   return { generation: value.generation, userGesture: true };
+}
+
+function parseDirectorySelectRequest(value: unknown): ShellDirectorySelectRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'userGesture'], 'request');
+  assertGeneration(value.generation);
+  if (value.userGesture !== true) {
+    throw new Error('directory.select requires an explicit user gesture');
+  }
+  return { generation: value.generation, userGesture: true };
+}
+
+function parseCredentialSelectRequest(value: unknown): ShellCredentialSelectRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'profileId'], 'request');
+  assertGeneration(value.generation);
+  if (value.profileId !== null) {
+    assertString(value.profileId, 'profileId', 256);
+  }
+  return { generation: value.generation, profileId: value.profileId as string | null };
 }
 
 function parseSessionResumeRequest(value: unknown): ShellSessionResumeRequest {
@@ -360,6 +399,7 @@ function assertTrustedSender(event: ShellIpcMainEvent, trusted: ShellWebContents
 
 function responseLimit(channel: ShellIpcInvokeChannel): number {
   return channel === shellIpcChannels.runtimeRead ||
+    channel === shellIpcChannels.credentialSelect ||
     channel === shellIpcChannels.handoffPrepare ||
     channel === shellIpcChannels.domainSnapshot ||
     channel === shellIpcChannels.domainAction ||
@@ -390,12 +430,24 @@ export function registerShellIpc(input: {
       (request) => operations.runtimeStop(parseGenerationRequest(request)),
     ],
     [
+      shellIpcChannels.directorySelect,
+      (request) => operations.directorySelect(parseDirectorySelectRequest(request)),
+    ],
+    [
+      shellIpcChannels.credentialSelect,
+      (request) => operations.credentialSelect(parseCredentialSelectRequest(request)),
+    ],
+    [
       shellIpcChannels.sessionCreate,
       (request) => operations.sessionCreate(parseGenerationRequest(request)),
     ],
     [
       shellIpcChannels.sessionResume,
       (request) => operations.sessionResume(parseSessionResumeRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionDetach,
+      (request) => operations.sessionDetach(parseGenerationRequest(request)),
     ],
     [
       shellIpcChannels.promptSubmit,

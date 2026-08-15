@@ -8,8 +8,11 @@ import {
   type DomainSnapshotResponse_unstable,
   type GetSessionInfoResponse_unstable,
   type GoslingClientCallbacks,
+  type ShellCredentialListResponse_unstable,
+  type ShellDirectoryValidateResponse_unstable,
   type ShellHandoffPrepareRequest_unstable,
   type ShellHandoffPrepareResponse_unstable,
+  type ShellModuleListResponse_unstable,
   type ShellProvisioningReadResponse_unstable,
   type ShellProvisioningValidateRequest_unstable,
   type ShellProvisioningValidateResponse_unstable,
@@ -49,12 +52,22 @@ export interface ShellAcpClient {
   cancel(params: Parameters<GoslingClient['cancel']>[0]): ReturnType<GoslingClient['cancel']>;
   gosling: {
     sessionInfo_unstable(params: { sessionId: string }): Promise<GetSessionInfoResponse_unstable>;
-    shellProvisioningRead_unstable(
-      params: Record<string, never>
-    ): Promise<ShellProvisioningReadResponse_unstable>;
+    shellProvisioningRead_unstable(params: {
+      workingDir?: string;
+    }): Promise<ShellProvisioningReadResponse_unstable>;
     shellProvisioningValidate_unstable(params: {
       provisioning?: ShellProvisioningValidateRequest_unstable['provisioning'];
+      workingDir?: string;
     }): Promise<ShellProvisioningValidateResponse_unstable>;
+    shellDirectoryValidate_unstable(params: {
+      path: string;
+    }): Promise<ShellDirectoryValidateResponse_unstable>;
+    shellCredentialsList_unstable(
+      params: Record<string, never>
+    ): Promise<ShellCredentialListResponse_unstable>;
+    shellModulesList_unstable(params: {
+      workingDir?: string;
+    }): Promise<ShellModuleListResponse_unstable>;
     shellHandoffPrepare_unstable(
       params: ShellHandoffPrepareRequest_unstable
     ): Promise<ShellHandoffPrepareResponse_unstable>;
@@ -77,8 +90,14 @@ export interface ShellAcpConnection {
   compatibility: { compatible: true };
   runtimeNamespace: string;
   domainAdapter: ShellRuntimeMetadata['domainAdapter'];
-  createSession(): Promise<ShellSession>;
+  createSession(input: {
+    workingDir: string;
+    credentialProfileId?: string | null;
+  }): Promise<ShellSession>;
   resumeSession(sessionId: string): Promise<ShellSession>;
+  validateDirectory(directory: string): Promise<ShellDirectoryValidateResponse_unstable>;
+  listCredentials(): Promise<ShellCredentialListResponse_unstable>;
+  listModules(workingDir: string | null): Promise<ShellModuleListResponse_unstable>;
   prompt(input: { sessionId: string; text: string; messageId: string }): Promise<unknown>;
   cancel(input: { sessionId: string }): Promise<void>;
   prepareHandoff(
@@ -299,12 +318,24 @@ function assertSessionCapabilities(response: InitializeResponse): void {
   }
 }
 
+/// Methods main uses on every startup, whatever the consumer declares.
+///
+/// The directory is restored and the credential catalog and module inventory are read before the
+/// shell is ready, so a backend missing them is incompatible rather than merely failing later:
+/// without this the call would surface as a generic startup failure instead of METHOD_UNAVAILABLE.
+const MAIN_OWNED_METHODS = [
+  '_gosling/unstable/shell/credentials/list',
+  '_gosling/unstable/shell/directory/validate',
+  '_gosling/unstable/shell/modules/list',
+];
+
 function requiredMethods(
   manifest: ShellBuildManifest,
   profile: ResolvedShellProductProfile
 ): string[] {
   return [
     ...new Set([
+      ...MAIN_OWNED_METHODS,
       ...profile.compatibility.requiredMethods,
       ...(manifest.consumer?.requiredMethods ?? []),
     ]),
@@ -341,14 +372,20 @@ export async function connectShellAcp(input: {
   acpUrl: string;
   profile: ResolvedShellProductProfile;
   manifest: ShellBuildManifest;
-  workingDir: string;
   clientName: string;
   clientVersion: string;
   callbacks?: () => GoslingClientCallbacks;
+  /// Resolves the working directory provisioning must be judged against.
+  ///
+  /// It runs after the method check and before provisioning is validated, because extensions and
+  /// skills can be project-local: judging a shell against the backend's startup directory would
+  /// fail a product whose selected directory is the one that makes its provisioning valid.
+  resolveWorkingDir?: (
+    validate: (directory: string) => Promise<ShellDirectoryValidateResponse_unstable>
+  ) => Promise<string | null>;
   dependencies?: ShellAcpRuntimeDependencies;
 }): Promise<ShellAcpConnection> {
   const dependencies = input.dependencies ?? defaultDependencies;
-  const workingDir = assertAbsoluteWorkingDir(input.workingDir);
   const stream = dependencies.createStream(assertAuthenticatedLoopbackUrl(input.acpUrl));
   const client = dependencies.createClient(input.callbacks ?? clientCallbacks(), stream);
 
@@ -374,8 +411,14 @@ export async function connectShellAcp(input: {
     if (!methodCompatibility.compatible) {
       throw new ShellCompatibilityError(methodCompatibility);
     }
-    const read = await client.gosling.shellProvisioningRead_unstable({});
-    const validation = await client.gosling.shellProvisioningValidate_unstable({});
+    const validateDirectory = async (directory: string) =>
+      client.gosling.shellDirectoryValidate_unstable({
+        path: assertAbsoluteWorkingDir(directory),
+      });
+    const workingDir = (await input.resolveWorkingDir?.(validateDirectory)) ?? null;
+    const provisioningScope = workingDir === null ? {} : { workingDir };
+    const read = await client.gosling.shellProvisioningRead_unstable(provisioningScope);
+    const validation = await client.gosling.shellProvisioningValidate_unstable(provisioningScope);
     const compatibility = checkShellCompatibility({
       profile: input.profile,
       manifest: input.manifest,
@@ -406,13 +449,17 @@ export async function connectShellAcp(input: {
       compatibility,
       runtimeNamespace: metadata.runtimeNamespace,
       domainAdapter: metadata.domainAdapter,
-      createSession: async () => {
+      createSession: async ({ workingDir: requested, credentialProfileId }) => {
+        const cwd = assertAbsoluteWorkingDir(requested);
         const created = await client.newSession({
-          cwd: workingDir,
+          cwd,
           mcpServers: [],
-          _meta: { client: 'gosling-shell' },
+          _meta: {
+            client: 'gosling-shell',
+            ...(credentialProfileId ? { shellCredentialProfileId: credentialProfileId } : {}),
+          },
         });
-        return asShellSession(String(created.sessionId), workingDir);
+        return asShellSession(String(created.sessionId), cwd);
       },
       resumeSession: async (sessionId) => {
         const fixedSessionId = assertSessionId(sessionId);
@@ -439,6 +486,12 @@ export async function connectShellAcp(input: {
           prompt: [{ type: 'text', text }],
         }),
       cancel: ({ sessionId }) => client.cancel({ sessionId: assertSessionId(sessionId) }),
+      validateDirectory,
+      listCredentials: () => client.gosling.shellCredentialsList_unstable({}),
+      listModules: async (workingDir) =>
+        client.gosling.shellModulesList_unstable(
+          workingDir === null ? {} : { workingDir: assertAbsoluteWorkingDir(workingDir) }
+        ),
       prepareHandoff: (request) => client.gosling.shellHandoffPrepare_unstable(request),
       domainSnapshot: (request) => client.gosling.shellDomainSnapshot_unstable(request),
       domainAction: (request) => client.gosling.shellDomainAction_unstable(request),

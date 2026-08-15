@@ -5,6 +5,8 @@ import type {
   ShellHandoffEnvelope,
   ShellHandoffPrepareRequest_unstable,
 } from '@repo-makeover/gosling-sdk';
+import type { ShellCredentialSnapshot } from './credentialController';
+import type { ShellDirectorySelectResult } from './directoryController';
 import type { ShellLifecycleStateName } from './lifecycle';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
@@ -14,8 +16,11 @@ export const shellIpcChannels = {
   runtimeRead: 'runtime.read',
   runtimeRetry: 'runtime.retry',
   runtimeStop: 'runtime.stop',
+  directorySelect: 'directory.select',
+  credentialSelect: 'credential.select',
   sessionCreate: 'session.create',
   sessionResume: 'session.resume',
+  sessionDetach: 'session.detach',
   promptSubmit: 'prompt.submit',
   promptCancel: 'prompt.cancel',
   permissionRespond: 'permission.respond',
@@ -37,8 +42,11 @@ export type ShellIpcInvokeChannel =
   | (typeof shellIpcChannels)['runtimeRead']
   | (typeof shellIpcChannels)['runtimeRetry']
   | (typeof shellIpcChannels)['runtimeStop']
+  | (typeof shellIpcChannels)['directorySelect']
+  | (typeof shellIpcChannels)['credentialSelect']
   | (typeof shellIpcChannels)['sessionCreate']
   | (typeof shellIpcChannels)['sessionResume']
+  | (typeof shellIpcChannels)['sessionDetach']
   | (typeof shellIpcChannels)['promptSubmit']
   | (typeof shellIpcChannels)['promptCancel']
   | (typeof shellIpcChannels)['permissionRespond']
@@ -73,6 +81,19 @@ export interface ShellDiagnosticsSaveRequest extends ShellGenerationRequest {
 
 export interface ShellSessionResumeRequest extends ShellGenerationRequest {
   sessionId: string;
+}
+
+export interface ShellDirectorySelectRequest extends ShellGenerationRequest {
+  userGesture: true;
+}
+
+export interface ShellCredentialSelectRequest extends ShellGenerationRequest {
+  profileId: string | null;
+}
+
+export interface ShellSessionDetachResult {
+  detached: boolean;
+  sessionId: string | null;
 }
 
 export interface ShellPromptSubmitRequest extends ShellSessionResumeRequest {
@@ -137,8 +158,11 @@ export interface ShellIpcRequestMap {
   [shellIpcChannels.runtimeRead]: undefined;
   [shellIpcChannels.runtimeRetry]: ShellGenerationRequest;
   [shellIpcChannels.runtimeStop]: ShellGenerationRequest;
+  [shellIpcChannels.directorySelect]: ShellDirectorySelectRequest;
+  [shellIpcChannels.credentialSelect]: ShellCredentialSelectRequest;
   [shellIpcChannels.sessionCreate]: ShellGenerationRequest;
   [shellIpcChannels.sessionResume]: ShellSessionResumeRequest;
+  [shellIpcChannels.sessionDetach]: ShellGenerationRequest;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitRequest;
   [shellIpcChannels.promptCancel]: ShellPromptCancelRequest;
   [shellIpcChannels.permissionRespond]: ShellPermissionRespondRequest;
@@ -156,8 +180,11 @@ export interface ShellIpcResponseMap {
   [shellIpcChannels.runtimeRead]: ShellRuntimeSnapshot;
   [shellIpcChannels.runtimeRetry]: ShellActionResult;
   [shellIpcChannels.runtimeStop]: ShellActionResult;
+  [shellIpcChannels.directorySelect]: ShellDirectorySelectResult;
+  [shellIpcChannels.credentialSelect]: ShellCredentialSnapshot;
   [shellIpcChannels.sessionCreate]: ShellSessionRecord;
   [shellIpcChannels.sessionResume]: ShellSessionRecord;
+  [shellIpcChannels.sessionDetach]: ShellSessionDetachResult;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitResult;
   [shellIpcChannels.promptCancel]: undefined;
   [shellIpcChannels.permissionRespond]: undefined;

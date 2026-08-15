@@ -1,7 +1,8 @@
 use crate::acp::custom_requests::{
-    ShellProvisioning, ShellProvisioningIssue, ShellProvisioningIssueCode,
-    ShellProvisioningIssueSeverity, ShellProvisioningResolution, ShellProvisioningValidationReport,
-    SHELL_PROVISIONING_SCHEMA_VERSION,
+    ShellCredentialPolicy, ShellCredentialStatus, ShellCredentialSummary, ShellProvisioning,
+    ShellProvisioningIssue, ShellProvisioningIssueCode, ShellProvisioningIssueSeverity,
+    ShellProvisioningResolution, ShellProvisioningValidationReport,
+    SHELL_PROVISIONING_SCHEMA_VERSION, SHELL_SETTINGS_SCHEMA_VERSION,
 };
 use crate::agents::ExtensionConfig;
 use crate::config::extensions::get_enabled_extensions_with_config_for_cwd;
@@ -100,6 +101,18 @@ pub(crate) async fn validate_shell_provisioning_for_working_dir(
             "identity version cannot be empty",
         ));
     }
+    if provisioning
+        .settings_schema_version
+        .is_some_and(|version| version != SHELL_SETTINGS_SCHEMA_VERSION)
+    {
+        issues.push(issue(
+            ShellProvisioningIssueCode::UnsupportedSettingsSchemaVersion,
+            "settingsSchemaVersion",
+            format!(
+                "unsupported shell settings schema version; expected {SHELL_SETTINGS_SCHEMA_VERSION}"
+            ),
+        ));
+    }
     if let Some(instructions) = &provisioning.instructions {
         if instructions.system_prompt.trim().is_empty()
             || instructions.system_prompt.len() > MAX_SHELL_SYSTEM_PROMPT_BYTES
@@ -114,6 +127,16 @@ pub(crate) async fn validate_shell_provisioning_for_working_dir(
     }
 
     let session = &provisioning.session;
+    resolution.credential_policy = session.credential_policy;
+    if session.credential_policy == ShellCredentialPolicy::SelectableCatalog
+        && session.credential_profile_id.is_some()
+    {
+        issues.push(issue(
+            ShellProvisioningIssueCode::InvalidCredentialPolicy,
+            "session.credentialPolicy",
+            "selectable_catalog cannot be combined with a fixed credentialProfileId",
+        ));
+    }
     let mut working_dir = effective_working_dir
         .unwrap_or(default_working_dir)
         .to_path_buf();
@@ -423,6 +446,66 @@ pub(crate) async fn validate_shell_provisioning_for_working_dir(
     }
 }
 
+pub const MAX_SHELL_CREDENTIAL_PROFILES: usize = 128;
+const MAX_SHELL_CREDENTIAL_FIELD_BYTES: usize = 256;
+
+fn shell_credential_status(status: CredentialProfileStatus) -> ShellCredentialStatus {
+    match status {
+        CredentialProfileStatus::Configured => ShellCredentialStatus::Configured,
+        CredentialProfileStatus::Missing | CredentialProfileStatus::NeedsAuthentication => {
+            ShellCredentialStatus::RelinkRequired
+        }
+    }
+}
+
+/// Narrows Gosling's credential catalog to the four facts a shell may observe.
+///
+/// The broad `CredentialProfile` never crosses the shell boundary: this projection is built field
+/// by field so a future catalog field cannot reach a shell by simply existing.
+pub fn shell_credential_summaries(
+    profiles: &[crate::workspace::CredentialProfile],
+    provider_constraint: Option<&str>,
+) -> Vec<ShellCredentialSummary> {
+    let mut summaries = profiles
+        .iter()
+        .filter(|profile| {
+            provider_constraint.is_none_or(|provider| profile.provider_or_service_id == provider)
+        })
+        .filter(|profile| {
+            [
+                profile.id.as_str(),
+                profile.name.as_str(),
+                profile.provider_or_service_id.as_str(),
+            ]
+            .iter()
+            .all(|value| {
+                !value.is_empty()
+                    && value.len() <= MAX_SHELL_CREDENTIAL_FIELD_BYTES
+                    && !value.contains('\0')
+            })
+        })
+        .scan(HashSet::new(), |seen, profile| {
+            Some(
+                seen.insert(profile.id.clone())
+                    .then(|| ShellCredentialSummary {
+                        id: profile.id.clone(),
+                        name: profile.name.clone(),
+                        provider_or_service_id: profile.provider_or_service_id.clone(),
+                        status: shell_credential_status(profile.status),
+                    }),
+            )
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+    summaries.sort_by(|left, right| {
+        left.name
+            .cmp(&right.name)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    summaries.truncate(MAX_SHELL_CREDENTIAL_PROFILES);
+    summaries
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,6 +575,120 @@ mod tests {
         )
         .await;
         assert!(override_report.valid, "{:?}", override_report.issues);
+    }
+
+    fn sentinel_profile(id: &str, provider: &str) -> crate::workspace::CredentialProfile {
+        crate::workspace::CredentialProfile {
+            id: id.into(),
+            name: format!("Profile {id}"),
+            provider_or_service_id: provider.into(),
+            configured_secret_fields: vec!["SENTINEL_SECRET_FIELD".into()],
+            non_secret_fields: std::collections::BTreeMap::from([(
+                "SENTINEL_PARAMETER".to_string(),
+                "SENTINEL_VALUE".to_string(),
+            )]),
+            status: CredentialProfileStatus::Configured,
+            created_at: "SENTINEL_CREATED_AT".into(),
+            updated_at: "SENTINEL_UPDATED_AT".into(),
+            ..crate::workspace::CredentialProfile::default()
+        }
+    }
+
+    #[test]
+    fn credential_summaries_drop_every_sentinel_field_and_stay_deterministic() {
+        let profiles = vec![
+            sentinel_profile("b", "anthropic"),
+            sentinel_profile("a", "anthropic"),
+            sentinel_profile("a", "anthropic"),
+            sentinel_profile("c", "openai"),
+        ];
+
+        let summaries = shell_credential_summaries(&profiles, None);
+        assert_eq!(
+            summaries
+                .iter()
+                .map(|entry| entry.id.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
+        let serialized = serde_json::to_string(&summaries).unwrap();
+        for sentinel in [
+            "SENTINEL_SECRET_FIELD",
+            "SENTINEL_PARAMETER",
+            "SENTINEL_VALUE",
+            "SENTINEL_CREATED_AT",
+            "SENTINEL_UPDATED_AT",
+        ] {
+            assert!(!serialized.contains(sentinel), "{sentinel} leaked");
+        }
+    }
+
+    #[test]
+    fn credential_summaries_apply_the_provisioned_provider_constraint() {
+        let profiles = vec![
+            sentinel_profile("a", "anthropic"),
+            sentinel_profile("c", "openai"),
+        ];
+        let summaries = shell_credential_summaries(&profiles, Some("openai"));
+        assert_eq!(
+            summaries
+                .iter()
+                .map(|entry| entry.id.as_str())
+                .collect::<Vec<_>>(),
+            ["c"]
+        );
+    }
+
+    #[test]
+    fn credential_summaries_normalize_unusable_profiles_to_relink_required() {
+        let mut profile = sentinel_profile("a", "anthropic");
+        profile.status = CredentialProfileStatus::NeedsAuthentication;
+        assert_eq!(
+            shell_credential_summaries(&[profile], None)[0].status,
+            ShellCredentialStatus::RelinkRequired
+        );
+    }
+
+    #[tokio::test]
+    async fn selectable_catalog_cannot_be_combined_with_a_fixed_profile() {
+        let data = TempDir::new().unwrap();
+        let working_dir = TempDir::new().unwrap();
+        let workspace_service = WorkspaceService::initialize(data.path(), working_dir.path())
+            .await
+            .unwrap();
+        let provisioning = ShellProvisioning {
+            schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
+            identity: ShellIdentity {
+                id: "default_shell".into(),
+                display_name: "Default Shell".into(),
+                version: "1".into(),
+                runtime_namespace: "default_shell".into(),
+            },
+            session: ShellSessionProvisioning {
+                credential_policy: ShellCredentialPolicy::SelectableCatalog,
+                credential_profile_id: Some("pinned".into()),
+                ..ShellSessionProvisioning::default()
+            },
+            ..ShellProvisioning::default()
+        };
+
+        let report = validate_shell_provisioning(
+            &provisioning,
+            Config::global(),
+            &workspace_service,
+            &[],
+            working_dir.path(),
+        )
+        .await;
+
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.code == ShellProvisioningIssueCode::InvalidCredentialPolicy));
+        assert_eq!(
+            report.resolution.credential_policy,
+            ShellCredentialPolicy::SelectableCatalog
+        );
     }
 
     #[tokio::test]

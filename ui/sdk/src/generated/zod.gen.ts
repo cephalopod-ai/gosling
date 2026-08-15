@@ -2,7 +2,12 @@
 
 import { z } from 'zod';
 
-export const zShellProvisioningReadRequest_unstable = z.record(z.unknown());
+export const zShellProvisioningReadRequest_unstable = z.object({
+    workingDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
 
 export const zShellIdentity = z.object({
     id: z.string(),
@@ -20,6 +25,15 @@ export const zShellProtocolPolicy = z.object({
     deniedMethods: z.array(z.string()).optional()
 });
 
+/**
+ * Governs whether a shell may read Gosling's credential catalog and select a profile.
+ *
+ * `Fixed` keeps the pre-DS-4 behavior: the provisioned `credential_profile_id` is the only
+ * permitted profile and no catalog method is available. Absence of the field defaults to `Fixed`
+ * so an unmodified provisioning document never silently widens credential access.
+ */
+export const zShellCredentialPolicy = z.enum(['fixed', 'selectable_catalog']);
+
 export const zShellExtensionSelection = z.object({
     name: z.string(),
     availableTools: z.union([
@@ -33,6 +47,7 @@ export const zShellSessionProvisioning = z.object({
         z.string(),
         z.null()
     ]).optional(),
+    credentialPolicy: zShellCredentialPolicy.optional().default('fixed'),
     credentialProfileId: z.union([
         z.string(),
         z.null()
@@ -79,8 +94,12 @@ export const zShellProvisioning = z.object({
     schemaVersion: z.number().int().gte(0),
     identity: zShellIdentity,
     settingsAuthority: zShellSettingsAuthority.optional().default('main_gosling'),
+    settingsSchemaVersion: z.union([
+        z.number().int().gte(0),
+        z.null()
+    ]).optional(),
     protocolPolicy: zShellProtocolPolicy.optional().default({ mode: 'inherit' }),
-    session: zShellSessionProvisioning.optional().default({}),
+    session: zShellSessionProvisioning.optional().default({ credentialPolicy: 'fixed' }),
     instructions: z.union([
         zShellInstructionProfile,
         z.null()
@@ -108,7 +127,9 @@ export const zShellProvisioningIssueCode = z.enum([
     'duplicate_skill',
     'invalid_denied_method',
     'invalid_instructions',
-    'invalid_domain_adapter'
+    'invalid_domain_adapter',
+    'invalid_credential_policy',
+    'unsupported_settings_schema_version'
 ]);
 
 export const zShellProvisioningIssueSeverity = z.enum(['error', 'warning']);
@@ -125,6 +146,7 @@ export const zShellProvisioningResolution = z.object({
         z.string(),
         z.null()
     ]).optional(),
+    credentialPolicy: zShellCredentialPolicy.optional().default('fixed'),
     credentialProfileId: z.union([
         z.string(),
         z.null()
@@ -144,7 +166,11 @@ export const zShellProvisioningResolution = z.object({
 export const zShellProvisioningValidationReport = z.object({
     valid: z.boolean(),
     issues: z.array(zShellProvisioningIssue).optional().default([]),
-    resolution: zShellProvisioningResolution.optional().default({ extensions: [], skillIds: [] })
+    resolution: zShellProvisioningResolution.optional().default({
+        credentialPolicy: 'fixed',
+        extensions: [],
+        skillIds: []
+    })
 });
 
 export const zShellProvisioningReadResponse_unstable = z.object({
@@ -156,12 +182,109 @@ export const zShellProvisioningValidateRequest_unstable = z.object({
     provisioning: z.union([
         zShellProvisioning,
         z.null()
+    ]).optional(),
+    workingDir: z.union([
+        z.string(),
+        z.null()
     ]).optional()
 });
 
 export const zShellProvisioningValidateResponse_unstable = z.object({
     provisioning: zShellProvisioning,
     validation: zShellProvisioningValidationReport
+});
+
+export const zShellDirectoryValidateRequest_unstable = z.object({
+    path: z.string()
+});
+
+export const zShellDirectoryStatus = z.enum([
+    'valid',
+    'invalid',
+    'unavailable'
+]);
+
+export const zShellDirectoryReason = z.enum([
+    'not_absolute',
+    'not_found',
+    'not_a_directory',
+    'inaccessible',
+    'path_too_long',
+    'invalid_path'
+]);
+
+export const zShellDirectoryValidateResponse_unstable = z.object({
+    status: zShellDirectoryStatus,
+    canonicalPath: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    reason: z.union([
+        zShellDirectoryReason,
+        z.null()
+    ]).optional()
+});
+
+export const zShellCredentialListRequest_unstable = z.record(z.unknown());
+
+export const zShellCredentialCatalogStatus = z.enum([
+    'available',
+    'denied',
+    'unavailable'
+]);
+
+export const zShellCredentialStatus = z.enum(['configured', 'relink_required']);
+
+/**
+ * The only credential facts a shell may observe. Auth kind, source, configured secret-field names,
+ * non-secret provider parameters, timestamps, and usage stay inside main Gosling.
+ */
+export const zShellCredentialSummary = z.object({
+    id: z.string(),
+    name: z.string(),
+    providerOrServiceId: z.string(),
+    status: zShellCredentialStatus
+});
+
+export const zShellCredentialListResponse_unstable = z.object({
+    status: zShellCredentialCatalogStatus,
+    profiles: z.array(zShellCredentialSummary).optional().default([])
+});
+
+export const zShellModuleListRequest_unstable = z.object({
+    workingDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zShellModuleKind = z.enum([
+    'core',
+    'extension',
+    'skill',
+    'adapter'
+]);
+
+export const zShellModuleStatus = z.enum([
+    'ready',
+    'unavailable',
+    'incompatible'
+]);
+
+export const zShellModuleSummary = z.object({
+    id: z.string(),
+    kind: zShellModuleKind,
+    status: zShellModuleStatus,
+    version: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    capabilities: z.array(z.string()).optional().default([])
+});
+
+export const zShellModuleListResponse_unstable = z.object({
+    contractVersion: z.number().int().gte(0),
+    modules: z.array(zShellModuleSummary).optional().default([])
 });
 
 export const zDomainSnapshotRequest_unstable = z.object({
@@ -2755,6 +2878,9 @@ export const zExtRequest = z.object({
         z.union([
             zShellProvisioningReadRequest_unstable,
             zShellProvisioningValidateRequest_unstable,
+            zShellDirectoryValidateRequest_unstable,
+            zShellCredentialListRequest_unstable,
+            zShellModuleListRequest_unstable,
             zDomainSnapshotRequest_unstable,
             zDomainActionRequest_unstable,
             zDomainActionConfirmRequest_unstable,
@@ -2872,6 +2998,9 @@ export const zExtResponse = z.union([
             z.union([
                 zShellProvisioningReadResponse_unstable,
                 zShellProvisioningValidateResponse_unstable,
+                zShellDirectoryValidateResponse_unstable,
+                zShellCredentialListResponse_unstable,
+                zShellModuleListResponse_unstable,
                 zDomainSnapshotResponse_unstable,
                 zDomainActionResponse_unstable,
                 zDomainActionConfirmResponse_unstable,

@@ -153,8 +153,14 @@ import type {
   SetToolPermissionsResponse_unstable,
   ShareSessionNostrRequest_unstable,
   ShareSessionNostrResponse_unstable,
+  ShellCredentialListRequest_unstable,
+  ShellCredentialListResponse_unstable,
+  ShellDirectoryValidateRequest_unstable,
+  ShellDirectoryValidateResponse_unstable,
   ShellHandoffPrepareRequest_unstable,
   ShellHandoffPrepareResponse_unstable,
+  ShellModuleListRequest_unstable,
+  ShellModuleListResponse_unstable,
   ShellProvisioningReadRequest_unstable,
   ShellProvisioningReadResponse_unstable,
   ShellProvisioningValidateRequest_unstable,
@@ -246,7 +252,10 @@ import {
   zSessionWorkingDirsResponse_unstable,
   zSetToolPermissionsResponse_unstable,
   zShareSessionNostrResponse_unstable,
+  zShellCredentialListResponse_unstable,
+  zShellDirectoryValidateResponse_unstable,
   zShellHandoffPrepareResponse_unstable,
+  zShellModuleListResponse_unstable,
   zShellProvisioningReadResponse_unstable,
   zShellProvisioningValidateResponse_unstable,
   zSteerSessionResponse_unstable,
@@ -284,6 +293,42 @@ export class GoslingExtClient {
     return zShellProvisioningValidateResponse_unstable.parse(
       raw,
     ) as ShellProvisioningValidateResponse_unstable;
+  }
+
+  async shellDirectoryValidate_unstable(
+    params: ShellDirectoryValidateRequest_unstable,
+  ): Promise<ShellDirectoryValidateResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/directory/validate",
+      params,
+    );
+    return zShellDirectoryValidateResponse_unstable.parse(
+      raw,
+    ) as ShellDirectoryValidateResponse_unstable;
+  }
+
+  async shellCredentialsList_unstable(
+    params: ShellCredentialListRequest_unstable,
+  ): Promise<ShellCredentialListResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/credentials/list",
+      params,
+    );
+    return zShellCredentialListResponse_unstable.parse(
+      raw,
+    ) as ShellCredentialListResponse_unstable;
+  }
+
+  async shellModulesList_unstable(
+    params: ShellModuleListRequest_unstable,
+  ): Promise<ShellModuleListResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/modules/list",
+      params,
+    );
+    return zShellModuleListResponse_unstable.parse(
+      raw,
+    ) as ShellModuleListResponse_unstable;
   }
 
   async shellDomainSnapshot_unstable(

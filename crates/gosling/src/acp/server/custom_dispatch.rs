@@ -24,8 +24,9 @@ impl GoslingAcpAgent {
     #[custom_method(ShellProvisioningReadRequest)]
     async fn dispatch_read_shell_provisioning(
         &self,
+        req: ShellProvisioningReadRequest,
     ) -> Result<ShellProvisioningReadResponse, agent_client_protocol::Error> {
-        Ok(self.on_read_shell_provisioning().await)
+        self.on_read_shell_provisioning(req).await
     }
 
     #[custom_method(ShellProvisioningValidateRequest)]
@@ -33,7 +34,30 @@ impl GoslingAcpAgent {
         &self,
         req: ShellProvisioningValidateRequest,
     ) -> Result<ShellProvisioningValidateResponse, agent_client_protocol::Error> {
-        Ok(self.on_validate_shell_provisioning(req).await)
+        self.on_validate_shell_provisioning(req).await
+    }
+
+    #[custom_method(ShellDirectoryValidateRequest)]
+    async fn dispatch_validate_shell_directory(
+        &self,
+        req: ShellDirectoryValidateRequest,
+    ) -> Result<ShellDirectoryValidateResponse, agent_client_protocol::Error> {
+        Ok(self.on_validate_shell_directory(req))
+    }
+
+    #[custom_method(ShellCredentialListRequest)]
+    async fn dispatch_list_shell_credentials(
+        &self,
+    ) -> Result<ShellCredentialListResponse, agent_client_protocol::Error> {
+        Ok(self.on_list_shell_credentials().await)
+    }
+
+    #[custom_method(ShellModuleListRequest)]
+    async fn dispatch_list_shell_modules(
+        &self,
+        req: ShellModuleListRequest,
+    ) -> Result<ShellModuleListResponse, agent_client_protocol::Error> {
+        self.on_list_shell_modules(req).await
     }
 
     #[custom_method(DomainSnapshotRequest)]

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "consumerId": "default-shell-template",
+  "requiredShellKit": "current",
+  "productProfilePath": "fixtures/shell-products/default-shell-template/product-profile.json",
+  "rendererEntry": "renderer.ts",
+  "declaredCapabilities": [
+    "directory.select",
+    "prompt.cancel",
+    "prompt.submit",
+    "session.create",
+    "session.detach",
+    "session.resume"
+  ]
+}

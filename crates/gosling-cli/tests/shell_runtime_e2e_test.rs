@@ -5,8 +5,11 @@ use agent_client_protocol_http::HttpClient;
 use gosling::acp::custom_requests::{
     GetSessionInfoRequest, GetSessionInfoResponse, GetToolsRequest, GetToolsResponse,
     GoslingToolCallRequest, GoslingToolCallResponse, SetToolPermissionsRequest,
-    SetToolPermissionsResponse, ShellProvisioningIssueCode, ShellProvisioningReadRequest,
+    SetToolPermissionsResponse, ShellCredentialCatalogStatus, ShellCredentialListResponse,
+    ShellDirectoryReason, ShellDirectoryStatus, ShellDirectoryValidateResponse,
+    ShellModuleListResponse, ShellProvisioningIssueCode, ShellProvisioningReadRequest,
     ShellProvisioningReadResponse, ToolPermissionEntry, ToolPermissionLevel,
+    SHELL_MODULE_CONTRACT_VERSION,
 };
 use gosling::session::{EnabledExtensionsState, ExtensionState, ShellSkillSelectionState};
 use std::net::TcpListener;
@@ -247,7 +250,7 @@ async fn spawned_shell_runtime_applies_provisioning_and_isolates_sessions() {
     let provisioning: ShellProvisioningReadResponse = custom(
         &cx,
         "_gosling/unstable/shell/provisioning/read",
-        serde_json::to_value(ShellProvisioningReadRequest {}).unwrap(),
+        serde_json::to_value(ShellProvisioningReadRequest::default()).unwrap(),
     )
     .await;
     assert!(
@@ -377,7 +380,7 @@ async fn session_preflight_and_runtime_use_the_requested_working_directory() {
     let startup_preflight: ShellProvisioningReadResponse = custom(
         &cx,
         "_gosling/unstable/shell/provisioning/read",
-        serde_json::to_value(ShellProvisioningReadRequest {}).unwrap(),
+        serde_json::to_value(ShellProvisioningReadRequest::default()).unwrap(),
     )
     .await;
     assert!(!startup_preflight.validation.valid);
@@ -385,6 +388,20 @@ async fn session_preflight_and_runtime_use_the_requested_working_directory() {
         issue.code == ShellProvisioningIssueCode::MissingSkill
             && issue.path == "session.skillIds[0]"
     }));
+
+    // The same provisioning is valid once judged against the directory the shell selected, which is
+    // what lets a shell restore its remembered directory instead of failing the compatibility gate.
+    let scoped_preflight: ShellProvisioningReadResponse = custom(
+        &cx,
+        "_gosling/unstable/shell/provisioning/read",
+        serde_json::json!({ "workingDir": requested_dir.path() }),
+    )
+    .await;
+    assert!(
+        scoped_preflight.validation.valid,
+        "{:?}",
+        scoped_preflight.validation.issues
+    );
 
     let session = cx
         .send_request(NewSessionRequest::new(requested_dir.path()))
@@ -477,7 +494,7 @@ async fn session_preflight_rejects_skills_available_only_in_the_startup_director
     let startup_preflight: ShellProvisioningReadResponse = custom(
         &cx,
         "_gosling/unstable/shell/provisioning/read",
-        serde_json::to_value(ShellProvisioningReadRequest {}).unwrap(),
+        serde_json::to_value(ShellProvisioningReadRequest::default()).unwrap(),
     )
     .await;
     assert!(startup_preflight.validation.valid);
@@ -501,5 +518,171 @@ async fn session_preflight_rejects_skills_available_only_in_the_startup_director
         0,
         "invalid session-specific provisioning must fail before durable session creation"
     );
+    client_task.abort();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shell_directory_credential_and_module_surfaces_are_live_and_bounded() {
+    let root = TempDir::new().unwrap();
+    let work = TempDir::new().unwrap();
+    std::fs::create_dir_all(root.path().join("config")).unwrap();
+    std::fs::write(
+        root.path().join("config/config.yaml"),
+        "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\nGOSLING_DISABLE_KEYRING: true\n",
+    )
+    .unwrap();
+    let provisioning_path = root.path().join("provisioning.json");
+    std::fs::write(
+        &provisioning_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 1,
+            "settingsSchemaVersion": 1,
+            "identity": { "id": "ignored", "displayName": "Ignored", "version": "0" },
+            "session": { "credentialPolicy": "fixed", "extensions": [], "skillIds": [] },
+            "instructions": { "systemPrompt": "You are the neutral template assistant." }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let port = free_port();
+    let _server = spawn_server(root.path(), "directory", &provisioning_path, port);
+    wait_for_server(port).await;
+    let (cx, client_task) = connect(port).await;
+
+    let accepted: ShellDirectoryValidateResponse = custom(
+        &cx,
+        "_gosling/unstable/shell/directory/validate",
+        serde_json::json!({ "path": work.path() }),
+    )
+    .await;
+    assert_eq!(accepted.status, ShellDirectoryStatus::Valid);
+    let canonical = accepted.canonical_path.expect("accepted directory");
+    assert_eq!(
+        std::path::Path::new(&canonical),
+        std::fs::canonicalize(work.path()).unwrap()
+    );
+
+    for (path, status, reason) in [
+        (
+            work.path().join("missing").display().to_string(),
+            ShellDirectoryStatus::Invalid,
+            ShellDirectoryReason::NotFound,
+        ),
+        (
+            "relative/path".to_string(),
+            ShellDirectoryStatus::Invalid,
+            ShellDirectoryReason::NotAbsolute,
+        ),
+    ] {
+        let rejected: ShellDirectoryValidateResponse = custom(
+            &cx,
+            "_gosling/unstable/shell/directory/validate",
+            serde_json::json!({ "path": path }),
+        )
+        .await;
+        assert_eq!(rejected.status, status);
+        assert_eq!(rejected.reason, Some(reason));
+        assert!(rejected.canonical_path.is_none(), "no path may be echoed");
+    }
+    assert!(
+        !work.path().join("missing").exists(),
+        "validation must not create the directory it was asked about"
+    );
+
+    let credentials: ShellCredentialListResponse = custom(
+        &cx,
+        "_gosling/unstable/shell/credentials/list",
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(credentials.status, ShellCredentialCatalogStatus::Denied);
+    assert!(credentials.profiles.is_empty());
+
+    let modules: ShellModuleListResponse = custom(
+        &cx,
+        "_gosling/unstable/shell/modules/list",
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(modules.contract_version, SHELL_MODULE_CONTRACT_VERSION);
+    assert_eq!(
+        modules
+            .modules
+            .iter()
+            .map(|module| module.id.as_str())
+            .collect::<Vec<_>>(),
+        ["core:session"],
+        "an empty shell selection resolves to no extension, skill, or adapter module"
+    );
+
+    let session = cx
+        .send_request(NewSessionRequest::new(work.path()))
+        .block_task()
+        .await
+        .unwrap();
+    let info: GetSessionInfoResponse = custom(
+        &cx,
+        "_gosling/unstable/session/info",
+        serde_json::to_value(GetSessionInfoRequest {
+            session_id: session.session_id.0.to_string(),
+        })
+        .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        info.session.cwd.to_string_lossy(),
+        canonical,
+        "session creation must pin the canonical directory"
+    );
+
+    let tools: GetToolsResponse = custom(
+        &cx,
+        "_gosling/unstable/tools/list",
+        serde_json::to_value(GetToolsRequest {
+            session_id: session.session_id.0.to_string(),
+            extension_name: None,
+        })
+        .unwrap(),
+    )
+    .await;
+    assert!(
+        tools.tools.is_empty(),
+        "an empty shell extension selection must yield no developer tools: {:?}",
+        tools
+            .tools
+            .iter()
+            .map(|tool| &tool.name)
+            .collect::<Vec<_>>()
+    );
+
+    for smuggled in [
+        serde_json::json!({ "shellCredentialProfileId": "smuggled-profile" }),
+        serde_json::json!({
+            "workspaceId": "any-workspace",
+            "workspaceCredentialProfileId": "smuggled-profile"
+        }),
+    ] {
+        let denied = cx
+            .send_request(
+                agent_client_protocol::UntypedMessage::new(
+                    "session/new",
+                    serde_json::json!({
+                        "cwd": work.path(),
+                        "mcpServers": [],
+                        "_meta": smuggled
+                    }),
+                )
+                .unwrap(),
+            )
+            .block_task()
+            .await
+            .expect_err("fixed provisioning must refuse any caller-selected credential");
+        assert_eq!(
+            denied.data.unwrap()["code"],
+            "SHELL_CREDENTIAL_SELECTION_DENIED"
+        );
+    }
+
     client_task.abort();
 }

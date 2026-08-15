@@ -49,7 +49,7 @@ test('consumer manifests reject host authority, undeclared operations, and trave
     requiredShellKit: 'current',
     productProfilePath: 'fixtures/shell-products/fixture-a/product-profile.json',
     rendererEntry: 'renderer.ts',
-    declaredCapabilities: ['session.create'],
+    declaredCapabilities: ['directory.select', 'session.create'],
   };
   try {
     fs.writeFileSync(manifest, JSON.stringify({ ...base, preloadEntry: 'src/shell/preload.ts' }));
@@ -58,6 +58,19 @@ test('consumer manifests reject host authority, undeclared operations, and trave
     assert.throws(
       () => resolveConsumerManifest(manifest),
       /consumer\.declaredCapabilities is invalid/
+    );
+    fs.writeFileSync(manifest, JSON.stringify({ ...base, declaredCapabilities: ['session.create'] }));
+    assert.throws(
+      () => resolveConsumerManifest(manifest),
+      /session\.create requires directory\.select/
+    );
+    fs.writeFileSync(
+      manifest,
+      JSON.stringify({ ...base, declaredCapabilities: ['directory.select', 'session.detach'] })
+    );
+    assert.throws(
+      () => resolveConsumerManifest(manifest),
+      /session\.detach requires session\.create/
     );
     fs.writeFileSync(
       manifest,

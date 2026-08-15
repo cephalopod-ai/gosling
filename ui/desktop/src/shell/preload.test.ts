@@ -28,7 +28,9 @@ describe('shell preload surface', () => {
 
     expect(electron.exposeInMainWorld).toHaveBeenCalledWith('goslingShell', goslingShellAPI);
     expect(Object.keys(goslingShellAPI).sort()).toEqual([
+      'credential',
       'diagnostics',
+      'directory',
       'domain',
       'elicitation',
       'external',
@@ -47,7 +49,14 @@ describe('shell preload surface', () => {
     expect(Object.keys(goslingShellAPI.diagnostics)).toEqual(['save']);
     expect(Object.keys(goslingShellAPI.handoff).sort()).toEqual(['confirm', 'prepare']);
     expect(Object.keys(goslingShellAPI.external)).toEqual(['open']);
-    expect(Object.keys(goslingShellAPI.session).sort()).toEqual(['create', 'onUpdated', 'resume']);
+    expect(Object.keys(goslingShellAPI.session).sort()).toEqual([
+      'create',
+      'detach',
+      'onUpdated',
+      'resume',
+    ]);
+    expect(Object.keys(goslingShellAPI.directory)).toEqual(['select']);
+    expect(Object.keys(goslingShellAPI.credential)).toEqual(['select']);
     expect(Object.keys(goslingShellAPI.prompt).sort()).toEqual(['cancel', 'submit']);
     expect(Object.keys(goslingShellAPI.permission).sort()).toEqual(['onRequested', 'respond']);
     expect(Object.keys(goslingShellAPI.elicitation).sort()).toEqual(['onRequested', 'respond']);
@@ -86,6 +95,8 @@ describe('shell preload surface', () => {
       actionId: 'elicitation',
       action: 'cancel' as const,
     };
+    const directorySelect = { ...generation, userGesture: true as const };
+    const credentialSelect = { ...generation, profileId: 'profile-a' };
     const snapshot = { ...generation, input: { scope: 'neutral' } };
     const action = { ...generation, sessionId: 'session', action: 'inspect', input: { id: 'one' } };
     const confirmation = {
@@ -98,8 +109,11 @@ describe('shell preload surface', () => {
     await goslingShellAPI.runtime.read();
     await goslingShellAPI.runtime.retry(generation);
     await goslingShellAPI.runtime.stop(generation);
+    await goslingShellAPI.directory.select(directorySelect);
+    await goslingShellAPI.credential.select(credentialSelect);
     await goslingShellAPI.session.create(generation);
     await goslingShellAPI.session.resume(resume);
+    await goslingShellAPI.session.detach(generation);
     await goslingShellAPI.prompt.submit(submit);
     await goslingShellAPI.prompt.cancel(cancel);
     await goslingShellAPI.permission.respond(permission);
@@ -116,8 +130,11 @@ describe('shell preload surface', () => {
       [shellIpcChannels.runtimeRead],
       [shellIpcChannels.runtimeRetry, generation],
       [shellIpcChannels.runtimeStop, generation],
+      [shellIpcChannels.directorySelect, directorySelect],
+      [shellIpcChannels.credentialSelect, credentialSelect],
       [shellIpcChannels.sessionCreate, generation],
       [shellIpcChannels.sessionResume, resume],
+      [shellIpcChannels.sessionDetach, generation],
       [shellIpcChannels.promptSubmit, submit],
       [shellIpcChannels.promptCancel, cancel],
       [shellIpcChannels.permissionRespond, permission],

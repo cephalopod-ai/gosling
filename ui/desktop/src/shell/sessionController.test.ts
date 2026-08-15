@@ -148,3 +148,28 @@ describe('shell session controller', () => {
     expect(controller.read()).toMatchObject({ status: 'none', promptAttempt: null });
   });
 });
+
+describe('shell session release', () => {
+  it('never lets an in-flight open reinstate a session that was already released', async () => {
+    let release!: (value: { sessionId: string }) => void;
+    const transport = {
+      createSession: vi.fn(
+        () => new Promise<{ sessionId: string }>((resolve) => (release = resolve))
+      ),
+      resumeSession: vi.fn(),
+      prompt: vi.fn(),
+      cancel: vi.fn(),
+    };
+    const controller = createShellSessionController({ transport, generation: () => 1 });
+
+    const opening = controller.create(1);
+    expect(controller.read().status).toBe('creating');
+
+    controller.close();
+    release({ sessionId: 'session-a' });
+
+    await expect(opening).rejects.toThrow('released while it was opening');
+    expect(controller.read().status).toBe('none');
+    expect(controller.read().sessionId).toBe('');
+  });
+});

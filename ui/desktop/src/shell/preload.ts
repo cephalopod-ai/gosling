@@ -6,6 +6,8 @@ import type {
   ShellDomainActionConfirmRequest,
   ShellDomainActionRequest,
   ShellDomainSnapshotRequest,
+  ShellCredentialSelectRequest,
+  ShellDirectorySelectRequest,
   ShellGenerationRequest,
   ShellHandoffConfirmRequest,
   ShellHandoffPrepareRequest,
@@ -44,9 +46,18 @@ export const goslingShellAPI: GoslingShellAPI = Object.freeze({
       return () => ipcRenderer.removeListener(shellIpcChannels.runtimeChanged, wrapped);
     },
   }),
+  directory: Object.freeze({
+    select: (request: ShellDirectorySelectRequest) =>
+      invoke(shellIpcChannels.directorySelect, request),
+  }),
+  credential: Object.freeze({
+    select: (request: ShellCredentialSelectRequest) =>
+      invoke(shellIpcChannels.credentialSelect, request),
+  }),
   session: Object.freeze({
     create: (request: ShellGenerationRequest) => invoke(shellIpcChannels.sessionCreate, request),
     resume: (request: ShellSessionResumeRequest) => invoke(shellIpcChannels.sessionResume, request),
+    detach: (request: ShellGenerationRequest) => invoke(shellIpcChannels.sessionDetach, request),
     onUpdated: (listener: (update: ShellSessionUpdate) => void) => {
       const wrapped = (
         _event: IpcRendererEvent,

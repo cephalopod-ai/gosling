@@ -21,6 +21,8 @@ void bootstrapShell({
   ipcMain,
   createWindow: (options) => new BrowserWindow(options),
   showSaveDialog: (options) => dialog.showSaveDialog(options),
+  showOpenDialog: (options) =>
+    dialog.showOpenDialog({ ...options, properties: [...options.properties] }),
   openExternal: (url) => shell.openExternal(url),
   resourcesPath: process.resourcesPath,
   preloadPath: path.join(__dirname, 'shell-preload.js'),

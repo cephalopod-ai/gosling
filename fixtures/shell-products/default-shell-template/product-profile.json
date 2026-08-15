@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "id": "gosling-default-shell-template",
+    "displayName": "Default Shell Template",
+    "version": "0.0.0-template",
+    "runtimeNamespace": "default-shell-template",
+    "protocolScheme": "gosling-default-shell-template",
+    "executableName": "gosling-default-shell-template",
+    "macosBundleId": "io.github.repo-makeover.gosling.default-shell-template",
+    "windowsAppId": "Gosling.DefaultShell.Template",
+    "linuxPackageName": "gosling-default-shell-template",
+    "flatpakId": "io.github.repo_makeover.Gosling.DefaultShellTemplate"
+  },
+  "provisioningPath": "fixtures/shell-products/default-shell-template/provisioning.json",
+  "compatibility": {
+    "goslingVersion": "0.1.0",
+    "goslingRevision": "current",
+    "provisioningSchemaVersion": 1,
+    "handoffSchemaVersion": 1,
+    "requiredMethods": [
+      "_gosling/unstable/session/info",
+      "_gosling/unstable/shell/handoff/prepare",
+      "_gosling/unstable/shell/provisioning/read",
+      "_gosling/unstable/shell/provisioning/validate"
+    ]
+  },
+  "assets": {
+    "root": "fixtures/shell-products/default-shell-template/assets",
+    "iconBase": "fixtures/shell-products/default-shell-template/assets/icon",
+    "requiredTargets": [
+      "linux-x64",
+      "macos-arm64",
+      "macos-x64",
+      "windows-x64"
+    ]
+  },
+  "update": {
+    "enabled": false,
+    "channel": "gosling-default-shell-template-disabled"
+  },
+  "distribution": {
+    "publishable": false,
+    "artifactPrefix": "gosling-default-shell-template",
+    "signingPolicy": "none"
+  }
+}

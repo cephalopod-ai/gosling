@@ -12,7 +12,10 @@ const SECRET_PATTERN =
   /(api.?key|authorization|bearer|cookie|credential.?value|password|private.?key|secret|token)/i;
 const PRIVATE_KEY_PATTERN = /-----BEGIN [^-]*PRIVATE KEY-----/i;
 const APPLICATION_OPERATIONS = new Set([
+  'credential.select',
+  'directory.select',
   'session.create',
+  'session.detach',
   'session.resume',
   'prompt.submit',
   'prompt.cancel',
@@ -23,6 +26,8 @@ const APPLICATION_OPERATIONS = new Set([
   'confirmation.respond',
 ]);
 const CUSTOM_METHODS_BY_OPERATION = {
+  'directory.select': '_gosling/unstable/shell/directory/validate',
+  'credential.select': '_gosling/unstable/shell/credentials/list',
   'domain.snapshot': '_gosling/unstable/shell/domain/snapshot',
   'domain.action': '_gosling/unstable/shell/domain/action',
   'confirmation.respond': '_gosling/unstable/shell/domain/action/confirm',
@@ -30,6 +35,11 @@ const CUSTOM_METHODS_BY_OPERATION = {
 const AGENT_CAPABILITIES_BY_OPERATION = {
   'session.create': 'loadSession',
   'session.resume': 'loadSession',
+};
+const OPERATION_PREREQUISITES = {
+  'session.create': ['directory.select'],
+  'session.detach': ['session.create'],
+  'confirmation.respond': ['domain.action'],
 };
 
 function fail(message) {
@@ -220,11 +230,13 @@ function resolveConsumerManifest(manifestFile) {
   if (declaresDomainOperation && raw.domainAdapter === undefined) {
     fail('consumer.domainAdapter is required when domain operations are declared');
   }
-  if (
-    raw.declaredCapabilities.includes('confirmation.respond') &&
-    !raw.declaredCapabilities.includes('domain.action')
-  ) {
-    fail('confirmation.respond requires domain.action');
+  for (const [operation, prerequisites] of Object.entries(OPERATION_PREREQUISITES)) {
+    if (!raw.declaredCapabilities.includes(operation)) continue;
+    for (const prerequisite of prerequisites) {
+      if (!raw.declaredCapabilities.includes(prerequisite)) {
+        fail(`${operation} requires ${prerequisite}`);
+      }
+    }
   }
   if (raw.domainAdapter !== undefined) {
     exactKeys(

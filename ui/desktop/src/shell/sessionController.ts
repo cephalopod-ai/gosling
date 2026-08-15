@@ -90,6 +90,9 @@ export function createShellSessionController(input: {
 }): ShellSessionController {
   let session = emptySession();
   let updateSeq = 0;
+  // Bumped by every close, so an open that is still awaiting the transport cannot reinstate a
+  // session the shell has already released.
+  let openEpoch = 0;
   const listeners = new Set<(update: ShellSessionUpdate) => void>();
   const stateListeners = new Set<(session: ShellSessionRecord) => void>();
   const createAttemptId = input.createAttemptId ?? randomUUID;
@@ -131,11 +134,13 @@ export function createShellSessionController(input: {
   ) => {
     if (generation !== input.generation()) throw new Error('session request generation is stale');
     if (session.status !== 'none') throw new Error('an active session already exists');
+    const epoch = openEpoch;
     session = { ...emptySession(), status: kind };
     publishState();
     try {
       const opened = await operation();
       if (generation !== input.generation()) throw new Error('session request generation is stale');
+      if (epoch !== openEpoch) throw new Error('session was released while it was opening');
       assertSessionId(opened.sessionId);
       session = {
         sessionId: opened.sessionId,
@@ -149,8 +154,10 @@ export function createShellSessionController(input: {
       publishState();
       return session;
     } catch (error) {
-      session = emptySession();
-      publishState();
+      if (epoch === openEpoch) {
+        session = emptySession();
+        publishState();
+      }
       throw error;
     }
   };
@@ -226,6 +233,7 @@ export function createShellSessionController(input: {
       return () => stateListeners.delete(listener);
     },
     close(outcome) {
+      openEpoch += 1;
       const attempt = session.promptAttempt;
       if (attempt && outcome) {
         publish(outcome, attempt.id);

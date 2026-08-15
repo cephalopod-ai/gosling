@@ -437,11 +437,15 @@ test('build resolution writes canonical files atomically only under ignored buil
   assert.throws(() => writeBuildResolution(resolved, 'macos-arm64', os.tmpdir()), /build output/);
 });
 
-test('approved profile discovery returns the two source-controlled fixtures without following symlinks', () => {
+test('approved profile discovery returns the source-controlled fixtures without following symlinks', () => {
   const link = path.join(scratchRoot, 'fixture-link');
   fs.symlinkSync(path.join(fixtureRoot, 'fixture-a'), link, 'dir');
   const discovered = discoverProfiles(repositoryRoot).filter(
     (file) => !file.startsWith(scratchRoot)
   );
-  assert.deepEqual(discovered, [fixtureA, fixtureB]);
+  assert.deepEqual(discovered, [
+    path.join(fixtureRoot, 'default-shell-template', 'product-profile.json'),
+    fixtureA,
+    fixtureB,
+  ]);
 });
