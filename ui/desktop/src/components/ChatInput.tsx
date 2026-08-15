@@ -115,10 +115,6 @@ const i18n = defineMessages({
     id: 'chatInput.contextWindow',
     defaultMessage: 'Context window',
   },
-  contextManagedExternally: {
-    id: 'chatInput.contextManagedExternally',
-    defaultMessage: "Context is managed by the connected CLI tool, not Gosling — there's nothing for Gosling to compact here.",
-  },
   waitingForImages: {
     id: 'chatInput.waitingForImages',
     defaultMessage: 'Waiting for images to save...',
@@ -654,23 +650,28 @@ export default function ChatInput({
   useEffect(() => {
     clearAlerts();
 
-    // Show alert when either there is registered token usage, or we know the limit
-    if ((totalTokens && totalTokens > 0) || (isTokenLimitLoaded && tokenLimit)) {
-      // For a provider that manages its own context (a persistent CLI/ACP session
-      // like Claude Code), Gosling only ever sends it the newest turn — Gosling's
-      // own /compact has nothing here to trim, and would just add another turn to
-      // that provider's own session instead of shrinking anything. Surface the
-      // number without offering an action that can't do what it implies.
+    // For a provider that manages its own context (a persistent CLI/ACP session
+    // like Claude Code), Gosling only ever sends it the newest turn — Gosling's
+    // own /compact has nothing here to trim, and would just add another turn to
+    // that provider's own session instead of shrinking anything. AlertBox has no
+    // way to show that nuance (it always renders the auto-compact threshold/edit
+    // control whenever an alert carries progress, regardless of showCompactButton),
+    // and that threshold is meaningless here too — Gosling never checks it for a
+    // manages-own-context provider. Rather than surface a non-actionable "Auto
+    // compact at X%" control, skip the alert entirely; ContextWindowIndicator
+    // still shows the raw number unobtrusively.
+    if (
+      !managesOwnContext &&
+      ((totalTokens && totalTokens > 0) || (isTokenLimitLoaded && tokenLimit))
+    ) {
       addAlert({
         type: getContextAlertType(totalTokens || 0, tokenLimit),
-        message: managesOwnContext
-          ? intl.formatMessage(i18n.contextManagedExternally)
-          : intl.formatMessage(i18n.contextWindow),
+        message: intl.formatMessage(i18n.contextWindow),
         progress: {
           current: totalTokens || 0,
           total: tokenLimit,
         },
-        showCompactButton: !managesOwnContext,
+        showCompactButton: true,
         compactButtonDisabled: !totalTokens || isLoading,
         onCompact: () => {
           window.dispatchEvent(new CustomEvent(AppEvents.HIDE_ALERT_POPOVER));
