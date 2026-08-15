@@ -8,6 +8,7 @@ import type {
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
 import type { ShellLifecycleStateName } from './lifecycle';
+import type { ShellSettingsRecovery, ShellTheme } from './localSettings';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
 import type { ShellInteraction } from './interactionController';
@@ -32,6 +33,9 @@ export const shellIpcChannels = {
   handoffPrepare: 'handoff.prepare',
   handoffConfirm: 'handoff.confirm',
   externalOpen: 'external.open',
+  settingsRead: 'settings.read',
+  settingsAppearanceUpdate: 'settings.appearance.update',
+  settingsReset: 'settings.reset',
   runtimeChanged: 'runtime.changed',
   sessionUpdated: 'session.updated',
   permissionRequested: 'permission.requested',
@@ -57,7 +61,10 @@ export type ShellIpcInvokeChannel =
   | (typeof shellIpcChannels)['diagnosticsSave']
   | (typeof shellIpcChannels)['handoffPrepare']
   | (typeof shellIpcChannels)['handoffConfirm']
-  | (typeof shellIpcChannels)['externalOpen'];
+  | (typeof shellIpcChannels)['externalOpen']
+  | (typeof shellIpcChannels)['settingsRead']
+  | (typeof shellIpcChannels)['settingsAppearanceUpdate']
+  | (typeof shellIpcChannels)['settingsReset'];
 
 export type ShellIpcEventChannel =
   | (typeof shellIpcChannels)['runtimeChanged']
@@ -154,6 +161,23 @@ export interface ShellOpenResult {
   opened: boolean;
 }
 
+export interface ShellSettingsAppearanceUpdateRequest extends ShellGenerationRequest {
+  theme?: ShellTheme;
+  textScale?: number;
+}
+
+export interface ShellSettingsResetRequest extends ShellGenerationRequest {
+  userGesture: true;
+}
+
+export interface ShellSettingsSnapshot {
+  appearance: {
+    theme: ShellTheme;
+    textScale: number;
+  };
+  recovery: ShellSettingsRecovery;
+}
+
 export interface ShellIpcRequestMap {
   [shellIpcChannels.runtimeRead]: undefined;
   [shellIpcChannels.runtimeRetry]: ShellGenerationRequest;
@@ -174,6 +198,9 @@ export interface ShellIpcRequestMap {
   [shellIpcChannels.handoffPrepare]: ShellHandoffPrepareRequest;
   [shellIpcChannels.handoffConfirm]: ShellHandoffConfirmRequest;
   [shellIpcChannels.externalOpen]: string;
+  [shellIpcChannels.settingsRead]: undefined;
+  [shellIpcChannels.settingsAppearanceUpdate]: ShellSettingsAppearanceUpdateRequest;
+  [shellIpcChannels.settingsReset]: ShellSettingsResetRequest;
 }
 
 export interface ShellIpcResponseMap {
@@ -196,6 +223,9 @@ export interface ShellIpcResponseMap {
   [shellIpcChannels.handoffPrepare]: ShellHandoffPrepareResult;
   [shellIpcChannels.handoffConfirm]: ShellOpenResult;
   [shellIpcChannels.externalOpen]: ShellOpenResult;
+  [shellIpcChannels.settingsRead]: ShellSettingsSnapshot;
+  [shellIpcChannels.settingsAppearanceUpdate]: ShellSettingsSnapshot;
+  [shellIpcChannels.settingsReset]: ShellSettingsSnapshot;
 }
 
 export interface ShellIpcEventMap {

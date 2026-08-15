@@ -19,6 +19,8 @@ import type {
   ShellPermissionRespondRequest,
   ShellElicitationRespondRequest,
   ShellSessionResumeRequest,
+  ShellSettingsAppearanceUpdateRequest,
+  ShellSettingsResetRequest,
 } from './ipc';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type { ShellSessionUpdate } from './sessionController';
@@ -118,6 +120,12 @@ export const goslingShellAPI: GoslingShellAPI = Object.freeze({
   }),
   external: Object.freeze({
     open: (url: string) => invoke(shellIpcChannels.externalOpen, url),
+  }),
+  settings: Object.freeze({
+    read: () => invoke(shellIpcChannels.settingsRead, undefined),
+    updateAppearance: (request: ShellSettingsAppearanceUpdateRequest) =>
+      invoke(shellIpcChannels.settingsAppearanceUpdate, request),
+    reset: (request: ShellSettingsResetRequest) => invoke(shellIpcChannels.settingsReset, request),
   }),
 });
 

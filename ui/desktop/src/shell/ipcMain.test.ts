@@ -110,6 +110,18 @@ function harness() {
       selectionStatus: 'none' as const,
     })),
     sessionDetach: vi.fn(() => ({ detached: false, sessionId: null })),
+    settingsRead: vi.fn(() => ({
+      appearance: { theme: 'system' as const, textScale: 1 },
+      recovery: { status: 'loaded' as const, schemaVersion: 1 },
+    })),
+    settingsAppearanceUpdate: vi.fn((request) => ({
+      appearance: { theme: request.theme ?? 'system', textScale: request.textScale ?? 1 },
+      recovery: { status: 'loaded' as const, schemaVersion: 1 },
+    })),
+    settingsReset: vi.fn(() => ({
+      appearance: { theme: 'system' as const, textScale: 1 },
+      recovery: { status: 'loaded' as const, schemaVersion: 1 },
+    })),
   };
   const registration = registerShellIpc({
     ipcMain,
@@ -379,6 +391,74 @@ describe('shell IPC registration', () => {
     await expect(invoke(shellIpcChannels.externalOpen, 'file:///tmp/secret')).rejects.toThrow(
       'not allowlisted'
     );
+  });
+
+  it('reads settings without accepting a request and never gates it on a declared capability', async () => {
+    const value = harness();
+    value.registration.dispose();
+    const registration = registerShellIpc({
+      ipcMain: value.ipcMain,
+      renderer: value.renderer,
+      operations: value.operations,
+      allowedExternalOrigins: new Set(),
+      declaredCapabilities: new Set(),
+    });
+    const read = value.handlers.get(shellIpcChannels.settingsRead)!;
+    await expect(read(value.event, { generation: 1 })).rejects.toThrow('does not accept');
+    await expect(read(value.event)).resolves.toMatchObject({
+      appearance: { theme: 'system', textScale: 1 },
+    });
+    registration.dispose();
+  });
+
+  it('validates settings.appearance.update fields and rejects unsupported ones', async () => {
+    const { invoke, operations } = harness();
+
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, theme: 'neon' })
+    ).rejects.toThrow('theme must be');
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0.1 })
+    ).rejects.toThrow('textScale must be');
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0 })
+    ).rejects.toThrow('textScale must be');
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 2.1 })
+    ).rejects.toThrow('textScale must be');
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, {
+        generation: 1,
+        theme: 'dark',
+        credentialProfileId: 'x',
+      })
+    ).rejects.toThrow('unsupported fields');
+    expect(operations.settingsAppearanceUpdate).not.toHaveBeenCalled();
+
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, theme: 'dark' })
+    ).resolves.toMatchObject({ appearance: { theme: 'dark' } });
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1 })
+    ).resolves.toMatchObject({ appearance: { theme: 'system' } });
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0.8 })
+    ).resolves.toMatchObject({ appearance: { textScale: 0.8 } });
+    await expect(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 2 })
+    ).resolves.toMatchObject({ appearance: { textScale: 2 } });
+  });
+
+  it('requires an explicit user gesture before settings.reset dispatches', async () => {
+    const { invoke, operations } = harness();
+    await expect(
+      invoke(shellIpcChannels.settingsReset, { generation: 1, userGesture: false })
+    ).rejects.toThrow('explicit user gesture');
+    expect(operations.settingsReset).not.toHaveBeenCalled();
+    await expect(
+      invoke(shellIpcChannels.settingsReset, { generation: 1, userGesture: true })
+    ).resolves.toMatchObject({ appearance: { theme: 'system' } });
+    expect(operations.settingsReset).toHaveBeenCalledWith({ generation: 1, userGesture: true });
   });
 
   it('rejects oversized operation responses', async () => {

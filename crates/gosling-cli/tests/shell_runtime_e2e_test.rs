@@ -686,3 +686,209 @@ async fn shell_directory_credential_and_module_surfaces_are_live_and_bounded() {
 
     client_task.abort();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn selectable_catalog_credential_policy_opens_the_catalog_and_caller_selection() {
+    let root = TempDir::new().unwrap();
+    let work = TempDir::new().unwrap();
+    let provisioning_path = write_neutral_provisioning(root.path(), "selectable_catalog");
+
+    let port = free_port();
+    let _server = spawn_server(
+        root.path(),
+        "selectable-credential",
+        &provisioning_path,
+        port,
+    );
+    wait_for_server(port).await;
+    let (cx, client_task) = connect(port).await;
+
+    // The catalog itself must be reachable rather than fail-closed the way `fixed` policy denies
+    // it — whatever profiles this sandbox happens to have configured, the policy gate must open.
+    let credentials: ShellCredentialListResponse = custom(
+        &cx,
+        "_gosling/unstable/shell/credentials/list",
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(credentials.status, ShellCredentialCatalogStatus::Available);
+
+    // A caller-selected credential is no longer blanket-denied the way it is under `fixed` — it
+    // may still fail for other reasons (e.g. the profile doesn't exist), but never with the
+    // fixed-policy denial code, which would incorrectly claim this shell never opted into
+    // selection at all. Assert something concrete on both branches so a regression that makes
+    // this silently succeed-without-effect, or silently fail some other way, is still caught.
+    let result = cx
+        .send_request(
+            agent_client_protocol::UntypedMessage::new(
+                "session/new",
+                serde_json::json!({
+                    "cwd": work.path(),
+                    "mcpServers": [],
+                    "_meta": { "shellCredentialProfileId": "does-not-exist" }
+                }),
+            )
+            .unwrap(),
+        )
+        .block_task()
+        .await;
+    match result {
+        Ok(value) => {
+            // `effective_credential_profile_id` passes the selected id through unchecked for
+            // `selectable_catalog` (crates/gosling/src/acp/shell.rs) — existence is resolved at
+            // use time, not session creation — so a real session must still come back.
+            assert!(
+                value.get("sessionId").and_then(|id| id.as_str()).is_some(),
+                "selectable_catalog must create a real session even for an unresolved \
+                 credential reference: {value:?}"
+            );
+        }
+        Err(error) => {
+            assert_ne!(
+                error.data.as_ref().and_then(|data| data["code"].as_str()),
+                Some("SHELL_CREDENTIAL_SELECTION_DENIED"),
+                "selectable_catalog must not reuse the fixed-policy blanket denial: {error:?}"
+            );
+        }
+    }
+
+    client_task.abort();
+}
+
+fn write_neutral_provisioning(root: &Path, credential_policy: &str) -> std::path::PathBuf {
+    std::fs::create_dir_all(root.join("config")).unwrap();
+    std::fs::write(
+        root.join("config/config.yaml"),
+        "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\nGOSLING_DISABLE_KEYRING: true\n",
+    )
+    .unwrap();
+    let provisioning_path = root.join("provisioning.json");
+    std::fs::write(
+        &provisioning_path,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 1,
+            "settingsSchemaVersion": 1,
+            "identity": { "id": "ignored", "displayName": "Ignored", "version": "0" },
+            "session": { "credentialPolicy": credential_policy, "extensions": [], "skillIds": [] },
+            "instructions": { "systemPrompt": "You are the neutral template assistant." }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    provisioning_path
+}
+
+/// Addresses SHP-DEF-007: no test previously launched two shell identities as live concurrent
+/// processes and observed them. Two full server processes, each with its own path root, run at
+/// the same time and must not observe or disturb each other's sessions, and neither may survive
+/// the other's independent shutdown.
+///
+/// `multi_thread` matters here, not just as a nicety: `ServeProcess::drop` does a blocking
+/// `Child::wait()` with no timeout, and this test drops two server handles mid-test. On the
+/// default current-thread runtime that blocking wait would tie up the only executor thread; a
+/// dedicated worker thread keeps it from stalling the runtime the rest of the test still needs.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_shell_identities_coexist_as_live_concurrent_processes() {
+    let root_a = TempDir::new().unwrap();
+    let root_b = TempDir::new().unwrap();
+    let work_a = TempDir::new().unwrap();
+    let work_b = TempDir::new().unwrap();
+    let provisioning_a = write_neutral_provisioning(root_a.path(), "fixed");
+    let provisioning_b = write_neutral_provisioning(root_b.path(), "fixed");
+
+    let port_a = free_port();
+    let mut port_b = free_port();
+    while port_b == port_a {
+        port_b = free_port();
+    }
+    let server_a = spawn_server(root_a.path(), "coexist-a", &provisioning_a, port_a);
+    let server_b = spawn_server(root_b.path(), "coexist-b", &provisioning_b, port_b);
+    let pid_a = server_a.0.id();
+    let pid_b = server_b.0.id();
+    assert_ne!(pid_a, pid_b, "each identity must be its own OS process");
+
+    tokio::join!(wait_for_server(port_a), wait_for_server(port_b));
+    let ((cx_a, task_a), (cx_b, task_b)) = tokio::join!(connect(port_a), connect(port_b));
+
+    let (session_a, session_b) = tokio::join!(
+        cx_a.send_request(NewSessionRequest::new(work_a.path()))
+            .block_task(),
+        cx_b.send_request(NewSessionRequest::new(work_b.path()))
+            .block_task(),
+    );
+    let session_a = session_a.unwrap();
+    let session_b = session_b.unwrap();
+    // Session ids are a per-store day counter, so two freshly isolated stores legitimately mint
+    // the same first id independently — that's a feature of isolation, not a collision. The real
+    // proof is that each store only ever holds its own session, checked below.
+
+    // Each server persisted its own session under its own path root. Both stores independently
+    // minted the same first-of-the-day session id (a per-store counter, not a global one), so
+    // resolving that same id against each root's own store correctly and only ever returning
+    // that root's own working directory is what proves the two stores are genuinely separate
+    // rather than sharing state.
+    let (found_a, found_b) = tokio::join!(
+        read_session(root_a.path(), "coexist-a", &session_a.session_id.0),
+        read_session(root_b.path(), "coexist-b", &session_b.session_id.0),
+    );
+    assert_eq!(
+        found_a.working_dir,
+        std::fs::canonicalize(work_a.path()).unwrap()
+    );
+    assert_eq!(
+        found_b.working_dir,
+        std::fs::canonicalize(work_b.path()).unwrap()
+    );
+
+    // Each server independently answers a live request while the other is also active.
+    let (info_a, info_b): (GetSessionInfoResponse, GetSessionInfoResponse) = tokio::join!(
+        custom(
+            &cx_a,
+            "_gosling/unstable/session/info",
+            serde_json::to_value(GetSessionInfoRequest {
+                session_id: session_a.session_id.0.to_string(),
+            })
+            .unwrap(),
+        ),
+        custom(
+            &cx_b,
+            "_gosling/unstable/session/info",
+            serde_json::to_value(GetSessionInfoRequest {
+                session_id: session_b.session_id.0.to_string(),
+            })
+            .unwrap(),
+        ),
+    );
+    assert_eq!(
+        info_a.session.cwd,
+        std::fs::canonicalize(work_a.path()).unwrap()
+    );
+    assert_eq!(
+        info_b.session.cwd,
+        std::fs::canonicalize(work_b.path()).unwrap()
+    );
+
+    task_a.abort();
+    task_b.abort();
+
+    // Shut down identity A only; identity B must survive untouched.
+    drop(server_a);
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        gosling::subprocess::wait_for_process_exit(pid_a, Duration::from_millis(20)),
+    )
+    .await
+    .expect("identity A's process must not survive its own shutdown");
+    assert!(
+        gosling::subprocess::process_is_alive(pid_b).await,
+        "identity B must keep running after only identity A is shut down"
+    );
+
+    drop(server_b);
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        gosling::subprocess::wait_for_process_exit(pid_b, Duration::from_millis(20)),
+    )
+    .await
+    .expect("identity B's process must not survive its own shutdown");
+}

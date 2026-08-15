@@ -15,7 +15,7 @@
     ]
   },
   "session": {
-    "credentialPolicy": "fixed",
+    "credentialPolicy": "selectable_catalog",
     "extensions": [],
     "skillIds": []
   },

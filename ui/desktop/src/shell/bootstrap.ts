@@ -64,6 +64,13 @@ export interface ShellBootstrapAdapter {
     message: string;
     properties: ReadonlyArray<'openDirectory' | 'createDirectory' | 'dontAddToRecent'>;
   }): Promise<{ canceled: boolean; filePaths: string[] }>;
+  showConfirmDialog(options: {
+    title: string;
+    message: string;
+    detail: string;
+    confirmLabel: string;
+    cancelLabel: string;
+  }): Promise<{ confirmed: boolean }>;
   openExternal(url: string): Promise<void>;
   resourcesPath: string;
   preloadPath: string;
@@ -364,6 +371,51 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
       externalOpen: async (url) => {
         await adapter.openExternal(url);
         return { opened: true };
+      },
+      settingsRead: () => ({
+        appearance: settings.read().appearance,
+        recovery: settings.recovery(),
+      }),
+      settingsAppearanceUpdate: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('settings request generation is stale');
+        }
+        const { theme, textScale } = request;
+        const updated = settings.setAppearance({ theme, textScale });
+        return { appearance: updated.appearance, recovery: settings.recovery() };
+      },
+      settingsReset: async (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('settings request generation is stale');
+        }
+        const confirmation = await adapter.showConfirmDialog({
+          title: 'Reset local settings',
+          message: `Reset ${loaded.profile.product.displayName} settings?`,
+          detail:
+            'This clears the theme, text size, remembered directory, and preferred credential ' +
+            'for this app only. Your Gosling credentials and other apps are not affected.',
+          confirmLabel: 'Reset',
+          cancelLabel: 'Cancel',
+        });
+        // Re-check after the await: the runtime may have torn down or retried while the native
+        // dialog was open, the same hazard directoryController.ts guards for around its own
+        // showOpenDialog await.
+        if (request.generation !== controller.read().generation) {
+          throw new Error('settings request generation is stale');
+        }
+        if (!confirmation.confirmed) {
+          return { appearance: settings.read().appearance, recovery: settings.recovery() };
+        }
+        const reset = settings.reset();
+        // The settings file is now cleared, but directory/credentials keep their own in-memory
+        // selection for session creation (runtimeController.ts reads `.accepted()`/`.selected()`,
+        // not the settings file) — without this, a session created before the next restart would
+        // still use the directory/credential the operator just reset. clear() is the same
+        // teardown call runtimeController.ts already uses when the backend itself is lost, and it
+        // publishes through the existing onChanged wiring so the renderer's snapshot updates too.
+        directory.clear();
+        credentials.clear();
+        return { appearance: reset.appearance, recovery: settings.recovery() };
       },
     },
   });

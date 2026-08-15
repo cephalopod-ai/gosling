@@ -32,6 +32,35 @@ const controller = vi.hoisted(() => {
 controller.create.mockReturnValue(controller.value);
 vi.mock('./runtimeController', () => ({ createShellRuntimeController: controller.create }));
 
+const directoryController = vi.hoisted(() => ({
+  read: vi.fn(() => ({ state: 'unselected', path: null, label: null, reasonCode: null, remembered: false })),
+  accepted: vi.fn(() => null),
+  restore: vi.fn(),
+  select: vi.fn(),
+  clear: vi.fn(),
+  onChanged: vi.fn(() => vi.fn()),
+}));
+vi.mock('./directoryController', () => ({
+  createShellDirectoryController: vi.fn(() => directoryController),
+}));
+
+const credentialController = vi.hoisted(() => ({
+  read: vi.fn(() => ({
+    catalogStatus: 'denied',
+    profiles: [],
+    selectedProfileId: null,
+    selectionStatus: 'none',
+  })),
+  selected: vi.fn(() => null),
+  refresh: vi.fn(),
+  select: vi.fn(),
+  clear: vi.fn(),
+  onChanged: vi.fn(() => vi.fn()),
+}));
+vi.mock('./credentialController', () => ({
+  createShellCredentialController: vi.fn(() => credentialController),
+}));
+
 import type Electron from 'electron';
 import type { ShellBootstrapAdapter } from './bootstrap';
 import { bootstrapShell } from './bootstrap';
@@ -43,6 +72,8 @@ afterEach(() => {
   controller.create.mockReturnValue(controller.value);
   controller.value.getAcp.mockReturnValue(null);
   controller.value.getSessionController.mockReturnValue(null);
+  directoryController.accepted.mockReturnValue(null);
+  credentialController.selected.mockReturnValue(null);
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -187,6 +218,7 @@ function harness(lock = true) {
     },
     createWindow: vi.fn(() => window),
     showSaveDialog: vi.fn(async () => ({ canceled: true })),
+    showConfirmDialog: vi.fn(async () => ({ confirmed: true })),
     openExternal: vi.fn(async () => {}),
     resourcesPath: value.root,
     preloadPath: '/app/shell-preload.js',
@@ -272,6 +304,117 @@ describe('shell bootstrap', () => {
     });
     expect(response).toEqual(controller.value.read());
     expect(JSON.stringify(response)).not.toMatch(/token|secret|acp/i);
+  });
+
+  it('reads and updates real product-local settings through the store, never a raw file', async () => {
+    const value = harness();
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+
+    const initial = await value.handlers.get(shellIpcChannels.settingsRead)!(event);
+    expect(initial).toEqual({
+      appearance: { theme: 'system', textScale: 1 },
+      recovery: { status: 'absent', schemaVersion: null },
+    });
+
+    const updated = await value.handlers.get(shellIpcChannels.settingsAppearanceUpdate)!(event, {
+      generation: 1,
+      theme: 'dark',
+    });
+    expect(updated).toEqual({
+      appearance: { theme: 'dark', textScale: 1 },
+      recovery: { status: 'loaded', schemaVersion: 1 },
+    });
+    const reread = await value.handlers.get(shellIpcChannels.settingsRead)!(event);
+    expect(reread).toEqual(updated);
+  });
+
+  it('resets settings only after explicit confirmation, and leaves them untouched on cancel', async () => {
+    const value = harness();
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+    await value.handlers.get(shellIpcChannels.settingsAppearanceUpdate)!(event, {
+      generation: 1,
+      theme: 'dark',
+      textScale: 1.5,
+    });
+
+    value.adapter.showConfirmDialog.mockResolvedValueOnce({ confirmed: false });
+    const cancelled = await value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+      generation: 1,
+      userGesture: true,
+    });
+    expect(cancelled).toEqual({
+      appearance: { theme: 'dark', textScale: 1.5 },
+      recovery: { status: 'loaded', schemaVersion: 1 },
+    });
+
+    value.adapter.showConfirmDialog.mockResolvedValueOnce({ confirmed: true });
+    const reset = await value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+      generation: 1,
+      userGesture: true,
+    });
+    expect(reset).toEqual({
+      appearance: { theme: 'system', textScale: 1 },
+      recovery: { status: 'loaded', schemaVersion: 1 },
+    });
+    expect(value.adapter.showConfirmDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Reset local settings' })
+    );
+  });
+
+  it('clears the live directory and credential selection on a confirmed reset, not on cancel', async () => {
+    const value = harness();
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+
+    value.adapter.showConfirmDialog.mockResolvedValueOnce({ confirmed: false });
+    await value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+      generation: 1,
+      userGesture: true,
+    });
+    expect(directoryController.clear).not.toHaveBeenCalled();
+    expect(credentialController.clear).not.toHaveBeenCalled();
+
+    value.adapter.showConfirmDialog.mockResolvedValueOnce({ confirmed: true });
+    await value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+      generation: 1,
+      userGesture: true,
+    });
+    expect(directoryController.clear).toHaveBeenCalledTimes(1);
+    expect(credentialController.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects settings mutations carrying a stale generation, like every other mutating channel', async () => {
+    const value = harness();
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+
+    await expect(
+      value.handlers.get(shellIpcChannels.settingsAppearanceUpdate)!(event, {
+        generation: 2,
+        theme: 'dark',
+      })
+    ).rejects.toThrow('generation is stale');
+    await expect(
+      value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+        generation: 2,
+        userGesture: true,
+      })
+    ).rejects.toThrow('generation is stale');
+    expect(value.adapter.showConfirmDialog).not.toHaveBeenCalled();
   });
 
   it('relays domain reads, actions, and confirmation through the verified active session only', async () => {

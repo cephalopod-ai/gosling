@@ -22,12 +22,16 @@ import {
   type ShellPromptSubmitRequest,
   type ShellPromptSubmitResult,
   type ShellSessionResumeRequest,
+  type ShellSettingsAppearanceUpdateRequest,
+  type ShellSettingsResetRequest,
+  type ShellSettingsSnapshot,
 } from './ipc';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
 import type { ShellInteraction } from './interactionController';
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
+import { isValidShellTheme, isValidShellTextScale } from './localSettings';
 
 const MAX_INVOKE_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -98,6 +102,13 @@ export interface ShellIpcOperations {
   ): Promise<ShellHandoffPrepareResult> | ShellHandoffPrepareResult;
   handoffConfirm(request: ShellHandoffConfirmRequest): Promise<ShellOpenResult> | ShellOpenResult;
   externalOpen(url: string): Promise<ShellOpenResult> | ShellOpenResult;
+  settingsRead(): Promise<ShellSettingsSnapshot> | ShellSettingsSnapshot;
+  settingsAppearanceUpdate(
+    request: ShellSettingsAppearanceUpdateRequest
+  ): Promise<ShellSettingsSnapshot> | ShellSettingsSnapshot;
+  settingsReset(
+    request: ShellSettingsResetRequest
+  ): Promise<ShellSettingsSnapshot> | ShellSettingsSnapshot;
 }
 
 export interface RegisteredShellIpc {
@@ -373,6 +384,34 @@ function parseHandoffConfirmRequest(value: unknown): ShellHandoffConfirmRequest 
   return { generation: value.generation, handoffId: value.handoffId };
 }
 
+function parseSettingsAppearanceUpdateRequest(
+  value: unknown
+): ShellSettingsAppearanceUpdateRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  const optionalKeys = ['theme', 'textScale'].filter((key) => key in value);
+  assertExactKeys(value, ['generation', ...optionalKeys], 'request');
+  assertGeneration(value.generation);
+  if ('theme' in value && !isValidShellTheme(value.theme)) {
+    throw new Error('theme must be system, light, or dark');
+  }
+  if ('textScale' in value && !isValidShellTextScale(value.textScale)) {
+    throw new Error('textScale must be a number between 0.8 and 2');
+  }
+  return value as unknown as ShellSettingsAppearanceUpdateRequest;
+}
+
+function parseSettingsResetRequest(value: unknown): ShellSettingsResetRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'userGesture'], 'request');
+  assertGeneration(value.generation);
+  if (value.userGesture !== true) {
+    throw new Error('settings.reset requires an explicit user gesture');
+  }
+  return { generation: value.generation, userGesture: true };
+}
+
 function parseExternalUrl(value: unknown, allowedOrigins: ReadonlySet<string>): string {
   assertString(value, 'url', MAX_EXTERNAL_URL_BYTES);
   assertRequestBytes(value, MAX_EXTERNAL_URL_BYTES);
@@ -493,6 +532,16 @@ export function registerShellIpc(input: {
       shellIpcChannels.externalOpen,
       (request) => operations.externalOpen(parseExternalUrl(request, allowedExternalOrigins)),
     ],
+    [shellIpcChannels.settingsRead, () => operations.settingsRead()],
+    [
+      shellIpcChannels.settingsAppearanceUpdate,
+      (request) =>
+        operations.settingsAppearanceUpdate(parseSettingsAppearanceUpdateRequest(request)),
+    ],
+    [
+      shellIpcChannels.settingsReset,
+      (request) => operations.settingsReset(parseSettingsResetRequest(request)),
+    ],
   ];
 
   for (const [channel, operation] of registrations) {
@@ -502,8 +551,10 @@ export function registerShellIpc(input: {
       if (capability && declaredCapabilities && !declaredCapabilities.has(capability)) {
         throw new Error(`shell consumer did not declare ${capability}`);
       }
-      if (channel === shellIpcChannels.runtimeRead && request !== undefined) {
-        throw new Error('runtime.read does not accept a request');
+      const isParameterlessReadChannel =
+        channel === shellIpcChannels.runtimeRead || channel === shellIpcChannels.settingsRead;
+      if (isParameterlessReadChannel && request !== undefined) {
+        throw new Error(`${channel} does not accept a request`);
       }
       const response = await operation(request);
       assertResponseBytes(response, responseLimit(channel));
