@@ -103,11 +103,11 @@ consequence for session/prompt/interaction state explicit, since the Gate 2 cont
   fact through the safe snapshot and must not treat `uncertain` as permission to silently resubmit.
   This is an outcome fence, not an automatic replay or an idempotency guarantee for an operator who
   chooses to repeat a completed prompt.
-- `session.updates` carries a monotonic per-session `updateSeq` (added to the event payload) that
-  resets to 1 on every `session.create`/`session.resume`. This gives the renderer a way to detect a
-  gap (a jump in `updateSeq`) without this contract committing to a replay/backfill buffer, which is
-  not required for the R4 neutral-fixture conformance workflow and would be scope creep to freeze
-  now without an implementation to validate it against.
+- `session.updates` carries a monotonic per-session `updateSeq` and an explicit `delivery` value of
+  `history` or `live`; sequence numbering resets on every `session.create`/`session.resume`.
+  Main retains at most 256 projected updates and 48 KiB for the active session. The
+  `session.transcript.read` repair operation returns that fenced snapshot plus first/last sequence and
+  honest `truncated`/integrity facts. It never re-reads arbitrary files or exposes raw ACP payloads.
 - "Compacted resume" (an ACP-level session resume that may drop or summarize prior history, already
   reachable through the existing `resumeSession`/`loadSession` call in `acpRuntime.ts`) is exposed to
   the renderer through the same `resumeKind: resumed` signal; this contract does not distinguish
@@ -120,24 +120,26 @@ Added to the existing eight-channel allowlist; each invoke carries generation an
 session ID and a prompt-attempt or action nonce, validated exactly as `runtime.retry`/`runtime.stop`
 already are:
 
-| Operation | Direction | Input bound | Output/event bound | Main behavior |
-| --- | --- | --- | --- | --- |
-| `session.create` | invoke | none beyond generation | typed result <=8 KiB | main/server-owned working directory only |
-| `session.resume` | invoke | session ID | typed result <=8 KiB | rejects unknown/foreign session ID |
-| `prompt.submit` | invoke | bounded text, <=64 KiB | prompt-attempt ID <=1 KiB | rejects if an attempt is already outstanding |
-| `prompt.cancel` | invoke | prompt-attempt ID | status <=1 KiB | idempotent no-op success if the named ID is the current attempt (whether or not it was already cancelled); rejects with a stale-ID error if the ID was never issued or belongs to a different session/generation |
-| `session.updates` | event | main only | bounded update <=64 KiB, attempt-fenced, carries monotonic per-session `updateSeq` (resets on create/resume) | streamed model/tool output |
-| `permission.respond` | invoke | generation + session ID + action ID + allow_once\|deny | status <=1 KiB | rejects replay/expired/foreign action ID |
-| `elicitation.respond` | invoke | generation + session ID + action ID + submit(bounded fields)\|cancel | status <=8 KiB | rejects replay/expired/foreign action ID |
-| `permission.requested` | event | main only | action summary <=8 KiB | opaque action ID, allowlisted fields only |
-| `elicitation.requested` | event | main only | action summary <=8 KiB | opaque action ID, allowlisted fields only |
-| `domain.snapshot` | invoke | none beyond generation | bounded payload <=64 KiB (matches the safe-snapshot ceiling; the R4 neutral fixture's snapshot must fit this bound, and an adapter that would exceed it fails as overproducing) | only when `adapter.status == ready` |
-| `domain.action` | invoke | session ID + generation + action name + args, <=16 KiB | bounded payload <=64 KiB, or bounded `confirmationActionId` for an unapproved `mutate` action | `read` actions execute directly; `mutate` actions execute only once their `confirm` interaction (below) is approved |
-| `confirmation.requested` | event | main only | interaction summary <=8 KiB | opaque action ID, allowlisted action-name/args summary only |
-| `directory.select` | invoke | generation + `userGesture: true`; **never a path** | typed result <=8 KiB | main opens Electron's native directory chooser, sends the operator-confirmed path to the authenticated loopback backend for canonicalization, and keeps only an accepted canonical path; cancel is `{status: "cancelled"}`, not an error; rejected paths return a stable reason code and no path; a settings document the store refuses to overwrite yields `remembered: false` rather than blocking the selection |
-| `credential.select` | invoke | generation + opaque profile ID from the current safe catalog, or `null` | safe catalog snapshot <=64 KiB | rejects unknown/stale/policy-disallowed IDs; persists only the opaque ID; overlapping selections are sequence-fenced so a slower earlier one never overwrites a later committed one; never returns a secret, auth kind, source, secret-field name, provider parameter, or timestamp |
-| `session.detach` | invoke | none beyond generation | typed result <=8 KiB | releases the local one-session slot so a different directory can be chosen; permitted only from `active` — a create or resume still awaiting the backend would otherwise finish afterwards and reinstate a session nobody holds — and refuses while a prompt attempt streams or an interaction is pending; never deletes or mutates the server session, which stays resumable by ID |
-| `confirmation.respond` | invoke | action ID + approve\|deny | on approve: bounded `DomainActionResponse` payload <=64 KiB; on deny/reject: status <=1 KiB | main relays to the Rust server, which rejects replay/expired/foreign action ID and, on approve, executes the already-pending action immediately (it retained the action/input from the original `domain.action` call) and returns the result inline — there is no second `perform_domain_action` round trip and no token ever crosses the main/server boundary |
+| Operation                 | Direction | Input bound                                                                   | Output/event bound                                                                                                                                                              | Main behavior                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | --------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `session.create`          | invoke    | none beyond generation                                                        | typed result <=8 KiB                                                                                                                                                            | main/server-owned working directory only                                                                                                                                                                                                                                                                                                                                                                           |
+| `session.list`            | invoke    | none beyond generation                                                        | at most 20 safe summaries <=64 KiB                                                                                                                                              | lists active ACP sessions for the accepted current directory only; omits message snippets and credential metadata                                                                                                                                                                                                                                                                                                  |
+| `session.resume`          | invoke    | session ID                                                                    | typed result <=8 KiB                                                                                                                                                            | rejects unknown/foreign session ID                                                                                                                                                                                                                                                                                                                                                                                 |
+| `session.transcript.read` | invoke    | generation + active session ID                                                | bounded replay <=64 KiB                                                                                                                                                         | returns the main-owned active-session repair ledger with sequence and integrity facts                                                                                                                                                                                                                                                                                                                              |
+| `prompt.submit`           | invoke    | bounded text, <=64 KiB                                                        | prompt-attempt ID <=1 KiB                                                                                                                                                       | rejects if an attempt is already outstanding                                                                                                                                                                                                                                                                                                                                                                       |
+| `prompt.cancel`           | invoke    | prompt-attempt ID                                                             | status <=1 KiB                                                                                                                                                                  | idempotent no-op success if the named ID is the current attempt (whether or not it was already cancelled); rejects with a stale-ID error if the ID was never issued or belongs to a different session/generation                                                                                                                                                                                                   |
+| `session.updates`         | event     | main only                                                                     | bounded update <=64 KiB, session-fenced, carries monotonic `updateSeq` and `history`/`live` delivery                                                                            | compacted resume history or live model/tool output; private reasoning is discarded                                                                                                                                                                                                                                                                                                                                 |
+| `permission.respond`      | invoke    | generation + session ID + action ID + allow_once\|deny                        | status <=1 KiB                                                                                                                                                                  | rejects replay/expired/foreign action ID                                                                                                                                                                                                                                                                                                                                                                           |
+| `elicitation.respond`     | invoke    | generation + session ID + action ID + submit(bounded fields)\|decline\|cancel | status <=8 KiB                                                                                                                                                                  | validates the projected schema and rejects replay/expired/foreign action ID                                                                                                                                                                                                                                                                                                                                        |
+| `permission.requested`    | event     | main only                                                                     | action summary <=8 KiB                                                                                                                                                          | opaque action ID, safe tool title/effect/basename targets/input-field names only                                                                                                                                                                                                                                                                                                                                   |
+| `elicitation.requested`   | event     | main only                                                                     | action summary <=8 KiB                                                                                                                                                          | opaque action ID and bounded supported form schema; secret-shaped or unsupported schemas cancel                                                                                                                                                                                                                                                                                                                    |
+| `domain.snapshot`         | invoke    | none beyond generation                                                        | bounded payload <=64 KiB (matches the safe-snapshot ceiling; the R4 neutral fixture's snapshot must fit this bound, and an adapter that would exceed it fails as overproducing) | only when `adapter.status == ready`                                                                                                                                                                                                                                                                                                                                                                                |
+| `domain.action`           | invoke    | session ID + generation + action name + args, <=16 KiB                        | bounded payload <=64 KiB, or bounded `confirmationActionId` for an unapproved `mutate` action                                                                                   | `read` actions execute directly; `mutate` actions execute only once their `confirm` interaction (below) is approved                                                                                                                                                                                                                                                                                                |
+| `confirmation.requested`  | event     | main only                                                                     | interaction summary <=8 KiB                                                                                                                                                     | opaque action ID, allowlisted action-name/args summary only                                                                                                                                                                                                                                                                                                                                                        |
+| `directory.select`        | invoke    | generation + `userGesture: true`; **never a path**                            | typed result <=8 KiB                                                                                                                                                            | main opens Electron's native directory chooser, sends the operator-confirmed path to the authenticated loopback backend for canonicalization, and keeps only an accepted canonical path; cancel is `{status: "cancelled"}`, not an error; rejected paths return a stable reason code and no path; a settings document the store refuses to overwrite yields `remembered: false` rather than blocking the selection |
+| `credential.select`       | invoke    | generation + opaque profile ID from the current safe catalog, or `null`       | safe catalog snapshot <=64 KiB                                                                                                                                                  | rejects unknown/stale/policy-disallowed IDs; persists only the opaque ID; overlapping selections are sequence-fenced so a slower earlier one never overwrites a later committed one; never returns a secret, auth kind, source, secret-field name, provider parameter, or timestamp                                                                                                                                |
+| `session.detach`          | invoke    | none beyond generation                                                        | typed result <=8 KiB                                                                                                                                                            | releases the local one-session slot so a different directory can be chosen; permitted only from `active` — a create or resume still awaiting the backend would otherwise finish afterwards and reinstate a session nobody holds — and refuses while a prompt attempt streams or an interaction is pending; never deletes or mutates the server session, which stays resumable by ID                                |
+| `confirmation.respond`    | invoke    | generation + session ID + opaque action ID + approve\|deny                    | on approve: bounded `DomainActionResponse` payload <=64 KiB; on deny/reject: status <=1 KiB                                                                                     | main first matches its safe pending-fact mirror, then relays to Rust; Rust rejects replay/expired/foreign IDs and executes an approved retained action inline — raw action input is never resupplied by the renderer                                                                                                                                                                                               |
 
 Three methods are required of the backend regardless of what a consumer declares, because main uses
 them on every startup: `_gosling/unstable/shell/directory/validate`,
@@ -149,10 +151,15 @@ Provisioning read/validate accept an optional `workingDir`; main restores the re
 before the compatibility gate so a product with project-local extensions or skills is judged against
 the directory its sessions will run in rather than the backend's startup directory.
 
-`session.create` requires `directory.select` and `session.detach` requires `session.create`: a
-consumer that can open a session must be able to choose the directory that session runs in, and a
-consumer that can release a session must be able to open one. The resolver rejects a declaration
-that omits a prerequisite rather than silently widening it.
+`session.create` requires `directory.select`; `session.list` requires `directory.select`;
+`session.resume` requires `session.list`; `session.detach` and `session.transcript.read` require
+`session.create`; and `prompt.submit` requires `session.create`, `permission.respond`, and
+`elicitation.respond`. `domain.action` and `confirmation.respond` are a required pair. The resolver
+rejects a declaration that omits a prerequisite rather than silently widening it.
+
+All invokes cross the preload boundary as a stable `ShellOperationFailure` on failure: bounded code,
+safe message, retry-safety flag, recovery action, and `preservesDraft`. Arbitrary backend exception
+text never becomes renderer recovery logic.
 
 Explicitly still absent, unchanged from the Gate 2 contract: arbitrary file/settings/clipboard/
 notification/updater access, raw ACP URL/token, MCP proxy URL, server secret, and arbitrary IPC
@@ -167,7 +174,7 @@ profile (`shell-productization-contracts.md` §"Product-profile schema v1"), and
 `checkShellMethods`/`availableMethods` perform **exact string membership against
 `custom_method_names()`** (`crates/gosling/src/acp/server.rs:2506-2530`) — this checks only
 `_gosling/unstable/...` custom methods, never standard ACP capabilities. Standard ACP support is a
-*different* mechanism: boolean/structured predicates on `AgentCapabilities`
+_different_ mechanism: boolean/structured predicates on `AgentCapabilities`
 (`load_session`, `session_capabilities`, `prompt_capabilities`, `mcp_capabilities` —
 `crates/gosling/src/acp/server.rs:2563-2577`), returned unconditionally on every `initialize` call,
 not looked up by method name. Conflating the two (as an earlier draft of this table did) would either
@@ -185,6 +192,7 @@ Custom-method operations -> derive into requiredMethods (checked by exact string
 
 Standard-ACP-capability operations -> derive into a capability-predicate check (NOT requiredMethods):
   session.create, session.resume                 -> agentCapabilities.load_session == true
+  session.list                                   -> agentCapabilities.session_capabilities.list exists
   prompt.submit, prompt.cancel                    -> unconditional core ACP prompt/cancel; no predicate needed
   permission.respond                              -> unconditional core ACP requestPermission path; no predicate needed
   elicitation.respond                             -> unconditional core ACP unstable_createElicitation path; no predicate needed
@@ -218,13 +226,15 @@ Ownership follows the authority boundary each kind already belongs to, not one s
 - `permission` and `elicitation` interactions are **main-owned**: Electron main is the ACP client
   that receives these ACP-protocol callbacks (`clientCallbacks()` in `acpRuntime.ts`), so main holds
   the pending-record table and mediates the response directly.
-- `confirm` interactions are **Rust-server-owned**, per ADR-0012's server-owned-authorization rule
+- `confirm` authorization records are **Rust-server-owned**, per ADR-0012's server-owned-authorization rule
   and the parent plan's binding boundary that domain-operation authorization stays in Rust/backend
   services (`project-shell-readiness-plan.md` §3.3). Electron main relays `confirmation.requested`/
   `confirmation.respond` to and from the server over the existing authenticated ACP channel (a new
   custom method, `_gosling/unstable/shell/domain/action/confirm`, alongside `domain_snapshot`/
-  `perform_domain_action`); main holds no pending-record state of its own for this kind and cannot
-  resolve it locally. The server-side record additionally retains the pending action's `action`/
+  `perform_domain_action`). Main holds only a bounded safe mirror—opaque action ID, generation,
+  session ID, action name, and non-secret input-field names—so runtime snapshots, detach gating, and
+  the `confirmation.requested` event agree. Main cannot resolve authorization locally. The
+  server-side record additionally retains the pending action's `action`/
   `input` alongside the fencing keys (not just an opaque ID) — this is what lets approval execute the
   action immediately instead of requiring the renderer or main to resupply it. It is not tied to a
   `promptAttemptId` the way permission/elicitation interactions are, since a mutation can be
@@ -310,12 +320,12 @@ once and compares the live `{ domain_id, version, actions, protocolVersion }` ag
 migration (§ above) adds `protocolVersion` alongside the structured `actions` shape in the same
 schema bump. An exact `protocolVersion` mismatch is `incompatible` even if `domain_id`/`actions`
 otherwise match, since it means the two sides implement different descriptor/snapshot/action/confirm
-wire shapes. The consumer manifest's `domainAdapter` declaration is a *separate*, Electron-side check:
+wire shapes. The consumer manifest's `domainAdapter` declaration is a _separate_, Electron-side check:
 the server's authenticated `initialize` response already carries the live descriptor back to main
 today via `_meta.goslingShell.domainAdapter` (`shell_capabilities_meta()`,
 `crates/gosling/src/acp/server.rs:2506-2530` — this metadata exists now, this contract adds no new
-field to *that* method, only to the `DomainAdapterDescriptor` payload it already carries), so
-`checkShellCompatibility` in Electron main compares *that* live descriptor's `protocolVersion` against
+field to _that_ method, only to the `DomainAdapterDescriptor` payload it already carries), so
+`checkShellCompatibility` in Electron main compares _that_ live descriptor's `protocolVersion` against
 the manifest's `domainAdapter.protocolVersion`, and its `actions` against `domainAdapter.actions` — no
 new trusted channel is needed to move manifest data into Rust, because Rust never needs to see the
 manifest at all; it only needs to compare against provisioning, which it already has. `ready` requires
@@ -346,10 +356,10 @@ back to `None` silently.
 server-owned-authorization decision, approval is handled entirely **inside the Rust server** through
 the dedicated `_gosling/unstable/shell/domain/action/confirm` method (new;
 `DomainActionConfirmRequest`/`DomainActionConfirmResponse`, defined above) — `confirmation.respond`
-maps to *this* method, not to `perform_domain_action`, since `DomainActionRequest` has no field for an
+maps to _this_ method, not to `perform_domain_action`, since `DomainActionRequest` has no field for an
 interaction's `action_id` or an approve/deny decision. On approval the server atomically consumes the
 matching retained pending action, executes it, and returns
-the resulting `DomainActionResponse` shape as `DomainActionConfirmResponse.result` in the *same*
+the resulting `DomainActionResponse` shape as `DomainActionConfirmResponse.result` in the _same_
 response — there is no second `perform_domain_action` call, no token relay through Electron main, and
 no wire field anywhere carries the token value; main's role is strictly to relay the
 `confirmation.respond` invoke to the server and relay `DomainActionConfirmResponse` back to the
@@ -372,12 +382,12 @@ to the same push path `runtime.changed` already uses for every other lifecycle c
 
 Extends the existing table in `shell-productization-contracts.md` §"Error taxonomy":
 
-| Category | Representative codes | User actions |
-| --- | --- | --- |
-| consumer manifest | schema/hash/root-containment/capability-declaration mismatch | fix reviewed manifest; no build |
-| application interaction | stale/foreign/duplicate action ID, no outstanding attempt, attempt already active | resubmit through current snapshot state |
-| adapter negotiation | descriptor/version/`protocolVersion`/capability mismatch, adapter absent when required, `ADAPTER_NOT_REGISTERED` (`domain_id` has no `AdapterRegistration` settings entry), post-ready `crashed`/`hung` pushed via `DomainStatusNotification` | stop, diagnostics; adapter is a build/consumer/operator-settings defect, not a user error |
-| adapter action authority | invalid/expired/replayed confirmation token | retry from a fresh snapshot; never silently retried by the client |
+| Category                 | Representative codes                                                                                                                                                                                                                          | User actions                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| consumer manifest        | schema/hash/root-containment/capability-declaration mismatch                                                                                                                                                                                  | fix reviewed manifest; no build                                                           |
+| application interaction  | stale/foreign/duplicate action ID, no outstanding attempt, attempt already active                                                                                                                                                             | resubmit through current snapshot state                                                   |
+| adapter negotiation      | descriptor/version/`protocolVersion`/capability mismatch, adapter absent when required, `ADAPTER_NOT_REGISTERED` (`domain_id` has no `AdapterRegistration` settings entry), post-ready `crashed`/`hung` pushed via `DomainStatusNotification` | stop, diagnostics; adapter is a build/consumer/operator-settings defect, not a user error |
+| adapter action authority | invalid/expired/replayed confirmation token                                                                                                                                                                                                   | retry from a fresh snapshot; never silently retried by the client                         |
 
 ## Negative-space rules (carried into R2–R4 test design)
 

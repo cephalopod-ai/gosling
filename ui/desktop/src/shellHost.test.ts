@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const startGoslingServe = vi.hoisted(() => vi.fn());
-vi.mock('./goslingServe', () => ({ startGoslingServe }));
+const cleanupRecordedBackendProcesses = vi.hoisted(() => vi.fn());
+const defaultLogger = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn() }));
+vi.mock('./goslingServe', () => ({ defaultLogger, startGoslingServe }));
+vi.mock('./backendProcessRegistry', () => ({ cleanupRecordedBackendProcesses }));
 
 import { createMinimalShellHost } from './shellHost';
 
 describe('minimal shell host', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    cleanupRecordedBackendProcesses.mockResolvedValue(undefined);
     startGoslingServe.mockResolvedValue({ acpUrl: 'ws://127.0.0.1/acp?token=secret' });
   });
 
@@ -44,6 +48,13 @@ describe('minimal shell host', () => {
       isPackaged: true,
       resourcesPath: '/resources',
     });
+    expect(cleanupRecordedBackendProcesses).toHaveBeenCalledWith(
+      '/user/backend-processes.json',
+      defaultLogger
+    );
+    expect(cleanupRecordedBackendProcesses.mock.invocationCallOrder[0]).toBeLessThan(
+      startGoslingServe.mock.invocationCallOrder[0]
+    );
     expect(runtime.windowOptions.webPreferences).toMatchObject({
       preload: '/app/shell-preload.js',
       partition: 'persist:gosling-shell-fixture-a',
@@ -51,5 +62,17 @@ describe('minimal shell host', () => {
       nodeIntegration: false,
       sandbox: true,
     });
+  });
+
+  it('fails closed before spawn when stale-process cleanup fails', async () => {
+    cleanupRecordedBackendProcesses.mockRejectedValueOnce(new Error('registry unavailable'));
+    await expect(
+      createMinimalShellHost({
+        profile: { id: 'fixture-a', displayName: 'Fixture A' },
+        serverSecret: 'secret',
+        processRegistryPath: '/user/backend-processes.json',
+      })
+    ).rejects.toThrow('registry unavailable');
+    expect(startGoslingServe).not.toHaveBeenCalled();
   });
 });

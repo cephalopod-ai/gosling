@@ -126,6 +126,7 @@ function harness() {
   );
   const newSession = vi.fn(() => Promise.resolve({ sessionId: 'session-1' }));
   const loadSession = vi.fn(() => Promise.resolve({}));
+  const listSessions = vi.fn(() => Promise.resolve({ sessions: [] }));
   const prompt = vi.fn(() => Promise.resolve({ stopReason: 'end_turn' as const }));
   const cancel = vi.fn(() => Promise.resolve());
   const sessionInfo = vi.fn(() =>
@@ -158,6 +159,7 @@ function harness() {
     initialize,
     newSession,
     loadSession,
+    listSessions,
     prompt,
     cancel,
     gosling: {
@@ -196,6 +198,7 @@ function harness() {
     dependencies,
     initialize,
     loadSession,
+    listSessions,
     newSession,
     prompt,
     cancel,
@@ -384,6 +387,9 @@ describe('shell ACP runtime', () => {
     await expect(connection.createSession({ workingDir: '/workspace/current' })).resolves.toEqual({
       sessionId: 'session-1',
       workingDir: '/workspace/current',
+      title: null,
+      providerId: null,
+      modelId: null,
     });
     expect(value.newSession).toHaveBeenCalledWith({
       cwd: '/workspace/current',
@@ -391,9 +397,12 @@ describe('shell ACP runtime', () => {
       _meta: { client: 'gosling-shell' },
     });
 
-    await expect(connection.resumeSession('session-1')).resolves.toEqual({
+    await expect(connection.resumeSession('session-1', '/workspace/saved')).resolves.toEqual({
       sessionId: 'session-1',
       workingDir: '/workspace/saved',
+      title: null,
+      providerId: null,
+      modelId: null,
       resumeIntegrity: 'clean',
     });
     expect(value.sessionInfo).toHaveBeenCalledWith({ sessionId: 'session-1' });
@@ -402,6 +411,58 @@ describe('shell ACP runtime', () => {
       cwd: '/workspace/saved',
       mcpServers: [],
       _meta: { gosling: { loadMode: 'compacted', tailLimit: 50 } },
+    });
+  });
+
+  it('refuses to load a session outside the main-selected working directory', async () => {
+    const { promise, value } = connect();
+    const connection = await promise;
+
+    await expect(connection.resumeSession('session-1', '/workspace/current')).rejects.toThrow(
+      'does not match the selected directory'
+    );
+    expect(value.sessionInfo).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    expect(value.loadSession).not.toHaveBeenCalled();
+  });
+
+  it('lists only bounded current-directory ACP session summaries without message snippets', async () => {
+    const { promise, value } = connect();
+    value.listSessions.mockResolvedValueOnce({
+      sessions: [
+        {
+          sessionId: 'session-1',
+          cwd: '/workspace/current',
+          title: 'Current task',
+          updatedAt: '2026-08-15T12:00:00Z',
+          _meta: { providerId: 'provider-a', modelId: 'model-a', messageCount: 4 },
+        },
+        {
+          sessionId: 'session-other-workspace',
+          cwd: '/workspace/other',
+          title: 'Must not cross the selected workspace boundary',
+          updatedAt: '2026-08-14T11:00:00Z',
+        },
+      ],
+    } as never);
+    const connection = await promise;
+
+    await expect(connection.listSessions('/workspace/current')).resolves.toEqual([
+      {
+        sessionId: 'session-1',
+        workingDir: '/workspace/current',
+        title: 'Current task',
+        providerId: 'provider-a',
+        modelId: 'model-a',
+        updatedAt: '2026-08-15T12:00:00Z',
+        messageCount: 4,
+      },
+    ]);
+    expect(value.listSessions).toHaveBeenCalledWith({
+      cwd: '/workspace/current',
+      _meta: {
+        types: ['acp'],
+        gosling: { archiveState: 'active', includeLastMessageSnippet: false },
+      },
     });
   });
 
@@ -477,7 +538,9 @@ describe('shell ACP runtime', () => {
     const { promise, value } = connect();
     const connection = await promise;
 
-    await expect(connection.resumeSession(' padded ')).rejects.toThrow('sessionId');
+    await expect(connection.resumeSession(' padded ', '/workspace/current')).rejects.toThrow(
+      'sessionId'
+    );
     expect(value.sessionInfo).not.toHaveBeenCalled();
     expect(value.loadSession).not.toHaveBeenCalled();
   });

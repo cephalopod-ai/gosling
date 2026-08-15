@@ -33,7 +33,13 @@ controller.create.mockReturnValue(controller.value);
 vi.mock('./runtimeController', () => ({ createShellRuntimeController: controller.create }));
 
 const directoryController = vi.hoisted(() => ({
-  read: vi.fn(() => ({ state: 'unselected', path: null, label: null, reasonCode: null, remembered: false })),
+  read: vi.fn(() => ({
+    state: 'unselected',
+    path: null,
+    label: null,
+    reasonCode: null,
+    remembered: false,
+  })),
   accepted: vi.fn(() => null),
   restore: vi.fn(),
   select: vi.fn(),
@@ -65,6 +71,17 @@ import type Electron from 'electron';
 import type { ShellBootstrapAdapter } from './bootstrap';
 import { bootstrapShell } from './bootstrap';
 import { shellIpcChannels } from './ipc';
+import { decodeShellOperationFailure } from './operationFailure';
+
+async function expectFailure(pending: Promise<unknown>, code: string): Promise<void> {
+  try {
+    await pending;
+  } catch (error) {
+    expect(decodeShellOperationFailure(error)).toMatchObject({ code });
+    return;
+  }
+  throw new Error(`expected ${code}`);
+}
 
 const roots: string[] = [];
 afterEach(() => {
@@ -72,6 +89,7 @@ afterEach(() => {
   controller.create.mockReturnValue(controller.value);
   controller.value.getAcp.mockReturnValue(null);
   controller.value.getSessionController.mockReturnValue(null);
+  controller.value.getInteractionController.mockReturnValue(null);
   directoryController.accepted.mockReturnValue(null);
   credentialController.selected.mockReturnValue(null);
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
@@ -167,6 +185,7 @@ function harness(lock = true) {
   const webContents = {
     id: 1,
     mainFrame,
+    isDestroyed: vi.fn(() => false),
     send: vi.fn(),
     setWindowOpenHandler: vi.fn(),
     on: vi.fn((event: string, listener: (...args: unknown[]) => void) =>
@@ -296,6 +315,7 @@ describe('shell bootstrap', () => {
         .filter((channel) => channel !== shellIpcChannels.sessionUpdated)
         .filter((channel) => channel !== shellIpcChannels.permissionRequested)
         .filter((channel) => channel !== shellIpcChannels.elicitationRequested)
+        .filter((channel) => channel !== shellIpcChannels.confirmationRequested)
         .sort()
     );
     const response = await value.handlers.get(shellIpcChannels.runtimeRead)!({
@@ -402,18 +422,24 @@ describe('shell bootstrap', () => {
       senderFrame: value.mainFrame as Electron.WebFrameMain,
     };
 
-    await expect(
-      value.handlers.get(shellIpcChannels.settingsAppearanceUpdate)!(event, {
-        generation: 2,
-        theme: 'dark',
-      })
-    ).rejects.toThrow('generation is stale');
-    await expect(
-      value.handlers.get(shellIpcChannels.settingsReset)!(event, {
-        generation: 2,
-        userGesture: true,
-      })
-    ).rejects.toThrow('generation is stale');
+    await expectFailure(
+      Promise.resolve(
+        value.handlers.get(shellIpcChannels.settingsAppearanceUpdate)!(event, {
+          generation: 2,
+          theme: 'dark',
+        })
+      ),
+      'STALE_REQUEST'
+    );
+    await expectFailure(
+      Promise.resolve(
+        value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+          generation: 2,
+          userGesture: true,
+        })
+      ),
+      'STALE_REQUEST'
+    );
     expect(value.adapter.showConfirmDialog).not.toHaveBeenCalled();
   });
 
@@ -442,6 +468,19 @@ describe('shell bootstrap', () => {
     controller.value.getSessionController.mockReturnValue({
       read: () => ({ sessionId: 'session-a', status: 'active' }),
     } as never);
+    const confirmations = new Map<string, Record<string, unknown>>();
+    const interactions = {
+      requestConfirmation: vi.fn((input: Record<string, unknown> & { actionId: string }) => {
+        confirmations.set(input.actionId, input);
+      }),
+      read: vi.fn(() =>
+        [...confirmations.values()].map((input) => ({ ...input, kind: 'confirm' }))
+      ),
+      respondConfirmation: vi.fn((input: { actionId: string }) =>
+        confirmations.delete(input.actionId)
+      ),
+    };
+    controller.value.getInteractionController.mockReturnValue(interactions as never);
     const value = harness();
     const manifestPath = path.join(value.value.root, 'manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -489,21 +528,27 @@ describe('shell bootstrap', () => {
       actionId: 'confirm-a',
       approve: false,
     });
-    await expect(
-      value.handlers.get(shellIpcChannels.domainAction)!(event, {
-        generation: 2,
-        sessionId: 'session-a',
-        action: 'toggle',
-      })
-    ).rejects.toThrow('generation is stale');
-    await expect(
-      value.handlers.get(shellIpcChannels.confirmationRespond)!(event, {
-        generation: 1,
-        sessionId: 'foreign-session',
-        actionId: 'confirm-a',
-        approve: false,
-      })
-    ).rejects.toThrow('session is stale');
+    await expectFailure(
+      Promise.resolve(
+        value.handlers.get(shellIpcChannels.domainAction)!(event, {
+          generation: 2,
+          sessionId: 'session-a',
+          action: 'toggle',
+        })
+      ),
+      'STALE_REQUEST'
+    );
+    await expectFailure(
+      Promise.resolve(
+        value.handlers.get(shellIpcChannels.confirmationRespond)!(event, {
+          generation: 1,
+          sessionId: 'foreign-session',
+          actionId: 'confirm-a',
+          approve: false,
+        })
+      ),
+      'STALE_REQUEST'
+    );
   });
 
   it('focuses a second instance and waits for runtime cleanup before final quit', async () => {

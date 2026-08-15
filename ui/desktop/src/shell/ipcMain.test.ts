@@ -1,6 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shellIpcChannels } from './ipc';
 import { registerShellIpc } from './ipcMain';
+import { decodeShellOperationFailure, type ShellOperationFailure } from './operationFailure';
+
+async function expectShellFailure(
+  pending: Promise<unknown>,
+  code: ShellOperationFailure['code']
+): Promise<void> {
+  try {
+    await pending;
+  } catch (error) {
+    expect(decodeShellOperationFailure(error)).toMatchObject({ code });
+    return;
+  }
+  throw new Error(`expected ${code}`);
+}
 
 function state(generation = 1): import('./runtimeSnapshot').ShellRuntimeSnapshot {
   return {
@@ -47,7 +61,7 @@ function harness() {
     removeHandler: vi.fn((channel: string) => handlers.delete(channel)),
   };
   const mainFrame = { url: 'file:///shell/index.html' };
-  const renderer = { id: 7, mainFrame, send: vi.fn() };
+  const renderer = { id: 7, mainFrame, isDestroyed: vi.fn(() => false), send: vi.fn() };
   const operations = {
     runtimeRead: vi.fn(() => state()),
     runtimeRetry: vi.fn((request) => ({ accepted: true, ...request, state: 'booting' as const })),
@@ -57,15 +71,32 @@ function harness() {
       status: 'active' as const,
       resumeKind: 'fresh' as const,
       resumeIntegrity: 'not_applicable' as const,
+      workingDir: '/workspace',
+      title: null,
+      providerId: null,
+      modelId: null,
       promptAttempt: null,
       ...request,
     })),
+    sessionList: vi.fn(() => []),
     sessionResume: vi.fn((request) => ({
       sessionId: request.sessionId,
       status: 'active' as const,
       resumeKind: 'resumed' as const,
       resumeIntegrity: 'uncertain' as const,
+      workingDir: '/workspace',
+      title: null,
+      providerId: null,
+      modelId: null,
       promptAttempt: null,
+    })),
+    sessionTranscriptRead: vi.fn((request) => ({
+      ...request,
+      integrity: 'complete' as const,
+      firstSeq: null,
+      lastSeq: null,
+      truncated: false,
+      updates: [],
     })),
     promptSubmit: vi.fn(() => ({ promptAttemptId: 'attempt' })),
     promptCancel: vi.fn(),
@@ -147,6 +178,7 @@ describe('shell IPC registration', () => {
         .filter((channel) => channel !== shellIpcChannels.sessionUpdated)
         .filter((channel) => channel !== shellIpcChannels.permissionRequested)
         .filter((channel) => channel !== shellIpcChannels.elicitationRequested)
+        .filter((channel) => channel !== shellIpcChannels.confirmationRequested)
         .sort()
     );
     registration.dispose();
@@ -156,6 +188,7 @@ describe('shell IPC registration', () => {
         .filter((channel) => channel !== shellIpcChannels.sessionUpdated)
         .filter((channel) => channel !== shellIpcChannels.permissionRequested)
         .filter((channel) => channel !== shellIpcChannels.elicitationRequested)
+        .filter((channel) => channel !== shellIpcChannels.confirmationRequested)
         .sort()
     );
   });
@@ -173,16 +206,19 @@ describe('shell IPC registration', () => {
 
   it('validates exact generation payloads and user gesture before dispatch', async () => {
     const { invoke, operations } = harness();
-    await expect(invoke(shellIpcChannels.runtimeRead, {})).rejects.toThrow('does not accept');
-    await expect(invoke(shellIpcChannels.runtimeRetry, { generation: 0 })).rejects.toThrow(
-      'positive integer'
+    await expectShellFailure(invoke(shellIpcChannels.runtimeRead, {}), 'INVALID_REQUEST');
+    await expectShellFailure(
+      invoke(shellIpcChannels.runtimeRetry, { generation: 0 }),
+      'INVALID_REQUEST'
     );
-    await expect(
-      invoke(shellIpcChannels.runtimeStop, { generation: 1, extra: true })
-    ).rejects.toThrow('unsupported fields');
-    await expect(
-      invoke(shellIpcChannels.diagnosticsSave, { generation: 1, userGesture: false })
-    ).rejects.toThrow('explicit user gesture');
+    await expectShellFailure(
+      invoke(shellIpcChannels.runtimeStop, { generation: 1, extra: true }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.diagnosticsSave, { generation: 1, userGesture: false }),
+      'INVALID_REQUEST'
+    );
     expect(operations.runtimeRetry).not.toHaveBeenCalled();
     expect(operations.runtimeStop).not.toHaveBeenCalled();
     expect(operations.diagnosticsSave).not.toHaveBeenCalled();
@@ -203,31 +239,60 @@ describe('shell IPC registration', () => {
     await expect(create(value.event, { generation: 1 })).resolves.toMatchObject({
       sessionId: 'session',
     });
+    await expectShellFailure(
+      submit(value.event, { generation: 1, sessionId: 'session', text: 'hello' }),
+      'CAPABILITY_UNAVAILABLE'
+    );
+    registration.dispose();
+  });
+
+  it('fences session discovery and transcript repair behind their declared capabilities', async () => {
+    const value = harness();
+    value.registration.dispose();
+    const registration = registerShellIpc({
+      ipcMain: value.ipcMain,
+      renderer: value.renderer,
+      operations: value.operations,
+      allowedExternalOrigins: new Set(),
+      declaredCapabilities: new Set(['session.list']),
+    });
+
     await expect(
-      submit(value.event, { generation: 1, sessionId: 'session', text: 'hello' })
-    ).rejects.toThrow('did not declare prompt.submit');
+      value.handlers.get(shellIpcChannels.sessionList)!(value.event, { generation: 1 })
+    ).resolves.toEqual([]);
+    await expectShellFailure(
+      value.handlers.get(shellIpcChannels.sessionTranscriptRead)!(value.event, {
+        generation: 1,
+        sessionId: 'session',
+      }),
+      'CAPABILITY_UNAVAILABLE'
+    );
     registration.dispose();
   });
 
   it('never accepts a renderer-supplied path or an unexpected selection field', async () => {
     const { invoke, operations } = harness();
 
-    await expect(
+    await expectShellFailure(
       invoke(shellIpcChannels.directorySelect, {
         generation: 1,
         userGesture: true,
         path: '/etc',
-      })
-    ).rejects.toThrow('unsupported fields');
-    await expect(
-      invoke(shellIpcChannels.directorySelect, { generation: 1, userGesture: false })
-    ).rejects.toThrow('explicit user gesture');
-    await expect(
-      invoke(shellIpcChannels.credentialSelect, { generation: 1, profileId: 'a'.repeat(257) })
-    ).rejects.toThrow('bounded string');
-    await expect(
-      invoke(shellIpcChannels.credentialSelect, { generation: 1, profileId: 'work', secret: 'x' })
-    ).rejects.toThrow('unsupported fields');
+      }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.directorySelect, { generation: 1, userGesture: false }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.credentialSelect, { generation: 1, profileId: 'a'.repeat(257) }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.credentialSelect, { generation: 1, profileId: 'work', secret: 'x' }),
+      'INVALID_REQUEST'
+    );
     expect(operations.directorySelect).not.toHaveBeenCalled();
     expect(operations.credentialSelect).not.toHaveBeenCalled();
 
@@ -237,9 +302,10 @@ describe('shell IPC registration', () => {
     await expect(
       invoke(shellIpcChannels.credentialSelect, { generation: 1, profileId: null })
     ).resolves.toMatchObject({ selectedProfileId: null });
-    await expect(
-      invoke(shellIpcChannels.sessionDetach, { generation: 1 })
-    ).resolves.toEqual({ detached: false, sessionId: null });
+    await expect(invoke(shellIpcChannels.sessionDetach, { generation: 1 })).resolves.toEqual({
+      detached: false,
+      sessionId: null,
+    });
   });
 
   it('gates directory, credential, and detach operations on the consumer declaration', async () => {
@@ -259,15 +325,17 @@ describe('shell IPC registration', () => {
         userGesture: true,
       })
     ).resolves.toMatchObject({ status: 'cancelled' });
-    await expect(
+    await expectShellFailure(
       value.handlers.get(shellIpcChannels.credentialSelect)!(value.event, {
         generation: 1,
         profileId: null,
-      })
-    ).rejects.toThrow('did not declare credential.select');
-    await expect(
-      value.handlers.get(shellIpcChannels.sessionDetach)!(value.event, { generation: 1 })
-    ).rejects.toThrow('did not declare session.detach');
+      }),
+      'CAPABILITY_UNAVAILABLE'
+    );
+    await expectShellFailure(
+      value.handlers.get(shellIpcChannels.sessionDetach)!(value.event, { generation: 1 }),
+      'CAPABILITY_UNAVAILABLE'
+    );
     registration.dispose();
   });
 
@@ -290,20 +358,22 @@ describe('shell IPC registration', () => {
     await invoke(shellIpcChannels.elicitationRespond, elicitation);
     expect(operations.permissionRespond).toHaveBeenCalledWith(permission);
     expect(operations.elicitationRespond).toHaveBeenCalledWith(elicitation);
-    await expect(
+    await expectShellFailure(
       invoke(shellIpcChannels.permissionRespond, {
         generation: 1,
         actionId: 'permission-a',
         allowOnce: true,
-      })
-    ).rejects.toThrow('unsupported fields');
-    await expect(
+      }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
       invoke(shellIpcChannels.elicitationRespond, {
         generation: 1,
         actionId: 'elicitation-a',
         action: 'cancel',
-      })
-    ).rejects.toThrow('unsupported fields');
+      }),
+      'INVALID_REQUEST'
+    );
   });
 
   it('bounds, capability-gates, and relays domain requests through the main process', async () => {
@@ -328,12 +398,14 @@ describe('shell IPC registration', () => {
     expect(value.operations.domainSnapshot).toHaveBeenCalledWith(snapshot);
     expect(value.operations.domainAction).toHaveBeenCalledWith(action);
     expect(value.operations.confirmationRespond).toHaveBeenCalledWith(confirmation);
-    await expect(
-      value.invoke(shellIpcChannels.domainAction, { ...action, extra: true })
-    ).rejects.toThrow('unsupported fields');
-    await expect(
-      value.invoke(shellIpcChannels.confirmationRespond, { ...confirmation, approve: 'yes' })
-    ).rejects.toThrow('approve must be boolean');
+    await expectShellFailure(
+      value.invoke(shellIpcChannels.domainAction, { ...action, extra: true }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      value.invoke(shellIpcChannels.confirmationRespond, { ...confirmation, approve: 'yes' }),
+      'INVALID_REQUEST'
+    );
 
     value.registration.dispose();
     const registration = registerShellIpc({
@@ -346,11 +418,13 @@ describe('shell IPC registration', () => {
     await expect(value.invoke(shellIpcChannels.domainSnapshot, snapshot)).resolves.toMatchObject({
       domainId: 'neutral-fixture',
     });
-    await expect(value.invoke(shellIpcChannels.domainAction, action)).rejects.toThrow(
-      'did not declare domain.action'
+    await expectShellFailure(
+      value.invoke(shellIpcChannels.domainAction, action),
+      'CAPABILITY_UNAVAILABLE'
     );
-    await expect(value.invoke(shellIpcChannels.confirmationRespond, confirmation)).rejects.toThrow(
-      'did not declare confirmation.respond'
+    await expectShellFailure(
+      value.invoke(shellIpcChannels.confirmationRespond, confirmation),
+      'CAPABILITY_UNAVAILABLE'
     );
     registration.dispose();
   });
@@ -367,29 +441,35 @@ describe('shell IPC registration', () => {
     };
     await invoke(shellIpcChannels.handoffPrepare, valid);
     expect(operations.handoffPrepare).toHaveBeenCalledWith(valid);
-    await expect(
-      invoke(shellIpcChannels.handoffPrepare, { ...valid, secret: 'forbidden' })
-    ).rejects.toThrow('unsupported fields');
-    await expect(
-      invoke(shellIpcChannels.handoffPrepare, { ...valid, question: 'q'.repeat(65 * 1024) })
-    ).rejects.toThrow('size limit');
-    await expect(
-      invoke(shellIpcChannels.handoffConfirm, { generation: 3, handoffId: '' })
-    ).rejects.toThrow('non-empty bounded string');
+    await expectShellFailure(
+      invoke(shellIpcChannels.handoffPrepare, { ...valid, secret: 'forbidden' }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.handoffPrepare, { ...valid, question: 'q'.repeat(65 * 1024) }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.handoffConfirm, { generation: 3, handoffId: '' }),
+      'INVALID_REQUEST'
+    );
   });
 
   it('opens only bounded credential-free URLs at configured HTTP(S) origins', async () => {
     const { invoke, operations } = harness();
     await invoke(shellIpcChannels.externalOpen, 'https://support.example.test/help');
     expect(operations.externalOpen).toHaveBeenCalledWith('https://support.example.test/help');
-    await expect(
-      invoke(shellIpcChannels.externalOpen, 'https://other.example.test/help')
-    ).rejects.toThrow('not allowlisted');
-    await expect(
-      invoke(shellIpcChannels.externalOpen, 'https://user:pass@support.example.test/help')
-    ).rejects.toThrow('credentials');
-    await expect(invoke(shellIpcChannels.externalOpen, 'file:///tmp/secret')).rejects.toThrow(
-      'not allowlisted'
+    await expectShellFailure(
+      invoke(shellIpcChannels.externalOpen, 'https://other.example.test/help'),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.externalOpen, 'https://user:pass@support.example.test/help'),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.externalOpen, 'file:///tmp/secret'),
+      'INVALID_REQUEST'
     );
   });
 
@@ -404,7 +484,7 @@ describe('shell IPC registration', () => {
       declaredCapabilities: new Set(),
     });
     const read = value.handlers.get(shellIpcChannels.settingsRead)!;
-    await expect(read(value.event, { generation: 1 })).rejects.toThrow('does not accept');
+    await expectShellFailure(read(value.event, { generation: 1 }), 'INVALID_REQUEST');
     await expect(read(value.event)).resolves.toMatchObject({
       appearance: { theme: 'system', textScale: 1 },
     });
@@ -414,25 +494,30 @@ describe('shell IPC registration', () => {
   it('validates settings.appearance.update fields and rejects unsupported ones', async () => {
     const { invoke, operations } = harness();
 
-    await expect(
-      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, theme: 'neon' })
-    ).rejects.toThrow('theme must be');
-    await expect(
-      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0.1 })
-    ).rejects.toThrow('textScale must be');
-    await expect(
-      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0 })
-    ).rejects.toThrow('textScale must be');
-    await expect(
-      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 2.1 })
-    ).rejects.toThrow('textScale must be');
-    await expect(
+    await expectShellFailure(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, theme: 'neon' }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0.1 }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 0 }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
+      invoke(shellIpcChannels.settingsAppearanceUpdate, { generation: 1, textScale: 2.1 }),
+      'INVALID_REQUEST'
+    );
+    await expectShellFailure(
       invoke(shellIpcChannels.settingsAppearanceUpdate, {
         generation: 1,
         theme: 'dark',
         credentialProfileId: 'x',
-      })
-    ).rejects.toThrow('unsupported fields');
+      }),
+      'INVALID_REQUEST'
+    );
     expect(operations.settingsAppearanceUpdate).not.toHaveBeenCalled();
 
     await expect(
@@ -451,9 +536,10 @@ describe('shell IPC registration', () => {
 
   it('requires an explicit user gesture before settings.reset dispatches', async () => {
     const { invoke, operations } = harness();
-    await expect(
-      invoke(shellIpcChannels.settingsReset, { generation: 1, userGesture: false })
-    ).rejects.toThrow('explicit user gesture');
+    await expectShellFailure(
+      invoke(shellIpcChannels.settingsReset, { generation: 1, userGesture: false }),
+      'INVALID_REQUEST'
+    );
     expect(operations.settingsReset).not.toHaveBeenCalled();
     await expect(
       invoke(shellIpcChannels.settingsReset, { generation: 1, userGesture: true })
@@ -464,9 +550,7 @@ describe('shell IPC registration', () => {
   it('rejects oversized operation responses', async () => {
     const value = harness();
     value.operations.runtimeRead.mockReturnValue({ ...state(), reasonCode: 'x'.repeat(65 * 1024) });
-    await expect(value.invoke(shellIpcChannels.runtimeRead)).rejects.toThrow(
-      'response exceeds the channel size limit'
-    );
+    await expectShellFailure(value.invoke(shellIpcChannels.runtimeRead), 'INVALID_REQUEST');
   });
 
   it('generation-fences runtime events and sends only the allowlisted event channel', () => {
@@ -478,5 +562,32 @@ describe('shell IPC registration', () => {
       [shellIpcChannels.runtimeChanged, state(2)],
       [shellIpcChannels.runtimeChanged, state(2)],
     ]);
+  });
+
+  it('drops lifecycle events when renderer contents are destroyed or close during send', () => {
+    const { registration, renderer } = harness();
+    renderer.isDestroyed.mockReturnValueOnce(true);
+    expect(registration.publishRuntimeChanged(state(2))).toBe(false);
+    renderer.send.mockImplementationOnce(() => {
+      throw new Error('Object has been destroyed');
+    });
+    expect(registration.publishRuntimeChanged(state(2))).toBe(false);
+    expect(registration.publishRuntimeChanged(state(2))).toBe(true);
+    expect(renderer.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('routes domain confirmation requests only through the confirmation event channel', () => {
+    const { registration, renderer } = harness();
+    const interaction = {
+      actionId: 'confirm-a',
+      generation: 1,
+      expiresAtGeneration: 1,
+      sessionId: 'session-a',
+      promptAttemptId: null,
+      kind: 'confirm' as const,
+      summary: { action: 'replace', inputFields: ['outputId'] },
+    };
+    expect(registration.publishInteractionRequested(interaction)).toBe(true);
+    expect(renderer.send).toHaveBeenCalledWith(shellIpcChannels.confirmationRequested, interaction);
   });
 });

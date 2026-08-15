@@ -1,6 +1,12 @@
 import type { BrowserWindowConstructorOptions } from 'electron';
 import path from 'node:path';
-import { startGoslingServe, type GoslingServeResult, type ShellHostProfile } from './goslingServe';
+import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
+import {
+  defaultLogger,
+  startGoslingServe,
+  type GoslingServeResult,
+  type ShellHostProfile,
+} from './goslingServe';
 
 export interface MinimalShellHostOptions {
   profile: ShellHostProfile;
@@ -42,6 +48,9 @@ export function createMinimalShellWindowOptions(
 export const createMinimalShellHost = async (
   options: MinimalShellHostOptions
 ): Promise<MinimalShellHostRuntime> => {
+  if (options.processRegistryPath) {
+    await cleanupRecordedBackendProcesses(options.processRegistryPath, defaultLogger);
+  }
   const backend = await startGoslingServe({
     dir: options.workingDir,
     serverSecret: options.serverSecret,

@@ -33,6 +33,12 @@ describe('shell session update projection', () => {
   it('rejects unsupported and oversized updates', () => {
     expect(
       projectShellSessionUpdate({
+        sessionUpdate: 'agent_thought_chunk',
+        content: { type: 'text', text: 'private reasoning' },
+      })
+    ).toBeNull();
+    expect(
+      projectShellSessionUpdate({
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: 'x'.repeat(60 * 1024 + 1) },
       })

@@ -10,7 +10,12 @@ import type { ShellDirectorySelectResult } from './directoryController';
 import type { ShellLifecycleStateName } from './lifecycle';
 import type { ShellSettingsRecovery, ShellTheme } from './localSettings';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
-import type { ShellSessionRecord, ShellSessionUpdate } from './sessionController';
+import type { ShellSessionSummary } from './acpRuntime';
+import type {
+  ShellSessionRecord,
+  ShellSessionUpdate,
+  ShellTranscriptSnapshot,
+} from './sessionController';
 import type { ShellInteraction } from './interactionController';
 
 export const shellIpcChannels = {
@@ -20,7 +25,9 @@ export const shellIpcChannels = {
   directorySelect: 'directory.select',
   credentialSelect: 'credential.select',
   sessionCreate: 'session.create',
+  sessionList: 'session.list',
   sessionResume: 'session.resume',
+  sessionTranscriptRead: 'session.transcript.read',
   sessionDetach: 'session.detach',
   promptSubmit: 'prompt.submit',
   promptCancel: 'prompt.cancel',
@@ -40,6 +47,7 @@ export const shellIpcChannels = {
   sessionUpdated: 'session.updated',
   permissionRequested: 'permission.requested',
   elicitationRequested: 'elicitation.requested',
+  confirmationRequested: 'confirmation.requested',
 } as const;
 
 export type ShellIpcInvokeChannel =
@@ -49,7 +57,9 @@ export type ShellIpcInvokeChannel =
   | (typeof shellIpcChannels)['directorySelect']
   | (typeof shellIpcChannels)['credentialSelect']
   | (typeof shellIpcChannels)['sessionCreate']
+  | (typeof shellIpcChannels)['sessionList']
   | (typeof shellIpcChannels)['sessionResume']
+  | (typeof shellIpcChannels)['sessionTranscriptRead']
   | (typeof shellIpcChannels)['sessionDetach']
   | (typeof shellIpcChannels)['promptSubmit']
   | (typeof shellIpcChannels)['promptCancel']
@@ -70,7 +80,8 @@ export type ShellIpcEventChannel =
   | (typeof shellIpcChannels)['runtimeChanged']
   | (typeof shellIpcChannels)['sessionUpdated']
   | (typeof shellIpcChannels)['permissionRequested']
-  | (typeof shellIpcChannels)['elicitationRequested'];
+  | (typeof shellIpcChannels)['elicitationRequested']
+  | (typeof shellIpcChannels)['confirmationRequested'];
 
 export interface ShellGenerationRequest {
   generation: number;
@@ -118,7 +129,7 @@ export interface ShellPermissionRespondRequest extends ShellSessionResumeRequest
 
 export interface ShellElicitationRespondRequest extends ShellSessionResumeRequest {
   actionId: string;
-  action: 'submit' | 'cancel';
+  action: 'submit' | 'decline' | 'cancel';
   fields?: Record<string, unknown>;
 }
 
@@ -185,7 +196,9 @@ export interface ShellIpcRequestMap {
   [shellIpcChannels.directorySelect]: ShellDirectorySelectRequest;
   [shellIpcChannels.credentialSelect]: ShellCredentialSelectRequest;
   [shellIpcChannels.sessionCreate]: ShellGenerationRequest;
+  [shellIpcChannels.sessionList]: ShellGenerationRequest;
   [shellIpcChannels.sessionResume]: ShellSessionResumeRequest;
+  [shellIpcChannels.sessionTranscriptRead]: ShellSessionResumeRequest;
   [shellIpcChannels.sessionDetach]: ShellGenerationRequest;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitRequest;
   [shellIpcChannels.promptCancel]: ShellPromptCancelRequest;
@@ -210,7 +223,9 @@ export interface ShellIpcResponseMap {
   [shellIpcChannels.directorySelect]: ShellDirectorySelectResult;
   [shellIpcChannels.credentialSelect]: ShellCredentialSnapshot;
   [shellIpcChannels.sessionCreate]: ShellSessionRecord;
+  [shellIpcChannels.sessionList]: ShellSessionSummary[];
   [shellIpcChannels.sessionResume]: ShellSessionRecord;
+  [shellIpcChannels.sessionTranscriptRead]: ShellTranscriptSnapshot;
   [shellIpcChannels.sessionDetach]: ShellSessionDetachResult;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitResult;
   [shellIpcChannels.promptCancel]: undefined;
@@ -233,4 +248,5 @@ export interface ShellIpcEventMap {
   [shellIpcChannels.sessionUpdated]: ShellSessionUpdate;
   [shellIpcChannels.permissionRequested]: Extract<ShellInteraction, { kind: 'permission' }>;
   [shellIpcChannels.elicitationRequested]: Extract<ShellInteraction, { kind: 'elicitation' }>;
+  [shellIpcChannels.confirmationRequested]: Extract<ShellInteraction, { kind: 'confirm' }>;
 }

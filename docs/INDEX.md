@@ -15,6 +15,7 @@ for the relationship to cephalopod-ai/gosling.
 - [build/shell-productization/project-shell-readiness-plan.md](build/shell-productization/project-shell-readiness-plan.md) — superseding R0–R8 plan for consumer, application-runtime, domain-adapter, package, and onboarding readiness
 - [build/shell-productization/pre-gui-backend-implementation-plan.md](build/shell-productization/pre-gui-backend-implementation-plan.md) — dependency-aware R1–R4 execution plan and hard backend acceptance gate before shared or named shell GUI work
 - [build/shell-productization/default-shell-ds3-ds7-implementation-plan.md](build/shell-productization/default-shell-ds3-ds7-implementation-plan.md) — implementation-ready work packages, security boundaries, validation matrix, and GO/NO-GO criteria for the remaining Default Shell pre-GUI foundation
+- [build/shell-productization/audits/default-shell-pre-gui-corrective-audit.md](build/shell-productization/audits/default-shell-pre-gui-corrective-audit.md) — fresh workflow, data-flow, recovery, and security audit of the corrective pre-GUI patch
 - [build/shell-productization/execution-plan.md](build/shell-productization/execution-plan.md) — historical original plan; forward Gates 5–8 are superseded
 - [build/shell-productization/build-state.md](build/shell-productization/build-state.md) — current resumable status and verify-before-execution handoff
 - [build/shell-productization/evidence/r0.md](build/shell-productization/evidence/r0.md) — R0 Linux CI repair, two clean Rust executions, and Gate 4 acceptance reconciliation

@@ -4107,6 +4107,7 @@ dependencies = [
  "rmcp",
  "rustls",
  "schemars 1.2.1",
+ "security-framework 3.7.0",
  "serde",
  "serde_json",
  "serde_urlencoded",

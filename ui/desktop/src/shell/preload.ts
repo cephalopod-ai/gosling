@@ -26,12 +26,17 @@ import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type { ShellSessionUpdate } from './sessionController';
 import type { ShellInteraction } from './interactionController';
 import type { GoslingShellAPI } from './preloadApi';
+import { decodeShellOperationFailure } from './operationFailure';
 
 function invoke<T extends keyof ShellIpcRequestMap>(
   channel: T,
   request: ShellIpcRequestMap[T]
 ): Promise<ShellIpcResponseMap[T]> {
-  return request === undefined ? ipcRenderer.invoke(channel) : ipcRenderer.invoke(channel, request);
+  const pending =
+    request === undefined ? ipcRenderer.invoke(channel) : ipcRenderer.invoke(channel, request);
+  return pending.catch((error: unknown) =>
+    Promise.reject(decodeShellOperationFailure(error) ?? error)
+  );
 }
 
 export const goslingShellAPI: GoslingShellAPI = Object.freeze({
@@ -58,7 +63,10 @@ export const goslingShellAPI: GoslingShellAPI = Object.freeze({
   }),
   session: Object.freeze({
     create: (request: ShellGenerationRequest) => invoke(shellIpcChannels.sessionCreate, request),
+    list: (request: ShellGenerationRequest) => invoke(shellIpcChannels.sessionList, request),
     resume: (request: ShellSessionResumeRequest) => invoke(shellIpcChannels.sessionResume, request),
+    readTranscript: (request: ShellSessionResumeRequest) =>
+      invoke(shellIpcChannels.sessionTranscriptRead, request),
     detach: (request: ShellGenerationRequest) => invoke(shellIpcChannels.sessionDetach, request),
     onUpdated: (listener: (update: ShellSessionUpdate) => void) => {
       const wrapped = (
@@ -107,6 +115,16 @@ export const goslingShellAPI: GoslingShellAPI = Object.freeze({
     action: (request: ShellDomainActionRequest) => invoke(shellIpcChannels.domainAction, request),
     confirm: (request: ShellDomainActionConfirmRequest) =>
       invoke(shellIpcChannels.confirmationRespond, request),
+    onConfirmationRequested: (
+      listener: (interaction: Extract<ShellInteraction, { kind: 'confirm' }>) => void
+    ) => {
+      const wrapped = (
+        _event: IpcRendererEvent,
+        interaction: ShellIpcEventMap[typeof shellIpcChannels.confirmationRequested]
+      ) => listener(interaction);
+      ipcRenderer.on(shellIpcChannels.confirmationRequested, wrapped);
+      return () => ipcRenderer.removeListener(shellIpcChannels.confirmationRequested, wrapped);
+    },
   }),
   diagnostics: Object.freeze({
     save: (request: ShellDiagnosticsSaveRequest) =>

@@ -34,6 +34,7 @@ import type { ShellSettingsStore } from './localSettings';
 import type { ShellModuleSummary } from '@repo-makeover/gosling-sdk';
 
 const MAX_SHELL_MODULES = 64;
+const ACP_CLOSE_GRACE_MS = 1_000;
 
 interface BackendProcessEvents {
   once(event: 'exit', listener: (code: number | null, signal: string | null) => void): unknown;
@@ -118,6 +119,24 @@ async function readModules(
   }));
 }
 
+async function closeAcpBeforeBackend(connection: ShellAcpConnection): Promise<void> {
+  try {
+    connection.close();
+  } catch {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      if (timeout) clearTimeout(timeout);
+      resolve();
+    };
+    timeout = setTimeout(finish, ACP_CLOSE_GRACE_MS);
+    void connection.closed.then(finish, finish);
+  });
+}
+
 function startupFailureCode(error: unknown): string {
   if (error instanceof ShellCompatibilityError) {
     return error.result.code;
@@ -150,6 +169,7 @@ export function createShellRuntimeController(
   const listeners = new Set<(state: ShellRuntimeSnapshot) => void>();
   const sessionListeners = new Set<(update: ShellSessionUpdate) => void>();
   const interactionListeners = new Set<(interaction: ShellInteraction) => void>();
+  const declaredCapabilities = new Set(options.manifest.consumer?.declaredCapabilities ?? []);
 
   const stateName = (): ShellLifecycleStateName => state.name;
 
@@ -235,8 +255,11 @@ export function createShellRuntimeController(
     interactions = null;
     sessions?.close();
     sessions = null;
-    acp?.close();
+    const currentAcp = acp;
     acp = null;
+    if (currentAcp) {
+      await closeAcpBeforeBackend(currentAcp);
+    }
     const currentHost = host;
     host = null;
     if (currentHost) {
@@ -348,11 +371,16 @@ export function createShellRuntimeController(
           clientVersion: options.clientVersion,
           callbacks: () => ({
             requestPermission: (request) =>
-              acceptsInteraction(request.sessionId) && interactions
+              declaredCapabilities.has('permission.respond') &&
+              acceptsInteraction(request.sessionId) &&
+              interactions
                 ? interactions.requestPermission(request)
                 : Promise.resolve({ outcome: { outcome: 'cancelled' } }),
             unstable_createElicitation: (request) =>
-              'sessionId' in request && acceptsInteraction(request.sessionId) && interactions
+              declaredCapabilities.has('elicitation.respond') &&
+              'sessionId' in request &&
+              acceptsInteraction(request.sessionId) &&
+              interactions
                 ? interactions.requestElicitation(request)
                 : Promise.resolve({ action: 'cancel' }),
             sessionUpdate: async (notification) => sessions?.ingestUpdate(notification),
@@ -389,7 +417,13 @@ export function createShellRuntimeController(
                 credentialProfileId: options.credentials.selected(),
               });
             },
-            resumeSession: (sessionId) => connection.resumeSession(sessionId),
+            resumeSession: (sessionId) => {
+              const accepted = options.directory.accepted();
+              if (!accepted) {
+                throw new Error('no working directory is selected');
+              }
+              return connection.resumeSession(sessionId, accepted);
+            },
             prompt: (input) => connection.prompt(input),
             cancel: (input) => connection.cancel(input),
           },
@@ -406,7 +440,13 @@ export function createShellRuntimeController(
           ) {
             transition('ready');
           }
-          if (update.kind !== 'started') interactions?.clearSession(update.sessionId);
+          if (
+            update.kind === 'completed' ||
+            update.kind === 'cancelled' ||
+            update.kind === 'failed'
+          ) {
+            interactions?.clearSession(update.sessionId);
+          }
           for (const listener of sessionListeners) listener(update);
         });
         void acp.closed

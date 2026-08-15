@@ -1,14 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
+import { classifyShellOperationFailure, type ShellOperationFailure } from './operationFailure';
 import { projectShellSessionUpdate, type ShellSessionStream } from './sessionUpdateProjection';
 
 const MAX_PROMPT_BYTES = 64 * 1024;
+const MAX_TRANSCRIPT_BYTES = 48 * 1024;
+const MAX_TRANSCRIPT_UPDATES = 256;
 
 export interface ShellSessionRecord {
   sessionId: string;
   status: 'none' | 'creating' | 'active' | 'resuming' | 'closing';
   resumeKind: 'fresh' | 'resumed';
   resumeIntegrity: 'clean' | 'uncertain' | 'not_applicable';
+  workingDir: string | null;
+  title: string | null;
+  providerId: string | null;
+  modelId: string | null;
   promptAttempt: { id: string; phase: 'idle' | 'streaming' | 'cancelling' } | null;
 }
 
@@ -18,13 +25,35 @@ export interface ShellSessionUpdate {
   promptAttemptId: string | null;
   updateSeq: number;
   kind: 'started' | 'completed' | 'cancelled' | 'failed' | 'stream';
+  delivery: 'history' | 'live';
   stream?: ShellSessionStream;
+  failure?: ShellOperationFailure;
+}
+
+export interface ShellTranscriptSnapshot {
+  generation: number;
+  sessionId: string;
+  integrity: 'complete' | 'incomplete' | 'resume_uncertain';
+  firstSeq: number | null;
+  lastSeq: number | null;
+  truncated: boolean;
+  updates: ShellSessionUpdate[];
 }
 
 export interface ShellSessionTransport {
-  createSession(): Promise<{ sessionId: string }>;
+  createSession(): Promise<{
+    sessionId: string;
+    workingDir?: string;
+    title?: string | null;
+    providerId?: string | null;
+    modelId?: string | null;
+  }>;
   resumeSession(sessionId: string): Promise<{
     sessionId: string;
+    workingDir?: string;
+    title?: string | null;
+    providerId?: string | null;
+    modelId?: string | null;
     resumeIntegrity?: 'clean' | 'uncertain';
   }>;
   prompt(input: { sessionId: string; text: string; messageId: string }): Promise<unknown>;
@@ -40,6 +69,7 @@ export interface ShellSessionController {
   };
   cancel(input: { generation: number; sessionId: string; promptAttemptId: string }): Promise<void>;
   ingestUpdate(notification: SessionNotification): void;
+  readTranscript(generation: number, sessionId: string): ShellTranscriptSnapshot;
   onUpdate(listener: (update: ShellSessionUpdate) => void): () => void;
   onChanged(listener: (session: ShellSessionRecord) => void): () => void;
   close(outcome?: 'cancelled' | 'failed'): void;
@@ -51,7 +81,19 @@ function emptySession(): ShellSessionRecord {
     status: 'none',
     resumeKind: 'fresh',
     resumeIntegrity: 'not_applicable',
+    workingDir: null,
+    title: null,
+    providerId: null,
+    modelId: null,
     promptAttempt: null,
+  };
+}
+
+function copyUpdate(update: ShellSessionUpdate): ShellSessionUpdate {
+  return {
+    ...update,
+    ...(update.stream ? { stream: { ...update.stream } } : {}),
+    ...(update.failure ? { failure: { ...update.failure } } : {}),
   };
 }
 
@@ -90,6 +132,11 @@ export function createShellSessionController(input: {
 }): ShellSessionController {
   let session = emptySession();
   let updateSeq = 0;
+  let transcript: ShellSessionUpdate[] = [];
+  let transcriptBytes = 0;
+  let transcriptTruncated = false;
+  let pendingHistory: ShellSessionStream[] = [];
+  let pendingHistoryBytes = 0;
   // Bumped by every close, so an open that is still awaiting the transport cannot reinstate a
   // session the shell has already released.
   let openEpoch = 0;
@@ -100,7 +147,9 @@ export function createShellSessionController(input: {
   const publish = (
     kind: ShellSessionUpdate['kind'],
     promptAttemptId: string | null,
-    stream?: ShellSessionStream
+    delivery: ShellSessionUpdate['delivery'],
+    stream?: ShellSessionStream,
+    failure?: ShellOperationFailure
   ) => {
     updateSeq += 1;
     const update: ShellSessionUpdate = {
@@ -109,9 +158,27 @@ export function createShellSessionController(input: {
       promptAttemptId,
       updateSeq,
       kind,
+      delivery,
       ...(stream ? { stream } : {}),
+      ...(failure ? { failure } : {}),
     };
-    for (const listener of listeners) listener(update);
+    const stored = copyUpdate(update);
+    const storedBytes = Buffer.byteLength(JSON.stringify(stored), 'utf8');
+    if (storedBytes <= MAX_TRANSCRIPT_BYTES) {
+      transcript.push(stored);
+      transcriptBytes += storedBytes;
+    } else {
+      transcriptTruncated = true;
+    }
+    while (
+      transcript.length > MAX_TRANSCRIPT_UPDATES ||
+      (transcriptBytes > MAX_TRANSCRIPT_BYTES && transcript.length > 1)
+    ) {
+      const removed = transcript.shift();
+      if (removed) transcriptBytes -= Buffer.byteLength(JSON.stringify(removed), 'utf8');
+      transcriptTruncated = true;
+    }
+    for (const listener of listeners) listener(copyUpdate(update));
   };
 
   const publishState = () => {
@@ -130,32 +197,59 @@ export function createShellSessionController(input: {
   const open = async (
     generation: number,
     kind: 'creating' | 'resuming',
-    operation: () => Promise<{ sessionId: string; resumeIntegrity?: 'clean' | 'uncertain' }>
+    expectedSessionId: string | null,
+    operation: () => Promise<Awaited<ReturnType<ShellSessionTransport['resumeSession']>>>
   ) => {
     if (generation !== input.generation()) throw new Error('session request generation is stale');
     if (session.status !== 'none') throw new Error('an active session already exists');
     const epoch = openEpoch;
-    session = { ...emptySession(), status: kind };
+    updateSeq = 0;
+    transcript = [];
+    transcriptBytes = 0;
+    transcriptTruncated = false;
+    pendingHistory = [];
+    pendingHistoryBytes = 0;
+    session = {
+      ...emptySession(),
+      sessionId: expectedSessionId ?? '',
+      status: kind,
+      resumeKind: kind === 'resuming' ? 'resumed' : 'fresh',
+      resumeIntegrity: kind === 'resuming' ? 'uncertain' : 'not_applicable',
+    };
     publishState();
     try {
       const opened = await operation();
       if (generation !== input.generation()) throw new Error('session request generation is stale');
       if (epoch !== openEpoch) throw new Error('session was released while it was opening');
       assertSessionId(opened.sessionId);
+      if (expectedSessionId && opened.sessionId !== expectedSessionId) {
+        throw new Error('session transport returned a different sessionId');
+      }
       session = {
         sessionId: opened.sessionId,
         status: 'active',
         resumeKind: kind === 'creating' ? 'fresh' : 'resumed',
         resumeIntegrity:
           kind === 'creating' ? 'not_applicable' : (opened.resumeIntegrity ?? 'uncertain'),
+        workingDir: opened.workingDir ?? null,
+        title: opened.title ?? null,
+        providerId: opened.providerId ?? null,
+        modelId: opened.modelId ?? null,
         promptAttempt: null,
       };
-      updateSeq = 0;
       publishState();
+      for (const stream of pendingHistory) publish('stream', null, 'history', stream);
+      pendingHistory = [];
+      pendingHistoryBytes = 0;
       return session;
     } catch (error) {
       if (epoch === openEpoch) {
         session = emptySession();
+        pendingHistory = [];
+        pendingHistoryBytes = 0;
+        transcript = [];
+        transcriptBytes = 0;
+        transcriptTruncated = false;
         publishState();
       }
       throw error;
@@ -164,10 +258,13 @@ export function createShellSessionController(input: {
 
   return {
     read: () => copySession(session),
-    create: (generation) => open(generation, 'creating', () => input.transport.createSession()),
+    create: (generation) =>
+      open(generation, 'creating', null, () => input.transport.createSession()),
     resume: (generation, sessionId) => {
       assertSessionId(sessionId);
-      return open(generation, 'resuming', () => input.transport.resumeSession(sessionId));
+      return open(generation, 'resuming', sessionId, () =>
+        input.transport.resumeSession(sessionId)
+      );
     },
     submit({ generation, sessionId, text }) {
       assertCurrent(generation, sessionId);
@@ -186,7 +283,7 @@ export function createShellSessionController(input: {
         promptAttempt: { id: promptAttemptId, phase: 'streaming' },
       };
       publishState();
-      publish('started', promptAttemptId);
+      publish('started', promptAttemptId, 'live');
       void input.transport
         .prompt({ sessionId, text, messageId: promptAttemptId })
         .then(() => {
@@ -194,13 +291,19 @@ export function createShellSessionController(input: {
           const wasCancelling = session.promptAttempt.phase === 'cancelling';
           session = { ...session, promptAttempt: null };
           publishState();
-          publish(wasCancelling ? 'cancelled' : 'completed', promptAttemptId);
+          publish(wasCancelling ? 'cancelled' : 'completed', promptAttemptId, 'live');
         })
-        .catch(() => {
+        .catch((error) => {
           if (session.promptAttempt?.id !== promptAttemptId) return;
           session = { ...session, promptAttempt: null };
           publishState();
-          publish('failed', promptAttemptId);
+          publish(
+            'failed',
+            promptAttemptId,
+            'live',
+            undefined,
+            classifyShellOperationFailure('prompt.submit', error)
+          );
         });
       return { promptAttemptId };
     },
@@ -214,15 +317,42 @@ export function createShellSessionController(input: {
       }
     },
     ingestUpdate(notification) {
-      if (
-        notification.sessionId !== session.sessionId ||
-        session.status !== 'active' ||
-        !session.promptAttempt
-      ) {
+      if (notification.sessionId !== session.sessionId) return;
+      const stream = projectShellSessionUpdate(notification.update);
+      if (!stream) return;
+      if (session.status === 'resuming') {
+        const bytes = Buffer.byteLength(JSON.stringify(stream), 'utf8');
+        if (
+          pendingHistory.length < MAX_TRANSCRIPT_UPDATES &&
+          pendingHistoryBytes + bytes <= MAX_TRANSCRIPT_BYTES
+        ) {
+          pendingHistory.push(stream);
+          pendingHistoryBytes += bytes;
+        } else {
+          transcriptTruncated = true;
+        }
         return;
       }
-      const stream = projectShellSessionUpdate(notification.update);
-      if (stream) publish('stream', session.promptAttempt.id, stream);
+      if (session.status === 'active' && session.promptAttempt) {
+        publish('stream', session.promptAttempt.id, 'live', stream);
+      }
+    },
+    readTranscript(generation, sessionId) {
+      assertCurrent(generation, sessionId);
+      const integrity = transcriptTruncated
+        ? 'incomplete'
+        : session.resumeIntegrity === 'uncertain'
+          ? 'resume_uncertain'
+          : 'complete';
+      return {
+        generation,
+        sessionId,
+        integrity,
+        firstSeq: transcript[0]?.updateSeq ?? null,
+        lastSeq: transcript[transcript.length - 1]?.updateSeq ?? null,
+        truncated: transcriptTruncated,
+        updates: transcript.map(copyUpdate),
+      };
     },
     onUpdate(listener) {
       listeners.add(listener);
@@ -236,10 +366,15 @@ export function createShellSessionController(input: {
       openEpoch += 1;
       const attempt = session.promptAttempt;
       if (attempt && outcome) {
-        publish(outcome, attempt.id);
+        publish(outcome, attempt.id, 'live');
       }
       session = emptySession();
       updateSeq = 0;
+      transcript = [];
+      transcriptBytes = 0;
+      transcriptTruncated = false;
+      pendingHistory = [];
+      pendingHistoryBytes = 0;
       publishState();
     },
   };

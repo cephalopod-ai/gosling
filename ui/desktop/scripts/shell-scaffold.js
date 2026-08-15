@@ -16,12 +16,17 @@ const NAMED_DOMAIN_PATTERN = /(dawes|physics|cst|chemistry|biology|mathematics)/
 const REQUIRED_TARGETS = ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64'];
 const ICON_EXTENSIONS = ['.icns', '.ico', '.png', '.svg'];
 const DECLARED_CAPABILITIES = [
+  'credential.select',
   'directory.select',
+  'elicitation.respond',
+  'permission.respond',
   'prompt.cancel',
   'prompt.submit',
   'session.create',
   'session.detach',
+  'session.list',
   'session.resume',
+  'session.transcript.read',
 ];
 const REQUIRED_METHODS = [
   '_gosling/unstable/session/info',
@@ -411,43 +416,27 @@ function checkShellConformance(manifestFile) {
     if (!condition) findings.push(message);
   };
 
-  require(
-    typeof provisioningDocument.instructions?.systemPrompt === 'string' &&
-      provisioningDocument.instructions.systemPrompt.trim().length > 0,
-    'provisioning must declare instructions.systemPrompt'
-  );
-  require(
-    provisioningDocument.session?.credentialPolicy === 'fixed' ||
-      provisioningDocument.session?.credentialPolicy === 'selectable_catalog',
-    'provisioning must declare session.credentialPolicy explicitly'
-  );
-  require(
-    provisioningDocument.settingsSchemaVersion === 1,
-    'provisioning must declare settingsSchemaVersion 1'
-  );
-  require(
-    !(provisioningDocument.session?.extensions ?? []).some(
-      (extension) => extension.name === 'developer'
-    ),
-    'provisioning must not enable the developer builtin'
-  );
-  require(
-    provisioningDocument.domainAdapter === undefined || resolved.consumer.domainAdapter !== undefined,
-    'provisioning declares a domain adapter the consumer does not declare'
-  );
+  require(typeof provisioningDocument.instructions?.systemPrompt === 'string' &&
+    provisioningDocument.instructions.systemPrompt.trim().length >
+      0, 'provisioning must declare instructions.systemPrompt');
+  require(provisioningDocument.session?.credentialPolicy === 'fixed' ||
+    provisioningDocument.session?.credentialPolicy ===
+      'selectable_catalog', 'provisioning must declare session.credentialPolicy explicitly');
+  require(provisioningDocument.settingsSchemaVersion ===
+    1, 'provisioning must declare settingsSchemaVersion 1');
+  require(!(provisioningDocument.session?.extensions ?? []).some(
+    (extension) => extension.name === 'developer'
+  ), 'provisioning must not enable the developer builtin');
+  require(provisioningDocument.domainAdapter === undefined ||
+    resolved.consumer.domainAdapter !==
+      undefined, 'provisioning declares a domain adapter the consumer does not declare');
   require(profile.update.enabled === false, 'profile.update.enabled must be false for a template');
-  require(
-    profile.distribution.publishable === false,
-    'profile.distribution.publishable must be false for a template'
-  );
-  require(
-    profile.distribution.signingPolicy === 'none',
-    'profile.distribution.signingPolicy must be none for a template'
-  );
-  require(
-    NAMED_DOMAIN_PATTERN.test(JSON.stringify(provisioningDocument)) === false,
-    'provisioning contains named-domain content'
-  );
+  require(profile.distribution.publishable ===
+    false, 'profile.distribution.publishable must be false for a template');
+  require(profile.distribution.signingPolicy ===
+    'none', 'profile.distribution.signingPolicy must be none for a template');
+  require(NAMED_DOMAIN_PATTERN.test(JSON.stringify(provisioningDocument)) ===
+    false, 'provisioning contains named-domain content');
 
   for (const target of profile.assets.requiredTargets) {
     const extensions = target.startsWith('macos-')

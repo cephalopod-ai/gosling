@@ -16,7 +16,9 @@ const APPLICATION_OPERATIONS = new Set([
   'directory.select',
   'session.create',
   'session.detach',
+  'session.list',
   'session.resume',
+  'session.transcript.read',
   'prompt.submit',
   'prompt.cancel',
   'permission.respond',
@@ -34,11 +36,18 @@ const CUSTOM_METHODS_BY_OPERATION = {
 };
 const AGENT_CAPABILITIES_BY_OPERATION = {
   'session.create': 'loadSession',
+  'session.list': 'sessionList',
   'session.resume': 'loadSession',
 };
 const OPERATION_PREREQUISITES = {
+  'domain.action': ['confirmation.respond'],
+  'prompt.cancel': ['prompt.submit'],
+  'prompt.submit': ['elicitation.respond', 'permission.respond', 'session.create'],
   'session.create': ['directory.select'],
   'session.detach': ['session.create'],
+  'session.list': ['directory.select'],
+  'session.resume': ['session.list'],
+  'session.transcript.read': ['session.create'],
   'confirmation.respond': ['domain.action'],
 };
 

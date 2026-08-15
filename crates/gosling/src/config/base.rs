@@ -27,6 +27,9 @@ use thiserror::Error;
 #[cfg(feature = "system-keyring")]
 static KEYRING_RUNTIME_DISABLED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(all(feature = "system-keyring", target_os = "macos"))]
+static KEYRING_INTERACTION_GUARD: Mutex<()> = Mutex::new(());
+
 /// Recover the guarded data even if another thread panicked while holding the
 /// lock. All values guarded by these mutexes are caches or plain flags that
 /// remain structurally valid after a panic; propagating the poison would turn
@@ -316,7 +319,8 @@ impl Default for Config {
             param_cache: Mutex::new(None),
         };
 
-        let keyring_disabled = env::var("GOSLING_DISABLE_KEYRING").is_ok()
+        let keyring_disabled = cfg!(test)
+            || env::var("GOSLING_DISABLE_KEYRING").is_ok()
             || no_secrets_config
                 .get_param::<serde_yaml::Value>("GOSLING_DISABLE_KEYRING")
                 .is_ok_and(|v| keyring_disabled_value(&v));
@@ -551,8 +555,9 @@ impl Config {
     /// to manage multiple configuration files.
     pub fn new<P: AsRef<Path>>(config_path: P, service: &str) -> Result<Self, ConfigError> {
         let config_path = config_path.as_ref().to_path_buf();
-        let keyring_disabled =
-            env::var("GOSLING_DISABLE_KEYRING").is_ok() || keyring_disabled_in_config(&config_path);
+        let keyring_disabled = cfg!(test)
+            || env::var("GOSLING_DISABLE_KEYRING").is_ok()
+            || keyring_disabled_in_config(&config_path);
         let config_dir = config_path
             .parent()
             .map(Path::to_path_buf)
@@ -1403,6 +1408,19 @@ impl Config {
             return Err(ConfigError::FallbackToFileStorage);
         }
 
+        #[cfg(target_os = "macos")]
+        let _interaction_guard = env::var_os("GOSLING_KEYRING_NONINTERACTIVE")
+            .map(|_| lock_ignoring_poison(&KEYRING_INTERACTION_GUARD));
+        #[cfg(target_os = "macos")]
+        let _interaction_lock = if _interaction_guard.is_some() {
+            Some(
+                security_framework::os::macos::keychain::SecKeychain::disable_user_interaction()
+                    .map_err(|error| ConfigError::KeyringError(error.to_string()))?,
+            )
+        } else {
+            None
+        };
+
         // Try to get the keyring entry and perform the operation
         let entry = match Self::get_keyring_entry(service) {
             Ok(entry) => entry,
@@ -1600,6 +1618,17 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use tempfile::{NamedTempFile, TempDir};
+
+    #[cfg(feature = "system-keyring")]
+    #[test]
+    fn unit_test_configs_never_use_the_real_system_keyring() {
+        let directory = TempDir::new().unwrap();
+        let config =
+            Config::new(directory.path().join("config.yaml"), "gosling-unit-test").unwrap();
+
+        assert!(matches!(config.secrets, SecretStorage::File { .. }));
+    }
+
     #[test]
     fn test_basic_config() -> Result<(), ConfigError> {
         let config = new_test_config();

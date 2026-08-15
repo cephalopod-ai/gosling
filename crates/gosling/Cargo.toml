@@ -62,7 +62,7 @@ native-tls = [
     "oauth2/native-tls",
     "gosling-providers/native-tls",
 ]
-system-keyring = ["dep:keyring"]
+system-keyring = ["dep:keyring", "dep:security-framework"]
 portable-default = ["rustls-tls", "aws-providers", "otel"]
 nostr = ["dep:nostr", "dep:nostr-sdk"]
 
@@ -198,6 +198,7 @@ keyring = { workspace = true, features = ["windows-native"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { workspace = true, features = ["apple-native"], optional = true }
+security-framework = { version = "3.7.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { workspace = true, features = ["sync-secret-service"], optional = true }
