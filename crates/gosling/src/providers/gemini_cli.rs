@@ -36,6 +36,13 @@ pub const GEMINI_CLI_KNOWN_MODELS: &[&str] = &[
 
 pub const GEMINI_CLI_DOC_URL: &str = "https://ai.google.dev/gemini-api/docs";
 
+/// How many prior messages to replay into the prompt when Gosling has no
+/// resumable `cli_session_id` yet but its own conversation shows history the
+/// CLI can't know about (see `GeminiCliProvider::restart_backfill_text`).
+/// Matches `DEFAULT_SESSION_TAIL_LIMIT`, the window already shown to the user
+/// on a compacted session reload, so the backfill matches what's on screen.
+const RESTART_BACKFILL_MESSAGES: usize = 50;
+
 #[derive(Debug, serde::Serialize)]
 pub struct GeminiCliProvider {
     command: PathBuf,
@@ -88,21 +95,57 @@ impl GeminiCliProvider {
 
     /// Build the prompt for the CLI invocation. When resuming a session the CLI
     /// maintains conversation context internally, so only the latest user
-    /// message is needed. On the first turn (no session yet) the system prompt
-    /// is prepended — there is typically only one user message at that point.
+    /// message is needed. On the first turn in this process there is no
+    /// `-r <session_id>` to resume from — either this is genuinely a new
+    /// conversation (typically just one user message, so the backfill below
+    /// is a no-op), or Gosling restarted mid-session and lost the in-memory
+    /// session id the CLI needs to resume its own history (`cli_session_id`
+    /// is never persisted). In the latter case, replay a bounded tail of
+    /// Gosling's own conversation so the CLI isn't silently started from
+    /// scratch with no way to know anything came before this turn.
     fn build_prompt(&self, system: &str, messages: &[Message]) -> String {
         let user_text = Self::last_user_message_text(messages);
 
         if self.session_id().is_some() {
-            user_text
-        } else {
-            let filtered_system = filter_extensions_from_system_prompt(system);
-            if filtered_system.is_empty() {
-                user_text
-            } else {
-                format!("{filtered_system}\n\n{user_text}")
-            }
+            return user_text;
         }
+
+        let filtered_system = filter_extensions_from_system_prompt(system);
+        let mut parts = Vec::new();
+        if !filtered_system.is_empty() {
+            parts.push(filtered_system);
+        }
+        if let Some(backfill) = Self::restart_backfill_text(messages) {
+            parts.push(backfill);
+        }
+        parts.push(user_text);
+        parts.join("\n\n")
+    }
+
+    fn restart_backfill_text(messages: &[Message]) -> Option<String> {
+        let latest_user_idx = messages.iter().rposition(|m| m.role == Role::User)?;
+        let backfill_start =
+            latest_user_idx.saturating_sub(RESTART_BACKFILL_MESSAGES.min(latest_user_idx));
+        let backfill = &messages[backfill_start..latest_user_idx];
+        if backfill.is_empty() {
+            return None;
+        }
+
+        let replay = backfill
+            .iter()
+            .map(crate::context_mgmt::format_message_for_compacting)
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        Some(format!(
+            "[Gosling reconnected to this session after a restart. The CLI process handling it \
+             did not survive, so it has no memory of the conversation below. Replaying the last \
+             {} message(s) from Gosling's own record for context. This is not a summary; some \
+             detail may still be missing if the conversation is longer than the replay \
+             window.\n\n{}\n\n--- end of replay, continuing normally below ---]",
+            backfill.len(),
+            replay
+        ))
     }
 
     fn build_command(
@@ -439,6 +482,45 @@ mod tests {
         ];
         let prompt = provider.build_prompt("You are helpful.", &messages);
         assert_eq!(prompt, "Follow up question");
+    }
+
+    #[test]
+    fn test_build_prompt_backfills_history_when_session_id_was_lost() {
+        // No cli_session_id set (e.g. Gosling just restarted), but Gosling's
+        // own conversation has real prior turns — build_prompt must replay
+        // them instead of silently sending only the newest message.
+        let provider = make_provider();
+        let messages = vec![
+            Message::new(Role::User, 0, vec![MessageContent::text("turn1 request")]),
+            Message::new(
+                Role::Assistant,
+                0,
+                vec![MessageContent::text("turn1 response")],
+            ),
+            Message::new(Role::User, 0, vec![MessageContent::text("turn2 request")]),
+        ];
+
+        let prompt = provider.build_prompt("You are helpful.", &messages);
+
+        assert!(prompt.contains("reconnected to this session after a restart"));
+        assert!(prompt.contains("turn1 request"));
+        assert!(prompt.contains("turn1 response"));
+        assert!(prompt.ends_with("turn2 request"));
+    }
+
+    #[test]
+    fn test_build_prompt_no_backfill_for_genuine_first_turn() {
+        let provider = make_provider();
+        let messages = vec![Message::new(
+            Role::User,
+            0,
+            vec![MessageContent::text("Hello")],
+        )];
+
+        let prompt = provider.build_prompt("You are helpful.", &messages);
+
+        assert!(!prompt.contains("reconnected to this session"));
+        assert_eq!(prompt, "You are helpful.\n\nHello");
     }
 
     #[test]

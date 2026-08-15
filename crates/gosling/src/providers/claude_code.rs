@@ -44,6 +44,13 @@ const CLAUDE_CODE_KNOWN_MODELS: &[&str] = &[
     "claude-haiku-4-5",
 ];
 
+/// How many prior messages to replay to a freshly spawned CLI child process
+/// when Gosling's own conversation shows history the child can't possibly
+/// know about (see `ClaudeCodeProvider::bootstrap_content_blocks`). Matches
+/// `DEFAULT_SESSION_TAIL_LIMIT`, the window already shown to the user on a
+/// compacted session reload, so the backfill matches what's visibly on screen.
+const CLI_RESTART_BACKFILL_MESSAGES: usize = 50;
+
 fn current_claude_model(model: &str) -> Option<&'static str> {
     match model.strip_suffix("[1m]").unwrap_or(model) {
         "best" | "opus" | "claude-opus-5" => Some("claude-opus-5"),
@@ -364,6 +371,50 @@ impl ClaudeCodeProvider {
                 );
             }
         }
+        blocks
+    }
+
+    /// Content blocks for the first turn sent to a freshly spawned CLI child
+    /// process. The child's own conversation memory only ever lived in the
+    /// *previous* process's memory (see the `Drop` impl for `CliProcess`,
+    /// which kills the child, and the module doc comment) — if Gosling
+    /// restarted mid-session, that memory is gone even though Gosling's own
+    /// persisted conversation still has the full history. Without this, the
+    /// child would receive only the newest message via
+    /// `last_user_content_blocks` and have no way to know anything happened
+    /// before it, silently stranding the user's turn with zero context. This
+    /// prepends a bounded, clearly labeled replay of the prior conversation
+    /// so the child starts caught up instead of guessing.
+    fn bootstrap_content_blocks(&self, messages: &[Message]) -> Vec<Value> {
+        let Some(latest_user_idx) = messages.iter().rposition(|m| m.role == Role::User) else {
+            return self.last_user_content_blocks(messages);
+        };
+        let backfill_start =
+            latest_user_idx.saturating_sub(CLI_RESTART_BACKFILL_MESSAGES.min(latest_user_idx));
+        let backfill = &messages[backfill_start..latest_user_idx];
+        if backfill.is_empty() {
+            return self.last_user_content_blocks(messages);
+        }
+
+        let replay = backfill
+            .iter()
+            .map(crate::context_mgmt::format_message_for_compacting)
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let mut blocks = vec![json!({
+            "type": "text",
+            "text": format!(
+                "[Gosling reconnected to this session after a restart. The CLI process that was \
+                 handling it — and its memory of the conversation — did not survive the restart. \
+                 Replaying the last {} message(s) from Gosling's own record so you have context. \
+                 This is not a summary; some detail may still be missing if the conversation is \
+                 longer than the replay window.\n\n{}\n\n--- end of replay, continuing normally below ---]",
+                backfill.len(),
+                replay
+            )
+        })];
+        blocks.extend(self.last_user_content_blocks(messages));
         blocks
     }
 
@@ -804,13 +855,18 @@ impl Provider for ClaudeCodeProvider {
         }
 
         let filtered_system = filter_extensions_from_system_prompt(system);
+        let is_fresh_spawn = self.cli_process.get().is_none();
         let process_arc = Arc::clone(
             self.get_or_init_process(model_config, &filtered_system)
                 .await?,
         );
 
         // Prepare the payload outside the lock — these don't need the process.
-        let blocks = self.last_user_content_blocks(messages);
+        let blocks = if is_fresh_spawn {
+            self.bootstrap_content_blocks(messages)
+        } else {
+            self.last_user_content_blocks(messages)
+        };
         let ndjson_line = build_stream_json_input(&blocks, &session_id);
         let model_name = model_config.model_name.clone();
         let message_id = uuid::Uuid::new_v4().to_string();
@@ -1474,6 +1530,40 @@ mod tests {
                 .get_current_dir(),
             Some(PathBuf::from("/tmp/claude-project").as_path())
         );
+    }
+
+    #[test]
+    fn bootstrap_content_blocks_replays_prior_history_when_present() {
+        let provider = make_provider();
+        let messages = vec![
+            Message::user().with_text("turn1 request"),
+            Message::assistant().with_text("turn1 response"),
+            Message::user().with_text("turn2 request"),
+        ];
+
+        let blocks = provider.bootstrap_content_blocks(&messages);
+
+        let replay_text = blocks[0]["text"].as_str().expect("first block is text");
+        assert!(replay_text.contains("reconnected to this session after a restart"));
+        assert!(replay_text.contains("turn1 request"));
+        assert!(replay_text.contains("turn1 response"));
+        assert!(!replay_text.contains("turn2 request"));
+
+        // Everything after the replay block is exactly the normal latest-turn payload.
+        assert_eq!(
+            &blocks[1..],
+            provider.last_user_content_blocks(&messages).as_slice()
+        );
+    }
+
+    #[test]
+    fn bootstrap_content_blocks_skips_replay_with_no_prior_history() {
+        let provider = make_provider();
+        let messages = vec![Message::user().with_text("only turn")];
+
+        let blocks = provider.bootstrap_content_blocks(&messages);
+
+        assert_eq!(blocks, provider.last_user_content_blocks(&messages));
     }
 
     fn make_test_process(canned_stdout: &str) -> (CliProcess, tokio::io::DuplexStream) {
