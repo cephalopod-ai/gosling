@@ -1315,19 +1315,6 @@ mod tests {
         assert!(compaction_bands(&turn_starts, 5, 10).is_empty());
     }
 
-    fn bands_debug(bands: &[CompactionBand]) -> String {
-        bands
-            .iter()
-            .map(|b| {
-                format!(
-                    "[{}, {}) -> {} chars",
-                    b.start_idx, b.end_idx, b.target_characters
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
     #[tokio::test]
     async fn test_compact_retries_transient_network_error() {
         // Regression test: a mid-stream network/decode failure during compaction
