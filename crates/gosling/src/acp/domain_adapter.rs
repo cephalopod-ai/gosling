@@ -472,6 +472,131 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
         }
     }
 
+    fn write_startup_crashing_fixture(directory: &TempDir) -> AdapterRegistration {
+        let script = directory.path().join("startup-crashing-adapter.mjs");
+        fs::write(&script, "process.exit(9);\n").unwrap();
+        AdapterRegistration {
+            domain_id: "neutral-fixture".to_string(),
+            cmd: "node".to_string(),
+            args: vec![script.display().to_string()],
+            envs: Default::default(),
+            env_keys: Vec::new(),
+            timeout: Some(10),
+            cwd: None,
+            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
+        }
+    }
+
+    fn write_idle_crashing_fixture(directory: &TempDir) -> AdapterRegistration {
+        let script = directory.path().join("idle-crashing-adapter.mjs");
+        fs::write(
+            &script,
+            r#"
+import readline from 'node:readline';
+
+const descriptor = {
+  domainId: 'neutral-fixture',
+  displayName: 'Neutral Fixture',
+  version: '0.1.0',
+  protocolVersion: '1.0.0',
+  actions: [
+    { name: 'inspect', kind: 'read', schemaRef: 'neutral-fixture/inspect@1' },
+    { name: 'toggle', kind: 'mutate', schemaRef: 'neutral-fixture/toggle@1' },
+  ],
+};
+
+const reply = (id, result) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, result })}\n`);
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const request = JSON.parse(line);
+  if (request.method === 'initialize') {
+    reply(request.id, {
+      protocolVersion: request.params.protocolVersion,
+      capabilities: { tools: {} },
+      serverInfo: { name: 'neutral-fixture', version: '0.1.0' },
+    });
+    return;
+  }
+  if (request.method === 'tools/call' && request.params.name === 'descriptor') {
+    reply(request.id, { content: [], structuredContent: descriptor, isError: false });
+    // Exits on its own once negotiated, independent of any subsequent call — an idle crash
+    // rather than one triggered by an in-flight snapshot/action request.
+    setTimeout(() => process.exit(23), 50);
+  }
+});
+"#,
+        )
+        .unwrap();
+        AdapterRegistration {
+            domain_id: "neutral-fixture".to_string(),
+            cmd: "node".to_string(),
+            args: vec![script.display().to_string()],
+            envs: Default::default(),
+            env_keys: Vec::new(),
+            timeout: Some(10),
+            cwd: None,
+            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
+        }
+    }
+
+    fn write_idle_fixture(directory: &TempDir, pid_file: &Path) -> AdapterRegistration {
+        let script = directory.path().join("idle-adapter.mjs");
+        fs::write(
+            &script,
+            r#"
+import fs from 'node:fs';
+import readline from 'node:readline';
+
+fs.writeFileSync(process.argv[2], String(process.pid));
+
+const descriptor = {
+  domainId: 'neutral-fixture',
+  displayName: 'Neutral Fixture',
+  version: '0.1.0',
+  protocolVersion: '1.0.0',
+  actions: [
+    { name: 'inspect', kind: 'read', schemaRef: 'neutral-fixture/inspect@1' },
+    { name: 'toggle', kind: 'mutate', schemaRef: 'neutral-fixture/toggle@1' },
+  ],
+};
+
+const reply = (id, result) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id, result })}\n`);
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const request = JSON.parse(line);
+  if (request.method === 'initialize') {
+    reply(request.id, {
+      protocolVersion: request.params.protocolVersion,
+      capabilities: { tools: {} },
+      serverInfo: { name: 'neutral-fixture', version: '0.1.0' },
+    });
+    return;
+  }
+  if (request.method === 'tools/call' && request.params.name === 'descriptor') {
+    reply(request.id, { content: [], structuredContent: descriptor, isError: false });
+  }
+});
+"#,
+        )
+        .unwrap();
+        AdapterRegistration {
+            domain_id: "neutral-fixture".to_string(),
+            cmd: "node".to_string(),
+            args: vec![script.display().to_string(), pid_file.display().to_string()],
+            envs: Default::default(),
+            env_keys: Vec::new(),
+            timeout: Some(10),
+            cwd: None,
+            max_message_bytes: DEFAULT_ADAPTER_MAX_MESSAGE_BYTES,
+        }
+    }
+
+    fn process_is_alive(pid: &str) -> bool {
+        std::process::Command::new("kill")
+            .args(["-0", pid])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
     #[test]
     fn decodes_a_single_json_text_result() {
         let result = CallToolResult::success(vec![Content::text(r#"{"domainId":"fixture"}"#)]);
@@ -642,5 +767,131 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
             .expect("adapter exit status arrived")
             .expect("adapter status channel remained open");
         assert_eq!(*status.borrow(), DomainAdapterStatus::Crashed);
+    }
+
+    #[tokio::test]
+    async fn a_startup_crash_before_negotiation_fails_connect_instead_of_hanging() {
+        let directory = TempDir::new().unwrap();
+
+        let result = McpDomainAdapter::connect(
+            write_startup_crashing_fixture(&directory),
+            descriptor(),
+            directory.path().to_path_buf(),
+        )
+        .await;
+
+        // The exact wording comes from the MCP client's own handshake failure; what matters here
+        // is that connect() resolves to an error at all rather than hanging forever on a process
+        // that died before completing negotiation.
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn an_idle_crash_with_no_call_in_flight_still_updates_the_safe_status() {
+        let directory = TempDir::new().unwrap();
+        let adapter = McpDomainAdapter::connect(
+            write_idle_crashing_fixture(&directory),
+            descriptor(),
+            directory.path().to_path_buf(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(adapter.status(), DomainAdapterStatus::Ready);
+        let mut status = adapter
+            .subscribe_status()
+            .expect("MCP adapter exposes a process status subscription");
+
+        // No snapshot/action call is ever made — the fixture exits on its own once negotiated.
+        tokio::time::timeout(Duration::from_secs(2), status.changed())
+            .await
+            .expect("adapter exit status arrived")
+            .expect("adapter status channel remained open");
+        assert_eq!(*status.borrow(), DomainAdapterStatus::Crashed);
+    }
+
+    #[tokio::test]
+    async fn reconnecting_after_a_crash_starts_ready_with_no_stale_status() {
+        let directory = TempDir::new().unwrap();
+        let crashed = McpDomainAdapter::connect(
+            write_crashing_fixture(&directory),
+            descriptor(),
+            directory.path().to_path_buf(),
+        )
+        .await
+        .unwrap();
+        let mut crashed_status = crashed
+            .subscribe_status()
+            .expect("MCP adapter exposes a process status subscription");
+        let _ = crashed
+            .snapshot(DomainSnapshotRequest {
+                input: serde_json::json!({ "scope": "neutral" }),
+            })
+            .await;
+        tokio::time::timeout(Duration::from_secs(2), crashed_status.changed())
+            .await
+            .expect("adapter exit status arrived")
+            .expect("adapter status channel remained open");
+        assert_eq!(*crashed_status.borrow(), DomainAdapterStatus::Crashed);
+        drop(crashed);
+
+        // A supervisor restarting the adapter connects a fresh instance, which must not inherit
+        // the prior process's crashed status — each connection owns its own status channel.
+        let restarted = McpDomainAdapter::connect(
+            write_fixture(&directory),
+            descriptor(),
+            directory.path().to_path_buf(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(restarted.status(), DomainAdapterStatus::Ready);
+        let snapshot = restarted
+            .snapshot(DomainSnapshotRequest {
+                input: serde_json::json!({ "scope": "neutral" }),
+            })
+            .await
+            .unwrap();
+        assert_eq!(snapshot.domain_id, "neutral-fixture");
+    }
+
+    #[tokio::test]
+    async fn a_forced_shutdown_leaves_no_orphaned_adapter_process() {
+        let directory = TempDir::new().unwrap();
+        let pid_file = directory.path().join("adapter.pid");
+        let adapter = McpDomainAdapter::connect(
+            write_idle_fixture(&directory, &pid_file),
+            descriptor(),
+            directory.path().to_path_buf(),
+        )
+        .await
+        .unwrap();
+
+        let pid = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Ok(contents) = fs::read_to_string(&pid_file) {
+                    let trimmed = contents.trim();
+                    if !trimmed.is_empty() {
+                        return trimmed.to_string();
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("adapter wrote its pid before timing out");
+        assert!(
+            process_is_alive(&pid),
+            "adapter process should be running before shutdown"
+        );
+
+        drop(adapter);
+        // OperatorChildGuard::drop spawns an async reap task on the current runtime; give it a
+        // bounded window rather than asserting immediately.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while process_is_alive(&pid) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("adapter process must not survive a forced shutdown");
     }
 }

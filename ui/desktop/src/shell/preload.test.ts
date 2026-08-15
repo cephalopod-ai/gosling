@@ -39,6 +39,7 @@ describe('shell preload surface', () => {
       'prompt',
       'runtime',
       'session',
+      'settings',
     ]);
     expect(Object.keys(goslingShellAPI.runtime).sort()).toEqual([
       'onChanged',
@@ -61,6 +62,11 @@ describe('shell preload surface', () => {
     expect(Object.keys(goslingShellAPI.permission).sort()).toEqual(['onRequested', 'respond']);
     expect(Object.keys(goslingShellAPI.elicitation).sort()).toEqual(['onRequested', 'respond']);
     expect(Object.keys(goslingShellAPI.domain).sort()).toEqual(['action', 'confirm', 'snapshot']);
+    expect(Object.keys(goslingShellAPI.settings).sort()).toEqual([
+      'read',
+      'reset',
+      'updateAppearance',
+    ]);
     expect(Object.isFrozen(goslingShellAPI)).toBe(true);
     expect(Object.values(goslingShellAPI).every(Object.isFrozen)).toBe(true);
     expect(JSON.stringify(goslingShellAPI)).not.toMatch(
@@ -105,6 +111,8 @@ describe('shell preload surface', () => {
       actionId: 'confirm',
       approve: false,
     };
+    const appearanceUpdate = { ...generation, theme: 'dark' as const };
+    const settingsReset = { ...generation, userGesture: true as const };
 
     await goslingShellAPI.runtime.read();
     await goslingShellAPI.runtime.retry(generation);
@@ -125,6 +133,9 @@ describe('shell preload surface', () => {
     await goslingShellAPI.handoff.prepare(prepare);
     await goslingShellAPI.handoff.confirm(confirm);
     await goslingShellAPI.external.open('https://support.example.test/help');
+    await goslingShellAPI.settings.read();
+    await goslingShellAPI.settings.updateAppearance(appearanceUpdate);
+    await goslingShellAPI.settings.reset(settingsReset);
 
     expect(electron.invoke.mock.calls).toEqual([
       [shellIpcChannels.runtimeRead],
@@ -146,6 +157,9 @@ describe('shell preload surface', () => {
       [shellIpcChannels.handoffPrepare, prepare],
       [shellIpcChannels.handoffConfirm, confirm],
       [shellIpcChannels.externalOpen, 'https://support.example.test/help'],
+      [shellIpcChannels.settingsRead],
+      [shellIpcChannels.settingsAppearanceUpdate, appearanceUpdate],
+      [shellIpcChannels.settingsReset, settingsReset],
     ]);
   });
 

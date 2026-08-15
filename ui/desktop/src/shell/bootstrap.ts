@@ -64,6 +64,13 @@ export interface ShellBootstrapAdapter {
     message: string;
     properties: ReadonlyArray<'openDirectory' | 'createDirectory' | 'dontAddToRecent'>;
   }): Promise<{ canceled: boolean; filePaths: string[] }>;
+  showConfirmDialog(options: {
+    title: string;
+    message: string;
+    detail: string;
+    confirmLabel: string;
+    cancelLabel: string;
+  }): Promise<{ confirmed: boolean }>;
   openExternal(url: string): Promise<void>;
   resourcesPath: string;
   preloadPath: string;
@@ -364,6 +371,31 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
       externalOpen: async (url) => {
         await adapter.openExternal(url);
         return { opened: true };
+      },
+      settingsRead: () => ({
+        appearance: settings.read().appearance,
+        recovery: settings.recovery(),
+      }),
+      settingsAppearanceUpdate: (request) => {
+        const { theme, textScale } = request;
+        const updated = settings.setAppearance({ theme, textScale });
+        return { appearance: updated.appearance, recovery: settings.recovery() };
+      },
+      settingsReset: async () => {
+        const confirmation = await adapter.showConfirmDialog({
+          title: 'Reset local settings',
+          message: `Reset ${loaded.profile.product.displayName} settings?`,
+          detail:
+            'This clears the theme, text size, remembered directory, and preferred credential ' +
+            'for this app only. Your Gosling credentials and other apps are not affected.',
+          confirmLabel: 'Reset',
+          cancelLabel: 'Cancel',
+        });
+        if (!confirmation.confirmed) {
+          return { appearance: settings.read().appearance, recovery: settings.recovery() };
+        }
+        const reset = settings.reset();
+        return { appearance: reset.appearance, recovery: settings.recovery() };
       },
     },
   });

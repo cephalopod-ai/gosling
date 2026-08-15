@@ -262,6 +262,7 @@ test('the committed neutral Default Shell sample stays conformant', () => {
   assert.equal(report.conformant, true);
   assert.deepEqual(report.findings, []);
   assert.deepEqual(report.declaredCapabilities, [
+    'credential.select',
     'directory.select',
     'prompt.cancel',
     'prompt.submit',
@@ -270,4 +271,5 @@ test('the committed neutral Default Shell sample stays conformant', () => {
     'session.resume',
   ]);
   assert.ok(report.requiredMethods.includes('_gosling/unstable/shell/directory/validate'));
+  assert.ok(report.requiredMethods.includes('_gosling/unstable/shell/credentials/list'));
 });

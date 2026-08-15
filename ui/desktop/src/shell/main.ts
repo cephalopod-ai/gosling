@@ -23,6 +23,18 @@ void bootstrapShell({
   showSaveDialog: (options) => dialog.showSaveDialog(options),
   showOpenDialog: (options) =>
     dialog.showOpenDialog({ ...options, properties: [...options.properties] }),
+  showConfirmDialog: async (options) => {
+    const result = await dialog.showMessageBox({
+      type: 'warning',
+      title: options.title,
+      message: options.message,
+      detail: options.detail,
+      buttons: [options.cancelLabel, options.confirmLabel],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    return { confirmed: result.response === 1 };
+  },
   openExternal: (url) => shell.openExternal(url),
   resourcesPath: process.resourcesPath,
   preloadPath: path.join(__dirname, 'shell-preload.js'),

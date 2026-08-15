@@ -187,6 +187,7 @@ function harness(lock = true) {
     },
     createWindow: vi.fn(() => window),
     showSaveDialog: vi.fn(async () => ({ canceled: true })),
+    showConfirmDialog: vi.fn(async () => ({ confirmed: true })),
     openExternal: vi.fn(async () => {}),
     resourcesPath: value.root,
     preloadPath: '/app/shell-preload.js',
@@ -272,6 +273,69 @@ describe('shell bootstrap', () => {
     });
     expect(response).toEqual(controller.value.read());
     expect(JSON.stringify(response)).not.toMatch(/token|secret|acp/i);
+  });
+
+  it('reads and updates real product-local settings through the store, never a raw file', async () => {
+    const value = harness();
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+
+    const initial = await value.handlers.get(shellIpcChannels.settingsRead)!(event);
+    expect(initial).toEqual({
+      appearance: { theme: 'system', textScale: 1 },
+      recovery: { status: 'absent', schemaVersion: null },
+    });
+
+    const updated = await value.handlers.get(shellIpcChannels.settingsAppearanceUpdate)!(event, {
+      generation: 1,
+      theme: 'dark',
+    });
+    expect(updated).toEqual({
+      appearance: { theme: 'dark', textScale: 1 },
+      recovery: { status: 'loaded', schemaVersion: 1 },
+    });
+    const reread = await value.handlers.get(shellIpcChannels.settingsRead)!(event);
+    expect(reread).toEqual(updated);
+  });
+
+  it('resets settings only after explicit confirmation, and leaves them untouched on cancel', async () => {
+    const value = harness();
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+    await value.handlers.get(shellIpcChannels.settingsAppearanceUpdate)!(event, {
+      generation: 1,
+      theme: 'dark',
+      textScale: 1.5,
+    });
+
+    value.adapter.showConfirmDialog.mockResolvedValueOnce({ confirmed: false });
+    const cancelled = await value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+      generation: 1,
+      userGesture: true,
+    });
+    expect(cancelled).toEqual({
+      appearance: { theme: 'dark', textScale: 1.5 },
+      recovery: { status: 'loaded', schemaVersion: 1 },
+    });
+
+    value.adapter.showConfirmDialog.mockResolvedValueOnce({ confirmed: true });
+    const reset = await value.handlers.get(shellIpcChannels.settingsReset)!(event, {
+      generation: 1,
+      userGesture: true,
+    });
+    expect(reset).toEqual({
+      appearance: { theme: 'system', textScale: 1 },
+      recovery: { status: 'loaded', schemaVersion: 1 },
+    });
+    expect(value.adapter.showConfirmDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Reset local settings' })
+    );
   });
 
   it('relays domain reads, actions, and confirmation through the verified active session only', async () => {

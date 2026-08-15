@@ -19,6 +19,9 @@ import type {
   ShellDirectorySelectRequest,
   ShellSessionDetachResult,
   ShellSessionResumeRequest,
+  ShellSettingsAppearanceUpdateRequest,
+  ShellSettingsResetRequest,
+  ShellSettingsSnapshot,
 } from './ipc';
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
@@ -82,6 +85,13 @@ export interface GoslingShellAPI {
   };
   external: {
     open(url: string): Promise<ShellOpenResult>;
+  };
+  settings: {
+    read(): Promise<ShellSettingsSnapshot>;
+    updateAppearance(
+      request: ShellSettingsAppearanceUpdateRequest
+    ): Promise<ShellSettingsSnapshot>;
+    reset(request: ShellSettingsResetRequest): Promise<ShellSettingsSnapshot>;
   };
 }
 

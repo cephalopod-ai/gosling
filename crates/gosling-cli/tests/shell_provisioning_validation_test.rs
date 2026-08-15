@@ -70,6 +70,57 @@ fn dynamic_provider_model_is_not_rejected_by_static_preflight() {
 }
 
 #[test]
+fn selectable_catalog_credential_policy_alone_is_accepted() {
+    let root = TempDir::new().unwrap();
+    let output = validate(
+        &root,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "identity": { "id": "ignored", "displayName": "Ignored", "version": "0" },
+            "session": { "credentialPolicy": "selectable_catalog" }
+        }),
+    );
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["valid"], true);
+    assert_eq!(report["issues"], serde_json::json!([]));
+}
+
+#[test]
+fn selectable_catalog_combined_with_a_fixed_credential_profile_id_is_rejected() {
+    let root = TempDir::new().unwrap();
+    let output = validate(
+        &root,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "identity": { "id": "ignored", "displayName": "Ignored", "version": "0" },
+            "session": {
+                "credentialPolicy": "selectable_catalog",
+                "credentialProfileId": "some-fixed-profile"
+            }
+        }),
+    );
+
+    assert!(!output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let codes = report["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|issue| issue["code"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        codes.contains(&"invalid_credential_policy"),
+        "missing invalid_credential_policy: {report}"
+    );
+}
+
+#[test]
 fn invalid_references_are_reported_without_starting_a_server() {
     let root = TempDir::new().unwrap();
     let output = validate(
