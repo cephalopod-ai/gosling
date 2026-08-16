@@ -239,6 +239,7 @@ fn build_outer_csp(
          media-src 'self' data: blob:{resources}; \
          {frame_src}; \
          object-src 'none'; \
+         form-action 'none'; \
          base-uri 'self'{base_uris}"
     )
 }
@@ -491,6 +492,27 @@ mod tests {
     // own <meta> policy and rewrote nonces to 'unsafe-inline' before sending
     // it — so the frame the policy bounds supplied the policy. It is now
     // derived server-side from the declared domains. (SEC-GOS-002)
+    // The guest sandbox carries `allow-forms`, so without a CSP rule an MCP
+    // app could submit a form to an origin it never declared, carrying
+    // whatever the page holds. Ported from upstream goose `34adc70f1`
+    // (PR #10985), which neither gosling variant had.
+    #[test]
+    fn the_policy_blocks_form_submission_to_undeclared_origins() {
+        let csp = build_outer_csp(
+            &parse_domains(Some(&"https://api.example.com".to_string())),
+            &[],
+            &[],
+            &[],
+            &[],
+            "http://127.0.0.1:1234",
+            "'unsafe-inline'",
+        );
+        assert!(
+            csp.contains("form-action 'none'"),
+            "declared connect domains must not become form targets: {csp}"
+        );
+    }
+
     #[test]
     fn guest_csp_is_derived_from_declared_domains_not_supplied() {
         let connect = parse_domains(Some(&"https://api.example.com".to_string()));

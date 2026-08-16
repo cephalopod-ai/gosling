@@ -197,7 +197,16 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
 
   return (
     <>
-      <div className="flex items-center gap-2 mt-2">
+      {/*
+        Visual weight follows consequence (WEB-GOS-001). Previously all three
+        affirmative buttons were `secondary` — so "Always Allow", which outlives
+        this call, looked identical to the single-call "Allow Once" — while
+        Deny was `outline`, the faintest control on the row. The persistent
+        grants are now de-emphasized and grouped after Deny, so the two
+        one-shot decisions read as the default pair and a lasting grant takes a
+        deliberate look to find.
+      */}
+      <div className="flex items-center gap-2 mt-2 flex-wrap">
         <Button
           className="rounded-full"
           variant="secondary"
@@ -205,10 +214,17 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
         >
           {intl.formatMessage(i18n.allowOnce)}
         </Button>
+        <Button
+          className="rounded-full"
+          variant="secondary"
+          onClick={() => handleAction('deny_once')}
+        >
+          {intl.formatMessage(i18n.deny)}
+        </Button>
         {!prompt && (
           <Button
             className="rounded-full"
-            variant="secondary"
+            variant="ghost"
             onClick={() => handleAction('always_allow')}
           >
             {intl.formatMessage(i18n.alwaysAllow)}
@@ -217,20 +233,13 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
         {!prompt && extensionName && (
           <Button
             className="rounded-full"
-            variant="secondary"
+            variant="ghost"
             disabled={isAllowingExtension}
             onClick={() => void handleAlwaysAllowExtension()}
           >
             {intl.formatMessage(i18n.alwaysAllowExtension, { extensionName })}
           </Button>
         )}
-        <Button
-          className="rounded-full"
-          variant="outline"
-          onClick={() => handleAction('deny_once')}
-        >
-          {intl.formatMessage(i18n.deny)}
-        </Button>
       </div>
       {approvalError && (
         <p className="text-sm text-red-500 mt-2" role="alert">

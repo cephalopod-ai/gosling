@@ -18,34 +18,31 @@ rediscovered from scratch.
       server-side; the unauthenticated GETs return a static shell and a
       UUIDv4-nonced guest. Forcing loopback would break remote MCP-app
       deployments for a low-value gain.
-- [ ] **SECN-GSL-001** *(now the top ACP/MCP item)* — both proxy templates read
-      the backend secret from `window.location.hash` in a frame running
-      `allow-scripts allow-same-origin`. The `proxy_token` added by the
-      SEC-GOS-002 fix is the mechanism to replace it: make `store_guest_html`
-      accept the token instead of the secret and the backend secret leaves the
-      browser entirely. Spans both Rust paths, both templates, and Desktop
-      `main.ts`.
-- [x] **SEC-GOS-012** — closed in `6a02881fb`. The combination is refused with
-      an actionable error; verified live across unauth+0.0.0.0 (refused),
-      authenticated+0.0.0.0 (serves), and unauth+loopback (serves).
-- [ ] **CON-GSL-001** — cross-process recover can mark a live peer's tool
-      `in_doubt`. The obvious `updated_at` guard was implemented and rejected:
-      `updated_at` only moves on state transitions, so it means "started
-      recently", not "owner alive". Needs a real liveness source — a heartbeat
-      on `updated_at`, or an owner PID/lease the recovering process can probe.
-- [ ] **AOC-GOS-002** — tagteam puts the full system+conversation prompt on
-      argv, where `ps` exposes it. The fix is stdin, but the tagteam CLI is an
-      external binary whose input contract is not verifiable from this repo.
-- [ ] **DAT-GSL-003** — `UNIQUE(session_id, message_id)` needs a schema
-      migration plus dedupe of existing rows on live databases.
-- [ ] **TMP-GOS-005 / TMP-GOS-006** — pinned-vs-live workspace folder policy is
-      a documented product invariant; config migration versioning needs a
-      `config_version` scheme and a dual-read deprecation window.
-- [ ] **REC-GSL-001** — `Cargo.toml` declares `repo-makeover/gosling`; the
-      remote is `cephalopod-ai/gosling`. **Nine workflows are gated on
-      `github.repository == 'repo-makeover/gosling'` and therefore never run
-      here**, including `cargo-deny`, `scorecard`, and `dependabot-auto-merge`.
-      Correcting the slug activates all nine at once — an operator decision.
+- [ ] **SECN-GSL-001** — **re-assessed 2026-08-16 against upstream goose; the
+      stated exploit path does not hold.** The claim was "any script in the
+      secret-bearing frame can read `window.location.hash`". Untrusted MCP app
+      code never runs in that frame: it runs in a *nested* guest iframe served
+      by a separate loopback listener on its own ephemeral port
+      (`spawn_guest_server`, `crates/gosling/src/acp/mcp_app_proxy.rs`), so
+      `allow-same-origin` preserves a *different* origin and same-origin policy
+      blocks reading the parent's location. The guest only ever receives an
+      unguessable nonce.
+
+      Upstream comparison: goose puts the same secret in the **query string**
+      (`McpAppRenderer.tsx` -> `proxyUrl.searchParams.set('secret', ...)`),
+      which is strictly worse — it reaches the server, access logs, and
+      `Referer`. gosling's fragment does not. Upstream had the genuine
+      same-origin variant of this bug in `goose-server` and **deleted that
+      crate** (PR #10224) rather than fixing it; gosling's `gosling-server` is a
+      fork-local survivor that already fixed it differently, by dropping
+      `allow-same-origin` (opaque origin) and using a nonce-only guest src.
+
+      **There is no upstream mechanism to port.** Residual hardening, not a
+      demonstrated path: the outer page's `script-src` is widened by
+      app-declared `resource_domains`/`script_domains`, and no injection sink
+      was found in that page. If the secret is to leave the URL entirely, the
+      `proxy_token` infrastructure added by the SEC-GOS-002 fix is the natural
+      basis. Severity should be re-rated down from High.
 
 ### Blocked on tooling
 
