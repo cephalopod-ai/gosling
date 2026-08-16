@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveLoadingStatus } from './ToolCallWithResponse';
+import { deriveLoadingStatus, getToolResultError } from './ToolCallWithResponse';
 import type { ToolResponseMessageContent } from '../types/message';
 
 function toolResponse(status?: string): ToolResponseMessageContent {
@@ -28,5 +28,30 @@ describe('deriveLoadingStatus', () => {
 
   it('is error when the response reports an error status', () => {
     expect(deriveLoadingStatus(toolResponse('error'), false)).toBe('error');
+  });
+});
+
+// The `error` string was parsed for the status icon but never rendered, so a
+// failed tool showed no reason (WFG-GOS-003).
+describe('getToolResultError', () => {
+  it('returns the error string from a failed tool result', () => {
+    expect(getToolResultError({ status: 'error', error: 'ENOENT: missing file' })).toBe(
+      'ENOENT: missing file'
+    );
+  });
+
+  it('never returns an empty string for a failed result', () => {
+    expect(getToolResultError({ status: 'error', error: '   ' })).toBe(
+      'The tool reported an error with no message.'
+    );
+    expect(getToolResultError({ status: 'error' })).toBe(
+      'The tool reported an error with no message.'
+    );
+  });
+
+  it('returns nothing for a successful or absent result', () => {
+    expect(getToolResultError({ status: 'success', value: { content: [] } })).toBeUndefined();
+    expect(getToolResultError(undefined)).toBeUndefined();
+    expect(getToolResultError(null)).toBeUndefined();
   });
 });

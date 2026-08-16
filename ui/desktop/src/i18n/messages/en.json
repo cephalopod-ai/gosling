@@ -2915,6 +2915,9 @@
   "toolApprovalButtons.failedToAllowExtension": {
     "defaultMessage": "Failed to update permissions for this extension"
   },
+  "toolApprovalButtons.failedToSubmitDecision": {
+    "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
+  },
   "toolApprovalButtons.staleApprovalRequest": {
     "defaultMessage": "This approval request is no longer active."
   },
