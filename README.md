@@ -81,7 +81,7 @@ Relative to the inherited baseline, gosling implements several safety and securi
 | **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
 | **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in cache extension paths. |
 
-## What's included in gosling v1.0.0
+## What's included (targeting v1.0.0; current build is 0.1.0)
 
 - **Workspace-aware Desktop chats** - workspace rows filter the chat list without changing the default for future chats. Starting a chat from a workspace action preselects that workspace, while the global New Chat flow preselects the active/default workspace and still allows a per-chat override.
 - **Credential profiles in chat** - the chat composer exposes the credential-profile selector and manager, shows a session's pinned profile, and keeps missing-profile failures visible instead of silently choosing another credential.
@@ -134,7 +134,9 @@ The Rust core owns agent execution, provider contracts, permissions, session per
 
 ## Release validation status
 
-The [2026-07-20 live playtest](docs/cloud/2026-07-20-live-all-scenarios-playtest.md) executed all 110 scenario cards. Its initial result was 46 pass, 32 fail, and 32 blocked; the appended repair closure records focused regression evidence for all 15 findings, including an installed Apple Silicon Desktop windowing replay. The initial ledger was not rewritten as a 110-card post-repair pass.
+The current validation reference is the [2026-08-15 live playtest](docs/cloud/2026-08-15-live-all-scenarios-playtest.md): 58 pass, 5 fail, 47 blocked across all 110 scenario cards. Blocked is dominated by Desktop cards, which had no GUI driver — that is missing coverage, not a pass. The [2026-08-15 audit](docs/cloud/2026-08-15-master-report.md) and its [repair campaign](docs/logs/session/2026-08-16-audit-repair-campaign.md) record what was found and what has been fixed since.
+
+The earlier [2026-07-20 playtest](docs/cloud/2026-07-20-live-all-scenarios-playtest.md) (46 pass, 32 fail, 32 blocked, with appended repair closure for 15 findings) is retained as history and should not be read as current.
 
 Before publishing v1.0.0, the release owner must complete the [release checklist](RELEASE_CHECKLIST.md), including the full build, test, Clippy, packaged-GUI, and version-alignment gates. Documentation preparation alone is not release validation.
 

@@ -119,6 +119,26 @@ MEM-GSL-002 (8 MiB read cap on `memories.jsonl`), MEM-GSL-003 (Desktop
 MEM-GSL-001 and MEM-GSL-003 remain **unmeasured**. These bound a mechanism
 that is provably unbounded in code; they are not evidence a leak was observed.
 
+## Unresolved conflict — repository identity (REC-GSL-001)
+
+**Not resolved, deliberately.** `Cargo.toml:14` declares
+`https://github.com/repo-makeover/gosling`; the actual remote is
+`https://github.com/cephalopod-ai/gosling.git`.
+
+The consequence is larger than a stale URL: **nine workflows are gated on
+`if: github.repository == 'repo-makeover/gosling'` and therefore never run on
+this remote** — `cargo-deny`, `scorecard`, `dependabot-auto-merge`,
+`cargo-machete`, `stale`, `minor-release`, `update-health-dashboard`,
+`rebuild-skills-marketplace`, `update-hacktoberfest-leaderboard`.
+
+Flipping the slug would *activate* nine dormant workflows at once, including
+release and auto-merge automation. That is an operator decision, not a
+mechanical repair, so per AGENTS.md ("preserve the conflict explicitly and log
+it as a follow-up") it is recorded here rather than resolved.
+
+Note this also limits the value of the RSP-GSL-004 hardening in Group 5: the
+dependabot auto-merge workflow is currently dormant on this remote regardless.
+
 ## Deliberately not fixed
 
 **SEC-GOS-011** (absent `Origin` skips the WebSocket origin check). The

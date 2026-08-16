@@ -1,5 +1,14 @@
 # Extraction & Removal Plan: Local Inference, Telegram, and Phone-Home Features
 
+> **HISTORICAL — the local-inference extraction described here is already done
+> (DEAD-GSL-001).**
+>
+> The inventory below describes the tree at commit `c5fbbd7`. At HEAD,
+> `crates/gosling/src/providers/local_inference/`, `llamacpp/`, and `mlx.rs`
+> no longer exist, and `llama-cpp-2` is absent from `Cargo.lock`. Read the
+> local-inference sections as a record of work completed, not as a survey of
+> current state; re-verify against HEAD before acting on any remaining step.
+
 This document is a plan only — no code changes accompany it. It describes, in
 implementation-ready detail, how to:
 
