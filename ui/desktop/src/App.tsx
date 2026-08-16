@@ -181,11 +181,15 @@ const PermissionRoute = () => {
 
 const ConfigureProvidersRoute = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const parentViewOptions = location.state?.parentViewOptions as ViewOptions | undefined;
 
   return (
     <div className="w-screen h-screen bg-background-primary">
       <ProviderSettings
-        onClose={() => navigate('/settings', { state: { section: 'models' } })}
+        onClose={() =>
+          navigate('/settings', { state: parentViewOptions ?? { section: 'models' } })
+        }
         isOnboarding={false}
       />
     </div>

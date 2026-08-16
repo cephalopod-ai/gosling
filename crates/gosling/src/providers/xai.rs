@@ -12,9 +12,9 @@ pub const XAI_API_HOST: &str = "https://api.x.ai/v1";
 // only host that will actually run the subscription's models. See xai_oauth.rs.
 pub const SUPERGROK_API_HOST: &str = "https://cli-chat-proxy.grok.com/v1";
 
-// The proxy serves exactly these models to SuperGrok tokens (GET /v1/models).
-// grok-4.5 supports reasoning-effort (high/medium/low); Composer does not.
-pub const SUPERGROK_DEFAULT_MODEL: &str = "grok-4.5";
+// Gosling exposes only this model for SuperGrok subscriptions.
+// grok-4.6 supports reasoning-effort (high/medium/low).
+pub const SUPERGROK_DEFAULT_MODEL: &str = "grok-4.6";
 
 /// A SuperGrok model as advertised by the chat proxy. `reasoning` drives whether
 /// the desktop switcher shows the high/medium/low effort selector; there is no
@@ -25,18 +25,11 @@ pub struct SuperGrokModel {
     pub reasoning: bool,
 }
 
-pub const SUPERGROK_MODELS: &[SuperGrokModel] = &[
-    SuperGrokModel {
-        name: "grok-4.5",
-        context_limit: 500_000,
-        reasoning: true,
-    },
-    SuperGrokModel {
-        name: "grok-composer-2.5-fast",
-        context_limit: 200_000,
-        reasoning: false,
-    },
-];
+pub const SUPERGROK_MODELS: &[SuperGrokModel] = &[SuperGrokModel {
+    name: "grok-4.6",
+    context_limit: 500_000,
+    reasoning: true,
+}];
 
 pub const XAI_DEFAULT_MODEL: &str = "grok-code-fast-1";
 pub const XAI_KNOWN_MODELS: &[&str] = &[

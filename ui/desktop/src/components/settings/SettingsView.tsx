@@ -239,7 +239,7 @@ export default function SettingsView({
                   value="auth"
                   className="mt-0 focus-visible:outline-none focus-visible:ring-0"
                 >
-                  <AuthSettingsSection />
+                  <AuthSettingsSection setView={setView} />
                 </TabsContent>
 
                 <TabsContent

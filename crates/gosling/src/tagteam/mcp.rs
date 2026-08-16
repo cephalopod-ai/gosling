@@ -1788,7 +1788,7 @@ mod tests {
             }),
             coder: Some(WireRoleTarget {
                 adapter: "grok".to_string(),
-                model: Some("grok-4.5".to_string()),
+                model: Some("grok-4.6".to_string()),
             }),
             supervisor: None,
             reviewer: None,

@@ -3121,5 +3121,8 @@
   },
   "artifactPane.truncated": {
     "defaultMessage": "Truncated"
+  },
+  "authSettings.addCredential": {
+    "defaultMessage": "Add credential"
   }
 }

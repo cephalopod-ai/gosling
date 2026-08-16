@@ -34,9 +34,12 @@ const mockedListProviderSecrets = vi.mocked(acpListProviderSecrets);
 const mockedDeleteProviderSecret = vi.mocked(acpDeleteProviderSecret);
 const mockedAcpAuthenticateProvider = vi.mocked(acpAuthenticateProvider);
 const mockedToast = vi.mocked(toast);
+const mockSetView = vi.fn();
 
 const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
   render(ui, { wrapper: IntlTestWrapper, ...options });
+
+const renderSection = () => renderWithIntl(<AuthSettingsSection setView={mockSetView} />);
 
 const providerSecret: ProviderSecretDto = {
   id: 'secret_store:openai:OPENAI_API_KEY',
@@ -62,12 +65,24 @@ describe('AuthSettingsSection', () => {
   });
 
   it('renders an empty state when no credentials are stored', async () => {
-    renderWithIntl(<AuthSettingsSection />);
+    renderSection();
 
     expect(screen.getByText('Loading credentials...')).toBeInTheDocument();
     expect(
       await screen.findByText('No locally stored provider credentials were found.')
     ).toBeInTheDocument();
+  });
+
+  it('opens provider configuration to add a credential and returns to Auth', async () => {
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole('button', { name: 'Add credential' }));
+
+    expect(mockSetView).toHaveBeenCalledWith('ConfigureProviders', {
+      parentView: 'settings',
+      parentViewOptions: { section: 'auth' },
+    });
   });
 
   it('renders provider credentials with storage and expiry status', async () => {
@@ -79,7 +94,7 @@ describe('AuthSettingsSection', () => {
       },
     ]);
 
-    renderWithIntl(<AuthSettingsSection />);
+    renderSection();
 
     expect(await screen.findByText('OpenAI')).toBeInTheDocument();
     expect(screen.getByText('OPENAI_API_KEY')).toBeInTheDocument();
@@ -90,7 +105,7 @@ describe('AuthSettingsSection', () => {
   it('does not render an expiry badge when expiry is unknown', async () => {
     mockedListProviderSecrets.mockResolvedValue([providerSecret]);
 
-    renderWithIntl(<AuthSettingsSection />);
+    renderSection();
 
     expect(await screen.findByText('OpenAI')).toBeInTheDocument();
     expect(screen.getByText('Secret store')).toBeInTheDocument();
@@ -102,7 +117,7 @@ describe('AuthSettingsSection', () => {
     const user = userEvent.setup();
     mockedListProviderSecrets.mockResolvedValueOnce([providerSecret]).mockResolvedValueOnce([]);
 
-    renderWithIntl(<AuthSettingsSection />);
+    renderSection();
 
     expect(await screen.findByText('OpenAI')).toBeInTheDocument();
 

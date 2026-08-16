@@ -83,6 +83,9 @@
   "authSettings.activeProviderWarning": {
     "defaultMessage": "This is the active provider. New requests may fail until you configure another credential."
   },
+  "authSettings.addCredential": {
+    "defaultMessage": "Add credential"
+  },
   "authSettings.cancel": {
     "defaultMessage": "Cancel"
   },

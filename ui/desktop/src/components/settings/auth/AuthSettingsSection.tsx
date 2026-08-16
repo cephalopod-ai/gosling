@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { KeyRound, Loader2, LogIn, RefreshCw, Trash2 } from 'lucide-react';
+import { KeyRound, Loader2, LogIn, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import {
   acpAuthenticateProvider,
@@ -13,6 +13,7 @@ import { Button } from '../../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
 import { defineMessages, useIntl } from '../../../i18n';
+import type { View, ViewOptions } from '../../../utils/navigationUtils';
 
 const i18n = defineMessages({
   title: {
@@ -96,6 +97,10 @@ const i18n = defineMessages({
     id: 'authSettings.failedToConfigure',
     defaultMessage: 'Failed to configure credential: {error}',
   },
+  addCredential: {
+    id: 'authSettings.addCredential',
+    defaultMessage: 'Add credential',
+  },
 });
 
 function storageLabel(secret: ProviderSecretDto, intl: ReturnType<typeof useIntl>) {
@@ -124,7 +129,11 @@ function expiryClass(secret: ProviderSecretDto) {
   return 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300';
 }
 
-export default function AuthSettingsSection() {
+export default function AuthSettingsSection({
+  setView,
+}: {
+  setView: (view: View, options?: ViewOptions) => void;
+}) {
   const intl = useIntl();
   const { currentProvider } = useModelAndProvider();
   const [secrets, setSecrets] = useState<ProviderSecretDto[]>([]);
@@ -199,11 +208,28 @@ export default function AuthSettingsSection() {
     <section id="auth" className="space-y-4 pr-4 mt-1">
       <Card className="pb-2">
         <CardHeader className="pb-0">
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4" />
-            {intl.formatMessage(i18n.title)}
-          </CardTitle>
-          <CardDescription>{intl.formatMessage(i18n.description)}</CardDescription>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1.5">
+              <CardTitle className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4" />
+                {intl.formatMessage(i18n.title)}
+              </CardTitle>
+              <CardDescription>{intl.formatMessage(i18n.description)}</CardDescription>
+            </div>
+            <Button
+              size="sm"
+              className="gap-2 self-start"
+              onClick={() =>
+                setView('ConfigureProviders', {
+                  parentView: 'settings',
+                  parentViewOptions: { section: 'auth' },
+                })
+              }
+            >
+              <Plus className="h-4 w-4" />
+              {intl.formatMessage(i18n.addCredential)}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="px-4 py-2">
           {loading ? (
