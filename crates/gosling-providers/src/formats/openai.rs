@@ -14,8 +14,8 @@ use chrono;
 use futures::Stream;
 use regex::Regex;
 use rmcp::model::{
-    object, AnnotateAble, CallToolRequestParams, Content, ErrorCode, ErrorData, RawContent, Role,
-    Tool,
+    object, AnnotateAble, CallToolRequestParams, Content, ErrorCode, ErrorData, JsonObject,
+    RawContent, Role, Tool,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -619,12 +619,100 @@ pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
             "function": {
                 "name": tool.name,
                 "description": tool.description,
-                "parameters": tool.input_schema,
+                "parameters": object_rooted_parameters(&tool.input_schema),
             }
         }));
     }
 
     Ok(result)
+}
+
+/// Coerce an MCP tool's input schema into the object-rooted shape the
+/// OpenAI-compatible `function.parameters` field requires.
+///
+/// MCP lets a tool declare any JSON Schema at the root, including an
+/// `anyOf`/`oneOf` union. Several OpenAI-compatible backends reject that
+/// outright -- xAI answers `400 ... tool parameter root must be an object type
+/// (root schema is an anyOf/oneOf union with a non-object branch)` -- and the
+/// failure surfaces to the operator as an unusable tool rather than a
+/// provider-compatibility problem. The schema was previously forwarded
+/// verbatim, so a single such tool broke every request for the whole session.
+///
+/// Object branches are preserved by merging their `properties`; a union with
+/// no object branch degrades to a permissive object so the tool stays
+/// callable. Validation strictness is lost in that last case, but the backend
+/// still validates the call and the model still sees the parameter names.
+pub(crate) fn object_rooted_parameters(input_schema: &JsonObject) -> Value {
+    if input_schema.is_empty() {
+        return json!({ "type": "object", "properties": {} });
+    }
+
+    let is_object_root = input_schema.get("type").and_then(Value::as_str) == Some("object")
+        || input_schema.contains_key("properties");
+    if is_object_root {
+        return Value::Object(input_schema.clone());
+    }
+
+    let union_branches = ["anyOf", "oneOf", "allOf"]
+        .iter()
+        .find_map(|key| input_schema.get(*key).and_then(Value::as_array));
+
+    let Some(branches) = union_branches else {
+        // Some other non-object root (a bare "type": "string", say). Nothing
+        // to preserve; keep the tool callable.
+        return json!({ "type": "object", "properties": {} });
+    };
+
+    let mut merged_properties = serde_json::Map::new();
+    let mut required: Vec<Value> = Vec::new();
+    for branch in branches {
+        let Some(branch): Option<&serde_json::Map<String, Value>> = branch.as_object() else {
+            continue;
+        };
+        if branch.get("type").and_then(Value::as_str) != Some("object")
+            && !branch.contains_key("properties")
+        {
+            continue;
+        }
+        if let Some(properties) = branch.get("properties").and_then(Value::as_object) {
+            for (name, schema) in properties {
+                merged_properties
+                    .entry(name.clone())
+                    .or_insert_with(|| schema.clone());
+            }
+        }
+        // A field is only required if every object branch requires it;
+        // collected here and intersected below.
+        required.push(branch.get("required").cloned().unwrap_or(json!([])));
+    }
+
+    let common_required: Vec<Value> = match required.split_first() {
+        Some((first, rest)) => first
+            .as_array()
+            .map(|first| {
+                first
+                    .iter()
+                    .filter(|name| {
+                        rest.iter()
+                            .all(|other| other.as_array().is_some_and(|other| other.contains(name)))
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+
+    let mut normalized = serde_json::Map::new();
+    normalized.insert("type".to_string(), json!("object"));
+    normalized.insert("properties".to_string(), Value::Object(merged_properties));
+    if !common_required.is_empty() {
+        normalized.insert("required".to_string(), Value::Array(common_required));
+    }
+    if let Some(description) = input_schema.get("description") {
+        normalized.insert("description".to_string(), description.clone());
+    }
+    Value::Object(normalized)
 }
 
 /// Convert OpenAI's API response to internal Message format
@@ -1646,6 +1734,74 @@ mod tests {
     use rmcp::object;
     use serde_json::json;
     use test_case::test_case;
+
+    // xAI rejects a union root outright:
+    //   400 ... tool parameter root must be an object type
+    //   (root schema is an anyOf/oneOf union with a non-object branch)
+    // The schema used to be forwarded verbatim, so one such MCP tool broke
+    // every request for the session.
+    #[test]
+    fn union_rooted_tool_schema_is_coerced_to_an_object_root() {
+        let schema = object!({
+            "anyOf": [
+                { "type": "object", "properties": { "expression": { "type": "string" } },
+                  "required": ["expression"] },
+                { "type": "string" }
+            ]
+        });
+        let normalized = object_rooted_parameters(&schema);
+        assert_eq!(normalized["type"], "object");
+        assert_eq!(normalized["properties"]["expression"]["type"], "string");
+        assert!(normalized.get("anyOf").is_none());
+    }
+
+    #[test]
+    fn object_branches_are_merged_and_required_is_intersected() {
+        let schema = object!({
+            "oneOf": [
+                { "type": "object",
+                  "properties": { "a": { "type": "string" }, "shared": { "type": "number" } },
+                  "required": ["a", "shared"] },
+                { "type": "object",
+                  "properties": { "b": { "type": "boolean" }, "shared": { "type": "number" } },
+                  "required": ["b", "shared"] }
+            ]
+        });
+        let normalized = object_rooted_parameters(&schema);
+        let properties = normalized["properties"].as_object().unwrap();
+        assert!(properties.contains_key("a"));
+        assert!(properties.contains_key("b"));
+        assert!(properties.contains_key("shared"));
+        // Only `shared` is required by every branch.
+        assert_eq!(normalized["required"], json!(["shared"]));
+    }
+
+    #[test]
+    fn a_union_with_no_object_branch_stays_callable() {
+        let schema = object!({ "anyOf": [{ "type": "string" }, { "type": "number" }] });
+        let normalized = object_rooted_parameters(&schema);
+        assert_eq!(normalized["type"], "object");
+        assert!(normalized["properties"].as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn ordinary_object_schemas_pass_through_unchanged() {
+        let schema = object!({
+            "type": "object",
+            "properties": { "path": { "type": "string" } },
+            "required": ["path"]
+        });
+        assert_eq!(
+            object_rooted_parameters(&schema),
+            serde_json::Value::Object(schema.clone())
+        );
+    }
+
+    #[test]
+    fn an_empty_schema_becomes_an_empty_object() {
+        let normalized = object_rooted_parameters(&object!({}));
+        assert_eq!(normalized["type"], "object");
+    }
     use tokio::pin;
     use tokio_stream::{self, StreamExt};
 

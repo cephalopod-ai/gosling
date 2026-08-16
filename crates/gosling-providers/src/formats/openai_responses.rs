@@ -665,7 +665,9 @@ pub fn create_responses_request(
                     "type": "function",
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.input_schema,
+                    // Same union-root coercion as the chat-completions
+                    // format; see `openai::object_rooted_parameters`.
+                    "parameters": super::openai::object_rooted_parameters(&tool.input_schema),
                     "strict": false,
                 })
             })
