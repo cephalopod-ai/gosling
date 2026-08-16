@@ -44,12 +44,16 @@ impl RetryConfig {
         backoff_multiplier: f64,
         max_interval_ms: u64,
     ) -> Self {
+        // Matches `Default`. These diverged, so every provider that built a
+        // config with `new` (Bedrock, Vertex, Databricks) silently replayed
+        // permanent failures such as auth and validation errors, burning the
+        // retry budget and multiplying the request. (CAS-GSL-001, REL-GSL-012)
         Self {
             max_retries,
             initial_interval_ms,
             backoff_multiplier,
             max_interval_ms,
-            transient_only: false,
+            transient_only: true,
         }
     }
 

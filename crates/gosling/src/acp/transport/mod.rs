@@ -120,6 +120,13 @@ async fn enforce_websocket_origin(
     next: Next,
 ) -> Result<Response, StatusCode> {
     if is_websocket_upgrade(&request) {
+        // SEC-GOS-011 asked for this to fail closed when `Origin` is absent.
+        // It deliberately does not: the WebSocket spec requires browsers to
+        // send `Origin`, so a request without one provably did not come from a
+        // page, and rejecting it would break every non-browser ACP client (the
+        // CLI, the SDK, editor integrations) while blocking no browser attack.
+        // The cross-origin threat this guards is handled for real requests by
+        // the policy below, and by `check_acp_token`, which runs first.
         if let Some(origin) = request.headers().get(header::ORIGIN) {
             if !policy.origin_allowed(origin) {
                 return Err(StatusCode::FORBIDDEN);
