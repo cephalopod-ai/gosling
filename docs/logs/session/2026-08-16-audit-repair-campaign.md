@@ -198,6 +198,46 @@ REC-GSL-002 (workspace ledger bannered historical; the live ledger is
 `docs/build/shell-productization/build-state.md`), CMP-GOS-003 (README
 footprint heading now carries its own date).
 
+### Groups 17-19 — remaining low-priority items
+
+**Group 17** — TMP-GOS-004 (a failed JWT signature check fell through to the
+unverified decoder exactly like an unreachable JWKS endpoint; the two are now
+distinct and an invalid signature refuses the claims), MEM-GSL-008
+(`read-file` IPC capped, matching `read-artifact-file` beside it), MEM-GSL-009
+(artifact pagination capped with a truncation warning), RES-GSL-001
+(`check-ollama` `ps`/`grep` bounded with SIGKILL escalation — a hung `ps`
+leaked a process pair per check), SECN-GSL-003 (`sandbox: true` pinned on main
+and launcher windows; verified safe because `preload.ts` imports no Node
+modules and Electron 41 already defaults it on).
+
+**Group 18** — DAT-GSL-005 (a failed legacy import wrote the completion marker
+anyway, so it was never retried), IOP-GOS-001 (the Claude Code importer
+dropped unrecognized entries silently, making a partial import look complete;
+skipped types are now counted and named), MEM-GSL-006 (a whole-conversation
+clone per turn that was never used).
+
+**Group 19** — IOP-GOS-002 (`git clone ext::<command>` executes the command;
+transport-helper sources are refused, with tests confirming https, ssh,
+scp-style, and local paths still work).
+
+## Low-priority items deliberately left open
+
+These are the Low/Info findings a mechanical repair cannot close honestly.
+
+| ID | Why it stays open |
+|---|---|
+| DAT-GSL-003 | `UNIQUE(session_id, message_id)` needs a schema migration plus dedupe of existing rows, and turns duplicate inserts into runtime errors. Not a mechanical repair on a live user database. |
+| TMP-GOS-005 | The pinned-vs-live workspace folder policy is a documented product invariant; changing it alters tool-permission behavior for existing sessions. Operator decision. |
+| TMP-GOS-006 | Config migration versioning needs a `config_version` scheme and a dual-read deprecation window; the minimal repair would make config writes hard-fail on read-only dirs. |
+| ARCN-GSL-002 | 49 scattered `process.env` reads across ui/desktop. Consolidating needs a config owner plus a `no-restricted-properties` lint rule — a refactor, not a fix. |
+| ARC-GSL-005 | Two hand-maintained `GOOSE_EXCLUDED_SKILL_IDS` copies across a TS/JS boundary. Needs a cross-stack parity test to be a real fix. |
+| INV-GSL-003 | Slash `COMMANDS` vs the dispatch `match` needs an exhaustiveness guard; the catch-all arm makes drift silent but is also load-bearing for skills. |
+| MEM-GSL-004 | TUI `turns` array grows unbounded; capping it changes what scrollback the user can reach. Product decision. |
+| PERF-GSL-002 | The Desktop `performance.spec.ts` is a single-run smoke script presented as a performance test. Fixing means writing a real benchmark, not editing a label. |
+| SIG-GSL-005 | ML-classifier init failure falls back to pattern-only with log-only signal. Surfacing it properly needs a degraded-state channel to the operator, which does not exist yet. |
+| DAT-GSL-006 | New-session create + extension apply are two commits. A one-transaction path needs a new public entry point over the existing private `*_in_tx` helpers. |
+| NEG-GSL-003 | `GOSLING_SHELL` shell flavor is unmodeled scanner input. Needs a threat-model decision about which flavors are in scope. |
+
 ## Unresolved conflict — repository identity (REC-GSL-001)
 
 **Not resolved, deliberately.** `Cargo.toml:14` declares
