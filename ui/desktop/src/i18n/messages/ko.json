@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "구성"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "취소"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "모든 도구 요청에 승인을 요구하거나, 위험도에 따라 승인 필요 여부를 판단할 수 있습니다."
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "수동 승인"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "모든 도구, 익스텐션, 파일 수정에는 사용자 승인이 필요합니다."
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "저장"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "저장 중..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "스마트 승인"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "위험 수준에 따라 승인이 필요한 작업을 지능적으로 판단합니다."
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "승인 모드 구성"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "아니요"
   },

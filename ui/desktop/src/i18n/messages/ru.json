@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "Конфигурация"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "Отмена"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "Запросы на подтверждение могут быть даны на все запросы, либо определяться в зависимости от действий, которые могут требовать человеческого вмешательства"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Ручное подтверждение"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "Все инструменты, расширения и изменения файлов будут требовать подтверждения человеком"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Сохранить"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Сохранение..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Умное подтверждение"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Интеллектуально определять, какие действия требуют подтверждения, исходя из уровня риска"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Настроить режим подтверждения"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "Нет"
   },

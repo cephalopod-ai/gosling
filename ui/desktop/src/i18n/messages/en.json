@@ -350,33 +350,6 @@
   "configSettings.title": {
     "defaultMessage": "Configuration"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "Cancel"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "Approve requests can either be given to all tool requests or determine which actions may need integration"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Manual approval"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "All tools, extensions and file modifications will require human approval"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Save"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Saving..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Smart approval"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Intelligently determine which actions need approval based on risk level"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Configure approve mode"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "No"
   },

@@ -1375,10 +1375,14 @@ async function runTextMode(
           params: RequestPermissionRequest,
         ): Promise<RequestPermissionResponse> => {
           if (autoApprove) {
-            const option =
-              params.options.find((o) => o.kind === "allow_once") ??
-              params.options.find((o) => o.kind === "allow_always") ??
-              params.options[0];
+            // WFG-GOS-008: the comment above promised the least-privileged
+            // affirmative option and "never allow always", but the fallback
+            // chain reached for `allow_always` and then `options[0]` — which
+            // acp/server.rs orders as allow_always. `--yes` now grants a
+            // single call or nothing; a server that offers no `allow_once`
+            // falls through to the decline path below rather than being
+            // escalated to a persistent grant.
+            const option = params.options.find((o) => o.kind === "allow_once");
             if (option) {
               return {
                 outcome: { outcome: "selected", optionId: option.optionId },

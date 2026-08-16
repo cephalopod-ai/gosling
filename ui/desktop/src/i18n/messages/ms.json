@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "Konfigurasi"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "Batal"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "Permintaan kelulusan boleh diberikan kepada semua permintaan alat atau menentukan tindakan mana yang mungkin memerlukan penyepaduan"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Kelulusan manual"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "Semua alat, sambungan dan pengubahsuaian fail akan memerlukan kelulusan manusia"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Simpan"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Menyimpan..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Kelulusan pintar"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Tentukan secara pintar tindakan mana yang memerlukan kelulusan berdasarkan tahap risiko"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Konfigurasi mod kelulusan"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "Tidak"
   },

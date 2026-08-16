@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "Configuration"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "Annuler"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "Les demandes d'approbation peuvent s'appliquer à toutes les requêtes d'outils ou déterminer quelles actions nécessitent une intégration"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Approbation manuelle"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "Tous les outils, extensions et modifications de fichiers nécessiteront une approbation humaine"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Enregistrer"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Enregistrement..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Approbation intelligente"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Déterminer intelligemment quelles actions nécessitent une approbation en fonction du niveau de risque"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Configurer le mode d'approbation"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "Non"
   },

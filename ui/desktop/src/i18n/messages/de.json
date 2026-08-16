@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "Konfiguration"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "Abbrechen"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "Genehmigungsanfragen können entweder für alle Tool-Anfragen gelten oder bestimmen, welche Aktionen eine Integration erfordern können"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Manuelle Genehmigung"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "Alle Tools, Erweiterungen und Dateiänderungen erfordern eine menschliche Genehmigung"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Speichern"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Wird gespeichert..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Intelligente Genehmigung"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Intelligent bestimmen, welche Aktionen basierend auf dem Risikoniveau eine Genehmigung erfordern"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Genehmigungsmodus konfigurieren"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "Nein"
   },

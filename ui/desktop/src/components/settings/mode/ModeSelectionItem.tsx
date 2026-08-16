@@ -1,6 +1,5 @@
 import { useEffect, useState, forwardRef } from 'react';
 import { Gear } from '../../icons';
-import { ConfigureApproveMode } from './ConfigureApproveMode';
 import PermissionRulesModal from '../permission/PermissionRulesModal';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -80,7 +79,6 @@ export const ModeSelectionItem = forwardRef<HTMLDivElement, ModeSelectionItemPro
   ({ currentMode, mode, showDescription, isApproveModeConfigure, handleModeChange }, ref) => {
     const intl = useIntl();
     const [checked, setChecked] = useState(currentMode == mode.key);
-    const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
 
     useEffect(() => {
@@ -105,6 +103,8 @@ export const ModeSelectionItem = forwardRef<HTMLDivElement, ModeSelectionItemPro
           <div className="relative flex items-center gap-2">
             {!isApproveModeConfigure && (mode.key == 'approve' || mode.key == 'smart_approve') && (
               <button
+                type="button"
+                aria-label={`Configure permission rules for ${intl.formatMessage(mode.labelDescriptor)}`}
                 onClick={(e) => {
                   e.stopPropagation(); // Prevent triggering the mode change
                   setIsPermissionModalOpen(true);
@@ -129,20 +129,6 @@ export const ModeSelectionItem = forwardRef<HTMLDivElement, ModeSelectionItemPro
             ></div>
           </div>
         </div>
-        <div>
-          <div>
-            {isDialogOpen ? (
-              <ConfigureApproveMode
-                onClose={() => {
-                  setIsDialogOpen(false);
-                }}
-                handleModeChange={handleModeChange}
-                currentMode={currentMode}
-              />
-            ) : null}
-          </div>
-        </div>
-
         <PermissionRulesModal
           isOpen={isPermissionModalOpen}
           onClose={() => setIsPermissionModalOpen(false)}
