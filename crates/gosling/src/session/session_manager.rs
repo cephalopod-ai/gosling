@@ -1446,10 +1446,18 @@ impl SessionStorage {
                 // (see `apply_migration`), so upgrading installs never get
                 // silently re-imported.
                 if !Self::legacy_import_completed(&self.pool).await? {
-                    if let Err(e) = Self::import_legacy(&self.pool, &self.session_dir).await {
-                        warn!("Failed to import some legacy sessions: {}", e);
+                    // The completion marker used to be written even when the
+                    // import failed, so anything that did not make it across
+                    // was never retried and the failure survived only as a log
+                    // line (DAT-GSL-005). A failed import now leaves the
+                    // marker unset so the next start tries again.
+                    match Self::import_legacy(&self.pool, &self.session_dir).await {
+                        Ok(()) => Self::mark_legacy_import_complete(&self.pool).await?,
+                        Err(e) => warn!(
+                            "Failed to import some legacy sessions; will retry on next start: {}",
+                            e
+                        ),
                     }
-                    Self::mark_legacy_import_complete(&self.pool).await?;
                 }
                 Ok::<(), anyhow::Error>(())
             })

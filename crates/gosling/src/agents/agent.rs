@@ -762,8 +762,11 @@ impl Agent {
         working_dir: &std::path::Path,
         additional_working_dirs: &[std::path::PathBuf],
     ) -> Result<ReplyContext> {
+        // `unfixed_conversation` is owned and unused after this point, so the
+        // second clone duplicated the whole conversation on every turn for
+        // nothing (MEM-GSL-006). Move it instead.
         let unfixed_messages = unfixed_conversation.messages().clone();
-        let (conversation, issues) = fix_conversation(unfixed_conversation.clone());
+        let (conversation, issues) = fix_conversation(unfixed_conversation);
         if !issues.is_empty() {
             debug!(
                 "Conversation issue fixed: {}",
