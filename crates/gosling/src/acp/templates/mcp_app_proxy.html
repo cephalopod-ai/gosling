@@ -35,6 +35,7 @@
           var colorScheme = params.get('color_scheme');
           return {
             secret: fragmentParams.get('secret') || '',
+            proxyToken: '{{PROXY_TOKEN}}',
             baseUrl: getProxyBaseUrl(),
             colorScheme: colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : null
           };
@@ -114,20 +115,18 @@
           document.body.appendChild(errorElement);
         }
 
-        function createGuestCsp(csp) {
-          return String(csp || '').replace(/'nonce-[A-Za-z0-9+/_=-]+'/g, "'unsafe-inline'");
-        }
-
         async function storeGuestHtml(html) {
           var proxyParams = getProxyParams();
-          var cspMeta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+          // The guest CSP is computed by the server and looked up by this
+          // token. This page deliberately does not send a policy: it is the
+          // context the policy exists to bound. (SEC-GOS-002)
           var response = await fetch(proxyParams.baseUrl + '/mcp-app-guest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               secret: proxyParams.secret,
               html: html,
-              csp: cspMeta ? createGuestCsp(cspMeta.content) : ''
+              proxyToken: proxyParams.proxyToken
             })
           });
 
