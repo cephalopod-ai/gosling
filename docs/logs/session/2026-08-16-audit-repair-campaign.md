@@ -119,6 +119,47 @@ MEM-GSL-002 (8 MiB read cap on `memories.jsonl`), MEM-GSL-003 (Desktop
 MEM-GSL-001 and MEM-GSL-003 remain **unmeasured**. These bound a mechanism
 that is provably unbounded in code; they are not evidence a leak was observed.
 
+### Group 7 — `ecddfe1ba` — compacted-resume freshness (Cluster D)
+
+DAT-GSL-001. A stored summary is used only when it is `Current` *and* reaches
+the row immediately before the loaded tail. `Stale` is the column `Default`,
+and a summary written before the session grew leaves rows in neither the
+summary nor the tail — injecting it claimed continuous coverage over that gap.
+
+### Group 8 — `ea133a13f` — Desktop operator truth (Cluster E)
+
+WFG-GOS-003 (a failed tool's `error` string is now rendered; it was parsed for
+the icon and discarded), WFG-GOS-001 (mode selector initialized to `auto`
+while the backend `#[default]` is `SmartApprove`), WFG-GOS-004 (a thrown
+approval error only reached `console.error`, leaving the buttons dead).
+
+### Group 9 — `2fbb8dc47` — always-allow and /doctor
+
+WFG-GOS-006 (ACP withholds always-allow on security prompts, matching the CLI
+rule and the same `Option<String>` signal, so all three frontends agree),
+FSR-GSL-012 (`/doctor` no longer rewrites the *global* provider; the switch is
+session-scoped and says so).
+
+### Group 10 — `documentation truth`
+
+CMP-GOS-001 (superseded banner with a claim-by-claim correction table on the
+2026-07-05 master report), CMP-GOS-002 (README no longer speaks of v1.0.0 in
+the present tense while the build is 0.1.0), README release-validation section
+repointed at the 2026-08-15 playtest, DEAD-GSL-001 (`EXTRACTION_PLAN.md`
+banner-marked historical; the modules and `llama-cpp-2` verified absent).
+
+### Group 11 — secrets out of logs, plan-act mode leak
+
+SEC-GOS-009 (scan records carried the whole serialized tool call at `warn`;
+they now carry sorted argument *names*), WFG-GOS-007 (`?` after the plan-act
+run skipped the restore, pinning the *global* mode to Auto on any error).
+
+### Group 12 — tagteam run status
+
+AOC-GOS-005. A parsed `TagteamFinalRun` was returned regardless of process
+exit, so a crashed or killed run read as completed. The formatted body is
+still returned, with a non-zero exit stated outright.
+
 ## Unresolved conflict — repository identity (REC-GSL-001)
 
 **Not resolved, deliberately.** `Cargo.toml:14` declares
@@ -140,6 +181,13 @@ Note this also limits the value of the RSP-GSL-004 hardening in Group 5: the
 dependabot auto-merge workflow is currently dormant on this remote regardless.
 
 ## Deliberately not fixed
+
+**AOC-GOS-002** (tagteam puts the full system+conversation prompt on argv,
+where `ps` exposes it). The fix is to pass the prompt on stdin, but
+`build_command` sets `.stdin(Stdio::null())` and the tagteam CLI is an
+external binary whose input contract is not verifiable from this repo.
+Guessing at it would break the integration, so this stays open pending that
+contract.
 
 **SEC-GOS-011** (absent `Origin` skips the WebSocket origin check). The
 audit's recommended fail-closed behavior was implemented and tested live: it

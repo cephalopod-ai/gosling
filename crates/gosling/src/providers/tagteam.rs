@@ -233,7 +233,25 @@ impl TagteamProvider {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
         if let Ok(final_run) = serde_json::from_str::<TagteamFinalRun>(&stdout) {
-            return Ok(Self::format_final_run(final_run));
+            // The parsed run was returned regardless of how the process
+            // exited, so a tagteam invocation that crashed or was killed
+            // still read as a completed run (AOC-GOS-005). The formatted body
+            // is still returned -- it carries verdict, degraded, and
+            // exit_code, which are useful -- but a non-zero exit is stated
+            // outright so it cannot be mistaken for a clean finish.
+            let formatted = Self::format_final_run(final_run);
+            if output.status.success() {
+                return Ok(formatted);
+            }
+            return Ok(format!(
+                "{formatted}\n\nWARNING: the tagteam process exited with {}. \
+                 Treat this run as incomplete regardless of the verdict above.",
+                output
+                    .status
+                    .code()
+                    .map(|code| format!("status {code}"))
+                    .unwrap_or_else(|| "a signal".to_string()),
+            ));
         }
 
         if output.status.success() && !stdout.is_empty() {
