@@ -95,9 +95,9 @@ authority.
 The local runtime subsystems score at least 2 for detection, containment, recovery, and signal;
 the tested directory/settings, managed-backend, session/interaction, and adapter paths score 3 for
 their exercised scenarios. Credential recovery remains a deliberate handoff to full Gosling rather
-than shell ownership, so it is present but not a shell-local mutation path. No averaging changes the
-release decision: DS-7 acceptance itself remains not ready because the exact corrective source has
-not yet been committed, clean-source packaged, or validated by current exact-SHA CI.
+than shell ownership, so it is present but not a shell-local mutation path. No averaging changes
+the release decision: exact-source validation now supports technical GO, while explicit operator
+acceptance remains the final DS-7 condition.
 
 ## Validation evidence
 
@@ -188,11 +188,14 @@ is accepted; build Gates 3–6 are not started.
 
 ## Decision and next gate
 
-The corrective implementation is locally ready as a candidate revision. It is **not yet safe to
-begin the GUI**, because the containing revision still needs clean-source package/readback, current
-CI bound to its exact SHA, and post-CI operator GO. In accordance with the operator's rule, this
-audit does not create the Default Shell GUI implementation plan yet.
+The corrective implementation is committed at
+`259935f01b1fbf0bcffcb17f21a01a7f9c2548fc` and merged to `main` as
+`240ab751585afc03c68a710f8be10ea891ab168f`, with an identical source tree. The exact clean source
+passed the complete Rust and Desktop suites and fresh macOS arm64 package/readback; exact-head CI,
+the merged-main CI rerun, and main's Live Provider Tests are green. The earlier merged-main Desktop
+failure was an unrelated i18n lock-test race and passed when the failed job was rerun.
 
-Next action: publish the containing revision, require mandatory CI for its exact head, repeat and
-record clean-source package readback, and request the explicit DS-7 decision. Only a GO at that
-point unlocks the generic GUI design/handoff plan; named shells remain blocked through M5.
+The evidence now supports a **technical GO recommendation for generic Default Shell GUI planning**.
+It does not record operator acceptance and does not authorize renderer implementation. The only
+remaining DS-7 condition is the operator's explicit decision. Named shells remain blocked through
+M5 regardless.

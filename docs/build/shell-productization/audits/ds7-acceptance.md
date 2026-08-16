@@ -1,7 +1,33 @@
 # DS-7 nonvisual acceptance audit
 
 Date: 2026-08-15
-Decision: **findings recorded below; GO/NO-GO is an explicit operator decision (CA-7), not made by this audit**
+Decision: **technical GO recommended; explicit operator acceptance remains the final CA-7 condition**
+
+## 2026-08-15 final corrective closure (current authority)
+
+The complete corrective source is committed at
+`259935f01b1fbf0bcffcb17f21a01a7f9c2548fc` and merged to `main` as
+`240ab751585afc03c68a710f8be10ea891ab168f`; both revisions have the same source tree. This section
+supersedes stale candidate, uncommitted-worktree, and unmerged-PR status statements retained below
+as historical evidence.
+
+- Exact-source full Rust workspace validation passed under an isolated Gosling configuration root.
+- Desktop validation passed 110 files and 795 tests, with typecheck, ESLint, and i18n checks green.
+- All three shell profiles reported `sourceClean:true` and resolved the exact corrective commit.
+- Fresh macOS arm64 Default Shell package/readback matched profile hash
+  `830f6143a45ea309c42f03cb440410b3eb6484009c86cda4aa98f0a7e1282950` and embedded backend hash
+  `76b812b5677520b5c8a564b4251cda7113f47277dcd4f0ff0eb34cd53f3d6574`.
+- Mandatory PR-head CI passed on the exact corrective commit. Merged-main CI also passed after one
+  unrelated i18n process-lock test race succeeded on the failed-job rerun. Main's Live Provider
+  Tests passed; the earlier PR live-provider failure was a GitHub merge-ref checkout race after the
+  PR had already merged, not a product build or test failure.
+- Final negative-space review found no named-domain renderer or GUI implementation. The separately
+  tracked Gemini OAuth login failure remains note-only and was not investigated or changed.
+
+No critical or high Default Shell finding remains open. The evidence supports a technical GO for
+the generic GUI planning phase. This audit does not grant the operator acceptance required by DS-7
+condition 8 and does not authorize renderer implementation. Named shells, signing, publication,
+and cross-platform release acceptance remain outside this decision.
 
 ## 2026-08-15 merged-main corrective reassessment (supersedes the historical decision below)
 

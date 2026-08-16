@@ -144,3 +144,24 @@ the operator responded. Runtime cleanup is now limited to completed, cancelled, 
 outcomes. Focused regressions hold an ACP permission across streamed tool progress and a form across
 streamed agent content, then resolve each exact action explicitly; the full Desktop suite passes
 795/795. No renderer or named-shell GUI was added.
+
+## Final revision binding and decision handoff
+
+The complete corrective source was committed at
+`259935f01b1fbf0bcffcb17f21a01a7f9c2548fc`, pushed, and merged to `main` as
+`240ab751585afc03c68a710f8be10ea891ab168f`; the two revisions have an identical source tree.
+Against the exact corrective commit, the full isolated Rust workspace and all 795 Desktop tests
+passed. A fresh macOS arm64 package/readback matched profile hash
+`830f6143a45ea309c42f03cb440410b3eb6484009c86cda4aa98f0a7e1282950` and backend hash
+`76b812b5677520b5c8a564b4251cda7113f47277dcd4f0ff0eb34cd53f3d6574`.
+
+PR-head CI passed on the exact corrective commit. Merged-main CI initially hit an unrelated i18n
+process-lock test race, then passed on the failed-job rerun; main's Live Provider Tests also passed.
+The earlier PR live-provider failure occurred because its queued job attempted to fetch GitHub's
+temporary merge ref after the PR had already merged. No Default Shell build or provider smoke ran
+and failed in that attempt.
+
+The resulting evidence supports a technical GO recommendation for generic Default Shell GUI
+planning. The repository still requires the operator's explicit DS-7 acceptance before the plan or
+renderer begins. Gemini OAuth remains a separately recorded, uninvestigated provider issue, and no
+GUI or named-domain implementation was added.

@@ -1,7 +1,8 @@
 # Default Shell template: pre-GUI contract and implementation plan
 
-Status: nonvisual foundation implemented; corrective pre-GUI replay/recovery contracts locally
-validated but not revision-bound; no Default Shell GUI or named shell is implemented
+Status: nonvisual foundation revision-bound and green; technical GO for generic GUI planning is
+recommended, explicit operator acceptance remains pending; no Default Shell GUI or named shell is
+implemented
 Date: 2026-08-15
 Authority: ADR-0007–0012 and ADR-0014
 
@@ -178,23 +179,19 @@ Exit: DS-1–DS-6 are revision-bound and green; no critical/high open finding ap
 accepts GUI implementation. Only then begin the Default Shell renderer. Named shells remain blocked
 until the generic GUI passes M5.
 
-Current status: a fresh corrective audit is complete locally. Merged `main` revision
-`0140e8169c231539c61a4dce98d4e713eccd07ce` has a fully green mandatory CI run. The Default Shell
-and second neutral fixture package/readback, a live full-Gosling-plus-two-shell coexistence replay,
-and an actual packaged Electron renderer/preload/backend startup replay pass on the supported macOS
-arm64 host. That last replay found and closed a blocking credential/Keychain stall and a follow-up
-audit closed unknown selected-profile acceptance. That clean candidate was pushed at `1e608283b`.
-The later workflow/data-flow corrective patch is locally green but currently uncommitted, so it is
-not revision-bound and does not inherit that candidate's `sourceClean:true` evidence. DS-7
-acceptance requires a clean commit, a repeated clean-source package/readback, a successful mandatory
-CI run whose reported head SHA matches that commit, and an explicit operator decision. Without
-those facts, DS-7 remains NO-GO. The corrective patch adds capability-gated interaction response
-channels, safe structured form/permission summaries, current-directory session discovery,
-provider/model session context, compacted-resume history replay, bounded transcript repair, stable
-renderer failure envelopes, a safe mirror of server-owned domain confirmations, and a
-main-enforced accepted-directory comparison before any resumed session is loaded. These additions
-are recorded in the fresh corrective audit; prior acceptance evidence does not automatically cover
-them.
+Current status: the final corrective source is committed at
+`259935f01b1fbf0bcffcb17f21a01a7f9c2548fc` and merged to `main` as
+`240ab751585afc03c68a710f8be10ea891ab168f`; the merge has the identical source tree. Exact-source
+Rust and Desktop validation passes, all fixture profiles resolve the corrective commit with
+`sourceClean:true`, and a fresh macOS arm64 package/readback independently matches profile hash
+`830f6143a45ea309c42f03cb440410b3eb6484009c86cda4aa98f0a7e1282950` and embedded backend hash
+`76b812b5677520b5c8a564b4251cda7113f47277dcd4f0ff0eb34cd53f3d6574`. Mandatory CI is green for
+both the exact PR head and merged-main tree; the one merged-main Desktop failure was an unrelated
+i18n lock-test race and passed on the failed-job rerun. Main's Live Provider Tests also pass. No
+critical or high Default Shell finding remains open. The technical evidence therefore supports a
+GO recommendation for generic GUI planning. The last DS-7 condition is the operator's explicit
+acceptance; until that decision is recorded, no Default Shell renderer or named shell is
+authorized.
 
 ## GUI implementation order after DS-7
 

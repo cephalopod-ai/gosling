@@ -1,6 +1,6 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-15 after the Default Shell workflow/data-flow corrective audit
+Updated: 2026-08-15 after final corrective merge, exact-source package/readback, and merged-main CI
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -9,7 +9,9 @@ Completed gate: **R0 — baseline CI restored and evidence reconciled**
 Completed gate: **R1 — project-shell topology and application contracts accepted**
 Completed gate: **R2 — copy-free consumer composition and package readback**
 Completed gate: **R3/R4 — main-owned application runtime and live neutral domain adapter, revision-bound**
-Current gate: **DS-1–DS-7 — Default Shell nonvisual foundation and fresh revision-bound acceptance. No renderer or named shell is authorized in the current worktree.**
+Current gate: **DS-7 operator decision — the Default Shell nonvisual foundation is revision-bound
+and green, and technical GO for generic GUI planning is recommended. No renderer or named shell is
+authorized until the operator explicitly accepts the gate.**
 
 ## Intent
 
@@ -17,9 +19,9 @@ Finish a copy-free, least-privilege shared foundation before DAWES, math, Projec
 
 ## Current decision
 
-**Historical host substrate: accepted on its recorded revision. Current corrective candidate:
-locally green; clean-source package/readback, exact-SHA CI, and a new operator decision are still
-required.**
+**Historical host substrate: accepted on its recorded revision. Final corrective source: merged,
+clean-source packaged, and green on exact-source and merged-main CI. The operator decision is the
+only remaining DS-7 condition.**
 
 2026-08-15 corrective status: merged `main` at
 `0140e8169c231539c61a4dce98d4e713eccd07ce` is green, and supported-host package/readback,
@@ -44,10 +46,14 @@ passes with the system-keyring feature enabled and no disable override. A later 
 replay found that a timed-out interactive Keychain lookup could survive and force shutdown to
 `SIGKILL`; managed backends now use noninteractive protected-store access and bounded ACP-close
 settling. The same live replay reports an available credential catalog, stops in 6 ms, and exits the
-backend with code 0. This candidate does not inherit the earlier exact-revision acceptance. The
-final handoff must repeat clean-source package/readback on the containing revision, bind successful
-mandatory CI to that exact SHA, and record the operator's explicit decision. The gate is **NO-GO**
-until those facts exist. See
+backend with code 0. The complete corrective source is committed at
+`259935f01b1fbf0bcffcb17f21a01a7f9c2548fc` and merged to `main` as
+`240ab751585afc03c68a710f8be10ea891ab168f`. A fresh clean-source macOS arm64 package/readback
+matches profile hash `830f6143a45ea309c42f03cb440410b3eb6484009c86cda4aa98f0a7e1282950` and backend hash
+`76b812b5677520b5c8a564b4251cda7113f47277dcd4f0ff0eb34cd53f3d6574`. Exact-head CI and the
+identical merged-main tree's rerun are green, as are main's Live Provider Tests. Technical GO for
+generic GUI planning is recommended; the gate remains unaccepted only until the operator records
+the explicit decision. See
 [`audits/default-shell-pre-gui-corrective-audit.md`](audits/default-shell-pre-gui-corrective-audit.md).
 
 The operator has narrowed the next MVP to a generic Default Shell template and explicitly deferred
