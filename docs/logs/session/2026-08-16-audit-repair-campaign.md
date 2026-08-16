@@ -84,6 +84,41 @@ said `true`, so Bedrock/Vertex/Databricks replayed permanent failures).
 Validation: workspace check + clippy clean; gosling-providers 439 passed;
 gosling-server 36 passed including two new mask regression tests.
 
+### Group 4 — `b831abfd5` — operator truth (Cluster E)
+
+REL-GSL-010, REL-GSL-011, AOC-GOS-003. `/status` now runs the real
+`SessionManager::healthy` probe instead of returning the same static `"ok"` as
+`/health`; `gosling doctor` no longer claims "local diagnostics complete"
+without contacting a provider; a review check that fails to run now enters the
+findings stream at `high` instead of being indistinguishable from a clean run.
+
+Verified live: healthy store → `/health` 200, `/status` 200; unopenable store
+→ `/health` 200, `/status` 503. Corrupting the `.db` on disk does **not** trip
+the probe, because SQLite keeps serving an already-open pool — the probe
+catches an unreachable store, not post-open corruption.
+
+### Group 5 — `42dd4fb84` — CI permission scoping
+
+RST-GSL-002 (dropped `id-token: write` from the job that checks out an
+untrusted PR head), RST-GSL-001 (paused-but-dispatchable workflow dropped to
+`contents: read` at top level), RSP-GSL-004 (dependabot auto-merge moved to
+`permissions: {}` at workflow level with job-scoped grants and explicit trigger
+types).
+
+**RSP-GSL-002 and RSP-GSL-003 stay open**: cargo-deny is not available in this
+environment, so neither a secret-scanning job nor `[licenses]`/`[bans]`/
+`[sources]` rules could be validated. Unverified CI config that fails on first
+run is worse than the open finding.
+
+### Group 6 — `6ffd57176` — bounded caches
+
+MEM-GSL-001 (digest cache, 512-entry cap with insertion-order eviction),
+MEM-GSL-002 (8 MiB read cap on `memories.jsonl`), MEM-GSL-003 (Desktop
+`sessionsById` evicts unobserved entries past 50).
+
+MEM-GSL-001 and MEM-GSL-003 remain **unmeasured**. These bound a mechanism
+that is provably unbounded in code; they are not evidence a leak was observed.
+
 ## Deliberately not fixed
 
 **SEC-GOS-011** (absent `Origin` skips the WebSocket origin check). The
@@ -95,12 +130,24 @@ the policy for real origins and by `check_acp_token`, which runs first.
 
 ## Open / not yet started
 
-SEC-GOS-002 (client-supplied CSP), SEC-GOS-004/005/006/007/009/012,
-AOC-GOS-002..005, the Cluster D durability set (DAT-GSL-001, CON-GSL-001..005),
-Cluster E operator-truth (WFG-GOS-001..009, REL-GSL-010/011, FSR-GSL-012),
-repo posture (RSP-*, RST-*, RPC-*), and the nodejs/GUI set. SEC-GOS-007 is
-blocked on the same browser-cannot-set-headers constraint as SEC-GOS-001 and
-needs a nonce/design decision rather than a mechanical patch.
+Roughly 60 of the 94 High+Medium findings remain. Notable clusters:
 
-Operator authorized CI/CD workflow changes (RSP-GSL-004, RST-GSL-001/002) and
-bounding the unmeasured caches (MEM-GSL-001, MEM-GSL-003); neither is started.
+- **Cluster B remainder**: SEC-GOS-002 (client-supplied CSP), SEC-GOS-007
+  (unauthenticated `/mcp-app-proxy`, `/mcp-app-guest`), SEC-GOS-012 (unauth
+  serve does not force loopback), SECN-GSL-001. SEC-GOS-007 hits the same
+  browser-cannot-set-headers constraint as SEC-GOS-001 and needs a nonce or
+  design decision, not a mechanical patch.
+- **Cluster C**: NEG-GSL-002 / LLM-GSL-004 (repo `AGENTS.md` and skills load
+  as instructions with no workspace-trust gate), AOC-GOS-004.
+- **Cluster D durability**: DAT-GSL-001 (compacted resume has no freshness
+  gate), CON-GSL-001 (recover can mark a live peer tool `in_doubt`),
+  CON-GSL-002..005, STT-GOS-001..005, TMP-GOS-001..007, RPC-GSL-001/002.
+- **Cluster E remainder**: WFG-GOS-001..009 (Desktop drops tool `error`
+  strings, Settings default-mode copy, TUI Allow-always on security prompts),
+  FSR-GSL-012, CMP-GOS-001/002.
+- **Repo posture**: RSP-GSL-001..003, REC-GSL-001, DEAD-GSL-001, XREP-GOS-001.
+- **Orchestration**: AOC-GOS-002 (tagteam puts the full prompt on argv),
+  AOC-GOS-005, MCP-GOS-001, IAPI-GOS-001.
+- **Architecture**: ARC-GSL-001..006, INV-GSL-001. ARC-GSL-001 names three
+  files over 4000 lines; per the campaign's own rule these are routed to a
+  dedicated modularization pass rather than split mid-repair.
