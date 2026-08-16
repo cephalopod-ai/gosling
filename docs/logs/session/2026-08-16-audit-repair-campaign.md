@@ -160,6 +160,44 @@ AOC-GOS-005. A parsed `TagteamFinalRun` was returned regardless of process
 exit, so a crashed or killed run read as completed. The formatted body is
 still returned, with a non-zero exit stated outright.
 
+## Low-priority sweep (groups 13-16)
+
+### Group 13 — low-priority security, dead code, a11y, doc accuracy
+
+SEC-GOS-008 (`!=` on a secret replaced with the constant-time `token_matches`),
+WFG-GOS-008 (`--yes` fell back to `allow_always` despite a comment promising it
+never would; now grants one call or declines), WEB-GOS-004 (unreachable
+`ConfigureApproveMode` and its 9 i18n messages removed — nothing ever set
+`isDialogOpen`), WEB-GOS-003 (gear button given a localized accessible name;
+`index.html` given `lang`), MEM-GSL-005 (MCP tools cache bounded; its
+`clearToolsCache` teardown hook had no production caller), INV-GSL-002 (the
+dictation guide advertised an on-device "Local" provider that does not exist —
+`DictationProvider` is `OpenAI | ElevenLabs | Groq`, so a privacy claim a user
+could act on was false).
+
+### Group 14 — shutdown, panics, export permissions
+
+RES-GSL-002 (TUI sent SIGTERM and exited in the same tick, orphaning the ACP
+child; now a bounded grace period then SIGKILL), FSR-GSL-005 (`.expect()` on a
+missing provider/model panicked the CLI although both callers already returned
+`Result`), IOP-GOS-003 (`session export` wrote the full conversation at 0644;
+now uses the 0o600 helper the diagnostics bundle already used, and warns).
+
+### Group 15 — disabled telemetry module reduced to its seam
+
+DEAD-GSL-003 / RSP-GSL-005. `posthog.rs` went from ~540 lines to 61. Accuracy
+note recorded in the commit: `pub mod posthog` is `#[cfg(feature =
+"telemetry")]` and nothing in the workspace enables it, so the module was
+already absent from every build — the API key was in the source tree, not in a
+shipped binary. Verified the rewrite compiles and passes under `--features
+telemetry`, the only configuration that builds it.
+
+### Group 16 — stale ledger and baseline dating
+
+REC-GSL-002 (workspace ledger bannered historical; the live ledger is
+`docs/build/shell-productization/build-state.md`), CMP-GOS-003 (README
+footprint heading now carries its own date).
+
 ## Unresolved conflict — repository identity (REC-GSL-001)
 
 **Not resolved, deliberately.** `Cargo.toml:14` declares
