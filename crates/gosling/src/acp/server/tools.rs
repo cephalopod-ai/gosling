@@ -131,7 +131,16 @@ impl GoslingAcpAgent {
                 ToolPermissionLevel::AskBefore => PermissionLevel::AskBefore,
                 ToolPermissionLevel::NeverAllow => PermissionLevel::NeverAllow,
             };
-            permission_manager.update_user_permission(&entry.tool_name, level);
+            let level_for_log = format!("{level:?}");
+            if let Err(e) = permission_manager.update_user_permission(&entry.tool_name, level) {
+                tracing::error!(
+                    security.event_type = "permission_persist_failed",
+                    security.tool = %entry.tool_name,
+                    security.level = %level_for_log,
+                    error = %e,
+                    "permission decision applied for this session but could not be saved"
+                );
+            }
         }
         Ok(SetToolPermissionsResponse {})
     }

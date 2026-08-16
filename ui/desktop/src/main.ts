@@ -16,6 +16,7 @@ import {
   session,
   shell,
   Tray,
+  webContents,
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
 import { Buffer } from 'node:buffer';
@@ -2720,8 +2721,18 @@ async function appMain() {
       const webContentsId = (details as { webContentsId?: number }).webContentsId;
       let localAcpUrl: string | null = null;
       try {
-        localAcpUrl =
-          typeof webContentsId === 'number' ? goslingServeLeases.getAcpUrl(webContentsId) : null;
+        // Leases are keyed by `BrowserWindow.id`, but this handler only has a
+        // *webContents* id — a different id space. Passing it straight through
+        // meant the lookup essentially never matched, so the CSP was built
+        // without the local ACP origin and the renderer's own backend was
+        // blocked by policy rather than allowed. Resolve the window first, the
+        // same way every other lease lookup in this file does.
+        // (ARCN-GSL-001)
+        const windowId =
+          typeof webContentsId === 'number'
+            ? (BrowserWindow.fromWebContents(webContents.fromId(webContentsId)!)?.id ?? null)
+            : null;
+        localAcpUrl = windowId !== null ? goslingServeLeases.getAcpUrl(windowId) : null;
       } catch {
         localAcpUrl = null;
       }
@@ -3332,12 +3343,37 @@ app.whenReady().then(async () => {
   }
 });
 
+/// Bounds on the extension allowlist fetch. It gates what may execute, so it
+/// must not be able to hang startup or exhaust memory. (SECN-GSL-002)
+const ALLOWLIST_FETCH_TIMEOUT_MS = 10_000;
+const ALLOWLIST_MAX_BYTES = 1024 * 1024;
+
 async function getAllowList(): Promise<string[]> {
   if (!process.env.GOSLING_ALLOWLIST) {
     return [];
   }
 
-  const response = await fetch(process.env.GOSLING_ALLOWLIST);
+  // This fetch decides which extensions may run, so it is a security input.
+  // It previously had no scheme check, no timeout, and no size cap: a plain
+  // `http://` URL could be rewritten in transit, an unresponsive host hung
+  // startup indefinitely, and an oversized body was read whole into the main
+  // process. (SECN-GSL-002)
+  const allowlistUrl = new URL(process.env.GOSLING_ALLOWLIST);
+  if (allowlistUrl.protocol !== 'https:') {
+    throw new Error(
+      `GOSLING_ALLOWLIST must use https (got ${allowlistUrl.protocol}); the extension allowlist ` +
+        'decides what is allowed to run and must not be fetched over a modifiable channel'
+    );
+  }
+
+  const abort = new AbortController();
+  const timeout = setTimeout(() => abort.abort(), ALLOWLIST_FETCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(allowlistUrl, { signal: abort.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     throw new Error(
@@ -3346,7 +3382,13 @@ async function getAllowList(): Promise<string[]> {
   }
 
   // Parse the YAML content
-  const yamlContent = await response.text();
+  const rawYaml = await response.text();
+  if (rawYaml.length > ALLOWLIST_MAX_BYTES) {
+    throw new Error(
+      `Extension allowlist is larger than ${ALLOWLIST_MAX_BYTES} bytes; refusing to parse it`
+    );
+  }
+  const yamlContent = rawYaml;
   const parsedYaml = yaml.parse(yamlContent);
 
   // Extract the commands from the extensions array

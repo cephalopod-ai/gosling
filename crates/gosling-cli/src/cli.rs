@@ -1541,6 +1541,20 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         || tls_key_path.is_some();
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
+
+    // Running without ACP authentication is only defensible while the socket
+    // is unreachable from off-box. The warning above said "dangerous" but
+    // nothing stopped `--host 0.0.0.0`, so a single flag could publish an
+    // unauthenticated agent to the whole network. Refuse the combination
+    // rather than warn about it. (SEC-GOS-012)
+    if !require_token && !addr.ip().is_loopback() {
+        anyhow::bail!(
+            "--dangerously-unauthenticated only permits a loopback bind, but --host resolved to \
+             {}. Either bind 127.0.0.1 (or ::1), or set {GOSLING_SERVER_SECRET_KEY_ENV} and drop \
+             the flag.",
+            addr.ip()
+        );
+    }
     if tls {
         #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
         {

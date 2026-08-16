@@ -2648,17 +2648,42 @@ impl Agent {
                                     .await?;
                                 messages_to_add.push(request_msg);
 
-                                for request in frontend_requests.iter() {
-                                    let response_msg = request_to_response_map.get_mut(&request.id)
-                                        .ok_or_else(|| anyhow::anyhow!("missing response entry for request {}", request.id))?;
-                                    let mut frontend_tool_stream = self.handle_frontend_tool_request(
-                                        request,
-                                        response_msg,
-                                        &session,
-                                    );
+                                // Chat mode must run no tools at all. This loop
+                                // used to sit above the `GoslingMode::Chat`
+                                // branch below, which only skipped
+                                // `remaining_requests` — so frontend tool
+                                // requests still executed in the one mode whose
+                                // entire contract is "answer, don't act".
+                                // (STT-GOS-001)
+                                if gosling_mode == GoslingMode::Chat {
+                                    for request in frontend_requests.iter() {
+                                        // Mirrors the skip below: a parse error
+                                        // must still surface as a parse error,
+                                        // not as a successful skip.
+                                        if request.tool_call.is_err() {
+                                            continue;
+                                        }
+                                        if let Some(response) = request_to_response_map.get_mut(&request.id) {
+                                            response.add_tool_response_with_metadata(
+                                                request.id.clone(),
+                                                Ok(CallToolResult::success(vec![Content::text(CHAT_MODE_TOOL_SKIPPED_RESPONSE)])),
+                                                request.metadata.as_ref(),
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    for request in frontend_requests.iter() {
+                                        let response_msg = request_to_response_map.get_mut(&request.id)
+                                            .ok_or_else(|| anyhow::anyhow!("missing response entry for request {}", request.id))?;
+                                        let mut frontend_tool_stream = self.handle_frontend_tool_request(
+                                            request,
+                                            response_msg,
+                                            &session,
+                                        );
 
-                                    while let Some(msg) = frontend_tool_stream.try_next().await? {
-                                        yield AgentEvent::Message(msg);
+                                        while let Some(msg) = frontend_tool_stream.try_next().await? {
+                                            yield AgentEvent::Message(msg);
+                                        }
                                     }
                                 }
                                 if gosling_mode == GoslingMode::Chat {

@@ -183,9 +183,24 @@ impl ToolInspectionManager {
         permission_level: crate::config::permission::PermissionLevel,
     ) {
         if let Some(inspector) = self.get_permission_inspector() {
-            inspector
+            // The decision holds in memory either way; a write failure means it
+            // will not survive a restart, which for a `NeverAllow` is a lost
+            // denial. Name the tool and the level so the record is actionable
+            // rather than a bare path. (STT-GOS-005)
+            let level_for_log = format!("{permission_level:?}");
+            if let Err(e) = inspector
                 .permission_manager
-                .update_user_permission(tool_name, permission_level);
+                .update_user_permission(tool_name, permission_level)
+            {
+                tracing::error!(
+                    security.event_type = "permission_persist_failed",
+                    security.tool = tool_name,
+                    security.level = %level_for_log,
+                    error = %e,
+                    "permission decision applied for this session but could not be saved; \
+                     it will not survive a restart"
+                );
+            }
         }
     }
 
