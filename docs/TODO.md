@@ -68,15 +68,26 @@ a dedicated modularization pass rather than split mid-repair).
 
 ## Provider follow-up — observed 2026-08-16
 
-- [ ] **Grok / xAI OAuth tool-schema rejection.** `gosling` with the
+- [x] **Grok / xAI OAuth tool-schema rejection.** Fixed in `11806887c` —
+      `formats/openai.rs::object_rooted_parameters` coerces union-rooted MCP
+      tool schemas to an object root before they reach the provider. Residual:
+      this is a compatibility shim at the provider seam; `math_mcp__math_analyze`
+      still declares an `anyOf`/`oneOf` root upstream.
+      Original report:
+
+- [ ] ~~**Grok / xAI OAuth tool-schema rejection.**~~ `gosling` with the
       `xai_oauth` provider fails a tool call with
       `Bad request (400): math_mcp__math_analyze: tool parameter root must be an
       object type (root schema is an anyOf/oneOf union with a non-object
       branch)`. Reported repeatable. Investigate whether Gosling forwards MCP
       tool schemas that xAI rejects, and normalize them at the provider seam.
-- [ ] **Mistral (`vibe`) CLI as an ACP provider option.** The Mistral CLI is
-      installed locally and should be selectable through ACP like the other
-      agent-backed providers.
+- [x] **Mistral (`vibe`) CLI as an ACP provider option.** Done —
+      `crates/gosling/src/providers/vibe_acp.rs`. Uses the `vibe-acp` console
+      script the `mistral-vibe` package ships, so it is a normal `AcpProvider`
+      registration rather than a CLI scraper. Verified end to end through the
+      built binary. Follow-up worth knowing: Gosling's `Chat` maps to Vibe's
+      `plan`, which writes a plan file under `~/.vibe/plans/` instead of
+      running nothing — usable for planning, not a no-side-effects mode.
 
 ## Provider authentication follow-up — observed 2026-08-15
 
