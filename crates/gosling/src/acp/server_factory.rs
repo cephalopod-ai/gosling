@@ -72,6 +72,11 @@ impl AcpServer {
 }
 
 impl AcpServer {
+    /// Session-store directory, used by the readiness probe behind `/status`.
+    pub fn data_dir(&self) -> std::path::PathBuf {
+        self.config.data_dir.clone()
+    }
+
     pub fn runtime_paths(&self) -> RuntimePaths {
         RuntimePaths::new(
             self.config.config_dir.clone(),

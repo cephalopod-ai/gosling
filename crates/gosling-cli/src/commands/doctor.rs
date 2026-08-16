@@ -23,8 +23,20 @@ fn render_report(
     provider: Option<&str>,
     model: Option<&str>,
 ) -> String {
+    // "local diagnostics complete" read as a verdict on the whole setup even
+    // though nothing here contacts the provider, so a broken key still exited
+    // 0 with a reassuring line. Report only what was actually inspected, and
+    // say plainly what was not. (REL-GSL-011)
+    let status = match (provider, model) {
+        (Some(_), Some(_)) => {
+            "Status: configuration present (not verified — no provider request was made)"
+        }
+        (None, _) => "Status: no provider configured",
+        (Some(_), None) => "Status: provider configured but no model selected",
+    };
+
     format!(
-        "Gosling Doctor\n\n{system_info}\nConfig file: {}\nProvider: {}\nModel: {}\nStatus: local diagnostics complete",
+        "Gosling Doctor\n\n{system_info}\nConfig file: {}\nProvider: {}\nModel: {}\n{status}",
         config_file.display(),
         provider.unwrap_or("not configured"),
         model.unwrap_or("not configured")
@@ -47,7 +59,19 @@ mod tests {
         assert!(report.contains("Gosling Doctor"));
         assert!(report.contains("Provider: ollama"));
         assert!(report.contains("Model: qwen2.5:latest"));
-        assert!(report.ends_with("Status: local diagnostics complete"));
         assert!(!report.contains("/doctor"));
+    }
+
+    #[test]
+    fn configured_setup_is_not_reported_as_verified() {
+        let report = render_report("info", Path::new("/tmp/config.yaml"), Some("p"), Some("m"));
+        assert!(report.contains("not verified"));
+        assert!(!report.contains("diagnostics complete"));
+    }
+
+    #[test]
+    fn missing_provider_and_model_are_named() {
+        assert!(render_report("i", Path::new("/c"), None, None).contains("no provider configured"));
+        assert!(render_report("i", Path::new("/c"), Some("p"), None).contains("no model selected"));
     }
 }
