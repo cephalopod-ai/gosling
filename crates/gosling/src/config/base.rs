@@ -662,11 +662,13 @@ impl Config {
             e
         })?;
 
-        if crate::config::migrations::run_migrations(&mut values) {
-            if let Err(e) = self.save_values(&values) {
-                tracing::warn!("Failed to save migrated config: {}", e);
-            }
-        }
+        // Migrations are persisted by the caller, not here. This function runs
+        // inside `with_config_write_lock`, which already holds the `.save.lock`
+        // flock; calling `save_values` (which acquires that same lock) from
+        // here self-deadlocks, because flock is per-descriptor. The migrated
+        // mapping is returned and written by whichever path is doing the
+        // read-modify-write. (CON-GSL-002)
+        crate::config::migrations::run_migrations(&mut values);
 
         Ok(values)
     }
@@ -773,24 +775,27 @@ impl Config {
         }
     }
 
-    fn save_values(&self, values: &Mapping) -> Result<(), ConfigError> {
+    /// Acquire the cross-process lock that guards a config read-modify-write.
+    ///
+    /// `save_values` already held this across write-then-rename, but the
+    /// *read* sat outside it, so two processes (typically the CLI and Desktop)
+    /// could both load the file, each apply its own change, and each write —
+    /// last writer wins and the other's setting is silently gone. The in-process
+    /// `self.guard` mutex never saw the other process. Callers that
+    /// read-modify-write now hold this across the whole sequence.
+    /// (CON-GSL-002)
+    ///
+    /// The returned file must stay alive for the duration of the critical
+    /// section; `flock` is released when it drops. Do not call this while
+    /// already holding it in the same process — `flock` is per-descriptor and a
+    /// second acquisition from the same process deadlocks, which is why
+    /// `save_values_locked` exists.
+    fn acquire_config_write_lock(&self) -> Result<std::fs::File, ConfigError> {
         let target_path = self.config_write_target_path()?;
-
-        // Convert to YAML for storage
-        let yaml_value = serde_yaml::to_string(values)?;
-
         if let Some(parent) = target_path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
         }
-
-        // Hold a dedicated lock file across the whole write-then-rename sequence
-        // (not just the write) so a second writer can't rename its own temp file
-        // over ours between our unlock and our rename, tearing the result. This
-        // is a separate lock file from `lock_extension_transaction`'s
-        // `.extensions.lock`, which extension-mutation code paths already hold
-        // while calling into `save_values`; reusing that file here would
-        // self-deadlock on the second `flock()` from the same process.
         let lock_path = target_path.with_extension("save.lock");
         let mut lock_options = OpenOptions::new();
         lock_options.read(true).write(true).create(true);
@@ -803,6 +808,43 @@ impl Config {
         lock_file
             .lock_exclusive()
             .map_err(|e| ConfigError::LockError(e.to_string()))?;
+        Ok(lock_file)
+    }
+
+    /// Read the config, apply `mutate`, and write it back while holding the
+    /// cross-process lock for the whole sequence. (CON-GSL-002)
+    fn with_config_write_lock<F>(&self, mutate: F) -> Result<(), ConfigError>
+    where
+        F: FnOnce(&mut Mapping) -> Result<(), ConfigError>,
+    {
+        let _guard = lock_ignoring_poison(&self.guard);
+        let _lock = self.acquire_config_write_lock()?;
+        let mut values = self.load_write_config()?;
+        mutate(&mut values)?;
+        self.save_values_locked(&values)
+    }
+
+    fn save_values(&self, values: &Mapping) -> Result<(), ConfigError> {
+        let _lock = self.acquire_config_write_lock()?;
+        self.save_values_locked(values)
+    }
+
+    /// `save_values` without acquiring the lock. The caller must already hold
+    /// it (see `acquire_config_write_lock`).
+    fn save_values_locked(&self, values: &Mapping) -> Result<(), ConfigError> {
+        let target_path = self.config_write_target_path()?;
+
+        // Convert to YAML for storage
+        let yaml_value = serde_yaml::to_string(values)?;
+
+        if let Some(parent) = target_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
+        }
+
+        // The caller holds the `.save.lock` flock across this whole
+        // write-then-rename sequence, so a second writer cannot rename its own
+        // temp file over ours mid-sequence.
 
         // Write to a process-unique temporary file so concurrent writers never
         // truncate or overwrite each other's in-flight temp file.
@@ -824,8 +866,7 @@ impl Config {
         // Atomically replace the original file, still under the lock.
         std::fs::rename(&temp_path, &target_path)?;
 
-        // Unlock is handled automatically when `lock_file` is dropped.
-        drop(lock_file);
+        // The caller's lock guard releases on drop, after this returns.
 
         *lock_ignoring_poison(&self.param_cache) = None;
 
@@ -997,15 +1038,16 @@ impl Config {
         V: Serialize,
         F: FnOnce(T) -> V,
     {
-        let _guard = lock_ignoring_poison(&self.guard);
-        let mut values = self.load_write_config()?;
-        let current: T = values
-            .get(key)
-            .and_then(|v| serde_yaml::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let updated = f(current);
-        values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(updated)?);
-        self.save_values(&values)
+        let key = key.to_string();
+        self.with_config_write_lock(move |values| {
+            let current: T = values
+                .get(key.as_str())
+                .and_then(|v| serde_yaml::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let updated = f(current);
+            values.insert(serde_yaml::to_value(&key)?, serde_yaml::to_value(updated)?);
+            Ok(())
+        })
     }
 
     /// Set a configuration value in the config file (non-secret).
@@ -1022,10 +1064,12 @@ impl Config {
     /// - There is an error reading or writing the config file
     /// - There is an error serializing the value
     pub fn set_param<V: Serialize>(&self, key: &str, value: V) -> Result<(), ConfigError> {
-        let _guard = lock_ignoring_poison(&self.guard);
-        let mut values = self.load_write_config()?;
-        values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(value)?);
-        self.save_values(&values)
+        let key = serde_yaml::to_value(key)?;
+        let value = serde_yaml::to_value(value)?;
+        self.with_config_write_lock(move |values| {
+            values.insert(key, value);
+            Ok(())
+        })
     }
 
     /// Set multiple configuration values in the config file with one read and one write.
@@ -1034,12 +1078,16 @@ impl Config {
             return Ok(());
         }
 
-        let _guard = lock_ignoring_poison(&self.guard);
-        let mut values = self.load_write_config()?;
-        for (key, value) in updates {
-            values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(value)?);
-        }
-        self.save_values(&values)
+        let updates: Vec<(serde_yaml::Value, serde_yaml::Value)> = updates
+            .iter()
+            .map(|(key, value)| Ok((serde_yaml::to_value(key)?, serde_yaml::to_value(value)?)))
+            .collect::<Result<_, ConfigError>>()?;
+        self.with_config_write_lock(move |values| {
+            for (key, value) in updates {
+                values.insert(key, value);
+            }
+            Ok(())
+        })
     }
 
     /// Delete a configuration value in the config file.
@@ -1056,13 +1104,11 @@ impl Config {
     /// - There is an error reading or writing the config file
     /// - There is an error serializing the value
     pub fn delete(&self, key: &str) -> Result<(), ConfigError> {
-        // Lock before reading to prevent race condition.
-        let _guard = lock_ignoring_poison(&self.guard);
-
-        let mut values = self.load_write_config()?;
-        values.shift_remove(key);
-
-        self.save_values(&values)
+        let key = key.to_string();
+        self.with_config_write_lock(move |values| {
+            values.shift_remove(key.as_str());
+            Ok(())
+        })
     }
 
     /// Get a secret value.
@@ -2102,6 +2148,42 @@ mod tests {
         let temp_path = config_file.path().with_extension("tmp");
         assert!(!temp_path.exists(), "Temporary file should be cleaned up");
 
+        Ok(())
+    }
+
+    // Two independent `Config` handles over the same file stand in for the CLI
+    // and Desktop writing concurrently. Before CON-GSL-002 each did
+    // read -> mutate -> write with only an in-process mutex, so interleaved
+    // reads meant last-writer-wins and one key vanished. The cross-process
+    // flock now spans the whole read-modify-write.
+    #[test]
+    fn concurrent_writers_over_the_same_file_do_not_lose_each_others_keys(
+    ) -> Result<(), ConfigError> {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.yaml");
+
+        let writers: Vec<Config> = (0..8)
+            .map(|_| Config::new(&config_path, "test-concurrent").unwrap())
+            .collect();
+
+        std::thread::scope(|scope| {
+            for (index, config) in writers.iter().enumerate() {
+                scope.spawn(move || {
+                    config
+                        .set_param(&format!("key_{index}"), format!("value_{index}"))
+                        .expect("set_param should succeed");
+                });
+            }
+        });
+
+        // Every writer's key must have survived, not just the last one.
+        let verifier = Config::new(&config_path, "test-concurrent")?;
+        for index in 0..8 {
+            let value: String = verifier
+                .get_param(&format!("key_{index}"))
+                .unwrap_or_else(|e| panic!("key_{index} was lost by a concurrent writer: {e}"));
+            assert_eq!(value, format!("value_{index}"));
+        }
         Ok(())
     }
 
