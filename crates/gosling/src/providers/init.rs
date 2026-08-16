@@ -31,6 +31,7 @@ use super::{
     snowflake::SnowflakeProvider,
     tagteam::TagteamProvider,
     tetrate::TetrateProvider,
+    vibe_acp::VibeAcpProvider,
     xai::XaiProvider,
     xai_oauth::XaiOAuthProvider,
 };
@@ -120,6 +121,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<SageMakerTgiProvider>(false);
         registry.register::<SnowflakeProvider>(false);
         registry.register::<TagteamProvider>(false);
+        registry.register_with_inventory::<VibeAcpProvider>(
+            false,
+            Some(registrations::vibe_acp_inventory()),
+        );
         registry.register::<TetrateProvider>(true);
         registry.register::<XaiProvider>(false);
         registry.register_with_inventory::<XaiOAuthProvider>(

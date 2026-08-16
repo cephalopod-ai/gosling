@@ -66,6 +66,7 @@ pub mod pi_acp;
 pub mod provider_registry;
 pub mod provider_secrets;
 pub mod provider_test;
+pub mod vibe_acp;
 mod retry {
     pub use gosling_providers::retry::*;
 }

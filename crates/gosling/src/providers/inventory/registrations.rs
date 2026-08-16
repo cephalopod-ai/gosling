@@ -14,6 +14,7 @@ use crate::providers::google::{GOOGLE_API_HOST, GOOGLE_PROVIDER_NAME};
 use crate::providers::ollama::OLLAMA_PROVIDER_NAME;
 use crate::providers::openai::{OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_PROVIDER_NAME};
 use crate::providers::pi_acp::{PI_ACP_BINARY, PI_ACP_PROVIDER_NAME};
+use crate::providers::vibe_acp::{VIBE_ACP_BINARY, VIBE_ACP_PROVIDER_NAME};
 use crate::providers::xai_oauth::TokenCache as XaiOAuthTokenCache;
 
 pub fn openai_inventory() -> InventoryRegistration {
@@ -188,4 +189,8 @@ pub fn copilot_acp_inventory() -> InventoryRegistration {
 
 pub fn pi_acp_inventory() -> InventoryRegistration {
     acp_inventory(PI_ACP_PROVIDER_NAME, PI_ACP_BINARY, false)
+}
+
+pub fn vibe_acp_inventory() -> InventoryRegistration {
+    acp_inventory(VIBE_ACP_PROVIDER_NAME, VIBE_ACP_BINARY, false)
 }
