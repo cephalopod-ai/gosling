@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "Yapılandırma"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "İptal"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "Onay istekleri tüm araç isteklerine verilebilir veya hangi eylemlerin entegrasyona ihtiyaç duyabileceği belirlenebilir"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Manuel onay"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "Tüm araçlar, uzantılar ve dosya değişiklikleri insan onayı gerektirecektir"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Kaydet"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Kaydediliyor..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Akıllı onay"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Risk düzeyine göre hangi eylemlerin onaylanması gerektiğini akıllıca belirleyin"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Onay modunu yapılandırma"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "Hayır"
   },
@@ -3124,5 +3097,8 @@
   },
   "authSettings.addCredential": {
     "defaultMessage": "Add credential"
+  },
+  "toolApprovalButtons.failedToSubmitDecision": {
+    "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
   }
 }

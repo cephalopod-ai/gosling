@@ -9,8 +9,12 @@ export const MAX_BUFFERED_ACP_MESSAGE_CHARS = 8_000_000;
 export const MAX_ACP_MESSAGE_CHARS = MAX_BUFFERED_ACP_MESSAGE_CHARS;
 const ACP_OVERSIZED_CLOSE_CODE = 4009;
 
-export function createWebSocketStream(wsUrl: string): ClosableAcpStream {
-  const ws = new globalThis.WebSocket(wsUrl);
+export function createWebSocketStream(wsUrl: string, subprotocol?: string): ClosableAcpStream {
+  // `WebSocket` cannot set request headers, so the shared secret is offered as
+  // a subprotocol; the server echoes it back on acceptance (SEC-GOS-001).
+  const ws = subprotocol
+    ? new globalThis.WebSocket(wsUrl, subprotocol)
+    : new globalThis.WebSocket(wsUrl);
 
   const incoming: Array<{ message: unknown; encodedLength: number }> = [];
   const waiters: Array<() => void> = [];

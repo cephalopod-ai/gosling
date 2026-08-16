@@ -15,6 +15,21 @@ type ToolsList = Array<McpAppTool>;
 
 const cache = new Map<string, Promise<ToolsList | null>>();
 
+/// `clearToolsCache` is the intended teardown hook but has no production
+/// caller, so entries accumulated for the life of the process as the user
+/// moved between sessions (MEM-GSL-005). Insertion-ordered eviction bounds it
+/// without depending on every future teardown path remembering to call in; an
+/// evicted entry is simply refetched.
+const MAX_CACHED_TOOL_LISTS = 64;
+
+function evictOldestEntries(): void {
+  while (cache.size > MAX_CACHED_TOOL_LISTS) {
+    const oldest = cache.keys().next();
+    if (oldest.done) return;
+    cache.delete(oldest.value);
+  }
+}
+
 function cacheKey(sessionId: string, extensionName: string | undefined): string {
   return `${sessionId}:${extensionName ?? ''}`;
 }
@@ -34,6 +49,7 @@ export function getCachedTools(
   });
 
   cache.set(key, promise);
+  evictOldestEntries();
   return promise;
 }
 

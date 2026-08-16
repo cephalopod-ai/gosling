@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "設定"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "キャンセル"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "すべてのツールリクエストに承認を求めるか、承認が必要な操作を自動で判断するかを選択します"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "手動承認"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "すべてのツール、拡張機能、ファイル変更に人の承認が必要になります"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "保存"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "保存中..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "スマート承認"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "リスクレベルに基づき、承認が必要な操作をインテリジェントに判断します"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "承認モードを設定"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "いいえ"
   },
@@ -3124,5 +3097,8 @@
   },
   "authSettings.addCredential": {
     "defaultMessage": "Add credential"
+  },
+  "toolApprovalButtons.failedToSubmitDecision": {
+    "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
   }
 }

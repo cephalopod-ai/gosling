@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "विन्यास"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "रद्द करें"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "स्वीकृत अनुरोध या तो सभी टूल अनुरोधों को दिए जा सकते हैं या यह निर्धारित कर सकते हैं कि किन कार्यों के लिए एकीकरण की आवश्यकता हो सकती है"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "मैन्युअल अनुमोदन"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "सभी टूल, एक्सटेंशन और फ़ाइल संशोधनों के लिए मानव अनुमोदन की आवश्यकता होगी"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "सहेजें"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "सहेजा जा रहा है..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "स्मार्ट अनुमोदन"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "जोखिम स्तर के आधार पर समझदारी से निर्धारित करें कि किन कार्यों को अनुमोदन की आवश्यकता है"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "अनुमोदन मोड कॉन्फ़िगर करें"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "नहीं"
   },
@@ -3124,5 +3097,8 @@
   },
   "authSettings.addCredential": {
     "defaultMessage": "Add credential"
+  },
+  "toolApprovalButtons.failedToSubmitDecision": {
+    "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
   }
 }

@@ -54,6 +54,10 @@ const i18n = defineMessages({
     id: 'toolApprovalButtons.failedToAllowExtension',
     defaultMessage: 'Failed to update permissions for this extension',
   },
+  failedToSubmitDecision: {
+    id: 'toolApprovalButtons.failedToSubmitDecision',
+    defaultMessage: 'Could not send your decision. The tool is still waiting for approval.',
+  },
 });
 
 function extensionNameFromToolName(toolName: string): string | undefined {
@@ -135,7 +139,10 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
         setApprovalError(intl.formatMessage(i18n.staleApprovalRequest));
       }
     } catch (err) {
+      // Only the stale path surfaced anything; a thrown error left the
+      // buttons looking dead with the tool still blocked. (WFG-GOS-004)
       console.error('Error confirming tool action:', err);
+      setApprovalError(intl.formatMessage(i18n.failedToSubmitDecision));
     }
   };
 

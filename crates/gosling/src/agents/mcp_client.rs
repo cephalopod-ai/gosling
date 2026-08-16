@@ -230,13 +230,25 @@ impl GoslingClient {
         self.additional_working_dirs.clone()
     }
 
-    async fn set_session_id(&self, session_id: &str) {
+    /// Binds this client to a session. Cross-session reuse is a real bug, but
+    /// it used to `assert!` and so took down a live tool path with a panic;
+    /// it is now a recoverable error the caller can surface (REL-GSL-005).
+    async fn set_session_id(&self, session_id: &str) -> Result<(), Error> {
         let mut slot = self.session_id.lock().await;
-        assert!(
-            slot.as_deref().is_none_or(|s| s == session_id),
-            "McpClient received requests from different sessions"
-        );
+        if let Some(bound) = slot.as_deref() {
+            if bound != session_id {
+                return Err(Error::McpError(ErrorData::new(
+                    ErrorCode::INVALID_REQUEST,
+                    format!(
+                        "MCP client is bound to session {bound} and cannot serve session \
+                         {session_id}"
+                    ),
+                    None,
+                )));
+            }
+        }
         *slot = Some(session_id.to_string());
+        Ok(())
     }
 
     async fn current_session_id(&self) -> Option<String> {
@@ -713,7 +725,7 @@ impl McpClient {
                 tool_call_request_id,
                 tool_operation_id,
             );
-            client.service().set_session_id(session_id).await;
+            client.service().set_session_id(session_id).await?;
             let guard = active_tool_call.map(|tool_call_request_id| {
                 client
                     .service()
@@ -1202,7 +1214,10 @@ mod tests {
         runtime.block_on(async {
             let client = new_client(GoslingPlatform::GoslingCli);
             if let Some(session_id) = current_session {
-                client.set_session_id(session_id).await;
+                client
+                    .set_session_id(session_id)
+                    .await
+                    .expect("fresh client cannot already be bound to another session");
             }
 
             let extensions = inject_session_context_into_extensions(

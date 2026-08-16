@@ -269,7 +269,10 @@ async fn store_guest_html(
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     Json(body): Json<StoreGuestBody>,
 ) -> Response {
-    if body.secret != state.secret_key {
+    // `!=` on a secret short-circuits at the first differing byte, so the
+    // comparison time leaks a prefix match. The constant-time helper the ACP
+    // transport already uses applies here too. (SEC-GOS-008)
+    if !crate::acp::transport::auth::token_matches(Some(&body.secret), &state.secret_key) {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
     if !peer_addr_is_loopback(&peer_addr) {

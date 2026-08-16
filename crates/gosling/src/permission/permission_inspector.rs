@@ -4,6 +4,7 @@ use crate::config::permission::PermissionLevel;
 use crate::config::{GoslingMode, PermissionManager};
 use crate::conversation::message::{Message, ToolRequest};
 use crate::permission::permission_judge::{detect_read_only_tools, PermissionCheckResult};
+use crate::permission::tool_class;
 use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -160,10 +161,28 @@ impl ToolInspector for PermissionInspector {
                             ),
                         }
                     } else if gosling_mode == GoslingMode::Auto {
-                        (
-                            InspectionAction::Allow,
-                            "Auto mode - all tools approved".to_string(),
-                        )
+                        // Auto runs with no operator attached (subagents,
+                        // plan-act, headless), so an implicit grant here is a
+                        // confused deputy: a delegating parent that merely
+                        // enabled an extension would hand the child write and
+                        // shell authority it never named. Execution and write
+                        // tools now need an explicit user permission; reads
+                        // stay allowed so autonomous work still functions.
+                        // (SEC-GOS-003, LLM-GSL-001, AOC-GOS-001, NEG-GSL-001)
+                        if tool_class::requires_explicit_grant_in_auto(tool_name) {
+                            (
+                                InspectionAction::Deny,
+                                "Auto mode has no operator to approve this tool; it requires an \
+                                 explicit user permission because it can execute code or modify \
+                                 files"
+                                    .to_string(),
+                            )
+                        } else {
+                            (
+                                InspectionAction::Allow,
+                                "Auto mode - read-only tool approved".to_string(),
+                            )
+                        }
                     } else if tool_name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
                         (
                             InspectionAction::RequireApproval(Some(
@@ -219,10 +238,19 @@ impl ToolInspector for PermissionInspector {
             };
 
             for candidate in &llm_detect_candidates {
+                // The judge's verdict is model output over a model-supplied
+                // tool name and arguments, so a prompt-injected "this is
+                // read-only" must not by itself unlock execution or write
+                // authority. A tool that can run code or touch the filesystem
+                // always falls back to an approval prompt, whatever the judge
+                // concluded. (SEC-GOS-013, LLM-GSL-006)
                 let is_readonly = candidate
                     .tool_call
                     .as_ref()
-                    .map(|tc| detected.contains(&tc.name.to_string()))
+                    .map(|tc| {
+                        detected.contains(&tc.name.to_string())
+                            && !tool_class::requires_explicit_grant_in_auto(&tc.name)
+                    })
                     .unwrap_or(false);
 
                 // A negative result can safely tighten future calls. A positive
@@ -376,6 +404,68 @@ mod tests {
             tool_call: Ok(
                 CallToolRequestParams::new("developer__shell").with_arguments(object!({}))
             ),
+            metadata: None,
+            tool_meta: None,
+        };
+        let results = inspector
+            .inspect(
+                gosling_test_support::TEST_SESSION_ID,
+                &[req],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(results[0].action, InspectionAction::Allow);
+    }
+
+    // A delegating parent that merely enabled `developer` must not thereby
+    // hand an unattended child shell and write authority. Without an explicit
+    // user permission these deny in Auto (SEC-GOS-003, AOC-GOS-001).
+    #[test_case("developer__shell"; "auto_denies_ungranted_shell")]
+    #[test_case("developer__edit"; "auto_denies_ungranted_write")]
+    #[test_case("computercontroller__automation_script"; "auto_denies_ungranted_automation_script")]
+    #[tokio::test]
+    async fn auto_denies_execution_and_write_tools_without_an_explicit_grant(tool_name: &str) {
+        let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
+        let inspector = new_inspector(pm);
+
+        let req = ToolRequest {
+            id: "req".into(),
+            tool_call: Ok(
+                CallToolRequestParams::new(tool_name.to_string()).with_arguments(object!({}))
+            ),
+            metadata: None,
+            tool_meta: None,
+        };
+        let results = inspector
+            .inspect(
+                gosling_test_support::TEST_SESSION_ID,
+                &[req],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            results[0].action,
+            InspectionAction::Deny,
+            "{tool_name} must not be implicitly granted in Auto"
+        );
+    }
+
+    // Autonomous work still needs to read. Denying reads too would make Auto
+    // useless, so the gate is scoped to execution and write authority.
+    #[tokio::test]
+    async fn auto_still_allows_read_only_tools_without_an_explicit_grant() {
+        let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
+        let inspector = new_inspector(pm);
+
+        let req = ToolRequest {
+            id: "req".into(),
+            tool_call: Ok(CallToolRequestParams::new("developer__read").with_arguments(object!({}))),
             metadata: None,
             tool_meta: None,
         };

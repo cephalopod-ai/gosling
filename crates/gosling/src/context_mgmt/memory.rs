@@ -78,6 +78,12 @@ const MAX_RECALLED_ITEMS: usize = 16;
 /// only cost budgeted slot space, never correctness.
 const MIN_KEYWORD_LEN: usize = 4;
 
+/// Upper bound on how much of the memory file a single context build will
+/// read. Only the most recent entries matter for recall, and the file is
+/// append-only, so a cap bounds the allocation without changing behavior for
+/// any realistic file. (MEM-GSL-002)
+const MAX_MEMORY_FILE_BYTES: u64 = 8 * 1024 * 1024;
+
 #[derive(Deserialize)]
 struct StoredMemory {
     content: String,
@@ -120,8 +126,16 @@ impl FileMemorySource {
         if fs2::FileExt::lock_shared(&file).is_err() {
             return Vec::new();
         }
+        // `memories.jsonl` is append-only and grows unattended, so reading it
+        // whole put an unbounded allocation on a routine context build
+        // (MEM-GSL-002). Read at most the cap; a partial trailing line is
+        // dropped by the `from_str` filter below.
         let mut raw = String::new();
-        if file.read_to_string(&mut raw).is_err() {
+        if std::io::Read::by_ref(&mut file)
+            .take(MAX_MEMORY_FILE_BYTES)
+            .read_to_string(&mut raw)
+            .is_err()
+        {
             return Vec::new();
         }
         raw.lines()

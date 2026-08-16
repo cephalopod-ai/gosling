@@ -435,8 +435,7 @@ fn is_mutating_tool_call(tool_call: &CallToolRequestParams) -> bool {
 }
 
 fn is_shell_tool(tool_call: &CallToolRequestParams) -> bool {
-    let name = tool_call.name.to_ascii_lowercase();
-    name.contains("shell") || name.contains("command") || name.contains("terminal")
+    crate::permission::tool_class::is_code_execution_tool(&tool_call.name)
 }
 
 fn is_confidently_read_only_shell(command: &str) -> bool {

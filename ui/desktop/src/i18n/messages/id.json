@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "Konfigurasi"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "Batal"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "Persetujuan permintaan dapat diberikan ke semua permintaan alat atau menentukan tindakan mana yang mungkin memerlukan integrasi"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Persetujuan manual"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "Semua alat, ekstensi, dan modifikasi berkas akan memerlukan persetujuan manusia"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Simpan"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Menyimpan..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Persetujuan cerdas"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Tentukan secara cerdas tindakan mana yang memerlukan persetujuan berdasarkan tingkat risiko"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Konfigurasi mode persetujuan"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "Tidak"
   },
@@ -3124,5 +3097,8 @@
   },
   "authSettings.addCredential": {
     "defaultMessage": "Add credential"
+  },
+  "toolApprovalButtons.failedToSubmitDecision": {
+    "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
   }
 }

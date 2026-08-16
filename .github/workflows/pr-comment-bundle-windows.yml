@@ -115,9 +115,12 @@ jobs:
     needs: [trigger-on-command]
     if: ${{ needs.trigger-on-command.outputs.continue == 'true' }}
     uses: ./.github/workflows/bundle-desktop-windows.yml
+    # No `id-token: write` here: this job checks out an untrusted PR head, and
+    # the OIDC token would be mintable by code from that head. The signing job
+    # in bundle-desktop-windows.yml declares its own `id-token: write` and is
+    # gated on `inputs.signing`, which is false on this path. (RST-GSL-002)
     permissions:
       contents: read
-      id-token: write
     with:
       signing: false
       ref: ${{ needs.trigger-on-command.outputs.head_sha }}

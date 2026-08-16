@@ -282,16 +282,7 @@ fn detect_direction(command: &str) -> EgressDirection {
     EgressDirection::Unknown
 }
 
-fn is_shell_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "shell" | "bash" | "execute_command" | "run_command" | "terminal"
-    ) || name.ends_with("__shell")
-        || name.ends_with("__bash")
-        || name.ends_with("__terminal")
-        || name.ends_with("__execute_command")
-        || name.ends_with("__run_command")
-}
+use crate::permission::tool_class::is_code_execution_tool as is_shell_tool;
 
 fn is_web_tool(name: &str) -> bool {
     matches!(
@@ -320,6 +311,14 @@ fn extract_text_for_inspection(
 impl ToolInspector for EgressInspector {
     fn name(&self) -> &'static str {
         "egress"
+    }
+
+    /// Egress is exfiltration-shaped: once the bytes leave the machine the
+    /// decision cannot be walked back. Auto downgrading `RequireApproval` to
+    /// `Allow` made an autonomous agent's outbound POST unreviewable, so this
+    /// inspector opts out of the downgrade. (PGR-GSL-001, LLM-GSL-003)
+    fn auto_downgrades_require_approval(&self) -> bool {
+        false
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -608,8 +607,11 @@ mod tests {
         ));
     }
 
+    /// Auto must not silently exfiltrate. This previously asserted `Allow`,
+    /// which made the downgrade in `ToolInspectionManager` look intentional
+    /// (PGR-GSL-001, LLM-GSL-003).
     #[tokio::test]
-    async fn external_egress_is_allowed_in_auto_mode() {
+    async fn external_egress_still_requires_approval_in_auto_mode() {
         let mut manager = ToolInspectionManager::new();
         manager.add_inspector(Box::new(EgressInspector::new()));
         let tool_requests = vec![ToolRequest {
@@ -627,7 +629,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].action, InspectionAction::Allow);
+        assert!(
+            matches!(results[0].action, InspectionAction::RequireApproval(_)),
+            "auto mode must not downgrade an egress approval to allow, got {:?}",
+            results[0].action
+        );
     }
 
     #[tokio::test]

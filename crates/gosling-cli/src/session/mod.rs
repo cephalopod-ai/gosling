@@ -1089,14 +1089,21 @@ impl CliSession {
                     self.push_message(plan_message);
                     // act on the plan
                     output::show_thinking();
-                    self.process_agent_response(true, CancellationToken::default())
-                        .await?;
+                    let act_result = self
+                        .process_agent_response(true, CancellationToken::default())
+                        .await;
                     output::hide_thinking();
 
-                    // Reset run & gosling mode
+                    // Restore before propagating. This used to be `...await?`,
+                    // so any error from acting on the plan skipped the restore
+                    // and left the *global* mode pinned to Auto — every later
+                    // session in this process, and every future one once the
+                    // config was written, silently ran auto-approved.
+                    // (WFG-GOS-007)
                     if curr_gosling_mode != GoslingMode::Auto {
                         config.set_gosling_mode(curr_gosling_mode)?;
                     }
+                    act_result?;
                 } else {
                     // add the plan response (assistant message) & carry the conversation forward
                     // in the next round, the user might wanna slightly modify the plan
@@ -2296,7 +2303,7 @@ async fn get_reasoner(
         println!("WARNING: GOSLING_PLANNER_PROVIDER not found. Using default provider...");
         config
             .get_gosling_provider()
-            .expect("No provider configured. Run 'gosling configure' first")
+            .map_err(|_| anyhow::anyhow!("No provider configured. Run 'gosling configure' first"))?
     };
 
     // Try planner-specific model first, fall back to default model
@@ -2306,7 +2313,7 @@ async fn get_reasoner(
         println!("WARNING: GOSLING_PLANNER_MODEL not found. Using default model...");
         config
             .get_gosling_model()
-            .expect("No model configured. Run 'gosling configure' first")
+            .map_err(|_| anyhow::anyhow!("No model configured. Run 'gosling configure' first"))?
     };
 
     let planner_context_limit = match env::var(GOSLING_PLANNER_CONTEXT_LIMIT)

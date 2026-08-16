@@ -1629,13 +1629,16 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
 
     let config = Config::global();
 
+    // These `.expect()`s panicked the CLI on a perfectly ordinary
+    // misconfiguration; the enclosing function already returns `Result`
+    // (FSR-GSL-005).
     let provider_name: String = config
         .get_gosling_provider()
-        .expect("No provider configured. Please set model provider first");
+        .map_err(|_| anyhow::anyhow!("No provider configured. Please set model provider first"))?;
 
     let model: String = config
         .get_gosling_model()
-        .expect("No model configured. Please set model first");
+        .map_err(|_| anyhow::anyhow!("No model configured. Please set model first"))?;
     let model_config =
         gosling::model_config::model_config_from_user_config(&provider_name, &model)?;
 

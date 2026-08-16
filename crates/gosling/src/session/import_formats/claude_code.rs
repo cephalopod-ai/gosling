@@ -45,6 +45,8 @@ pub fn convert(content: &str) -> Result<String> {
     });
 
     let mut messages: Vec<Message> = Vec::new();
+    let mut skipped_line_types: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut total_input: i64 = 0;
     let mut total_output: i64 = 0;
     let mut total_cache_read: i64 = 0;
@@ -105,8 +107,36 @@ pub fn convert(content: &str) -> Result<String> {
                     messages.push(msg);
                 }
             }
-            _ => {} // attachments, ai-title, queue-operation, etc.
+            other => {
+                // Silently dropping unrecognized line types made a partial
+                // import indistinguishable from a complete one; an operator
+                // saw a session that simply lacked content it had in the
+                // source (IOP-GOS-001). Expected non-message types stay
+                // quiet; anything else is counted and named.
+                if !matches!(
+                    other,
+                    "attachment" | "ai-title" | "queue-operation" | "summary"
+                ) {
+                    skipped_line_types
+                        .entry(other.to_string())
+                        .and_modify(|count| *count += 1)
+                        .or_insert(1usize);
+                }
+            }
         }
+    }
+
+    if !skipped_line_types.is_empty() {
+        let summary = skipped_line_types
+            .iter()
+            .map(|(line_type, count)| format!("{line_type}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        tracing::warn!(
+            session_id = %session_id,
+            skipped = %summary,
+            "import skipped unrecognized entries; the imported session is incomplete"
+        );
     }
 
     let name = ai_title

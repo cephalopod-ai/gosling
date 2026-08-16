@@ -257,7 +257,6 @@ Speak to gosling directly instead of typing your prompts.
         2. Click `Settings` in the sidebar
         3. Click the `Chat` tab
         4. For `Voice Dictation Provider`, select your provider from the dropdown:
-           - Local — On-device transcription using a local whisper model, no API key needed. On first use, you'll be prompted to download the model.
            - [Elevenlabs](https://elevenlabs.io/)
            - [Groq](https://groq.com/)
            - [OpenAI](https://platform.openai.com/api-keys)
@@ -276,7 +275,7 @@ Speak to gosling directly instead of typing your prompts.
 
        #### Important Notes
         * You can record up to 50MB of audio
-        * ElevenLabs, Groq, and OpenAI send audio recordings to their servers for processing. The local provider processes audio entirely on your device—no data leaves your computer.
+        * Every available provider (ElevenLabs, Groq, OpenAI) sends your audio recording to that provider's servers for processing. There is no on-device dictation option.
         * Voice input is appended to any existing text in the text input field
         * Recordings are not stored locally after transcription
         * To disable voice dictation, select `Disabled` from the provider dropdown

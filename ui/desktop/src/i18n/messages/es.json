@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "Configuración"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "Cancelar"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "La aprobación se puede aplicar a todas las solicitudes de herramientas o determinar qué acciones pueden requerir integración"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Aprobación manual"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "Todas las herramientas, extensiones y modificaciones de archivos requerirán aprobación humana"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Guardar"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Guardando..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Aprobación inteligente"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Determina de forma inteligente qué acciones necesitan aprobación según el nivel de riesgo"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Configurar modo de aprobación"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "No"
   },
@@ -3124,5 +3097,8 @@
   },
   "authSettings.addCredential": {
     "defaultMessage": "Add credential"
+  },
+  "toolApprovalButtons.failedToSubmitDecision": {
+    "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
   }
 }

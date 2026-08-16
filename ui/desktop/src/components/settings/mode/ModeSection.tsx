@@ -4,8 +4,14 @@ import { useConfig } from '../../ConfigContext';
 import { ConversationLimitsDropdown } from './ConversationLimitsDropdown';
 import { CodeExecutionRuntimeSection } from './CodeExecutionRuntimeSection';
 
+/// Must match `#[default]` on `GoslingMode` in
+/// `crates/gosling-providers/src/gosling_mode.rs`. Showing `auto` here while
+/// the backend defaulted to SmartApprove told the operator that every tool
+/// call was auto-approved when it was not. (WFG-GOS-001)
+const DEFAULT_GOSLING_MODE = 'smart_approve';
+
 export const ModeSection = () => {
-  const [currentMode, setCurrentMode] = useState('auto');
+  const [currentMode, setCurrentMode] = useState(DEFAULT_GOSLING_MODE);
   const [maxTurns, setMaxTurns] = useState<number>(1000);
   const { config, read, upsert } = useConfig();
 

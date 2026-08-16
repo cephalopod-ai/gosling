@@ -1,5 +1,25 @@
 # Gosling Stress-Test Audit — Master Report
 
+> **SUPERSEDED — do not read as current state (CMP-GOS-001).**
+>
+> This report describes `gosling` as of **2026-07-05**. Several of its
+> headline mechanisms are no longer true at HEAD, including the ones most
+> likely to be quoted:
+>
+> | This report says | Actual state |
+> |---|---|
+> | Default `GoslingMode` = `Auto`, every tool auto-approved | `#[default] SmartApprove` for interactive |
+> | Prompt-injection scanner default-off | default-on |
+> | `EgressInspector` is telemetry-only, always `Allow` | requires approval; opts out of the Auto downgrade |
+> | Subagents forced to Auto get unrestricted tools | Auto denies execution/write without an explicit grant |
+> | TUI silently auto-approves via `AllowAlways` first | always-allow is withheld on security prompts |
+> | Project plugins auto-enabled | require `plugin trust` |
+> | Non-atomic secrets write | atomic temp+rename |
+>
+> Current audit: `docs/cloud/2026-08-15-master-report.md`.
+> Repairs: `docs/logs/session/2026-08-16-audit-repair-campaign.md`.
+> Verify against HEAD before acting on anything below.
+
 **Engagement:** full multi-lens audit of `gosling` using the `agent-skills/10_audit`
 catalog. **Authority:** audit-only / read-only (no source modified; only
 `docs/cloud/` written). **Date:** 2026-07-05. **Target:** `gosling` @

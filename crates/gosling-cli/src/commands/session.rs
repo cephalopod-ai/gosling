@@ -285,10 +285,21 @@ pub async fn handle_session_export(
     }
 
     if let Some(output_path) = output_path {
-        fs::write(&output_path, output).with_context(|| {
+        // An export is the full conversation plus workspace and credential
+        // identifiers. It was written with `fs::write`, i.e. world-readable
+        // 0644, while the diagnostics bundle beside it already used 0o600 and
+        // warned about its contents. Match that. (IOP-GOS-003)
+        let mut file = create_diagnostics_output_file(&output_path).with_context(|| {
+            format!("Failed to write to output file: {}", output_path.display())
+        })?;
+        file.write_all(output.as_bytes()).with_context(|| {
             format!("Failed to write to output file: {}", output_path.display())
         })?;
         println!("Session exported to {}", output_path.display());
+        println!(
+            "This file contains the full conversation and may include secrets \
+             pasted into the session. Review before sharing."
+        );
     } else {
         println!("{}", output);
     }

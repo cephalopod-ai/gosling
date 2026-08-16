@@ -26,7 +26,7 @@ gosling is an independently maintained descendant of [goose](https://github.com/
 
 gosling aims to be a **lighter version of goose**: the same trusted agent core with a smaller footprint, a simpler surface, and faster iteration. The goal is an agent you can install next to (or instead of) goose that stays lean — fewer moving parts, quicker startup, and an easier codebase to remix for custom distributions.
 
-## Footprint & performance vs. goose
+## Footprint & performance vs. goose (historical baseline, 2026-07-04)
 
 Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), on the same host with matched Cargo feature flags. `code-mode` was excluded from both because this environment blocked the `v8-goose` static-library download. These are historical baseline measurements, not v1.0.0 benchmark claims; rerun them before publishing current performance deltas.
 
@@ -81,7 +81,7 @@ Relative to the inherited baseline, gosling implements several safety and securi
 | **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
 | **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in cache extension paths. |
 
-## What's included in gosling v1.0.0
+## What's included (targeting v1.0.0; current build is 0.1.0)
 
 - **Workspace-aware Desktop chats** - workspace rows filter the chat list without changing the default for future chats. Starting a chat from a workspace action preselects that workspace, while the global New Chat flow preselects the active/default workspace and still allows a per-chat override.
 - **Credential profiles in chat** - the chat composer exposes the credential-profile selector and manager, shows a session's pinned profile, and keeps missing-profile failures visible instead of silently choosing another credential.
@@ -134,7 +134,9 @@ The Rust core owns agent execution, provider contracts, permissions, session per
 
 ## Release validation status
 
-The [2026-07-20 live playtest](docs/cloud/2026-07-20-live-all-scenarios-playtest.md) executed all 110 scenario cards. Its initial result was 46 pass, 32 fail, and 32 blocked; the appended repair closure records focused regression evidence for all 15 findings, including an installed Apple Silicon Desktop windowing replay. The initial ledger was not rewritten as a 110-card post-repair pass.
+The current validation reference is the [2026-08-15 live playtest](docs/cloud/2026-08-15-live-all-scenarios-playtest.md): 58 pass, 5 fail, 47 blocked across all 110 scenario cards. Blocked is dominated by Desktop cards, which had no GUI driver — that is missing coverage, not a pass. The [2026-08-15 audit](docs/cloud/2026-08-15-master-report.md) and its [repair campaign](docs/logs/session/2026-08-16-audit-repair-campaign.md) record what was found and what has been fixed since.
+
+The earlier [2026-07-20 playtest](docs/cloud/2026-07-20-live-all-scenarios-playtest.md) (46 pass, 32 fail, 32 blocked, with appended repair closure for 15 findings) is retained as history and should not be read as current.
 
 Before publishing v1.0.0, the release owner must complete the [release checklist](RELEASE_CHECKLIST.md), including the full build, test, Clippy, packaged-GUI, and version-alignment gates. Documentation preparation alone is not release validation.
 

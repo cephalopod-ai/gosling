@@ -1,5 +1,14 @@
 # Workspaces build state
 
+> **HISTORICAL — completed campaign ledger, not current repo status
+> (REC-GSL-002).**
+>
+> This records the Workspaces campaign, which finished at PC-002. It is not
+> the continuation point: the current ledger is
+> `docs/build/shell-productization/build-state.md` (updated 2026-08-15), and
+> `docs/TODO.md` tracks the shell gates, not the workspace ones. An agent
+> resuming work from this file will start the wrong task.
+
 Last updated: 2026-07-19
 
 ## Objective

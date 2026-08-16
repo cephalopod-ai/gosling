@@ -359,6 +359,7 @@ export function createShellRuntimeController(
         };
         acp = await dependencies.connectAcp({
           acpUrl: runtime.backend.acpUrl,
+          acpSubprotocol: runtime.backend.acpSubprotocol,
           profile: options.profile,
           manifest: options.manifest,
           onPreflightPhase: (phase) =>

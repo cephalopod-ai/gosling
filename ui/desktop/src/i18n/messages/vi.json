@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "Cấu hình"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "Hủy"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "Yêu cầu phê duyệt có thể được áp dụng cho tất cả các yêu cầu công cụ hoặc xác định những hành động nào có thể cần tích hợp"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "Phê duyệt thủ công"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "Tất cả các công cụ, tiện ích mở rộng và thay đổi tệp sẽ yêu cầu phê duyệt của con người"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "Lưu"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "Đang lưu..."
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "Phê duyệt thông minh"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "Xác định một cách thông minh những hành động nào cần phê duyệt dựa trên mức độ rủi ro"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "Cấu hình chế độ phê duyệt"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "Không"
   },
@@ -3124,5 +3097,8 @@
   },
   "authSettings.addCredential": {
     "defaultMessage": "Add credential"
+  },
+  "toolApprovalButtons.failedToSubmitDecision": {
+    "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
   }
 }

@@ -178,7 +178,7 @@ pub struct Session {
     pub last_message_snippet: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionSummaryStatus {
     Current,
@@ -207,6 +207,30 @@ impl std::str::FromStr for SessionSummaryStatus {
             "failed" => Ok(Self::Failed),
             _ => Err(()),
         }
+    }
+}
+
+/// Whether a stored summary may be presented as covering the history that
+/// precedes `page`.
+///
+/// Resume previously injected any non-empty summary, ignoring both its
+/// `status` and how far it actually reached (DAT-GSL-001). `Stale` is the
+/// `Default` for the status column, so a summary written before a schema
+/// or worker change reads as stale and must not be presented as fact. The
+/// row-id check closes the more damaging case: if the session grew after
+/// the summary was written, the messages between `covered_through_row_id`
+/// and the tail's oldest row are in neither the summary nor the tail, and
+/// injecting the summary would silently claim continuous coverage over
+/// that gap.
+fn summary_covers_history_before(summary: &SessionSummary, page: &SessionMessagePage) -> bool {
+    if summary.status != SessionSummaryStatus::Current {
+        return false;
+    }
+    match page.oldest_row_id {
+        // The summary must reach the row immediately before the tail.
+        Some(oldest) => summary.covered_through_row_id >= oldest - 1,
+        // Empty tail: nothing can be uncovered between the two.
+        None => true,
     }
 }
 
@@ -1422,10 +1446,18 @@ impl SessionStorage {
                 // (see `apply_migration`), so upgrading installs never get
                 // silently re-imported.
                 if !Self::legacy_import_completed(&self.pool).await? {
-                    if let Err(e) = Self::import_legacy(&self.pool, &self.session_dir).await {
-                        warn!("Failed to import some legacy sessions: {}", e);
+                    // The completion marker used to be written even when the
+                    // import failed, so anything that did not make it across
+                    // was never retried and the failure survived only as a log
+                    // line (DAT-GSL-005). A failed import now leaves the
+                    // marker unset so the next start tries again.
+                    match Self::import_legacy(&self.pool, &self.session_dir).await {
+                        Ok(()) => Self::mark_legacy_import_complete(&self.pool).await?,
+                        Err(e) => warn!(
+                            "Failed to import some legacy sessions; will retry on next start: {}",
+                            e
+                        ),
                     }
-                    Self::mark_legacy_import_complete(&self.pool).await?;
                 }
                 Ok::<(), anyhow::Error>(())
             })
@@ -3511,7 +3543,11 @@ impl SessionStorage {
         let mut session = self.get_session(session_id, false).await?;
         let page = self.get_session_tail_page(session_id, tail_limit).await?;
         let mut messages = Vec::new();
-        if let Some(summary) = self.get_session_summary(session_id).await? {
+        let summary = self
+            .get_session_summary(session_id)
+            .await?
+            .filter(|summary| summary_covers_history_before(summary, &page));
+        if let Some(summary) = summary {
             if !summary.summary.trim().is_empty() {
                 messages.push(
                     Message::user()
@@ -3910,6 +3946,20 @@ impl SessionStorage {
             if owner_id == self.owner_id && active_operations.contains(&operation_id) {
                 continue;
             }
+            // CON-GSL-001 (cross-process recover can mark a live peer's tool
+            // `in_doubt`) is NOT fixed here. The obvious guard -- skip foreign
+            // rows whose `updated_at` is recent -- does not work, because
+            // `updated_at` only moves on state transitions and is never
+            // heartbeated during execution: "recently updated" means "started
+            // recently", not "owner is alive". Such a guard would still stomp
+            // a slow live tool once it aged past the window, while delaying
+            // the `in_doubt` signal after a genuine crash -- trading a false
+            // positive for a false negative on a safety signal whose whole
+            // purpose is to stop an automatic retry. A real fix needs a
+            // liveness source: a heartbeat that touches `updated_at` while a
+            // tool runs, or an owner PID/lease the recovering process can
+            // probe.
+
             let request_exists = request_metadata_by_id.contains_key(&request_id);
             let request_metadata = request_metadata_by_id.remove(&request_id).flatten();
             let existing_response_message_id = response_message_id_by_request.remove(&request_id);
@@ -5588,6 +5638,73 @@ mod tests {
             .await
             .unwrap_err();
         assert!(collision.to_string().contains("different tool payload"));
+    }
+
+    fn summary_fixture(
+        status: SessionSummaryStatus,
+        covered_through_row_id: i64,
+    ) -> SessionSummary {
+        SessionSummary {
+            session_id: "s".to_string(),
+            summary: "earlier work".to_string(),
+            covered_through_row_id,
+            covered_through_timestamp: 0,
+            covered_message_count: 10,
+            source_hash: "hash".to_string(),
+            summarizer_model: None,
+            status,
+            error: None,
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn page_fixture(oldest_row_id: Option<i64>) -> SessionMessagePage {
+        SessionMessagePage {
+            messages: Vec::new(),
+            next_before_cursor: None,
+            total_count: 100,
+            oldest_row_id,
+            newest_row_id: Some(100),
+        }
+    }
+
+    // Resume injected any non-empty summary regardless of status or reach
+    // (DAT-GSL-001).
+    #[test]
+    fn a_stale_or_failed_summary_is_not_presented_as_coverage() {
+        let page = page_fixture(Some(51));
+        for status in [SessionSummaryStatus::Stale, SessionSummaryStatus::Failed] {
+            assert!(!summary_covers_history_before(
+                &summary_fixture(status, 50),
+                &page
+            ));
+        }
+    }
+
+    #[test]
+    fn a_current_summary_that_reaches_the_tail_is_accepted() {
+        assert!(summary_covers_history_before(
+            &summary_fixture(SessionSummaryStatus::Current, 50),
+            &page_fixture(Some(51))
+        ));
+    }
+
+    // The damaging case: the session grew after the summary was written, so
+    // rows between the summary and the tail are in neither.
+    #[test]
+    fn a_current_summary_that_leaves_a_gap_before_the_tail_is_rejected() {
+        assert!(!summary_covers_history_before(
+            &summary_fixture(SessionSummaryStatus::Current, 50),
+            &page_fixture(Some(400))
+        ));
+    }
+
+    #[test]
+    fn an_empty_tail_cannot_have_a_gap() {
+        assert!(summary_covers_history_before(
+            &summary_fixture(SessionSummaryStatus::Current, 50),
+            &page_fixture(None)
+        ));
     }
 
     #[tokio::test]

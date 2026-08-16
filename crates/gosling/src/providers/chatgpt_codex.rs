@@ -557,16 +557,37 @@ fn parse_jwt_claims_unverified(token: &str) -> Option<JwtClaims> {
 }
 
 async fn parse_jwt_claims(token: &str, state: &ChatGptCodexAuthState) -> Option<JwtClaims> {
+    // A failed signature check used to fall through to the unverified decoder
+    // exactly like an unreachable JWKS endpoint did, so a token that failed
+    // verification still supplied its `chatgpt_account_id` (TMP-GOS-004).
+    // Those two cases are now distinct: if the keys were fetched and the
+    // signature did not hold, the claims are refused.
     if let Ok((jwks, was_cached)) = get_jwks(state).await {
         let jwks = if was_cached && !jwks_contains_token_kid(token, &jwks) {
             refresh_jwks(state).await.unwrap_or(jwks)
         } else {
             jwks
         };
-        if let Ok(claims) = parse_jwt_claims_with_jwks(token, &jwks) {
-            return Some(claims);
-        }
+        return match parse_jwt_claims_with_jwks(token, &jwks) {
+            Ok(claims) => Some(claims),
+            Err(error) => {
+                tracing::warn!(
+                    security.event_type = "jwt_verification_failed",
+                    %error,
+                    "refusing claims from a token whose signature did not verify"
+                );
+                None
+            }
+        };
     }
+
+    // The keys could not be fetched at all (offline, endpoint down). The token
+    // still comes from the operator's own auth file, so its claims are read
+    // rather than failing the session outright -- but say so.
+    tracing::warn!(
+        security.event_type = "jwt_unverified",
+        "JWKS unavailable; reading token claims without signature verification"
+    );
     parse_jwt_claims_unverified(token)
 }
 

@@ -17,6 +17,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::acp::server::GoslingAgentConnection;
 use crate::acp::server_factory::AcpServer;
+use crate::session::SessionManager;
 
 // The upstream ACP HTTP server only supports exact origin allowlists for
 // WebSocket upgrades; Gosling applies its richer loopback predicate before this.
@@ -120,6 +121,13 @@ async fn enforce_websocket_origin(
     next: Next,
 ) -> Result<Response, StatusCode> {
     if is_websocket_upgrade(&request) {
+        // SEC-GOS-011 asked for this to fail closed when `Origin` is absent.
+        // It deliberately does not: the WebSocket spec requires browsers to
+        // send `Origin`, so a request without one provably did not come from a
+        // page, and rejecting it would break every non-browser ACP client (the
+        // CLI, the SDK, editor integrations) while blocking no browser attack.
+        // The cross-origin threat this guards is handled for real requests by
+        // the policy below, and by `check_acp_token`, which runs first.
         if let Some(origin) = request.headers().get(header::ORIGIN) {
             if !policy.origin_allowed(origin) {
                 return Err(StatusCode::FORBIDDEN);
@@ -213,8 +221,24 @@ pub fn create_authenticated_acp_router(server: Arc<AcpServer>, secret_key: Strin
     )
 }
 
+/// Liveness: the process is running and serving. Deliberately does no I/O.
 async fn health() -> &'static str {
     "ok"
+}
+
+/// Readiness: the session store is actually reachable.
+///
+/// `/status` previously returned the same static `"ok"` as `/health`, so a
+/// serve whose session database was gone still reported healthy and Desktop
+/// treated it as ready. (REL-GSL-010)
+async fn status(State(sessions): State<Arc<SessionManager>>) -> Result<&'static str, StatusCode> {
+    match sessions.healthy().await {
+        Ok(()) => Ok("ok"),
+        Err(error) => {
+            tracing::error!(%error, "session store readiness probe failed");
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
+    }
 }
 
 /// The full standalone ACP server router used by `gosling serve`: ACP transport,
@@ -230,15 +254,18 @@ pub fn create_router(
     } else {
         AcpOriginPolicy::exact(additional_allowed_origins)
     };
+    let server_data_dir = server.data_dir();
     let acp_routes = create_acp_router_with_policy(
         server,
         policy.clone(),
         require_token.then_some(secret_key.clone()),
     );
 
+    let session_manager = Arc::new(SessionManager::new(server_data_dir));
+
     let aux_routes = Router::new()
         .route("/health", get(health))
-        .route("/status", get(health))
+        .route("/status", get(status).with_state(session_manager))
         .merge(super::mcp_app_proxy::routes(secret_key))
         .layer(aux_cors_layer(policy));
 

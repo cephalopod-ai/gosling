@@ -1375,10 +1375,14 @@ async function runTextMode(
           params: RequestPermissionRequest,
         ): Promise<RequestPermissionResponse> => {
           if (autoApprove) {
-            const option =
-              params.options.find((o) => o.kind === "allow_once") ??
-              params.options.find((o) => o.kind === "allow_always") ??
-              params.options[0];
+            // WFG-GOS-008: the comment above promised the least-privileged
+            // affirmative option and "never allow always", but the fallback
+            // chain reached for `allow_always` and then `options[0]` — which
+            // acp/server.rs orders as allow_always. `--yes` now grants a
+            // single call or nothing; a server that offers no `allow_once`
+            // falls through to the decline path below rather than being
+            // escalated to a persistent grant.
+            const option = params.options.find((o) => o.kind === "allow_once");
             if (option) {
               return {
                 outcome: { outcome: "selected", optionId: option.optionId },
@@ -1484,24 +1488,48 @@ async function main() {
   cleanup();
 }
 
+/// How long the ACP child is given to exit on its own before it is killed
+/// outright. (RES-GSL-002)
+const SHUTDOWN_GRACE_MS = 2000;
+
 function cleanup() {
   if (serverProcess && !serverProcess.killed) {
     serverProcess.kill();
   }
 }
 
+/// Terminate the ACP child, then exit.
+///
+/// This used to be `cleanup(); process.exit(0)`, which sent SIGTERM and then
+/// tore down the parent in the same tick — the child got no window to shut
+/// down and, if it ignored or was slow to handle SIGTERM, was left orphaned
+/// holding its port and session lock. The child is now given a bounded grace
+/// period and escalated to SIGKILL if it does not exit. (RES-GSL-002)
+function shutdown(code: number): void {
+  if (!serverProcess || serverProcess.killed || serverProcess.exitCode !== null) {
+    process.exit(code);
+  }
+
+  const child = serverProcess;
+  const force = setTimeout(() => {
+    child.kill("SIGKILL");
+    process.exit(code);
+  }, SHUTDOWN_GRACE_MS);
+  force.unref?.();
+
+  child.once("exit", () => {
+    clearTimeout(force);
+    process.exit(code);
+  });
+
+  child.kill();
+}
+
 process.on("exit", cleanup);
-process.on("SIGINT", () => {
-  cleanup();
-  process.exit(0);
-});
-process.on("SIGTERM", () => {
-  cleanup();
-  process.exit(0);
-});
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
 
 main().catch((err) => {
   console.error(err);
-  cleanup();
-  process.exit(1);
+  shutdown(1);
 });

@@ -223,20 +223,16 @@ pub async fn remove_config(
     Ok(Json(format!("Removed key {}", query.key)))
 }
 
-const SECRET_MASK_SHOW_LEN: usize = 8;
-
+/// Masks a secret for display. No plaintext prefix is emitted: the leading
+/// characters of an API key identify the issuer and materially narrow a brute
+/// force, and this value is returned over `/config/read` (SEC-GOS-010).
 fn mask_secret(secret: Value) -> String {
     let as_string = match secret {
         Value::String(s) => s,
         _ => serde_json::to_string(&secret).unwrap_or_else(|_| secret.to_string()),
     };
 
-    let chars: Vec<_> = as_string.chars().collect();
-    let show_len = std::cmp::min(chars.len() / 2, SECRET_MASK_SHOW_LEN);
-    let visible: String = chars.iter().take(show_len).collect();
-    let mask = "*".repeat(chars.len() - show_len);
-
-    format!("{}{}", visible, mask)
+    "*".repeat(as_string.chars().count())
 }
 
 #[utoipa::path(
@@ -952,4 +948,22 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/config/check_provider", post(check_provider))
         .route("/config/set_provider", post(set_config_provider))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn masked_secret_reveals_no_plaintext_prefix() {
+        let masked = mask_secret(Value::String("sk-ant-api03-SECRET".to_string()));
+        assert_eq!(masked, "*".repeat("sk-ant-api03-SECRET".chars().count()));
+        assert!(!masked.contains("sk-"));
+    }
+
+    #[test]
+    fn masked_secret_preserves_length_only() {
+        assert_eq!(mask_secret(Value::String("abcd".to_string())), "****");
+        assert_eq!(mask_secret(Value::String(String::new())), "");
+    }
 }

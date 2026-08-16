@@ -80,12 +80,14 @@ async fn ensure_working_provider(
         log.push(format!("Looking for alternative models on {} ...", pname));
         if let Some((working, model_config)) = try_other_models(pname, mname, &mut log).await {
             let new_model = model_config.model_name.clone();
-            save_and_set(agent, session_id, working, model_config).await?;
+            set_for_session(agent, session_id, working, model_config).await?;
             let preamble = log.join("\n");
             return Ok(Some(Message::assistant().with_text(format!(
                 "**Gosling Doctor**\n\n{}\n\n\
-                 Your configured model wasn't working, so I switched to \
-                 **{} / {}**. You can continue chatting now.",
+                 Your configured model wasn't working, so I switched this \
+                 session to **{} / {}**. You can continue chatting now. This \
+                 change applies to this session only -- run \
+                 `gosling configure` to make it your default.",
                 preamble, pname, new_model,
             ))));
         }
@@ -98,11 +100,13 @@ async fn ensure_working_provider(
     if let Some((working, model_config)) = try_other_providers(skip, &mut log).await {
         let name = working.get_name().to_string();
         let model = model_config.model_name.clone();
-        save_and_set(agent, session_id, working, model_config).await?;
+        set_for_session(agent, session_id, working, model_config).await?;
         let preamble = log.join("\n");
         return Ok(Some(Message::assistant().with_text(format!(
             "**Gosling Doctor**\n\n{}\n\n\
-             Switched to **{} / {}**. You can continue chatting now.",
+             Switched this session to **{} / {}**. You can continue chatting \
+             now. This change applies to this session only -- run \
+             `gosling configure` to make it your default.",
             preamble, name, model,
         ))));
     }
@@ -135,14 +139,20 @@ async fn ensure_developer_extension(agent: &crate::agents::Agent, session_id: &s
     }
 }
 
-async fn save_and_set(
+/// Switches the *current session* to a working provider/model.
+///
+/// This used to also call `set_active_provider` on the global `Config`, so
+/// running `/doctor` once to get unstuck silently rewrote the default provider
+/// for every future session -- a persistent configuration change the operator
+/// never asked for, from a command that reads as diagnostic (FSR-GSL-012).
+/// The switch is now session-scoped; the caller tells the operator how to make
+/// it permanent.
+async fn set_for_session(
     agent: &crate::agents::Agent,
     session_id: &str,
     provider: Arc<dyn Provider>,
     model_config: gosling_providers::model::ModelConfig,
 ) -> anyhow::Result<()> {
-    let config = Config::global();
-    crate::config::set_active_provider(config, provider.get_name(), &model_config.model_name)?;
     agent
         .update_provider(provider, model_config, session_id)
         .await

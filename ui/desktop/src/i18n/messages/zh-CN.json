@@ -230,33 +230,6 @@
   "configSettings.title": {
     "defaultMessage": "配置"
   },
-  "configureApproveMode.cancel": {
-    "defaultMessage": "取消"
-  },
-  "configureApproveMode.description": {
-    "defaultMessage": "批准可以应用于所有工具请求，或仅针对需要介入的特定操作"
-  },
-  "configureApproveMode.manualApproval": {
-    "defaultMessage": "手动批准"
-  },
-  "configureApproveMode.manualApprovalDescription": {
-    "defaultMessage": "所有工具、扩展和文件修改都将需要人工批准"
-  },
-  "configureApproveMode.save": {
-    "defaultMessage": "保存"
-  },
-  "configureApproveMode.saving": {
-    "defaultMessage": "保存中…"
-  },
-  "configureApproveMode.smartApproval": {
-    "defaultMessage": "智能批准"
-  },
-  "configureApproveMode.smartApprovalDescription": {
-    "defaultMessage": "根据风险级别智能判断哪些操作需要批准"
-  },
-  "configureApproveMode.title": {
-    "defaultMessage": "配置批准模式"
-  },
   "confirmationModal.defaultCancel": {
     "defaultMessage": "否"
   },
@@ -3124,5 +3097,8 @@
   },
   "authSettings.addCredential": {
     "defaultMessage": "Add credential"
+  },
+  "toolApprovalButtons.failedToSubmitDecision": {
+    "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
   }
 }

@@ -12,13 +12,21 @@ on:
         default: false
         type: boolean
 
+# The schedule above is paused but `workflow_dispatch` stays live, so these
+# grants are reachable by anyone who can dispatch a workflow. Least privilege
+# at the top level; the job that opens a PR requests what it needs.
+# (RST-GSL-001)
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   find-untested-code:
     runs-on: ubuntu-latest
+    # Scoped here rather than workflow-wide: this job opens a PR, so it needs
+    # write, but nothing else in the workflow should inherit it.
+    permissions:
+      contents: write
+      pull-requests: write
     container:
       image: ghcr.io/repo-makeover/gosling:sha-9f661a6@sha256:45c178cd40aceac2d3ea70bb99e0bcfaab584cdd758f7844dac9b0057f8e158c
       options: --user root

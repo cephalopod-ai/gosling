@@ -149,7 +149,7 @@ export class ShellCompatibilityError extends Error {
 }
 
 export interface ShellAcpRuntimeDependencies {
-  createStream(url: string): ClosableAcpStream;
+  createStream(url: string, subprotocol?: string): ClosableAcpStream;
   createClient(callbacks: () => GoslingClientCallbacks, stream: ClosableAcpStream): ShellAcpClient;
   setTimeout(callback: () => void, milliseconds: number): ReturnType<typeof setTimeout>;
   clearTimeout(id: ReturnType<typeof setTimeout>): void;
@@ -175,14 +175,12 @@ function assertAuthenticatedLoopbackUrl(value: string): string {
   if (parsed.hostname !== '127.0.0.1' && parsed.hostname !== '[::1]') {
     throw new Error('ACP endpoint must use a loopback address');
   }
-  if (parsed.pathname !== '/acp' || !parsed.searchParams.get('token')) {
-    throw new Error('ACP endpoint must carry the server authentication token');
+  if (parsed.pathname !== '/acp') {
+    throw new Error('ACP endpoint must address the /acp path');
   }
-  if (
-    parsed.username ||
-    parsed.password ||
-    [...parsed.searchParams.keys()].some((key) => key !== 'token')
-  ) {
+  // The secret now travels in the WebSocket subprotocol, so the URL must carry
+  // no credential at all (SEC-GOS-001).
+  if (parsed.username || parsed.password || [...parsed.searchParams.keys()].length > 0) {
     throw new Error('ACP endpoint contains unsupported authority');
   }
   return parsed.href;
@@ -435,6 +433,7 @@ function asShellSessionSummary(info: SessionInfo): ShellSessionSummary {
 
 export async function connectShellAcp(input: {
   acpUrl: string;
+  acpSubprotocol: string;
   profile: ResolvedShellProductProfile;
   manifest: ShellBuildManifest;
   clientName: string;
@@ -452,7 +451,10 @@ export async function connectShellAcp(input: {
   dependencies?: ShellAcpRuntimeDependencies;
 }): Promise<ShellAcpConnection> {
   const dependencies = input.dependencies ?? defaultDependencies;
-  const stream = dependencies.createStream(assertAuthenticatedLoopbackUrl(input.acpUrl));
+  const stream = dependencies.createStream(
+    assertAuthenticatedLoopbackUrl(input.acpUrl),
+    input.acpSubprotocol
+  );
   const client = dependencies.createClient(input.callbacks ?? clientCallbacks(), stream);
   const preflight = <T>(promise: Promise<T>, phase: ShellAcpPreflightPhase) => {
     input.onPreflightPhase?.(phase);

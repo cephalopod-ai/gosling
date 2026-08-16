@@ -151,6 +151,21 @@ function getSubagentSessionId(
   return null;
 }
 
+/// The `error` string from a failed tool result, if there is one worth
+/// showing. Mirrors the server's `ToolResult<T>` serialization:
+/// `{ status: "error", error: string }`. (WFG-GOS-003)
+export function getToolResultError(toolResult: unknown): string | undefined {
+  if (!toolResult || typeof toolResult !== 'object') {
+    return undefined;
+  }
+  const record = toolResult as Record<string, unknown>;
+  if (record.status !== 'error') {
+    return undefined;
+  }
+  const error = typeof record.error === 'string' ? record.error.trim() : '';
+  return error.length > 0 ? error : 'The tool reported an error with no message.';
+}
+
 function getToolResultContent(toolResult: Record<string, unknown>): ContentBlock[] {
   if (toolResult.status !== 'success') {
     return [];
@@ -569,6 +584,12 @@ function ToolCallView({
       ? getToolResultContent(toolResponse.toolResult)
       : [];
 
+  // A failed tool serializes as `{ status: "error", error: string }`. The
+  // status drove the header icon, but the string itself was never rendered,
+  // so the operator saw a failed call with no reason. (WFG-GOS-003)
+  const toolErrorMessage =
+    loadingStatus === 'error' ? getToolResultError(toolResponse?.toolResult) : undefined;
+
   const logs = notifications
     ?.filter((notification) => {
       const message = notification.message as { method?: string };
@@ -887,6 +908,15 @@ function ToolCallView({
         ))}
 
       {/* Tool Output */}
+      {!isCancelledMessage && toolErrorMessage && (
+        <div className="border-t border-border-primary px-3 py-2">
+          <div className="text-xs font-medium text-text-danger">Tool failed</div>
+          <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-text-secondary">
+            {toolErrorMessage}
+          </pre>
+        </div>
+      )}
+
       {!isCancelledMessage && (
         <>
           {toolResults.map((result, index) => (
