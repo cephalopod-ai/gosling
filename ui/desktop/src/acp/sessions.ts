@@ -42,6 +42,12 @@ interface GoslingSessionInfoMeta {
 export const COMPACTED_SESSION_TAIL_LIMIT = 50;
 const ARTIFACT_PAGE_LIMIT = 200;
 
+/// Ceiling on artifacts accumulated in the renderer for one session. The loop
+/// paginates but concatenated every page, so a session with a very large
+/// artifact set was pulled into memory whole (MEM-GSL-009). The list is a UI
+/// surface; beyond this many entries it is not usefully browsable anyway.
+const ARTIFACT_TOTAL_LIMIT = 2000;
+
 export async function acpListSessionArtifacts(sessionId: string): Promise<SessionArtifactDto[]> {
   const client = await getAcpClient();
   const artifacts: SessionArtifactDto[] = [];
@@ -55,6 +61,12 @@ export async function acpListSessionArtifacts(sessionId: string): Promise<Sessio
     });
     artifacts.push(...response.artifacts);
     cursor = response.nextCursor ?? null;
+    if (artifacts.length >= ARTIFACT_TOTAL_LIMIT) {
+      console.warn(
+        `Session ${sessionId} has more than ${ARTIFACT_TOTAL_LIMIT} artifacts; listing was truncated.`
+      );
+      return artifacts.slice(0, ARTIFACT_TOTAL_LIMIT);
+    }
   } while (cursor);
 
   return artifacts;

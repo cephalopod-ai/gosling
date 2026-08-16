@@ -1427,6 +1427,10 @@ const createChat = async (
         webSecurity: true,
         nodeIntegration: false,
         contextIsolation: true,
+        // Electron's default, pinned explicitly so the posture is declared
+        // rather than inherited -- shellHost.ts already pins it, and this
+        // window's preload uses no Node APIs. (SECN-GSL-003)
+        sandbox: true,
         additionalArguments: [
           JSON.stringify({
             ...appConfig,
@@ -1686,6 +1690,8 @@ const createLauncher = () => {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      // See the main window above. (SECN-GSL-003)
+      sandbox: true,
       additionalArguments: [
         JSON.stringify({
           ...appConfig,
@@ -2384,6 +2390,9 @@ ipcMain.handle('select-import-session-file', async () => {
   }
 });
 
+/// Bounds the `ps`/`grep` probe below. (RES-GSL-001)
+const CHECK_OLLAMA_TIMEOUT_MS = 5000;
+
 ipcMain.handle('check-ollama', async () => {
   try {
     return new Promise((resolve) => {
@@ -2434,6 +2443,18 @@ ipcMain.handle('check-ollama', async () => {
       ps.stdout.on('end', () => {
         grep.stdin.end();
       });
+
+      // Neither child was bounded: if `ps` hung (a wedged filesystem is
+      // enough), both processes and this promise stayed alive for the life of
+      // the app, and each check leaked another pair (RES-GSL-001).
+      const timeout = setTimeout(() => {
+        ps.kill('SIGKILL');
+        grep.kill('SIGKILL');
+        console.warn('check-ollama timed out; assuming Ollama is not running');
+        resolve(false);
+      }, CHECK_OLLAMA_TIMEOUT_MS);
+      timeout.unref?.();
+      grep.on('close', () => clearTimeout(timeout));
     });
   } catch (err) {
     console.error('Error checking for Ollama:', err);
@@ -2441,10 +2462,27 @@ ipcMain.handle('check-ollama', async () => {
   }
 });
 
+/// Upper bound on a single `read-file` IPC response. Matches the text
+/// preview limit used by `read-artifact-file`. (MEM-GSL-008)
+const READ_FILE_MAX_BYTES = 2 * 1024 * 1024;
+
 ipcMain.handle('read-file', async (event, filePath) => {
   try {
     const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
-    const buffer = await fs.readFile(expandedPath);
+    // Read a bounded prefix rather than the whole file. The renderer chooses
+    // the path, so an accidental multi-GB target used to be pulled entirely
+    // into the main process (MEM-GSL-008). `read-artifact-file` beside this
+    // handler already caps its read the same way.
+    const stats = await fs.stat(expandedPath);
+    const bytesToRead = Math.min(stats.size, READ_FILE_MAX_BYTES);
+    const handle = await fs.open(expandedPath, 'r');
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.alloc(bytesToRead);
+      await handle.read(buffer, 0, bytesToRead, 0);
+    } finally {
+      await handle.close();
+    }
     return { file: buffer.toString('utf8'), filePath: expandedPath, error: null, found: true };
   } catch (error) {
     console.error('Error reading file:', error);
