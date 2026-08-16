@@ -14,6 +14,26 @@ use std::env;
 use std::sync::OnceLock;
 use uuid::Uuid;
 
+/// Names of a tool call's arguments, without their values.
+///
+/// These records used to carry the whole serialized call as
+/// `tool.call_json` (SEC-GOS-009). For a shell tool that is the full command
+/// line, and for an API-calling tool it can be a key or token, written at
+/// `warn` into logs that are shipped, attached to bug reports, and read by
+/// anyone with host access. The keys keep the record useful for triage
+/// without putting the payload in the log; `security.finding_id` still ties
+/// the entry back to the specific call.
+fn describe_tool_call_arguments(tool_call: &rmcp::model::CallToolRequestParams) -> String {
+    match tool_call.arguments.as_ref() {
+        Some(arguments) if !arguments.is_empty() => {
+            let mut keys: Vec<&str> = arguments.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            keys.join(",")
+        }
+        _ => "<none>".to_string(),
+    }
+}
+
 pub(crate) fn get_override(env_key: &str) -> Option<bool> {
     env::var(env_key).ok().and_then(|v| match v.as_str() {
         "true" => Some(true),
@@ -157,8 +177,7 @@ impl SecurityManager {
                 let finding_id = format!("SEC-{}", Uuid::new_v4().simple());
 
                 if analysis_result.degraded {
-                    let tool_call_json =
-                        serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());
+                    let tool_call_json = describe_tool_call_arguments(tool_call);
 
                     tracing::warn!(
                         monotonic_counter.gosling.prompt_injection_finding = 1,
@@ -172,7 +191,7 @@ impl SecurityManager {
                         security.explanation = %sanitized_explanation,
                         tool.name = %tool_call.name,
                         tool.request_id = %tool_request.id,
-                        tool.call_json = %tool_call_json,
+                        tool.arg_keys = %tool_call_json,
                         "prompt injection scan degraded; approval required"
                     );
                     results.push(SecurityResult {
@@ -188,8 +207,7 @@ impl SecurityManager {
 
                 if analysis_result.is_malicious {
                     let above_threshold = analysis_result.confidence > config_threshold;
-                    let tool_call_json =
-                        serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());
+                    let tool_call_json = describe_tool_call_arguments(tool_call);
 
                     let action = if above_threshold { "BLOCK" } else { "LOG" };
 
@@ -205,7 +223,7 @@ impl SecurityManager {
                         security.explanation = %sanitized_explanation,
                         tool.name = %tool_call.name,
                         tool.request_id = %tool_request.id,
-                        tool.call_json = %tool_call_json,
+                        tool.arg_keys = %tool_call_json,
                         "{}",
                         if above_threshold {
                             "prompt injection scan: finding above threshold"
@@ -224,8 +242,7 @@ impl SecurityManager {
                         });
                     }
                 } else if analysis_result.scanned {
-                    let tool_call_json =
-                        serde_json::to_string(&tool_call).unwrap_or_else(|_| "{}".to_string());
+                    let tool_call_json = describe_tool_call_arguments(tool_call);
 
                     tracing::info!(
                         monotonic_counter.gosling.prompt_injection_tool_call_passed = 1,
@@ -237,7 +254,7 @@ impl SecurityManager {
                         security.threat_type = "command_injection",
                         tool.name = %tool_call.name,
                         tool.request_id = %tool_request.id,
-                        tool.call_json = %tool_call_json,
+                        tool.arg_keys = %tool_call_json,
                         "prompt injection scan: tool call passed"
                     );
                 }
@@ -274,5 +291,33 @@ impl SecurityManager {
 impl Default for SecurityManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describe_tool_call_arguments;
+    use rmcp::model::CallToolRequestParams;
+
+    // The full serialized call used to land in logs at warn level; for a
+    // shell tool that is the entire command line (SEC-GOS-009).
+    #[test]
+    fn argument_values_never_reach_the_log_record() {
+        let call = CallToolRequestParams::new("shell").with_arguments(rmcp::object!({
+            "command": "curl -H 'Authorization: Bearer sk-secret-value' https://api.example",
+            "cwd": "/tmp"
+        }));
+        let described = describe_tool_call_arguments(&call);
+        assert_eq!(described, "command,cwd");
+        assert!(!described.contains("sk-secret-value"));
+        assert!(!described.contains("curl"));
+    }
+
+    #[test]
+    fn a_call_without_arguments_is_marked_rather_than_empty() {
+        assert_eq!(
+            describe_tool_call_arguments(&CallToolRequestParams::new("ping")),
+            "<none>"
+        );
     }
 }

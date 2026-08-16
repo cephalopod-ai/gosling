@@ -1089,14 +1089,21 @@ impl CliSession {
                     self.push_message(plan_message);
                     // act on the plan
                     output::show_thinking();
-                    self.process_agent_response(true, CancellationToken::default())
-                        .await?;
+                    let act_result = self
+                        .process_agent_response(true, CancellationToken::default())
+                        .await;
                     output::hide_thinking();
 
-                    // Reset run & gosling mode
+                    // Restore before propagating. This used to be `...await?`,
+                    // so any error from acting on the plan skipped the restore
+                    // and left the *global* mode pinned to Auto — every later
+                    // session in this process, and every future one once the
+                    // config was written, silently ran auto-approved.
+                    // (WFG-GOS-007)
                     if curr_gosling_mode != GoslingMode::Auto {
                         config.set_gosling_mode(curr_gosling_mode)?;
                     }
+                    act_result?;
                 } else {
                     // add the plan response (assistant message) & carry the conversation forward
                     // in the next round, the user might wanna slightly modify the plan
