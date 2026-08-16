@@ -16,7 +16,7 @@ pub mod schema;
 pub mod worker;
 pub mod writer;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::{Mutex, OnceLock, PoisonError};
@@ -150,10 +150,47 @@ pub struct CachedDigest {
     pub summary: String,
 }
 
-static DIGEST_CACHE: OnceLock<Mutex<HashMap<u64, CachedDigest>>> = OnceLock::new();
+/// Upper bound on retained digests. The cache is keyed by conversation-text
+/// hash and lives for the life of the process, so a long-running server that
+/// keeps producing new text grows it without limit (MEM-GSL-001). Digests are
+/// small and a miss only costs a recompute, so a generous cap is enough.
+const MAX_CACHED_DIGESTS: usize = 512;
 
-fn digest_cache() -> &'static Mutex<HashMap<u64, CachedDigest>> {
-    DIGEST_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+/// Digest cache plus the insertion order needed to evict from it. `HashMap`
+/// alone has no order, so eviction would otherwise be arbitrary.
+#[derive(Default)]
+struct DigestCache {
+    entries: HashMap<u64, CachedDigest>,
+    insertion_order: VecDeque<u64>,
+}
+
+impl DigestCache {
+    fn get(&self, key: u64) -> Option<CachedDigest> {
+        self.entries.get(&key).cloned()
+    }
+
+    fn insert(&mut self, key: u64, digest: CachedDigest) {
+        if self.entries.insert(key, digest).is_none() {
+            self.insertion_order.push_back(key);
+        }
+        while self.insertion_order.len() > MAX_CACHED_DIGESTS {
+            if let Some(oldest) = self.insertion_order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn remove(&mut self, key: u64) {
+        self.entries.remove(&key);
+        self.insertion_order.retain(|entry| *entry != key);
+    }
+}
+
+static DIGEST_CACHE: OnceLock<Mutex<DigestCache>> = OnceLock::new();
+
+fn digest_cache() -> &'static Mutex<DigestCache> {
+    DIGEST_CACHE.get_or_init(|| Mutex::new(DigestCache::default()))
 }
 
 /// Content-addressed key for a block of rendered conversation text, used to
@@ -177,8 +214,7 @@ pub fn cached_digest(key: u64) -> Option<CachedDigest> {
     digest_cache()
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .get(&key)
-        .cloned()
+        .get(key)
 }
 
 fn store_digest(key: u64, digest: CachedDigest) {
@@ -204,7 +240,7 @@ pub fn remove_digest_for_test(key: u64) {
     digest_cache()
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .remove(&key);
+        .remove(key);
 }
 
 /// Runs the summarizer worker for each pending block and, depending on
@@ -595,6 +631,46 @@ mod tests {
     use super::*;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    // The cache is process-lifetime and was insert-only, so a long-running
+    // server grew it without limit (MEM-GSL-001). Exercised on a local
+    // instance rather than the global one so this does not race the other
+    // tests' cache entries in the same binary.
+    #[test]
+    fn digest_cache_evicts_oldest_entries_past_the_cap() {
+        let mut cache = DigestCache::default();
+        for i in 0..(MAX_CACHED_DIGESTS as u64 + 10) {
+            cache.insert(
+                i,
+                CachedDigest {
+                    summary: format!("digest {i}"),
+                },
+            );
+        }
+
+        assert_eq!(cache.entries.len(), MAX_CACHED_DIGESTS);
+        assert_eq!(cache.insertion_order.len(), MAX_CACHED_DIGESTS);
+        assert!(cache.get(0).is_none(), "oldest entry should be evicted");
+        assert!(
+            cache.get(MAX_CACHED_DIGESTS as u64 + 9).is_some(),
+            "newest entry should be retained"
+        );
+    }
+
+    #[test]
+    fn reinserting_a_key_does_not_grow_the_insertion_order() {
+        let mut cache = DigestCache::default();
+        for _ in 0..5 {
+            cache.insert(
+                7,
+                CachedDigest {
+                    summary: "same key".to_string(),
+                },
+            );
+        }
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.insertion_order.len(), 1);
+    }
 
     #[test]
     fn defaults_to_off() {

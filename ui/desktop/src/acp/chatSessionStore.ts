@@ -147,6 +147,10 @@ interface AcpChatSessionStoreInternal extends AcpChatSessionStore, AcpChatSessio
   subscribe(sessionId: string, listener: (snapshot: AcpChatSessionSnapshot) => void): () => void;
 }
 
+/// Upper bound on retained per-session snapshots. Unobserved entries are
+/// rebuilt on demand, so this only bounds memory, never correctness.
+const MAX_RETAINED_SESSIONS = 50;
+
 function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
   const sessionsById = new Map<string, StoreEntry>();
   const listenersBySessionId = new Map<string, Set<SnapshotListener>>();
@@ -214,8 +218,28 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       adapter: createAcpSessionNotificationAdapter(),
     };
     sessionsById.set(sessionId, entry);
+    evictUnobservedSessions();
     return entry;
   };
+
+  /// `sessionsById` only ever shrank on explicit archive/delete, so switching
+  /// between many sessions in one window grew it for the life of the process
+  /// (MEM-GSL-003). Entries with no subscriber are not rendered by anything
+  /// and are rebuilt on demand, so they are the safe ones to drop. A session
+  /// currently on screen always has a listener and is never evicted.
+  function evictUnobservedSessions(): void {
+    if (sessionsById.size <= MAX_RETAINED_SESSIONS) {
+      return;
+    }
+    for (const sessionId of sessionsById.keys()) {
+      if (sessionsById.size <= MAX_RETAINED_SESSIONS) {
+        break;
+      }
+      if ((listenersBySessionId.get(sessionId)?.size ?? 0) === 0) {
+        sessionsById.delete(sessionId);
+      }
+    }
+  }
 
   const notify = (sessionId: string, entry: StoreEntry): AcpChatSessionSnapshot => {
     const snapshot = snapshotFromEntry(entry);
