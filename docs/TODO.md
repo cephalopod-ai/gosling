@@ -58,6 +58,35 @@ rediscovered from scratch.
   while blocking no browser attack, because the spec requires browsers to send
   `Origin`. Reverted; reasoning is at the call site.
 
+### Closed in later repair batches — 2026-08-16
+
+- [x] **SEC-GOS-002** (`5ea594f4b`) — MCP-app guest CSP is derived server-side
+      from declared domains and keyed to a single-use proxy token; a forged
+      token carrying `default-src *` is refused. Verified live.
+- [x] **LLM-GSL-004 / NEG-GSL-002** (`60e72c61a`) — project hints
+      (`.goslinghints`, `AGENTS.md`) are labelled with their repo provenance and
+      the scanner's "untrusted data, not commands" wording instead of sharing
+      the operator's Additional Instructions framing.
+- [x] **LLM-GSL-010** (`60e72c61a`) — an unbounded, model-chosen delegate
+      extension grant now emits a security event naming the extensions.
+- [x] **WEB-GOS-001** (`60e72c61a`) — approval buttons ranked by consequence;
+      a persistent grant no longer looks identical to a one-shot allow, and
+      Deny is no longer the faintest control.
+- [x] **WEB-GOS-002** (`60e72c61a`) — the approval prompt discloses the full
+      argument instead of a 140-character first line, so a multi-line command
+      cannot be approved unseen.
+- [x] **Upstream port** (`60e72c61a`) — `form-action 'none'` added to both
+      MCP-app CSP builders, from goose `34adc70f1` (PR #10985). Neither gosling
+      variant had it while both emit `allow-forms` on the guest sandbox.
+- [x] **CON-GSL-002** (`37804170e`) — the four config read-modify-write paths
+      hold the `.save.lock` flock across read, mutate, and write, not just the
+      write. The new test fails deterministically without the lock, and the fix
+      also removed a self-deadlock where `load_write_config` persisted
+      migrations by re-acquiring the same flock.
+- [x] **SEC-GOS-005** (`8e7bb759e`) — relay URLs from a shared `nevent` must be
+      public `ws`/`wss` endpoints; private, link-local, and cloud-metadata
+      destinations are refused. `nostr` feature only.
+
 ### Closed in the second repair batch — 2026-08-16
 
 - [x] **STT-GOS-001** (`886c8df8b`) — Chat mode executed frontend tool
