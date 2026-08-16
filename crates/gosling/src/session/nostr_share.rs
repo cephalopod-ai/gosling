@@ -285,12 +285,60 @@ pub fn parse_deeplink(deeplink: &str) -> Result<ParsedShareLink> {
     })
 }
 
+/// Whether a relay URL is one this process is willing to dial.
+///
+/// Relay lists arrive inside a shared `nevent`, so whoever authored the link
+/// chooses the hosts Gosling connects out to (SEC-GOS-005). Importing a
+/// session someone sent you should not become a request generator aimed at
+/// your network.
+///
+/// Two rules, both narrow:
+/// * the scheme must be `ws`/`wss` — a relay speaks WebSocket, so anything
+///   else is not a relay;
+/// * private and link-local destinations are refused, which covers internal
+///   services and the cloud metadata endpoint at 169.254.169.254.
+///
+/// Loopback is deliberately still allowed: running a relay on localhost is a
+/// normal development setup, and a WebSocket handshake against your own
+/// machine is not the exposure this guards.
+fn relay_is_dialable(relay: &str) -> bool {
+    let Ok(url) = url::Url::parse(relay) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "ws" | "wss") {
+        return false;
+    }
+    match url.host() {
+        Some(url::Host::Domain(_)) => true,
+        Some(url::Host::Ipv4(addr)) => {
+            !(addr.is_private() || addr.is_link_local() || addr.is_broadcast())
+        }
+        Some(url::Host::Ipv6(addr)) => {
+            // `is_unique_local`/`is_unicast_link_local` are unstable, so the
+            // fc00::/7 and fe80::/10 prefixes are checked directly.
+            let segments = addr.segments();
+            let unique_local = (segments[0] & 0xfe00) == 0xfc00;
+            let link_local = (segments[0] & 0xffc0) == 0xfe80;
+            !(unique_local || link_local)
+        }
+        None => false,
+    }
+}
+
 fn normalize_relays(relays: Vec<String>) -> Vec<String> {
     let mut normalized = Vec::with_capacity(relays.len());
     let mut seen = HashSet::with_capacity(relays.len());
     for relay in relays {
         let relay = relay.trim();
         if relay.is_empty() || !seen.insert(relay.to_string()) {
+            continue;
+        }
+        if !relay_is_dialable(relay) {
+            tracing::warn!(
+                security.event_type = "nostr_relay_refused",
+                security.relay = relay,
+                "refusing to dial a relay from the shared event: not a public ws/wss endpoint"
+            );
             continue;
         }
         normalized.push(relay.to_string());
@@ -300,6 +348,63 @@ fn normalize_relays(relays: Vec<String>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    // Relay lists ride inside a shared `nevent`, so the sender picks the hosts
+    // this process dials (SEC-GOS-005).
+    #[test]
+    fn public_relays_are_dialable() {
+        for relay in [
+            "wss://relay.damus.io",
+            "ws://relay.example.com:7777",
+            "wss://relay.example.com/path",
+        ] {
+            assert!(relay_is_dialable(relay), "{relay} should be allowed");
+        }
+    }
+
+    #[test]
+    fn non_websocket_schemes_are_refused() {
+        for relay in [
+            "http://relay.example.com",
+            "https://relay.example.com",
+            "file:///etc/passwd",
+            "not a url",
+        ] {
+            assert!(!relay_is_dialable(relay), "{relay} must be refused");
+        }
+    }
+
+    #[test]
+    fn private_and_link_local_destinations_are_refused() {
+        for relay in [
+            "ws://10.0.0.5",
+            "ws://192.168.1.1",
+            "ws://172.16.0.1",
+            // Cloud instance metadata.
+            "ws://169.254.169.254",
+            "ws://[fe80::1]",
+            "ws://[fc00::1]",
+        ] {
+            assert!(!relay_is_dialable(relay), "{relay} must be refused");
+        }
+    }
+
+    #[test]
+    fn loopback_stays_allowed_for_local_relays() {
+        assert!(relay_is_dialable("ws://127.0.0.1:7777"));
+        assert!(relay_is_dialable("ws://[::1]:7777"));
+    }
+
+    #[test]
+    fn normalize_relays_drops_refused_entries_and_keeps_the_rest() {
+        let relays = normalize_relays(vec![
+            "wss://good.example".to_string(),
+            "ws://169.254.169.254".to_string(),
+            "http://not-a-relay.example".to_string(),
+            "wss://good.example".to_string(),
+        ]);
+        assert_eq!(relays, vec!["wss://good.example".to_string()]);
+    }
+
     use super::*;
     use std::sync::{Arc, Mutex};
 
