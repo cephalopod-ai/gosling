@@ -26,7 +26,7 @@ gosling is an independently maintained descendant of [goose](https://github.com/
 
 gosling aims to be a **lighter version of goose**: the same trusted agent core with a smaller footprint, a simpler surface, and faster iteration. The goal is an agent you can install next to (or instead of) goose that stays lean — fewer moving parts, quicker startup, and an easier codebase to remix for custom distributions.
 
-## Footprint & performance vs. goose
+## Footprint & performance vs. goose (historical baseline, 2026-07-04)
 
 Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), on the same host with matched Cargo feature flags. `code-mode` was excluded from both because this environment blocked the `v8-goose` static-library download. These are historical baseline measurements, not v1.0.0 benchmark claims; rerun them before publishing current performance deltas.
 
