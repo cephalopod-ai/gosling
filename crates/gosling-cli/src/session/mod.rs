@@ -2303,7 +2303,7 @@ async fn get_reasoner(
         println!("WARNING: GOSLING_PLANNER_PROVIDER not found. Using default provider...");
         config
             .get_gosling_provider()
-            .expect("No provider configured. Run 'gosling configure' first")
+            .map_err(|_| anyhow::anyhow!("No provider configured. Run 'gosling configure' first"))?
     };
 
     // Try planner-specific model first, fall back to default model
@@ -2313,7 +2313,7 @@ async fn get_reasoner(
         println!("WARNING: GOSLING_PLANNER_MODEL not found. Using default model...");
         config
             .get_gosling_model()
-            .expect("No model configured. Run 'gosling configure' first")
+            .map_err(|_| anyhow::anyhow!("No model configured. Run 'gosling configure' first"))?
     };
 
     let planner_context_limit = match env::var(GOSLING_PLANNER_CONTEXT_LIMIT)
