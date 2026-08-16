@@ -98,25 +98,25 @@ impl PermissionManager {
     /// snapshot is taken under the persist lock, so whichever writer runs
     /// last always writes the newest state (a per-caller snapshot could
     /// persist an older clone over a newer one). IO happens outside the map
-    /// lock; a failure keeps the in-memory update and logs.
-    fn persist(&self) {
+    /// lock.
+    ///
+    /// Returns the write error instead of swallowing it. A failure still keeps
+    /// the in-memory update — the decision holds for this session — but the
+    /// caller is responsible for telling the operator that it will not survive
+    /// a restart. Silently logging a lost `NeverAllow` let a user believe a
+    /// tool was permanently denied when it was not. (STT-GOS-005)
+    fn persist(&self) -> Result<(), String> {
         let _persist_guard = self
             .persist_lock
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let snapshot = self.read_map().clone();
-        let result = serde_yaml::to_string(&snapshot)
+        serde_yaml::to_string(&snapshot)
             .map_err(|e| e.to_string())
             .and_then(|yaml| {
                 crate::config::base::write_file_atomic(&self.config_path, &yaml)
                     .map_err(|e| e.to_string())
-            });
-        if let Err(e) = result {
-            tracing::error!(
-                "Failed to persist permission config to {:?}: {e}",
-                self.config_path
-            );
-        }
+            })
     }
 
     /// Returns a list of all the names (keys) in the permission map.
@@ -186,7 +186,14 @@ impl PermissionManager {
             }
         }
 
-        self.persist();
+        if let Err(e) = self.persist() {
+            tracing::error!(
+                security.event_type = "permission_persist_failed",
+                error = %e,
+                path = ?self.config_path,
+                "tool annotations were applied in memory but could not be saved"
+            );
+        }
     }
 
     /// Helper function to retrieve the permission level for a specific permission category and tool.
@@ -216,17 +223,30 @@ impl PermissionManager {
     }
 
     /// Updates the user permission level for a specific tool.
-    pub fn update_user_permission(&self, principal_name: &str, level: PermissionLevel) {
+    pub fn update_user_permission(
+        &self,
+        principal_name: &str,
+        level: PermissionLevel,
+    ) -> Result<(), String> {
         self.update_permission(USER_PERMISSION, principal_name, level)
     }
 
     /// Updates the smart approve permission level for a specific tool.
-    pub fn update_smart_approve_permission(&self, principal_name: &str, level: PermissionLevel) {
+    pub fn update_smart_approve_permission(
+        &self,
+        principal_name: &str,
+        level: PermissionLevel,
+    ) -> Result<(), String> {
         self.update_permission(SMART_APPROVE_PERMISSION, principal_name, level)
     }
 
     /// Helper function to update a permission level for a specific tool in a given permission category.
-    fn update_permission(&self, name: &str, principal_name: &str, level: PermissionLevel) {
+    fn update_permission(
+        &self,
+        name: &str,
+        principal_name: &str,
+        level: PermissionLevel,
+    ) -> Result<(), String> {
         {
             let mut map = self.write_map();
             // Get or create a new PermissionConfig for the specified category
@@ -255,7 +275,7 @@ impl PermissionManager {
             }
         }
 
-        self.persist();
+        self.persist()
     }
 
     /// Removes all permission entries in an extension's tool namespace.
@@ -310,6 +330,48 @@ mod tests {
         (manager, temp_dir)
     }
 
+    // A `NeverAllow` that fails to write used to be swallowed by `persist`,
+    // so the operator was told nothing and the denial silently did not survive
+    // a restart (STT-GOS-005).
+    #[cfg(unix)]
+    #[test]
+    fn a_permission_that_cannot_be_saved_reports_the_failure() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (manager, temp_dir) = create_test_permission_manager();
+        // Deny writes to the config directory *after* construction, so the
+        // read path stays valid and only the persist fails.
+        let mut deny = std::fs::metadata(temp_dir.path()).unwrap().permissions();
+        deny.set_mode(0o555);
+        std::fs::set_permissions(temp_dir.path(), deny).unwrap();
+
+        let result =
+            manager.update_user_permission("developer__shell", PermissionLevel::NeverAllow);
+
+        // Restore before asserting so TempDir can always clean up.
+        let mut restore = std::fs::metadata(temp_dir.path()).unwrap().permissions();
+        restore.set_mode(0o755);
+        std::fs::set_permissions(temp_dir.path(), restore).unwrap();
+
+        assert!(
+            result.is_err(),
+            "a permission write that cannot be persisted must not report success"
+        );
+        // The decision still applies for the running session.
+        assert_eq!(
+            manager.get_user_permission("developer__shell"),
+            Some(PermissionLevel::NeverAllow)
+        );
+    }
+
+    #[test]
+    fn a_permission_that_saves_cleanly_reports_success() {
+        let (manager, _temp_dir) = create_test_permission_manager();
+        assert!(manager
+            .update_user_permission("developer__shell", PermissionLevel::NeverAllow)
+            .is_ok());
+    }
+
     #[test]
     fn test_get_permission_names_empty() {
         let (manager, _temp_dir) = create_test_permission_manager();
@@ -320,7 +382,9 @@ mod tests {
     #[test]
     fn test_update_user_permission() {
         let (manager, _temp_dir) = create_test_permission_manager();
-        manager.update_user_permission("tool1", PermissionLevel::AlwaysAllow);
+        manager
+            .update_user_permission("tool1", PermissionLevel::AlwaysAllow)
+            .unwrap();
 
         let permission = manager.get_user_permission("tool1");
         assert_eq!(permission, Some(PermissionLevel::AlwaysAllow));
@@ -329,7 +393,9 @@ mod tests {
     #[test]
     fn test_update_smart_approve_permission() {
         let (manager, _temp_dir) = create_test_permission_manager();
-        manager.update_smart_approve_permission("tool2", PermissionLevel::AskBefore);
+        manager
+            .update_smart_approve_permission("tool2", PermissionLevel::AskBefore)
+            .unwrap();
 
         let permission = manager.get_smart_approve_permission("tool2");
         assert_eq!(permission, Some(PermissionLevel::AskBefore));
@@ -347,9 +413,15 @@ mod tests {
     fn test_permission_levels() {
         let (manager, _temp_dir) = create_test_permission_manager();
 
-        manager.update_user_permission("tool4", PermissionLevel::AlwaysAllow);
-        manager.update_user_permission("tool5", PermissionLevel::AskBefore);
-        manager.update_user_permission("tool6", PermissionLevel::NeverAllow);
+        manager
+            .update_user_permission("tool4", PermissionLevel::AlwaysAllow)
+            .unwrap();
+        manager
+            .update_user_permission("tool5", PermissionLevel::AskBefore)
+            .unwrap();
+        manager
+            .update_user_permission("tool6", PermissionLevel::NeverAllow)
+            .unwrap();
 
         // Check the permission levels
         assert_eq!(
@@ -371,14 +443,18 @@ mod tests {
         let (manager, _temp_dir) = create_test_permission_manager();
 
         // Initially AlwaysAllow
-        manager.update_user_permission("tool7", PermissionLevel::AlwaysAllow);
+        manager
+            .update_user_permission("tool7", PermissionLevel::AlwaysAllow)
+            .unwrap();
         assert_eq!(
             manager.get_user_permission("tool7"),
             Some(PermissionLevel::AlwaysAllow)
         );
 
         // Now change to NeverAllow
-        manager.update_user_permission("tool7", PermissionLevel::NeverAllow);
+        manager
+            .update_user_permission("tool7", PermissionLevel::NeverAllow)
+            .unwrap();
         assert_eq!(
             manager.get_user_permission("tool7"),
             Some(PermissionLevel::NeverAllow)
@@ -395,10 +471,18 @@ mod tests {
     #[test]
     fn test_remove_extension() {
         let (manager, _temp_dir) = create_test_permission_manager();
-        manager.update_user_permission("prefix__tool1", PermissionLevel::AlwaysAllow);
-        manager.update_user_permission("nonprefix__tool2", PermissionLevel::AlwaysAllow);
-        manager.update_user_permission("prefix__tool3", PermissionLevel::AskBefore);
-        manager.update_user_permission("prefix-extra__tool4", PermissionLevel::AlwaysAllow);
+        manager
+            .update_user_permission("prefix__tool1", PermissionLevel::AlwaysAllow)
+            .unwrap();
+        manager
+            .update_user_permission("nonprefix__tool2", PermissionLevel::AlwaysAllow)
+            .unwrap();
+        manager
+            .update_user_permission("prefix__tool3", PermissionLevel::AskBefore)
+            .unwrap();
+        manager
+            .update_user_permission("prefix-extra__tool4", PermissionLevel::AlwaysAllow)
+            .unwrap();
 
         // Remove entries starting with "prefix"
         manager.remove_extension("prefix").unwrap();
@@ -422,7 +506,9 @@ mod tests {
     #[test]
     fn test_remove_extension_rolls_back_when_persistence_fails() {
         let (manager, _temp_dir) = create_test_permission_manager();
-        manager.update_user_permission("prefix__tool1", PermissionLevel::AlwaysAllow);
+        manager
+            .update_user_permission("prefix__tool1", PermissionLevel::AlwaysAllow)
+            .unwrap();
         fs::create_dir(manager.config_path.with_extension("tmp")).unwrap();
 
         assert!(manager.remove_extension("prefix").is_err());

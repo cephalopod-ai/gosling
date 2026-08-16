@@ -257,7 +257,10 @@ impl ToolInspector for PermissionInspector {
                 // result is argument-specific and must be recomputed every time.
                 if !is_readonly {
                     if let Ok(tc) = &candidate.tool_call {
-                        permission_manager
+                        // Best-effort cache tightening: losing it only costs a
+                        // recompute next turn, so this one is genuinely
+                        // ignorable — unlike a user decision. (STT-GOS-005)
+                        let _ = permission_manager
                             .update_smart_approve_permission(&tc.name, PermissionLevel::AskBefore);
                     }
                 }
@@ -316,7 +319,7 @@ mod tests {
     ) {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
         if let Some(level) = cache {
-            pm.update_smart_approve_permission("tool", level);
+            pm.update_smart_approve_permission("tool", level).unwrap();
         }
         let inspector = new_inspector(pm);
         let req = ToolRequest {
@@ -339,7 +342,8 @@ mod tests {
     #[tokio::test]
     async fn auto_mode_denies_a_tool_the_user_marked_never_allow() {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
-        pm.update_user_permission("developer__shell", PermissionLevel::NeverAllow);
+        pm.update_user_permission("developer__shell", PermissionLevel::NeverAllow)
+            .unwrap();
         let inspector = new_inspector(pm);
 
         let req = ToolRequest {
@@ -366,7 +370,8 @@ mod tests {
     #[tokio::test]
     async fn auto_mode_denies_rather_than_hangs_on_ask_before() {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
-        pm.update_user_permission("developer__shell", PermissionLevel::AskBefore);
+        pm.update_user_permission("developer__shell", PermissionLevel::AskBefore)
+            .unwrap();
         let inspector = new_inspector(pm);
 
         let req = ToolRequest {
@@ -396,7 +401,8 @@ mod tests {
     #[tokio::test]
     async fn auto_mode_still_allows_a_tool_the_user_marked_always_allow() {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
-        pm.update_user_permission("developer__shell", PermissionLevel::AlwaysAllow);
+        pm.update_user_permission("developer__shell", PermissionLevel::AlwaysAllow)
+            .unwrap();
         let inspector = new_inspector(pm);
 
         let req = ToolRequest {

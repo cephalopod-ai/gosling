@@ -1770,7 +1770,12 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
         _ => unreachable!(),
     };
 
-    permission_manager.update_user_permission(&tool.name, new_permission);
+    if let Err(e) = permission_manager.update_user_permission(&tool.name, new_permission) {
+        let _ = cliclack::log::error(format!(
+            "Permission for '{}' was applied for this session but could not be saved: {e}",
+            tool.name
+        ));
+    }
 
     cliclack::outro(format!(
         "Updated permission level for tool {} to {}.",
