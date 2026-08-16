@@ -2275,6 +2275,13 @@ impl GoslingAcpAgent {
 
         let formatted_name = presentation::project_tool_title(&format_tool_name(&tool_name));
 
+        // A security prompt means an inspector flagged this specific call. A
+        // persistent "always allow" would carry that one-off decision forward
+        // to every future call of the tool, so the option is withheld -- the
+        // CLI already does this via `security_prompt.is_none()`, but ACP
+        // clients (Desktop, TUI) were offered it. (WFG-GOS-006)
+        let is_security_prompt = prompt.is_some();
+
         let mut fields = ToolCallUpdateFields::new()
             .title(formatted_name)
             .kind(ToolKind::default())
@@ -2303,12 +2310,15 @@ impl GoslingAcpAgent {
                 .to_string();
             PermissionOption::new(id.clone(), id, kind)
         }
-        let options = vec![
-            option(PermissionOptionKind::AllowAlways),
+        let mut options = Vec::new();
+        if !is_security_prompt {
+            options.push(option(PermissionOptionKind::AllowAlways));
+        }
+        options.extend([
             option(PermissionOptionKind::AllowOnce),
             option(PermissionOptionKind::RejectOnce),
             option(PermissionOptionKind::RejectAlways),
-        ];
+        ]);
 
         let permission_request =
             RequestPermissionRequest::new(session_id, tool_call_update, options);
