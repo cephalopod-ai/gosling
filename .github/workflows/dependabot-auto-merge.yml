@@ -2,15 +2,24 @@ name: Dependabot Auto Merge
 
 on:
   pull_request_target:
+    # `pull_request_target` runs with write access to this repository, so the
+    # trigger surface is named explicitly rather than defaulting to every
+    # pull-request activity type. (RSP-GSL-004)
+    types: [opened, reopened, synchronize]
 
-permissions:
-  contents: write
-  pull-requests: write
+# No workflow-level grants: `pull_request_target` would otherwise hand write
+# access to every job added here later. The one job that needs write asks for
+# it. This workflow never checks out the PR head, which is what keeps the
+# write grant safe.
+permissions: {}
 
 jobs:
   dependabot:
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'repo-makeover/gosling'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
