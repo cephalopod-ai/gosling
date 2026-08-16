@@ -115,6 +115,7 @@ fn build_outer_csp(
          media-src 'self' data: blob:{resources}; \
          {frame_src}; \
          object-src 'none'; \
+         form-action 'none'; \
          base-uri 'self'{base_uris}"
     )
 }

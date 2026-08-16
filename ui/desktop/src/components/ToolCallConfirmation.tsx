@@ -25,19 +25,26 @@ function formatToolName(fullName: string): string {
 // the approval prompt shows the same "what is this actually doing" detail
 // instead of a bare tool name.
 const DETAIL_ARG_KEYS = ['path', 'file', 'command', 'query', 'url', 'uri', 'name', 'pattern', 'source'];
-const MAX_DETAIL_LENGTH = 140;
+// Upper bound on what the approval prompt will render. Generous on purpose:
+// this is the text the operator is being asked to approve, so it should be cut
+// only to stop a pathological payload from taking over the window.
+const MAX_DETAIL_LENGTH = 4000;
 
-function summarizeArguments(args: Record<string, unknown> | undefined): string | undefined {
+// The approval prompt used to show the first matching argument's *first line*,
+// clipped to 140 characters and then CSS-truncated again — so a shell command
+// whose second line was the destructive part was approved unseen
+// (WEB-GOS-002). The full value is now returned and rendered in a bounded,
+// scrollable block; nothing that will run is hidden from the decision.
+export function summarizeArguments(args: Record<string, unknown> | undefined): string | undefined {
   if (!args) return undefined;
   for (const key of DETAIL_ARG_KEYS) {
     const value = args[key];
     if (value === undefined || value === null) continue;
-    const text = typeof value === 'string' ? value : JSON.stringify(value);
-    const firstLine = text.split('\n')[0];
-    if (!firstLine) continue;
-    return firstLine.length > MAX_DETAIL_LENGTH
-      ? `${firstLine.slice(0, MAX_DETAIL_LENGTH)}…`
-      : firstLine;
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    if (!text.trim()) continue;
+    return text.length > MAX_DETAIL_LENGTH
+      ? `${text.slice(0, MAX_DETAIL_LENGTH)}\n… (truncated for display)`
+      : text;
   }
   return undefined;
 }
@@ -70,9 +77,9 @@ export default function ToolConfirmation({
             : intl.formatMessage(i18n.goslingWouldLikeToCallWithName, { toolName: displayName })}
         </div>
         {detail && (
-          <div className="text-sm text-text-secondary mt-0.5 font-mono truncate" title={detail}>
+          <pre className="text-sm text-text-secondary mt-0.5 font-mono whitespace-pre-wrap break-words max-h-48 overflow-auto">
             {detail}
-          </div>
+          </pre>
         )}
       </div>
       <ToolApprovalButtons
