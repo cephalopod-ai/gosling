@@ -1,6 +1,11 @@
 # Intent Charter — Gosling Desktop Workspaces
 
-Status: authoritative. Changes only through `docs/build/plan-changes.md`.
+Status: historical — the Workspaces campaign is complete and its build records
+(`docs/build/plan-changes.md`, gate audits, evidence, traceability) have been
+removed. This charter is kept as the design record for shipped Workspaces
+behavior; it is no longer an active change-control surface. The current
+campaign and its plan-change record live under
+`docs/build/shell-productization/`.
 
 Date created: 2026-07-18
 Last amended: initial charter

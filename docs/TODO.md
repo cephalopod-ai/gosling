@@ -1,5 +1,83 @@
 # TODO
 
+## Open items from the 2026-08-15 exhaustive audit — recorded 2026-08-16
+
+The repair campaign (`docs/logs/session/2026-08-16-audit-repair-campaign.md`)
+closed roughly 62 of the 94 live High/Medium findings plus most Low items across
+19 gated groups, merged as `c828a5895`. What remains is listed here so it is not
+rediscovered from scratch.
+
+### Needs a design decision, not a patch
+
+- [ ] **SEC-GOS-002** — the live ACP MCP-app guest installs a client-supplied
+      CSP; goslingd builds one server-side. Port the server-side builder.
+- [ ] **SEC-GOS-007** — `/mcp-app-proxy` and `/mcp-app-guest` are exempt from
+      token auth because browsers cannot set headers on an iframe load. Needs a
+      nonce or equivalent, the same constraint class SEC-GOS-001 hit.
+- [ ] **SEC-GOS-012** — `--dangerously-unauthenticated` does not force a
+      loopback bind.
+- [ ] **CON-GSL-001** — cross-process recover can mark a live peer's tool
+      `in_doubt`. The obvious `updated_at` guard was implemented and rejected:
+      `updated_at` only moves on state transitions, so it means "started
+      recently", not "owner alive". Needs a real liveness source — a heartbeat
+      on `updated_at`, or an owner PID/lease the recovering process can probe.
+- [ ] **AOC-GOS-002** — tagteam puts the full system+conversation prompt on
+      argv, where `ps` exposes it. The fix is stdin, but the tagteam CLI is an
+      external binary whose input contract is not verifiable from this repo.
+- [ ] **DAT-GSL-003** — `UNIQUE(session_id, message_id)` needs a schema
+      migration plus dedupe of existing rows on live databases.
+- [ ] **TMP-GOS-005 / TMP-GOS-006** — pinned-vs-live workspace folder policy is
+      a documented product invariant; config migration versioning needs a
+      `config_version` scheme and a dual-read deprecation window.
+- [ ] **REC-GSL-001** — `Cargo.toml` declares `repo-makeover/gosling`; the
+      remote is `cephalopod-ai/gosling`. **Nine workflows are gated on
+      `github.repository == 'repo-makeover/gosling'` and therefore never run
+      here**, including `cargo-deny`, `scorecard`, and `dependabot-auto-merge`.
+      Correcting the slug activates all nine at once — an operator decision.
+
+### Blocked on tooling
+
+- [ ] **RSP-GSL-002 / RSP-GSL-003** — a secret-scanning job and
+      `[licenses]`/`[bans]`/`[sources]` in `deny.toml`. `cargo-deny` is not
+      available in the dev environment, so neither could be validated; shipping
+      unverified CI config that fails on first run is worse than the open item.
+
+### Deliberately not fixed, with reasoning recorded in-tree
+
+- **SEC-GOS-011** — failing closed on an absent WebSocket `Origin` was
+  implemented and tested live: it returns 403 to every non-browser ACP client
+  while blocking no browser attack, because the spec requires browsers to send
+  `Origin`. Reverted; reasoning is at the call site.
+
+### Lower priority, mechanical but needs a judgement call
+
+ARCN-GSL-002 (49 scattered `process.env` reads), ARC-GSL-005 (duplicated
+`GOOSE_EXCLUDED_SKILL_IDS` across a TS/JS boundary), INV-GSL-003 (slash
+`COMMANDS` vs dispatch `match` exhaustiveness), MEM-GSL-004 (TUI `turns` grows
+unbounded; capping changes reachable scrollback), PERF-GSL-002 (Desktop
+`performance.spec.ts` is a single-run smoke script presented as a benchmark),
+SIG-GSL-005 (ML-classifier init failure is log-only), DAT-GSL-006 (session
+create + extension apply are two commits), NEG-GSL-003 (`GOSLING_SHELL` flavor
+is unmodeled scanner input), ARC-GSL-001 (three files over 4000 lines, routed to
+a dedicated modularization pass rather than split mid-repair).
+
+### Known-failing test predating this work
+
+- [ ] `context_mgmt::summarizer::tests::defaults_to_off` fails on clean HEAD and
+      was left untouched throughout the campaign. Diagnose separately.
+
+## Provider follow-up — observed 2026-08-16
+
+- [ ] **Grok / xAI OAuth tool-schema rejection.** `gosling` with the
+      `xai_oauth` provider fails a tool call with
+      `Bad request (400): math_mcp__math_analyze: tool parameter root must be an
+      object type (root schema is an anyOf/oneOf union with a non-object
+      branch)`. Reported repeatable. Investigate whether Gosling forwards MCP
+      tool schemas that xAI rejects, and normalize them at the provider seam.
+- [ ] **Mistral (`vibe`) CLI as an ACP provider option.** The Mistral CLI is
+      installed locally and should be selectable through ACP like the other
+      agent-backed providers.
+
 ## Provider authentication follow-up — observed 2026-08-15
 
 - [ ] Investigate and repair Gemini provider OAuth configuration failing with

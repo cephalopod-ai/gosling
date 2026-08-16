@@ -1,7 +1,11 @@
 # Gosling Desktop Workspaces architecture
 
-Status: accepted design for REQ-001–REQ-030. See `docs/adr/` for decisions and
-`docs/build/io-contract.md` for exact formats and failures.
+Status: accepted design for REQ-001–REQ-030. See `docs/adr/` for decisions.
+
+The Workspaces I/O contract that this document referenced was pinned to session
+schema migration target 22 and was removed with the rest of the completed
+campaign's build records; the live schema is well past that, so treat the
+formats below as design intent and the code as authoritative.
 
 ## Dependency direction
 
