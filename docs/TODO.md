@@ -14,8 +14,9 @@ rediscovered from scratch.
 - [ ] **SEC-GOS-007** — `/mcp-app-proxy` and `/mcp-app-guest` are exempt from
       token auth because browsers cannot set headers on an iframe load. Needs a
       nonce or equivalent, the same constraint class SEC-GOS-001 hit.
-- [ ] **SEC-GOS-012** — `--dangerously-unauthenticated` does not force a
-      loopback bind.
+- [x] **SEC-GOS-012** — closed in `6a02881fb`. The combination is refused with
+      an actionable error; verified live across unauth+0.0.0.0 (refused),
+      authenticated+0.0.0.0 (serves), and unauth+loopback (serves).
 - [ ] **CON-GSL-001** — cross-process recover can mark a live peer's tool
       `in_doubt`. The obvious `updated_at` guard was implemented and rejected:
       `updated_at` only moves on state transitions, so it means "started
@@ -48,6 +49,22 @@ rediscovered from scratch.
   implemented and tested live: it returns 403 to every non-browser ACP client
   while blocking no browser attack, because the spec requires browsers to send
   `Origin`. Reverted; reasoning is at the call site.
+
+### Closed in the second repair batch — 2026-08-16
+
+- [x] **STT-GOS-001** (`886c8df8b`) — Chat mode executed frontend tool
+      requests because the execution loop sat above the Chat branch. Residual:
+      verified structurally and by compile, not by a runtime test.
+- [x] **STT-GOS-005** (`886c8df8b`) — permission write failures were swallowed;
+      `persist` and the mutators now return the error and every call site
+      handles it deliberately.
+- [x] **ARCN-GSL-001** (`6a02881fb`) — the CSP handler keyed the ACP lease
+      lookup by webContents id instead of `BrowserWindow.id`, so the CSP
+      omitted the local ACP origin.
+- [x] **SECN-GSL-002** (`6a02881fb`) — the extension allowlist fetch now
+      requires https and is bounded by timeout and size.
+
+See `docs/logs/session/2026-08-16-audit-repair-batch2.md`.
 
 ### Lower priority, mechanical but needs a judgement call
 
