@@ -215,7 +215,8 @@ function connect(value = harness()) {
   return {
     value,
     promise: connectShellAcp({
-      acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+      acpUrl: 'ws://127.0.0.1:7777/acp',
+      acpSubprotocol: 'gosling.token.test-secret',
       profile,
       manifest,
       clientName: 'fixture-shell',
@@ -245,7 +246,10 @@ describe('shell ACP runtime', () => {
   it('initializes, reads, validates, and checks compatibility without creating a session', async () => {
     const { promise, value } = connect();
     const connection = await promise;
-    expect(value.createStream).toHaveBeenCalledWith('ws://127.0.0.1:7777/acp?token=private');
+    expect(value.createStream).toHaveBeenCalledWith(
+      'ws://127.0.0.1:7777/acp',
+      'gosling.token.test-secret'
+    );
     expect(value.initialize).toHaveBeenCalledWith({
       protocolVersion: 1,
       clientCapabilities: {
@@ -284,7 +288,8 @@ describe('shell ACP runtime', () => {
       value.read.mockImplementation(() => new Promise(() => {}));
       const phases: string[] = [];
       const connection = connectShellAcp({
-        acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+        acpUrl: 'ws://127.0.0.1:7777/acp',
+        acpSubprotocol: 'gosling.token.test-secret',
         profile,
         manifest,
         clientName: 'fixture-shell',
@@ -340,7 +345,8 @@ describe('shell ACP runtime', () => {
     };
 
     const connection = await connectShellAcp({
-      acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+      acpUrl: 'ws://127.0.0.1:7777/acp',
+      acpSubprotocol: 'gosling.token.test-secret',
       profile,
       manifest: adapterManifest,
       clientName: 'fixture-shell',
@@ -369,7 +375,8 @@ describe('shell ACP runtime', () => {
 
     await expect(
       connectShellAcp({
-        acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+        acpUrl: 'ws://127.0.0.1:7777/acp',
+        acpSubprotocol: 'gosling.token.test-secret',
         profile,
         manifest: consumerManifest,
         clientName: 'fixture-shell',
@@ -575,18 +582,21 @@ describe('shell ACP runtime', () => {
     expect(value.close).toHaveBeenCalledOnce();
   });
 
+  // A credential in the URL is now itself non-canonical: the secret belongs in
+  // the WebSocket subprotocol (SEC-GOS-001).
   it.each([
-    'ws://localhost:7777/acp?token=private',
-    'https://127.0.0.1:7777/acp?token=private',
-    'ws://127.0.0.1:7777/other?token=private',
-    'ws://127.0.0.1:7777/acp',
-    'ws://user:pass@127.0.0.1:7777/acp?token=private',
-    'ws://127.0.0.1:7777/acp?token=private&extra=value',
+    'ws://localhost:7777/acp',
+    'https://127.0.0.1:7777/acp',
+    'ws://127.0.0.1:7777/other',
+    'ws://user:pass@127.0.0.1:7777/acp',
+    'ws://127.0.0.1:7777/acp?token=private',
+    'ws://127.0.0.1:7777/acp?extra=value',
   ])('rejects non-canonical ACP endpoint %s before creating a transport', async (acpUrl) => {
     const value = harness();
     await expect(
       connectShellAcp({
         acpUrl,
+        acpSubprotocol: 'gosling.token.test-secret',
         profile,
         manifest,
         clientName: 'fixture-shell',
@@ -595,6 +605,24 @@ describe('shell ACP runtime', () => {
       })
     ).rejects.toThrow(/ACP endpoint/);
     expect(value.createStream).not.toHaveBeenCalled();
+  });
+
+  it('passes the credential to the transport as a subprotocol, not in the URL', async () => {
+    const value = harness();
+    void connectShellAcp({
+      acpUrl: 'ws://127.0.0.1:7777/acp',
+      acpSubprotocol: 'gosling.token.test-secret',
+      profile,
+      manifest,
+      clientName: 'fixture-shell',
+      clientVersion: '0.0.0-test',
+      dependencies: value.dependencies,
+    });
+    await vi.waitFor(() => expect(value.createStream).toHaveBeenCalled());
+    expect(value.createStream).toHaveBeenCalledWith(
+      'ws://127.0.0.1:7777/acp',
+      'gosling.token.test-secret'
+    );
   });
 
   it('fails closed and closes transport when initialization metadata is absent', async () => {
@@ -644,7 +672,8 @@ describe('shell ACP runtime', () => {
 
       await expect(
         connectShellAcp({
-          acpUrl: 'ws://127.0.0.1:7777/acp?token=private',
+          acpUrl: 'ws://127.0.0.1:7777/acp',
+          acpSubprotocol: 'gosling.token.test-secret',
           profile: bareProfile,
           manifest: declaredNothing,
           clientName: 'fixture-shell',

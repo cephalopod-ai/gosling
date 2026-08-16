@@ -17,7 +17,8 @@ function createGoslingServeResult(
   overrides: Partial<Pick<GoslingServeResult, 'cleanup' | 'hasExited' | 'getExitDetails'>> = {}
 ): GoslingServeResult {
   return {
-    acpUrl: 'ws://127.0.0.1:1234/acp?token=test',
+    acpUrl: 'ws://127.0.0.1:1234/acp',
+    acpSubprotocol: 'gosling.token.test-secret',
     workingDir: '/tmp',
     process: new EventEmitter() as GoslingServeResult['process'],
     errorLog: [],
@@ -39,7 +40,7 @@ describe('GoslingServeLeaseRegistry', () => {
 
     store.attachWindow(1, lease);
 
-    expect(store.getAcpUrl(1)).toBe('ws://127.0.0.1:1234/acp?token=test');
+    expect(store.getAcpUrl(1)).toBe('ws://127.0.0.1:1234/acp');
     expect(store.getSecretKey(1)).toBe('local-secret');
   });
 
@@ -84,7 +85,7 @@ describe('GoslingServeLeaseRegistry', () => {
 
     await store.releaseWindow(1);
     expect(cleanup).not.toHaveBeenCalled();
-    expect(store.getAcpUrl(2)).toBe('ws://127.0.0.1:1234/acp?token=test');
+    expect(store.getAcpUrl(2)).toBe('ws://127.0.0.1:1234/acp');
     expect(store.getSecretKey(2)).toBe('local-secret');
 
     await store.releaseWindow(2);
@@ -108,13 +109,13 @@ describe('GoslingServeLeaseRegistry', () => {
   it('creates an external ACP lease without process cleanup', async () => {
     const store = new GoslingServeLeaseRegistry(createLogger());
     const lease = store.createExternal(
-      'wss://example.com/gosling/acp?token=test',
+      'wss://example.com/gosling/acp',
       'external-secret'
     );
 
     store.attachWindow(1, lease);
 
-    expect(store.getAcpUrl(1)).toBe('wss://example.com/gosling/acp?token=test');
+    expect(store.getAcpUrl(1)).toBe('wss://example.com/gosling/acp');
     expect(store.getSecretKey(1)).toBe('external-secret');
 
     await store.releaseWindow(1);
@@ -126,7 +127,7 @@ describe('GoslingServeLeaseRegistry', () => {
     const cleanup = vi.fn(async () => undefined);
     const store = new GoslingServeLeaseRegistry(createLogger());
     const lease = store.createExternal(
-      'wss://example.com/gosling/acp?token=test',
+      'wss://example.com/gosling/acp',
       'external-secret',
       cleanup
     );

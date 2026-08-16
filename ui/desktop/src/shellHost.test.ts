@@ -12,7 +12,7 @@ describe('minimal shell host', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     cleanupRecordedBackendProcesses.mockResolvedValue(undefined);
-    startGoslingServe.mockResolvedValue({ acpUrl: 'ws://127.0.0.1/acp?token=secret' });
+    startGoslingServe.mockResolvedValue({ acpUrl: 'ws://127.0.0.1/acp' });
   });
 
   it('passes fixed runtime inputs and applies the dedicated preload and partition', async () => {

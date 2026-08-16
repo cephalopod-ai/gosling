@@ -61,12 +61,12 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 }
 
 async function initializeConnection(): Promise<InitializedAcpClient> {
-  const wsUrl = await window.electron.getAcpUrl();
-  if (!wsUrl) {
+  const endpoint = await window.electron.getAcpUrl();
+  if (!endpoint) {
     throw new Error('ACP URL is not available');
   }
 
-  const stream = createWebSocketStream(wsUrl);
+  const stream = createWebSocketStream(endpoint.url, endpoint.subprotocol);
   const client = new GoslingClient(createClientCallbacks(), stream);
 
   try {

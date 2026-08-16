@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildLocalServeUrls, findGoslingBinaryPath, startGoslingServe } from './goslingServe';
+import {
+  acpTokenSubprotocol,
+  buildLocalServeUrls,
+  findGoslingBinaryPath,
+  startGoslingServe,
+} from './goslingServe';
 
 const binaryName = process.platform === 'win32' ? 'gosling.exe' : 'gosling';
 const tempDirs: string[] = [];
@@ -99,24 +104,30 @@ describe('findGoslingBinaryPath', () => {
 });
 
 describe('buildLocalServeUrls', () => {
-  it('builds HTTP and WS URLs', () => {
-    expect(buildLocalServeUrls(1234, 'secret', 'http')).toEqual({
+  // The secret must not appear in any URL: these strings reach logs, crash
+  // reports, and startup diagnostics (SEC-GOS-001).
+  it('builds HTTP and WS URLs without a credential', () => {
+    expect(buildLocalServeUrls(1234, 'http')).toEqual({
       httpBaseUrl: 'http://127.0.0.1:1234',
       statusUrl: 'http://127.0.0.1:1234/status',
       healthUrl: 'http://127.0.0.1:1234/health',
-      acpUrl: 'ws://127.0.0.1:1234/acp?token=secret',
-      redactedAcpUrl: 'ws://127.0.0.1:1234/acp?token=REDACTED',
+      acpUrl: 'ws://127.0.0.1:1234/acp',
+      redactedAcpUrl: 'ws://127.0.0.1:1234/acp',
     });
   });
 
-  it('builds HTTPS and WSS URLs', () => {
-    expect(buildLocalServeUrls(1234, 'secret', 'https')).toEqual({
+  it('builds HTTPS and WSS URLs without a credential', () => {
+    expect(buildLocalServeUrls(1234, 'https')).toEqual({
       httpBaseUrl: 'https://127.0.0.1:1234',
       statusUrl: 'https://127.0.0.1:1234/status',
       healthUrl: 'https://127.0.0.1:1234/health',
-      acpUrl: 'wss://127.0.0.1:1234/acp?token=secret',
-      redactedAcpUrl: 'wss://127.0.0.1:1234/acp?token=REDACTED',
+      acpUrl: 'wss://127.0.0.1:1234/acp',
+      redactedAcpUrl: 'wss://127.0.0.1:1234/acp',
     });
+  });
+
+  it('carries the secret in the subprotocol instead', () => {
+    expect(acpTokenSubprotocol('secret')).toBe('gosling.token.secret');
   });
 });
 
@@ -400,7 +411,8 @@ describe('startGoslingServe', () => {
 
       try {
         expect(readinessUrls[0]).toMatch(/^https:\/\/127\.0\.0\.1:\d+\/status$/);
-        expect(result.acpUrl).toMatch(/^wss:\/\/127\.0\.0\.1:\d+\/acp\?token=test-secret$/);
+        expect(result.acpUrl).toMatch(/^wss:\/\/127\.0\.0\.1:\d+\/acp$/);
+        expect(result.acpSubprotocol).toBe('gosling.token.test-secret');
         expect(result.certFingerprint).toBe('DD:EE:FF');
         await expect(waitForFileLines(argsPath)).resolves.toContain('--tls');
       } finally {

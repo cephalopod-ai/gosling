@@ -54,6 +54,9 @@ export interface StartGoslingServeOptions extends FindGoslingBinaryOptions {
 
 export interface GoslingServeResult {
   acpUrl: string;
+  /// Offered as the WebSocket subprotocol to authenticate the ACP upgrade
+  /// without putting the secret in the URL (SEC-GOS-001).
+  acpSubprotocol: string;
   workingDir: string;
   process: ChildProcess;
   errorLog: string[];
@@ -323,28 +326,30 @@ export interface LocalServeUrls {
   redactedAcpUrl: string;
 }
 
-export const buildLocalServeUrls = (
-  port: number,
-  token: string,
-  scheme: LocalServeScheme
-): LocalServeUrls => {
+/// Subprotocol prefix carrying the shared secret on the ACP WebSocket upgrade.
+/// Must match `ACP_TOKEN_SUBPROTOCOL_PREFIX` in
+/// `crates/gosling/src/acp/transport/auth.rs`.
+export const ACP_TOKEN_SUBPROTOCOL_PREFIX = 'gosling.token.';
+
+export const acpTokenSubprotocol = (token: string): string =>
+  `${ACP_TOKEN_SUBPROTOCOL_PREFIX}${token}`;
+
+export const buildLocalServeUrls = (port: number, scheme: LocalServeScheme): LocalServeUrls => {
   const httpBaseUrl = `${scheme}://127.0.0.1:${port}`;
   const websocketProtocol = scheme === 'https' ? 'wss:' : 'ws:';
 
+  // The secret rides in the WebSocket subprotocol rather than the query
+  // string, which would otherwise land in access logs, `ps` output, and crash
+  // reports (SEC-GOS-001). The URL is therefore already safe to log.
   const acpUrl = new URL(`${httpBaseUrl}/acp`);
   acpUrl.protocol = websocketProtocol;
-  acpUrl.searchParams.set('token', token);
-
-  const redactedAcpUrl = new URL(`${httpBaseUrl}/acp`);
-  redactedAcpUrl.protocol = websocketProtocol;
-  redactedAcpUrl.searchParams.set('token', 'REDACTED');
 
   return {
     httpBaseUrl,
     statusUrl: `${httpBaseUrl}/status`,
     healthUrl: `${httpBaseUrl}/health`,
     acpUrl: acpUrl.toString(),
-    redactedAcpUrl: redactedAcpUrl.toString(),
+    redactedAcpUrl: acpUrl.toString(),
   };
 };
 
@@ -439,7 +444,6 @@ export const startGoslingServe = async ({
   const localServeScheme: LocalServeScheme = tls ? 'https' : 'http';
   const { httpBaseUrl, statusUrl, healthUrl, acpUrl, redactedAcpUrl } = buildLocalServeUrls(
     port,
-    secretKey,
     localServeScheme
   );
   const errorLog: string[] = [];
@@ -805,6 +809,7 @@ export const startGoslingServe = async ({
 
   return {
     acpUrl,
+    acpSubprotocol: acpTokenSubprotocol(secretKey),
     workingDir,
     process: goslingProcess,
     errorLog,

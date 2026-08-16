@@ -91,6 +91,14 @@ interface McpAppProxyCsp {
   baseUriDomains?: string[];
 }
 
+/// The ACP WebSocket endpoint. The shared secret is carried in `subprotocol`
+/// rather than the URL so it stays out of logs and crash reports
+/// (SEC-GOS-001).
+export interface AcpEndpoint {
+  url: string;
+  subprotocol: string;
+}
+
 const config = JSON.parse(process.argv.find((arg) => arg.startsWith('{')) || '{}');
 
 export interface CreateChatWindowOptions {
@@ -141,7 +149,7 @@ type ElectronAPI = {
   getSetting: <K extends SettingKey>(key: K) => Promise<Settings[K]>;
   getSettings: <K extends SettingKey>(keys: K[]) => Promise<Pick<Settings, K>>;
   setSetting: <K extends SettingKey>(key: K, value: Settings[K]) => Promise<void>;
-  getAcpUrl: () => Promise<string | null>;
+  getAcpUrl: () => Promise<AcpEndpoint | null>;
   getMcpAppProxyUrl: (csp?: McpAppProxyCsp | null) => Promise<string | null>;
   setWakelock: (enable: boolean) => Promise<boolean>;
   getWakelockState: () => Promise<boolean>;

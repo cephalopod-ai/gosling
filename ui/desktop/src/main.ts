@@ -27,7 +27,7 @@ import os from 'node:os';
 import { execFileSync, spawn, execFile } from 'child_process';
 import 'dotenv/config';
 import { checkBackendStatus } from './backendStatus';
-import { startGoslingServe } from './goslingServe';
+import { acpTokenSubprotocol, startGoslingServe } from './goslingServe';
 import { GoslingServeLeaseRegistry, type GoslingServeLease } from './goslingServeLeaseRegistry';
 import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
 import { getOverrideOriginForRequest } from './requestOrigin';
@@ -2093,7 +2093,13 @@ ipcMain.handle('get-acp-url', async (event) => {
   if (!windowId) {
     return null;
   }
-  return goslingServeLeases.getAcpUrl(windowId) ?? null;
+  const url = goslingServeLeases.getAcpUrl(windowId);
+  const secretKey = goslingServeLeases.getSecretKey(windowId);
+  if (!url || !secretKey) {
+    return null;
+  }
+  // The secret travels in the WebSocket subprotocol, not the URL (SEC-GOS-001).
+  return { url, subprotocol: acpTokenSubprotocol(secretKey) };
 });
 
 ipcMain.handle('get-mcp-app-proxy-url', async (event, csp?: McpAppProxyCsp | null) => {
