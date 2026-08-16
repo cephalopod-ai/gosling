@@ -21,6 +21,24 @@ const MCP_APP_PROXY_HTML: &str = include_str!("templates/mcp_app_proxy.html");
 
 type GuestHtmlStore = Arc<RwLock<HashMap<String, GuestHtmlEntry>>>;
 
+/// Guest CSPs the server computed at proxy-render time, keyed by the
+/// single-use token handed to that proxy page.
+///
+/// The guest CSP used to be posted back by the proxy page, which read its own
+/// `<meta>` policy and rewrote `'nonce-...'` to `'unsafe-inline'` before
+/// sending it. Anything running in that frame could send a different string
+/// instead, and the server installed it verbatim — the policy meant to bound
+/// the guest was supplied by the very context it bounds. The server now derives
+/// it from the same declared domains it already uses for the outer CSP, and the
+/// page only presents a token. (SEC-GOS-002)
+type ProxyCspStore = Arc<RwLock<HashMap<String, ProxyCspEntry>>>;
+
+#[derive(Clone)]
+struct ProxyCspEntry {
+    guest_csp: String,
+    created: Instant,
+}
+
 #[derive(Clone)]
 struct GuestHtmlEntry {
     html: String,
@@ -43,10 +61,13 @@ struct GuestQuery {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct StoreGuestBody {
     secret: String,
     html: String,
-    csp: Option<String>,
+    /// Token minted by `/mcp-app-proxy` for this page. Names which
+    /// server-computed guest CSP to apply; it does not carry a policy.
+    proxy_token: String,
 }
 
 #[derive(Serialize)]
@@ -61,6 +82,7 @@ struct AppState {
     secret_key: String,
     guest_store: GuestHtmlStore,
     guest_base_url: String,
+    proxy_csp_store: ProxyCspStore,
 }
 
 #[derive(Clone)]
@@ -236,20 +258,65 @@ async fn mcp_app_proxy(
 
     let script_nonce = Uuid::new_v4().simple().to_string();
     let script_inline_source = format!("'nonce-{script_nonce}'");
+
+    let connect_domains = parse_domains(params.connect_domains.as_ref());
+    let resource_domains = parse_domains(params.resource_domains.as_ref());
+    let frame_domains = parse_domains(params.frame_domains.as_ref());
+    let base_uri_domains = parse_domains(params.base_uri_domains.as_ref());
+    let script_domains = parse_domains(params.script_domains.as_ref());
+
+    let outer_csp = build_outer_csp(
+        &connect_domains,
+        &resource_domains,
+        &frame_domains,
+        &base_uri_domains,
+        &script_domains,
+        &state.guest_base_url,
+        &script_inline_source,
+    );
+
+    // The guest runs the app's own markup and has no server-issued nonce, so
+    // its policy allows inline scripts where the outer page pins a nonce.
+    // Everything else is the same ceiling, derived from the same declared
+    // domains — the guest cannot widen it, because it never supplies it.
+    // (SEC-GOS-002)
+    let guest_csp = build_outer_csp(
+        &connect_domains,
+        &resource_domains,
+        &frame_domains,
+        &base_uri_domains,
+        &script_domains,
+        &state.guest_base_url,
+        "'unsafe-inline'",
+    );
+
+    let proxy_token = Uuid::new_v4().simple().to_string();
+    {
+        let mut store = state.proxy_csp_store.write().await;
+        let cutoff = Instant::now() - Duration::from_secs(GUEST_HTML_TTL_SECS);
+        store.retain(|_, entry| entry.created > cutoff);
+        if store.len() >= GUEST_HTML_MAX_ENTRIES {
+            if let Some(oldest) = store
+                .iter()
+                .min_by_key(|(_, entry)| entry.created)
+                .map(|(key, _)| key.clone())
+            {
+                store.remove(&oldest);
+            }
+        }
+        store.insert(
+            proxy_token.clone(),
+            ProxyCspEntry {
+                guest_csp,
+                created: Instant::now(),
+            },
+        );
+    }
+
     let html = MCP_APP_PROXY_HTML
-        .replace(
-            "{{OUTER_CSP}}",
-            &build_outer_csp(
-                &parse_domains(params.connect_domains.as_ref()),
-                &parse_domains(params.resource_domains.as_ref()),
-                &parse_domains(params.frame_domains.as_ref()),
-                &parse_domains(params.base_uri_domains.as_ref()),
-                &parse_domains(params.script_domains.as_ref()),
-                &state.guest_base_url,
-                &script_inline_source,
-            ),
-        )
-        .replace("{{SCRIPT_NONCE}}", &script_nonce);
+        .replace("{{OUTER_CSP}}", &outer_csp)
+        .replace("{{SCRIPT_NONCE}}", &script_nonce)
+        .replace("{{PROXY_TOKEN}}", &proxy_token);
 
     (
         [
@@ -283,8 +350,27 @@ async fn store_guest_html(
             .into_response();
     }
 
+    // Consume the token minted for this proxy page and use the CSP the server
+    // computed then. An unknown token means the caller never rendered through
+    // `/mcp-app-proxy`, so there is no policy to apply and the request is
+    // refused rather than defaulting to an empty (absent) CSP. (SEC-GOS-002)
+    let csp = {
+        let mut store = state.proxy_csp_store.write().await;
+        let cutoff = Instant::now() - Duration::from_secs(GUEST_HTML_TTL_SECS);
+        store.retain(|_, entry| entry.created > cutoff);
+        match store.remove(&body.proxy_token) {
+            Some(entry) => entry.guest_csp,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    "Unknown or expired proxy token; re-render the MCP app proxy page",
+                )
+                    .into_response();
+            }
+        }
+    };
+
     let nonce = Uuid::new_v4().to_string();
-    let csp = body.csp.unwrap_or_default();
     let guest_url = format!("{}/mcp-app-guest?nonce={}", state.guest_base_url, nonce);
 
     {
@@ -384,6 +470,7 @@ pub(crate) fn routes(secret_key: String) -> Router {
         secret_key,
         guest_store,
         guest_base_url,
+        proxy_csp_store: Arc::new(RwLock::new(HashMap::new())),
     };
 
     Router::new()
@@ -397,8 +484,65 @@ pub(crate) fn routes(secret_key: String) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_csp_source, parse_domains, peer_addr_is_loopback};
+    use super::{build_outer_csp, normalize_csp_source, parse_domains, peer_addr_is_loopback};
     use std::net::SocketAddr;
+
+    // The guest CSP used to be posted back by the proxy page, which read its
+    // own <meta> policy and rewrote nonces to 'unsafe-inline' before sending
+    // it — so the frame the policy bounds supplied the policy. It is now
+    // derived server-side from the declared domains. (SEC-GOS-002)
+    #[test]
+    fn guest_csp_is_derived_from_declared_domains_not_supplied() {
+        let connect = parse_domains(Some(&"https://api.example.com".to_string()));
+        let guest_csp = build_outer_csp(
+            &connect,
+            &[],
+            &[],
+            &[],
+            &[],
+            "http://127.0.0.1:1234",
+            "'unsafe-inline'",
+        );
+
+        assert!(guest_csp.starts_with("default-src 'none'"));
+        assert!(guest_csp.contains("https://api.example.com"));
+        assert!(guest_csp.contains("object-src 'none'"));
+    }
+
+    #[test]
+    fn an_undeclared_domain_never_reaches_the_guest_policy() {
+        let guest_csp = build_outer_csp(
+            &parse_domains(Some(&"https://declared.example".to_string())),
+            &[],
+            &[],
+            &[],
+            &[],
+            "http://127.0.0.1:1234",
+            "'unsafe-inline'",
+        );
+        assert!(guest_csp.contains("https://declared.example"));
+        assert!(
+            !guest_csp.contains("https://attacker.example"),
+            "only declared domains may appear in the guest policy"
+        );
+    }
+
+    #[test]
+    fn the_guest_policy_allows_inline_where_the_outer_page_pins_a_nonce() {
+        let outer = build_outer_csp(&[], &[], &[], &[], &[], "http://127.0.0.1:1", "'nonce-abc'");
+        let guest = build_outer_csp(
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            "http://127.0.0.1:1",
+            "'unsafe-inline'",
+        );
+        assert!(outer.contains("'nonce-abc'"));
+        assert!(!outer.contains("'unsafe-inline'; script-src"));
+        assert!(guest.contains("'unsafe-inline'"));
+    }
 
     #[test]
     fn normalizes_url_sources_to_origins() {

@@ -9,11 +9,22 @@ rediscovered from scratch.
 
 ### Needs a design decision, not a patch
 
-- [ ] **SEC-GOS-002** — the live ACP MCP-app guest installs a client-supplied
-      CSP; goslingd builds one server-side. Port the server-side builder.
-- [ ] **SEC-GOS-007** — `/mcp-app-proxy` and `/mcp-app-guest` are exempt from
-      token auth because browsers cannot set headers on an iframe load. Needs a
-      nonce or equivalent, the same constraint class SEC-GOS-001 hit.
+- [x] **SEC-GOS-002** — closed in `5ea594f4b`. The guest CSP is derived
+      server-side from declared domains and keyed to a single-use proxy token;
+      verified live that a forged token carrying `default-src *` is refused.
+- [ ] **SEC-GOS-007** — assessed 2026-08-16 and deliberately not patched; see
+      `docs/logs/session/2026-08-16-acp-mcp-repair.md`. The state-changing route
+      (`POST /mcp-app-guest`) *is* authenticated in-handler and derives its CSP
+      server-side; the unauthenticated GETs return a static shell and a
+      UUIDv4-nonced guest. Forcing loopback would break remote MCP-app
+      deployments for a low-value gain.
+- [ ] **SECN-GSL-001** *(now the top ACP/MCP item)* — both proxy templates read
+      the backend secret from `window.location.hash` in a frame running
+      `allow-scripts allow-same-origin`. The `proxy_token` added by the
+      SEC-GOS-002 fix is the mechanism to replace it: make `store_guest_html`
+      accept the token instead of the secret and the backend secret leaves the
+      browser entirely. Spans both Rust paths, both templates, and Desktop
+      `main.ts`.
 - [x] **SEC-GOS-012** — closed in `6a02881fb`. The combination is refused with
       an actionable error; verified live across unauth+0.0.0.0 (refused),
       authenticated+0.0.0.0 (serves), and unauth+loopback (serves).
