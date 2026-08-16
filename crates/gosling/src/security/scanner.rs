@@ -515,16 +515,7 @@ impl PromptInjectionScanner {
     }
 }
 
-fn is_shell_tool_name(name: &str) -> bool {
-    matches!(
-        name,
-        "shell" | "bash" | "execute_command" | "run_command" | "terminal"
-    ) || name.ends_with("__shell")
-        || name.ends_with("__bash")
-        || name.ends_with("__terminal")
-        || name.ends_with("__execute_command")
-        || name.ends_with("__run_command")
-}
+use crate::permission::tool_class::is_code_execution_tool as is_shell_tool_name;
 
 fn should_scan_tool_call(tool_call: &CallToolRequestParams) -> bool {
     if is_shell_tool_name(tool_call.name.as_ref()) {

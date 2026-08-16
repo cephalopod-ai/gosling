@@ -1,0 +1,123 @@
+//! Shared tool classification.
+//!
+//! Four independent predicates previously decided "is this a shell tool"
+//! (INV-GSL-004): two byte-identical copies in the scanner and egress
+//! inspector, a loose `contains()` form in the working-dir scope inspector
+//! that matched `computercontroller__automation_script` only by accident, and
+//! a separate literal list in the adversary inspector. They disagreed, so a
+//! tool could be scanned by one inspector and ignored by another.
+//!
+//! This module is the single owner of that judgement.
+
+/// Bare tool names that execute an arbitrary command line.
+const SHELL_TOOL_NAMES: &[&str] = &[
+    "shell",
+    "bash",
+    "execute_command",
+    "run_command",
+    "terminal",
+];
+
+/// Suffixes an MCP extension appends when it re-exports a shell tool
+/// (`<extension>__shell`).
+const SHELL_TOOL_SUFFIXES: &[&str] = &[
+    "__shell",
+    "__bash",
+    "__terminal",
+    "__execute_command",
+    "__run_command",
+];
+
+/// Tools that run code or drive the machine without looking like a shell.
+/// `computercontroller__automation_script` writes a 0o755 temp script and
+/// executes it, so it carries shell authority under a different name.
+const CODE_EXECUTION_TOOL_NAMES: &[&str] = &[
+    "computercontroller__automation_script",
+    "computercontroller__computer_control",
+];
+
+/// Bare tool names that mutate the filesystem.
+const WRITE_TOOL_NAMES: &[&str] = &["write", "edit", "str_replace", "create", "patch", "apply"];
+
+const WRITE_TOOL_SUFFIXES: &[&str] = &[
+    "__write",
+    "__edit",
+    "__str_replace",
+    "__create",
+    "__patch",
+    "__apply",
+];
+
+fn matches_name_or_suffix(name: &str, names: &[&str], suffixes: &[&str]) -> bool {
+    names.contains(&name) || suffixes.iter().any(|suffix| name.ends_with(suffix))
+}
+
+/// A tool that executes an arbitrary command line.
+pub fn is_shell_tool(name: &str) -> bool {
+    matches_name_or_suffix(name, SHELL_TOOL_NAMES, SHELL_TOOL_SUFFIXES)
+}
+
+/// A tool that runs code or drives the machine, shell-named or not.
+pub fn is_code_execution_tool(name: &str) -> bool {
+    is_shell_tool(name) || CODE_EXECUTION_TOOL_NAMES.contains(&name)
+}
+
+/// A tool that mutates the filesystem.
+pub fn is_write_tool(name: &str) -> bool {
+    matches_name_or_suffix(name, WRITE_TOOL_NAMES, WRITE_TOOL_SUFFIXES)
+}
+
+/// Tools that carry enough authority that an autonomous agent must not run
+/// them on an implicit grant. `Auto` has no operator attached, so these
+/// require an explicit user permission rather than the blanket approval Auto
+/// previously handed out (SEC-GOS-003).
+pub fn requires_explicit_grant_in_auto(name: &str) -> bool {
+    is_code_execution_tool(name) || is_write_tool(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bare_and_namespaced_shell_tools_are_shell() {
+        assert!(is_shell_tool("shell"));
+        assert!(is_shell_tool("bash"));
+        assert!(is_shell_tool("developer__shell"));
+        assert!(is_shell_tool("some_ext__run_command"));
+        assert!(!is_shell_tool("read"));
+    }
+
+    #[test]
+    fn automation_script_is_code_execution_without_being_shell_named() {
+        assert!(!is_shell_tool("computercontroller__automation_script"));
+        assert!(is_code_execution_tool(
+            "computercontroller__automation_script"
+        ));
+    }
+
+    #[test]
+    fn substring_lookalikes_are_not_shell_tools() {
+        // The old `contains("shell")` predicate matched these.
+        assert!(!is_shell_tool("read_shellcheck_report"));
+        assert!(!is_shell_tool("list_commands"));
+    }
+
+    #[test]
+    fn write_tools_are_recognized_bare_and_namespaced() {
+        assert!(is_write_tool("write"));
+        assert!(is_write_tool("developer__edit"));
+        assert!(!is_write_tool("read"));
+    }
+
+    #[test]
+    fn auto_grant_gate_covers_execution_and_write_but_not_read() {
+        assert!(requires_explicit_grant_in_auto("shell"));
+        assert!(requires_explicit_grant_in_auto("developer__edit"));
+        assert!(requires_explicit_grant_in_auto(
+            "computercontroller__automation_script"
+        ));
+        assert!(!requires_explicit_grant_in_auto("read"));
+        assert!(!requires_explicit_grant_in_auto("developer__read"));
+    }
+}

@@ -1,6 +1,7 @@
 pub mod permission_inspector;
 pub mod permission_judge;
 pub mod permission_store;
+pub mod tool_class;
 pub mod working_dir_scope_inspector;
 
 pub use gosling_providers::permission::{Permission, PermissionConfirmation};
