@@ -3100,5 +3100,32 @@
   },
   "toolApprovalButtons.failedToSubmitDecision": {
     "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
+  },
+  "authSettings.addCredentialDescription": {
+    "defaultMessage": "Store an API key, password, or login the same way you would in a .env file. To configure an AI model provider instead, use Models > Add model."
+  },
+  "authSettings.added": {
+    "defaultMessage": "Credential added"
+  },
+  "authSettings.failedToAdd": {
+    "defaultMessage": "Failed to add credential: {error}"
+  },
+  "authSettings.nameInvalid": {
+    "defaultMessage": "Name must contain only letters, numbers, \"_\", or \"-\"."
+  },
+  "authSettings.nameLabel": {
+    "defaultMessage": "Name"
+  },
+  "authSettings.namePlaceholder": {
+    "defaultMessage": "MY_API_KEY"
+  },
+  "authSettings.save": {
+    "defaultMessage": "Save"
+  },
+  "authSettings.valueLabel": {
+    "defaultMessage": "Value"
+  },
+  "authSettings.valuePlaceholder": {
+    "defaultMessage": "Secret value"
   }
 }

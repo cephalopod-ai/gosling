@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Loader2, LogIn, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import {
+  acpAddCustomProviderSecret,
   acpAuthenticateProvider,
   acpDeleteProviderSecret,
   acpListProviderSecrets,
@@ -12,8 +13,10 @@ import { useModelAndProvider } from '../../ModelAndProviderContext';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
+import { Input } from '../../ui/input';
 import { defineMessages, useIntl } from '../../../i18n';
-import type { View, ViewOptions } from '../../../utils/navigationUtils';
+
+const CUSTOM_CREDENTIAL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 const i18n = defineMessages({
   title: {
@@ -101,6 +104,43 @@ const i18n = defineMessages({
     id: 'authSettings.addCredential',
     defaultMessage: 'Add credential',
   },
+  addCredentialDescription: {
+    id: 'authSettings.addCredentialDescription',
+    defaultMessage:
+      'Store an API key, password, or login the same way you would in a .env file. To configure an AI model provider instead, use Models > Configure providers.',
+  },
+  nameLabel: {
+    id: 'authSettings.nameLabel',
+    defaultMessage: 'Name',
+  },
+  namePlaceholder: {
+    id: 'authSettings.namePlaceholder',
+    defaultMessage: 'MY_API_KEY',
+  },
+  valueLabel: {
+    id: 'authSettings.valueLabel',
+    defaultMessage: 'Value',
+  },
+  valuePlaceholder: {
+    id: 'authSettings.valuePlaceholder',
+    defaultMessage: 'Secret value',
+  },
+  nameInvalid: {
+    id: 'authSettings.nameInvalid',
+    defaultMessage: 'Name must contain only letters, numbers, "_", or "-".',
+  },
+  save: {
+    id: 'authSettings.save',
+    defaultMessage: 'Save',
+  },
+  added: {
+    id: 'authSettings.added',
+    defaultMessage: 'Credential added',
+  },
+  failedToAdd: {
+    id: 'authSettings.failedToAdd',
+    defaultMessage: 'Failed to add credential: {error}',
+  },
 });
 
 function storageLabel(secret: ProviderSecretDto, intl: ReturnType<typeof useIntl>) {
@@ -129,11 +169,7 @@ function expiryClass(secret: ProviderSecretDto) {
   return 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300';
 }
 
-export default function AuthSettingsSection({
-  setView,
-}: {
-  setView: (view: View, options?: ViewOptions) => void;
-}) {
+export default function AuthSettingsSection() {
   const intl = useIntl();
   const { currentProvider } = useModelAndProvider();
   const [secrets, setSecrets] = useState<ProviderSecretDto[]>([]);
@@ -141,6 +177,11 @@ export default function AuthSettingsSection({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [secretToDelete, setSecretToDelete] = useState<ProviderSecretDto | null>(null);
+  const [isAddingCredential, setIsAddingCredential] = useState(false);
+  const [newCredentialName, setNewCredentialName] = useState('');
+  const [newCredentialValue, setNewCredentialValue] = useState('');
+  const [addCredentialError, setAddCredentialError] = useState<string | null>(null);
+  const [isSubmittingCredential, setIsSubmittingCredential] = useState(false);
 
   const loadSecrets = useCallback(async () => {
     setLoading(true);
@@ -204,6 +245,40 @@ export default function AuthSettingsSection({
 
   const isActiveProvider = secretToDelete?.provider === currentProvider;
 
+  const resetAddCredentialForm = () => {
+    setIsAddingCredential(false);
+    setNewCredentialName('');
+    setNewCredentialValue('');
+    setAddCredentialError(null);
+  };
+
+  const submitNewCredential = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const name = newCredentialName.trim();
+    if (!CUSTOM_CREDENTIAL_NAME_PATTERN.test(name)) {
+      setAddCredentialError(intl.formatMessage(i18n.nameInvalid));
+      return;
+    }
+
+    setAddCredentialError(null);
+    setIsSubmittingCredential(true);
+    try {
+      await acpAddCustomProviderSecret(name, newCredentialValue);
+      toast.success(intl.formatMessage(i18n.added));
+      resetAddCredentialForm();
+      await loadSecrets();
+    } catch (error) {
+      toast.error(
+        intl.formatMessage(i18n.failedToAdd, {
+          error: errorMessage(error, 'Unknown error'),
+        })
+      );
+    } finally {
+      setIsSubmittingCredential(false);
+    }
+  };
+
   return (
     <section id="auth" className="space-y-4 pr-4 mt-1">
       <Card className="pb-2">
@@ -219,18 +294,85 @@ export default function AuthSettingsSection({
             <Button
               size="sm"
               className="gap-2 self-start"
-              onClick={() =>
-                setView('ConfigureProviders', {
-                  parentView: 'settings',
-                  parentViewOptions: { section: 'auth' },
-                })
-              }
+              onClick={() => setIsAddingCredential(true)}
+              disabled={isAddingCredential}
             >
               <Plus className="h-4 w-4" />
               {intl.formatMessage(i18n.addCredential)}
             </Button>
           </div>
         </CardHeader>
+        {isAddingCredential && (
+          <CardContent className="px-4 pb-2 pt-2">
+            <form
+              onSubmit={submitNewCredential}
+              className="space-y-3 rounded-lg bg-background-secondary p-3"
+            >
+              <p className="text-xs text-text-secondary">
+                {intl.formatMessage(i18n.addCredentialDescription)}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="new-credential-name"
+                    className="text-xs font-medium text-text-primary"
+                  >
+                    {intl.formatMessage(i18n.nameLabel)}
+                  </label>
+                  <Input
+                    id="new-credential-name"
+                    value={newCredentialName}
+                    onChange={(e) => setNewCredentialName(e.target.value)}
+                    placeholder={intl.formatMessage(i18n.namePlaceholder)}
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="new-credential-value"
+                    className="text-xs font-medium text-text-primary"
+                  >
+                    {intl.formatMessage(i18n.valueLabel)}
+                  </label>
+                  <Input
+                    id="new-credential-value"
+                    type="password"
+                    value={newCredentialValue}
+                    onChange={(e) => setNewCredentialValue(e.target.value)}
+                    placeholder={intl.formatMessage(i18n.valuePlaceholder)}
+                  />
+                </div>
+              </div>
+              {addCredentialError && (
+                <p className="text-xs text-red-600 dark:text-red-400">{addCredentialError}</p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={
+                    isSubmittingCredential || !newCredentialName.trim() || !newCredentialValue
+                  }
+                >
+                  {isSubmittingCredential ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    intl.formatMessage(i18n.save)
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={resetAddCredentialForm}
+                  disabled={isSubmittingCredential}
+                >
+                  {intl.formatMessage(i18n.cancel)}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        )}
         <CardContent className="px-4 py-2">
           {loading ? (
             <div className="flex items-center gap-2 py-6 text-sm text-text-secondary">

@@ -301,6 +301,16 @@ export async function acpDeleteProviderSecret(id: string): Promise<void> {
   }
 }
 
+export async function acpAddCustomProviderSecret(name: string, value: string): Promise<void> {
+  beginProviderDetailsMutation();
+  try {
+    const client = await getAcpClient();
+    await client.gosling.providersSecretsCustomAdd_unstable({ name, value });
+  } finally {
+    endProviderDetailsMutation();
+  }
+}
+
 export async function acpGetCanonicalModelInfo(
   provider: string,
   model: string

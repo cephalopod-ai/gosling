@@ -256,6 +256,11 @@
       "responseType": "EmptyResponse"
     },
     {
+      "method": "_gosling/unstable/providers/secrets/custom/add",
+      "requestType": "ProviderSecretCustomAddRequest_unstable",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_gosling/unstable/providers/canonical-model-info",
       "requestType": "CanonicalModelInfoRequest_unstable",
       "responseType": "CanonicalModelInfoResponse_unstable"

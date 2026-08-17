@@ -3910,6 +3910,24 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/providers/secrets/delete"
     },
+    "ProviderSecretCustomAddRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "description": "Add or overwrite a user-managed credential not tied to any provider's own\nsetup flow — a name/value pair stored the same way a provider API key is,\nfor arbitrary secrets a user would otherwise put in a `.env` file.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/providers/secrets/custom/add"
+    },
     "CanonicalModelInfoRequest_unstable": {
       "type": "object",
       "properties": {
@@ -7394,6 +7412,15 @@
                   ],
                   "description": "Params for _gosling/unstable/providers/secrets/delete",
                   "title": "ProviderSecretDeleteRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ProviderSecretCustomAddRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/providers/secrets/custom/add",
+                  "title": "ProviderSecretCustomAddRequest_unstable"
                 },
                 {
                   "allOf": [

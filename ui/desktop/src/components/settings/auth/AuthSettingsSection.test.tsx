@@ -3,6 +3,7 @@ import { render, screen, waitFor, type RenderOptions } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import AuthSettingsSection from './AuthSettingsSection';
 import {
+  acpAddCustomProviderSecret,
   acpAuthenticateProvider,
   acpDeleteProviderSecret,
   acpListProviderSecrets,
@@ -12,6 +13,7 @@ import { IntlTestWrapper } from '../../../i18n/test-utils';
 import { toast } from 'react-toastify';
 
 vi.mock('../../../acp/providers', () => ({
+  acpAddCustomProviderSecret: vi.fn(),
   acpAuthenticateProvider: vi.fn(),
   acpListProviderSecrets: vi.fn(),
   acpDeleteProviderSecret: vi.fn(),
@@ -33,13 +35,13 @@ vi.mock('react-toastify', () => ({
 const mockedListProviderSecrets = vi.mocked(acpListProviderSecrets);
 const mockedDeleteProviderSecret = vi.mocked(acpDeleteProviderSecret);
 const mockedAcpAuthenticateProvider = vi.mocked(acpAuthenticateProvider);
+const mockedAddCustomProviderSecret = vi.mocked(acpAddCustomProviderSecret);
 const mockedToast = vi.mocked(toast);
-const mockSetView = vi.fn();
 
 const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
   render(ui, { wrapper: IntlTestWrapper, ...options });
 
-const renderSection = () => renderWithIntl(<AuthSettingsSection setView={mockSetView} />);
+const renderSection = () => renderWithIntl(<AuthSettingsSection />);
 
 const providerSecret: ProviderSecretDto = {
   id: 'secret_store:openai:OPENAI_API_KEY',
@@ -62,6 +64,7 @@ describe('AuthSettingsSection', () => {
     mockedListProviderSecrets.mockResolvedValue([]);
     mockedDeleteProviderSecret.mockResolvedValue(undefined);
     mockedAcpAuthenticateProvider.mockResolvedValue(undefined);
+    mockedAddCustomProviderSecret.mockResolvedValue(undefined);
   });
 
   it('renders an empty state when no credentials are stored', async () => {
@@ -73,16 +76,51 @@ describe('AuthSettingsSection', () => {
     ).toBeInTheDocument();
   });
 
-  it('opens provider configuration to add a credential and returns to Auth', async () => {
+  it('adds a generic name/value credential without navigating away', async () => {
     const user = userEvent.setup();
+    mockedListProviderSecrets.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        ...providerSecret,
+        id: 'custom_secret:MY_API_KEY',
+        provider: 'custom',
+        providerDisplayName: 'Custom',
+        name: 'MY_API_KEY',
+      },
+    ]);
+
     renderSection();
+    await screen.findByText('No locally stored provider credentials were found.');
 
     await user.click(screen.getByRole('button', { name: 'Add credential' }));
+    await user.type(screen.getByPlaceholderText('MY_API_KEY'), 'MY_API_KEY');
+    await user.type(screen.getByPlaceholderText('Secret value'), 'shh-its-a-secret');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(mockSetView).toHaveBeenCalledWith('ConfigureProviders', {
-      parentView: 'settings',
-      parentViewOptions: { section: 'auth' },
+    await waitFor(() => {
+      expect(mockedAddCustomProviderSecret).toHaveBeenCalledWith('MY_API_KEY', 'shh-its-a-secret');
     });
+    await waitFor(() => {
+      expect(mockedToast.success).toHaveBeenCalledWith('Credential added');
+    });
+    expect(await screen.findByText('MY_API_KEY')).toBeInTheDocument();
+    // The form closes and does not leave the Auth tab.
+    expect(screen.queryByPlaceholderText('MY_API_KEY')).not.toBeInTheDocument();
+  });
+
+  it('rejects a credential name with invalid characters before submitting', async () => {
+    const user = userEvent.setup();
+    renderSection();
+    await screen.findByText('No locally stored provider credentials were found.');
+
+    await user.click(screen.getByRole('button', { name: 'Add credential' }));
+    await user.type(screen.getByPlaceholderText('MY_API_KEY'), 'has a space');
+    await user.type(screen.getByPlaceholderText('Secret value'), 'value');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(
+      await screen.findByText('Name must contain only letters, numbers, "_", or "-".')
+    ).toBeInTheDocument();
+    expect(mockedAddCustomProviderSecret).not.toHaveBeenCalled();
   });
 
   it('renders provider credentials with storage and expiry status', async () => {

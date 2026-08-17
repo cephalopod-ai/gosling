@@ -1201,6 +1201,20 @@ pub struct ProviderSecretDeleteRequest {
     pub id: String,
 }
 
+/// Add or overwrite a user-managed credential not tied to any provider's own
+/// setup flow — a name/value pair stored the same way a provider API key is,
+/// for arbitrary secrets a user would otherwise put in a `.env` file.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/providers/secrets/custom/add",
+    response = EmptyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSecretCustomAddRequest {
+    pub name: String,
+    pub value: String,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CanonicalModelInfoDto {

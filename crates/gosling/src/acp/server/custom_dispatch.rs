@@ -426,6 +426,14 @@ impl GoslingAcpAgent {
         self.on_delete_provider_secret(req).await
     }
 
+    #[custom_method(ProviderSecretCustomAddRequest)]
+    async fn dispatch_add_custom_provider_secret(
+        &self,
+        req: ProviderSecretCustomAddRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_add_custom_provider_secret(req).await
+    }
+
     #[custom_method(CanonicalModelInfoRequest)]
     async fn dispatch_canonical_model_info(
         &self,

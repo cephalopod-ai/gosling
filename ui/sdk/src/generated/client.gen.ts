@@ -124,6 +124,7 @@ import type {
   ProviderConfigSaveRequest_unstable,
   ProviderConfigStatusRequest_unstable,
   ProviderConfigStatusResponse_unstable,
+  ProviderSecretCustomAddRequest_unstable,
   ProviderSecretDeleteRequest_unstable,
   ProviderSecretsListRequest_unstable,
   ProviderSecretsListResponse_unstable,
@@ -840,6 +841,15 @@ export class GoslingExtClient {
   ): Promise<void> {
     await this.conn.extMethod(
       "_gosling/unstable/providers/secrets/delete",
+      params,
+    );
+  }
+
+  async providersSecretsCustomAdd_unstable(
+    params: ProviderSecretCustomAddRequest_unstable,
+  ): Promise<void> {
+    await this.conn.extMethod(
+      "_gosling/unstable/providers/secrets/custom/add",
       params,
     );
   }

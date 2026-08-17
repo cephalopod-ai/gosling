@@ -1642,6 +1642,16 @@ export const zProviderSecretDeleteRequest_unstable = z.object({
 });
 
 /**
+ * Add or overwrite a user-managed credential not tied to any provider's own
+ * setup flow — a name/value pair stored the same way a provider API key is,
+ * for arbitrary secrets a user would otherwise put in a `.env` file.
+ */
+export const zProviderSecretCustomAddRequest_unstable = z.object({
+    name: z.string(),
+    value: z.string()
+});
+
+/**
  * Look up canonical (bundled-registry) model info for a provider/model pair.
  */
 export const zCanonicalModelInfoRequest_unstable = z.object({
@@ -2927,6 +2937,7 @@ export const zExtRequest = z.object({
             zProviderConfigAuthenticateRequest_unstable,
             zProviderSecretsListRequest_unstable,
             zProviderSecretDeleteRequest_unstable,
+            zProviderSecretCustomAddRequest_unstable,
             zCanonicalModelInfoRequest_unstable,
             zPreferencesReadRequest_unstable,
             zPreferencesSaveRequest_unstable,

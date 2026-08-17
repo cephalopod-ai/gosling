@@ -3,6 +3,7 @@ use crate::config::declarative_providers;
 use crate::providers::base::{Provider, ProviderType};
 use crate::providers::inventory::ensure_refresh_identity_current;
 use crate::providers::provider_secrets;
+use serde_json::Value;
 use std::str::FromStr;
 
 fn provider_secret_to_dto(secret: provider_secrets::ProviderSecret) -> ProviderSecretDto {
@@ -1083,6 +1084,20 @@ impl GoslingAcpAgent {
             Err(provider_secrets::DeleteProviderSecretError::InvalidId(id)) => {
                 Err(agent_client_protocol::Error::invalid_params()
                     .data(format!("Invalid provider secret id: '{}'", id)))
+            }
+            Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.to_string())),
+        }
+    }
+
+    pub(super) async fn on_add_custom_provider_secret(
+        &self,
+        req: ProviderSecretCustomAddRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        match provider_secrets::add_custom_secret(&req.name, &Value::String(req.value)).await {
+            Ok(()) => Ok(EmptyResponse {}),
+            Err(e @ provider_secrets::AddCustomSecretError::InvalidName(_))
+            | Err(e @ provider_secrets::AddCustomSecretError::ProviderManaged(_)) => {
+                Err(agent_client_protocol::Error::invalid_params().data(e.to_string()))
             }
             Err(e) => Err(agent_client_protocol::Error::internal_error().data(e.to_string())),
         }

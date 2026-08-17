@@ -12,6 +12,16 @@ use crate::providers::base::{ProviderMetadata, ProviderType};
 
 pub const SECRET_STORE_ID_PREFIX: &str = "secret_store:";
 pub const PROVIDER_CACHE_ID_PREFIX: &str = "provider_cache:";
+pub const CUSTOM_SECRET_ID_PREFIX: &str = "custom_secret:";
+
+/// Names the user has added through the generic "Add credential" UI, so
+/// `list_provider_secrets` can surface exactly those secret-store entries
+/// without also surfacing every OTHER subsystem that happens to share the
+/// same flat secret store (workspace credentials, extension secrets,
+/// dictation provider keys). Stored as a plain (non-secret) param: it holds
+/// only key *names*, never values.
+const CUSTOM_CREDENTIAL_NAMES_PARAM: &str = "GOSLING_CUSTOM_CREDENTIAL_NAMES";
+const CUSTOM_CREDENTIAL_DISPLAY_NAME: &str = "Custom";
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -53,6 +63,25 @@ pub enum DeleteProviderSecretError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AddCustomSecretError {
+    #[error(
+        "Credential name must be non-empty and contain only letters, numbers, '_', or '-' (got '{0}')"
+    )]
+    InvalidName(String),
+    #[error("'{0}' is already managed as a provider credential; configure it from that provider's setup instead")]
+    ProviderManaged(String),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+}
+
+fn is_valid_custom_credential_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn provider_secret_status(expires_at: Option<DateTime<Utc>>) -> ProviderSecretStatus {
@@ -318,6 +347,45 @@ fn is_known_provider_secret(
         .any(|config_key| config_key.secret && config_key.name == key)
 }
 
+fn is_any_known_provider_secret(providers: &[(ProviderMetadata, ProviderType)], key: &str) -> bool {
+    providers
+        .iter()
+        .flat_map(|(metadata, _)| metadata.config_keys.iter())
+        .any(|config_key| config_key.secret && config_key.name == key)
+}
+
+fn custom_credential_names(config: &Config) -> Vec<String> {
+    config
+        .get_param::<Vec<String>>(CUSTOM_CREDENTIAL_NAMES_PARAM)
+        .unwrap_or_default()
+}
+
+fn build_custom_secrets(
+    stored_secrets: &HashMap<String, Value>,
+    names: &[String],
+    providers: &[(ProviderMetadata, ProviderType)],
+) -> Vec<ProviderSecret> {
+    names
+        .iter()
+        .filter(|name| stored_secrets.contains_key(name.as_str()))
+        .filter(|name| !is_any_known_provider_secret(providers, name))
+        .map(|name| ProviderSecret {
+            id: format!("{}{}", CUSTOM_SECRET_ID_PREFIX, name),
+            provider: "custom".to_string(),
+            provider_display_name: CUSTOM_CREDENTIAL_DISPLAY_NAME.to_string(),
+            name: name.clone(),
+            storage: ProviderSecretStorage::SecretStore,
+            expires_at: None,
+            status: ProviderSecretStatus::Unknown,
+            configured: true,
+            has_secret: true,
+            can_delete: true,
+            can_configure: false,
+            configure_provider: None,
+        })
+        .collect()
+}
+
 fn unconfigure_provider(config: &Config, provider_name: &str) -> Result<(), ConfigError> {
     if let Some(mut entry) = crate::config::get_provider_entry(config, provider_name) {
         entry.configured = false;
@@ -340,6 +408,10 @@ fn parse_provider_cache_id(id: &str) -> Option<&str> {
     id.strip_prefix(PROVIDER_CACHE_ID_PREFIX)
 }
 
+fn parse_custom_secret_id(id: &str) -> Option<&str> {
+    id.strip_prefix(CUSTOM_SECRET_ID_PREFIX)
+}
+
 fn is_valid_provider_name(provider_name: &str) -> bool {
     !provider_name.is_empty()
         && provider_name
@@ -357,6 +429,11 @@ pub async fn list_provider_secrets() -> Result<Vec<ProviderSecret>, ConfigError>
         .collect();
 
     let mut secrets = build_secret_store_secrets(&stored_secrets, &providers);
+    secrets.extend(build_custom_secrets(
+        &stored_secrets,
+        &custom_credential_names(config),
+        &providers,
+    ));
 
     for definition in provider_cache_definitions_for_display() {
         if let Some(secret) = build_provider_cache_secret(definition, &display_names) {
@@ -375,8 +452,45 @@ pub async fn list_provider_secrets() -> Result<Vec<ProviderSecret>, ConfigError>
     Ok(secrets)
 }
 
+/// Add or overwrite a user-managed credential that isn't tied to any known
+/// provider's own setup flow — the "Add credential" panel's equivalent of a
+/// `.env` entry. Rejects names already owned by a known provider's secret
+/// config keys, so this path can never shadow or bypass provider-specific
+/// config-save handling for the same key.
+pub async fn add_custom_secret(name: &str, value: &Value) -> Result<(), AddCustomSecretError> {
+    if !is_valid_custom_credential_name(name) {
+        return Err(AddCustomSecretError::InvalidName(name.to_string()));
+    }
+
+    let config = Config::global();
+    let providers = crate::providers::providers().await;
+    if is_any_known_provider_secret(&providers, name) {
+        return Err(AddCustomSecretError::ProviderManaged(name.to_string()));
+    }
+
+    config.set_secret(name, value)?;
+
+    let mut names = custom_credential_names(config);
+    if !names.iter().any(|existing| existing == name) {
+        names.push(name.to_string());
+        config.set_param(CUSTOM_CREDENTIAL_NAMES_PARAM, names)?;
+    }
+
+    Ok(())
+}
+
 pub async fn delete_provider_secret(id: &str) -> Result<(), DeleteProviderSecretError> {
     let config = Config::global();
+
+    if let Some(name) = parse_custom_secret_id(id) {
+        config.delete_secret(name)?;
+        let names: Vec<String> = custom_credential_names(config)
+            .into_iter()
+            .filter(|existing| existing != name)
+            .collect();
+        config.set_param(CUSTOM_CREDENTIAL_NAMES_PARAM, names)?;
+        return Ok(());
+    }
 
     if let Some((provider, key)) = parse_secret_store_id(id) {
         let providers = crate::providers::providers().await;
@@ -461,6 +575,66 @@ mod tests {
         assert_eq!(secrets[0].name, "OPENAI_API_KEY");
         assert_eq!(secrets[0].storage, ProviderSecretStorage::SecretStore);
         assert_eq!(secrets[0].status, ProviderSecretStatus::Unknown);
+    }
+
+    #[test]
+    fn is_valid_custom_credential_name_accepts_env_style_names_only() {
+        assert!(is_valid_custom_credential_name("MY_API_KEY"));
+        assert!(is_valid_custom_credential_name("some-login"));
+        assert!(!is_valid_custom_credential_name(""));
+        assert!(!is_valid_custom_credential_name("has a space"));
+        assert!(!is_valid_custom_credential_name("has/slash"));
+    }
+
+    #[test]
+    fn custom_secrets_are_listed_when_registered_and_present_in_the_store() {
+        let stored_secrets =
+            HashMap::from([("MY_API_KEY".to_string(), Value::String("shh".to_string()))]);
+        let names = vec!["MY_API_KEY".to_string()];
+
+        let secrets = build_custom_secrets(&stored_secrets, &names, &[]);
+
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(secrets[0].id, "custom_secret:MY_API_KEY");
+        assert_eq!(secrets[0].provider, "custom");
+        assert_eq!(secrets[0].provider_display_name, "Custom");
+        assert_eq!(secrets[0].name, "MY_API_KEY");
+        assert_eq!(secrets[0].storage, ProviderSecretStorage::SecretStore);
+        assert!(secrets[0].can_delete);
+        assert!(!secrets[0].can_configure);
+    }
+
+    #[test]
+    fn custom_secrets_skip_a_registered_name_whose_value_was_removed() {
+        // A name can survive in the registry after its value was deleted
+        // some other way; it must not appear as if it still has a secret.
+        let stored_secrets = HashMap::new();
+        let names = vec!["ORPHANED".to_string()];
+
+        assert!(build_custom_secrets(&stored_secrets, &names, &[]).is_empty());
+    }
+
+    #[test]
+    fn custom_secrets_never_shadow_a_known_provider_secret_key() {
+        let metadata = ProviderMetadata::new(
+            "openai",
+            "OpenAI",
+            "OpenAI provider",
+            "gpt-4o",
+            vec![],
+            "https://example.com",
+            vec![ConfigKey::new("OPENAI_API_KEY", true, true, None, true)],
+        );
+        let providers = vec![(metadata, ProviderType::Builtin)];
+        let stored_secrets = HashMap::from([(
+            "OPENAI_API_KEY".to_string(),
+            Value::String("secret-value".to_string()),
+        )]);
+        // Registered as if added through the generic UI, e.g. before the
+        // provider was configured through its own setup flow.
+        let names = vec!["OPENAI_API_KEY".to_string()];
+
+        assert!(build_custom_secrets(&stored_secrets, &names, &providers).is_empty());
     }
 
     #[test]
