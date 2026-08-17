@@ -30,7 +30,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 26;
+pub const CURRENT_SCHEMA_VERSION: i32 = 27;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -2552,6 +2552,29 @@ impl SessionStorage {
                 Self::create_session_artifacts_schema(tx).await?;
                 Self::backfill_session_artifacts(tx).await?;
             }
+            27 => {
+                // CON-GSL-001: recover previously had no way to tell a live
+                // peer's in-flight tool call from a crashed owner's, because
+                // `owner_id` is a per-instance UUID with no liveness signal.
+                // Recording the dispatching OS process id lets recovery probe
+                // it with `subprocess::process_is_alive` instead of guessing
+                // from `updated_at` recency. A brand-new database already has
+                // this column (`create_tool_operations_schema` declares it
+                // directly, e.g. fresh schema); this ALTER only reaches
+                // databases that created `tool_operations` before this
+                // migration existed.
+                let has_owner_pid = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('tool_operations') WHERE name = 'owner_pid'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if !has_owner_pid {
+                    sqlx::query("ALTER TABLE tool_operations ADD COLUMN owner_pid INTEGER")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -2668,6 +2691,7 @@ impl SessionStorage {
                 request_digest TEXT NOT NULL,
                 conversation_bound BOOLEAN NOT NULL DEFAULT FALSE,
                 owner_id TEXT NOT NULL,
+                owner_pid INTEGER,
                 state TEXT NOT NULL CHECK(state IN ('started', 'completed', 'in_doubt')),
                 result_json TEXT,
                 response_message_id TEXT,
@@ -3736,8 +3760,8 @@ impl SessionStorage {
                 r#"
                 INSERT INTO tool_operations (
                     operation_id, schema_version, session_id, tool_request_id, tool_name, request_digest,
-                    conversation_bound, owner_id, state
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'started')
+                    conversation_bound, owner_id, owner_pid, state
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'started')
                 "#,
             )
             .bind(&operation_id)
@@ -3748,6 +3772,7 @@ impl SessionStorage {
             .bind(request_digest)
             .bind(conversation_bound)
             .bind(&self.owner_id)
+            .bind(std::process::id() as i64)
             .execute(&mut *tx)
             .await?;
             ToolOperationStart::Execute { operation_id }
@@ -3893,10 +3918,20 @@ impl SessionStorage {
     async fn recover_tool_operations(&self, session_id: &str) -> Result<usize> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-        let operations =
-            sqlx::query_as::<_, (String, String, String, String, String, Option<String>)>(
-                r#"
-            SELECT operation_id, tool_request_id, tool_name, owner_id, state, result_json
+        let operations = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                String,
+                Option<i64>,
+                String,
+                Option<String>,
+            ),
+        >(
+            r#"
+            SELECT operation_id, tool_request_id, tool_name, owner_id, owner_pid, state, result_json
             FROM tool_operations
             WHERE session_id = ?
               AND conversation_bound = TRUE
@@ -3904,10 +3939,10 @@ impl SessionStorage {
               AND state IN ('started', 'completed', 'in_doubt')
             ORDER BY created_at, operation_id
             "#,
-            )
-            .bind(session_id)
-            .fetch_all(&mut *tx)
-            .await?;
+        )
+        .bind(session_id)
+        .fetch_all(&mut *tx)
+        .await?;
         if operations.is_empty() {
             tx.commit().await?;
             return Ok(0);
@@ -3942,23 +3977,31 @@ impl SessionStorage {
             .expect("active tool operations mutex poisoned")
             .clone();
 
-        for (operation_id, request_id, tool_name, owner_id, state, stored_result) in operations {
-            if owner_id == self.owner_id && active_operations.contains(&operation_id) {
-                continue;
+        for (operation_id, request_id, tool_name, owner_id, owner_pid, state, stored_result) in
+            operations
+        {
+            if owner_id == self.owner_id {
+                if active_operations.contains(&operation_id) {
+                    continue;
+                }
+            } else if state == "started" {
+                // CON-GSL-001: a foreign `owner_id` alone doesn't mean the
+                // owner is dead -- it's a per-instance UUID, not a liveness
+                // signal, so recovering unconditionally could mark a live
+                // peer's in-flight tool `in_doubt` mid-execution. Only a
+                // `started` row is still "in flight"; `completed`/`in_doubt`
+                // rows below are already terminal and safe to finalize
+                // regardless of who dispatched them. Probe the owner's OS
+                // process directly rather than guessing from `updated_at`
+                // recency, which only moves on state transitions and would
+                // either stomp a slow live tool or delay a genuine crash's
+                // `in_doubt` signal.
+                if let Some(pid) = owner_pid {
+                    if crate::subprocess::process_is_alive(pid as u32).await {
+                        continue;
+                    }
+                }
             }
-            // CON-GSL-001 (cross-process recover can mark a live peer's tool
-            // `in_doubt`) is NOT fixed here. The obvious guard -- skip foreign
-            // rows whose `updated_at` is recent -- does not work, because
-            // `updated_at` only moves on state transitions and is never
-            // heartbeated during execution: "recently updated" means "started
-            // recently", not "owner is alive". Such a guard would still stomp
-            // a slow live tool once it aged past the window, while delaying
-            // the `in_doubt` signal after a genuine crash -- trading a false
-            // positive for a false negative on a safety signal whose whole
-            // purpose is to stop an automatic retry. A real fix needs a
-            // liveness source: a heartbeat that touches `updated_at` while a
-            // tool runs, or an owner PID/lease the recovering process can
-            // probe.
 
             let request_exists = request_metadata_by_id.contains_key(&request_id);
             let request_metadata = request_metadata_by_id.remove(&request_id).flatten();
@@ -5738,6 +5781,19 @@ mod tests {
         ));
         assert_eq!(sm.recover_tool_operations(&session.id).await.unwrap(), 0);
 
+        // Simulate the owning process actually having crashed: an in-process
+        // `SessionManager` restart alone would still carry this test's own,
+        // very-much-alive PID (CON-GSL-001) and must NOT be recoverable —
+        // see `live_peer_tool_operation_survives_a_concurrent_recover` below.
+        // Overwrite the dispatch PID with one guaranteed not to exist so this
+        // test exercises the crash path it is named for.
+        sqlx::query("UPDATE tool_operations SET owner_pid = ? WHERE session_id = ?")
+            .bind(i32::MAX as i64)
+            .bind(&session.id)
+            .execute(sm.storage.pool().await.unwrap())
+            .await
+            .unwrap();
+
         let restarted = SessionManager::new(temp_dir.path().to_path_buf());
         assert_eq!(
             restarted
@@ -5777,6 +5833,87 @@ mod tests {
                 .unwrap(),
             ToolOperationStart::InDoubt { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn live_peer_tool_operation_survives_a_concurrent_recover() {
+        // CON-GSL-001: a second `SessionManager` on the same DB (the
+        // CLI+desktop topology, since both share the default session dirs)
+        // used to be indistinguishable from a crashed owner -- `owner_id` is
+        // only a per-instance UUID. Recovering here shares this test's own
+        // OS process, so it must be treated as a live owner and left alone,
+        // not stomped into `in_doubt` mid-execution.
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Live peer".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let tool_call = rmcp::model::CallToolRequestParams::new("send_email")
+            .with_arguments(rmcp::object!({ "recipient": "person@example.com" }));
+        sm.add_message(
+            &session.id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request("tool-request-live", Ok(tool_call.clone())),
+        )
+        .await
+        .unwrap();
+        let operation_id = match sm
+            .begin_tool_operation(&session.id, "tool-request-live", &tool_call, true)
+            .await
+            .unwrap()
+        {
+            ToolOperationStart::Execute { operation_id } => operation_id,
+            other => panic!("new operation should execute, got {other:?}"),
+        };
+
+        let peer = SessionManager::new(temp_dir.path().to_path_buf());
+        assert_eq!(
+            peer.recover_tool_operations(&session.id).await.unwrap(),
+            0,
+            "a live owner's in-flight tool must not be recovered by a peer"
+        );
+
+        let reloaded = peer.get_session(&session.id, true).await.unwrap();
+        let conversation = reloaded.conversation.unwrap();
+        assert!(
+            conversation
+                .messages()
+                .iter()
+                .flat_map(|message| message.content.iter())
+                .all(|content| !matches!(content, MessageContent::ToolResponse(_))),
+            "no synthetic in_doubt response should have been written"
+        );
+
+        // The real owner can still complete the call normally afterward.
+        let terminal_result = Ok(rmcp::model::CallToolResult::success(vec![
+            rmcp::model::Content::text("sent"),
+        ]));
+        sm.complete_tool_operation(&operation_id, &terminal_result)
+            .await
+            .unwrap();
+        let mut response = Message::user().with_generated_id();
+        response.add_tool_response_with_metadata("tool-request-live", terminal_result, None);
+        sm.persist_tool_operation_response(&session.id, "tool-request-live", &response)
+            .await
+            .unwrap();
+
+        let reloaded = sm.get_session(&session.id, true).await.unwrap();
+        let conversation = reloaded.conversation.unwrap();
+        let responses = conversation
+            .messages()
+            .iter()
+            .flat_map(|message| message.content.iter())
+            .filter_map(MessageContent::as_tool_response)
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 1);
+        assert!(responses[0].tool_result.as_ref().is_ok());
     }
 
     #[tokio::test]
