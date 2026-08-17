@@ -39,6 +39,10 @@ const i18n = defineMessages({
     defaultMessage: 'Open a local file, or send a tool result here from the conversation.',
   },
   previewFailed: { id: 'artifactPane.previewFailed', defaultMessage: 'Preview unavailable' },
+  grantAccessToPreview: {
+    id: 'artifactPane.grantAccessToPreview',
+    defaultMessage: 'Select this file to grant access and preview it',
+  },
   previewTruncated: {
     id: 'artifactPane.previewTruncated',
     defaultMessage: 'This preview is truncated. Open the file for the complete output.',
@@ -146,7 +150,15 @@ function CsvPreview({ content }: { content: string }) {
   );
 }
 
-function Preview({ tab, data }: { tab: ArtifactTab; data: PreviewData }) {
+function Preview({
+  tab,
+  data,
+  onGrantAccess,
+}: {
+  tab: ArtifactTab;
+  data: PreviewData;
+  onGrantAccess: () => void;
+}) {
   const intl = useIntl();
   if (data.error) {
     return (
@@ -156,6 +168,12 @@ function Preview({ tab, data }: { tab: ArtifactTab; data: PreviewData }) {
           {intl.formatMessage(i18n.previewFailed)}
         </div>
         <p className="mt-2 text-text-secondary">{data.error}</p>
+        {isRetryableArtifactAccessError(data.error) && (
+          <Button className="mt-3" variant="outline" size="sm" onClick={onGrantAccess}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            {intl.formatMessage(i18n.grantAccessToPreview)}
+          </Button>
+        )}
       </div>
     );
   }
@@ -494,7 +512,7 @@ export function ArtifactPane() {
                   {intl.formatMessage(i18n.previewTruncated)}
                 </div>
               )}
-            <Preview tab={activeTab} data={preview} />
+            <Preview tab={activeTab} data={preview} onGrantAccess={() => void chooseFile()} />
           </>
         )}
       </div>

@@ -156,6 +156,29 @@ describe('ArtifactPane', () => {
     expect(await screen.findByText('Report')).toBeInTheDocument();
   });
 
+  it('offers to grant access when a preview stays blocked after retrying', async () => {
+    const selectArtifactFile = vi.fn().mockResolvedValue('/outputs/report.md');
+    Object.assign(window.electron, { selectArtifactFile });
+
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load four outputs' }));
+    fireEvent.click(screen.getByTitle('/outputs/report.md'));
+
+    const grantButton = await screen.findByRole('button', {
+      name: 'Select this file to grant access and preview it',
+    });
+    fireEvent.click(grantButton);
+
+    await waitFor(() => expect(selectArtifactFile).toHaveBeenCalledWith('report.md'));
+  });
+
   it('shows four discovered outputs without opening or reading a preview', () => {
     render(
       <IntlTestWrapper>

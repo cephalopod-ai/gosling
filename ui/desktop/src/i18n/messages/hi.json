@@ -3127,5 +3127,8 @@
   },
   "authSettings.valuePlaceholder": {
     "defaultMessage": "Secret value"
+  },
+  "artifactPane.grantAccessToPreview": {
+    "defaultMessage": "Select this file to grant access and preview it"
   }
 }

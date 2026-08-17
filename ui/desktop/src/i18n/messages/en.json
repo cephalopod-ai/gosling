@@ -38,6 +38,9 @@
   "artifactPane.emptyTitle": {
     "defaultMessage": "View an output or deliverable"
   },
+  "artifactPane.grantAccessToPreview": {
+    "defaultMessage": "Select this file to grant access and preview it"
+  },
   "artifactPane.loading": {
     "defaultMessage": "Loading…"
   },
