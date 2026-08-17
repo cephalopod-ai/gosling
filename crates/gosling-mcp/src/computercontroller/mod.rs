@@ -790,7 +790,8 @@ impl ComputerControllerServer {
             - Sort unique lines: Get-Content file.txt | Sort-Object -Unique
             - Extract CSV column: Import-Csv file.csv | Select-Object -ExpandProperty Column2
             - Find text: Select-String -Pattern 'pattern' -Path file.txt
-        "
+        ",
+        annotations(destructive_hint = true, open_world_hint = true)
     )]
     pub async fn automation_script(
         &self,
@@ -810,7 +811,8 @@ impl ComputerControllerServer {
                 - sort file.txt | uniq
                 - awk -F ',' '{ print $2}' file.csv
                 - osascript -e 'tell app \"Finder\" to get name of every window'
-        "
+        ",
+        annotations(destructive_hint = true, open_world_hint = true)
     )]
     pub async fn automation_script(
         &self,
@@ -830,7 +832,8 @@ impl ComputerControllerServer {
                 - sort file.txt | uniq
                 - awk -F ',' '{ print $2}' file.csv
                 - grep pattern file.txt
-        "
+        ",
+        annotations(destructive_hint = true, open_world_hint = true)
     )]
     pub async fn automation_script(
         &self,
@@ -1002,7 +1005,8 @@ impl ComputerControllerServer {
             - Windows-specific features and settings
 
             Can be combined with screenshot tool for visual task assistance.
-        "
+        ",
+        annotations(destructive_hint = true, open_world_hint = true)
     )]
     pub async fn computer_control(
         &self,
@@ -1031,7 +1035,8 @@ impl ComputerControllerServer {
             Targeting: --app Name, --window-title, --window-id, --on ID, --coords x,y
             Set capture_screenshot=true to verify UI state after actions.
             See extension instructions for full command reference and examples.
-        "
+        ",
+        annotations(destructive_hint = true, open_world_hint = true)
     )]
     pub async fn computer_control(
         &self,
@@ -1057,7 +1062,8 @@ impl ComputerControllerServer {
             - System settings and configurations
 
             Can be combined with screenshot tool for visual task assistance.
-        "
+        ",
+        annotations(destructive_hint = true, open_world_hint = true)
     )]
     pub async fn computer_control(
         &self,
@@ -1070,7 +1076,8 @@ impl ComputerControllerServer {
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     #[tool(
         name = "computer_control",
-        description = "Control the computer using system automation. Features available depend on your operating system. Can be combined with screenshot tool for visual task assistance."
+        description = "Control the computer using system automation. Features available depend on your operating system. Can be combined with screenshot tool for visual task assistance.",
+        annotations(destructive_hint = true, open_world_hint = true)
     )]
     pub async fn computer_control(
         &self,
@@ -2097,5 +2104,38 @@ mod document_path_tests {
     #[test]
     fn rejects_a_relative_traversal_outside_the_working_directory() {
         assert!(resolve_document_path("../../../../etc/passwd").is_err());
+    }
+}
+
+// MCP-GOS-001 regression: `automation_script`/`computer_control` execute
+// model-supplied scripts or drive the OS UI with no dry-run gate. Gosling's
+// own host already refuses them without explicit grant in Auto
+// (`permission::tool_class::CODE_EXECUTION_TOOL_NAMES`), but this server is
+// also usable standalone by any other MCP host, which has no way to know
+// that without a signal on the tool itself. MCP tool `annotations` are the
+// spec's mechanism for that signal, so both tools must carry them regardless
+// of which platform-gated `#[cfg]` variant compiles.
+#[cfg(test)]
+mod tool_annotation_tests {
+    use super::ComputerControllerServer;
+
+    #[test]
+    fn automation_script_is_annotated_destructive() {
+        let tool = ComputerControllerServer::automation_script_tool_attr();
+        let annotations = tool
+            .annotations
+            .expect("automation_script must declare tool annotations");
+        assert_eq!(annotations.destructive_hint, Some(true));
+        assert_eq!(annotations.open_world_hint, Some(true));
+    }
+
+    #[test]
+    fn computer_control_is_annotated_destructive() {
+        let tool = ComputerControllerServer::computer_control_tool_attr();
+        let annotations = tool
+            .annotations
+            .expect("computer_control must declare tool annotations");
+        assert_eq!(annotations.destructive_hint, Some(true));
+        assert_eq!(annotations.open_world_hint, Some(true));
     }
 }
