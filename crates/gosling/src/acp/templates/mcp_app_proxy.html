@@ -147,6 +147,13 @@
           }
 
           guestIframe = document.createElement('iframe');
+          // `allow-same-origin` is only safe here because the guest is served
+          // from a separate loopback listener on its own port (see
+          // `spawn_guest_server` in acp/mcp_app_proxy.rs), so "same origin"
+          // means the guest's own origin, not this page's. This page holds the
+          // backend secret in its URL fragment; if the guest ever shares this
+          // origin, drop `allow-same-origin` here first or the app can read
+          // `parent.location.hash`. (SECN-GSL-001)
           guestIframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
           guestIframe.referrerPolicy = 'no-referrer';
 

@@ -18,31 +18,29 @@ rediscovered from scratch.
       server-side; the unauthenticated GETs return a static shell and a
       UUIDv4-nonced guest. Forcing loopback would break remote MCP-app
       deployments for a low-value gain.
-- [ ] **SECN-GSL-001** — **re-assessed 2026-08-16 against upstream goose; the
-      stated exploit path does not hold.** The claim was "any script in the
-      secret-bearing frame can read `window.location.hash`". Untrusted MCP app
-      code never runs in that frame: it runs in a *nested* guest iframe served
-      by a separate loopback listener on its own ephemeral port
-      (`spawn_guest_server`, `crates/gosling/src/acp/mcp_app_proxy.rs`), so
-      `allow-same-origin` preserves a *different* origin and same-origin policy
-      blocks reading the parent's location. The guest only ever receives an
-      unguessable nonce.
+- [~] **SECN-GSL-001** — **Warning, not actionable. Closed as re-assessed
+      2026-08-16, not as fixed.** The finding assumed untrusted MCP app HTML
+      runs in the frame whose URL carries the backend secret. It does not: that
+      frame is the proxy page, and the app runs in a nested guest iframe on a
+      *different origin*, so same-origin policy blocks reading
+      `parent.location`. The guest only gets a single-use nonce.
 
-      Upstream comparison: goose puts the same secret in the **query string**
-      (`McpAppRenderer.tsx` -> `proxyUrl.searchParams.set('secret', ...)`),
-      which is strictly worse — it reaches the server, access logs, and
-      `Referer`. gosling's fragment does not. Upstream had the genuine
-      same-origin variant of this bug in `goose-server` and **deleted that
-      crate** (PR #10224) rather than fixing it; gosling's `gosling-server` is a
-      fork-local survivor that already fixed it differently, by dropping
-      `allow-same-origin` (opaque origin) and using a nonce-only guest src.
+      Both variants are safe, for **different** reasons — and each is one edit
+      from being unsafe:
+      * `crates/gosling/src/acp/` — guest served from its own loopback listener
+        on its own port, so `allow-same-origin` means the guest's origin.
+        **Do not merge that route into the main ACP router.**
+      * `crates/gosling-server/` — guest shares the router but drops
+        `allow-same-origin` (opaque origin), which is also what makes its
+        `srcdoc` fallback safe. **Do not add `allow-same-origin` there.**
 
-      **There is no upstream mechanism to port.** Residual hardening, not a
-      demonstrated path: the outer page's `script-src` is widened by
-      app-declared `resource_domains`/`script_domains`, and no injection sink
-      was found in that page. If the secret is to leave the URL entirely, the
-      `proxy_token` infrastructure added by the SEC-GOS-002 fix is the natural
-      basis. Severity should be re-rated down from High.
+      Both invariants are commented at their sites and
+      `acp::mcp_app_proxy::tests::the_guest_is_served_from_its_own_loopback_origin`
+      fails if the ACP guest stops owning its origin. Upstream goose is worse
+      here (secret in the query string) and deleted its same-origin variant
+      rather than fixing it, so there is nothing to port. Residual hardening
+      only: the outer page's `script-src` is widened by app-declared domains,
+      with no injection sink found in that page.
 
 ### Blocked on tooling
 

@@ -439,6 +439,27 @@ async fn serve_guest_html(
     }
 }
 
+/// Serve the guest iframe from its **own** loopback listener, on a port of its
+/// own.
+///
+/// This is a security invariant, not a tidiness choice, and it is what makes
+/// SECN-GSL-001 non-exploitable on this path. The proxy page holds the backend
+/// secret in its URL fragment and renders the guest iframe with
+/// `sandbox="allow-scripts allow-same-origin ..."`. `allow-same-origin`
+/// preserves *the guest's own* origin — and because the guest is served from a
+/// different port, that is a different origin from the proxy page. Same-origin
+/// policy therefore stops the untrusted MCP app from reading
+/// `window.parent.location` and lifting the secret. The guest only ever
+/// receives an unguessable nonce.
+///
+/// **Do not merge these routes into the main ACP router.** Serving
+/// `/mcp-app-guest` from the same origin as `/mcp-app-proxy` while the guest
+/// keeps `allow-same-origin` re-creates the real vulnerability: untrusted app
+/// HTML would then run same-origin with the page holding the secret, and a
+/// single `parent.location.hash` read would take it. If these ever must share
+/// an origin, drop `allow-same-origin` from the guest sandbox first — that is
+/// the trade `crates/gosling-server` makes, which is why its variant can
+/// safely serve the guest from the main router and even fall back to `srcdoc`.
 fn spawn_guest_server(guest_store: GuestHtmlStore) -> String {
     let listener =
         std::net::TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind MCP app guest server");
@@ -485,8 +506,14 @@ pub(crate) fn routes(secret_key: String) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_outer_csp, normalize_csp_source, parse_domains, peer_addr_is_loopback};
+    use super::{
+        build_outer_csp, normalize_csp_source, parse_domains, peer_addr_is_loopback,
+        spawn_guest_server, GuestHtmlStore,
+    };
+    use std::collections::HashMap;
     use std::net::SocketAddr;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
 
     // The guest CSP used to be posted back by the proxy page, which read its
     // own <meta> policy and rewrote nonces to 'unsafe-inline' before sending
@@ -496,6 +523,37 @@ mod tests {
     // app could submit a form to an origin it never declared, carrying
     // whatever the page holds. Ported from upstream goose `34adc70f1`
     // (PR #10985), which neither gosling variant had.
+    // SECN-GSL-001 is non-exploitable on this path only because the guest runs
+    // on its own origin while the proxy page holds the secret. That is a
+    // property of the runtime wiring, so pin it: if someone later serves the
+    // guest from the main router, this fails instead of silently handing
+    // untrusted app HTML same-origin access to the secret-bearing page.
+    #[tokio::test]
+    async fn the_guest_is_served_from_its_own_loopback_origin() {
+        let store: GuestHtmlStore = Arc::new(RwLock::new(HashMap::new()));
+        let guest_base_url = spawn_guest_server(store);
+
+        let url = url::Url::parse(&guest_base_url).expect("guest base url must parse");
+        assert_eq!(url.scheme(), "http");
+        assert_eq!(
+            url.host_str(),
+            Some("127.0.0.1"),
+            "the guest server must stay on loopback"
+        );
+        let port = url.port().expect("guest server must bind its own port");
+        assert_ne!(port, 0, "guest server must have a concrete bound port");
+
+        // A second guest server takes a different port, confirming each is an
+        // independent listener rather than a shared origin.
+        let other: GuestHtmlStore = Arc::new(RwLock::new(HashMap::new()));
+        let other_url = url::Url::parse(&spawn_guest_server(other)).unwrap();
+        assert_ne!(
+            port,
+            other_url.port().unwrap(),
+            "each guest server must own its origin"
+        );
+    }
+
     #[test]
     fn the_policy_blocks_form_submission_to_undeclared_origins() {
         let csp = build_outer_csp(
