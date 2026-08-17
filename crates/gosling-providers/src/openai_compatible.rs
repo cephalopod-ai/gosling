@@ -18,7 +18,8 @@ use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use crate::errors::ProviderError;
 use crate::formats::openai::{
-    create_request, get_usage, response_to_message, response_to_streaming_message,
+    create_request_with_options, get_usage, response_to_message, response_to_streaming_message,
+    OpenAiFormatOptions,
 };
 use crate::formats::openai_responses::responses_api_to_streaming_message;
 use crate::model::ModelConfig;
@@ -32,6 +33,7 @@ pub struct OpenAiCompatibleProvider {
     /// Path prefix prepended to `chat/completions` (e.g. `"deployments/{name}/"` for Azure).
     completions_prefix: String,
     supports_streaming: bool,
+    preserve_thinking_context: bool,
 }
 
 impl OpenAiCompatibleProvider {
@@ -41,11 +43,23 @@ impl OpenAiCompatibleProvider {
             api_client,
             completions_prefix,
             supports_streaming: true,
+            preserve_thinking_context: true,
         }
     }
 
     pub fn with_supports_streaming(mut self, supports_streaming: bool) -> Self {
         self.supports_streaming = supports_streaming;
+        self
+    }
+
+    /// Whether prior turns' reasoning is echoed back as `reasoning_content` on
+    /// every subsequent request. Providers that don't return a real
+    /// `thought_signature` per reasoning block (so `dedupe_signed_thinking`
+    /// never collapses repeats) can end up re-reading their own past
+    /// reasoning verbatim every turn and re-deriving the same framing instead
+    /// of treating it as settled. Disable for those providers.
+    pub fn with_preserve_thinking_context(mut self, preserve_thinking_context: bool) -> Self {
+        self.preserve_thinking_context = preserve_thinking_context;
         self
     }
 
@@ -57,13 +71,16 @@ impl OpenAiCompatibleProvider {
         tools: &[Tool],
         for_streaming: bool,
     ) -> Result<Value, ProviderError> {
-        create_request(
+        create_request_with_options(
             model_config,
             system,
             messages,
             tools,
             &ImageFormat::OpenAi,
             for_streaming,
+            OpenAiFormatOptions {
+                preserve_thinking_context: self.preserve_thinking_context,
+            },
         )
         .map_err(|e| ProviderError::RequestFailed(format!("Failed to create request: {}", e)))
     }
@@ -334,5 +351,90 @@ mod tests {
 
         assert_eq!(payload.get("stream"), None);
         assert_eq!(payload.get("stream_options"), None);
+    }
+
+    #[test]
+    fn preserve_thinking_context_false_omits_prior_reasoning_from_request() {
+        use crate::conversation::message::Message;
+
+        let provider = OpenAiCompatibleProvider::new(
+            "test".to_string(),
+            ApiClient::new_with_tls(
+                "http://localhost".to_string(),
+                super::super::api_client::AuthMethod::NoAuth,
+                None,
+            )
+            .unwrap(),
+            String::new(),
+        )
+        .with_preserve_thinking_context(false);
+
+        let model = ModelConfig::new("test-model");
+        let messages = vec![
+            Message::user().with_text("Why didn't this use the fast path?"),
+            Message::assistant()
+                .with_thinking("The user wants to know about the fast path...", "")
+                .with_text("Because the fast path was skipped by design."),
+        ];
+
+        let payload = provider
+            .build_request(&model, "", &messages, &[], false)
+            .unwrap();
+
+        let assistant_message = payload["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "assistant")
+            .expect("assistant message present");
+
+        assert_eq!(
+            assistant_message.get("reasoning_content"),
+            None,
+            "prior reasoning should not be echoed back when preserve_thinking_context is false"
+        );
+    }
+
+    #[test]
+    fn preserve_thinking_context_defaults_to_true() {
+        use crate::conversation::message::Message;
+
+        let provider = OpenAiCompatibleProvider::new(
+            "test".to_string(),
+            ApiClient::new_with_tls(
+                "http://localhost".to_string(),
+                super::super::api_client::AuthMethod::NoAuth,
+                None,
+            )
+            .unwrap(),
+            String::new(),
+        );
+
+        let model = ModelConfig::new("test-model");
+        let messages = vec![
+            Message::user().with_text("Why didn't this use the fast path?"),
+            Message::assistant()
+                .with_thinking("The user wants to know about the fast path...", "")
+                .with_text("Because the fast path was skipped by design."),
+        ];
+
+        let payload = provider
+            .build_request(&model, "", &messages, &[], false)
+            .unwrap();
+
+        let assistant_message = payload["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "assistant")
+            .expect("assistant message present");
+
+        assert_eq!(
+            assistant_message
+                .get("reasoning_content")
+                .and_then(|v| v.as_str()),
+            Some("The user wants to know about the fast path..."),
+            "default behavior (unset) should still preserve thinking context"
+        );
     }
 }

@@ -933,11 +933,15 @@ impl ProviderDef for XaiOAuthProvider {
             .with_header(GROK_CLIENT_IDENTIFIER_HEADER, GROK_CLIENT_IDENTIFIER)?
             .with_request_builder(crate::session_context::session_id_request_builder());
 
+            // Grok's reasoning deltas rarely carry a `thought_signature`, so
+            // dedupe_signed_thinking never collapses repeats and the model
+            // ends up re-reading its own past reasoning verbatim every turn.
             let inner = OpenAiCompatibleProvider::new(
                 XAI_OAUTH_PROVIDER_NAME.to_string(),
                 api_client,
                 String::new(),
-            );
+            )
+            .with_preserve_thinking_context(false);
 
             Ok(Self {
                 inner,

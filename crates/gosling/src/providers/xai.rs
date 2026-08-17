@@ -96,7 +96,11 @@ impl ProviderDef for XaiProvider {
                 XAI_PROVIDER_NAME.to_string(),
                 api_client,
                 String::new(),
-            ))
+            )
+            // Grok's reasoning deltas rarely carry a `thought_signature`, so
+            // dedupe_signed_thinking never collapses repeats and the model
+            // ends up re-reading its own past reasoning verbatim every turn.
+            .with_preserve_thinking_context(false))
         })
     }
 }
