@@ -13,11 +13,17 @@ The supplied prompt is treated as a draft. The intended mission is preserved (El
 
 No Critical finding is Confirmed at this HEAD. The Electron desktop shell is materially hardened: `contextIsolation: true`, `nodeIntegration: false`, Electron Fuses are set on the packaged path, renderer filesystem IPC is root-confined, `gosling serve` is spawned `shell: false` with parent-PID supervision and a process registry, and several memory/resource bounds that README claims (token LRU, event-bus replay, subprocess stderr cap) exist in current source.
 
+**Re-assessed 2026-08-16: SECN-GSL-001 is downgraded to Warning /
+not-actionable — see its detail section. The paragraph below is the original
+2026-08-15 assessment and its taint-path premise does not hold, because the
+untrusted app HTML runs in a nested guest iframe on a different origin, not in
+the secret-bearing frame.**
+
 The highest-severity live defect is **SECN-GSL-001** (High, Confirmed code property): MCP Apps load untrusted HTML in an iframe whose default sandbox is `allow-scripts allow-same-origin allow-forms` and whose `src` is the loopback proxy URL with the backend secret in the fragment. That is a taint path from untrusted MCP content to the local control-plane secret. Do not treat it as an exploited break-in; the secret-in-URL and sandbox tokens are source-evidenced. XSS-to-API use was not reproduced.
 
 Do not pause merge for the remaining items. They are real missing bounds (session/digest caches, FileMemory slurp, chat-store retention, `check-ollama` child lifetime) plus a documentation/measurement honesty gap: README footprint numbers are explicitly historical (2026-07-04 / gosling v0.0.5) and were not remeasured at this HEAD. No race, OOM, lock storm, or timeout was marked Confirmed.
 
-Patching is recommended for SECN-GSL-001 and the session/digest unbounded maps; do not optimize README numbers until a same-harness remasurement exists.
+Patching is recommended for the session/digest unbounded maps (SECN-GSL-001 was re-assessed 2026-08-16 as not actionable); do not optimize README numbers until a same-harness remasurement exists.
 
 ## Scope
 
@@ -76,7 +82,7 @@ No `--max-old-space-size`, cgroup `memory.max`, or Rust allocator cap was found 
 | Backend spawn | argv array, no shell | `goslingServe.ts` `shell: false` | Held |
 | Backend orphan | parent death kills serve | `GOSLING_SERVER__PARENT_PID` + poll | Held (Potential on poll gap) |
 | MCP child lifetime | drop/kill on eviction | `configure_subprocess` `kill_on_drop` | Held; macOS APD residual |
-| MCP App isolation | untrusted UI cannot take host secret | iframe sandbox + proxy | **Failed** (SECN-GSL-001) |
+| MCP App isolation | untrusted UI cannot take host secret | iframe sandbox + proxy | **Held** — SECN-GSL-001 re-assessed 2026-08-16; guest runs on a separate origin |
 | CSP connect-src for local ACP | only this window’s loopback origin | `buildCSP` + lease lookup | **Failed** (ARCN-GSL-001) |
 | Session heap | evict unused snapshots | `deleteSnapshot` | **Failed** (MEM-GSL-003) |
 | Digest cache | bound or TTL | `DIGEST_CACHE` HashMap | **Failed** (MEM-GSL-001) |
@@ -86,7 +92,7 @@ No `--max-old-space-size`, cgroup `memory.max`, or Rust allocator cap was found 
 
 | ID | Severity | Confidence | Evidence Basis | Domain | Title | Patch Priority | Blast Radius | Complexity | Cost | Nominal Agent |
 |---|---|---|---|---|---|---|---|---|---|---|
-| SECN-GSL-001 | High | Confirmed (secret+sandbox tokens); runtime exfil Likely | source-evidenced | Security | MCP App iframe gets backend secret in URL hash under `allow-scripts allow-same-origin` | 1 | Local | workflow_protocol | M | claude |
+| SECN-GSL-001 | ~~High~~ Warning (re-assessed 2026-08-16, not actionable) | Confirmed (secret+sandbox tokens); runtime exfil Likely | source-evidenced | Security | MCP App iframe gets backend secret in URL hash under `allow-scripts allow-same-origin` | 1 | Local | workflow_protocol | M | claude |
 | ARCN-GSL-001 | Medium | Confirmed (wrong key); WS-block Likely | source-evidenced | Architecture | CSP rebuild looks up ACP lease by `webContentsId`, leases are keyed by `BrowserWindow.id` | 2 | Workflow | local_guardrail | S | codex |
 | MEM-GSL-001 | Medium | Likely (Potential; not measured) | source-evidenced | Memory Lifecycle | Process-lifetime `DIGEST_CACHE` HashMap has no cap/TTL/eviction | 3 | Service | local_guardrail | S | codex |
 | MEM-GSL-003 | Medium | Likely (Potential; not measured) | source-evidenced | Memory Lifecycle | Renderer `sessionsById` retains full message lists until explicit delete | 3 | Workflow | local_guardrail | S | codex |
@@ -107,6 +113,48 @@ No `--max-old-space-size`, cgroup `memory.max`, or Rust allocator cap was found 
 ## Detailed Findings
 
 ### SECN-GSL-001: MCP App iframe receives the backend secret under a scriptable same-origin sandbox
+
+> **RE-ASSESSED 2026-08-16 — downgraded to Warning / not-actionable. The
+> original finding is preserved below; the stated taint path does not hold.**
+>
+> The finding assumes untrusted MCP app HTML runs in the frame whose URL
+> carries the secret. It does not. That frame is the *proxy* page; the app HTML
+> runs in a **nested guest iframe served from a different origin**, so
+> `allow-same-origin` grants the guest its own origin and same-origin policy
+> blocks `parent.location` reads. The guest only ever receives an unguessable
+> single-use nonce.
+>
+> Verified per variant at `ed7cd5d17`:
+>
+> | variant | guest origin | guest sandbox | verdict |
+> |---|---|---|---|
+> | `crates/gosling/src/acp/` | separate loopback listener, own ephemeral port (`spawn_guest_server`) | `allow-scripts allow-same-origin allow-forms` | safe — different origin |
+> | `crates/gosling-server/` | same router | `allow-scripts allow-forms` (**no** same-origin) | safe — opaque origin, and its `srcdoc` fallback is safe for the same reason |
+>
+> Upstream comparison: `aaif-goose/goose` puts the same secret in the **query
+> string**, which is strictly worse (it reaches the server, access logs, and
+> `Referer`). Upstream had the genuine same-origin form of this bug in its
+> `goose-server` crate and **deleted that crate** (PR #10224) rather than fixing
+> it. There is no upstream mechanism to port.
+>
+> **What is load-bearing, and what a future agent must not undo:** the two
+> variants are safe for *different* reasons, and each is one edit away from
+> being unsafe. Merging the ACP guest route into the main router while it keeps
+> `allow-same-origin`, or adding `allow-same-origin` to the gosling-server
+> guest, re-creates the real vulnerability. Both sites now carry comments
+> saying so, and
+> `acp::mcp_app_proxy::tests::the_guest_is_served_from_its_own_loopback_origin`
+> fails if the ACP guest stops owning its origin.
+>
+> Residual hardening, **not** a demonstrated path: the outer page's `script-src`
+> is widened by app-declared `resource_domains`/`script_domains`. No injection
+> sink was found in that page's own code (its only DOM writes are
+> `document.body.textContent` and `createElement('iframe')`). If the secret is
+> to leave the URL entirely, the `proxy_token` added by the SEC-GOS-002 fix
+> (`5ea594f4b`) is the natural basis.
+
+#### Original finding (2026-08-15, unmodified)
+
 
 Severity: High  
 Confidence: Confirmed (secret placement + sandbox tokens); runtime secret use / sandbox escape is Likely  
