@@ -221,7 +221,7 @@ fn delegate_authority_summary(extensions: &[crate::agents::ExtensionConfig]) -> 
     }
 }
 
-fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
+fn parse_agent_content(content: &str, path: &Path, global: bool) -> Option<SourceEntry> {
     let (metadata, body): (AgentMetadata, String) = match parse_frontmatter(content) {
         Ok(Some(parsed)) => parsed,
         Ok(None) => return None,
@@ -251,7 +251,7 @@ fn parse_agent_content(content: &str, path: &Path) -> Option<SourceEntry> {
         description,
         content: body,
         path: path.to_string_lossy().into_owned(),
-        global: false,
+        global,
         writable: true,
         supporting_files: Vec::new(),
         properties: std::collections::HashMap::new(),
@@ -262,6 +262,7 @@ fn scan_agents_from_dir(
     dir: &Path,
     sources: &mut Vec<SourceEntry>,
     seen: &mut std::collections::HashSet<String>,
+    global: bool,
 ) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -287,7 +288,7 @@ fn scan_agents_from_dir(
             }
         };
 
-        if let Some(source) = parse_agent_content(&content, &path) {
+        if let Some(source) = parse_agent_content(&content, &path, global) {
             if !seen.contains(&source.name) {
                 seen.insert(source.name.clone());
                 sources.push(source);
@@ -320,11 +321,13 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     .collect();
 
     for dir in local_agent_dirs {
-        scan_agents_from_dir(&dir, &mut sources, &mut seen);
+        // Repo-committed: `global: false`. `build_spec_from_agent` uses this to
+        // refuse a capability policy declared here (AOC-GOS-004).
+        scan_agents_from_dir(&dir, &mut sources, &mut seen, false);
     }
 
     for dir in global_agent_dirs {
-        scan_agents_from_dir(&dir, &mut sources, &mut seen);
+        scan_agents_from_dir(&dir, &mut sources, &mut seen, true);
     }
 
     sources
@@ -1277,11 +1280,33 @@ impl SummonClient {
             .is_none()
             .then(|| "Proceed with your expertise to produce a useful result.".to_string());
 
+        // A capability policy is an allowlist authored by the agent file. Only
+        // the operator's own global agents (~/.gosling, ~/.claude, ~/.agents,
+        // the config dir) are trusted to author one. A repo-committed agent
+        // file (`source.global == false`) is untrusted config, so its
+        // declared policy is dropped and treated the same as no policy at
+        // all — `Some(Vec::new())`, the existing legacy-source result —
+        // instead of being honored as a grant (AOC-GOS-004).
+        let trusted_capabilities = if source.global {
+            metadata.capabilities
+        } else {
+            if metadata.capabilities.is_some() {
+                tracing::warn!(
+                    security.event_type = "delegate_capability_policy_untrusted_source",
+                    security.source_path = %source.path,
+                    "repo-committed agent file declares a capability policy; repo \
+                     content cannot grant extensions on its own, ignoring it"
+                );
+            }
+            None
+        };
+        let role_extensions = Some(validate_capability_policy(trusted_capabilities)?);
+
         Ok(DelegateSpec {
             instructions: Some(source.content.clone()),
             prompt,
             model: metadata.model,
-            role_extensions: Some(validate_capability_policy(metadata.capabilities)?),
+            role_extensions,
         })
     }
 
@@ -1807,7 +1832,7 @@ name: reviewer
 model: sonnet
 ---
 You review code."#;
-        let source = parse_agent_content(agent, Path::new("")).unwrap();
+        let source = parse_agent_content(agent, Path::new(""), false).unwrap();
         assert_eq!(source.name, "reviewer");
         assert!(source.description.contains("sonnet"));
     }
@@ -1905,6 +1930,69 @@ You review code."#;
         assert_eq!(spec.role_extensions, Some(Vec::new()));
     }
 
+    #[tokio::test]
+    async fn test_repo_committed_agent_capability_policy_is_ignored() {
+        // AOC-GOS-004: a repo-committed agent file cannot grant itself
+        // extensions by declaring a `capabilities` policy, even one the
+        // parent session happens to have enabled.
+        let temp_dir = TempDir::new().unwrap();
+        let agents = temp_dir.path().join(".gosling/agents");
+        fs::create_dir_all(&agents).unwrap();
+        fs::write(
+            agents.join("helper.md"),
+            "---\nname: helper\ncapabilities:\n  version: 1\n  extensions: [developer]\n---\nHelp.",
+        )
+        .unwrap();
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let params = DelegateParams {
+            source: Some("helper".to_string()),
+            ..Default::default()
+        };
+        let spec = client
+            .build_delegate_spec(&params, temp_dir.path())
+            .await
+            .unwrap();
+        assert_eq!(spec.role_extensions, Some(Vec::new()));
+
+        let resolved =
+            resolve_delegate_extensions(vec![test_extension("developer")], &spec, None).unwrap();
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn test_global_agent_capability_policy_is_honored() {
+        // Companion to the untrusted-source test above: an operator-authored
+        // global agent file (`source.global == true`) is still trusted to
+        // declare a capability policy, so `build_spec_from_agent` itself
+        // must honor it rather than only the discovery-layer flag.
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("helper.md");
+        fs::write(
+            &path,
+            "---\nname: helper\ncapabilities:\n  version: 1\n  extensions: [developer]\n---\nHelp.",
+        )
+        .unwrap();
+
+        let source = SourceEntry {
+            source_type: SourceType::Agent,
+            name: "helper".to_string(),
+            description: "Global helper".to_string(),
+            content: "Help.".to_string(),
+            path: path.to_string_lossy().into_owned(),
+            global: true,
+            writable: true,
+            supporting_files: Vec::new(),
+            properties: std::collections::HashMap::new(),
+        };
+
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let spec = client
+            .build_spec_from_agent(&source, &DelegateParams::default())
+            .unwrap();
+        assert_eq!(spec.role_extensions, Some(vec!["developer".to_string()]));
+    }
+
     #[test]
     fn test_resolve_working_dir_relative_subdir() {
         let temp_dir = TempDir::new().unwrap();
@@ -1986,7 +2074,7 @@ You review code."#;
 
         let mut sources = Vec::new();
         let mut seen = HashSet::new();
-        scan_agents_from_dir(&agents_dir, &mut sources, &mut seen);
+        scan_agents_from_dir(&agents_dir, &mut sources, &mut seen, false);
 
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].name, "reviewer");
