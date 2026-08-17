@@ -162,6 +162,62 @@ patch and routed. Full campaign evidence:
       closing note claimed "all five marked closed" here; only four were. Adding the
       fifth now.)
 
+### Performance findings — reassessed 2026-08-17
+
+Source audit: [`docs/cloud/audit-performance-profile.md`](cloud/audit-performance-profile.md).
+This ledger previously tracked only PERF-GSL-002 (below). The full PERF-GSL-001
+through 004 series and the new streaming finding recorded here are carried from
+that audit's §5/§6 inventory so they are not rediscovered from scratch. Full
+re-assessment and a new finding are in
+[`docs/logs/session/2026-08-17-performance-review.md`](logs/session/2026-08-17-performance-review.md).
+
+- [ ] **PERF-GSL-001** — README footprint table's cold-start row is a 2026-07-04 /
+      v0.0.5 historical run, not HEAD evidence, and `--version`/`doctor` do not
+      exercise real startup work. Not fixed: it is a published comparative claim,
+      so the nominal agent is `human-owner`; a re-measurement with a pinned
+      harness (run count, cold/warm protocol, p50/p95) must precede any number
+      change. `audit-performance-profile.md:416`.
+- [ ] **PERF-GSL-002** — Desktop `performance.spec.ts` is a single-run smoke script
+      presented as a benchmark. Not fixed: mechanical but needs a judgement call on
+      what a valid harness is for the Desktop surface. `audit-performance-profile.md:944`.
+- [ ] **PERF-GSL-003** — per-turn full-history tokenization and multiple
+      `Conversation` clones (O(n)/turn, ~O(T²)/session). Re-verified open against
+      current HEAD: clones at `agent.rs:2391` (`inject_moim(... conversation.clone()`)
+      and `agent.rs:2435` (`maybe_summarize_tool_pairs(... conversation.clone()`);
+      `inject_moim` takes `Conversation` by value (`moim.rs:41`); per-turn session
+      reload at `agent.rs:2339` plus a second inside `inject_moim` (`moim.rs:53`).
+      The process-wide LRU encode-cache already removes the expensive re-encode;
+      the residual quadratic is blake3 keying on every cache hit
+      (`token_counter.rs:35-40,54-55`) plus the clones. Not fixed: per Amdahl this
+      sits behind `p ≀ 0.01` and the audit's own §6 says do not touch it until a
+      profile (the PERF-GSL-003 break-it harness) shows a non-trivial share.
+      `audit-performance-profile.md:284`.
+- [~] **PERF-GSL-004** — **status changed: the double-scan is resolved.** The audit
+      reported `scan_for_patterns` running `is_match` then `find_iter` per pattern
+      (`patterns.rs:335-349` at audit time). Current `patterns.rs:334-348` runs
+      `find_iter` directly with no preceding `is_match`, so the redundant pass is
+      gone. What remains is the 37-pattern sequential loop over each scanned
+      tool output (the audit cited 43; patterns were trimmed) without a single
+      `RegexSet` pass. Still open, same Low tier, same guardrail (profile first).
+      `audit-performance-profile.md:374`.
+- [ ] **PERF-GSL-005** — **new, found 2026-08-17.** The OpenAI-compatible SSE
+      streaming decoder parses every chunk twice: `parse_streaming_chunk`
+      (`gosling-providers/src/formats/openai.rs:1088`) does
+      `serde_json::from_str::<Value>(line)` to check for an `error`/`object ==
+      "error"` shape, then `serde_json::from_value::<StreamingChunk>(value)`, which
+      re-walks the same `Value` tree. `StreamingChunk` already derives
+      `Deserialize`. This is on the hot streaming path (called per SSE data line
+      via `response_to_streaming_message`, `openai.rs:1165,1214`). Walkthrough:
+      deserialize straight to `StreamingChunk` via `from_str`, then inspect the
+      typed struct for the error shape, or do a cheap prefix/byte check before
+      the full parse; this eliminates one full `Value`-tree allocation + re-walk
+      per chunk. Justification for Low severity: a single SSE chunk is small, and
+      this is bounded CPU per token streamed, so it is unlikely to dominate a turn
+      dominated by provider network/inference; it only matters under very high
+      chunk throughput. Guardrail: a streaming-decode micro-benchmark with a
+      pinned captured fixture before/after, asserting alloc/parse count drops.
+      `docs/logs/session/2026-08-17-performance-review.md`.
+
 ### Lower priority, mechanical but needs a judgement call
 
 ARCN-GSL-002 (49 scattered `process.env` reads), ARC-GSL-005 (duplicated
