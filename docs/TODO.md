@@ -101,6 +101,40 @@ rediscovered from scratch.
 
 See `docs/logs/session/2026-08-16-audit-repair-batch2.md`.
 
+### Still open — High severity, never picked up by a repair batch
+
+Confirmed 2026-08-16 against `docs/logs/session/2026-08-16-audit-repair-campaign.md`'s
+"Open / not yet started" list and `docs/logs/session/2026-08-16-acp-mcp-repair.md`'s
+inventory table: these four High-severity findings from the 2026-08-15 audit have no
+fix commit and are absent from every "Closed" section above. Nothing in this repo's own
+severity scheme uses bare "P0/P1"; High is the top populated tier this cycle (Critical
+count is zero per the 2026-08-15 audit's own tally).
+
+- [ ] **AOC-GOS-004** — repo-committed `AGENTS.md`/skills load as instructions with no
+      workspace-trust gate, so a delegated child can be granted extensions the parent
+      never authorized. `docs/cloud/2026-08-15-audit-orchestration-contracts.md:234`.
+- [ ] **CON-GSL-001** — cross-process `recover` can mark a live peer's in-flight tool
+      call `in_doubt`, corrupting a session another process is actively using.
+      `docs/cloud/2026-08-15-audit-dataflow-core.md:187`.
+- [ ] **MCP-GOS-001** — the `computercontroller` extension executes model-supplied
+      scripts / UI control with no dry-run gate. Severity is inconsistent between docs:
+      `docs/cloud/2026-08-15-audit-orchestration-contracts.md:284-286` calls it High;
+      `docs/logs/session/2026-08-16-acp-mcp-repair.md` inventory table lists it Medium,
+      "Not started". Treat as High (the audit-of-record) until re-triaged.
+- [ ] **ARC-GSL-002** — `gosling-providers` crate still owns the conversation domain
+      (inverted ownership: `Message` and friends live in the adapter crate, not core).
+      `docs/cloud/2026-08-15-audit-architecture-invariants.md:352`. Two `Provider`
+      traits and 21 concrete impls left in core blur the boundary further
+      (`docs/cloud/audit-architecture-seam.md:126`).
+
+### Ledger correction
+
+- [x] **SEC-GOS-012** (`6a02881fb`) — missing from this file even though the second
+      repair batch fixed it: `--dangerously-unauthenticated` now refuses a non-loopback
+      bind. See `docs/logs/session/2026-08-16-audit-repair-batch2.md`. (The batch's own
+      closing note claimed "all five marked closed" here; only four were. Adding the
+      fifth now.)
+
 ### Lower priority, mechanical but needs a judgement call
 
 ARCN-GSL-002 (49 scattered `process.env` reads), ARC-GSL-005 (duplicated
