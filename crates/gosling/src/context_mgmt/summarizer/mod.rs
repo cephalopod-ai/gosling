@@ -672,20 +672,41 @@ mod tests {
         assert_eq!(cache.insertion_order.len(), 1);
     }
 
+    // `summarizer_mode()` reads `Config::global()`, the real process-wide
+    // config singleton keyed by the machine's actual config dir. On any
+    // machine that has ever set `GOSLING_SUMMARIZER` in its real settings
+    // file (e.g. a developer using the local summarizer), that ambient value
+    // wins over the built-in default and this test fails for reasons that
+    // have nothing to do with the code under test. Use `summarizer_mode_from`
+    // against an isolated, temp-file-backed `Config` instead, matching
+    // `settings_file_values_are_honored_and_env_overrides_them` below.
+    fn isolated_config() -> crate::config::Config {
+        use crate::config::Config;
+        use tempfile::NamedTempFile;
+
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap()
+    }
+
     #[test]
     fn defaults_to_off() {
         let _guard = env_lock::lock_env([("GOSLING_SUMMARIZER", None::<&str>)]);
-        assert_eq!(summarizer_mode(), SummarizerMode::Off);
+        assert_eq!(
+            summarizer_mode_from(&isolated_config()),
+            SummarizerMode::Off
+        );
     }
 
     #[test]
     fn reads_shadow_and_on() {
+        let config = isolated_config();
         {
             let _guard = env_lock::lock_env([("GOSLING_SUMMARIZER", Some("shadow"))]);
-            assert_eq!(summarizer_mode(), SummarizerMode::Shadow);
+            assert_eq!(summarizer_mode_from(&config), SummarizerMode::Shadow);
         }
         let _guard = env_lock::lock_env([("GOSLING_SUMMARIZER", Some("ON"))]);
-        assert_eq!(summarizer_mode(), SummarizerMode::On);
+        assert_eq!(summarizer_mode_from(&config), SummarizerMode::On);
     }
 
     #[test]
