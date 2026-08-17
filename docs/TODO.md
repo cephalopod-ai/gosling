@@ -101,31 +101,58 @@ rediscovered from scratch.
 
 See `docs/logs/session/2026-08-16-audit-repair-batch2.md`.
 
-### Still open — High severity, never picked up by a repair batch
+### High severity, repaired 2026-08-16 (repair-defect-campaign)
 
-Confirmed 2026-08-16 against `docs/logs/session/2026-08-16-audit-repair-campaign.md`'s
+The four items below were confirmed open against `docs/logs/session/2026-08-16-audit-repair-campaign.md`'s
 "Open / not yet started" list and `docs/logs/session/2026-08-16-acp-mcp-repair.md`'s
-inventory table: these four High-severity findings from the 2026-08-15 audit have no
-fix commit and are absent from every "Closed" section above. Nothing in this repo's own
-severity scheme uses bare "P0/P1"; High is the top populated tier this cycle (Critical
-count is zero per the 2026-08-15 audit's own tally).
+inventory table — no fix commit, absent from every "Closed" section above.
+Nothing in this repo's own severity scheme uses bare "P0/P1"; High was the top
+populated tier that cycle (Critical count was zero per the 2026-08-15 audit's
+own tally). Three are now fixed; the fourth was scoped out as too large for a
+patch and routed. Full campaign evidence:
+[`docs/logs/session/2026-08-16-repair-defect-campaign.md`](logs/session/2026-08-16-repair-defect-campaign.md).
 
-- [ ] **AOC-GOS-004** — repo-committed `AGENTS.md`/skills load as instructions with no
-      workspace-trust gate, so a delegated child can be granted extensions the parent
-      never authorized. `docs/cloud/2026-08-15-audit-orchestration-contracts.md:234`.
-- [ ] **CON-GSL-001** — cross-process `recover` can mark a live peer's in-flight tool
-      call `in_doubt`, corrupting a session another process is actively using.
+- [x] **AOC-GOS-004** (`1bf5a6ddb`) — `build_spec_from_agent` now drops a
+      capability policy declared in a repo-committed agent file
+      (`source.global == false`) instead of honoring it, so a cloned repo can
+      no longer grant its own delegate an extension the parent has enabled
+      just by declaring `capabilities: {extensions: [...]}`. Global
+      (operator-authored) agent files are unaffected. Regression tests cover
+      both. `docs/cloud/2026-08-15-audit-orchestration-contracts.md:234`.
+- [x] **CON-GSL-001** (`c314dae6a`) — `recover_tool_operations` now probes the
+      dispatching OS process (`tool_operations.owner_pid`, schema v27) via the
+      existing `subprocess::process_is_alive` before treating a foreign
+      `started` row as abandoned, instead of trusting a per-instance UUID with
+      no liveness signal. A live peer's in-flight tool survives a concurrent
+      recover; a genuinely dead owner's is still recovered.
       `docs/cloud/2026-08-15-audit-dataflow-core.md:187`.
-- [ ] **MCP-GOS-001** — the `computercontroller` extension executes model-supplied
-      scripts / UI control with no dry-run gate. Severity is inconsistent between docs:
-      `docs/cloud/2026-08-15-audit-orchestration-contracts.md:284-286` calls it High;
-      `docs/logs/session/2026-08-16-acp-mcp-repair.md` inventory table lists it Medium,
-      "Not started". Treat as High (the audit-of-record) until re-triaged.
-- [ ] **ARC-GSL-002** — `gosling-providers` crate still owns the conversation domain
-      (inverted ownership: `Message` and friends live in the adapter crate, not core).
-      `docs/cloud/2026-08-15-audit-architecture-invariants.md:352`. Two `Provider`
-      traits and 21 concrete impls left in core blur the boundary further
-      (`docs/cloud/audit-architecture-seam.md:126`).
+- [x] **MCP-GOS-001** (`72b23086d`) — `automation_script` and `computer_control`
+      (all platform `#[cfg]` variants) now carry MCP `destructive_hint` /
+      `open_world_hint` tool annotations, so a host other than Gosling's own
+      ACP layer (which already gates these by name) has a spec-level signal
+      that they differ from the read-only tools on the same server.
+      `computercontroller` was already disabled by default in both extension
+      registries — that part of the mitigation needed no change. Splitting
+      the server into separate read/exec servers is a product-policy call the
+      audit itself routes to a human owner, not part of this patch.
+      Severity was inconsistent between docs (High in
+      `docs/cloud/2026-08-15-audit-orchestration-contracts.md:284-286` vs.
+      Medium in `docs/logs/session/2026-08-16-acp-mcp-repair.md`'s inventory
+      table); treated as High, the audit-of-record.
+- [ ] **ARC-GSL-002** — `gosling-providers` crate still owns the conversation
+      domain (inverted ownership: `Message` and friends live in the adapter
+      crate, not core). Not fixed: the audit's own recommended mitigation is
+      moving `conversation`/`gosling_mode`/`thinking`/`permission` into a
+      domain crate, Cost L, "many import sites" across `gosling`,
+      `gosling-cli`, `gosling-server`, and generated SDK types — a crate-
+      boundary move, not a same-crate refactor, and the audit's own non-goal
+      says not to fold provider consolidation into the same slice. Routed to
+      a dedicated architecture pass rather than attempted as a repair-campaign
+      patch, matching how `ARC-GSL-001`'s >=2000-line files were routed
+      instead of split mid-repair (below).
+      `docs/cloud/2026-08-15-audit-architecture-invariants.md:352`. Two
+      `Provider` traits and 21 concrete impls left in core blur the boundary
+      further (`docs/cloud/audit-architecture-seam.md:126`).
 
 ### Ledger correction
 
@@ -149,8 +176,18 @@ a dedicated modularization pass rather than split mid-repair).
 
 ### Known-failing test predating this work
 
-- [ ] `context_mgmt::summarizer::tests::defaults_to_off` fails on clean HEAD and
-      was left untouched throughout the campaign. Diagnose separately.
+- [x] `context_mgmt::summarizer::tests::defaults_to_off` (`93a19738d`) — was
+      never a production defect: the test called the bare `summarizer_mode()`,
+      which reads `Config::global()`, the real process-wide config singleton
+      keyed by this machine's actual config dir. On any machine with a real
+      settings file setting `GOSLING_SUMMARIZER` (this dev environment's own
+      `~/.config/gosling/config.yaml` has `GOSLING_SUMMARIZER: on`, a
+      deliberate personal setting, left untouched), that ambient value beat
+      the built-in default and the test failed for reasons unrelated to the
+      code under test. Fixed by testing `summarizer_mode_from` against an
+      isolated, temp-file-backed `Config`, matching the neighboring
+      `settings_file_values_are_honored_and_env_overrides_them` test's
+      existing pattern.
 
 ## Provider follow-up — observed 2026-08-16
 
