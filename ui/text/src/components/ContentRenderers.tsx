@@ -81,14 +81,16 @@ export function renderErrorItem(
 export function renderContentItem(
   item: ResponseItem & { itemType: "content_chunk" },
   index: number,
-  width: number
+  width: number,
+  turnId?: string
 ): React.ReactElement[] {
   if (item.content.type !== "text" || !item.content.text) {
     return [];
   }
 
   const constrainedWidth = Math.max(width - 2, 10);
-  const mdLines = renderMarkdown(item.content.text, constrainedWidth);
+  const cacheKey = turnId !== undefined ? `${turnId}:${index}` : undefined;
+  const mdLines = renderMarkdown(item.content.text, constrainedWidth, cacheKey);
   const lines: React.ReactElement[] = [emptyLine(`md-gap-${index}`, width)];
   
   mdLines.forEach((mdLine, j) => {

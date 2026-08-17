@@ -762,20 +762,25 @@ impl Agent {
         working_dir: &std::path::Path,
         additional_working_dirs: &[std::path::PathBuf],
     ) -> Result<ReplyContext> {
-        // `unfixed_conversation` is owned and unused after this point, so the
-        // second clone duplicated the whole conversation on every turn for
-        // nothing (MEM-GSL-006). Move it instead.
-        let unfixed_messages = unfixed_conversation.messages().clone();
+        // Only clone the pre-fix conversation when the debug-fix log can
+        // actually fire: this clone previously ran unconditionally on every
+        // turn to feed a debug!() line that's usually filtered out, doubling
+        // as the same full-conversation-clone-for-nothing shape already
+        // fixed once under MEM-GSL-006.
+        let debug_fix_enabled = tracing::enabled!(tracing::Level::DEBUG);
+        let unfixed_messages = debug_fix_enabled.then(|| unfixed_conversation.messages().clone());
         let (conversation, issues) = fix_conversation(unfixed_conversation);
         if !issues.is_empty() {
-            debug!(
-                "Conversation issue fixed: {}",
-                debug_conversation_fix(
-                    unfixed_messages.as_slice(),
-                    conversation.messages(),
-                    &issues
-                )
-            );
+            if let Some(unfixed_messages) = unfixed_messages {
+                debug!(
+                    "Conversation issue fixed: {}",
+                    debug_conversation_fix(
+                        unfixed_messages.as_slice(),
+                        conversation.messages(),
+                        &issues
+                    )
+                );
+            }
         }
 
         let (tools, toolshim_tools, system_prompt, model_config) = self

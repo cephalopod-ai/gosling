@@ -340,7 +340,7 @@ function buildContentLines({
     } else if (item.itemType === "error") {
       lines.push(...renderErrorItem(item, i, safeWidth));
     } else if (item.itemType === "content_chunk") {
-      lines.push(...renderContentItem(item, i, safeWidth));
+      lines.push(...renderContentItem(item, i, safeWidth, turnId));
     }
   }
 

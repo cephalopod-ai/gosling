@@ -771,9 +771,13 @@ function upsertMessageAtIndex(entry: StoreEntry, index: number, message: Message
   const resolvedIndex = resolveMessageIndex(entry, index, clonedMessage);
 
   if (resolvedIndex >= 0 && resolvedIndex < entry.messages.length) {
-    entry.messages = entry.messages.map((existingMessage, currentIndex) =>
-      currentIndex === resolvedIndex ? clonedMessage : existingMessage
-    );
+    // Replace in place on a shallow copy instead of `.map()`-ing the whole
+    // array: streamed replies upsert the same trailing message on every
+    // chunk, so re-mapping every prior message here made a full-conversation
+    // pass cost per token.
+    const nextMessages = entry.messages.slice();
+    nextMessages[resolvedIndex] = clonedMessage;
+    entry.messages = nextMessages;
     return;
   }
 
