@@ -3619,7 +3619,13 @@ where
 {
     match select(Box::pin(connection), Box::pin(eof_receiver)).await {
         Either::Left((result, _)) => result?,
-        Either::Right((Ok(()), _)) => {}
+        Either::Right((Ok(()), connection)) => {
+            if let Ok(result) =
+                tokio::time::timeout(std::time::Duration::from_secs(1), connection).await
+            {
+                result?;
+            }
+        }
         Either::Right((Err(_), connection)) => connection.await?,
     }
     Ok(())
@@ -4884,6 +4890,39 @@ print(\"hello, world\")
         finish_connection_on_eof(connection, receiver)
             .await
             .expect("EOF should terminate the pending connection");
+    }
+
+    #[tokio::test]
+    async fn input_eof_allows_an_in_flight_response_to_finish() {
+        let (sender, receiver) = oneshot::channel();
+        sender.send(()).unwrap();
+        let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let completion = completed.clone();
+        let connection = async move {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            completion.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok::<(), agent_client_protocol::Error>(())
+        };
+
+        finish_connection_on_eof(connection, receiver)
+            .await
+            .expect("EOF drain should finish an in-flight response");
+
+        assert!(completed.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn input_eof_drain_preserves_connection_errors() {
+        let (sender, receiver) = oneshot::channel();
+        sender.send(()).unwrap();
+        let connection = async {
+            tokio::task::yield_now().await;
+            Err(agent_client_protocol::Error::internal_error())
+        };
+
+        finish_connection_on_eof(connection, receiver)
+            .await
+            .expect_err("connection errors during EOF drain must remain visible");
     }
 
     #[test]

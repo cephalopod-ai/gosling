@@ -73,3 +73,24 @@ Each verified group is a local commit boundary; no push is permitted.
   before session copying; `--yes` is explicit and scoped only to the already-matched sessions.
 - Contract drift: CLI documentation now states both non-TTY contracts. Post-repair delta: no new drift.
 
+Commit: `e7ff63031` (`fix(cli): make interrupted session flows honest`).
+
+## Group 2 — ACP stdio EOF
+
+### Repair rationale
+
+The EOF watcher won its `select` as soon as stdin closed and immediately dropped the ACP connection,
+including responses already accepted but not yet serialized. After EOF, the connection now receives a
+bounded one-second drain opportunity. A completed connection error remains an error; only expiry of the
+bounded drain is treated as clean EOF.
+
+### Verification and adversarial review
+
+- `cargo test -p gosling input_eof_ --lib` — 3/3 passed: prompt termination of a permanently pending
+  connection, completion of an in-flight response, and propagation of an in-flight connection error.
+- Live initialize followed immediately by EOF — exit 0, one valid JSON-RPC line, response id 1, 5,237
+  stdout bytes; stderr remained protocol-separated.
+- Adversarial checks: the drain is bounded below the scenario's shutdown deadline, does not turn a
+  completed transport error into success, and does not change request/response schema or framing.
+- Contract drift: HS-03/AP-05 and ACP v1 framing remain unchanged. Post-repair delta: no new drift.
+
