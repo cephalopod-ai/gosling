@@ -259,6 +259,11 @@ a dedicated modularization pass rather than split mid-repair).
       built binary. Follow-up worth knowing: Gosling's `Chat` maps to Vibe's
       `plan`, which writes a plan file under `~/.vibe/plans/` instead of
       running nothing — usable for planning, not a no-side-effects mode.
+      This is the fleet's original `vibe-acp` integration: cuttlefish's
+      `VibeAcpEngine` and tagteam's `MistralAcpAdapter` both mirror this
+      module's wire behavior (session mode mapping, ACP method sequence)
+      rather than re-deriving it independently — check here first if a
+      `vibe-acp` protocol assumption needs to change anywhere in the fleet.
 
 ## Provider authentication follow-up — observed 2026-08-15
 
