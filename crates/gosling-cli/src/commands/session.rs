@@ -13,7 +13,7 @@ use gosling::session::{
 use gosling::utils::safe_truncate;
 use regex::Regex;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
@@ -31,15 +31,26 @@ fn display_path_with_tilde(path: &Path) -> String {
     path.display().to_string()
 }
 
-async fn remove_sessions(session_manager: &SessionManager, sessions: Vec<Session>) -> Result<()> {
+async fn remove_sessions(
+    session_manager: &SessionManager,
+    sessions: Vec<Session>,
+    skip_confirmation: bool,
+) -> Result<()> {
+    if !skip_confirmation && !io::stdin().is_terminal() {
+        anyhow::bail!(
+            "Session removal requires an interactive terminal. Re-run with --yes to remove the matched sessions."
+        );
+    }
+
     println!("The following sessions will be removed:");
     for session in &sessions {
         println!("- {} {}", session.id, session.name);
     }
 
-    let should_delete = confirm("Are you sure you want to delete these sessions?")
-        .initial_value(false)
-        .interact()?;
+    let should_delete = skip_confirmation
+        || confirm("Are you sure you want to delete these sessions?")
+            .initial_value(false)
+            .interact()?;
 
     if should_delete {
         for session in sessions {
@@ -96,6 +107,7 @@ pub async fn handle_session_remove(
     session_id: Option<String>,
     name: Option<String>,
     regex_string: Option<String>,
+    skip_confirmation: bool,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
 
@@ -142,7 +154,7 @@ pub async fn handle_session_remove(
         return Ok(());
     }
 
-    remove_sessions(&session_manager, matched_sessions).await
+    remove_sessions(&session_manager, matched_sessions, skip_confirmation).await
 }
 
 fn write_line_or_broken_pipe_ok<W: Write>(out: &mut W, line: &str) -> Result<bool> {

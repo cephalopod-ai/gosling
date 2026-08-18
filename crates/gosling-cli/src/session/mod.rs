@@ -1348,7 +1348,11 @@ impl CliSession {
                             cancel_token_clone.cancel();
                             drop(stream);
                             if let Err(e) = self
-                                .handle_interrupted_messages(false, turn_message_id.as_deref())
+                                .handle_interrupted_messages(
+                                    false,
+                                    interactive,
+                                    turn_message_id.as_deref(),
+                                )
                                 .await
                             {
                                 eprintln!("Error handling interruption: {}", e);
@@ -1368,10 +1372,17 @@ impl CliSession {
                 _ = cancel_token_clone.cancelled() => {
                     drop(stream);
                     if let Err(e) = self
-                        .handle_interrupted_messages(true, turn_message_id.as_deref())
+                        .handle_interrupted_messages(
+                            true,
+                            interactive,
+                            turn_message_id.as_deref(),
+                        )
                         .await
                     {
                         eprintln!("Error handling interruption: {}", e);
+                    }
+                    if !interactive {
+                        terminal_error = Some("Run cancelled by user".to_string());
                     }
                     break;
                 }
@@ -1485,6 +1496,7 @@ impl CliSession {
     async fn handle_interrupted_messages(
         &mut self,
         interrupt: bool,
+        interactive: bool,
         turn_message_id: Option<&str>,
     ) -> Result<()> {
         if interrupt {
@@ -1493,6 +1505,21 @@ impl CliSession {
         }
 
         if let Some(message_id) = turn_message_id {
+            if !interactive {
+                if interrupt {
+                    let notice = Message::assistant()
+                        .with_text("Run cancelled by user before completion.")
+                        .with_generated_id();
+                    self.messages.push(notice.clone());
+                    self.agent
+                        .config
+                        .session_manager
+                        .add_message(&self.session_id, &notice)
+                        .await?;
+                }
+                return Ok(());
+            }
+
             self.agent
                 .config
                 .session_manager

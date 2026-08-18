@@ -206,7 +206,7 @@ Start or resume interactive chat sessions.
 - **`--path <path>`**: Legacy parameter for specifying session by file path
 - **`-r, --resume`**: Resume a previous session
 - **`--edit`**: Open the session's conversation in your editor (`$VISUAL` / `$EDITOR` / `vi`) as YAML. Edit, trim, or rewrite messages, then save and close to continue the session with the edited conversation. Must be used with `--resume`. Can be combined with `--fork` to create a new session from the edited result.
-- **`--fork`**: Create a new duplicate session with copied history. Must be used with `--resume`. Provide `--name` or `--session-id` to fork a specific session. Otherwise, forks the most recent session.
+- **`--fork`**: Create a new duplicate session with copied history. Must be used with `--resume` and an interactive terminal. Provide `--name` or `--session-id` to fork a specific session. Otherwise, forks the most recent session. Non-interactive invocation exits before copying the source session.
 - **`--history`**: Show previous messages when resuming a session
 - **`--container <container_id>`**: Run extensions inside a [Docker container](/docs/tutorials/gosling-in-docker#running-extensions-in-docker-containers).
 - **`--debug`**: Enable debug mode to output complete tool responses, detailed parameter values, and full file paths
@@ -295,6 +295,7 @@ Remove one or more saved sessions.
 - **`-n, --name <name>`**: Remove a specific session by its name
 - **`-r, --regex <pattern>`**: Remove sessions matching a regex pattern
 - **`--path <path>`**: Remove a specific session by its file path (legacy)
+- **`-y, --yes`**: Skip the confirmation prompt; required for non-interactive removal
 
 **Usage:**
 ```bash
@@ -312,10 +313,13 @@ gosling session remove -r "project-.*"
 
 # Remove all sessions containing "migration"
 gosling session remove -r ".*migration.*"
+
+# Remove a named session from automation without prompting
+gosling session remove -n my-project --yes
 ```
 
 :::caution
-Session removal is permanent and cannot be undone. gosling will show which sessions will be removed and ask for confirmation before deleting.
+Session removal is permanent and cannot be undone. By default, gosling shows which sessions will be removed and asks for confirmation before deleting. Non-interactive callers must pass `--yes`; without it, gosling exits before announcing or deleting any session.
 :::
 
 ---

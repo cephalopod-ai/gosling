@@ -30,7 +30,7 @@ use crate::session::{build_session, SessionBuilderConfig};
 use gosling::agents::Container;
 use gosling::session::session_manager::SessionType;
 use gosling::session::SessionManager;
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 use tracing::warn;
 
@@ -512,6 +512,12 @@ enum SessionCommand {
             help = "Regex for removing matched sessions (optional)"
         )]
         regex: Option<String>,
+        #[arg(
+            short = 'y',
+            long,
+            help = "Remove matched sessions without an interactive confirmation"
+        )]
+        yes: bool,
     },
     #[command(about = "Export a session")]
     Export {
@@ -1616,13 +1622,17 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
         } => {
             handle_session_list(format, ascending, working_dir, limit).await?;
         }
-        SessionCommand::Remove { identifier, regex } => {
+        SessionCommand::Remove {
+            identifier,
+            regex,
+            yes,
+        } => {
             let (session_id, name) = if let Some(id) = identifier {
                 (id.session_id, id.name)
             } else {
                 (None, None)
             };
-            handle_session_remove(session_id, name, regex).await?;
+            handle_session_remove(session_id, name, regex, yes).await?;
         }
         SessionCommand::Export {
             identifier,
@@ -1720,6 +1730,12 @@ async fn handle_interactive_session(
             eprintln!("Error: --session-id can only be used with --resume flag");
             std::process::exit(1);
         }
+    }
+
+    if fork && !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "--fork requires an interactive terminal; no session was copied. Use the Desktop or an interactive terminal to fork a session."
+        );
     }
 
     let gosling_mode = Config::global().get_gosling_mode().unwrap_or_default();
@@ -2233,6 +2249,21 @@ pub async fn cli() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_remove_accepts_non_interactive_confirmation() {
+        let cli =
+            Cli::try_parse_from(["gosling", "session", "remove", "--name", "fixture", "--yes"])
+                .expect("parse failed");
+
+        match cli.command {
+            Some(Command::Session {
+                command: Some(SessionCommand::Remove { yes: true, .. }),
+                ..
+            }) => {}
+            _ => panic!("expected confirmed session removal"),
+        }
+    }
 
     #[test]
     fn run_input_preserves_valid_stdin() {
