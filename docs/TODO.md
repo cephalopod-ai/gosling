@@ -553,6 +553,3 @@ Full inventory and repair evidence:
       tracker state.
 - [x] Coordinate shared memory JSONL readers and batch writers with file locks and durable
       flushes.
-- [ ] Replace Bedrock/SageMaker process-global AWS environment export with provider-instance
-      AWS SDK configuration. Preserve and test environment/config precedence, live reload,
-      concurrent different credentials, and subagent construction before deleting the adapter.
