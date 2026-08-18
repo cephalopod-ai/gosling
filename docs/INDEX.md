@@ -22,6 +22,7 @@ for the relationship to cephalopod-ai/gosling.
 - [SHELL_PRODUCTS.md](SHELL_PRODUCTS.md) — strict product-profile roots, local package/readback commands, fixtures, and extension recipe
 - [INTENT.md](INTENT.md) — fork intent and scope
 - [TODO.md](TODO.md) — outstanding work
+- [polish/](polish/) — code-polish, documentation-stewardship, and release-readiness evidence
 - [adr/](adr/) — architecture decision records
 - [adr/0010-project-shell-consumer-composition.md](adr/0010-project-shell-consumer-composition.md) — accepted project-shell consumer/composition topology
 - [adr/0011-shell-application-runtime-boundary.md](adr/0011-shell-application-runtime-boundary.md) — accepted main-owned application runtime and renderer capability boundary

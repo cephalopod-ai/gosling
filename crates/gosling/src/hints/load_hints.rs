@@ -769,7 +769,6 @@ End of nested hints"#;
             &[GOSLING_HINTS_FILENAME.to_string()],
             &gitignore,
         );
-        println!("======{}", hints);
         assert!(hints.contains("Project root hints"));
         assert!(hints.contains("Root level instructions"));
 

@@ -110,6 +110,14 @@ For detailed steps on updating your LLM provider, refer to the [Installation][in
 
 ---
 
+### Gemini OAuth Sign-in Errors
+
+When Gemini sign-in fails in the Desktop provider configuration modal, the error dialog includes the provider-specific ACP detail returned by the sign-in flow. Use that detail to determine whether to retry the browser sign-in or correct the reported account or provider condition.
+
+Do not include OAuth URLs, authorization codes, or tokens when sharing the error with a maintainer. If the detail remains unclear after retrying, include the redacted error text and a [diagnostic report](/docs/troubleshooting/diagnostics-and-reporting) in a support request.
+
+---
+
 ### GitHub Copilot Provider Configuration
 
 If you encounter errors when configuring GitHub Copilot as your provider, try these workarounds for common scenarios.
