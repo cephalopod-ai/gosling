@@ -21,6 +21,12 @@ This package is the durable, resumable plan for turning the merged Gosling shell
 14. [`../../architecture/default-shell-template.md`](../../architecture/default-shell-template.md) — the operator-directed generic Default Shell pre-GUI milestone that now precedes renderer work.
 15. [`default-shell-ds3-ds7-implementation-plan.md`](default-shell-ds3-ds7-implementation-plan.md) — detailed execution units, contract-freeze steps, tests, rollback, and exact GO/NO-GO gate for the remaining Default Shell foundation.
 16. [`audits/default-shell-pre-gui-corrective-audit.md`](audits/default-shell-pre-gui-corrective-audit.md) — fresh audit of session discovery/replay, interactions, failures, privacy, and the current GUI gate.
+17. [`audits/ds-7-operator-acceptance.md`](audits/ds-7-operator-acceptance.md) — the operator's DS-7
+    acceptance, its three conditions, and the Gate 3 entry condition.
+18. [`gui/gate-1-product-workflow-design.md`](gui/gate-1-product-workflow-design.md) and
+    [`gui/gate-2-frontend-handoff.md`](gui/gate-2-frontend-handoff.md) — the authorized
+    `plan-webapp-design` Gate 1 and Gate 2 design deliverables, plus
+    [`gui/default-shell-wireframe.html`](gui/default-shell-wireframe.html).
 
 ## Current status
 
@@ -40,8 +46,11 @@ blocked until M5 and R6–R8 respectively.
 
 No production signing, notarization, publication, updater promotion, production identifier, release destination, or named project shell is authorized or implemented. Resume from `build-state.md` and verify the current repository instead of trusting an earlier checkpoint blindly.
 
-The current operator direction narrows the next MVP to the generic Default Shell template. Complete
-its DS-1–DS-7 nonvisual gates before implementing its renderer. A 2026-08-15 corrective workflow and
-data-flow patch is locally validated but not yet committed or bound to current CI; consequently the
-current decision remains **NO-GO for GUI implementation**. The historical PG-50 and earlier DS-7
-evidence remain valid only for their exact recorded revisions.
+DS-1–DS-7 are closed. The operator accepted DS-7 on 2026-08-18 against revision
+`240ab751585afc03c68a710f8be10ea891ab168f` and authorized `plan-webapp-design` **Gate 1
+(product/workflow design) and Gate 2 (front-end handoff) only** — see
+[`audits/ds-7-operator-acceptance.md`](audits/ds-7-operator-acceptance.md). Renderer implementation
+(Gate 3) is blocked by SHP-DEF-053 until the DS-7 check battery is reproduced on a current clean
+revision, because `main` has since advanced and one commit touched shell runtime source. SHP-DEF-054
+must also close before any Outputs surface is built. The historical PG-50 and DS-7 evidence remain
+valid only for their exact recorded revisions, and every named shell remains blocked until M5.

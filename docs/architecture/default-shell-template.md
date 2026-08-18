@@ -1,9 +1,8 @@
 # Default Shell template: pre-GUI contract and implementation plan
 
-Status: nonvisual foundation revision-bound and green; technical GO for generic GUI planning is
-recommended, explicit operator acceptance remains pending; no Default Shell GUI or named shell is
-implemented
-Date: 2026-08-15
+Status: DS-1 through DS-7 closed; the operator accepted DS-7 on 2026-08-18 and authorized generic
+Default Shell GUI design Gates 1-2 only; no Default Shell renderer or named shell is implemented
+Date: 2026-08-18
 Authority: ADR-0007–0012 and ADR-0014
 
 Detailed execution for DS-3 through DS-7 is frozen in
@@ -179,7 +178,15 @@ Exit: DS-1–DS-6 are revision-bound and green; no critical/high open finding ap
 accepts GUI implementation. Only then begin the Default Shell renderer. Named shells remain blocked
 until the generic GUI passes M5.
 
-Current status: the final corrective source is committed at
+Current status: **accepted 2026-08-18.** The operator recorded explicit DS-7 acceptance in
+[`../build/shell-productization/audits/ds-7-operator-acceptance.md`](../build/shell-productization/audits/ds-7-operator-acceptance.md),
+authorizing `plan-webapp-design` Gate 1 (product/workflow design) and Gate 2 (front-end handoff) for
+the generic Default Shell. Renderer implementation stays closed until Gate 3, whose entry condition
+is SHP-DEF-053 — reproducing the DS-7 check battery on a current clean revision, because `main` has
+advanced 76 commits from the accepted revision and one of them touched shell runtime source. Named
+shells remain blocked until M5. The accepted technical evidence follows.
+
+The final corrective source is committed at
 `259935f01b1fbf0bcffcb17f21a01a7f9c2548fc` and merged to `main` as
 `240ab751585afc03c68a710f8be10ea891ab168f`; the merge has the identical source tree. Exact-source
 Rust and Desktop validation passes, all fixture profiles resolve the corrective commit with
@@ -189,9 +196,16 @@ Rust and Desktop validation passes, all fixture profiles resolve the corrective 
 both the exact PR head and merged-main tree; the one merged-main Desktop failure was an unrelated
 i18n lock-test race and passed on the failed-job rerun. Main's Live Provider Tests also pass. No
 critical or high Default Shell finding remains open. The technical evidence therefore supports a
-GO recommendation for generic GUI planning. The last DS-7 condition is the operator's explicit
-acceptance; until that decision is recorded, no Default Shell renderer or named shell is
-authorized.
+GO recommendation for generic GUI planning, and the operator's acceptance above closed the gate.
+
+## Design gate status
+
+| Gate                                   | State                                     | Deliverable                                                                                                      |
+| -------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Gate 1 — product and workflow design   | authorized 2026-08-18                     | [`../build/shell-productization/gui/gate-1-product-workflow-design.md`](../build/shell-productization/gui/gate-1-product-workflow-design.md) |
+| Gate 2 — front-end handoff             | authorized 2026-08-18                     | [`../build/shell-productization/gui/gate-2-frontend-handoff.md`](../build/shell-productization/gui/gate-2-frontend-handoff.md)               |
+| Gate 3 — build                         | blocked by SHP-DEF-053                    | none                                                                                                             |
+| Gates 4-6 — integrate, validate, ship  | not started                               | none                                                                                                             |
 
 ## GUI implementation order after DS-7
 

@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Default Shell GUI — Gate 1 wireframe</title>
+<style>
+  :root {
+    --surface-base: #f6f6f5;
+    --surface-raised: #ffffff;
+    --surface-sunken: #ecebe9;
+    --text-primary: #1a1a19;
+    --text-secondary: #6b6a67;
+    --border-subtle: #dcdbd8;
+    --border-strong: #a8a6a1;
+    --focus-ring: #3b6ea8;
+    --status-ok: #2f6b4f;
+    --status-busy: #7a5c14;
+    --status-warn: #8a5a12;
+    --status-error: #8c2f28;
+    --status-neutral: #6b6a67;
+    --text-scale: 1;
+  }
+  html[data-theme="dark"] {
+    --surface-base: #1b1b1a;
+    --surface-raised: #252523;
+    --surface-sunken: #131312;
+    --text-primary: #ecebe8;
+    --text-secondary: #a3a19c;
+    --border-subtle: #3a3936;
+    --border-strong: #5c5a55;
+    --focus-ring: #7fa8d8;
+    --status-ok: #7fbf9b;
+    --status-busy: #d6b45c;
+    --status-warn: #dda15e;
+    --status-error: #e08a80;
+    --status-neutral: #a3a19c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-sunken);
+    color: var(--text-primary);
+    font: calc(14px * var(--text-scale))/1.5 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    min-height: 100vh;
+  }
+  aside {
+    background: var(--surface-base);
+    border-right: 1px solid var(--border-subtle);
+    padding: 16px;
+    overflow-y: auto;
+    max-height: 100vh;
+  }
+  aside h1 { font-size: calc(15px * var(--text-scale)); margin: 0 0 4px; }
+  aside p.sub { margin: 0 0 16px; color: var(--text-secondary); font-size: calc(12px * var(--text-scale)); }
+  .controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle); }
+  .controls label { font-size: calc(12px * var(--text-scale)); color: var(--text-secondary); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .controls select, .controls input { font: inherit; font-size: calc(12px * var(--text-scale)); }
+  .group-title { font-size: calc(11px * var(--text-scale)); text-transform: uppercase; letter-spacing: .07em; color: var(--text-secondary); margin: 16px 0 6px; }
+  nav button {
+    display: block; width: 100%; text-align: left; border: 1px solid transparent;
+    background: none; color: var(--text-primary); font: inherit; font-size: calc(13px * var(--text-scale));
+    padding: 6px 8px; border-radius: 5px; cursor: pointer;
+  }
+  nav button:hover { background: var(--surface-sunken); }
+  nav button[aria-current="true"] { background: var(--surface-raised); border-color: var(--border-strong); font-weight: 600; }
+  nav button .id { color: var(--text-secondary); font-variant-numeric: tabular-nums; margin-right: 7px; font-size: calc(11px * var(--text-scale)); }
+  main { padding: 24px 28px 60px; overflow-y: auto; max-height: 100vh; }
+  .meta { margin-bottom: 14px; }
+  .meta h2 { margin: 0 0 4px; font-size: calc(18px * var(--text-scale)); }
+  .meta .cond { color: var(--text-secondary); font-size: calc(12px * var(--text-scale)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .meta .note { margin: 8px 0 0; color: var(--text-secondary); font-size: calc(12.5px * var(--text-scale)); max-width: 78ch; }
+
+  .win {
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 900px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .titlebar { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--surface-base); border-bottom: 1px solid var(--border-subtle); font-size: calc(12.5px * var(--text-scale)); }
+  .titlebar .name { font-weight: 600; }
+  .titlebar .ver { color: var(--text-secondary); }
+  .pill { margin-left: auto; border: 1px solid currentColor; border-radius: 999px; padding: 1px 9px; font-size: calc(11px * var(--text-scale)); }
+  .pill.ok { color: var(--status-ok); }
+  .pill.busy { color: var(--status-busy); }
+  .pill.warn { color: var(--status-warn); }
+  .pill.err { color: var(--status-error); }
+  .pill.neutral { color: var(--status-neutral); }
+
+  .ctxbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border-subtle); font-size: calc(12px * var(--text-scale)); }
+  .chip { border: 1px solid var(--border-subtle); border-radius: 5px; padding: 3px 8px; background: var(--surface-base); }
+  .chip.muted { color: var(--text-secondary); border-style: dashed; }
+  .chip.err { color: var(--status-error); border-color: currentColor; }
+  .spacer { margin-left: auto; }
+
+  .body { padding: 14px 12px; min-height: 220px; }
+  .center { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; min-height: 240px; padding: 20px; }
+  .center h3 { margin: 0; font-size: calc(16px * var(--text-scale)); }
+  .center p { margin: 0; color: var(--text-secondary); max-width: 52ch; font-size: calc(13px * var(--text-scale)); }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+  .btn { border: 1px solid var(--border-strong); background: var(--surface-base); color: var(--text-primary); border-radius: 5px; padding: 5px 12px; font: inherit; font-size: calc(12.5px * var(--text-scale)); }
+  .btn.primary { border-color: var(--focus-ring); box-shadow: inset 0 0 0 1px var(--focus-ring); font-weight: 600; }
+  .btn.ghost { border-style: dashed; color: var(--text-secondary); }
+  .btn[disabled] { opacity: .45; }
+
+  .msg { border: 1px solid var(--border-subtle); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; background: var(--surface-base); font-size: calc(13px * var(--text-scale)); }
+  .msg .who { font-size: calc(11px * var(--text-scale)); color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; display: block; margin-bottom: 3px; }
+  .msg.hist { opacity: .78; }
+  .seam { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: calc(11px * var(--text-scale)); margin: 10px 0; }
+  .seam::before, .seam::after { content: ""; height: 1px; background: var(--border-subtle); flex: 1; }
+  .toolrow { display: flex; gap: 8px; align-items: center; border: 1px dashed var(--border-subtle); border-radius: 5px; padding: 5px 9px; margin-bottom: 8px; font-size: calc(12px * var(--text-scale)); color: var(--text-secondary); }
+  .notice { border: 1px solid var(--status-warn); color: var(--status-warn); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; font-size: calc(12.5px * var(--text-scale)); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .banner { border: 1px solid var(--status-error); color: var(--status-error); border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: calc(12.5px * var(--text-scale)); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .banner code, .notice code { font-family: ui-monospace, Menlo, monospace; font-size: .92em; }
+
+  .dock { border-top: 1px solid var(--border-strong); background: var(--surface-sunken); padding: 12px; }
+  .dock h4 { margin: 0 0 6px; font-size: calc(13px * var(--text-scale)); }
+  .dock .detail { font-size: calc(12px * var(--text-scale)); color: var(--text-secondary); margin-bottom: 8px; }
+  .badge { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 0 6px; font-size: calc(10.5px * var(--text-scale)); text-transform: uppercase; letter-spacing: .05em; margin-right: 6px; }
+  .badge.read { color: var(--status-ok); }
+  .badge.write { color: var(--status-warn); }
+  .badge.execute { color: var(--status-error); }
+  .badge.network { color: var(--focus-ring); }
+  .badge.other { color: var(--status-neutral); }
+  .field { display: block; margin-bottom: 8px; font-size: calc(12px * var(--text-scale)); }
+  .field span { display: block; color: var(--text-secondary); margin-bottom: 2px; }
+  .field .box { border: 1px solid var(--border-subtle); background: var(--surface-raised); border-radius: 4px; padding: 5px 8px; color: var(--text-secondary); }
+  .req::after { content: " *"; color: var(--status-error); }
+
+  .composer { border-top: 1px solid var(--border-subtle); padding: 10px 12px; }
+  .composer .box { border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-base); padding: 9px 10px; min-height: 54px; color: var(--text-secondary); font-size: calc(13px * var(--text-scale)); }
+  .composer .box.draft { color: var(--text-primary); }
+  .composer .row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+  .composer .count { margin-left: auto; color: var(--text-secondary); font-size: calc(11px * var(--text-scale)); font-variant-numeric: tabular-nums; }
+
+  .modules { border-top: 1px solid var(--border-subtle); padding: 9px 12px; display: flex; gap: 8px; flex-wrap: wrap; font-size: calc(11.5px * var(--text-scale)); }
+  .mod { border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 8px; background: var(--surface-base); }
+  .mod.unavail { color: var(--status-warn); border-color: currentColor; }
+  .mod.incompat { color: var(--status-error); border-color: currentColor; }
+
+  .list { border: 1px solid var(--border-subtle); border-radius: 6px; overflow: hidden; }
+  .list .row { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); font-size: calc(12.5px * var(--text-scale)); }
+  .list .row:last-child { border-bottom: 0; }
+  .list .row .t { font-weight: 600; }
+  .list .row .m { color: var(--text-secondary); font-size: calc(11.5px * var(--text-scale)); margin-left: auto; }
+  .listhead { font-size: calc(11.5px * var(--text-scale)); color: var(--text-secondary); margin-bottom: 6px; }
+
+  .empty { border: 1px dashed var(--border-strong); border-radius: 6px; padding: 22px; text-align: center; color: var(--text-secondary); font-size: calc(12.5px * var(--text-scale)); }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: calc(12px * var(--text-scale)); }
+  .kv dt { color: var(--text-secondary); }
+  .kv dd { margin: 0; font-family: ui-monospace, Menlo, monospace; }
+  .settingrow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); font-size: calc(12.5px * var(--text-scale)); }
+  .settingrow:last-child { border-bottom: 0; }
+  .settingrow .lbl { min-width: 130px; color: var(--text-secondary); }
+  footer.legend { max-width: 900px; margin-top: 18px; color: var(--text-secondary); font-size: calc(11.5px * var(--text-scale)); line-height: 1.6; }
+  .warnbox { border-left: 3px solid var(--status-warn); padding: 8px 12px; background: var(--surface-base); border-radius: 0 5px 5px 0; margin-top: 12px; max-width: 900px; font-size: calc(12px * var(--text-scale)); }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Default Shell GUI</h1>
+  <p class="sub">Gate 1 wireframe · 2026-08-18 · structure only, not visual design</p>
+  <div class="controls">
+    <label>Theme
+      <select id="theme">
+        <option value="light">light</option>
+        <option value="dark">dark</option>
+      </select>
+    </label>
+    <label>Text scale <span id="scaleval">1.0</span>
+      <input id="scale" type="range" min="0.8" max="2" step="0.1" value="1">
+    </label>
+  </div>
+  <nav id="nav"></nav>
+</aside>
+<main>
+  <div class="meta">
+    <h2 id="s-title"></h2>
+    <div class="cond" id="s-cond"></div>
+    <p class="note" id="s-note"></p>
+  </div>
+  <div id="stage"></div>
+  <div class="warnbox" id="s-warn" hidden></div>
+  <footer class="legend">
+    Every state shown here is reachable from committed source in <code>ui/desktop/src/shell/**</code>.
+    Nothing in this file is an implementation. Copy is specification copy from Gate 1.
+  </footer>
+</main>
+<script>
+const NAME = "Default Shell Template";
+const VER = "0.0.0-template";
+
+function pill(kind, text) { return `<span class="pill ${kind}">${text}</span>`; }
+function titlebar(p, verified) {
+  return `<div class="titlebar"><span class="name">${NAME}</span><span class="ver">${VER}</span>` +
+    (verified ? `<span class="ver">· verified</span>` : `<span class="ver">· unverified</span>`) + p + `</div>`;
+}
+function ctxbar(opts) {
+  const o = Object.assign({dir: null, dirState: "unselected", cred: null, credState: "none", provider: null, model: null, showNav: true}, opts);
+  let dir;
+  if (o.dirState === "unselected") dir = `<span class="chip muted">No folder chosen</span>`;
+  else if (o.dirState === "missing") dir = `<span class="chip err">${o.dir} — folder is gone</span>`;
+  else if (o.dirState === "invalid") dir = `<span class="chip err">${o.dir} — not usable</span>`;
+  else dir = `<span class="chip">${o.dir}</span>`;
+  let cred;
+  if (o.credState === "none") cred = `<span class="chip muted">No account chosen</span>`;
+  else if (o.credState === "denied") cred = `<span class="chip">${o.cred} (set by product)</span>`;
+  else if (o.credState === "unavailable") cred = `<span class="chip err">Accounts unavailable</span>`;
+  else if (o.credState === "relink_required") cred = `<span class="chip err">${o.cred} — needs reconnecting</span>`;
+  else if (o.credState === "missing") cred = `<span class="chip err">${o.cred} — no longer exists</span>`;
+  else cred = `<span class="chip">${o.cred}</span>`;
+  const ctx = (o.provider) ? `<span class="chip muted">${o.provider} · ${o.model}</span>` : ``;
+  const nav = o.showNav ? `<span class="spacer"></span><button class="btn ghost">Sessions</button><button class="btn ghost">Settings</button>` : `<span class="spacer"></span>`;
+  return `<div class="ctxbar">📁 ${dir} <button class="btn ghost">Change</button> 🔑 ${cred} <button class="btn ghost">Change</button> ${ctx}${nav}</div>`;
+}
+function composer(opts) {
+  const o = Object.assign({phase: "idle", draft: "", placeholder: "Describe the task. This shell works only inside the folder you chose.", failure: null, disabled: false, count: null}, opts);
+  const btn = o.phase === "streaming" ? `<button class="btn primary">Stop</button>`
+    : o.phase === "cancelling" ? `<button class="btn" disabled>Stopping…</button>`
+    : `<button class="btn primary" ${o.disabled ? "disabled" : ""}>Send</button>`;
+  return `<div class="composer">` + (o.failure || "") +
+    `<div class="box ${o.draft ? "draft" : ""}">${o.draft || o.placeholder}</div>` +
+    `<div class="row">${btn}${o.count ? `<span class="count">${o.count}</span>` : ""}</div></div>`;
+}
+function win(parts) { return `<div class="win">${parts.join("")}</div>`; }
+function center(h, p, btns) {
+  return `<div class="center"><h3>${h}</h3><p>${p}</p><div class="btnrow">${(btns||[]).join("")}</div></div>`;
+}
+function b(t, cls) { return `<button class="btn ${cls||""}">${t}</button>`; }
+
+const TRANSCRIPT = `
+  <div class="msg hist"><span class="who">you · history</span>Summarise what changed in this folder last week.</div>
+  <div class="msg hist"><span class="who">assistant · history</span>Three files changed. The largest change is in the build script…</div>
+  <div class="seam">resumed here</div>
+  <div class="msg"><span class="who">you · live</span>Now update the changelog to match.</div>
+  <div class="toolrow">🔧 read_file · <code>CHANGELOG.md</code> · completed</div>
+  <div class="msg"><span class="who">assistant · live</span>I'll add an entry for the build script change…</div>`;
+
+const SCREENS = [
+  {group: "Startup", id: "S-01", title: "Starting", cond: "lifecycleState === 'booting'",
+   note: "Only Stop is allowed. No claim of connection, no progress bar implying a known duration.",
+   render: () => win([titlebar(pill("neutral","starting"), false), center(`Starting ${NAME}…`, "This takes a moment while the backend comes up.", [b("Stop")])])},
+
+  {group: "Startup", id: "S-02", title: "Checking your setup", cond: "lifecycleState === 'validating'",
+   note: "ACP preflight has a 10 s timeout, so this must not look hung before then. Save diagnostics becomes available here because a stuck validate is the most likely first-run complaint.",
+   render: () => win([titlebar(pill("busy","checking"), false), center("Checking your setup…", "Confirming this build matches the Gosling core it shipped with.", [b("Save diagnostics"), b("Stop")])])},
+
+  {group: "First run", id: "S-03", title: "Choose a folder", cond: "ready && directory.state === 'unselected'",
+   note: "The renderer never sends a path. It asks main to open the native chooser with an explicit user gesture. Cancel returns here unchanged and is not an error.",
+   render: () => win([titlebar(pill("ok","ready"), true), ctxbar({}),
+     center("Choose a folder to work in", `${NAME} works inside one folder you choose. It can read and change files there, and nowhere else.`, [b("Choose folder","primary"), b("Settings")])])},
+
+  {group: "First run", id: "S-04", title: "Choose an account", cond: "credentials.catalogStatus === 'available' && selectionStatus === 'none'",
+   note: "Exactly four safe fields per profile: opaque id, name, provider/service, status. No secrets, no field lists, no test-connection. Up to 128 profiles.",
+   render: () => win([titlebar(pill("ok","ready"), true), ctxbar({dir:"design-notes", dirState:"selected"}),
+     `<div class="body"><div class="listhead">Accounts available to this shell</div><div class="list">
+       <div class="row"><span class="t">Work Anthropic</span><span>anthropic</span><span class="m">configured</span></div>
+       <div class="row"><span class="t">Personal OpenAI</span><span>openai</span><span class="m">configured</span></div>
+       <div class="row"><span class="t">Old Gemini</span><span>google</span><span class="m" style="color:var(--status-warn)">needs reconnecting</span></div>
+     </div></div>`,
+     `<div class="composer"><div class="row">${b("Use this account","primary")}${b("Change folder")}</div></div>`])},
+
+  {group: "Session", id: "S-05", title: "Sessions", cond: "ready && no active session",
+   note: "session.list returns at most 20 active sessions whose workingDir equals the accepted canonical directory. The heading states the cap so the UI never implies a full archive.",
+   render: () => win([titlebar(pill("ok","ready"), true), ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
+     `<div class="body"><div class="listhead">Recent tasks in this folder (up to 20)</div><div class="list">
+       <div class="row"><span class="t">Changelog cleanup</span><span class="m">14 messages · 2h ago</span></div>
+       <div class="row"><span class="t">Build script review</span><span class="m">6 messages · yesterday</span></div>
+       <div class="row"><span class="t">Untitled task</span><span class="m">2 messages · 3 days ago</span></div>
+     </div></div>`,
+     `<div class="composer"><div class="row">${b("Start new task","primary")}${b("Resume selected")}</div></div>`])},
+
+  {group: "Session", id: "S-05b", title: "Sessions — empty (first run)", cond: "ready && session list is empty",
+   note: "First-run end state. One primary action, no empty-state illustration, no upsell.",
+   render: () => win([titlebar(pill("ok","ready"), true), ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
+     `<div class="body"><div class="listhead">Recent tasks in this folder (up to 20)</div><div class="empty">No tasks here yet.</div></div>`,
+     `<div class="composer"><div class="row">${b("Start new task","primary")}</div></div>`])},
+
+  {group: "Conversation", id: "S-06", title: "Conversation — idle", cond: "session.status === 'active' && promptAttempt === null",
+   note: "provider and model come from the session record and are null before a session exists. The composer counter appears as the 64 KiB prompt bound approaches.",
+   render: () => win([titlebar(pill("ok","ready"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}</div>`, composer({})])},
+
+  {group: "Conversation", id: "S-07", title: "Conversation — streaming", cond: "promptAttempt.phase === 'streaming'",
+   note: "Stop passes the exact promptAttemptId returned by prompt.submit. Streaming must be legible without animation (reduced-motion).",
+   render: () => win([titlebar(pill("busy","working"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}<div class="toolrow">🔧 write_file · <code>CHANGELOG.md</code> · in progress</div></div>`,
+     composer({phase:"streaming"})])},
+
+  {group: "Conversation", id: "S-08", title: "Conversation — cancelling", cond: "promptAttempt.phase === 'cancelling'",
+   note: "A distinct phase, not a spinner on the Stop button. The user must be able to tell that cancellation was accepted.",
+   render: () => win([titlebar(pill("busy","stopping task"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}</div>`, composer({phase:"cancelling"})])},
+
+  {group: "Interactions", id: "S-09", title: "Permission request", cond: "pendingInteractions[].kind === 'permission'",
+   note: "Buttons render only for the flags present in the summary. Targets are basenames and input fields are names only. There is deliberately no 'always allow' — the shell has no permission store.",
+   render: () => win([titlebar(pill("busy","waiting on you"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}</div>`,
+     `<div class="dock"><h4><span class="badge write">write</span>Allow this action?</h4>
+      <div class="detail">Tool: <code>write_file</code> · Target: <code>CHANGELOG.md</code> · Input fields: <code>path</code>, <code>content</code></div>
+      <div class="btnrow" style="justify-content:flex-start">${b("Allow once","primary")}${b("Deny")}</div></div>`,
+     composer({disabled:true, placeholder:"Respond to the pending request before continuing."})])},
+
+  {group: "Interactions", id: "S-10", title: "Form request", cond: "pendingInteractions[].kind === 'elicitation'",
+   note: "Only six field types are supported. Bounds are 32 fields / 64 options / 8 KiB. Secret-shaped or schema-invalid forms are cancelled in main and never reach the renderer.",
+   render: () => win([titlebar(pill("busy","waiting on you"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}</div>`,
+     `<div class="dock"><h4>The task needs some details</h4>
+      <div class="detail">Which release should the changelog entry go under?</div>
+      <label class="field"><span class="req">Version</span><span class="box">e.g. 1.4.0</span></label>
+      <label class="field"><span>Include breaking changes</span><span class="box">yes / no</span></label>
+      <div class="btnrow" style="justify-content:flex-start">${b("Submit","primary")}${b("Decline")}${b("Cancel")}</div></div>`,
+     composer({disabled:true, placeholder:"Respond to the pending request before continuing."})])},
+
+  {group: "Interactions", id: "S-11", title: "Action confirmation", cond: "pendingInteractions[].kind === 'confirm'",
+   note: "The mutation gate. Single-use, server-owned confirmation id. Copy must name the action and state that the shell cannot undo it.",
+   render: () => win([titlebar(pill("busy","waiting on you"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}</div>`,
+     `<div class="dock"><h4>Confirm “toggle”?</h4>
+      <div class="detail">Action: <code>toggle</code> · Input fields: <code>target</code>, <code>state</code>. ${NAME} can't undo this once it runs.</div>
+      <div class="btnrow" style="justify-content:flex-start">${b("Approve","primary")}${b("Reject")}</div></div>`,
+     composer({disabled:true})])},
+
+  {group: "Interactions", id: "S-09q", title: "Queued interactions", cond: "pendingInteractions.length > 1",
+   note: "At most one interaction is presented. Extras are counted, never stacked, and a streamed tool update must never dismiss the dock (SHP-DEF-052).",
+   render: () => win([titlebar(pill("busy","waiting on you"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}</div>`,
+     `<div class="dock"><h4><span class="badge execute">execute</span>Allow this action? <span class="pill neutral" style="margin-left:6px">1 more waiting</span></h4>
+      <div class="detail">Tool: <code>run_script</code> · Target: <code>build.sh</code></div>
+      <div class="btnrow" style="justify-content:flex-start">${b("Allow once","primary")}${b("Deny")}</div></div>`,
+     composer({disabled:true})])},
+
+  {group: "Recovery", id: "S-12", title: "Transcript gap", cond: "transcript.integrity !== 'complete' || truncated",
+   note: "Ledger bounds are 256 updates / 48 KiB. The notice is persistent and non-modal; it must never claim the conversation is complete.",
+   render: () => win([titlebar(pill("ok","ready"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body"><div class="notice">Part of this conversation isn't shown. ${b("Repair")}${b("Continue anyway","ghost")}</div>${TRANSCRIPT}</div>`,
+     composer({})])},
+
+  {group: "Recovery", id: "S-13", title: "Resume uncertainty", cond: "session.resumeIntegrity === 'uncertain'",
+   note: "An earlier prompt was interrupted and its outcome is unknown. The copy must not claim the work completed or failed.",
+   render: () => win([titlebar(pill("warn","check this"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body"><div class="notice">The last request may not have finished. Check the result before repeating it. ${b("Continue")}${b("Start new task instead","ghost")}</div>${TRANSCRIPT}</div>`,
+     composer({})])},
+
+  {group: "Recovery", id: "S-23", title: "Folder unavailable", cond: "directory.state === 'missing' || 'invalid'",
+   note: "A remembered folder that is gone must read differently from never having chosen one. Show the honest reasonCode; do not editorialise.",
+   render: () => win([titlebar(pill("warn","needs a folder"), true), ctxbar({dir:"design-notes", dirState:"missing"}),
+     center("The folder you used last time isn't there any more", "It may have been moved, renamed, or on a drive that isn't connected. Reason: <code>directory_not_found</code>.", [b("Choose folder","primary"), b("Save diagnostics")])])},
+
+  {group: "Recovery", id: "S-24", title: "Account unavailable", cond: "credentials.selectionStatus === 'relink_required' || 'missing'",
+   note: "The shell cannot fix this. Retry would be a lie, so the only action is handoff to Gosling.",
+   render: () => win([titlebar(pill("warn","account problem"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Old Gemini", credState:"relink_required"}),
+     center("That account needs reconnecting", `${NAME} can use accounts but can't create or repair them. Reconnect it in Gosling, then come back.`, [b("Open in Gosling","primary"), b("Choose a different account")])])},
+
+  {group: "Recovery", id: "S-25", title: "Setup problems", cond: "provisioningIssues.length > 0",
+   note: "Bounded issue codes and schema paths only — never a raw backend exception.",
+   render: () => win([titlebar(pill("warn","setup problems"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
+     `<div class="body"><div class="notice">Some of this product's setup couldn't be applied.</div>
+      <div class="list"><div class="row"><span class="t">missing_skill</span><span class="m">session.skillIds[0]</span></div>
+      <div class="row"><span class="t">extension_unavailable</span><span class="m">session.extensions[2]</span></div></div></div>`,
+     `<div class="composer"><div class="row">${b("Save diagnostics","primary")}${b("Open in Gosling")}</div></div>`])},
+
+  {group: "Lifecycle failures", id: "S-14", title: "Needs attention (degraded)", cond: "lifecycleState === 'degraded'",
+   note: "Retry is allowed here — but it is a full restart: stop, generation + 1, boot. The session, pending interactions, and transcript are lost. Only the draft and settings survive.",
+   render: () => win([titlebar(pill("err","needs attention"), false), ctxbar({dir:"design-notes", dirState:"selected", showNav:false}),
+     center(`${NAME} started with a problem it couldn't work around`, "Retrying restarts the shell. Your unsent message is kept; the current task is not.", [b("Retry","primary"), b("Save diagnostics"), b("Open in Gosling")])])},
+
+  {group: "Lifecycle failures", id: "S-15", title: "Reconnect an account", cond: "lifecycleState === 'relink_required'",
+   note: "The host allows stop, diagnostics, and handoff — NOT retry. A Retry button here would be dead. This state can only move on to stopping or fatal.",
+   render: () => win([titlebar(pill("err","account not connected"), false), ctxbar({dir:"design-notes", dirState:"selected", cred:"Old Gemini", credState:"relink_required", showNav:false}),
+     center("An account this shell needs isn't connected any more", `Reconnect it in Gosling, then start ${NAME} again.`, [b("Open in Gosling","primary"), b("Save diagnostics"), b("Quit")])])},
+
+  {group: "Lifecycle failures", id: "S-16", title: "Version mismatch", cond: "lifecycleState === 'incompatible'",
+   note: "No retry. Caused by a compatibility error or an adapter descriptor mismatch.",
+   render: () => win([titlebar(pill("err","version mismatch"), false), ctxbar({showNav:false}),
+     center(`This version of ${NAME} doesn't match the Gosling core it shipped with`, "Reinstalling the matching build is the only fix. Diagnostics will record the exact versions.", [b("Save diagnostics","primary"), b("Open in Gosling"), b("Quit")])])},
+
+  {group: "Lifecycle failures", id: "S-17", title: "Can't reach the backend", cond: "lifecycleState === 'offline'",
+   note: "The catch-all startup failure. Retry is allowed and restarts the runtime.",
+   render: () => win([titlebar(pill("err","offline"), false), ctxbar({showNav:false}),
+     center(`${NAME} can't reach its backend`, "Nothing was lost. Retrying restarts the shell.", [b("Retry","primary"), b("Save diagnostics"), b("Quit")])])},
+
+  {group: "Lifecycle failures", id: "S-18", title: "Something went wrong", cond: "lifecycleState === 'fatal'",
+   note: "No retry. Typically CLEANUP_FAILED. Diagnostics is the only useful action.",
+   render: () => win([titlebar(pill("err","stopped unexpectedly"), false), ctxbar({showNav:false}),
+     center(`${NAME} hit a problem it can't recover from`, "Saving diagnostics will help work out why. Reason: <code>CLEANUP_FAILED</code>.", [b("Save diagnostics","primary"), b("Quit")])])},
+
+  {group: "Lifecycle failures", id: "S-19", title: "Shutting down", cond: "lifecycleState === 'stopping'",
+   note: "Only diagnostics is allowed. Main waits a bounded interval for ACP close before signalling the child.",
+   render: () => win([titlebar(pill("neutral","shutting down"), false), ctxbar({showNav:false}),
+     center("Shutting down…", "Closing the session and stopping the backend.", [b("Save diagnostics")])])},
+
+  {group: "Lifecycle failures", id: "S-20", title: "Stopped", cond: "lifecycleState === 'stopped'",
+   note: "The only state that can legally return to booting, and only with a fresh generation.",
+   render: () => win([titlebar(pill("neutral","stopped"), false), ctxbar({showNav:false}),
+     center(`${NAME} has stopped`, "Restarting begins a new session. Nothing is running in the background.", [b("Restart","primary"), b("Quit")])])},
+
+  {group: "Failures", id: "F-01", title: "Failure — draft preserved", cond: "ShellOperationFailure.preservesDraft === true",
+   note: "preservesDraft is a literal contract. When true the composer keeps its text and the failure appears inline above it. RUNTIME_UNAVAILABLE is the only code with retrySafe true today.",
+   render: () => win([titlebar(pill("warn","backend unavailable"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}</div>`,
+     composer({draft:"Now update the changelog to match, and add a note about the build script.",
+       failure:`<div class="banner">The shell backend is not currently available. <code>RUNTIME_UNAVAILABLE</code> ${b("Retry")}</div>`,
+       count:"612 / 65,536"})])},
+
+  {group: "Failures", id: "F-02", title: "Failure — stale request", cond: "ShellOperationFailure.code === 'STALE_REQUEST'",
+   note: "Normal during retry and shutdown. Must be quiet: a low-emphasis inline line, never a modal.",
+   render: () => win([titlebar(pill("ok","ready"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body"><div class="toolrow">The shell changed while that action was pending. ${b("Refresh","ghost")}</div>${TRANSCRIPT}</div>`,
+     composer({draft:"Now update the changelog to match."})])},
+
+  {group: "Failures", id: "F-03", title: "Failure — capability unavailable", cond: "ShellOperationFailure.code === 'CAPABILITY_UNAVAILABLE'",
+   note: "The consumer did not declare the capability, or the adapter is absent. Honest exit is handoff, not retry.",
+   render: () => win([titlebar(pill("ok","ready"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}<div class="banner">This capability is not available in the current shell. <code>CAPABILITY_UNAVAILABLE</code> ${b("Open in Gosling")}</div></div>`,
+     composer({})])},
+
+  {group: "Settings", id: "S-21", title: "Settings", cond: "user opens from the context bar",
+   note: "Four things, and nothing else. No key-value editor, no global Gosling settings, no telemetry toggle, no developer-tools switch. It must look small on purpose.",
+   render: () => win([titlebar(pill("ok","ready"), true), ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
+     `<div class="body">
+       <div class="settingrow"><span class="lbl">Theme</span><span>system / light / dark</span></div>
+       <div class="settingrow"><span class="lbl">Text size</span><span>0.8 – 2.0</span></div>
+       <div class="settingrow"><span class="lbl">Remembered folder</span><span><code>design-notes</code> — set by choosing a folder</span></div>
+       <div class="settingrow"><span class="lbl">Preferred account</span><span><code>Work Anthropic</code> — stored as an opaque reference, never a secret</span></div>
+     </div>`,
+     `<div class="composer"><div class="row">${b("Close","primary")}${b("Reset settings")}</div></div>`])},
+
+  {group: "Settings", id: "S-22", title: "Settings need review", cond: "settingsRecovery.status is malformed | unreadable | unsupported_schema",
+   note: "Writes are refused until an explicit reset, but the shell must stay usable: a folder chosen now applies to this run and reports remembered: false. The UI must say that out loud.",
+   render: () => win([titlebar(pill("warn","settings problem"), true), ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
+     `<div class="body"><div class="notice">${NAME}'s local settings can't be read, so changes won't be saved. This folder won't be remembered until settings are reset. <code>malformed</code></div>
+      <div class="settingrow"><span class="lbl">Theme</span><span style="color:var(--text-secondary)">read-only until reset</span></div>
+      <div class="settingrow"><span class="lbl">Text size</span><span style="color:var(--text-secondary)">read-only until reset</span></div></div>`,
+     `<div class="composer"><div class="row">${b("Reset settings","primary")}${b("Continue without saving")}</div></div>`])},
+
+  {group: "Modules", id: "S-26", title: "Modules — mixed status", cond: "any modules[].status !== 'ready'",
+   note: "A provisioned module the backend couldn't resolve is shown as unavailable rather than dropped — that visibility is the point. The strip is hidden entirely when only core:session exists.",
+   render: () => win([titlebar(pill("ok","ready"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}</div>`, composer({}),
+     `<div class="modules"><span class="mod">core:session · core · ready</span><span class="mod">files · extension · ready</span><span class="mod unavail">changelog-helper · skill · unavailable</span><span class="mod incompat">legacy-tools · extension · incompatible</span></div>`])},
+
+  {group: "Modules", id: "S-27", title: "Adapter unavailable", cond: "adapter.status !== 'ready'",
+   note: "Adapter status is folded into the safe snapshot from a typed ACP notification. The generic template declares no domain.* capability, so this slot ships undeclared.",
+   render: () => win([titlebar(pill("warn","adapter problem"), true),
+     ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured", provider:"anthropic", model:"claude-opus-4"}),
+     `<div class="body">${TRANSCRIPT}<div class="notice">A backend this product declared has stopped responding. <code>crashed</code> ${b("Save diagnostics")}</div></div>`,
+     composer({}),
+     `<div class="modules"><span class="mod">core:session · core · ready</span><span class="mod incompat">example-adapter · adapter · crashed · v1 · actions: read, toggle</span></div>`])},
+
+  {group: "Exits", id: "S-28", title: "Hand off to Gosling", cond: "user chose handoff",
+   note: "The dialog must state exactly what travels: the question, the origin identity, and reference ids. Handoff is prepare → confirm → external.open, and the envelope is schema-checked at both ends.",
+   render: () => win([titlebar(pill("ok","ready"), true), ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
+     `<div class="body"><h3 style="margin-top:0">Continue this in Gosling</h3>
+      <p style="color:var(--text-secondary);max-width:60ch">${NAME} can't finish this here. Gosling can. This is what will be sent:</p>
+      <dl class="kv"><dt>Question</dt><dd>Update the changelog to match the build script change</dd>
+      <dt>From</dt><dd>${NAME} ${VER}</dd>
+      <dt>Session</dt><dd>sess_2f9c…</dd>
+      <dt>References</dt><dd>2 items (ids only)</dd>
+      <dt>Capability</dt><dd>credential.relink</dd></dl></div>`,
+     `<div class="composer"><div class="row">${b("Open Gosling","primary")}${b("Cancel")}</div></div>`])},
+
+  {group: "Exits", id: "S-29", title: "Outputs — BLOCKED", cond: "gap G-1 / SHP-DEF-054",
+   note: "The durable inventory exists in the backend under ADR-0013, but no shell IPC channel, preload namespace, capability, or snapshot field projects it to a renderer. This panel cannot be designed in detail or built until Gate 3 adds a narrow main-owned operation. A directory scan is forbidden.",
+   warn: "Do not design past this point. Specifying an Outputs layout now would encode a capability that does not exist, and the most likely shortcut — scanning the working directory — would create a second authority over output provenance and contradict ADR-0013.",
+   render: () => win([titlebar(pill("neutral","not available"), true), ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
+     `<div class="body"><div class="empty" style="border-color:var(--status-warn);color:var(--status-warn)">
+       <strong>Outputs slot — blocked by SHP-DEF-054</strong><br><br>
+       <code>_gosling/unstable/session/artifacts/list</code> exists.<br>
+       No shell channel, no preload namespace, no capability, no snapshot field.<br><br>
+       Gate 3 must add one bounded, metadata-only <code>session.artifacts.read</code> operation first.
+     </div></div>`])}
+];
+
+const nav = document.getElementById("nav");
+let lastGroup = null;
+SCREENS.forEach((s, i) => {
+  if (s.group !== lastGroup) {
+    const h = document.createElement("div");
+    h.className = "group-title";
+    h.textContent = s.group;
+    nav.appendChild(h);
+    lastGroup = s.group;
+  }
+  const btn = document.createElement("button");
+  btn.innerHTML = `<span class="id">${s.id}</span>${s.title}`;
+  btn.onclick = () => show(i);
+  nav.appendChild(btn);
+});
+
+function show(i) {
+  const s = SCREENS[i];
+  document.getElementById("s-title").textContent = `${s.id} — ${s.title}`;
+  document.getElementById("s-cond").textContent = s.cond;
+  document.getElementById("s-note").innerHTML = s.note;
+  document.getElementById("stage").innerHTML = s.render();
+  const w = document.getElementById("s-warn");
+  if (s.warn) { w.hidden = false; w.innerHTML = `<strong>Design constraint.</strong> ${s.warn}`; }
+  else { w.hidden = true; }
+  [...nav.querySelectorAll("button")].forEach((b, j) => b.setAttribute("aria-current", String(j === i)));
+}
+
+document.getElementById("theme").onchange = (e) =>
+  document.documentElement.setAttribute("data-theme", e.target.value);
+document.getElementById("scale").oninput = (e) => {
+  document.documentElement.style.setProperty("--text-scale", e.target.value);
+  document.getElementById("scaleval").textContent = Number(e.target.value).toFixed(1);
+};
+
+show(0);
+</script>
+</body>
+</html>
