@@ -24,6 +24,7 @@ import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import { AlertTriangle, LogIn } from 'lucide-react';
 import type { ProviderDetails } from '../../../../types/providers';
 import { Button } from '../../../../components/ui/button';
+import { describeAcpError } from '../../../../acp/errors';
 import { errorMessage } from '../../../../utils/conversionUtils';
 import { defineMessages, useIntl } from '../../../../i18n';
 import type { ProviderType } from '../../../../types/providers';
@@ -226,7 +227,7 @@ export default function ProviderConfigurationModal({
         onClose();
       }
     } catch (err) {
-      setError(intl.formatMessage(i18n.oauthLoginFailed, { error: errorMessage(err) }));
+      setError(intl.formatMessage(i18n.oauthLoginFailed, { error: describeAcpError(err) }));
     } finally {
       setIsOAuthLoading(false);
     }

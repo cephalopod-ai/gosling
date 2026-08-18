@@ -262,10 +262,12 @@ a dedicated modularization pass rather than split mid-repair).
 
 ## Provider authentication follow-up — observed 2026-08-15
 
-- [ ] Investigate and repair Gemini provider OAuth configuration failing with
-      `OAuth login failed: Internal error`. The operator supplied a Desktop provider-configuration
-      screenshot showing the failure. This item is recorded only; no diagnosis or login-flow change was
-      attempted as part of the Default Shell pre-GUI corrective work.
+- [x] **Gemini OAuth error detail** — resolved 2026-08-17. The Desktop provider
+      modal now preserves the ACP error payload, so a failed sign-in shows the
+      provider-specific cause rather than only `OAuth login failed: Internal error`.
+      Regression coverage is in
+      `ProviderConfigurationModal.test.tsx`; see
+      [`2026-08-17-gemini-oauth-error-repair.md`](logs/session/2026-08-17-gemini-oauth-error-repair.md).
 
 ## Shared project-shell readiness — reassessed 2026-08-13
 
