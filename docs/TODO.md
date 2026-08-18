@@ -200,23 +200,14 @@ re-assessment and a new finding are in
       tool output (the audit cited 43; patterns were trimmed) without a single
       `RegexSet` pass. Still open, same Low tier, same guardrail (profile first).
       `audit-performance-profile.md:374`.
-- [ ] **PERF-GSL-005** — **new, found 2026-08-17.** The OpenAI-compatible SSE
-      streaming decoder parses every chunk twice: `parse_streaming_chunk`
-      (`gosling-providers/src/formats/openai.rs:1088`) does
-      `serde_json::from_str::<Value>(line)` to check for an `error`/`object ==
-      "error"` shape, then `serde_json::from_value::<StreamingChunk>(value)`, which
-      re-walks the same `Value` tree. `StreamingChunk` already derives
-      `Deserialize`. This is on the hot streaming path (called per SSE data line
-      via `response_to_streaming_message`, `openai.rs:1165,1214`). Walkthrough:
-      deserialize straight to `StreamingChunk` via `from_str`, then inspect the
-      typed struct for the error shape, or do a cheap prefix/byte check before
-      the full parse; this eliminates one full `Value`-tree allocation + re-walk
-      per chunk. Justification for Low severity: a single SSE chunk is small, and
-      this is bounded CPU per token streamed, so it is unlikely to dominate a turn
-      dominated by provider network/inference; it only matters under very high
-      chunk throughput. Guardrail: a streaming-decode micro-benchmark with a
-      pinned captured fixture before/after, asserting alloc/parse count drops.
-      `docs/logs/session/2026-08-17-performance-review.md`.
+- [x] **PERF-GSL-005** — the OpenAI-compatible SSE decoder now deserializes each
+      data line once into a typed `StreamingPayload`, checks both supported server
+      error shapes, and moves the decoded fields into `StreamingChunk`. Focused
+      tests preserve successful chunks, nested errors, object errors, and malformed
+      missing-`choices` rejection. Implemented 2026-08-17 in
+      `gosling-providers/src/formats/openai.rs`; validation and remaining
+      measurement limits are recorded in
+      [`docs/logs/session/2026-08-17-performance-review.md`](logs/session/2026-08-17-performance-review.md).
 
 ### Lower priority, mechanical but needs a judgement call
 

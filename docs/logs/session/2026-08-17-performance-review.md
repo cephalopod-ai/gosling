@@ -202,3 +202,18 @@ governance marker is intact.
 - **Line numbers will drift again.** The ledger cites current-HEAD line numbers
   with the function/file names alongside; re-verify by name if the numbers
   stale before acting.
+
+## Implementation follow-up — PERF-GSL-005
+
+The operator subsequently requested implementation. `parse_streaming_chunk`
+now performs one `serde_json::from_str` into a typed `StreamingPayload`; it no
+longer builds an intermediate `Value` tree and then calls `from_value`. The wire
+payload retains optional fields needed to recognize both existing server-error
+forms before requiring `choices` and constructing `StreamingChunk`.
+
+Focused unit coverage exercises a normal chunk, the nested `error.message`
+form, the `object == "error"` form, and malformed input without `choices`.
+This establishes behavioral compatibility and the structural removal of the
+second deserialize. It does not establish a wall-time improvement: no stable
+streaming benchmark harness exists in this crate, so the Low-severity latency
+claim remains unmeasured rather than being promoted to a measured result.

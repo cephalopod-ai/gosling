@@ -150,6 +150,23 @@ struct StreamingChunk {
     model: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct StreamingPayload {
+    choices: Option<Vec<StreamingChoice>>,
+    created: Option<i64>,
+    id: Option<String>,
+    usage: Option<Value>,
+    model: Option<String>,
+    error: Option<StreamingError>,
+    object: Option<String>,
+    message: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StreamingError {
+    message: Option<String>,
+}
+
 fn extract_content_and_signature(
     delta_content: Option<&DeltaContent>,
 ) -> (Option<String>, Option<String>) {
@@ -1086,32 +1103,40 @@ fn strip_data_prefix(line: &str) -> Option<&str> {
 }
 
 fn parse_streaming_chunk(line: &str) -> Result<StreamingChunk, ProviderError> {
-    let value: Value = serde_json::from_str(line).map_err(|e| {
+    let payload: StreamingPayload = serde_json::from_str(line).map_err(|e| {
         ProviderError::stream_decode_error(format!(
             "Failed to parse streaming chunk: {e}: {line:?}"
         ))
     })?;
 
-    if let Some(error) = value.get("error") {
-        let message = error
-            .get("message")
-            .and_then(|m| m.as_str())
-            .unwrap_or("Unknown server error");
-        return Err(ProviderError::ServerError(message.to_string()));
+    if let Some(error) = payload.error {
+        return Err(ProviderError::ServerError(
+            error
+                .message
+                .unwrap_or_else(|| "Unknown server error".to_string()),
+        ));
     }
 
-    if value.get("object").and_then(|o| o.as_str()) == Some("error") {
-        let message = value
-            .get("message")
-            .and_then(|m| m.as_str())
-            .unwrap_or("Unknown server error");
-        return Err(ProviderError::ServerError(message.to_string()));
+    if payload.object.as_deref() == Some("error") {
+        return Err(ProviderError::ServerError(
+            payload
+                .message
+                .unwrap_or_else(|| "Unknown server error".to_string()),
+        ));
     }
 
-    serde_json::from_value(value).map_err(|e| {
+    let choices = payload.choices.ok_or_else(|| {
         ProviderError::stream_decode_error(format!(
-            "Failed to parse streaming chunk: {e}: {line:?}"
+            "Failed to parse streaming chunk: missing field `choices`: {line:?}"
         ))
+    })?;
+
+    Ok(StreamingChunk {
+        choices,
+        created: payload.created,
+        id: payload.id,
+        usage: payload.usage,
+        model: payload.model,
     })
 }
 
@@ -1734,6 +1759,49 @@ mod tests {
     use rmcp::object;
     use serde_json::json;
     use test_case::test_case;
+
+    #[test]
+    fn streaming_chunk_deserializes_without_an_intermediate_value() {
+        let chunk = parse_streaming_chunk(
+            r#"{"choices":[],"created":1,"id":"chunk-1","model":"test","usage":null}"#,
+        )
+        .unwrap();
+
+        assert!(chunk.choices.is_empty());
+        assert_eq!(chunk.created, Some(1));
+        assert_eq!(chunk.id.as_deref(), Some("chunk-1"));
+        assert_eq!(chunk.model.as_deref(), Some("test"));
+    }
+
+    #[test]
+    fn streaming_chunk_preserves_nested_error_responses() {
+        let error =
+            parse_streaming_chunk(r#"{"error":{"message":"capacity unavailable"}}"#).unwrap_err();
+
+        assert_eq!(
+            error,
+            ProviderError::ServerError("capacity unavailable".to_string())
+        );
+    }
+
+    #[test]
+    fn streaming_chunk_preserves_object_error_responses() {
+        let error =
+            parse_streaming_chunk(r#"{"object":"error","message":"invalid request"}"#).unwrap_err();
+
+        assert_eq!(
+            error,
+            ProviderError::ServerError("invalid request".to_string())
+        );
+    }
+
+    #[test]
+    fn streaming_chunk_still_rejects_missing_choices() {
+        let error = parse_streaming_chunk(r#"{"id":"malformed"}"#).unwrap_err();
+
+        assert!(matches!(error, ProviderError::NetworkError(_)));
+        assert!(error.to_string().contains("missing field `choices`"));
+    }
 
     // xAI rejects a union root outright:
     //   400 ... tool parameter root must be an object type
