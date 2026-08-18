@@ -91,6 +91,76 @@ These entries are not claims that implementation is broken beyond its documented
 | SHP-DEF-051 | Exact-source packaged shutdown replay  | A selectable-catalog shell could reach `ready` but leave a timed-out macOS Keychain lookup alive, forcing normal backend cleanup to escalate from `SIGTERM` to `SIGKILL`                      | high     | The managed backend allowed protected-store UI from a headless child, and its timed-out `spawn_blocking` credential lookup remained live during Tokio runtime shutdown                               | DS-4/DS-7               | fixed locally: Electron-managed backends enforce noninteractive protected-store access, so unlocked credentials remain readable while a prompt-required lookup fails instead of blocking; main also gives ACP transport closure a bounded grace interval before backend termination. The rebuilt package reports an available catalog, reaches `ready` in 23 ms, stops in 6 ms, exits the backend with code 0, and leaves an empty process registry |
 | SHP-DEF-052 | Post-patch interaction lifecycle audit | A streamed tool-progress update cleared the session's pending permission or form before the user could answer it                                                                             | critical | Runtime cleanup treated every update other than prompt start as terminal even though ACP `tool_call_update` and content progress are nonterminal                                               | R3/DS-7                 | fixed locally: pending interactions survive all streamed progress and are cleared only by completed, cancelled, or failed session outcomes. Regressions hold a real permission across `tool_call_update` and a form across agent content, then resolve each explicitly; the full Desktop suite passes 795/795 |
 
+## Findings from DS-7 operator acceptance (2026-08-18)
+
+These two entries are gate conditions rather than broken behavior in merged source. They are
+recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is closed.
+
+### SHP-DEF-053 — DS-7 acceptance evidence is not bound to current `main`
+
+- Discovered at gate / audit: DS-7 operator acceptance, `audits/ds-7-operator-acceptance.md`
+- Requirement(s): SHP-REQ-054
+- Severity: high
+- Symptom and reproduction: the accepted DS-7 evidence is bound to
+  `240ab751585afc03c68a710f8be10ea891ab168f`. `main` has since advanced 76 commits to
+  `437d7bd7d7866356ddd3eb6feb0c32b52b4e8528`, and `6634ece38` ("fix(acp): carry the ACP secret in
+  the WebSocket subprotocol, not the URL") modified `ui/desktop/src/shell/acpRuntime.ts`,
+  `ui/desktop/src/shell/runtimeController.ts`, and `ui/desktop/src/shellHost.test.ts`. Under the
+  repository's verify-don't-trust rule, revision-bound acceptance does not transfer across that
+  change. Reproduce by comparing `git log 240ab7515..HEAD -- ui/desktop/src/shell` against the
+  audit's recorded revision.
+- Root cause: normal trunk progress after a revision-bound acceptance; no defect in the change
+  itself. The ACP secret now travels in the WebSocket subprotocol rather than the URL, which is a
+  transport-security improvement, but the packaged startup and coexistence replays that DS-7
+  accepted were not re-run against it.
+- Security/data/process/release impact: process only. Design Gates 1-2 read contracts and add no
+  code, so they are unaffected. Gate 3 would build a renderer against evidence that no longer
+  matches its own source tree.
+- Disposition: `open` — explicit Gate 3 entry condition.
+- Patch/files: none; this is a validation obligation, not a code change.
+- Regression test or not-testable reason: not a code defect. Closure requires reproducing the DS-7
+  battery on one clean revision: full Rust workspace, full Desktop suite,
+  `pnpm --dir ui/desktop run shell:test-profile`, `shell:check-profiles` with `sourceClean:true`,
+  `shell:conformance`, a supported-host package/readback with recorded profile and backend hashes,
+  a packaged renderer-to-backend startup and close/restart replay, and green current CI for that
+  exact revision.
+- Validation/evidence: none yet.
+- Residual risk: if Gate 3 starts before closure, a renderer would be built and validated against a
+  foundation whose packaged behavior is unverified on the revision it ships from.
+
+### SHP-DEF-054 — the durable Outputs inventory has no shell renderer projection
+
+- Discovered at gate / audit: DS-7 acceptance surface mapping for Gate 2
+- Requirement(s): SHP-REQ-055
+- Severity: medium
+- Symptom and reproduction: step 6 of the GUI implementation order in
+  `docs/architecture/default-shell-template.md` requires the Default Shell GUI to consume the
+  durable session Outputs inventory established by ADR-0013. The backend method
+  `_gosling/unstable/session/artifacts/list` exists, but `shellIpcChannels` in
+  `ui/desktop/src/shell/ipc.ts` declares no artifacts channel, `GoslingShellAPI` in
+  `ui/desktop/src/shell/preloadApi.ts` exposes no artifacts namespace, `CAPABILITY_BY_CHANNEL` in
+  `ui/desktop/src/shell/ipcMain.ts` maps no artifacts capability, and `ShellRuntimeSnapshot` in
+  `ui/desktop/src/shell/runtimeSnapshot.ts` carries no artifact field. A renderer therefore has no
+  authorized route to Outputs.
+- Root cause: DS-5 scoped the module registry to extensions, skills, and one adapter. The Outputs
+  inventory was accepted separately under ADR-0013 and never given a shell projection, because no
+  renderer existed to need one.
+- Security/data/process/release impact: none in merged source — the absence is fail-closed. The risk
+  is that Gate 3 closes the gap the wrong way, with a renderer-side directory scan or a generic
+  artifact passthrough, either of which would create a second authority over output provenance and
+  contradict ADR-0013.
+- Disposition: `open` — must be closed by a narrow main-owned operation in Gate 3, before any
+  Outputs surface is built.
+- Patch/files: none yet. The expected shape is one bounded `session.artifacts.read` invoke channel
+  with a matching declared capability, a size-bounded metadata-only response, and no path or
+  filesystem authority in the renderer.
+- Regression test or not-testable reason: closure requires negative-space tests proving the renderer
+  cannot reach the filesystem or an undeclared artifact, plus a live-child test that the projection
+  matches the ADR-0013 inventory for the active session only.
+- Validation/evidence: none yet.
+- Residual risk: designing the Outputs surface in Gate 1 against a capability that does not exist.
+  Gate 1 and Gate 2 both mark the Outputs panel as gated on this defect.
+
 ## New entry template
 
 ### SHP-DEF-NNN — title

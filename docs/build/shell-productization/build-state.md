@@ -1,6 +1,7 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-15 after final corrective merge, exact-source package/readback, and merged-main CI
+Updated: 2026-08-18 after the operator accepted DS-7 and authorized generic Default Shell GUI
+design Gates 1-2
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -9,9 +10,13 @@ Completed gate: **R0 — baseline CI restored and evidence reconciled**
 Completed gate: **R1 — project-shell topology and application contracts accepted**
 Completed gate: **R2 — copy-free consumer composition and package readback**
 Completed gate: **R3/R4 — main-owned application runtime and live neutral domain adapter, revision-bound**
-Current gate: **DS-7 operator decision — the Default Shell nonvisual foundation is revision-bound
-and green, and technical GO for generic GUI planning is recommended. No renderer or named shell is
-authorized until the operator explicitly accepts the gate.**
+Completed gate: **DS-7 — the operator accepted the nonvisual Default Shell foundation on
+2026-08-18 and authorized generic GUI design. See
+[`audits/ds-7-operator-acceptance.md`](audits/ds-7-operator-acceptance.md).**
+Current gate: **`plan-webapp-design` Gate 1 (product/workflow design) and Gate 2 (front-end
+handoff) for the generic Default Shell. Design-only: no renderer source, host source, IPC channel,
+ACP method, or capability is added. Gate 3 (build) is blocked by SHP-DEF-053. Named shells remain
+blocked until M5.**
 
 ## Intent
 
@@ -19,9 +24,13 @@ Finish a copy-free, least-privilege shared foundation before DAWES, math, Projec
 
 ## Current decision
 
-**Historical host substrate: accepted on its recorded revision. Final corrective source: merged,
-clean-source packaged, and green on exact-source and merged-main CI. The operator decision is the
-only remaining DS-7 condition.**
+**DS-7 is accepted.** The operator recorded explicit acceptance on 2026-08-18 against revision
+`240ab751585afc03c68a710f8be10ea891ab168f`, authorizing `plan-webapp-design` Gates 1-2 for the
+generic Default Shell and nothing further. Acceptance carries three conditions: revision drift from
+the accepted revision to current `main` is acknowledged and must be reconciled before Gate 3
+(SHP-DEF-053); the Gemini OAuth provider defect blocks any claim of a polished credential/relink
+experience; and design documents may not invent host surface. Historical host substrate remains
+accepted on its own recorded revision.
 
 2026-08-15 corrective status: merged `main` at
 `0140e8169c231539c61a4dce98d4e713eccd07ce` is green, and supported-host package/readback,
@@ -85,7 +94,8 @@ process boundary is useful and merged; the former instruction to begin Gate 5 UI
 and that R2–R4/PG-50 gate is itself now closed — see
 [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md).
 
-`ShellRuntimeProvider` and all renderer work are paused until DS-7. Do not start any named project
+`ShellRuntimeProvider` and all renderer *implementation* remain paused until `plan-webapp-design`
+Gate 3 opens; DS-7 acceptance authorized design Gates 1-2 only. Do not start any named project
 shell (DAWES, math, physics/CST, or other) before M5. R4's conformance is revision-bound and local: the desktop
 CI job runs only the default `vitest.config.ts` (`src/**`), not `vitest.integration.config.ts`, so
 the non-visual consumer/runtime/adapter conformance suite's evidence is local-only, not CI-backed
@@ -268,12 +278,18 @@ condition-by-condition disposition, current-CI result, and the one residual gap 
 package-readback could not be reproduced in the accepting sandbox; `linux-x64` readback stands in
 as the supported-host-target proof).
 
-1. Close the remaining DS-1/DS-2 live proof and settings migration/recovery entry gate recorded in
-   `default-shell-ds3-ds7-implementation-plan.md`.
-2. Execute DS-3–DS-6 in dependency order: working-directory/session authority, safe credential
-   metadata and backend pinning, bounded module inventory, then the neutral scaffold.
-3. Run DS-7 on one exact clean revision with current CI before beginning the Default Shell GUI.
-4. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
+DS-1 through DS-7 are closed. The remaining sequence is:
+
+1. Complete `plan-webapp-design` Gate 1 and Gate 2 for the generic Default Shell —
+   [`gui/gate-1-product-workflow-design.md`](gui/gate-1-product-workflow-design.md) and
+   [`gui/gate-2-frontend-handoff.md`](gui/gate-2-frontend-handoff.md).
+2. Close SHP-DEF-053 by reproducing the DS-7 check battery on one current clean revision with
+   current CI. This is the Gate 3 entry condition; Gate 3 must not start before it.
+3. Close SHP-DEF-054 before the Outputs surface is built: `_gosling/unstable/session/artifacts/list`
+   exists under ADR-0013 but no shell IPC channel, preload operation, or declared capability
+   projects it to a renderer. Gate 3 must add that narrow operation rather than a directory scan.
+4. Execute Gates 3–6 only after the above, then M5 conformance for the reusable GUI.
+5. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
    publication) remain open and unauthorized by this acceptance.
 
 ## Named-shell start policy

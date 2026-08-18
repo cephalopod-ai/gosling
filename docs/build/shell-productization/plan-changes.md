@@ -28,6 +28,8 @@ Material changes to scope, requirements, architecture, sequencing, platform supp
 
 | SHP-PC-010 | 2026-08-15 | L1 | DS-4/DS-7 | Bound shell credential discovery and require selected-profile re-resolution before session creation | A real packaged renderer stalled in provisioning on macOS Keychain access, then code/test review found that an unknown selected ID was not fail-closed | SHP-REQ-046/053 and SHP-RSK-041/042/046 gain explicit timeout, unavailable-state, and live session-pinning evidence; no credential authority or GUI scope is added | operator directed continued corrective patching and audit until a GO recommendation is supportable |
 
+| SHP-PC-011 | 2026-08-18 | L2 | DS-7 -> GUI Gate 1/2 | Record operator acceptance of DS-7 and authorize `plan-webapp-design` Gate 1 (product/workflow design) and Gate 2 (front-end handoff) for the generic Default Shell only | The 2026-08-15 corrective audit closed DS-1-DS-6, issued a technical GO recommendation, and named operator acceptance as the only remaining DS-7 condition; the operator recorded that decision on 2026-08-18 | Adds SHP-REQ-054-057 for design-gate obligations. No change to SHP-REQ-044-053 authority and no widening of the v1 capability envelope. Adds SHP-DEF-053 (acceptance evidence not bound to current `main`) as the Gate 3 entry condition and SHP-DEF-054 (Outputs inventory has no shell renderer projection) as a Gate 3 prerequisite | operator acceptance received; renderer implementation, Gates 3-6, R6-R8, and every named shell remain unauthorized |
+
 ## Record template
 
 ### SHP-PC-NNN — title
