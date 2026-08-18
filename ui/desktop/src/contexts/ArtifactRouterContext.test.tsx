@@ -254,6 +254,33 @@ describe('ArtifactRouterProvider', () => {
     );
   });
 
+  it('authorizes session deliverables when the session has no workspace', async () => {
+    renderRouter();
+
+    act(() => {
+      router.setVisibleSessionWorkspaceId(null);
+      router.setVisibleSessionArtifacts([
+        {
+          sessionId: 'cli-session',
+          displayPath: 'playtest-artifact.md',
+          resolvedPath: '/tmp/playtest-artifact.md',
+          baseWorkingDir: '/tmp',
+          relation: 'referenced',
+          provenance: 'assistant_message',
+          firstSeenAt: '2026-08-18T00:00:00Z',
+          lastSeenAt: '2026-08-18T00:00:00Z',
+        },
+      ]);
+    });
+
+    await waitFor(() =>
+      expect(setArtifactRoutingConfig).toHaveBeenLastCalledWith({
+        artifactFiles: ['/tmp/playtest-artifact.md'],
+        outputs: [],
+      })
+    );
+  });
+
   it('warns instead of silently falling back when a native download is unroutable', () => {
     renderRouter();
     act(() => unroutedHandler?.({}, 'brief.pdf'));

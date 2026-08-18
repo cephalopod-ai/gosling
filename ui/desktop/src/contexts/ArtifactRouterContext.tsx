@@ -68,17 +68,15 @@ function outputIssue(item: WorkspaceWithValidation, outputId: string) {
 }
 
 function nativeRoutingConfig(
-  item: WorkspaceWithValidation,
+  item: WorkspaceWithValidation | null,
   artifactFiles: string[]
 ): ArtifactRoutingConfig | null {
-  const outputs = item.workspace.productOutputFolders.filter(
-    (output) => !outputIssue(item, output.id)
-  );
+  const outputs =
+    item?.workspace.productOutputFolders.filter((output) => !outputIssue(item, output.id)) ?? [];
   if (outputs.length === 0 && artifactFiles.length === 0) return null;
   return {
     artifactFiles,
-    workspaceId: item.workspace.id,
-    workspaceName: item.workspace.name,
+    ...(item ? { workspaceId: item.workspace.id, workspaceName: item.workspace.name } : {}),
     outputs: outputs.map((output) => ({
       id: output.id,
       isDefault: output.isDefault,
@@ -109,7 +107,8 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
   const [visibleSessionArtifacts, setVisibleSessionArtifacts] = useState<SessionArtifactDto[]>([]);
 
   const nativeWorkspace = useMemo(() => {
-    const workspaceId = visibleSessionWorkspaceId ?? activeWorkspaceId;
+    const workspaceId =
+      visibleSessionWorkspaceId === undefined ? activeWorkspaceId : visibleSessionWorkspaceId;
     if (!workspaceId) return null;
     return workspaces.find((item) => item.workspace.id === workspaceId) ?? null;
   }, [activeWorkspaceId, visibleSessionWorkspaceId, workspaces]);
@@ -126,7 +125,7 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
   );
 
   useEffect(() => {
-    const config = nativeWorkspace ? nativeRoutingConfig(nativeWorkspace, artifactFiles) : null;
+    const config = nativeRoutingConfig(nativeWorkspace, artifactFiles);
     void window.electron.setArtifactRoutingConfig(config).catch(() => {});
     return () => {
       void window.electron.setArtifactRoutingConfig(null).catch(() => {});

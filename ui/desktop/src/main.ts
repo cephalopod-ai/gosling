@@ -356,8 +356,9 @@ async function validateArtifactRoutingConfig(
   config: ArtifactRoutingConfig
 ): Promise<ArtifactRoutingConfig | null> {
   if (
-    typeof config.workspaceId !== 'string' ||
-    typeof config.workspaceName !== 'string' ||
+    (config.workspaceId !== undefined && typeof config.workspaceId !== 'string') ||
+    (config.workspaceName !== undefined && typeof config.workspaceName !== 'string') ||
+    (config.workspaceId === undefined) !== (config.workspaceName === undefined) ||
     !Array.isArray(config.outputs) ||
     config.outputs.length > 64 ||
     (config.artifactFiles !== undefined &&

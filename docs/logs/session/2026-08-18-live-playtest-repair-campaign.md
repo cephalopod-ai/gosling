@@ -94,3 +94,35 @@ bounded drain is treated as clean EOF.
   completed transport error into success, and does not change request/response schema or framing.
 - Contract drift: HS-03/AP-05 and ACP v1 framing remain unchanged. Post-repair delta: no new drift.
 
+Commit: `e5436dfe6` (`fix(acp): drain queued responses on stdin EOF`).
+
+## Group 3 — workspace-less Desktop artifact capability
+
+### Repair rationale
+
+`visibleSessionWorkspaceId` uses three states: `undefined` means no visible-session override and may
+fall back to the active workspace, while `null` means the visible session explicitly has no workspace.
+Nullish coalescing collapsed those states. The router now preserves them and can publish an
+artifact-only routing config, with no workspace/output identity, for exact user-facing files from the
+visible session. Electron still canonicalizes each file, requires it to exist, limits the list, and
+grants no directory capability.
+
+### Verification and adversarial review
+
+- Focused Vitest: six files, 25/25 tests passed, including a regression where an active workspace
+  exists but the visible CLI session has `workspaceId: null`.
+- `pnpm run typecheck` — passed.
+- `just package-ui` — passed, including release CLI build, schema generation, production Vite build,
+  Electron packaging, and ad-hoc signing.
+- Live pre-repair proof: the existing `/tmp/.../playtest-artifact.md` inventory item was visible but
+  preview was denied outside approved roots.
+- Live post-repair package startup was blocked before renderer creation by macOS Keychain
+  `SecItemCopyMatching`; CDP accepted TCP but could not serve a page. No credential prompt was
+  accepted or bypassed. Therefore this group is code-, type-, test-, and package-verified, but its
+  post-fix GUI click is partially verified rather than rounded up to live-pass.
+- Adversarial checks: workspace-backed download routing remains unchanged; workspace identity fields
+  must be both present or both absent; exact-file validation remains canonical, existing-file-only,
+  and per-window.
+- Contract drift: this restores ADR-0013's accepted workspace-less exact-file capability without
+  expanding it to code/config/tool-metadata files or directories. Post-repair delta: no new drift.
+
