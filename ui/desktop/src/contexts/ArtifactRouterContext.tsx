@@ -1,5 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import type { ProductOutputFolder, WorkspaceWithValidation } from '@repo-makeover/gosling-sdk';
+import type {
+  ProductOutputFolder,
+  SessionArtifactDto,
+  WorkspaceWithValidation,
+} from '@repo-makeover/gosling-sdk';
 import { toast } from 'react-toastify';
 import { acpCreateWorkspaceOutput } from '../acp/workspaces';
 import { defineMessages, useIntl } from '../i18n';
@@ -30,6 +34,7 @@ const i18n = defineMessages({
 
 interface ArtifactRouterValue {
   saveArtifact(input: RoutedArtifactSaveInput): Promise<RoutedArtifactSaveResult>;
+  setVisibleSessionArtifacts(artifacts: SessionArtifactDto[]): void;
   setVisibleSessionWorkspaceId(workspaceId: string | null | undefined): void;
 }
 
@@ -41,12 +46,16 @@ function outputIssue(item: WorkspaceWithValidation, outputId: string) {
   );
 }
 
-function nativeRoutingConfig(item: WorkspaceWithValidation): ArtifactRoutingConfig | null {
+function nativeRoutingConfig(
+  item: WorkspaceWithValidation,
+  artifactFiles: string[]
+): ArtifactRoutingConfig | null {
   const outputs = item.workspace.productOutputFolders.filter(
     (output) => !outputIssue(item, output.id)
   );
-  if (outputs.length === 0) return null;
+  if (outputs.length === 0 && artifactFiles.length === 0) return null;
   return {
+    artifactFiles,
     workspaceId: item.workspace.id,
     workspaceName: item.workspace.name,
     outputs: outputs.map((output) => ({
@@ -64,6 +73,7 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
   const [visibleSessionWorkspaceId, setVisibleSessionWorkspaceId] = useState<
     string | null | undefined
   >(undefined);
+  const [visibleSessionArtifacts, setVisibleSessionArtifacts] = useState<SessionArtifactDto[]>([]);
 
   const nativeWorkspace = useMemo(() => {
     const workspaceId = visibleSessionWorkspaceId ?? activeWorkspaceId;
@@ -71,13 +81,28 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
     return workspaces.find((item) => item.workspace.id === workspaceId) ?? null;
   }, [activeWorkspaceId, visibleSessionWorkspaceId, workspaces]);
 
+  const artifactFiles = useMemo(
+    () => [
+      ...new Set(
+        visibleSessionArtifacts
+          .filter(
+            (artifact) =>
+              artifact.provenance === 'built_in_tool' &&
+              (artifact.relation === 'created' || artifact.relation === 'modified')
+          )
+          .map((artifact) => artifact.resolvedPath)
+      ),
+    ],
+    [visibleSessionArtifacts]
+  );
+
   useEffect(() => {
-    const config = nativeWorkspace ? nativeRoutingConfig(nativeWorkspace) : null;
+    const config = nativeWorkspace ? nativeRoutingConfig(nativeWorkspace, artifactFiles) : null;
     void window.electron.setArtifactRoutingConfig(config).catch(() => {});
     return () => {
       void window.electron.setArtifactRoutingConfig(null).catch(() => {});
     };
-  }, [nativeWorkspace]);
+  }, [artifactFiles, nativeWorkspace]);
 
   useEffect(() => {
     const handleUnroutedDownload = (_event: unknown, fileName: string) => {
@@ -152,8 +177,8 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
   );
 
   const value = useMemo<ArtifactRouterValue>(
-    () => ({ saveArtifact, setVisibleSessionWorkspaceId }),
-    [saveArtifact]
+    () => ({ saveArtifact, setVisibleSessionArtifacts, setVisibleSessionWorkspaceId }),
+    [saveArtifact, setVisibleSessionArtifacts]
   );
   return <ArtifactRouterContext.Provider value={value}>{children}</ArtifactRouterContext.Provider>;
 }

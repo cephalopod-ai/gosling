@@ -81,6 +81,7 @@ describe('ArtifactPane', () => {
     Object.assign(window.electron, { readArtifactFile });
     vi.mocked(useArtifactRouter).mockReturnValue({
       saveArtifact,
+      setVisibleSessionArtifacts: vi.fn(),
       setVisibleSessionWorkspaceId: vi.fn(),
     });
   });

@@ -323,8 +323,9 @@ async function assertRendererArtifactFileAccess(
   filePath: string,
   baseDirectory?: string
 ): Promise<string> {
-  const routedOutputRoots =
-    artifactRoutingRegistry.get(webContentsId)?.outputs.map((output) => output.path) ?? [];
+  const routingConfig = artifactRoutingRegistry.get(webContentsId);
+  const routedOutputRoots = routingConfig?.outputs.map((output) => output.path) ?? [];
+  const routedArtifactFiles = routingConfig?.artifactFiles ?? [];
   const expandedPath = expandTilde(filePath);
   const candidatePath = path.isAbsolute(expandedPath) ? resolveRendererPath(filePath) : filePath;
   return assertArtifactFileAccess(
@@ -332,7 +333,7 @@ async function assertRendererArtifactFileAccess(
     baseDirectory ? resolveRendererPath(baseDirectory) : undefined,
     rendererFileRoots(webContentsId),
     routedOutputRoots,
-    rendererArtifactFileGrants.get(webContentsId) ?? new Set<string>()
+    new Set([...(rendererArtifactFileGrants.get(webContentsId) ?? []), ...routedArtifactFiles])
   );
 }
 
@@ -358,7 +359,9 @@ async function validateArtifactRoutingConfig(
     typeof config.workspaceId !== 'string' ||
     typeof config.workspaceName !== 'string' ||
     !Array.isArray(config.outputs) ||
-    config.outputs.length > 64
+    config.outputs.length > 64 ||
+    (config.artifactFiles !== undefined &&
+      (!Array.isArray(config.artifactFiles) || config.artifactFiles.length > 256))
   ) {
     return null;
   }
@@ -384,7 +387,26 @@ async function validateArtifactRoutingConfig(
     }
   }
 
-  return outputs.length > 0 ? { ...config, outputs } : null;
+  const artifactFiles = [];
+  for (const artifactFile of config.artifactFiles ?? []) {
+    if (
+      typeof artifactFile !== 'string' ||
+      artifactFile.length === 0 ||
+      artifactFile.length > 4096
+    ) {
+      continue;
+    }
+    try {
+      const artifactPath = await canonicalizePotentialPath(resolveRendererPath(artifactFile));
+      if ((await fs.stat(artifactPath)).isFile()) artifactFiles.push(artifactPath);
+    } catch {
+      continue;
+    }
+  }
+
+  return outputs.length > 0 || artifactFiles.length > 0
+    ? { ...config, artifactFiles: [...new Set(artifactFiles)], outputs }
+    : null;
 }
 
 async function openExternalIfSafe(url: string): Promise<void> {

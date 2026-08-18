@@ -118,7 +118,7 @@ export default function BaseChat({
   const { isOpen: isArtifactWorkbenchOpen, setVisibleSession: setVisibleArtifactSession } =
     useArtifactWorkbench();
   const acpSessionSnapshot = useAcpChatSessionSnapshot(sessionId);
-  const { setVisibleSessionWorkspaceId } = useArtifactRouter();
+  const { setVisibleSessionArtifacts, setVisibleSessionWorkspaceId } = useArtifactRouter();
   const setView = useNavigation();
   const isNavCollapsed = !navContext?.isNavExpanded;
   const contentClassName = cn('pr-1 pb-10 pt-12', (isMobile || isNavCollapsed) && 'pt-16');
@@ -157,7 +157,9 @@ export default function BaseChat({
     if (!isActiveSession) return;
     setVisibleSessionWorkspaceId(session?.workspace_id ?? null);
     setVisibleArtifactSession(sessionId, acpSessionSnapshot?.artifacts ?? []);
+    setVisibleSessionArtifacts(acpSessionSnapshot?.artifacts ?? []);
     return () => {
+      setVisibleSessionArtifacts([]);
       setVisibleSessionWorkspaceId(undefined);
       setVisibleArtifactSession(null, []);
     };
@@ -167,6 +169,7 @@ export default function BaseChat({
     session?.workspace_id,
     sessionId,
     setVisibleArtifactSession,
+    setVisibleSessionArtifacts,
     setVisibleSessionWorkspaceId,
   ]);
 

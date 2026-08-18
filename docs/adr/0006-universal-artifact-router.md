@@ -53,4 +53,8 @@ workspace context remain authoritative.
 
 No new dependency. The implementation uses existing React context, Electron IPC/session APIs,
 Node path/filesystem APIs, the generated workspace SDK type, and the existing renderer file-access
-guard.
+guard. The active session may also provide exact existing files discovered as
+`created` or `modified` by a built-in tool. The bridge canonicalizes those
+paths and treats them as transient single-file preview capabilities; they are
+not directory grants, and referenced paths or externally supplied artifact
+metadata remain ineligible.

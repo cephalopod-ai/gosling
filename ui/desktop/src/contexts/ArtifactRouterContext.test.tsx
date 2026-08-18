@@ -154,6 +154,50 @@ describe('ArtifactRouterProvider', () => {
     );
   });
 
+  it('authorizes only built-in files created or modified in the visible session', async () => {
+    renderRouter();
+    act(() =>
+      router.setVisibleSessionArtifacts([
+        {
+          sessionId: 'session-1',
+          displayPath: 'report.md',
+          resolvedPath: '/active/report.md',
+          baseWorkingDir: '/active',
+          relation: 'created',
+          provenance: 'built_in_tool',
+          firstSeenAt: '2026-08-17T00:00:00Z',
+          lastSeenAt: '2026-08-17T00:00:00Z',
+        },
+        {
+          sessionId: 'session-1',
+          displayPath: 'reference.md',
+          resolvedPath: '/active/reference.md',
+          baseWorkingDir: '/active',
+          relation: 'referenced',
+          provenance: 'built_in_tool',
+          firstSeenAt: '2026-08-17T00:00:00Z',
+          lastSeenAt: '2026-08-17T00:00:00Z',
+        },
+        {
+          sessionId: 'session-1',
+          displayPath: 'external.md',
+          resolvedPath: '/active/external.md',
+          baseWorkingDir: '/active',
+          relation: 'created',
+          provenance: 'tool_metadata',
+          firstSeenAt: '2026-08-17T00:00:00Z',
+          lastSeenAt: '2026-08-17T00:00:00Z',
+        },
+      ])
+    );
+
+    await waitFor(() =>
+      expect(setArtifactRoutingConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ artifactFiles: ['/active/report.md'] })
+      )
+    );
+  });
+
   it('warns instead of silently falling back when a native download is unroutable', () => {
     renderRouter();
     act(() => unroutedHandler?.({}, 'brief.pdf'));

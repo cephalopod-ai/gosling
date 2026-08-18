@@ -57,6 +57,7 @@ describe('WorkspaceSidebarSection', () => {
     window.localStorage.clear();
     vi.mocked(useArtifactRouter).mockReturnValue({
       saveArtifact,
+      setVisibleSessionArtifacts: vi.fn(),
       setVisibleSessionWorkspaceId: vi.fn(),
     });
     vi.mocked(useWorkspace).mockReturnValue({
@@ -122,9 +123,7 @@ describe('WorkspaceSidebarSection', () => {
     const user = userEvent.setup();
     render(<WorkspaceSidebarSection onNewChat={startNewChat} />);
 
-    await user.click(
-      screen.getByRole('button', { name: 'Annual Meeting, chat filter active' })
-    );
+    await user.click(screen.getByRole('button', { name: 'Annual Meeting, chat filter active' }));
 
     expect(setSessionWorkspaceFilterId).toHaveBeenCalledWith('workspace-1');
     expect(setActiveWorkspace).not.toHaveBeenCalled();
@@ -139,7 +138,9 @@ describe('WorkspaceSidebarSection', () => {
     render(<WorkspaceSidebarSection onNewChat={startNewChat} />);
 
     await user.click(screen.getByRole('button', { name: 'Actions for Annual Meeting' }));
-    expect(screen.getByRole('menuitem', { name: 'New chat in this workspace' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'New chat in this workspace' })
+    ).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Reveal primary folder' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Export metadata' })).toBeInTheDocument();
