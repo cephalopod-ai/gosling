@@ -24,6 +24,27 @@ const UNAVAILABLE_OUTPUT_CODES = new Set([
   'invalid_output_configuration',
 ]);
 
+const USER_FACING_DELIVERABLE_EXTENSIONS = new Set([
+  'csv',
+  'doc',
+  'docx',
+  'json',
+  'jsonl',
+  'md',
+  'markdown',
+  'mdown',
+  'ods',
+  'odt',
+  'pdf',
+  'ppt',
+  'pptx',
+  'rtf',
+  'tsv',
+  'txt',
+  'xls',
+  'xlsx',
+]);
+
 const i18n = defineMessages({
   unroutedDownload: {
     id: 'artifactRouter.unroutedDownload',
@@ -67,6 +88,18 @@ function nativeRoutingConfig(
   };
 }
 
+function isUserFacingSessionDeliverable(artifact: SessionArtifactDto): boolean {
+  const fileName = artifact.displayPath.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+  const extension = fileName.split('.').pop();
+  if (!extension || !USER_FACING_DELIVERABLE_EXTENSIONS.has(extension)) return false;
+
+  return (
+    (artifact.provenance === 'built_in_tool' &&
+      (artifact.relation === 'created' || artifact.relation === 'modified')) ||
+    artifact.provenance === 'assistant_message'
+  );
+}
+
 export function ArtifactRouterProvider({ children }: { children: React.ReactNode }) {
   const intl = useIntl();
   const { activeWorkspaceId, refreshWorkspaces, workspaces } = useWorkspace();
@@ -85,11 +118,7 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
     () => [
       ...new Set(
         visibleSessionArtifacts
-          .filter(
-            (artifact) =>
-              artifact.provenance === 'built_in_tool' &&
-              (artifact.relation === 'created' || artifact.relation === 'modified')
-          )
+          .filter(isUserFacingSessionDeliverable)
           .map((artifact) => artifact.resolvedPath)
       ),
     ],

@@ -28,8 +28,11 @@ workbench keeps that inventory separate from session-scoped preview tabs and sel
 visibility remain window preferences.
 
 Inventory registration grants no filesystem capability. Relative paths retain their discovery working
-directory, but selection still passes through the Electron artifact guard. Only existing renderer roots,
-validated workspace output roots, or explicit file-picker grants authorize a read/open/reveal/copy.
+directory, but selection still passes through the Electron artifact guard. Existing renderer roots,
+validated workspace output roots, explicit file-picker grants, and exact session-generated user-facing
+deliverables authorize a read/open/reveal/copy. The last category is limited to document-like files
+created or modified by a built-in tool or referenced by the assistant; it never grants a directory or
+authorizes code, configuration, or MCP/tool-metadata paths.
 
 ## Consequences
 

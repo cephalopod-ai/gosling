@@ -154,7 +154,7 @@ describe('ArtifactRouterProvider', () => {
     );
   });
 
-  it('authorizes only built-in files created or modified in the visible session', async () => {
+  it('authorizes only session-generated user-facing deliverables', async () => {
     renderRouter();
     act(() =>
       router.setVisibleSessionArtifacts([
@@ -180,8 +180,58 @@ describe('ArtifactRouterProvider', () => {
         },
         {
           sessionId: 'session-1',
+          displayPath: 'state/report.json',
+          resolvedPath: '/active/state/report.json',
+          baseWorkingDir: '/active',
+          relation: 'referenced',
+          provenance: 'assistant_message',
+          firstSeenAt: '2026-08-17T00:00:00Z',
+          lastSeenAt: '2026-08-17T00:00:00Z',
+        },
+        {
+          sessionId: 'session-1',
+          displayPath: 'deliverables/brief.docx',
+          resolvedPath: '/active/deliverables/brief.docx',
+          baseWorkingDir: '/active',
+          relation: 'referenced',
+          provenance: 'assistant_message',
+          firstSeenAt: '2026-08-17T00:00:00Z',
+          lastSeenAt: '2026-08-17T00:00:00Z',
+        },
+        {
+          sessionId: 'session-1',
           displayPath: 'external.md',
           resolvedPath: '/active/external.md',
+          baseWorkingDir: '/active',
+          relation: 'created',
+          provenance: 'tool_metadata',
+          firstSeenAt: '2026-08-17T00:00:00Z',
+          lastSeenAt: '2026-08-17T00:00:00Z',
+        },
+        {
+          sessionId: 'session-1',
+          displayPath: 'src/analysis.py',
+          resolvedPath: '/active/src/analysis.py',
+          baseWorkingDir: '/active',
+          relation: 'created',
+          provenance: 'built_in_tool',
+          firstSeenAt: '2026-08-17T00:00:00Z',
+          lastSeenAt: '2026-08-17T00:00:00Z',
+        },
+        {
+          sessionId: 'session-1',
+          displayPath: '.env',
+          resolvedPath: '/active/.env',
+          baseWorkingDir: '/active',
+          relation: 'referenced',
+          provenance: 'assistant_message',
+          firstSeenAt: '2026-08-17T00:00:00Z',
+          lastSeenAt: '2026-08-17T00:00:00Z',
+        },
+        {
+          sessionId: 'session-1',
+          displayPath: 'tool-output.json',
+          resolvedPath: '/active/tool-output.json',
           baseWorkingDir: '/active',
           relation: 'created',
           provenance: 'tool_metadata',
@@ -193,7 +243,13 @@ describe('ArtifactRouterProvider', () => {
 
     await waitFor(() =>
       expect(setArtifactRoutingConfig).toHaveBeenLastCalledWith(
-        expect.objectContaining({ artifactFiles: ['/active/report.md'] })
+        expect.objectContaining({
+          artifactFiles: [
+            '/active/report.md',
+            '/active/state/report.json',
+            '/active/deliverables/brief.docx',
+          ],
+        })
       )
     );
   });

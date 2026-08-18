@@ -117,8 +117,11 @@ shares a basename.
 Inventory and preview are intentionally separate. Discovering an output does not open the pane, read
 the file, create an output directory, or grant access. Selecting an item opens a session-scoped preview
 tab through the same Electron authorization boundary used by **Reveal**, **Open externally**, and
-**Save a copy**. A file outside the session's approved roots or validated workspace outputs remains
-blocked unless you explicitly select it with the file picker.
+**Save a copy**. Session-generated document deliverables (such as JSON, Markdown, PDF, Word,
+spreadsheets, and plain text) can be previewed directly through an exact-file capability. A file
+outside the session's approved roots or validated workspace outputs remains blocked unless you
+explicitly select it with the file picker; code, configuration (including `.env`), and MCP/tool
+metadata never receive that automatic capability.
 
 gosling's artifact router applies the same rule to every Desktop-owned save, export, and native
 download. It recognizes documents, spreadsheets, presentations, images, video, code, data,
