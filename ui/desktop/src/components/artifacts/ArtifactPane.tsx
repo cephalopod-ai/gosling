@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Copy,
@@ -16,12 +16,7 @@ import { useArtifactWorkbench } from '../../contexts/ArtifactWorkbenchContext';
 import { cn } from '../../utils';
 import MarkdownContent from '../MarkdownContent';
 import { Button } from '../ui/button';
-import {
-  addSandboxCsp,
-  artifactKindFromMimeType,
-  artifactKindFromPath,
-  parseCsv,
-} from './artifactUtils';
+import { addSandboxCsp, isArtifactPreviewable, parseCsv } from './artifactUtils';
 import type { ArtifactTab } from './types';
 import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
 import { errorMessage } from '../../utils/conversionUtils';
@@ -265,6 +260,13 @@ export function ArtifactPane() {
   } = useArtifactWorkbench();
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(false);
+  const previewableArtifacts = useMemo(
+    () =>
+      artifacts.filter((artifact) =>
+        isArtifactPreviewable(artifact.displayPath, artifact.mimeType)
+      ),
+    [artifacts]
+  );
 
   useEffect(() => {
     if (!activeTab) {
@@ -321,7 +323,12 @@ export function ArtifactPane() {
     const selected = await window.electron.selectArtifactFile(
       activeTab?.source.type === 'file' ? activeTab.source.path : undefined
     );
-    if (selected) openFile(selected);
+    if (!selected) return;
+    if (!isArtifactPreviewable(selected)) {
+      toast.info(intl.formatMessage(i18n.unsupported));
+      return;
+    }
+    openFile(selected);
   };
 
   const resizeFrom = (event: React.PointerEvent) => {
@@ -345,9 +352,7 @@ export function ArtifactPane() {
   const selectedArtifactPath =
     activeTab?.source.type === 'file' ? activeTab.source.path : undefined;
 
-  const artifactStatus = (displayPath: string, mimeType?: string | null) => {
-    const kind = mimeType ? artifactKindFromMimeType(mimeType) : artifactKindFromPath(displayPath);
-    if (kind === 'unknown') return intl.formatMessage(i18n.unsupported);
+  const artifactStatus = (displayPath: string) => {
     if (displayPath !== selectedArtifactPath || !preview) return null;
     if (preview.truncated) return intl.formatMessage(i18n.truncated);
     if (!preview.error) return null;
@@ -397,7 +402,7 @@ export function ArtifactPane() {
       <div className="no-drag flex h-11 shrink-0 items-center gap-2 border-b border-border-primary px-2">
         <FileOutput className="h-4 w-4 text-text-secondary" />
         <span className="text-sm font-medium">
-          {intl.formatMessage(i18n.outputs)} {artifacts.length}
+          {intl.formatMessage(i18n.outputs)} {previewableArtifacts.length}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <Button
@@ -421,14 +426,14 @@ export function ArtifactPane() {
         </div>
       </div>
 
-      {artifacts.length > 0 && (
+      {previewableArtifacts.length > 0 && (
         <div className="max-h-52 shrink-0 overflow-y-auto border-b border-border-primary py-1">
-          {artifacts.map((artifact) => {
+          {previewableArtifacts.map((artifact) => {
             const selected =
               activeTab?.source.type === 'file' &&
               activeTab.source.path === artifact.displayPath &&
               activeTab.source.baseDirectory === artifact.baseWorkingDir;
-            const status = artifactStatus(artifact.displayPath, artifact.mimeType);
+            const status = artifactStatus(artifact.displayPath);
             return (
               <button
                 key={artifact.resolvedPath}

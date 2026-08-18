@@ -53,11 +53,11 @@ screenshots and both renderer/backend logs for every failure.
 
 ### DT-06 — Artifact inventory and preview type matrix
 
-- Goal: completed outputs populate automatically, supported artifacts preview safely, and unsupported content fails clearly.
+- Goal: completed previewable outputs populate automatically, supported artifacts preview safely, and unsupported file types stay out of the presented inventory.
 - Category: files / boundary
 - Preconditions: small known fixtures for Markdown, JSON, HTML, image, PDF, SVG, empty file, unknown binary, and a missing path.
-- Steps: complete one turn that writes/references four fixtures; verify `Outputs 4` before clicking a chip; open each fixture through the inventory; switch tabs rapidly; use Save a copy where offered; compare source hash before and after preview.
-- Expected: the inventory populates without opening the pane or reading a file; `.rs`, `.ts`, `.py`, and `.sh` are code; unknown files remain listed; supported formats render the intended content; active content cannot execute privileged app actions; malformed/unknown/missing files show a bounded error; preview never mutates source; saved copy hash matches source where no conversion is promised.
+- Steps: complete one turn that writes/references four supported fixtures plus an unknown binary and an email-like compatibility inference; verify `Outputs 4` before clicking a chip; confirm the unsupported entries are absent; open each listed fixture; switch tabs rapidly; use Save a copy where offered; compare source hash before and after preview.
+- Expected: the inventory populates without opening the pane or reading a file; `.rs`, `.ts`, `.py`, and `.sh` are code; file types with no in-app renderer are excluded from the list and count; supported formats render the intended content; active content cannot execute privileged app actions; malformed or missing supported files show a bounded error; preview never mutates source; saved copy hash matches source where no conversion is promised.
 - Observe: large-file warning and renderer console errors.
 
 ### DT-07 — Session artifact state across navigation and relaunch
@@ -66,7 +66,7 @@ screenshots and both renderer/backend logs for every failure.
 - Category: persistence / navigation
 - Preconditions: three artifact tabs from two sessions/workspaces; record tab order and pane width.
 - Steps: resize and select the middle tab; navigate away and back; close one tab; quit/relaunch; move one source file before another relaunch.
-- Expected: switching sessions immediately replaces the inventory and restores only that session's tabs/selection; closed tab stays closed; relaunch reloads inventory from ACP and restores only documented preview state; moved source becomes a named missing-file state and is not replaced with another file of the same basename. Inventory presence alone never grants access to an outside-root path.
+- Expected: switching sessions immediately replaces the inventory and restores only that session's supported tabs/selection; persisted unsupported tabs are discarded; closed tab stays closed; relaunch reloads inventory from ACP and restores only documented preview state; moved source becomes a named missing-file state and is not replaced with another file of the same basename. Inventory presence alone never grants access to an outside-root path.
 - Observe: state isolation across multiple Desktop windows.
 
 ### DT-08 — Archive and restore session lifecycle

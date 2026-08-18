@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ArtifactWorkbenchProvider,
@@ -40,24 +41,60 @@ describe('ArtifactPane', () => {
         </button>
         <button
           type="button"
-          onClick={() =>
+          onClick={() => {
+            const artifacts: SessionArtifactDto[] = [
+              'report.md',
+              'analysis.py',
+              'engine.rs',
+              'build.sh',
+            ].map((displayPath, index) => ({
+              sessionId: 'session-four-files',
+              displayPath,
+              resolvedPath: `/outputs/${displayPath}`,
+              baseWorkingDir: '/outputs',
+              relation: 'created' as const,
+              provenance: 'built_in_tool' as const,
+              sourceId: `tool-${index}`,
+              firstSeenAt: `2026-01-01T00:00:0${index}Z`,
+              lastSeenAt: `2026-01-01T00:00:0${index}Z`,
+            }));
             setVisibleSession(
               'session-four-files',
-              ['report.md', 'analysis.py', 'engine.rs', 'build.sh'].map((displayPath, index) => ({
+              artifacts.concat({
                 sessionId: 'session-four-files',
-                displayPath,
-                resolvedPath: `/outputs/${displayPath}`,
+                displayPath: 'David.Casbeer@us.af.mil',
+                resolvedPath: '/outputs/David.Casbeer@us.af.mil',
                 baseWorkingDir: '/outputs',
-                relation: 'created',
-                provenance: 'built_in_tool',
-                sourceId: `tool-${index}`,
-                firstSeenAt: `2026-01-01T00:00:0${index}Z`,
-                lastSeenAt: `2026-01-01T00:00:0${index}Z`,
-              }))
-            )
-          }
+                relation: 'referenced',
+                provenance: 'compatibility_inference',
+                sourceId: 'assistant-message',
+                firstSeenAt: '2026-01-01T00:00:04Z',
+                lastSeenAt: '2026-01-01T00:00:04Z',
+              })
+            );
+          }}
         >
           Load four outputs
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setVisibleSession('session-pdf', [
+              {
+                sessionId: 'session-pdf',
+                displayPath: 'report.pdf',
+                resolvedPath: '/outputs/report.pdf',
+                baseWorkingDir: '/outputs',
+                mimeType: 'application/pdf; version=1.7',
+                relation: 'created',
+                provenance: 'built_in_tool',
+                firstSeenAt: '2026-01-01T00:00:00Z',
+                lastSeenAt: '2026-01-01T00:00:00Z',
+              },
+            ])
+          }
+        >
+          Load MIME PDF
         </button>
         <ArtifactPane />
       </>
@@ -172,9 +209,13 @@ describe('ArtifactPane', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load four outputs' }));
     fireEvent.click(screen.getByTitle('/outputs/report.md'));
 
-    const grantButton = await screen.findByRole('button', {
-      name: 'Select this file to grant access and preview it',
-    });
+    const grantButton = await screen.findByRole(
+      'button',
+      {
+        name: 'Select this file to grant access and preview it',
+      },
+      { timeout: 2_000 }
+    );
     fireEvent.click(grantButton);
 
     await waitFor(() => expect(selectArtifactFile).toHaveBeenCalledWith('report.md'));
@@ -196,6 +237,26 @@ describe('ArtifactPane', () => {
     expect(screen.getByText('analysis.py')).toBeInTheDocument();
     expect(screen.getByText('engine.rs')).toBeInTheDocument();
     expect(screen.getByText('build.sh')).toBeInTheDocument();
+    expect(screen.queryByText('David.Casbeer@us.af.mil')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('This file type does not have an in-app preview yet.')
+    ).not.toBeInTheDocument();
+    expect(readArtifactFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps a supported PDF visible when its metadata includes a parameterized MIME type', () => {
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load MIME PDF' }));
+
+    expect(screen.getByText('Outputs 1')).toBeInTheDocument();
+    expect(screen.getByText('report.pdf')).toBeInTheDocument();
     expect(readArtifactFile).not.toHaveBeenCalled();
   });
 });

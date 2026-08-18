@@ -172,3 +172,66 @@ canonical, existing-file-only, exact, bounded, and per-window. Drift delta: `no 
 
 Final status: `completed_with_partial_verification`.
 
+## Follow-up — previewable-only Outputs inventory
+
+### Task and finding
+
+The operator supplied a live screenshot showing email-like `compatibility_inference` records in the
+Outputs list, each leading only to “This file type does not have an in-app preview yet.” This was
+recorded as `GSL-PLAY-2026-009` in the consolidated report. The confirmed Gate 1 failure was a list
+state that promoted non-actionable metadata as a usable output; the backend metadata itself remained
+valid provenance and was not deleted.
+
+### Repair and changed files
+
+- `artifactUtils.ts` now centralizes the artifact kind derived from path/MIME metadata and exposes the
+  matching previewability predicate.
+- `ArtifactPane.tsx` filters only the presented inventory and its count through that predicate.
+- `ArtifactWorkbenchContext.tsx` uses the same classifier when opening a listed artifact, refuses new
+  unsupported file tabs, and prunes persisted tabs that can no longer produce a preview.
+- Focused component/unit tests cover four supported entries plus the observed email-like `.mil`
+  inference, asserting `Outputs 4`, no unsupported row/message, and no preview read. Adjacent tests
+  preserve PDF, generic-MIME extension fallback, parameterized JSON/PDF MIME, and supported persisted
+  tabs while rejecting MIME-only binary/image records the file reader cannot decode.
+- ADR-0013, `docs/architecture.md`, the workspace guide, and DT-06 now state the previewable-only
+  presentation contract. Durable metadata, missing supported files, preview authorization, and file
+  contents are unchanged.
+
+### Validation and Gate 1 recheck
+
+- Baseline Desktop suite: 112 files / 810 tests passed before the repair.
+- Focused post-repair tests: 3 files / 17 tests passed.
+- Full post-repair Desktop suite: 112 files / 812 tests passed.
+- Desktop `pnpm run typecheck`: passed.
+- ESLint on the six changed TypeScript/TSX files: passed with zero warnings.
+- One full-suite attempt run alongside other validation produced three unrelated `userEvent`
+  timeout/input-order failures in the workspace and extension dialogs (809/812). Both files passed
+  isolated (18/18), and the subsequent standalone full suite passed 812/812.
+- `git diff --check`: passed before final record updates and is repeated in closeout.
+- Gate 1 changed-surface result: Pass. The list count and rows now represent actionable previews;
+  empty/missing behavior for supported types is preserved. The Gate 6 persistence seam received a
+  focused upgrade-state check: unsupported tabs are removed while supported selection is restored.
+  Gates 2–5 and the remainder of Gate 6 were not re-audited because this follow-up changed no handoff,
+  markup semantics, accessibility mechanics, responsive layout, backend permission, or deployment
+  surface.
+
+### Architecture and contract drift
+
+Authoritative sources are accepted ADR-0013, `docs/architecture.md`, the workspace guide, and DT-06.
+The pre-repair implementation conformed to the old declaration that unknown types remain visible, but
+that declaration conflicted with the operator's explicit product decision. This run completed the
+authorized amendment consistently across implementation, consumer, tests, guide, architecture text,
+scenario, and consolidated report. Backend inventory schema/ACP contracts did not change. Post-repair
+disposition: intentional authorized amendment complete; drift delta: `no new drift`.
+
+### Record closure and limits
+
+- `docs/cloud/2026-08-18-live-all-scenarios-playtest.md`: new operator finding → Closed, with focused
+  and full-suite evidence.
+- `docs/test_scenarios/14-desktop-ux-and-integration.md`: DT-06 stale expectation → amended regression
+  requirement.
+- No existing TODO/FIXME/HACK/XXX marker or `docs/TODO.md` row named this defect.
+- The supplied screenshot is the before evidence. Automated DOM/state assertions are the after
+  evidence; a newly packaged visual screenshot was not captured in this follow-up.
+
+Follow-up status: `completed_with_automated_ui_verification`.

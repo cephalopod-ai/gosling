@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   addSandboxCsp,
+  artifactKindFromMetadata,
   artifactKindFromMimeType,
   artifactKindFromPath,
+  isArtifactPreviewable,
   localFilePathFromUri,
   parseCsv,
   viewableFilePathsFromToolArguments,
@@ -15,6 +17,18 @@ describe('artifactUtils', () => {
     expect(artifactKindFromPath('C:\\work\\brief.PDF')).toBe('pdf');
     expect(artifactKindFromPath('/tmp/archive.bin')).toBe('unknown');
     expect(artifactKindFromMimeType('image/svg+xml')).toBe('svg');
+    expect(artifactKindFromMimeType('application/pdf; version=1.7')).toBe('pdf');
+    expect(artifactKindFromMimeType('application/json; charset=utf-8')).toBe('json');
+    expect(artifactKindFromMetadata('/tmp/report.md')).toBe('markdown');
+    expect(artifactKindFromMetadata('/tmp/download', 'text/plain')).toBe('text');
+    expect(artifactKindFromMetadata('/tmp/download', 'application/json; charset=utf-8')).toBe(
+      'json'
+    );
+    expect(artifactKindFromMetadata('/tmp/report.md', 'application/octet-stream')).toBe('markdown');
+    expect(artifactKindFromMetadata('/tmp/download', 'image/png')).toBe('unknown');
+    expect(artifactKindFromMetadata('/tmp/report.bmp', 'image/bmp')).toBe('unknown');
+    expect(isArtifactPreviewable('David.Casbeer@us.af.mil')).toBe(false);
+    expect(isArtifactPreviewable('/tmp/report.md')).toBe(true);
   });
 
   it('parses quoted CSV cells and embedded newlines', () => {

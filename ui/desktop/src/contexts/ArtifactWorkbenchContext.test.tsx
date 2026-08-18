@@ -36,6 +36,9 @@ describe('ArtifactWorkbenchProvider', () => {
     );
     expect(workbench.tabs).toHaveLength(2);
     expect(workbench.activeTab?.kind).toBe('json');
+
+    act(() => workbench.openFile('deliverables/archive.bin', '/workspace'));
+    expect(workbench.tabs).toHaveLength(2);
   });
 
   it('keeps the same relative output path distinct across unrelated working directories', () => {
@@ -101,11 +104,79 @@ describe('ArtifactWorkbenchProvider', () => {
     act(() => workbench.openArtifact(artifact));
     expect(workbench.activeTab?.kind).toBe('code');
 
+    act(() =>
+      workbench.openArtifact({
+        ...artifact,
+        displayPath: 'David.Casbeer@us.af.mil',
+        resolvedPath: '/workspace/David.Casbeer@us.af.mil',
+        relation: 'referenced',
+        provenance: 'compatibility_inference',
+      })
+    );
+    expect(workbench.tabs).toHaveLength(1);
+
     act(() => workbench.setVisibleSession('session-b', []));
     expect(workbench.artifacts).toEqual([]);
     expect(workbench.tabs).toEqual([]);
 
     act(() => workbench.setVisibleSession('session-a', [artifact]));
     expect(workbench.tabs).toHaveLength(1);
+  });
+
+  it('drops unsupported persisted tabs while retaining MIME-only text previews', () => {
+    localStorage.setItem(
+      'gosling-artifact-workbench-v1',
+      JSON.stringify({
+        isOpen: true,
+        width: 480,
+        tabs: [
+          {
+            id: 'unsupported',
+            kind: 'unknown',
+            source: { type: 'file', path: 'David.Casbeer@us.af.mil' },
+            title: 'David.Casbeer@us.af.mil',
+          },
+          {
+            id: 'supported',
+            kind: 'markdown',
+            source: { type: 'file', path: 'report.md' },
+            title: 'report.md',
+          },
+          {
+            id: 'mime-only-json',
+            kind: 'json',
+            source: { type: 'file', path: 'download' },
+            title: 'download',
+          },
+          {
+            id: 'mime-only-image',
+            kind: 'image',
+            source: { type: 'file', path: 'image-download' },
+            title: 'image-download',
+          },
+          {
+            id: 'stale-pdf-kind',
+            kind: 'unknown',
+            source: { type: 'file', path: 'report.pdf' },
+            title: 'report.pdf',
+          },
+        ],
+        activeTabId: 'unsupported',
+      })
+    );
+
+    render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+
+    expect(workbench.tabs.map((tab) => tab.id)).toEqual([
+      'supported',
+      'mime-only-json',
+      'stale-pdf-kind',
+    ]);
+    expect(workbench.tabs.find((tab) => tab.id === 'stale-pdf-kind')?.kind).toBe('pdf');
+    expect(workbench.activeTabId).toBe('supported');
   });
 });

@@ -106,20 +106,20 @@ session behavior. Session search still works across workspaces when **All worksp
 The agent receives named output paths and product types as structured, non-secret session context.
 Use specific destinations for their matching product types and the default destination otherwise.
 
-The **Outputs** pane also shows a durable inventory for the visible session. Successful write/edit
-tools, local tool resources, explicit output metadata, and completed assistant file references appear
-automatically as `Outputs N`; clicking a message chip is not required. The list includes common code
-and configuration files such as `.rs`, `.ts`, `.py`, `.sh`, `.toml`, and `.yaml`, and keeps unknown
-file types visible even when no in-app preview exists. Switching chats immediately switches the list.
-Missing files remain named after restart or resume so they cannot be confused with another file that
-shares a basename.
+The **Outputs** pane also shows a durable inventory for the visible session. Previewable entries from
+successful write/edit tools, local tool resources, explicit output metadata, and completed assistant
+file references appear automatically as `Outputs N`; clicking a message chip is not required. The list
+includes common code and configuration files such as `.rs`, `.ts`, `.py`, `.sh`, `.toml`, and `.yaml`.
+Entries without a supported in-app preview are excluded from the list and its count. Switching chats
+immediately switches the list. Missing files with a supported preview type remain named after restart
+or resume so they cannot be confused with another file that shares a basename.
 
 Inventory and preview are intentionally separate. Discovering an output does not open the pane, read
 the file, create an output directory, or grant access. Selecting an item opens a session-scoped preview
 tab through the same Electron authorization boundary used by **Reveal**, **Open externally**, and
-**Save a copy**. Session-generated document deliverables (such as JSON, Markdown, PDF, Word,
-spreadsheets, and plain text) can be previewed directly through an exact-file capability. A file
-outside the session's approved roots or validated workspace outputs remains blocked unless you
+**Save a copy**. Supported session-generated deliverables such as JSON, Markdown, PDF, and plain text
+can be previewed directly through an exact-file capability. A file outside the session's approved
+roots or validated workspace outputs remains blocked unless you
 explicitly select it with the file picker; code, configuration (including `.env`), and MCP/tool
 metadata never receive that automatic capability.
 

@@ -128,6 +128,22 @@ Blocked pending the final packaged click-through described below.
 - Status: **Repaired, partially live-verified** by `0cb1ec2d4`; DT-06/DT-07 remain Blocked until one
   packaged click-through confirms the preview.
 
+### GSL-PLAY-2026-009 — unpreviewable metadata polluted the Outputs list
+
+- Priority/domain: P2 workflow / Desktop data flow
+- Evidence before: the operator-observed Outputs pane listed email-like compatibility inferences such
+  as `David.Casbeer@us.af.mil`; selecting them could only show the unsupported-preview message.
+- Root cause: durable session artifact metadata was projected directly into the visible list and
+  count even when its MIME type or extension mapped to the renderer's `unknown` kind.
+- Repair: preserve the backend metadata, but filter the presented Outputs list and count through the
+  same centralized preview-kind classifier used when opening an artifact; prune persisted unsupported
+  tabs and refuse to create new ones.
+- Proof: the focused regression fixture supplies four supported files plus the observed email-like
+  inference; the pane reports `Outputs 4`, omits the unsupported record, performs no file read, and all
+  17 focused tests plus Desktop typecheck pass. Adjacent cases preserve supported PDF and parameterized
+  JSON/PDF MIME metadata while rejecting MIME-only images the file reader cannot decode.
+- Status: **Closed** in the `2026-08-18-live-playtest-repair-campaign` session log.
+
 ## Scenario-library assessment
 
 The library is broad and its 110-card index is internally consistent, but several cards should be
@@ -143,7 +159,9 @@ Recommended updates:
   before copying.
 - HS-03 and AP-05: explicitly pipe initialize followed immediately by EOF and require the accepted
   response to flush before bounded shutdown.
-- DT-06 and DT-07: add a workspace-less CLI-created session, relaunch/import, and macOS
+- DT-06 now also requires unsupported binaries and email-like compatibility inferences to be absent
+  from the presented list and count.
+- DT-07: add a workspace-less CLI-created session, relaunch/import, and macOS
   `/tmp` ↔ `/private/tmp` canonical-alias case; existing referenced deliverables should preview without
   a picker, while missing files stay named and code/config remains gated.
 
@@ -163,8 +181,9 @@ handoff integrity, and packaged verification. Those contracts are extensively do
   instead of silently treating the count as comparable.
 - `docs/TODO.md`: no selected playtest finding was an existing TODO row, so no row was deleted or
   fabricated. Deferred architecture/performance/security items remain unchanged.
-- The August 18 session-artifact repair record correctly described the intended capability; this run
-  found a regression in the workspace-selection data flow, not a change to ADR-0013.
+- The original August 18 repair restored the intended workspace-less capability. The operator's
+  follow-up explicitly amended ADR-0013's presentation contract: durable unknown metadata may remain,
+  but entries with no in-app preview no longer appear in Outputs.
 
 ## Validation
 
@@ -211,4 +230,3 @@ Not fully green:
 The five selected defect roots are repaired. Four have live post-fix proof; the fifth has regression,
 type, package, and contract proof but awaits one Keychain-unblocked packaged click-through. The full
 Rust suite is not claimed green because of the two unrelated stale auth-test expectations.
-

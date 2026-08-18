@@ -67,6 +67,16 @@ const FILE_ARGUMENT_KEYS = new Set([
   'uris',
 ]);
 
+const MIME_ONLY_PREVIEW_KINDS = new Set<ArtifactKind>([
+  'code',
+  'csv',
+  'html',
+  'json',
+  'jsonl',
+  'markdown',
+  'text',
+]);
+
 function normalizeArgumentKey(key: string): string {
   return key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 }
@@ -187,10 +197,11 @@ export function artifactKindFromPath(path: string): ArtifactKind {
 }
 
 export function artifactKindFromMimeType(mimeType: string): ArtifactKind {
-  const normalized = mimeType.toLowerCase();
+  const normalized = mimeType.split(';', 1)[0].trim().toLowerCase();
   if (normalized === 'text/markdown') return 'markdown';
   if (normalized === 'text/csv') return 'csv';
   if (normalized === 'application/json') return 'json';
+  if (normalized === 'application/pdf') return 'pdf';
   if (normalized === 'text/html') return 'html';
   if (normalized === 'image/svg+xml') return 'svg';
   if (
@@ -207,6 +218,23 @@ export function artifactKindFromMimeType(mimeType: string): ArtifactKind {
   if (normalized.startsWith('image/')) return 'image';
   if (normalized.startsWith('text/')) return 'text';
   return 'unknown';
+}
+
+export function artifactKindFromMetadata(path: string, mimeType?: string | null): ArtifactKind {
+  const pathKind = artifactKindFromPath(path);
+  if (pathKind !== 'unknown') return pathKind;
+  if (!mimeType) return 'unknown';
+
+  const mimeKind = artifactKindFromMimeType(mimeType);
+  return isArtifactKindPreviewableWithoutExtension(mimeKind) ? mimeKind : 'unknown';
+}
+
+export function isArtifactKindPreviewableWithoutExtension(kind: ArtifactKind): boolean {
+  return MIME_ONLY_PREVIEW_KINDS.has(kind);
+}
+
+export function isArtifactPreviewable(path: string, mimeType?: string | null): boolean {
+  return artifactKindFromMetadata(path, mimeType) !== 'unknown';
 }
 
 export function artifactTitleFromPath(path: string): string {

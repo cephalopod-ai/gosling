@@ -1,9 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 import {
+  artifactKindFromMetadata,
   artifactKindFromMimeType,
   artifactKindFromPath,
   artifactTitleFromPath,
+  isArtifactKindPreviewableWithoutExtension,
 } from '../components/artifacts/artifactUtils';
 import type { ArtifactTab } from '../components/artifacts/types';
 
@@ -64,7 +66,12 @@ function emptySessionState(): SessionPreviewState {
 
 function validSessionState(value: Partial<SessionPreviewState> | undefined): SessionPreviewState {
   const tabs = Array.isArray(value?.tabs)
-    ? value.tabs.filter((tab) => tab?.source?.type === 'file')
+    ? value.tabs.flatMap((tab) => {
+        if (tab?.source?.type !== 'file') return [];
+        const pathKind = artifactKindFromPath(tab.source.path);
+        if (pathKind !== 'unknown') return [{ ...tab, kind: pathKind }];
+        return isArtifactKindPreviewableWithoutExtension(tab.kind) ? [tab] : [];
+      })
     : [];
   return {
     activeTabId: tabs.some((tab) => tab.id === value?.activeTabId)
@@ -145,6 +152,8 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
 
   const openFile = useCallback(
     (path: string, baseDirectory?: string, workspaceId?: string) => {
+      const kind = artifactKindFromPath(path);
+      if (kind === 'unknown') return;
       updateCurrent((state) => {
         const existing = state.tabs.find(
           (tab) =>
@@ -156,7 +165,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
         if (existing) return { ...state, activeTabId: existing.id };
         const tab: ArtifactTab = {
           id: createId(),
-          kind: artifactKindFromPath(path),
+          kind,
           source: { type: 'file', path, baseDirectory },
           title: artifactTitleFromPath(path),
           workspaceId,
@@ -170,6 +179,8 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
 
   const openArtifact = useCallback(
     (artifact: SessionArtifactDto) => {
+      const kind = artifactKindFromMetadata(artifact.displayPath, artifact.mimeType);
+      if (kind === 'unknown') return;
       updateCurrent((state) => {
         const existing = state.tabs.find(
           (tab) =>
@@ -181,9 +192,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
         if (existing) return { ...state, activeTabId: existing.id };
         const tab: ArtifactTab = {
           id: createId(),
-          kind: artifact.mimeType
-            ? artifactKindFromMimeType(artifact.mimeType)
-            : artifactKindFromPath(artifact.displayPath),
+          kind,
           source: {
             type: 'file',
             path: artifact.displayPath,

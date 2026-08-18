@@ -119,11 +119,13 @@ path. Forking copies metadata, deleting a session cascades metadata, and missing
 Legacy migration parses persisted messages once and never scans output directories.
 
 The Desktop loads the paginated inventory with the session and applies durable `artifact_update`
-notifications idempotently. The Outputs list is backend-owned; preview tabs and active selection are
-separate, session-scoped user state. Listing an artifact never opens the pane, reads a file, creates an
-output folder, copies a file, or grants access. Selection still traverses the Electron file guard, so
-only renderer directory grants, validated workspace output roots, and explicit picker grants can be
-read, revealed, copied, or opened externally.
+notifications idempotently. Inventory metadata is backend-owned; the renderer presents only entries
+whose MIME type or extension maps to a preview compatible with the file reader. Preview tabs and
+active selection are separate, session-scoped user state. Listing an artifact never opens the pane,
+reads a file, creates an output folder, copies a file, or grants access. Selection still traverses the
+Electron file guard, so only
+renderer directory grants, validated workspace output roots, and explicit picker grants can be read,
+revealed, copied, or opened externally.
 
 ## Error taxonomy
 
