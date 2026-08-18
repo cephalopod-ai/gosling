@@ -126,3 +126,49 @@ grants no directory capability.
 - Contract drift: this restores ADR-0013's accepted workspace-less exact-file capability without
   expanding it to code/config/tool-metadata files or directories. Post-repair delta: no new drift.
 
+Commit: `0cb1ec2d4` (`fix(desktop): authorize workspace-less session artifacts`).
+
+## Campaign closeout
+
+### Final regression
+
+- `cargo fmt` — passed.
+- `cargo build` — passed.
+- `cargo clippy --all-targets -- -D warnings` — passed.
+- Desktop `pnpm test` — 112 files, 810/810 passed.
+- Desktop `pnpm run typecheck` — passed.
+- `just package-ui` — passed.
+- `cargo test` — partially passed: the `gosling` unit suite passed 1,823/1,823 and subsequent ACP
+  suites progressed until `acp_transport_auth_test`; 23/25 there passed. Two stale integration tests
+  expect query-string token authentication to succeed, while current `auth.rs` deliberately rejects
+  it and pins that security behavior in `query_string_token_is_no_longer_accepted`. A serial isolated
+  rerun reproduced the same 401-vs-406 mismatch. It is unrelated to this campaign and remains open.
+
+### Architecture and contract drift
+
+Authoritative sources were `docs/architecture.md`, accepted ADR-0013, current CLI documentation, ACP
+v1 framing, and cards CH-03/SE-01/HS-03/AC-02/DT-06/DT-07/AP-05. The pre-repair disposition was
+evidenced drift from those declared behaviors. Repeated tests/diffs show no new drift: CLI automation
+contracts are now documented; ACP schema/framing is unchanged; and Desktop file authority remains
+canonical, existing-file-only, exact, bounded, and per-window. Drift delta: `no new drift`.
+
+### Record closure
+
+- `docs/cloud/2026-08-15-live-all-scenarios-playtest.md`: GSL-PLAY-2026-005 and 006 open → closed,
+  with live evidence and commit pointers.
+- `docs/cloud/2026-08-16-live-all-scenarios-playtest.md`: non-TTY removal open → closed.
+- `docs/cloud/2026-08-15-master-report.md`: historical cluster retained; closure note added.
+- `docs/TODO.md`: no selected finding had a native row, so none was deleted or fabricated.
+- No in-code TODO/FIXME/HACK/XXX marker described any of the repaired defects.
+
+### Outputs and residual risk
+
+- Consolidated report: `docs/cloud/2026-08-18-live-all-scenarios-playtest.md`.
+- Final scenario ledger: 31 Pass · 0 Fail · 79 Blocked after repair.
+- DT-06/DT-07 remain Blocked pending one Keychain-unblocked packaged preview click.
+- The two stale ACP query-token integration expectations remain open test hygiene.
+- `session/mod.rs` and `cli.rs` exceed 2,000 lines and are routed to a dedicated modularization run;
+  they were not split inside this repair.
+
+Final status: `completed_with_partial_verification`.
+

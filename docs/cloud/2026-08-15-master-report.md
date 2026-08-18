@@ -97,6 +97,9 @@ Historical non-atomic secrets write is **held** (atomic temp+rename). Remaining:
 | GSL-PLAY-2026-005 | Medium | SE-01, AC-02 | Non-TTY remove/fork: `not connected` after announcing the mutation |
 | GSL-PLAY-2026-006 | Medium | HS-03, AP-05 | `gosling acp` initialize → exit 0, empty stdout |
 
+Resolution update (2026-08-18): GSL-PLAY-2026-005 and GSL-PLAY-2026-006 are closed with live
+post-fix evidence in `2026-08-18-live-all-scenarios-playtest.md` (`e7ff63031`, `e5436dfe6`).
+
 2026-08-12 repairs still hold live: missing diagnostics fail closed (AC-04); invalid typed settings warn (LC-04).
 
 ## 5. Severity tally (deduplicated mechanisms)

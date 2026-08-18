@@ -64,6 +64,10 @@ Reproduction:
 
 ### GSL-PLAY-2026-005 — Non-interactive session remove/fork dies with `not connected`
 
+**Resolution (2026-08-18): Closed.** Removal now refuses before output/mutation unless `--yes` is
+provided; non-TTY fork refuses before copying. Live evidence and commits are recorded in
+`2026-08-18-live-all-scenarios-playtest.md` (`e7ff63031`).
+
 Severity: **Medium** · Cards: SE-01, AC-02 · Evidence basis: runtime-observed
 
 `gosling session remove --name se-remove-me` printed `The following sessions will be removed:` then `Error: not connected` and left the session in `session list`. The same `not connected` error occurs for `session remove --session-id <existing>` and `session --resume --name fork-src --fork`. Missing IDs correctly exit 1 with `Session ID '…' not found.` There is no `--yes` / `--force` on `session remove --help`.
@@ -73,6 +77,10 @@ Expected: scripted remove of a named existing session either deletes it or refus
 Reproduction: `GOSLING_PATH_ROOT=… gosling session remove --session-id <real-id>` with stdin not a TTY.
 
 ### GSL-PLAY-2026-006 — `gosling acp` initialize yields empty stdout and exit 0
+
+**Resolution (2026-08-18): Closed.** EOF now gives queued ACP responses a bounded drain opportunity.
+Initialize+EOF produced one valid JSON-RPC response; see `2026-08-18-live-all-scenarios-playtest.md`
+and `e5436dfe6`.
 
 Severity: **Medium** · Cards: HS-03, AP-05 · Evidence basis: runtime-observed
 

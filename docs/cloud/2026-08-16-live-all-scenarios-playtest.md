@@ -23,6 +23,10 @@ A live playtest pass was executed across all 110 scenario cards in Gosling's tes
 ## 2. Confirmed Live Findings
 
 ### Finding 1: Non-interactive `session remove` fails with `Error: not connected`
+
+**Resolution (2026-08-18): Closed.** Named non-TTY removal now refuses before stdout/mutation unless
+the caller supplies `--yes`; both branches were verified live. See
+`2026-08-18-live-all-scenarios-playtest.md` and `e7ff63031`.
 - **Identifier:** `GSL-PLAY-001`
 - **Severity:** Medium
 - **Card:** `SE-01`
