@@ -24,11 +24,11 @@ gosling is an independently maintained descendant of [goose](https://github.com/
 
 ## Vision
 
-gosling aims to be a **lighter version of goose**: the same trusted agent core with a smaller footprint, a simpler surface, and faster iteration. The goal is an agent you can install next to (or instead of) goose that stays lean — fewer moving parts, quicker startup, and an easier codebase to remix for custom distributions.
+gosling aims to be a **lighter version of goose**: the same trusted agent core with a smaller footprint, a simpler surface, and faster iteration. The goal is an agent you can install next to (or instead of) goose that stays lean — fewer moving parts and an easier codebase to remix for custom distributions.
 
 ## Footprint & performance vs. goose (historical baseline, 2026-07-04)
 
-Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), on the same host with matched Cargo feature flags. `code-mode` was excluded from both because this environment blocked the `v8-goose` static-library download. These are historical baseline measurements, not v1.0.0 benchmark claims; rerun them before publishing current performance deltas.
+Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), on the same host with matched Cargo feature flags. `code-mode` was excluded from both because this environment blocked the `v8-goose` static-library download. These are historical footprint measurements, not current startup benchmarks: the command timings below do not measure ready-to-prompt startup, and their cache state and percentile distribution were not recorded.
 
 | | goose | gosling | Δ |
 |---|---|---|---|
@@ -37,8 +37,8 @@ Comparison performed **2026-07-04** between release builds of `goose-cli` from `
 | `target/release` build dir | 3.8 GB | 2.4 GB | -37% |
 | Build time (wall) | 17m12s | 11m26s | -33% |
 | Runtime shared libs (`ldd`) | libstdc++, libgcc_s, libm, libc | libgcc_s, libm, libc | no libstdc++ |
-| `--version` cold start | 8.4ms avg / 24.0 MB peak RSS | 6.1ms avg / 17.7 MB peak RSS | -27% time, -26% mem |
-| `doctor` cold start | 8.8ms avg / 28.9 MB peak RSS | 6.3ms avg / 22.0 MB peak RSS | -29% time, -24% mem |
+| Historical `--version` command timing | 8.4ms avg / 24.0 MB peak RSS | 6.1ms avg / 17.7 MB peak RSS | -27% time, -26% mem |
+| Historical `doctor` command timing | 8.8ms avg / 28.9 MB peak RSS | 6.3ms avg / 22.0 MB peak RSS | -29% time, -24% mem |
 
 The footprint reduction traces to the local-inference stack (candle, llama.cpp, MLX, Hugging Face downloads — 148 crates) that gosling extracts, along with dropping the `recipe`, `schedule`, `gateway`, and `local-models` subcommands. 
 

@@ -171,16 +171,21 @@ that audit's §5/§6 inventory so they are not rediscovered from scratch. Full
 re-assessment and a new finding are in
 [`docs/logs/session/2026-08-17-performance-review.md`](logs/session/2026-08-17-performance-review.md).
 
-- [ ] **PERF-GSL-001** — README footprint table's cold-start row is a 2026-07-04 /
-      v0.0.5 historical run, not HEAD evidence, and `--version`/`doctor` do not
-      exercise real startup work. Not fixed: it is a published comparative claim,
-      so the nominal agent is `human-owner`; a re-measurement with a pinned
-      harness (run count, cold/warm protocol, p50/p95) must precede any number
-      change. `audit-performance-profile.md:416`.
-- [ ] **PERF-GSL-002** — Desktop `performance.spec.ts` is a single-run smoke script
-      presented as a benchmark. Not fixed: mechanical but needs a judgement call on
-      what a valid harness is for the Desktop surface. `audit-performance-profile.md:944`.
-- [ ] **PERF-GSL-003** — per-turn full-history tokenization and multiple
+- [x] **PERF-GSL-001** — resolved 2026-08-17: the README now labels the command
+      timings as historical and explicitly says they are not startup benchmarks.
+      No performance numbers were changed or claimed for HEAD. A ready-to-prompt
+      comparison remains a future measurement, not a prerequisite for honest docs.
+- [x] **PERF-GSL-002** — resolved 2026-08-17: the Desktop E2E suite now has an
+      opt-in, provider-independent renderer-readiness harness. It launches a fresh
+      Electron process for at least five samples and reports p50/p95; page-cache
+      state remains explicitly uncontrolled. Run with
+      `GOSLING_RUN_PERFORMANCE=1 GOSLING_PERFORMANCE_RUNS=10 pnpm test-e2e -- performance.spec.ts`.
+- [~] **PERF-GSL-003** — the avoidable clones are reduced: MOIM now borrows the
+      conversation and only allocates a replacement when it injects context, and
+      tool-pair summarization only clones after finding eligible pairs. Per-turn
+      full-history tokenization and the remaining session reload are still open;
+      no wall-time profile was captured, so this is not claimed as a measured win.
+      Re-verified open against current HEAD: per-turn full-history tokenization and multiple
       `Conversation` clones (O(n)/turn, ~O(T²)/session). Re-verified open against
       current HEAD: clones at `agent.rs:2391` (`inject_moim(... conversation.clone()`)
       and `agent.rs:2435` (`maybe_summarize_tool_pairs(... conversation.clone()`);
@@ -192,14 +197,10 @@ re-assessment and a new finding are in
       sits behind `p ≀ 0.01` and the audit's own §6 says do not touch it until a
       profile (the PERF-GSL-003 break-it harness) shows a non-trivial share.
       `audit-performance-profile.md:284`.
-- [~] **PERF-GSL-004** — **status changed: the double-scan is resolved.** The audit
-      reported `scan_for_patterns` running `is_match` then `find_iter` per pattern
-      (`patterns.rs:335-349` at audit time). Current `patterns.rs:334-348` runs
-      `find_iter` directly with no preceding `is_match`, so the redundant pass is
-      gone. What remains is the 37-pattern sequential loop over each scanned
-      tool output (the audit cited 43; patterns were trimmed) without a single
-      `RegexSet` pass. Still open, same Low tier, same guardrail (profile first).
-      `audit-performance-profile.md:374`.
+- [x] **PERF-GSL-004** — resolved 2026-08-17: fallback pattern scanning now uses a
+      case-insensitive `RegexSet` to select matching patterns before running
+      `find_iter` only for those patterns. Existing match behavior and ordering are
+      preserved by the focused pattern suite. No scanner input is truncated.
 - [x] **PERF-GSL-005** — the OpenAI-compatible SSE decoder now deserializes each
       data line once into a typed `StreamingPayload`, checks both supported server
       error shapes, and moves the decoded fields into `StreamingChunk`. Focused

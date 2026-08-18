@@ -982,7 +982,7 @@ pub fn maybe_summarize_tool_pairs(
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
     session_id: String,
-    conversation: Conversation,
+    conversation: &Conversation,
     cutoff: usize,
     protect_last_n: usize,
 ) -> Option<JoinHandle<Vec<(Message, String)>>> {
@@ -990,10 +990,11 @@ pub fn maybe_summarize_tool_pairs(
         return None;
     }
 
-    let tool_ids = tool_ids_to_summarize(&conversation, cutoff, protect_last_n);
+    let tool_ids = tool_ids_to_summarize(conversation, cutoff, protect_last_n);
     if tool_ids.is_empty() {
         return None;
     }
+    let conversation = conversation.clone();
 
     Some(tokio::spawn(async move {
         let mut results = Vec::new();

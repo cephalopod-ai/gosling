@@ -2390,11 +2390,13 @@ impl Agent {
 
                 let conversation_with_moim = super::moim::inject_moim(
                     &session_config.id,
-                    conversation.clone(),
+                    &conversation,
                     &self.extension_manager,
                     turns_taken,
                     max_turns,
-                ).await;
+                )
+                .await;
+                let conversation_for_context = conversation_with_moim.as_ref().unwrap_or(&conversation);
 
                 let (provider_system_prompt, provider_messages) = self
                     .apply_context_manager(
@@ -2402,7 +2404,7 @@ impl Agent {
                         &base_system_prompt,
                         project_addendum.as_deref(),
                         &system_prompt,
-                        &conversation_with_moim,
+                        conversation_for_context,
                         &model_config,
                         &working_dir,
                     )
@@ -2432,7 +2434,7 @@ impl Agent {
                         self.provider().await?,
                         model_config.clone(),
                         session_config.id.clone(),
-                        conversation.clone(),
+                        &conversation,
                         tool_call_cut_off,
                         current_turn_tool_count,
                     )

@@ -1,5 +1,4 @@
-use regex::Regex;
-use regex::RegexBuilder;
+use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 use std::sync::LazyLock;
 
 /// Security threat patterns for command injection detection
@@ -307,8 +306,14 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
 ];
 
-static COMPILED_PATTERNS: LazyLock<Vec<Option<Regex>>> = LazyLock::new(|| {
-    THREAT_PATTERNS
+struct CompiledPatterns {
+    regexes: Vec<Option<Regex>>,
+    matcher: RegexSet,
+    matcher_pattern_indexes: Vec<usize>,
+}
+
+static COMPILED_PATTERNS: LazyLock<CompiledPatterns> = LazyLock::new(|| {
+    let regexes: Vec<Option<Regex>> = THREAT_PATTERNS
         .iter()
         .map(|threat| {
             RegexBuilder::new(threat.pattern)
@@ -316,12 +321,31 @@ static COMPILED_PATTERNS: LazyLock<Vec<Option<Regex>>> = LazyLock::new(|| {
                 .build()
                 .ok()
         })
-        .collect()
+        .collect();
+    let matcher_pattern_indexes: Vec<usize> = regexes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, regex)| regex.as_ref().map(|_| index))
+        .collect();
+    let matcher = RegexSetBuilder::new(
+        matcher_pattern_indexes
+            .iter()
+            .map(|&index| THREAT_PATTERNS[index].pattern),
+    )
+    .case_insensitive(true)
+    .build()
+    .expect("compiled threat patterns must build a regex set");
+
+    CompiledPatterns {
+        regexes,
+        matcher,
+        matcher_pattern_indexes,
+    }
 });
 
 /// Pattern matcher for detecting security threats
 pub struct PatternMatcher {
-    patterns: &'static [Option<Regex>],
+    patterns: &'static CompiledPatterns,
 }
 
 impl PatternMatcher {
@@ -334,11 +358,13 @@ impl PatternMatcher {
     pub fn scan_for_patterns(&self, text: &str) -> Vec<PatternMatch> {
         let mut matches = Vec::new();
 
-        for (threat, regex) in THREAT_PATTERNS.iter().zip(self.patterns) {
-            if let Some(regex) = regex {
+        for matcher_index in self.patterns.matcher.matches(text).iter() {
+            let pattern_index = self.patterns.matcher_pattern_indexes[matcher_index];
+            let threat = THREAT_PATTERNS[pattern_index];
+            if let Some(regex) = &self.patterns.regexes[pattern_index] {
                 for regex_match in regex.find_iter(text) {
                     matches.push(PatternMatch {
-                        threat: *threat,
+                        threat,
                         matched_text: regex_match.as_str().to_string(),
                         start_pos: regex_match.start(),
                         end_pos: regex_match.end(),

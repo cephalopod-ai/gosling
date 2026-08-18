@@ -38,13 +38,13 @@ pub fn system_prompt_block() -> Option<String> {
 
 pub async fn inject_moim(
     session_id: &str,
-    conversation: Conversation,
+    conversation: &Conversation,
     extension_manager: &ExtensionManager,
     turns_taken: u32,
     max_turns: u32,
-) -> Conversation {
+) -> Option<Conversation> {
     if SKIP.with(|f| f.get()) {
-        return conversation;
+        return None;
     }
 
     let session = extension_manager
@@ -70,7 +70,7 @@ pub async fn inject_moim(
         None
     };
     if should_skip_moim(context_limit) {
-        return conversation;
+        return None;
     }
 
     let working_dir = session
@@ -95,12 +95,9 @@ pub async fn inject_moim(
     );
 
     let mut messages = conversation.messages().clone();
-    let Some(idx) = messages
+    let idx = messages
         .iter()
-        .rposition(|m| m.is_agent_visible() && effective_role(m) == "user")
-    else {
-        return conversation;
-    };
+        .rposition(|m| m.is_agent_visible() && effective_role(m) == "user")?;
     let insert_idx = messages[idx]
         .content
         .iter()
@@ -123,10 +120,10 @@ pub async fn inject_moim(
 
     if has_unexpected_issues {
         tracing::warn!("MOIM injection caused unexpected issues: {:?}", issues);
-        return conversation;
+        return None;
     }
 
-    fixed
+    Some(fixed)
 }
 
 fn should_skip_moim(context_limit: Option<usize>) -> bool {
@@ -256,7 +253,9 @@ mod tests {
             Message::assistant().with_text("Hi"),
             Message::user().with_text("Bye"),
         ]);
-        let result = inject_moim(&session.id, conv, &em, 0, 100).await;
+        let result = inject_moim(&session.id, &conv, &em, 0, 100)
+            .await
+            .expect("MOIM should be injected for a supported context");
         let msgs = result.messages();
 
         assert_eq!(msgs.len(), 3);
@@ -283,7 +282,9 @@ mod tests {
             .unwrap();
 
         let conv = Conversation::new_unvalidated(vec![Message::user().with_text("Hello")]);
-        let result = inject_moim(&session.id, conv, &em, 0, 100).await;
+        let result = inject_moim(&session.id, &conv, &em, 0, 100)
+            .await
+            .expect("MOIM should be injected for a supported context");
 
         assert_eq!(result.messages().len(), 1);
         assert!(is_moim(&result.messages()[0].content[0]));
@@ -311,7 +312,9 @@ mod tests {
             Message::assistant().with_text("reply"),
             Message::user().with_text("user only").user_only(),
         ]);
-        let result = inject_moim(&session.id, conv, &em, 0, 100).await;
+        let result = inject_moim(&session.id, &conv, &em, 0, 100)
+            .await
+            .expect("MOIM should be injected for a supported context");
         let msgs = result.messages();
 
         assert_eq!(msgs.len(), 2);
@@ -346,7 +349,9 @@ mod tests {
                 .with_tool_response("search_1", Ok(rmcp::model::CallToolResult::success(vec![]))),
         ]);
 
-        let result = inject_moim(&session.id, conv, &em, 0, 100).await;
+        let result = inject_moim(&session.id, &conv, &em, 0, 100)
+            .await
+            .expect("MOIM should be injected for a supported context");
         let msgs = result.messages();
 
         assert_eq!(msgs.len(), 3);
