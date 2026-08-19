@@ -63,7 +63,8 @@ export interface ShellBootstrapAdapter {
     title: string;
     buttonLabel: string;
     message: string;
-    properties: ReadonlyArray<'openDirectory' | 'createDirectory' | 'dontAddToRecent'>;
+    properties: ReadonlyArray<'openFile' | 'openDirectory' | 'createDirectory' | 'dontAddToRecent'>;
+    filters?: ReadonlyArray<{ name: string; extensions: string[] }>;
   }): Promise<{ canceled: boolean; filePaths: string[] }>;
   showConfirmDialog(options: {
     title: string;
@@ -183,12 +184,22 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
     loaded.manifest.compatibility.handoffSchemaVersion
   );
   const now = adapter.now ?? (() => new Date().toISOString());
+  const declaredCapabilities = new Set(loaded.manifest.consumer?.declaredCapabilities ?? []);
+  const assertActiveLibrarySession = (generation: number, sessionId: string): void => {
+    if (generation !== controller.read().generation) {
+      throw new Error('library request generation is stale');
+    }
+    const session = controller.getSessionController()?.read();
+    if (session?.status !== 'active' || session.sessionId !== sessionId) {
+      throw new Error('library access is limited to the active session');
+    }
+  };
   let ipc: RegisteredShellIpc;
   ipc = registerShellIpc({
     ipcMain: adapter.ipcMain,
     renderer: window.webContents as never,
     allowedExternalOrigins: adapter.allowedExternalOrigins ?? new Set(),
-    declaredCapabilities: new Set(loaded.manifest.consumer?.declaredCapabilities ?? []),
+    declaredCapabilities,
     operations: {
       runtimeRead: () => controller.read(),
       runtimeRetry: async (request) => {
@@ -248,6 +259,73 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         }
         return requireAcp().listArtifacts(request.sessionId);
       },
+      sessionLibraryRead: (request) => {
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        return requireAcp().listLibrary(request.sessionId);
+      },
+      sessionLibraryAddText: (request) => {
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        return requireAcp().addLibraryText({
+          sessionId: request.sessionId,
+          scope: request.scope,
+          name: request.name,
+          text: request.text,
+        });
+      },
+      sessionLibraryAddImage: (request) => {
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        return requireAcp().addLibraryImage({
+          sessionId: request.sessionId,
+          scope: request.scope,
+          name: request.name,
+          mimeType: request.mimeType,
+          data: request.data,
+        });
+      },
+      sessionLibraryLinkFile: async (request) => {
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        const selected = await adapter.showOpenDialog({
+          title: 'Add a file to the library',
+          buttonLabel: 'Add file',
+          message: 'The file stays linked in place. Its path is never exposed to the shell UI.',
+          properties: ['openFile', 'dontAddToRecent'],
+          filters: [
+            {
+              name: 'Supported files',
+              extensions: [
+                'pdf',
+                'png',
+                'jpg',
+                'jpeg',
+                'webp',
+                'gif',
+                'txt',
+                'md',
+                'csv',
+                'tsv',
+                'json',
+                'rs',
+                'js',
+                'ts',
+                'tsx',
+                'py',
+              ],
+            },
+          ],
+        });
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        if (selected.canceled || selected.filePaths.length !== 1) return { status: 'canceled' };
+        const response = await requireAcp().linkLibraryFile({
+          sessionId: request.sessionId,
+          scope: request.scope,
+          path: selected.filePaths[0],
+        });
+        return { status: 'added', item: response.item };
+      },
+      sessionLibraryRemove: (request) => {
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        return requireAcp().removeLibraryItem(request.sessionId, request.itemId);
+      },
       sessionDetach: (request) => {
         if (request.generation !== controller.read().generation) {
           throw new Error('session detach generation is stale');
@@ -273,6 +351,12 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         return { detached: true, sessionId: session.sessionId };
       },
       promptSubmit: (request) => {
+        if (
+          (request.libraryItemIds?.length ?? 0) > 0 &&
+          !declaredCapabilities.has('session.library.read')
+        ) {
+          throw new Error('library references require session.library.read');
+        }
         const sessions = controller.getSessionController();
         if (!sessions) throw new Error('session runtime is unavailable');
         return sessions.submit(request);

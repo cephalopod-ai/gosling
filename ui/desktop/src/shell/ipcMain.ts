@@ -23,12 +23,22 @@ import {
   type ShellPromptSubmitRequest,
   type ShellPromptSubmitResult,
   type ShellSessionResumeRequest,
+  type ShellLibraryAddTextRequest,
+  type ShellLibraryAddImageRequest,
+  type ShellLibraryLinkFileRequest,
+  type ShellLibraryLinkFileResult,
+  type ShellLibraryRemoveRequest,
   type ShellSettingsAppearanceUpdateRequest,
   type ShellSettingsResetRequest,
   type ShellSettingsSnapshot,
 } from './ipc';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
-import type { ShellArtifactListResponse_unstable } from '@repo-makeover/gosling-sdk';
+import type {
+  ShellArtifactListResponse_unstable,
+  ShellLibraryAddResponse_unstable,
+  ShellLibraryListResponse_unstable,
+  ShellLibraryRemoveResponse_unstable,
+} from '@repo-makeover/gosling-sdk';
 import type { ShellSessionSummary } from './acpRuntime';
 import type {
   ShellSessionRecord,
@@ -46,6 +56,8 @@ const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_SMALL_RESPONSE_BYTES = 8 * 1024;
 const MAX_EXTERNAL_URL_BYTES = 2 * 1024;
 const MAX_REFERENCES = 128;
+const MAX_LIBRARY_TEXT_BYTES = 260 * 1024;
+const MAX_LIBRARY_IMAGE_REQUEST_BYTES = 7 * 1024 * 1024;
 const CAPABILITY_BY_CHANNEL: Partial<Record<ShellIpcInvokeChannel, string>> = {
   [shellIpcChannels.directorySelect]: 'directory.select',
   [shellIpcChannels.credentialSelect]: 'credential.select',
@@ -54,6 +66,11 @@ const CAPABILITY_BY_CHANNEL: Partial<Record<ShellIpcInvokeChannel, string>> = {
   [shellIpcChannels.sessionResume]: 'session.resume',
   [shellIpcChannels.sessionTranscriptRead]: 'session.transcript.read',
   [shellIpcChannels.sessionArtifactsRead]: 'session.artifacts.read',
+  [shellIpcChannels.sessionLibraryRead]: 'session.library.read',
+  [shellIpcChannels.sessionLibraryAddText]: 'session.library.write',
+  [shellIpcChannels.sessionLibraryAddImage]: 'session.library.write',
+  [shellIpcChannels.sessionLibraryLinkFile]: 'session.library.write',
+  [shellIpcChannels.sessionLibraryRemove]: 'session.library.write',
   [shellIpcChannels.sessionDetach]: 'session.detach',
   [shellIpcChannels.promptSubmit]: 'prompt.submit',
   [shellIpcChannels.promptCancel]: 'prompt.cancel',
@@ -103,6 +120,21 @@ export interface ShellIpcOperations {
   sessionArtifactsRead(
     request: ShellSessionResumeRequest
   ): Promise<ShellArtifactListResponse_unstable> | ShellArtifactListResponse_unstable;
+  sessionLibraryRead(
+    request: ShellSessionResumeRequest
+  ): Promise<ShellLibraryListResponse_unstable> | ShellLibraryListResponse_unstable;
+  sessionLibraryAddText(
+    request: ShellLibraryAddTextRequest
+  ): Promise<ShellLibraryAddResponse_unstable> | ShellLibraryAddResponse_unstable;
+  sessionLibraryAddImage(
+    request: ShellLibraryAddImageRequest
+  ): Promise<ShellLibraryAddResponse_unstable> | ShellLibraryAddResponse_unstable;
+  sessionLibraryLinkFile(
+    request: ShellLibraryLinkFileRequest
+  ): Promise<ShellLibraryLinkFileResult> | ShellLibraryLinkFileResult;
+  sessionLibraryRemove(
+    request: ShellLibraryRemoveRequest
+  ): Promise<ShellLibraryRemoveResponse_unstable> | ShellLibraryRemoveResponse_unstable;
   sessionDetach(
     request: ShellGenerationRequest
   ): Promise<ShellSessionDetachResult> | ShellSessionDetachResult;
@@ -253,13 +285,99 @@ function parseSessionResumeRequest(value: unknown): ShellSessionResumeRequest {
 }
 
 function parsePromptSubmitRequest(value: unknown): ShellPromptSubmitRequest {
-  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertRequestBytes(value, MAX_INVOKE_BYTES + 4 * 1024);
   assertObject(value, 'request');
-  assertExactKeys(value, ['generation', 'sessionId', 'text'], 'request');
+  assertExactKeys(
+    value,
+    value.libraryItemIds === undefined
+      ? ['generation', 'sessionId', 'text']
+      : ['generation', 'sessionId', 'text', 'libraryItemIds'],
+    'request'
+  );
   assertGeneration(value.generation);
   assertString(value.sessionId, 'sessionId', MAX_SMALL_RESPONSE_BYTES);
-  assertString(value.text, 'text', MAX_INVOKE_BYTES);
-  return { generation: value.generation, sessionId: value.sessionId, text: value.text };
+  if (typeof value.text !== 'string' || Buffer.byteLength(value.text, 'utf8') > MAX_INVOKE_BYTES) {
+    throw new Error('text must be a bounded string');
+  }
+  const libraryItemIds = parseLibraryItemIds(value.libraryItemIds ?? []);
+  if (value.text.trim().length === 0 && libraryItemIds.length === 0) {
+    throw new Error('prompt must contain text or library items');
+  }
+  return {
+    generation: value.generation,
+    sessionId: value.sessionId,
+    text: value.text,
+    libraryItemIds,
+  };
+}
+
+function assertLibraryScope(value: unknown): asserts value is 'project' | 'session' {
+  if (value !== 'project' && value !== 'session') {
+    throw new Error('scope must be project or session');
+  }
+}
+
+function parseLibraryItemIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 16) {
+    throw new Error('libraryItemIds must be a bounded array');
+  }
+  for (const itemId of value) assertString(itemId, 'libraryItemId', 128);
+  if (new Set(value).size !== value.length) {
+    throw new Error('libraryItemIds must not contain duplicates');
+  }
+  return value as string[];
+}
+
+function parseLibraryAddTextRequest(value: unknown): ShellLibraryAddTextRequest {
+  assertRequestBytes(value, MAX_LIBRARY_TEXT_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'scope', 'name', 'text'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertLibraryScope(value.scope);
+  assertString(value.name, 'name', 128);
+  assertString(value.text, 'text', 256 * 1024);
+  return value as unknown as ShellLibraryAddTextRequest;
+}
+
+function parseLibraryAddImageRequest(value: unknown): ShellLibraryAddImageRequest {
+  assertRequestBytes(value, MAX_LIBRARY_IMAGE_REQUEST_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(
+    value,
+    ['generation', 'sessionId', 'scope', 'name', 'mimeType', 'data'],
+    'request'
+  );
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertLibraryScope(value.scope);
+  assertString(value.name, 'name', 128);
+  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(String(value.mimeType))) {
+    throw new Error('mimeType is not an accepted image type');
+  }
+  assertString(value.data, 'data', MAX_LIBRARY_IMAGE_REQUEST_BYTES);
+  return value as unknown as ShellLibraryAddImageRequest;
+}
+
+function parseLibraryLinkFileRequest(value: unknown): ShellLibraryLinkFileRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'scope', 'userGesture'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertLibraryScope(value.scope);
+  if (value.userGesture !== true) throw new Error('linkFile requires an explicit user gesture');
+  return value as unknown as ShellLibraryLinkFileRequest;
+}
+
+function parseLibraryRemoveRequest(value: unknown): ShellLibraryRemoveRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'itemId'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertString(value.itemId, 'itemId', 128);
+  return value as unknown as ShellLibraryRemoveRequest;
 }
 
 function parsePromptCancelRequest(value: unknown): ShellPromptCancelRequest {
@@ -463,6 +581,7 @@ function responseLimit(channel: ShellIpcInvokeChannel): number {
     channel === shellIpcChannels.sessionList ||
     channel === shellIpcChannels.sessionTranscriptRead ||
     channel === shellIpcChannels.sessionArtifactsRead ||
+    channel === shellIpcChannels.sessionLibraryRead ||
     channel === shellIpcChannels.handoffPrepare ||
     channel === shellIpcChannels.domainSnapshot ||
     channel === shellIpcChannels.domainAction ||
@@ -528,6 +647,26 @@ export function registerShellIpc(input: {
     [
       shellIpcChannels.sessionArtifactsRead,
       (request) => operations.sessionArtifactsRead(parseSessionResumeRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionLibraryRead,
+      (request) => operations.sessionLibraryRead(parseSessionResumeRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionLibraryAddText,
+      (request) => operations.sessionLibraryAddText(parseLibraryAddTextRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionLibraryAddImage,
+      (request) => operations.sessionLibraryAddImage(parseLibraryAddImageRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionLibraryLinkFile,
+      (request) => operations.sessionLibraryLinkFile(parseLibraryLinkFileRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionLibraryRemove,
+      (request) => operations.sessionLibraryRemove(parseLibraryRemoveRequest(request)),
     ],
     [
       shellIpcChannels.sessionDetach,

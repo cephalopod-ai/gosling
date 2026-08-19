@@ -25,6 +25,8 @@ const DECLARED_CAPABILITIES = [
   'session.artifacts.read',
   'session.create',
   'session.detach',
+  'session.library.read',
+  'session.library.write',
   'session.list',
   'session.resume',
   'session.transcript.read',

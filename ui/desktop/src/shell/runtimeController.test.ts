@@ -376,6 +376,7 @@ describe('shell runtime controller', () => {
       sessionId: 'session-a',
       text: 'hello',
       messageId: attempt.promptAttemptId,
+      libraryItemIds: [],
     });
     await value.controller.stop(1);
     expect(value.controller.getSessionController()).toBeNull();

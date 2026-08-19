@@ -6,7 +6,7 @@ checkout. A supported-host package/readback also passes. Exact-revision CI and t
 startup/close/restart/coexistence replay remain the final evidence gate. No named shell is
 implemented.
 Date: 2026-08-18
-Authority: ADR-0007–0012 and ADR-0014
+Authority: ADR-0007–0012 and ADR-0014–0015
 
 Detailed execution for DS-3 through DS-7 is frozen in
 [`../build/shell-productization/default-shell-ds3-ds7-implementation-plan.md`](../build/shell-productization/default-shell-ds3-ds7-implementation-plan.md).
@@ -19,6 +19,11 @@ exchange prompts, repair a bounded transcript event gap, mediate permissions, el
 domain confirmations, show bounded status and recovery, use a
 referenced Gosling credential profile, and optionally present declared backend modules. It does not
 load developer tools by default and cannot edit global Gosling settings.
+
+The implemented shell also has a declaration-gated input Library. Operators can link a supported
+file through a main-owned native chooser or paste bounded text/image content, choose project or
+session scope, and attach up to 16 opaque references to a prompt. Rust owns storage, scope checks,
+PDF extraction, and content resolution. The renderer never receives a linked path.
 
 This document is the implementation plan for everything that must be true before its GUI is built.
 DAWES, math, Physics/CST, and all other named shells remain outside the milestone.
@@ -35,6 +40,7 @@ DAWES, math, Physics/CST, and all other named shells remain outside the mileston
 | Tools and skills   | provisioning plus backend validation               | declared availability and permission requests                               | undeclared builtin, raw MCP/ACP connection                            |
 | Optional modules   | Gosling extension or supervised adapter contracts  | declared bounded snapshots/actions                                          | arbitrary process launch or RPC routing                               |
 | Conversation       | Gosling session runtime                            | bounded updates/replay, session/provider/model facts, interaction summaries | server secret, transport endpoint, private reasoning, raw tool values |
+| Input library      | Gosling session store plus Electron main           | opaque ID, safe metadata, scope/status, selection state                      | linked path, listed payload, generic file operation                   |
 
 “Read credentials” means that the backend may resolve a selected profile and use the credential for
 a provider request. The shell UI reads only safe catalog metadata; it never reads secret bytes.
@@ -57,6 +63,8 @@ Required capabilities:
 
 Optional, declaration-gated capabilities:
 
+- project/session reference library for linked PDF/text/image files and pasted text/images,
+  resolved only into selected prompt content;
 - selected Gosling extensions and skills;
 - one or more supervised domain/backend adapters through versioned descriptors;
 - consumer-owned, data-only renderers for declared module payloads.

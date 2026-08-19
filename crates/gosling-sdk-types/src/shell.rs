@@ -463,6 +463,175 @@ pub struct ShellArtifactListResponse {
     pub truncated: bool,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellLibraryScope {
+    Project,
+    #[default]
+    Session,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellLibraryItemKind {
+    Text,
+    Image,
+    #[default]
+    File,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellLibraryItemStatus {
+    #[default]
+    Available,
+    Missing,
+}
+
+/// Safe metadata for one project/session input reference.
+///
+/// Linked paths and stored text/image payloads never appear in this projection.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryItemSummary {
+    pub id: String,
+    pub name: String,
+    pub kind: ShellLibraryItemKind,
+    pub scope: ShellLibraryScope,
+    pub status: ShellLibraryItemStatus,
+    pub mime_type: String,
+    pub size_bytes: usize,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/session/library/list",
+    response = ShellLibraryListResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryListRequest {
+    pub session_id: String,
+}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryListResponse {
+    #[serde(default)]
+    pub items: Vec<ShellLibraryItemSummary>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/session/library/add_text",
+    response = ShellLibraryAddResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryAddTextRequest {
+    pub session_id: String,
+    pub scope: ShellLibraryScope,
+    pub name: String,
+    pub text: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/session/library/add_image",
+    response = ShellLibraryAddResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryAddImageRequest {
+    pub session_id: String,
+    pub scope: ShellLibraryScope,
+    pub name: String,
+    pub mime_type: String,
+    pub data: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/session/library/link_file",
+    response = ShellLibraryAddResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryLinkFileRequest {
+    pub session_id: String,
+    pub scope: ShellLibraryScope,
+    pub path: String,
+}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryAddResponse {
+    pub item: ShellLibraryItemSummary,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/session/library/remove",
+    response = ShellLibraryRemoveResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryRemoveRequest {
+    pub session_id: String,
+    pub item_id: String,
+}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryRemoveResponse {
+    pub removed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ShellLibraryResolvedContent {
+    Text { text: String },
+    Image { data: String, mime_type: String },
+}
+
+impl Default for ShellLibraryResolvedContent {
+    fn default() -> Self {
+        Self::Text {
+            text: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryResolvedItem {
+    pub id: String,
+    pub name: String,
+    pub content: ShellLibraryResolvedContent,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/session/library/resolve",
+    response = ShellLibraryResolveResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryResolveRequest {
+    pub session_id: String,
+    #[serde(default)]
+    pub item_ids: Vec<String>,
+}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryResolveResponse {
+    #[serde(default)]
+    pub items: Vec<ShellLibraryResolvedItem>,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DomainResourceReference {

@@ -8,6 +8,7 @@ import { InteractionDock } from './components/InteractionDock';
 import { LifecycleFailureScreen } from './components/LifecycleFailureScreen';
 import { ModulesStrip } from './components/ModulesStrip';
 import { OutputsPanel } from './components/OutputsPanel';
+import { LibraryPanel } from './components/LibraryPanel';
 import { CredentialPicker, CredentialProblem, DirectoryPrompt } from './components/Pickers';
 import { ShellButton, ShellButtonRow, ShellCentered, ShellNotice } from './components/primitives';
 import { SessionPicker } from './components/SessionPicker';
@@ -69,6 +70,16 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
       void actions.readOutputs();
     }
   }, [route, state.outputs.status, state, actions]);
+
+  useEffect(() => {
+    if (
+      route === 'S-06' &&
+      state.library.status === 'idle' &&
+      isDeclared(state, 'session.library.read')
+    ) {
+      void actions.readLibrary();
+    }
+  }, [route, state.library.status, state, actions]);
 
   const recoveryHandlers = useMemo<RecoveryHandlers>(
     () => ({
@@ -265,8 +276,26 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
               onRepair={() => void actions.repairTranscript()}
               canRepair={isDeclared(state, 'session.transcript.read')}
             />
-            {isDeclared(state, 'session.artifacts.read') ? (
-              <OutputsPanel outputs={state.outputs} />
+            {isDeclared(state, 'session.library.read') ||
+            isDeclared(state, 'session.artifacts.read') ? (
+              <aside className="gsh-reference-sidebar">
+                {isDeclared(state, 'session.library.read') ? (
+                  <LibraryPanel
+                    library={state.library}
+                    canWrite={isDeclared(state, 'session.library.write')}
+                    busy={state.pending === 'session.library.write'}
+                    onScopeChange={actions.setLibraryScope}
+                    onToggle={actions.toggleLibraryItem}
+                    onAddText={actions.addLibraryText}
+                    onAddImage={actions.addLibraryImage}
+                    onLinkFile={actions.linkLibraryFile}
+                    onRemove={actions.removeLibraryItem}
+                  />
+                ) : null}
+                {isDeclared(state, 'session.artifacts.read') ? (
+                  <OutputsPanel outputs={state.outputs} />
+                ) : null}
+              </aside>
             ) : null}
           </div>
         );
@@ -297,6 +326,7 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
           blockedByInteraction={blockedByInteraction}
           canSubmit={isDeclared(state, 'prompt.submit')}
           canCancel={isDeclared(state, 'prompt.cancel')}
+          attachmentCount={state.library.selectedItemIds.length}
           onDraftChange={actions.setDraft}
           onSubmit={() => void actions.submitPrompt()}
           onCancel={() => void actions.cancelPrompt()}

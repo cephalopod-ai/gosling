@@ -14,6 +14,13 @@ import {
   type ShellHandoffPrepareRequest_unstable,
   type ShellHandoffPrepareResponse_unstable,
   type ShellModuleListResponse_unstable,
+  type ShellLibraryAddImageRequest_unstable,
+  type ShellLibraryAddResponse_unstable,
+  type ShellLibraryAddTextRequest_unstable,
+  type ShellLibraryLinkFileRequest_unstable,
+  type ShellLibraryListResponse_unstable,
+  type ShellLibraryRemoveResponse_unstable,
+  type ShellLibraryResolveResponse_unstable,
   type ShellProvisioningReadResponse_unstable,
   type ShellProvisioningValidateRequest_unstable,
   type ShellProvisioningValidateResponse_unstable,
@@ -92,6 +99,26 @@ export interface ShellAcpClient {
     shellSessionArtifactsList_unstable(params: {
       sessionId: string;
     }): Promise<ShellArtifactListResponse_unstable>;
+    shellSessionLibraryList_unstable(params: {
+      sessionId: string;
+    }): Promise<ShellLibraryListResponse_unstable>;
+    shellSessionLibraryAddText_unstable(
+      params: ShellLibraryAddTextRequest_unstable
+    ): Promise<ShellLibraryAddResponse_unstable>;
+    shellSessionLibraryAddImage_unstable(
+      params: ShellLibraryAddImageRequest_unstable
+    ): Promise<ShellLibraryAddResponse_unstable>;
+    shellSessionLibraryLinkFile_unstable(
+      params: ShellLibraryLinkFileRequest_unstable
+    ): Promise<ShellLibraryAddResponse_unstable>;
+    shellSessionLibraryRemove_unstable(params: {
+      sessionId: string;
+      itemId: string;
+    }): Promise<ShellLibraryRemoveResponse_unstable>;
+    shellSessionLibraryResolve_unstable(params: {
+      sessionId: string;
+      itemIds: string[];
+    }): Promise<ShellLibraryResolveResponse_unstable>;
     shellHandoffPrepare_unstable(
       params: ShellHandoffPrepareRequest_unstable
     ): Promise<ShellHandoffPrepareResponse_unstable>;
@@ -124,7 +151,26 @@ export interface ShellAcpConnection {
   listCredentials(): Promise<ShellCredentialListResponse_unstable>;
   listModules(workingDir: string | null): Promise<ShellModuleListResponse_unstable>;
   listArtifacts(sessionId: string): Promise<ShellArtifactListResponse_unstable>;
-  prompt(input: { sessionId: string; text: string; messageId: string }): Promise<unknown>;
+  listLibrary(sessionId: string): Promise<ShellLibraryListResponse_unstable>;
+  addLibraryText(
+    input: ShellLibraryAddTextRequest_unstable
+  ): Promise<ShellLibraryAddResponse_unstable>;
+  addLibraryImage(
+    input: ShellLibraryAddImageRequest_unstable
+  ): Promise<ShellLibraryAddResponse_unstable>;
+  linkLibraryFile(
+    input: ShellLibraryLinkFileRequest_unstable
+  ): Promise<ShellLibraryAddResponse_unstable>;
+  removeLibraryItem(
+    sessionId: string,
+    itemId: string
+  ): Promise<ShellLibraryRemoveResponse_unstable>;
+  prompt(input: {
+    sessionId: string;
+    text: string;
+    messageId: string;
+    libraryItemIds?: string[];
+  }): Promise<unknown>;
   cancel(input: { sessionId: string }): Promise<void>;
   prepareHandoff(
     request: ShellHandoffPrepareRequest_unstable
@@ -599,12 +645,30 @@ export async function connectShellAcp(input: {
           .filter((session) => session.workingDir === cwd)
           .slice(0, 20);
       },
-      prompt: ({ sessionId, text, messageId }) =>
-        client.prompt({
-          sessionId: assertSessionId(sessionId),
-          messageId,
-          prompt: [{ type: 'text', text }],
-        }),
+      prompt: async ({ sessionId, text, messageId, libraryItemIds = [] }) => {
+        const fixedSessionId = assertSessionId(sessionId);
+        const resolved =
+          libraryItemIds.length === 0
+            ? { items: [] }
+            : await client.gosling.shellSessionLibraryResolve_unstable({
+                sessionId: fixedSessionId,
+                itemIds: libraryItemIds,
+              });
+        const prompt: Parameters<GoslingClient['prompt']>[0]['prompt'] = [];
+        if (text.trim().length > 0) prompt.push({ type: 'text', text });
+        for (const item of resolved.items ?? []) {
+          if (item.content.type === 'text') {
+            prompt.push({ type: 'text', text: item.content.text });
+          } else {
+            prompt.push({
+              type: 'image',
+              data: item.content.data,
+              mimeType: item.content.mime_type,
+            });
+          }
+        }
+        return client.prompt({ sessionId: fixedSessionId, messageId, prompt });
+      },
       cancel: ({ sessionId }) => client.cancel({ sessionId: assertSessionId(sessionId) }),
       validateDirectory: (directory) =>
         withTimeout(
@@ -638,6 +702,30 @@ export async function connectShellAcp(input: {
           'ACP artifact inventory timed out',
           dependencies
         ),
+      listLibrary: (sessionId) =>
+        client.gosling.shellSessionLibraryList_unstable({
+          sessionId: assertSessionId(sessionId),
+        }),
+      addLibraryText: (request) =>
+        client.gosling.shellSessionLibraryAddText_unstable({
+          ...request,
+          sessionId: assertSessionId(request.sessionId),
+        }),
+      addLibraryImage: (request) =>
+        client.gosling.shellSessionLibraryAddImage_unstable({
+          ...request,
+          sessionId: assertSessionId(request.sessionId),
+        }),
+      linkLibraryFile: (request) =>
+        client.gosling.shellSessionLibraryLinkFile_unstable({
+          ...request,
+          sessionId: assertSessionId(request.sessionId),
+        }),
+      removeLibraryItem: (sessionId, itemId) =>
+        client.gosling.shellSessionLibraryRemove_unstable({
+          sessionId: assertSessionId(sessionId),
+          itemId,
+        }),
       prepareHandoff: (request) => client.gosling.shellHandoffPrepare_unstable(request),
       domainSnapshot: (request) => client.gosling.shellDomainSnapshot_unstable(request),
       domainAction: (request) => client.gosling.shellDomainAction_unstable(request),

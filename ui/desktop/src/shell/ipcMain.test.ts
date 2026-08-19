@@ -100,6 +100,31 @@ function harness() {
       updates: [],
     })),
     sessionArtifactsRead: vi.fn(() => ({ artifacts: [], totalCount: 0, truncated: false })),
+    sessionLibraryRead: vi.fn(() => ({ items: [] })),
+    sessionLibraryAddText: vi.fn(() => ({
+      item: {
+        id: 'lib-text',
+        name: 'Notes',
+        kind: 'text' as const,
+        scope: 'session' as const,
+        status: 'available' as const,
+        mimeType: 'text/plain',
+        sizeBytes: 5,
+      },
+    })),
+    sessionLibraryAddImage: vi.fn(() => ({
+      item: {
+        id: 'lib-image',
+        name: 'Image',
+        kind: 'image' as const,
+        scope: 'session' as const,
+        status: 'available' as const,
+        mimeType: 'image/png',
+        sizeBytes: 5,
+      },
+    })),
+    sessionLibraryLinkFile: vi.fn(() => ({ status: 'canceled' as const })),
+    sessionLibraryRemove: vi.fn(() => ({ removed: true })),
     promptSubmit: vi.fn(() => ({ promptAttemptId: 'attempt' })),
     promptCancel: vi.fn(),
     permissionRespond: vi.fn(),
@@ -224,6 +249,35 @@ describe('shell IPC registration', () => {
     expect(operations.runtimeRetry).not.toHaveBeenCalled();
     expect(operations.runtimeStop).not.toHaveBeenCalled();
     expect(operations.diagnosticsSave).not.toHaveBeenCalled();
+  });
+
+  it('accepts bounded library writes without accepting renderer file paths', async () => {
+    const { invoke, operations } = harness();
+    await invoke(shellIpcChannels.sessionLibraryAddText, {
+      generation: 1,
+      sessionId: 'session',
+      scope: 'project',
+      name: 'Notes',
+      text: 'Reference text',
+    });
+    expect(operations.sessionLibraryAddText).toHaveBeenCalledWith({
+      generation: 1,
+      sessionId: 'session',
+      scope: 'project',
+      name: 'Notes',
+      text: 'Reference text',
+    });
+    await expectShellFailure(
+      invoke(shellIpcChannels.sessionLibraryLinkFile, {
+        generation: 1,
+        sessionId: 'session',
+        scope: 'session',
+        userGesture: true,
+        path: '/private/reference.pdf',
+      }),
+      'INVALID_REQUEST'
+    );
+    expect(operations.sessionLibraryLinkFile).not.toHaveBeenCalled();
   });
 
   it('rejects session and prompt operations absent from the consumer declaration', async () => {

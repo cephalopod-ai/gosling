@@ -25,6 +25,7 @@ function onGenerationAdvanced(state: ShellUiState): ShellUiState {
     interactions: [],
     sessions: { status: 'idle', items: [] },
     outputs: { status: 'idle', items: [], totalCount: 0, truncated: false },
+    library: { status: 'idle', items: [], selectedItemIds: [], addScope: 'session' },
     respondedActionIds: [],
     pending: null,
     handoff: null,
@@ -54,7 +55,15 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
         ...merged,
         snapshot: action.snapshot,
         ...(priorSessionId !== nextSessionId
-          ? { outputs: { status: 'idle' as const, items: [], totalCount: 0, truncated: false } }
+          ? {
+              outputs: { status: 'idle' as const, items: [], totalCount: 0, truncated: false },
+              library: {
+                status: 'idle' as const,
+                items: [],
+                selectedItemIds: [],
+                addScope: 'session' as const,
+              },
+            }
           : {}),
       };
     }
@@ -124,6 +133,66 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
           truncated: action.truncated,
         },
       };
+
+    case 'library/loading':
+      return { ...state, library: { ...state.library, status: 'loading' } };
+
+    case 'library/loaded': {
+      const available = new Set(action.items.map((item) => item.id));
+      return {
+        ...state,
+        library: {
+          ...state.library,
+          status: 'loaded',
+          items: action.items,
+          selectedItemIds: state.library.selectedItemIds.filter((id) => available.has(id)),
+        },
+      };
+    }
+
+    case 'library/itemAdded':
+      return {
+        ...state,
+        library: {
+          ...state.library,
+          status: 'loaded',
+          items: [action.item, ...state.library.items.filter((item) => item.id !== action.item.id)],
+          selectedItemIds: [
+            action.item.id,
+            ...state.library.selectedItemIds.filter((id) => id !== action.item.id),
+          ].slice(0, 16),
+        },
+      };
+
+    case 'library/itemRemoved':
+      return {
+        ...state,
+        library: {
+          ...state.library,
+          items: state.library.items.filter((item) => item.id !== action.itemId),
+          selectedItemIds: state.library.selectedItemIds.filter((id) => id !== action.itemId),
+        },
+      };
+
+    case 'library/itemToggled': {
+      const selected = state.library.selectedItemIds.includes(action.itemId);
+      if (!selected && state.library.selectedItemIds.length >= 16) return state;
+      return {
+        ...state,
+        library: {
+          ...state.library,
+          selectedItemIds: selected
+            ? state.library.selectedItemIds.filter((id) => id !== action.itemId)
+            : [...state.library.selectedItemIds, action.itemId],
+        },
+      };
+    }
+
+    case 'library/scopeChanged':
+      return { ...state, library: { ...state.library, addScope: action.scope } };
+
+    case 'library/selectionCleared':
+      return { ...state, library: { ...state.library, selectedItemIds: [] } };
 
     case 'draft/changed':
       return { ...state, draft: action.draft };

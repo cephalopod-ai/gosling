@@ -5,7 +5,11 @@ import type { ShellRuntimeSnapshot } from '../../shell/runtimeSnapshot';
 import type { ShellSessionSummary } from '../../shell/acpRuntime';
 import type { ShellSessionUpdate, ShellTranscriptSnapshot } from '../../shell/sessionController';
 import type { ShellHandoffEnvelope } from '@repo-makeover/gosling-sdk';
-import type { ShellArtifactSummary } from '@repo-makeover/gosling-sdk';
+import type {
+  ShellArtifactSummary,
+  ShellLibraryItemSummary,
+  ShellLibraryScope,
+} from '@repo-makeover/gosling-sdk';
 import type { TranscriptState } from './transcript';
 
 export type ShellUiView = 'workspace' | 'sessions' | 'settings' | 'handoff';
@@ -18,6 +22,8 @@ export type ShellUiPendingOperation =
   | 'session.resume'
   | 'session.transcript.read'
   | 'session.artifacts.read'
+  | 'session.library.read'
+  | 'session.library.write'
   | 'session.detach'
   | 'prompt.submit'
   | 'prompt.cancel'
@@ -41,6 +47,12 @@ export interface ShellUiState {
     items: ShellArtifactSummary[];
     totalCount: number;
     truncated: boolean;
+  };
+  library: {
+    status: 'idle' | 'loading' | 'loaded';
+    items: ShellLibraryItemSummary[];
+    selectedItemIds: string[];
+    addScope: ShellLibraryScope;
   };
   draft: string;
   failure: ShellOperationFailure | null;
@@ -68,6 +80,13 @@ export type ShellUiAction =
       totalCount: number;
       truncated: boolean;
     }
+  | { type: 'library/loading' }
+  | { type: 'library/loaded'; items: ShellLibraryItemSummary[] }
+  | { type: 'library/itemAdded'; item: ShellLibraryItemSummary }
+  | { type: 'library/itemRemoved'; itemId: string }
+  | { type: 'library/itemToggled'; itemId: string }
+  | { type: 'library/selectionCleared' }
+  | { type: 'library/scopeChanged'; scope: ShellLibraryScope }
   | { type: 'draft/changed'; draft: string }
   | { type: 'failure/raised'; failure: ShellOperationFailure }
   | { type: 'failure/cleared' }
@@ -95,6 +114,7 @@ export function initialShellUiState(): ShellUiState {
     interactions: [],
     sessions: { status: 'idle', items: [] },
     outputs: { status: 'idle', items: [], totalCount: 0, truncated: false },
+    library: { status: 'idle', items: [], selectedItemIds: [], addScope: 'session' },
     draft: '',
     failure: null,
     pending: null,

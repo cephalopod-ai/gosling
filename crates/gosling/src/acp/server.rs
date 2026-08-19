@@ -38,9 +38,10 @@ use crate::providers::inventory::{
     RefreshSkipReason,
 };
 use crate::session::{
-    AcpPromptRunState, EnabledExtensionsState, ExtensionData, ExtensionState, Session,
-    SessionArtifact, SessionArtifactProvenance, SessionArtifactRelation, SessionManager,
-    SessionType, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
+    AcpPromptRunState, EnabledExtensionsState, ExtensionData, ExtensionState,
+    NewSessionLibraryContent, Session, SessionArtifact, SessionArtifactProvenance,
+    SessionArtifactRelation, SessionLibraryItem, SessionLibraryItemKind, SessionLibraryScope,
+    SessionManager, SessionType, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
@@ -4841,6 +4842,16 @@ print(\"hello, world\")
         assert!(methods.windows(2).all(|pair| pair[0] < pair[1]));
         assert!(methods.contains(&"_gosling/unstable/shell/provisioning/read".to_string()));
         assert!(methods.contains(&"_gosling/unstable/shell/session/artifacts/list".to_string()));
+        for method in [
+            "_gosling/unstable/shell/session/library/list",
+            "_gosling/unstable/shell/session/library/add_text",
+            "_gosling/unstable/shell/session/library/add_image",
+            "_gosling/unstable/shell/session/library/link_file",
+            "_gosling/unstable/shell/session/library/remove",
+            "_gosling/unstable/shell/session/library/resolve",
+        ] {
+            assert!(methods.contains(&method.to_string()), "missing {method}");
+        }
         assert!(methods.contains(&"_gosling/unstable/shell/handoff/prepare".to_string()));
     }
 

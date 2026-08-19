@@ -56,7 +56,12 @@ export interface ShellSessionTransport {
     modelId?: string | null;
     resumeIntegrity?: 'clean' | 'uncertain';
   }>;
-  prompt(input: { sessionId: string; text: string; messageId: string }): Promise<unknown>;
+  prompt(input: {
+    sessionId: string;
+    text: string;
+    messageId: string;
+    libraryItemIds?: string[];
+  }): Promise<unknown>;
   cancel(input: { sessionId: string }): Promise<void>;
 }
 
@@ -64,7 +69,12 @@ export interface ShellSessionController {
   read(): ShellSessionRecord;
   create(generation: number): Promise<ShellSessionRecord>;
   resume(generation: number, sessionId: string): Promise<ShellSessionRecord>;
-  submit(input: { generation: number; sessionId: string; text: string }): {
+  submit(input: {
+    generation: number;
+    sessionId: string;
+    text: string;
+    libraryItemIds?: string[];
+  }): {
     promptAttemptId: string;
   };
   cancel(input: { generation: number; sessionId: string; promptAttemptId: string }): Promise<void>;
@@ -115,13 +125,22 @@ function assertSessionId(sessionId: string): void {
   }
 }
 
-function assertPrompt(text: string): void {
+function assertPrompt(text: string, libraryItemIds: string[]): void {
+  if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_PROMPT_BYTES) {
+    throw new Error('prompt text must be at most 64 KiB');
+  }
   if (
-    typeof text !== 'string' ||
-    text.trim().length === 0 ||
-    Buffer.byteLength(text, 'utf8') > MAX_PROMPT_BYTES
+    !Array.isArray(libraryItemIds) ||
+    libraryItemIds.length > 16 ||
+    libraryItemIds.some(
+      (itemId) => typeof itemId !== 'string' || itemId.length === 0 || itemId.length > 128
+    ) ||
+    new Set(libraryItemIds).size !== libraryItemIds.length
   ) {
-    throw new Error('prompt text must be non-empty and at most 64 KiB');
+    throw new Error('prompt may contain up to 16 unique library items');
+  }
+  if (text.trim().length === 0 && libraryItemIds.length === 0) {
+    throw new Error('prompt text must be non-empty unless library items are selected');
   }
 }
 
@@ -266,9 +285,9 @@ export function createShellSessionController(input: {
         input.transport.resumeSession(sessionId)
       );
     },
-    submit({ generation, sessionId, text }) {
+    submit({ generation, sessionId, text, libraryItemIds = [] }) {
       assertCurrent(generation, sessionId);
-      assertPrompt(text);
+      assertPrompt(text, libraryItemIds);
       if (session.promptAttempt) throw new Error('a prompt attempt is already active');
       const promptAttemptId = createAttemptId();
       if (
@@ -285,7 +304,7 @@ export function createShellSessionController(input: {
       publishState();
       publish('started', promptAttemptId, 'live');
       void input.transport
-        .prompt({ sessionId, text, messageId: promptAttemptId })
+        .prompt({ sessionId, text, messageId: promptAttemptId, libraryItemIds })
         .then(() => {
           if (session.promptAttempt?.id !== promptAttemptId) return;
           const wasCancelling = session.promptAttempt.phase === 'cancelling';

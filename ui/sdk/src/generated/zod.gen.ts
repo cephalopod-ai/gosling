@@ -324,6 +324,100 @@ export const zShellArtifactListResponse_unstable = z.object({
     truncated: z.boolean().optional().default(false)
 });
 
+export const zShellLibraryListRequest_unstable = z.object({
+    sessionId: z.string()
+});
+
+export const zShellLibraryItemKind = z.enum([
+    'text',
+    'image',
+    'file'
+]);
+
+export const zShellLibraryScope = z.enum(['project', 'session']);
+
+export const zShellLibraryItemStatus = z.enum(['available', 'missing']);
+
+/**
+ * Safe metadata for one project/session input reference.
+ *
+ * Linked paths and stored text/image payloads never appear in this projection.
+ */
+export const zShellLibraryItemSummary = z.object({
+    id: z.string(),
+    name: z.string(),
+    kind: zShellLibraryItemKind,
+    scope: zShellLibraryScope,
+    status: zShellLibraryItemStatus,
+    mimeType: z.string(),
+    sizeBytes: z.number().int().gte(0)
+});
+
+export const zShellLibraryListResponse_unstable = z.object({
+    items: z.array(zShellLibraryItemSummary).optional().default([])
+});
+
+export const zShellLibraryAddTextRequest_unstable = z.object({
+    sessionId: z.string(),
+    scope: zShellLibraryScope,
+    name: z.string(),
+    text: z.string()
+});
+
+export const zShellLibraryAddResponse_unstable = z.object({
+    item: zShellLibraryItemSummary
+});
+
+export const zShellLibraryAddImageRequest_unstable = z.object({
+    sessionId: z.string(),
+    scope: zShellLibraryScope,
+    name: z.string(),
+    mimeType: z.string(),
+    data: z.string()
+});
+
+export const zShellLibraryLinkFileRequest_unstable = z.object({
+    sessionId: z.string(),
+    scope: zShellLibraryScope,
+    path: z.string()
+});
+
+export const zShellLibraryRemoveRequest_unstable = z.object({
+    sessionId: z.string(),
+    itemId: z.string()
+});
+
+export const zShellLibraryRemoveResponse_unstable = z.object({
+    removed: z.boolean()
+});
+
+export const zShellLibraryResolveRequest_unstable = z.object({
+    sessionId: z.string(),
+    itemIds: z.array(z.string()).optional().default([])
+});
+
+export const zShellLibraryResolvedContent = z.union([
+    z.object({
+        text: z.string(),
+        type: z.literal('text')
+    }),
+    z.object({
+        data: z.string(),
+        mime_type: z.string(),
+        type: z.literal('image')
+    })
+]);
+
+export const zShellLibraryResolvedItem = z.object({
+    id: z.string(),
+    name: z.string(),
+    content: zShellLibraryResolvedContent
+});
+
+export const zShellLibraryResolveResponse_unstable = z.object({
+    items: z.array(zShellLibraryResolvedItem).optional().default([])
+});
+
 export const zDomainSnapshotRequest_unstable = z.object({
     input: z.unknown().optional().default(null)
 });
@@ -2929,6 +3023,12 @@ export const zExtRequest = z.object({
             zShellCredentialListRequest_unstable,
             zShellModuleListRequest_unstable,
             zShellArtifactListRequest_unstable,
+            zShellLibraryListRequest_unstable,
+            zShellLibraryAddTextRequest_unstable,
+            zShellLibraryAddImageRequest_unstable,
+            zShellLibraryLinkFileRequest_unstable,
+            zShellLibraryRemoveRequest_unstable,
+            zShellLibraryResolveRequest_unstable,
             zDomainSnapshotRequest_unstable,
             zDomainActionRequest_unstable,
             zDomainActionConfirmRequest_unstable,
@@ -3051,6 +3151,10 @@ export const zExtResponse = z.union([
                 zShellCredentialListResponse_unstable,
                 zShellModuleListResponse_unstable,
                 zShellArtifactListResponse_unstable,
+                zShellLibraryListResponse_unstable,
+                zShellLibraryAddResponse_unstable,
+                zShellLibraryRemoveResponse_unstable,
+                zShellLibraryResolveResponse_unstable,
                 zDomainSnapshotResponse_unstable,
                 zDomainActionResponse_unstable,
                 zDomainActionConfirmResponse_unstable,

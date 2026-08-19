@@ -1,5 +1,6 @@
 import type { GoslingShellAPI } from '../../shell/preloadApi';
 import type { ShellTheme } from '../../shell/settingsSchema';
+import type { ShellLibraryScope } from '@repo-makeover/gosling-sdk';
 import { asOperationFailure } from '../api';
 import { shellUiReducer } from './reducer';
 import { isDeclared } from './route';
@@ -33,6 +34,13 @@ export interface ShellStoreActions {
   detachSession(): Promise<void>;
   repairTranscript(sessionId?: string): Promise<void>;
   readOutputs(): Promise<void>;
+  readLibrary(): Promise<void>;
+  setLibraryScope(scope: ShellLibraryScope): void;
+  toggleLibraryItem(itemId: string): void;
+  addLibraryText(name: string, text: string): Promise<void>;
+  addLibraryImage(name: string, mimeType: string, data: string): Promise<void>;
+  linkLibraryFile(): Promise<void>;
+  removeLibraryItem(itemId: string): Promise<void>;
   submitPrompt(): Promise<void>;
   cancelPrompt(): Promise<void>;
   respondPermission(actionId: string, allowOnce: boolean): Promise<void>;
@@ -206,18 +214,111 @@ export function createShellStore(api: GoslingShellAPI): ShellStore {
       );
     },
 
+    async readLibrary() {
+      if (!requireCapability('session.library.read')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      dispatch({ type: 'library/loading' });
+      await run(
+        'session.library.read',
+        (current) => api.library.list({ generation: current, sessionId }),
+        (response) => dispatch({ type: 'library/loaded', items: response.items ?? [] })
+      );
+    },
+
+    setLibraryScope(scope) {
+      dispatch({ type: 'library/scopeChanged', scope });
+    },
+
+    toggleLibraryItem(itemId) {
+      dispatch({ type: 'library/itemToggled', itemId });
+    },
+
+    async addLibraryText(name, text) {
+      if (!requireCapability('session.library.write')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      await run(
+        'session.library.write',
+        (current) =>
+          api.library.addText({
+            generation: current,
+            sessionId,
+            scope: state.library.addScope,
+            name,
+            text,
+          }),
+        (response) => dispatch({ type: 'library/itemAdded', item: response.item })
+      );
+    },
+
+    async addLibraryImage(name, mimeType, data) {
+      if (!requireCapability('session.library.write')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      await run(
+        'session.library.write',
+        (current) =>
+          api.library.addImage({
+            generation: current,
+            sessionId,
+            scope: state.library.addScope,
+            name,
+            mimeType,
+            data,
+          }),
+        (response) => dispatch({ type: 'library/itemAdded', item: response.item })
+      );
+    },
+
+    async linkLibraryFile() {
+      if (!requireCapability('session.library.write')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      await run(
+        'session.library.write',
+        (current) =>
+          api.library.linkFile({
+            generation: current,
+            sessionId,
+            scope: state.library.addScope,
+            userGesture: true,
+          }),
+        (response) => {
+          if (response.status === 'added') {
+            dispatch({ type: 'library/itemAdded', item: response.item });
+          }
+        }
+      );
+    },
+
+    async removeLibraryItem(itemId) {
+      if (!requireCapability('session.library.write')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      await run(
+        'session.library.write',
+        (current) => api.library.remove({ generation: current, sessionId, itemId }),
+        (response) => {
+          if (response.removed) dispatch({ type: 'library/itemRemoved', itemId });
+        }
+      );
+    },
+
     async submitPrompt() {
       if (!requireCapability('prompt.submit')) return;
       const sessionId = state.snapshot?.session?.sessionId;
       const text = state.draft;
-      if (!sessionId || text.length === 0) return;
+      const libraryItemIds = [...state.library.selectedItemIds];
+      if (!sessionId || (text.trim().length === 0 && libraryItemIds.length === 0)) return;
       const current = generation();
       if (current === null) return;
       dispatch({ type: 'pending/changed', pending: 'prompt.submit' });
       dispatch({ type: 'draft/changed', draft: '' });
       try {
-        await api.prompt.submit({ generation: current, sessionId, text });
+        await api.prompt.submit({ generation: current, sessionId, text, libraryItemIds });
         if (disposed) return;
+        dispatch({ type: 'library/selectionCleared' });
         dispatch({ type: 'failure/cleared' });
         dispatch({ type: 'pending/changed', pending: null });
       } catch (error) {

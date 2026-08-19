@@ -1,6 +1,6 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-18 after closing the generic Default Shell implementation gaps locally
+Updated: 2026-08-18 after adding the generic Default Shell project/session input library locally
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -20,6 +20,12 @@ SHP-DEF-054, SHP-DEF-055, and SHP-DEF-057 are closed; see
 Current gate: **bind the completed working tree to one committed revision, run current CI for that
 revision, and reproduce packaged startup/close/restart/coexistence. SHP-DEF-053 remains partially
 validated until those exact-revision checks exist. Named shells remain blocked until M5.**
+
+Latest local extension: ADR-0015 adds a Rust-owned, project/session-scoped input Library for linked
+PDF/text/image files and pasted text/images. Native selection remains main-owned, renderer list
+responses contain only opaque safe metadata, and prompt resolution is active-session and
+declaration gated. Local Rust, generated-schema, Desktop, and consumer validation is recorded in
+`docs/logs/session/2026-08-18-default-shell-library.md`; this does not close the exact-revision gate.
 
 ## Intent
 

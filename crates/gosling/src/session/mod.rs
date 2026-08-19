@@ -5,6 +5,7 @@ pub mod extension_data;
 pub mod import_formats;
 mod last_message_snippet;
 mod legacy;
+pub mod library;
 #[cfg(feature = "nostr")]
 pub mod nostr_share;
 pub mod session_manager;
@@ -27,6 +28,9 @@ pub use diagnostics::{
 pub use extension_data::{
     AcpPromptRunState, EnabledExtensionsState, ExtensionData, ExtensionState,
     ShellSkillSelectionState, TodoState,
+};
+pub use library::{
+    NewSessionLibraryContent, SessionLibraryItem, SessionLibraryItemKind, SessionLibraryScope,
 };
 pub(crate) use session_manager::ToolOperationStart;
 pub use session_manager::{

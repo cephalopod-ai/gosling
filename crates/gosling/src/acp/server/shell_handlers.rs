@@ -1,8 +1,17 @@
 use super::*;
+use base64::Engine as _;
+use std::io::Read as _;
 
 const SHELL_CREDENTIAL_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const SHELL_ARTIFACT_LIMIT: usize = 100;
 const SHELL_ARTIFACT_NAME_LIMIT: usize = 256;
+const SHELL_LIBRARY_NAME_LIMIT: usize = 128;
+const SHELL_LIBRARY_TEXT_LIMIT: usize = 256 * 1024;
+const SHELL_LIBRARY_FILE_LIMIT: u64 = 20 * 1024 * 1024;
+const SHELL_LIBRARY_IMAGE_LIMIT: usize = 5 * 1024 * 1024;
+const SHELL_LIBRARY_PROMPT_ITEM_LIMIT: usize = 16;
+const SHELL_LIBRARY_PROMPT_TEXT_LIMIT: usize = 512 * 1024;
+const SHELL_LIBRARY_PROMPT_IMAGE_LIMIT: usize = 10 * 1024 * 1024;
 // A failed lookup (timeout, panic, or read error) is usually transient — a locked keychain or a
 // momentarily unreadable workspace document — so callers back off for this long instead of
 // retrying on every request, but still retry on the next call after it elapses rather than
@@ -265,6 +274,204 @@ impl GoslingAcpAgent {
         })
     }
 
+    pub(super) async fn on_list_shell_library(
+        &self,
+        request: ShellLibraryListRequest,
+    ) -> Result<ShellLibraryListResponse, agent_client_protocol::Error> {
+        self.require_library_session(&request.session_id).await?;
+        let items = self
+            .session_manager
+            .list_session_library_items(&request.session_id)
+            .await
+            .map_err(shell_library_internal_error)?;
+        Ok(ShellLibraryListResponse {
+            items: items.into_iter().map(shell_library_summary).collect(),
+        })
+    }
+
+    pub(super) async fn on_add_shell_library_text(
+        &self,
+        request: ShellLibraryAddTextRequest,
+    ) -> Result<ShellLibraryAddResponse, agent_client_protocol::Error> {
+        self.require_library_session(&request.session_id).await?;
+        let name = validated_library_name(&request.name)?;
+        let text = sanitize_unicode_tags(&request.text);
+        if text.trim().is_empty() || text.len() > SHELL_LIBRARY_TEXT_LIMIT {
+            return Err(shell_library_invalid("SHELL_LIBRARY_TEXT_INVALID"));
+        }
+        let item = self
+            .session_manager
+            .add_session_library_item(
+                &request.session_id,
+                session_library_scope(request.scope),
+                name,
+                NewSessionLibraryContent::Text(text),
+            )
+            .await
+            .map_err(shell_library_internal_error)?;
+        Ok(ShellLibraryAddResponse {
+            item: shell_library_summary(item),
+        })
+    }
+
+    pub(super) async fn on_add_shell_library_image(
+        &self,
+        request: ShellLibraryAddImageRequest,
+    ) -> Result<ShellLibraryAddResponse, agent_client_protocol::Error> {
+        self.require_library_session(&request.session_id).await?;
+        let name = validated_library_name(&request.name)?;
+        if !matches!(
+            request.mime_type.as_str(),
+            "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+        ) {
+            return Err(shell_library_invalid("SHELL_LIBRARY_IMAGE_TYPE_INVALID"));
+        }
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&request.data)
+            .map_err(|_| shell_library_invalid("SHELL_LIBRARY_IMAGE_INVALID"))?;
+        if decoded.is_empty() || decoded.len() > SHELL_LIBRARY_IMAGE_LIMIT {
+            return Err(shell_library_invalid("SHELL_LIBRARY_IMAGE_INVALID"));
+        }
+        let item = self
+            .session_manager
+            .add_session_library_item(
+                &request.session_id,
+                session_library_scope(request.scope),
+                name,
+                NewSessionLibraryContent::Image {
+                    data: request.data,
+                    mime_type: request.mime_type,
+                },
+            )
+            .await
+            .map_err(shell_library_internal_error)?;
+        Ok(ShellLibraryAddResponse {
+            item: shell_library_summary(item),
+        })
+    }
+
+    pub(super) async fn on_link_shell_library_file(
+        &self,
+        request: ShellLibraryLinkFileRequest,
+    ) -> Result<ShellLibraryAddResponse, agent_client_protocol::Error> {
+        self.require_library_session(&request.session_id).await?;
+        let requested = std::path::Path::new(&request.path);
+        if !requested.is_absolute() {
+            return Err(shell_library_invalid("SHELL_LIBRARY_FILE_INVALID"));
+        }
+        let path = fs::canonicalize(requested)
+            .map_err(|_| shell_library_invalid("SHELL_LIBRARY_FILE_UNAVAILABLE"))?;
+        let metadata = fs::metadata(&path)
+            .map_err(|_| shell_library_invalid("SHELL_LIBRARY_FILE_UNAVAILABLE"))?;
+        if !metadata.is_file() || metadata.len() == 0 || metadata.len() > SHELL_LIBRARY_FILE_LIMIT {
+            return Err(shell_library_invalid("SHELL_LIBRARY_FILE_INVALID"));
+        }
+        let mime_type = shell_library_file_mime_type(&path)
+            .ok_or_else(|| shell_library_invalid("SHELL_LIBRARY_FILE_TYPE_INVALID"))?;
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| shell_library_invalid("SHELL_LIBRARY_FILE_INVALID"))?;
+        let name = validated_library_name(name)?;
+        let item = self
+            .session_manager
+            .add_session_library_item(
+                &request.session_id,
+                session_library_scope(request.scope),
+                name,
+                NewSessionLibraryContent::File {
+                    path: path.to_string_lossy().into_owned(),
+                    mime_type: mime_type.to_string(),
+                },
+            )
+            .await
+            .map_err(shell_library_internal_error)?;
+        Ok(ShellLibraryAddResponse {
+            item: shell_library_summary(item),
+        })
+    }
+
+    pub(super) async fn on_remove_shell_library_item(
+        &self,
+        request: ShellLibraryRemoveRequest,
+    ) -> Result<ShellLibraryRemoveResponse, agent_client_protocol::Error> {
+        self.require_library_session(&request.session_id).await?;
+        if request.item_id.is_empty() || request.item_id.len() > 128 {
+            return Err(shell_library_invalid("SHELL_LIBRARY_ITEM_INVALID"));
+        }
+        let removed = self
+            .session_manager
+            .remove_session_library_item(&request.session_id, &request.item_id)
+            .await
+            .map_err(shell_library_internal_error)?;
+        Ok(ShellLibraryRemoveResponse { removed })
+    }
+
+    pub(super) async fn on_resolve_shell_library(
+        &self,
+        request: ShellLibraryResolveRequest,
+    ) -> Result<ShellLibraryResolveResponse, agent_client_protocol::Error> {
+        self.require_library_session(&request.session_id).await?;
+        if request.item_ids.is_empty()
+            || request.item_ids.len() > SHELL_LIBRARY_PROMPT_ITEM_LIMIT
+            || request
+                .item_ids
+                .iter()
+                .any(|item_id| item_id.is_empty() || item_id.len() > 128)
+            || request.item_ids.iter().collect::<HashSet<_>>().len() != request.item_ids.len()
+        {
+            return Err(shell_library_invalid("SHELL_LIBRARY_SELECTION_INVALID"));
+        }
+        let stored = self
+            .session_manager
+            .get_session_library_items(&request.session_id, &request.item_ids)
+            .await
+            .map_err(|_| shell_library_invalid("SHELL_LIBRARY_ITEM_UNAVAILABLE"))?;
+        let mut text_bytes = 0usize;
+        let mut image_bytes = 0usize;
+        let mut items = Vec::with_capacity(stored.len());
+        for item in stored {
+            let content = resolve_shell_library_item(&item)
+                .map_err(|_| shell_library_invalid("SHELL_LIBRARY_ITEM_UNAVAILABLE"))?;
+            match &content {
+                ShellLibraryResolvedContent::Text { text } => {
+                    text_bytes = text_bytes.saturating_add(text.len());
+                }
+                ShellLibraryResolvedContent::Image { data, .. } => {
+                    image_bytes = image_bytes.saturating_add(
+                        base64::engine::general_purpose::STANDARD
+                            .decode(data)
+                            .map_err(|_| shell_library_invalid("SHELL_LIBRARY_ITEM_UNAVAILABLE"))?
+                            .len(),
+                    );
+                }
+            }
+            if text_bytes > SHELL_LIBRARY_PROMPT_TEXT_LIMIT
+                || image_bytes > SHELL_LIBRARY_PROMPT_IMAGE_LIMIT
+            {
+                return Err(shell_library_invalid("SHELL_LIBRARY_SELECTION_TOO_LARGE"));
+            }
+            items.push(ShellLibraryResolvedItem {
+                id: item.id,
+                name: item.name,
+                content,
+            });
+        }
+        Ok(ShellLibraryResolveResponse { items })
+    }
+
+    async fn require_library_session(
+        &self,
+        session_id: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        self.require_active_shell_session(
+            session_id,
+            "SHELL_LIBRARY_SESSION_INVALID",
+            "SHELL_LIBRARY_SESSION_UNAVAILABLE",
+        )
+        .await
+    }
+
     pub(super) async fn on_domain_snapshot(
         &self,
         request: DomainSnapshotRequest,
@@ -323,6 +530,156 @@ impl GoslingAcpAgent {
             handoff: self.shell_runtime.prepare_handoff(request),
         }
     }
+}
+
+fn shell_library_invalid(code: &str) -> agent_client_protocol::Error {
+    agent_client_protocol::Error::invalid_params().data(serde_json::json!({ "code": code }))
+}
+
+fn shell_library_internal_error(error: anyhow::Error) -> agent_client_protocol::Error {
+    agent_client_protocol::Error::internal_error().data(error.to_string())
+}
+
+fn validated_library_name(name: &str) -> Result<String, agent_client_protocol::Error> {
+    let name = sanitize_unicode_tags(name).trim().to_string();
+    if name.is_empty() || name.chars().count() > SHELL_LIBRARY_NAME_LIMIT {
+        return Err(shell_library_invalid("SHELL_LIBRARY_NAME_INVALID"));
+    }
+    Ok(name)
+}
+
+fn session_library_scope(scope: ShellLibraryScope) -> SessionLibraryScope {
+    match scope {
+        ShellLibraryScope::Project => SessionLibraryScope::Project,
+        ShellLibraryScope::Session => SessionLibraryScope::Session,
+    }
+}
+
+fn shell_library_summary(item: SessionLibraryItem) -> ShellLibraryItemSummary {
+    let status = if item
+        .file_path
+        .as_deref()
+        .is_some_and(|path| !std::path::Path::new(path).is_file())
+    {
+        ShellLibraryItemStatus::Missing
+    } else {
+        ShellLibraryItemStatus::Available
+    };
+    ShellLibraryItemSummary {
+        id: item.id,
+        name: item.name,
+        kind: match item.kind {
+            SessionLibraryItemKind::Text => ShellLibraryItemKind::Text,
+            SessionLibraryItemKind::Image => ShellLibraryItemKind::Image,
+            SessionLibraryItemKind::File => ShellLibraryItemKind::File,
+        },
+        scope: match item.scope {
+            SessionLibraryScope::Project => ShellLibraryScope::Project,
+            SessionLibraryScope::Session => ShellLibraryScope::Session,
+        },
+        status,
+        mime_type: item.mime_type,
+        size_bytes: item.size_bytes,
+    }
+}
+
+fn shell_library_file_mime_type(path: &std::path::Path) -> Option<&'static str> {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "pdf" => Some("application/pdf"),
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        "json" => Some("application/json"),
+        "csv" => Some("text/csv"),
+        "tsv" => Some("text/tab-separated-values"),
+        "md" => Some("text/markdown"),
+        "txt" | "rs" | "js" | "jsx" | "ts" | "tsx" | "py" | "go" | "java" | "c" | "h" | "cpp"
+        | "hpp" | "swift" | "kt" | "rb" | "sh" | "css" | "html" | "sql" | "toml" | "yaml"
+        | "yml" | "xml" => Some("text/plain"),
+        _ => None,
+    }
+}
+
+fn resolve_shell_library_item(item: &SessionLibraryItem) -> Result<ShellLibraryResolvedContent> {
+    match item.kind {
+        SessionLibraryItemKind::Text => Ok(ShellLibraryResolvedContent::Text {
+            text: wrap_library_text(
+                &item.name,
+                item.text_content
+                    .as_deref()
+                    .ok_or_else(|| anyhow::anyhow!("stored text is missing"))?,
+            ),
+        }),
+        SessionLibraryItemKind::Image => Ok(ShellLibraryResolvedContent::Image {
+            data: item
+                .image_data
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("stored image is missing"))?,
+            mime_type: item.mime_type.clone(),
+        }),
+        SessionLibraryItemKind::File => resolve_shell_library_file(item),
+    }
+}
+
+fn resolve_shell_library_file(item: &SessionLibraryItem) -> Result<ShellLibraryResolvedContent> {
+    let path = item
+        .file_path
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("linked file path is missing"))?;
+    let metadata = fs::metadata(path)?;
+    anyhow::ensure!(
+        metadata.is_file() && metadata.len() <= SHELL_LIBRARY_FILE_LIMIT,
+        "linked file is unavailable"
+    );
+    if item.mime_type.starts_with("image/") {
+        let bytes = fs::read(path)?;
+        anyhow::ensure!(
+            bytes.len() <= SHELL_LIBRARY_IMAGE_LIMIT,
+            "image is too large"
+        );
+        return Ok(ShellLibraryResolvedContent::Image {
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+            mime_type: item.mime_type.clone(),
+        });
+    }
+    let text = if item.mime_type == "application/pdf" {
+        let document = lopdf::Document::load(path)?;
+        let pages = document.get_pages().keys().copied().collect::<Vec<_>>();
+        document.extract_text(&pages)?
+    } else {
+        let mut file = fs::File::open(path)?;
+        let mut bytes = Vec::new();
+        file.by_ref()
+            .take((SHELL_LIBRARY_PROMPT_TEXT_LIMIT + 1) as u64)
+            .read_to_end(&mut bytes)?;
+        String::from_utf8(bytes)?
+    };
+    Ok(ShellLibraryResolvedContent::Text {
+        text: wrap_library_text(&item.name, &truncate_library_text(text)),
+    })
+}
+
+fn truncate_library_text(mut text: String) -> String {
+    if text.len() <= SHELL_LIBRARY_PROMPT_TEXT_LIMIT {
+        return text;
+    }
+    let mut boundary = SHELL_LIBRARY_PROMPT_TEXT_LIMIT;
+    while !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    text.truncate(boundary);
+    text.push_str("\n[Content truncated]");
+    text
+}
+
+fn wrap_library_text(name: &str, text: &str) -> String {
+    format!("[Library item: {}]\n{}", sanitize_unicode_tags(name), text)
 }
 
 fn shell_artifact_summary(artifact: SessionArtifact) -> ShellArtifactSummary {
@@ -438,5 +795,56 @@ mod tests {
         ] {
             assert!(json.get(forbidden).is_none());
         }
+    }
+
+    #[test]
+    fn shell_library_projection_omits_payloads_and_paths() {
+        let item = SessionLibraryItem {
+            id: "lib-one".into(),
+            scope: SessionLibraryScope::Project,
+            name: "reference.pdf".into(),
+            kind: SessionLibraryItemKind::File,
+            mime_type: "application/pdf".into(),
+            size_bytes: 2048,
+            text_content: None,
+            image_data: None,
+            file_path: Some("/private/project/reference.pdf".into()),
+            created_at: chrono::Utc::now(),
+        };
+
+        let json = serde_json::to_value(shell_library_summary(item)).unwrap();
+        assert_eq!(json["id"], "lib-one");
+        assert_eq!(json["name"], "reference.pdf");
+        assert_eq!(json["kind"], "file");
+        assert_eq!(json["scope"], "project");
+        assert_eq!(json["status"], "missing");
+        let serialized = json.to_string();
+        assert!(!serialized.contains("/private"));
+        assert!(!serialized.contains("filePath"));
+        assert!(!serialized.contains("textContent"));
+        assert!(!serialized.contains("imageData"));
+    }
+
+    #[test]
+    fn pasted_library_text_resolves_as_labeled_content() {
+        let item = SessionLibraryItem {
+            id: "lib-text".into(),
+            scope: SessionLibraryScope::Session,
+            name: "Meeting notes".into(),
+            kind: SessionLibraryItemKind::Text,
+            mime_type: "text/plain".into(),
+            size_bytes: 12,
+            text_content: Some("Decide today".into()),
+            image_data: None,
+            file_path: None,
+            created_at: chrono::Utc::now(),
+        };
+
+        assert_eq!(
+            resolve_shell_library_item(&item).unwrap(),
+            ShellLibraryResolvedContent::Text {
+                text: "[Library item: Meeting notes]\nDecide today".into()
+            }
+        );
     }
 }

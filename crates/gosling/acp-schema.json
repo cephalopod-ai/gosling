@@ -744,6 +744,302 @@
         "referenced"
       ]
     },
+    "ShellLibraryListRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/list"
+    },
+    "ShellLibraryListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellLibraryItemSummary"
+          },
+          "default": []
+        }
+      },
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/list"
+    },
+    "ShellLibraryItemSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ShellLibraryItemKind"
+        },
+        "scope": {
+          "$ref": "#/$defs/ShellLibraryScope"
+        },
+        "status": {
+          "$ref": "#/$defs/ShellLibraryItemStatus"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "scope",
+        "status",
+        "mimeType",
+        "sizeBytes"
+      ],
+      "description": "Safe metadata for one project/session input reference.\n\nLinked paths and stored text/image payloads never appear in this projection."
+    },
+    "ShellLibraryItemKind": {
+      "type": "string",
+      "enum": [
+        "text",
+        "image",
+        "file"
+      ]
+    },
+    "ShellLibraryScope": {
+      "type": "string",
+      "enum": [
+        "project",
+        "session"
+      ]
+    },
+    "ShellLibraryItemStatus": {
+      "type": "string",
+      "enum": [
+        "available",
+        "missing"
+      ]
+    },
+    "ShellLibraryAddTextRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/ShellLibraryScope"
+        },
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "scope",
+        "name",
+        "text"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/add_text"
+    },
+    "ShellLibraryAddResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ShellLibraryItemSummary"
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "x-side": "agent"
+    },
+    "ShellLibraryAddImageRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/ShellLibraryScope"
+        },
+        "name": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "scope",
+        "name",
+        "mimeType",
+        "data"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/add_image"
+    },
+    "ShellLibraryLinkFileRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/ShellLibraryScope"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "scope",
+        "path"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/link_file"
+    },
+    "ShellLibraryRemoveRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "itemId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/remove"
+    },
+    "ShellLibraryRemoveResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "removed"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/remove"
+    },
+    "ShellLibraryResolveRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "itemIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/resolve"
+    },
+    "ShellLibraryResolveResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellLibraryResolvedItem"
+          },
+          "default": []
+        }
+      },
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/resolve"
+    },
+    "ShellLibraryResolvedItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "content": {
+          "$ref": "#/$defs/ShellLibraryResolvedContent"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "content"
+      ]
+    },
+    "ShellLibraryResolvedContent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "string"
+            },
+            "mime_type": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "image"
+            }
+          },
+          "required": [
+            "type",
+            "data",
+            "mime_type"
+          ]
+        }
+      ]
+    },
     "DomainSnapshotRequest_unstable": {
       "type": "object",
       "properties": {
@@ -7088,6 +7384,60 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ShellLibraryListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/session/library/list",
+                  "title": "ShellLibraryListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ShellLibraryAddTextRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/session/library/add_text",
+                  "title": "ShellLibraryAddTextRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ShellLibraryAddImageRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/session/library/add_image",
+                  "title": "ShellLibraryAddImageRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ShellLibraryLinkFileRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/session/library/link_file",
+                  "title": "ShellLibraryLinkFileRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ShellLibraryRemoveRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/session/library/remove",
+                  "title": "ShellLibraryRemoveRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ShellLibraryResolveRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/session/library/resolve",
+                  "title": "ShellLibraryResolveRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/DomainSnapshotRequest_unstable"
                     }
                   ],
@@ -8089,6 +8439,38 @@
                         }
                       ],
                       "title": "ShellArtifactListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellLibraryListResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellLibraryListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellLibraryAddResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellLibraryAddResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellLibraryRemoveResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellLibraryRemoveResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellLibraryResolveResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellLibraryResolveResponse_unstable"
                     },
                     {
                       "allOf": [

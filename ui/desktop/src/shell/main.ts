@@ -21,8 +21,12 @@ void bootstrapShell({
   ipcMain,
   createWindow: (options) => new BrowserWindow(options),
   showSaveDialog: (options) => dialog.showSaveDialog(options),
-  showOpenDialog: (options) =>
-    dialog.showOpenDialog({ ...options, properties: [...options.properties] }),
+  showOpenDialog: ({ filters, ...options }) =>
+    dialog.showOpenDialog({
+      ...options,
+      properties: [...options.properties],
+      ...(filters ? { filters: filters.map((filter) => ({ ...filter })) } : {}),
+    }),
   showConfirmDialog: async (options) => {
     const result = await dialog.showMessageBox({
       type: 'warning',

@@ -31,6 +31,36 @@
       "responseType": "ShellArtifactListResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/shell/session/library/list",
+      "requestType": "ShellLibraryListRequest_unstable",
+      "responseType": "ShellLibraryListResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/session/library/add_text",
+      "requestType": "ShellLibraryAddTextRequest_unstable",
+      "responseType": "ShellLibraryAddResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/session/library/add_image",
+      "requestType": "ShellLibraryAddImageRequest_unstable",
+      "responseType": "ShellLibraryAddResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/session/library/link_file",
+      "requestType": "ShellLibraryLinkFileRequest_unstable",
+      "responseType": "ShellLibraryAddResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/session/library/remove",
+      "requestType": "ShellLibraryRemoveRequest_unstable",
+      "responseType": "ShellLibraryRemoveResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/shell/session/library/resolve",
+      "requestType": "ShellLibraryResolveRequest_unstable",
+      "responseType": "ShellLibraryResolveResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/shell/domain/snapshot",
       "requestType": "DomainSnapshotRequest_unstable",
       "responseType": "DomainSnapshotResponse_unstable"

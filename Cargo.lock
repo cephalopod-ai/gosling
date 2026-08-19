@@ -4082,6 +4082,7 @@ dependencies = [
  "jsonwebtoken",
  "keyring",
  "libc",
+ "lopdf",
  "lru 0.18.0",
  "minijinja",
  "mockall",

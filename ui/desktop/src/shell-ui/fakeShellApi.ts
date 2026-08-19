@@ -108,6 +108,36 @@ export function createFakeShellApi(
       detach: (request) => record('session.detach', request, { detached: true, sessionId: null }),
       onUpdated: (listener) => subscribe(sessionListeners, listener),
     },
+    library: {
+      list: (request) => record('session.library.read', request, { items: [] }),
+      addText: (request) =>
+        record('session.library.write', request, {
+          item: {
+            id: 'lib-text',
+            name: request.name,
+            kind: 'text' as const,
+            scope: request.scope,
+            status: 'available' as const,
+            mimeType: 'text/plain',
+            sizeBytes: request.text.length,
+          },
+        }),
+      addImage: (request) =>
+        record('session.library.write', request, {
+          item: {
+            id: 'lib-image',
+            name: request.name,
+            kind: 'image' as const,
+            scope: request.scope,
+            status: 'available' as const,
+            mimeType: request.mimeType,
+            sizeBytes: request.data.length,
+          },
+        }),
+      linkFile: (request) =>
+        record('session.library.write', request, { status: 'canceled' as const }),
+      remove: (request) => record('session.library.write', request, { removed: true }),
+    },
     prompt: {
       submit: (request) => record('prompt.submit', request, { promptAttemptId: 'attempt-1' }),
       cancel: (request) => record('prompt.cancel', request, undefined),

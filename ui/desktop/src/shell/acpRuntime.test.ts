@@ -4,6 +4,7 @@ import type {
   DomainActionResponse_unstable,
   DomainSnapshotResponse_unstable,
   GoslingClientCallbacks,
+  ShellLibraryResolveResponse_unstable,
 } from '@repo-makeover/gosling-sdk';
 import type { InitializeResponse } from '@agentclientprotocol/sdk';
 import { connectShellAcp, provisioningIssueSummaries, ShellCompatibilityError } from './acpRuntime';
@@ -146,6 +147,14 @@ function harness() {
   const listArtifacts = vi.fn(() =>
     Promise.resolve({ artifacts: [], totalCount: 0, truncated: false })
   );
+  const listLibrary = vi.fn(() => Promise.resolve({ items: [] }));
+  const addLibraryText = vi.fn(() => Promise.reject(new Error('not used')));
+  const addLibraryImage = vi.fn(() => Promise.reject(new Error('not used')));
+  const linkLibraryFile = vi.fn(() => Promise.reject(new Error('not used')));
+  const removeLibraryItem = vi.fn(() => Promise.resolve({ removed: false }));
+  const resolveLibrary = vi.fn<() => Promise<ShellLibraryResolveResponse_unstable>>(() =>
+    Promise.resolve({ items: [] })
+  );
   const prepare = vi.fn(() => Promise.reject(new Error('not used')));
   const snapshot = vi.fn<() => Promise<DomainSnapshotResponse_unstable>>(() =>
     Promise.reject(new Error('not used'))
@@ -173,6 +182,12 @@ function harness() {
       shellCredentialsList_unstable: listCredentials,
       shellModulesList_unstable: listModules,
       shellSessionArtifactsList_unstable: listArtifacts,
+      shellSessionLibraryList_unstable: listLibrary,
+      shellSessionLibraryAddText_unstable: addLibraryText,
+      shellSessionLibraryAddImage_unstable: addLibraryImage,
+      shellSessionLibraryLinkFile_unstable: linkLibraryFile,
+      shellSessionLibraryRemove_unstable: removeLibraryItem,
+      shellSessionLibraryResolve_unstable: resolveLibrary,
       shellHandoffPrepare_unstable: prepare,
       shellDomainSnapshot_unstable: snapshot,
       shellDomainAction_unstable: action,
@@ -211,6 +226,7 @@ function harness() {
     snapshot,
     action,
     confirmAction,
+    resolveLibrary,
     validate,
   };
 }
@@ -495,6 +511,41 @@ describe('shell ACP runtime', () => {
       prompt: [{ type: 'text', text: 'hello' }],
     });
     expect(value.cancel).toHaveBeenCalledWith({ sessionId: 'session-1' });
+  });
+
+  it('resolves selected library items into standard ACP text and image blocks', async () => {
+    const { promise, value } = connect();
+    value.resolveLibrary.mockResolvedValue({
+      items: [
+        { id: 'lib-text', name: 'Notes', content: { type: 'text', text: 'library notes' } },
+        {
+          id: 'lib-image',
+          name: 'Sketch',
+          content: { type: 'image', data: 'aW1hZ2U=', mime_type: 'image/png' },
+        },
+      ],
+    });
+    const connection = await promise;
+
+    await connection.prompt({
+      sessionId: 'session-1',
+      text: '',
+      messageId: 'attempt-library',
+      libraryItemIds: ['lib-text', 'lib-image'],
+    });
+
+    expect(value.resolveLibrary).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      itemIds: ['lib-text', 'lib-image'],
+    });
+    expect(value.prompt).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      messageId: 'attempt-library',
+      prompt: [
+        { type: 'text', text: 'library notes' },
+        { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
+      ],
+    });
   });
 
   it('relays domain actions and confirmation only through the main-owned connection', async () => {

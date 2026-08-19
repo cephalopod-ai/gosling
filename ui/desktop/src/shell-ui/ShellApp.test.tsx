@@ -470,6 +470,44 @@ describe('accessibility', () => {
 });
 
 describe('sessions and transcript', () => {
+  it('sends selected library references even when the text composer is empty', async () => {
+    const { fake, store } = await mount();
+    act(() => {
+      store.dispatch({
+        type: 'library/loaded',
+        items: [
+          {
+            id: 'lib-reference',
+            name: 'Reference.pdf',
+            kind: 'file',
+            scope: 'project',
+            status: 'available',
+            mimeType: 'application/pdf',
+            sizeBytes: 1024,
+          },
+        ],
+      });
+    });
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(fake.calls.find((call) => call.operation === 'prompt.submit')?.request).toEqual({
+      generation: 1,
+      sessionId: 'sess-1',
+      text: '',
+      libraryItemIds: ['lib-reference'],
+    });
+  });
+
+  it('omits the library when the consumer does not declare library read access', async () => {
+    const capabilities = ALL_CAPABILITIES.filter(
+      (capability) => !capability.startsWith('session.library.')
+    );
+    const { fake } = await mount({ declaredCapabilities: capabilities });
+    expect(screen.queryByRole('heading', { name: 'Library' })).toBeNull();
+    expect(fake.calls.some((call) => call.operation === 'session.library.read')).toBe(false);
+  });
+
   it('loads and renders only the safe Outputs projection for the active session', async () => {
     const { fake } = await mount();
     await waitFor(() => {

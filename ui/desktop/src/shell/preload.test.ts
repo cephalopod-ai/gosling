@@ -36,6 +36,7 @@ describe('shell preload surface', () => {
       'elicitation',
       'external',
       'handoff',
+      'library',
       'permission',
       'prompt',
       'runtime',
@@ -59,6 +60,13 @@ describe('shell preload surface', () => {
       'readArtifacts',
       'readTranscript',
       'resume',
+    ]);
+    expect(Object.keys(goslingShellAPI.library).sort()).toEqual([
+      'addImage',
+      'addText',
+      'linkFile',
+      'list',
+      'remove',
     ]);
     expect(Object.keys(goslingShellAPI.directory)).toEqual(['select']);
     expect(Object.keys(goslingShellAPI.credential)).toEqual(['select']);
@@ -97,6 +105,16 @@ describe('shell preload surface', () => {
     const confirm = { ...generation, handoffId: 'handoff' };
     const resume = { ...generation, sessionId: 'session' };
     const submit = { ...resume, text: 'prompt' };
+    const libraryText = { ...resume, scope: 'session' as const, name: 'Notes', text: 'content' };
+    const libraryImage = {
+      ...resume,
+      scope: 'project' as const,
+      name: 'Sketch',
+      mimeType: 'image/png',
+      data: 'aW1hZ2U=',
+    };
+    const libraryFile = { ...resume, scope: 'session' as const, userGesture: true as const };
+    const libraryRemove = { ...resume, itemId: 'lib-one' };
     const cancel = { ...resume, promptAttemptId: 'attempt' };
     const permission = {
       ...generation,
@@ -133,6 +151,11 @@ describe('shell preload surface', () => {
     await goslingShellAPI.session.resume(resume);
     await goslingShellAPI.session.readTranscript(resume);
     await goslingShellAPI.session.readArtifacts(resume);
+    await goslingShellAPI.library.list(resume);
+    await goslingShellAPI.library.addText(libraryText);
+    await goslingShellAPI.library.addImage(libraryImage);
+    await goslingShellAPI.library.linkFile(libraryFile);
+    await goslingShellAPI.library.remove(libraryRemove);
     await goslingShellAPI.session.detach(generation);
     await goslingShellAPI.prompt.submit(submit);
     await goslingShellAPI.prompt.cancel(cancel);
@@ -160,6 +183,11 @@ describe('shell preload surface', () => {
       [shellIpcChannels.sessionResume, resume],
       [shellIpcChannels.sessionTranscriptRead, resume],
       [shellIpcChannels.sessionArtifactsRead, resume],
+      [shellIpcChannels.sessionLibraryRead, resume],
+      [shellIpcChannels.sessionLibraryAddText, libraryText],
+      [shellIpcChannels.sessionLibraryAddImage, libraryImage],
+      [shellIpcChannels.sessionLibraryLinkFile, libraryFile],
+      [shellIpcChannels.sessionLibraryRemove, libraryRemove],
       [shellIpcChannels.sessionDetach, generation],
       [shellIpcChannels.promptSubmit, submit],
       [shellIpcChannels.promptCancel, cancel],

@@ -41,6 +41,7 @@ describe('shell session controller', () => {
       sessionId: 'session-a',
       text: 'hello',
       messageId: 'attempt-a',
+      libraryItemIds: [],
     });
     expect(() =>
       controller.submit({ generation: 3, sessionId: 'session-a', text: 'again' })

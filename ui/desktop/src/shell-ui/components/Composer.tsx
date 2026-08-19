@@ -17,13 +17,24 @@ export interface ComposerProps {
   blockedByInteraction: boolean;
   canSubmit: boolean;
   canCancel: boolean;
+  attachmentCount: number;
   onDraftChange: (draft: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function Composer(
-  { draft, session, blockedByInteraction, canSubmit, canCancel, onDraftChange, onSubmit, onCancel },
+  {
+    draft,
+    session,
+    blockedByInteraction,
+    canSubmit,
+    canCancel,
+    attachmentCount,
+    onDraftChange,
+    onSubmit,
+    onCancel,
+  },
   ref
 ) {
   const phase = session?.promptAttempt?.phase ?? 'idle';
@@ -34,7 +45,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
   const sendDisabled =
     !canSubmit ||
     blockedByInteraction ||
-    draft.length === 0 ||
+    (draft.trim().length === 0 && attachmentCount === 0) ||
     overLimit ||
     streaming ||
     cancelling;
@@ -73,6 +84,11 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
             disabled={sendDisabled}
           />
         )}
+        {attachmentCount > 0 ? (
+          <span className="gsh-composer__attachments">
+            {attachmentCount} library {attachmentCount === 1 ? 'item' : 'items'} selected
+          </span>
+        ) : null}
         {bytes >= COUNTER_THRESHOLD ? (
           <span
             id="gsh-composer-limit"

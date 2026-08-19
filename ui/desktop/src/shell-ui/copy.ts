@@ -191,4 +191,11 @@ export const COPY = {
   outputsHeading: 'Outputs',
   outputsEmpty: 'No durable outputs have been recorded for this session.',
   outputsTruncated: 'Showing the first recorded outputs.',
+  libraryHeading: 'Library',
+  libraryHint:
+    'Select items to include with your next request. Paste an image anywhere in this panel.',
+  libraryEmpty: 'No project or task references yet.',
+  libraryAddFile: 'Add file',
+  libraryAddText: 'Add text',
+  librarySaveText: 'Save text',
 } as const;

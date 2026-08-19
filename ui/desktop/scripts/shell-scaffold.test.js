@@ -267,11 +267,14 @@ test('the committed neutral Default Shell sample stays conformant', () => {
     'session.artifacts.read',
     'session.create',
     'session.detach',
+    'session.library.read',
+    'session.library.write',
     'session.list',
     'session.resume',
     'session.transcript.read',
   ]);
   assert.deepEqual(report.requiredAgentCapabilities, ['loadSession', 'sessionList']);
   assert.ok(report.requiredMethods.includes('_gosling/unstable/shell/directory/validate'));
+  assert.ok(report.requiredMethods.includes('_gosling/unstable/shell/session/library/resolve'));
   assert.ok(report.requiredMethods.includes('_gosling/unstable/shell/credentials/list'));
 });

@@ -162,6 +162,16 @@ import type {
   ShellDirectoryValidateResponse_unstable,
   ShellHandoffPrepareRequest_unstable,
   ShellHandoffPrepareResponse_unstable,
+  ShellLibraryAddImageRequest_unstable,
+  ShellLibraryAddResponse_unstable,
+  ShellLibraryAddTextRequest_unstable,
+  ShellLibraryLinkFileRequest_unstable,
+  ShellLibraryListRequest_unstable,
+  ShellLibraryListResponse_unstable,
+  ShellLibraryRemoveRequest_unstable,
+  ShellLibraryRemoveResponse_unstable,
+  ShellLibraryResolveRequest_unstable,
+  ShellLibraryResolveResponse_unstable,
   ShellModuleListRequest_unstable,
   ShellModuleListResponse_unstable,
   ShellProvisioningReadRequest_unstable,
@@ -259,6 +269,10 @@ import {
   zShellCredentialListResponse_unstable,
   zShellDirectoryValidateResponse_unstable,
   zShellHandoffPrepareResponse_unstable,
+  zShellLibraryAddResponse_unstable,
+  zShellLibraryListResponse_unstable,
+  zShellLibraryRemoveResponse_unstable,
+  zShellLibraryResolveResponse_unstable,
   zShellModuleListResponse_unstable,
   zShellProvisioningReadResponse_unstable,
   zShellProvisioningValidateResponse_unstable,
@@ -345,6 +359,78 @@ export class GoslingExtClient {
     return zShellArtifactListResponse_unstable.parse(
       raw,
     ) as ShellArtifactListResponse_unstable;
+  }
+
+  async shellSessionLibraryList_unstable(
+    params: ShellLibraryListRequest_unstable,
+  ): Promise<ShellLibraryListResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/session/library/list",
+      params,
+    );
+    return zShellLibraryListResponse_unstable.parse(
+      raw,
+    ) as ShellLibraryListResponse_unstable;
+  }
+
+  async shellSessionLibraryAddText_unstable(
+    params: ShellLibraryAddTextRequest_unstable,
+  ): Promise<ShellLibraryAddResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/session/library/add_text",
+      params,
+    );
+    return zShellLibraryAddResponse_unstable.parse(
+      raw,
+    ) as ShellLibraryAddResponse_unstable;
+  }
+
+  async shellSessionLibraryAddImage_unstable(
+    params: ShellLibraryAddImageRequest_unstable,
+  ): Promise<ShellLibraryAddResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/session/library/add_image",
+      params,
+    );
+    return zShellLibraryAddResponse_unstable.parse(
+      raw,
+    ) as ShellLibraryAddResponse_unstable;
+  }
+
+  async shellSessionLibraryLinkFile_unstable(
+    params: ShellLibraryLinkFileRequest_unstable,
+  ): Promise<ShellLibraryAddResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/session/library/link_file",
+      params,
+    );
+    return zShellLibraryAddResponse_unstable.parse(
+      raw,
+    ) as ShellLibraryAddResponse_unstable;
+  }
+
+  async shellSessionLibraryRemove_unstable(
+    params: ShellLibraryRemoveRequest_unstable,
+  ): Promise<ShellLibraryRemoveResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/session/library/remove",
+      params,
+    );
+    return zShellLibraryRemoveResponse_unstable.parse(
+      raw,
+    ) as ShellLibraryRemoveResponse_unstable;
+  }
+
+  async shellSessionLibraryResolve_unstable(
+    params: ShellLibraryResolveRequest_unstable,
+  ): Promise<ShellLibraryResolveResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/session/library/resolve",
+      params,
+    );
+    return zShellLibraryResolveResponse_unstable.parse(
+      raw,
+    ) as ShellLibraryResolveResponse_unstable;
   }
 
   async shellDomainSnapshot_unstable(

@@ -68,6 +68,54 @@ impl GoslingAcpAgent {
         self.on_list_shell_artifacts(req).await
     }
 
+    #[custom_method(ShellLibraryListRequest)]
+    async fn dispatch_list_shell_library(
+        &self,
+        req: ShellLibraryListRequest,
+    ) -> Result<ShellLibraryListResponse, agent_client_protocol::Error> {
+        self.on_list_shell_library(req).await
+    }
+
+    #[custom_method(ShellLibraryAddTextRequest)]
+    async fn dispatch_add_shell_library_text(
+        &self,
+        req: ShellLibraryAddTextRequest,
+    ) -> Result<ShellLibraryAddResponse, agent_client_protocol::Error> {
+        self.on_add_shell_library_text(req).await
+    }
+
+    #[custom_method(ShellLibraryAddImageRequest)]
+    async fn dispatch_add_shell_library_image(
+        &self,
+        req: ShellLibraryAddImageRequest,
+    ) -> Result<ShellLibraryAddResponse, agent_client_protocol::Error> {
+        self.on_add_shell_library_image(req).await
+    }
+
+    #[custom_method(ShellLibraryLinkFileRequest)]
+    async fn dispatch_link_shell_library_file(
+        &self,
+        req: ShellLibraryLinkFileRequest,
+    ) -> Result<ShellLibraryAddResponse, agent_client_protocol::Error> {
+        self.on_link_shell_library_file(req).await
+    }
+
+    #[custom_method(ShellLibraryRemoveRequest)]
+    async fn dispatch_remove_shell_library_item(
+        &self,
+        req: ShellLibraryRemoveRequest,
+    ) -> Result<ShellLibraryRemoveResponse, agent_client_protocol::Error> {
+        self.on_remove_shell_library_item(req).await
+    }
+
+    #[custom_method(ShellLibraryResolveRequest)]
+    async fn dispatch_resolve_shell_library(
+        &self,
+        req: ShellLibraryResolveRequest,
+    ) -> Result<ShellLibraryResolveResponse, agent_client_protocol::Error> {
+        self.on_resolve_shell_library(req).await
+    }
+
     #[custom_method(DomainSnapshotRequest)]
     async fn dispatch_domain_snapshot(
         &self,

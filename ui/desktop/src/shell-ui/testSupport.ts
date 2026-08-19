@@ -12,6 +12,8 @@ export const ALL_CAPABILITIES = [
   'prompt.cancel',
   'prompt.submit',
   'session.artifacts.read',
+  'session.library.read',
+  'session.library.write',
   'session.create',
   'session.detach',
   'session.list',

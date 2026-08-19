@@ -19,11 +19,21 @@ import type {
   ShellDirectorySelectRequest,
   ShellSessionDetachResult,
   ShellSessionResumeRequest,
+  ShellLibraryAddTextRequest,
+  ShellLibraryAddImageRequest,
+  ShellLibraryLinkFileRequest,
+  ShellLibraryLinkFileResult,
+  ShellLibraryRemoveRequest,
   ShellSettingsAppearanceUpdateRequest,
   ShellSettingsResetRequest,
   ShellSettingsSnapshot,
 } from './ipc';
-import type { ShellArtifactListResponse_unstable } from '@repo-makeover/gosling-sdk';
+import type {
+  ShellArtifactListResponse_unstable,
+  ShellLibraryAddResponse_unstable,
+  ShellLibraryListResponse_unstable,
+  ShellLibraryRemoveResponse_unstable,
+} from '@repo-makeover/gosling-sdk';
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
@@ -63,6 +73,13 @@ export interface GoslingShellAPI {
     readArtifacts(request: ShellSessionResumeRequest): Promise<ShellArtifactListResponse_unstable>;
     detach(request: ShellGenerationRequest): Promise<ShellSessionDetachResult>;
     onUpdated(listener: (update: ShellSessionUpdate) => void): () => void;
+  };
+  library: {
+    list(request: ShellSessionResumeRequest): Promise<ShellLibraryListResponse_unstable>;
+    addText(request: ShellLibraryAddTextRequest): Promise<ShellLibraryAddResponse_unstable>;
+    addImage(request: ShellLibraryAddImageRequest): Promise<ShellLibraryAddResponse_unstable>;
+    linkFile(request: ShellLibraryLinkFileRequest): Promise<ShellLibraryLinkFileResult>;
+    remove(request: ShellLibraryRemoveRequest): Promise<ShellLibraryRemoveResponse_unstable>;
   };
   prompt: {
     submit(request: ShellPromptSubmitRequest): Promise<ShellPromptSubmitResult>;

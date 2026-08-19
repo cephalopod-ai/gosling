@@ -265,10 +265,105 @@ body {
   gap: 0.9em;
 }
 
-.gsh-outputs {
+.gsh-reference-sidebar {
   border-left: 1px solid var(--gsh-border-subtle);
   padding-left: 0.9em;
   min-width: 0;
+}
+
+.gsh-outputs {
+  border-top: 1px solid var(--gsh-border-subtle);
+  margin-top: 1em;
+  padding-top: 1em;
+}
+
+.gsh-library__head,
+.gsh-library__actions,
+.gsh-library-item,
+.gsh-library-item__select {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.gsh-library__head {
+  justify-content: space-between;
+}
+
+.gsh-library__heading {
+  margin: 0;
+  font-size: 1em;
+}
+
+.gsh-library__head select,
+.gsh-library__text-form input,
+.gsh-library__text-form textarea {
+  min-width: 0;
+  font: inherit;
+  font-size: 0.85em;
+}
+
+.gsh-library__hint,
+.gsh-library__empty,
+.gsh-library-item__meta {
+  color: var(--gsh-text-secondary);
+  font-size: 0.82em;
+}
+
+.gsh-library__hint {
+  margin: 0.35em 0 0.6em;
+}
+
+.gsh-library__actions {
+  flex-wrap: wrap;
+  margin-bottom: 0.6em;
+}
+
+.gsh-library__text-form {
+  display: grid;
+  gap: 0.4em;
+  margin-bottom: 0.7em;
+}
+
+.gsh-library__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gsh-library-item {
+  align-items: flex-start;
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 4px;
+  padding: 0.4em 0.5em;
+  margin-bottom: 0.4em;
+  background: var(--gsh-surface-base);
+  overflow-wrap: anywhere;
+}
+
+.gsh-library-item__select {
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+}
+
+.gsh-library-item__name,
+.gsh-library-item__meta {
+  display: block;
+}
+
+.gsh-library-item__remove {
+  border: 0;
+  background: transparent;
+  color: var(--gsh-text-secondary);
+  font: inherit;
+  font-size: 0.75em;
+  cursor: pointer;
+}
+
+.gsh-composer__attachments {
+  color: var(--gsh-text-secondary);
+  font-size: 0.8em;
 }
 
 .gsh-outputs__head {
@@ -316,7 +411,7 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .gsh-outputs {
+  .gsh-reference-sidebar {
     border-left: 0;
     border-top: 1px solid var(--gsh-border-subtle);
     padding: 0.9em 0 0;

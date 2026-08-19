@@ -19,6 +19,10 @@ import type {
   ShellPermissionRespondRequest,
   ShellElicitationRespondRequest,
   ShellSessionResumeRequest,
+  ShellLibraryAddTextRequest,
+  ShellLibraryAddImageRequest,
+  ShellLibraryLinkFileRequest,
+  ShellLibraryRemoveRequest,
   ShellSettingsAppearanceUpdateRequest,
   ShellSettingsResetRequest,
 } from './ipc';
@@ -78,6 +82,18 @@ export const goslingShellAPI: GoslingShellAPI = Object.freeze({
       ipcRenderer.on(shellIpcChannels.sessionUpdated, wrapped);
       return () => ipcRenderer.removeListener(shellIpcChannels.sessionUpdated, wrapped);
     },
+  }),
+  library: Object.freeze({
+    list: (request: ShellSessionResumeRequest) =>
+      invoke(shellIpcChannels.sessionLibraryRead, request),
+    addText: (request: ShellLibraryAddTextRequest) =>
+      invoke(shellIpcChannels.sessionLibraryAddText, request),
+    addImage: (request: ShellLibraryAddImageRequest) =>
+      invoke(shellIpcChannels.sessionLibraryAddImage, request),
+    linkFile: (request: ShellLibraryLinkFileRequest) =>
+      invoke(shellIpcChannels.sessionLibraryLinkFile, request),
+    remove: (request: ShellLibraryRemoveRequest) =>
+      invoke(shellIpcChannels.sessionLibraryRemove, request),
   }),
   prompt: Object.freeze({
     submit: (request: ShellPromptSubmitRequest) => invoke(shellIpcChannels.promptSubmit, request),

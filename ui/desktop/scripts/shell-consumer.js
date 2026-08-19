@@ -16,6 +16,8 @@ const APPLICATION_OPERATIONS = new Set([
   'directory.select',
   'session.create',
   'session.artifacts.read',
+  'session.library.read',
+  'session.library.write',
   'session.detach',
   'session.list',
   'session.resume',
@@ -29,12 +31,22 @@ const APPLICATION_OPERATIONS = new Set([
   'confirmation.respond',
 ]);
 const CUSTOM_METHODS_BY_OPERATION = {
-  'directory.select': '_gosling/unstable/shell/directory/validate',
-  'credential.select': '_gosling/unstable/shell/credentials/list',
-  'domain.snapshot': '_gosling/unstable/shell/domain/snapshot',
-  'domain.action': '_gosling/unstable/shell/domain/action',
-  'confirmation.respond': '_gosling/unstable/shell/domain/action/confirm',
-  'session.artifacts.read': '_gosling/unstable/shell/session/artifacts/list',
+  'directory.select': ['_gosling/unstable/shell/directory/validate'],
+  'credential.select': ['_gosling/unstable/shell/credentials/list'],
+  'domain.snapshot': ['_gosling/unstable/shell/domain/snapshot'],
+  'domain.action': ['_gosling/unstable/shell/domain/action'],
+  'confirmation.respond': ['_gosling/unstable/shell/domain/action/confirm'],
+  'session.artifacts.read': ['_gosling/unstable/shell/session/artifacts/list'],
+  'session.library.read': [
+    '_gosling/unstable/shell/session/library/list',
+    '_gosling/unstable/shell/session/library/resolve',
+  ],
+  'session.library.write': [
+    '_gosling/unstable/shell/session/library/add_text',
+    '_gosling/unstable/shell/session/library/add_image',
+    '_gosling/unstable/shell/session/library/link_file',
+    '_gosling/unstable/shell/session/library/remove',
+  ],
 };
 const AGENT_CAPABILITIES_BY_OPERATION = {
   'session.create': 'loadSession',
@@ -47,6 +59,8 @@ const OPERATION_PREREQUISITES = {
   'prompt.submit': ['elicitation.respond', 'permission.respond', 'session.create'],
   'session.create': ['directory.select'],
   'session.artifacts.read': ['session.create'],
+  'session.library.read': ['session.create'],
+  'session.library.write': ['session.library.read'],
   'session.detach': ['session.create'],
   'session.list': ['directory.select'],
   'session.resume': ['session.list'],
@@ -313,8 +327,9 @@ function resolveConsumerManifest(manifestFile) {
   const requiredMethods = new Set(profile.profile.compatibility.requiredMethods);
   const requiredAgentCapabilities = new Set();
   for (const operation of normalized.declaredCapabilities) {
-    if (CUSTOM_METHODS_BY_OPERATION[operation])
-      requiredMethods.add(CUSTOM_METHODS_BY_OPERATION[operation]);
+    for (const method of CUSTOM_METHODS_BY_OPERATION[operation] ?? []) {
+      requiredMethods.add(method);
+    }
     if (AGENT_CAPABILITIES_BY_OPERATION[operation]) {
       requiredAgentCapabilities.add(AGENT_CAPABILITIES_BY_OPERATION[operation]);
     }

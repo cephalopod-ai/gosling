@@ -5,6 +5,11 @@ import type {
   ShellHandoffEnvelope,
   ShellHandoffPrepareRequest_unstable,
   ShellArtifactListResponse_unstable,
+  ShellLibraryAddResponse_unstable,
+  ShellLibraryItemSummary,
+  ShellLibraryListResponse_unstable,
+  ShellLibraryRemoveResponse_unstable,
+  ShellLibraryScope,
 } from '@repo-makeover/gosling-sdk';
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
@@ -30,6 +35,11 @@ export const shellIpcChannels = {
   sessionResume: 'session.resume',
   sessionTranscriptRead: 'session.transcript.read',
   sessionArtifactsRead: 'session.artifacts.read',
+  sessionLibraryRead: 'session.library.read',
+  sessionLibraryAddText: 'session.library.addText',
+  sessionLibraryAddImage: 'session.library.addImage',
+  sessionLibraryLinkFile: 'session.library.linkFile',
+  sessionLibraryRemove: 'session.library.remove',
   sessionDetach: 'session.detach',
   promptSubmit: 'prompt.submit',
   promptCancel: 'prompt.cancel',
@@ -63,6 +73,11 @@ export type ShellIpcInvokeChannel =
   | (typeof shellIpcChannels)['sessionResume']
   | (typeof shellIpcChannels)['sessionTranscriptRead']
   | (typeof shellIpcChannels)['sessionArtifactsRead']
+  | (typeof shellIpcChannels)['sessionLibraryRead']
+  | (typeof shellIpcChannels)['sessionLibraryAddText']
+  | (typeof shellIpcChannels)['sessionLibraryAddImage']
+  | (typeof shellIpcChannels)['sessionLibraryLinkFile']
+  | (typeof shellIpcChannels)['sessionLibraryRemove']
   | (typeof shellIpcChannels)['sessionDetach']
   | (typeof shellIpcChannels)['promptSubmit']
   | (typeof shellIpcChannels)['promptCancel']
@@ -119,7 +134,34 @@ export interface ShellSessionDetachResult {
 
 export interface ShellPromptSubmitRequest extends ShellSessionResumeRequest {
   text: string;
+  libraryItemIds?: string[];
 }
+
+export interface ShellLibraryAddTextRequest extends ShellSessionResumeRequest {
+  scope: ShellLibraryScope;
+  name: string;
+  text: string;
+}
+
+export interface ShellLibraryAddImageRequest extends ShellSessionResumeRequest {
+  scope: ShellLibraryScope;
+  name: string;
+  mimeType: string;
+  data: string;
+}
+
+export interface ShellLibraryLinkFileRequest extends ShellSessionResumeRequest {
+  scope: ShellLibraryScope;
+  userGesture: true;
+}
+
+export interface ShellLibraryRemoveRequest extends ShellSessionResumeRequest {
+  itemId: string;
+}
+
+export type ShellLibraryLinkFileResult =
+  | { status: 'canceled' }
+  | { status: 'added'; item: ShellLibraryItemSummary };
 
 export interface ShellPromptCancelRequest extends ShellSessionResumeRequest {
   promptAttemptId: string;
@@ -203,6 +245,11 @@ export interface ShellIpcRequestMap {
   [shellIpcChannels.sessionResume]: ShellSessionResumeRequest;
   [shellIpcChannels.sessionTranscriptRead]: ShellSessionResumeRequest;
   [shellIpcChannels.sessionArtifactsRead]: ShellSessionResumeRequest;
+  [shellIpcChannels.sessionLibraryRead]: ShellSessionResumeRequest;
+  [shellIpcChannels.sessionLibraryAddText]: ShellLibraryAddTextRequest;
+  [shellIpcChannels.sessionLibraryAddImage]: ShellLibraryAddImageRequest;
+  [shellIpcChannels.sessionLibraryLinkFile]: ShellLibraryLinkFileRequest;
+  [shellIpcChannels.sessionLibraryRemove]: ShellLibraryRemoveRequest;
   [shellIpcChannels.sessionDetach]: ShellGenerationRequest;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitRequest;
   [shellIpcChannels.promptCancel]: ShellPromptCancelRequest;
@@ -231,6 +278,11 @@ export interface ShellIpcResponseMap {
   [shellIpcChannels.sessionResume]: ShellSessionRecord;
   [shellIpcChannels.sessionTranscriptRead]: ShellTranscriptSnapshot;
   [shellIpcChannels.sessionArtifactsRead]: ShellArtifactListResponse_unstable;
+  [shellIpcChannels.sessionLibraryRead]: ShellLibraryListResponse_unstable;
+  [shellIpcChannels.sessionLibraryAddText]: ShellLibraryAddResponse_unstable;
+  [shellIpcChannels.sessionLibraryAddImage]: ShellLibraryAddResponse_unstable;
+  [shellIpcChannels.sessionLibraryLinkFile]: ShellLibraryLinkFileResult;
+  [shellIpcChannels.sessionLibraryRemove]: ShellLibraryRemoveResponse_unstable;
   [shellIpcChannels.sessionDetach]: ShellSessionDetachResult;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitResult;
   [shellIpcChannels.promptCancel]: undefined;
