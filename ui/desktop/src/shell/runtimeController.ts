@@ -428,6 +428,7 @@ export function createShellRuntimeController(
             },
             prompt: (input) => connection.prompt(input),
             cancel: (input) => connection.cancel(input),
+            setProviderModel: (input) => connection.setSessionProviderModel(input),
           },
           generation: () => generation,
         });

@@ -29,6 +29,7 @@ import {
   type ShellLibraryLinkFileResult,
   type ShellLibraryRemoveRequest,
   type ShellSettingsAppearanceUpdateRequest,
+  type ShellSettingsModelSelectRequest,
   type ShellSettingsResetRequest,
   type ShellSettingsSnapshot,
 } from './ipc';
@@ -158,6 +159,9 @@ export interface ShellIpcOperations {
   settingsRead(): Promise<ShellSettingsSnapshot> | ShellSettingsSnapshot;
   settingsAppearanceUpdate(
     request: ShellSettingsAppearanceUpdateRequest
+  ): Promise<ShellSettingsSnapshot> | ShellSettingsSnapshot;
+  settingsModelSelect?(
+    request: ShellSettingsModelSelectRequest
   ): Promise<ShellSettingsSnapshot> | ShellSettingsSnapshot;
   settingsReset(
     request: ShellSettingsResetRequest
@@ -551,6 +555,16 @@ function parseSettingsResetRequest(value: unknown): ShellSettingsResetRequest {
   return { generation: value.generation, userGesture: true };
 }
 
+function parseSettingsModelSelectRequest(value: unknown): ShellSettingsModelSelectRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'providerId', 'modelId'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.providerId, 'providerId', 256);
+  assertString(value.modelId, 'modelId', 512);
+  return value as unknown as ShellSettingsModelSelectRequest;
+}
+
 function parseExternalUrl(value: unknown, allowedOrigins: ReadonlySet<string>): string {
   assertString(value, 'url', MAX_EXTERNAL_URL_BYTES);
   assertRequestBytes(value, MAX_EXTERNAL_URL_BYTES);
@@ -721,6 +735,13 @@ export function registerShellIpc(input: {
       shellIpcChannels.settingsAppearanceUpdate,
       (request) =>
         operations.settingsAppearanceUpdate(parseSettingsAppearanceUpdateRequest(request)),
+    ],
+    [
+      shellIpcChannels.settingsModelSelect,
+      (request) => {
+        if (!operations.settingsModelSelect) throw new Error('model selection is unavailable');
+        return operations.settingsModelSelect(parseSettingsModelSelectRequest(request));
+      },
     ],
     [
       shellIpcChannels.settingsReset,

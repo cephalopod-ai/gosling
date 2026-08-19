@@ -25,6 +25,7 @@ import type {
   ShellLibraryLinkFileResult,
   ShellLibraryRemoveRequest,
   ShellSettingsAppearanceUpdateRequest,
+  ShellSettingsModelSelectRequest,
   ShellSettingsResetRequest,
   ShellSettingsSnapshot,
 } from './ipc';
@@ -120,6 +121,7 @@ export interface GoslingShellAPI {
   settings: {
     read(): Promise<ShellSettingsSnapshot>;
     updateAppearance(request: ShellSettingsAppearanceUpdateRequest): Promise<ShellSettingsSnapshot>;
+    selectModel(request: ShellSettingsModelSelectRequest): Promise<ShellSettingsSnapshot>;
     reset(request: ShellSettingsResetRequest): Promise<ShellSettingsSnapshot>;
   };
 }

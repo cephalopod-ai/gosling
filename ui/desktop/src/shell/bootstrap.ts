@@ -9,6 +9,7 @@ import {
 } from './diagnostics';
 import { ShellHandoffStore } from './handoff';
 import { registerShellIpc, type RegisteredShellIpc, type ShellIpcMainAdapter } from './ipcMain';
+import type { ShellModelOption, ShellModelSelection, ShellSettingsSnapshot } from './ipc';
 import type { ShellLifecycleState } from './lifecycle';
 import { loadShellResources, type ShellResourceFiles } from './resources';
 import { createShellRuntimeController, type ShellRuntimeController } from './runtimeController';
@@ -185,6 +186,54 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
   );
   const now = adapter.now ?? (() => new Date().toISOString());
   const declaredCapabilities = new Set(loaded.manifest.consumer?.declaredCapabilities ?? []);
+  const readModelSelection = async (): Promise<ShellModelSelection> => {
+    try {
+      const client = requireAcp().client.gosling;
+      if (!client.defaultsRead_unstable || !client.providersList_unstable) {
+        throw new Error('model selection is unavailable');
+      }
+      const [defaults, providers] = await Promise.all([
+        client.defaultsRead_unstable({}),
+        client.providersList_unstable({}),
+      ]);
+      const options = providers.entries
+        .filter((provider) => provider.configured)
+        .flatMap((provider): ShellModelOption[] =>
+          provider.models.slice(0, 128).map((model) => ({
+            providerId: provider.providerId,
+            providerName: provider.providerName,
+            modelId: model.id,
+            modelName: model.name ?? model.id,
+          }))
+        )
+        .filter(
+          (option) =>
+            option.providerId.length > 0 &&
+            option.providerId.length <= 256 &&
+            option.modelId.length > 0 &&
+            option.modelId.length <= 512
+        )
+        .sort((left, right) =>
+          `${left.providerName}/${left.modelName}`.localeCompare(
+            `${right.providerName}/${right.modelName}`
+          )
+        )
+        .slice(0, 128);
+      return {
+        status: 'available',
+        providerId: defaults.providerId ?? null,
+        modelId: defaults.modelId ?? null,
+        options,
+      };
+    } catch {
+      return { status: 'unavailable', providerId: null, modelId: null, options: [] };
+    }
+  };
+  const readSettings = async (): Promise<ShellSettingsSnapshot> => ({
+    appearance: settings.read().appearance,
+    recovery: settings.recovery(),
+    modelSelection: await readModelSelection(),
+  });
   const assertActiveLibrarySession = (generation: number, sessionId: string): void => {
     if (generation !== controller.read().generation) {
       throw new Error('library request generation is stale');
@@ -495,17 +544,42 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         await adapter.openExternal(url);
         return { opened: true };
       },
-      settingsRead: () => ({
-        appearance: settings.read().appearance,
-        recovery: settings.recovery(),
-      }),
-      settingsAppearanceUpdate: (request) => {
+      settingsRead: readSettings,
+      settingsAppearanceUpdate: async (request) => {
         if (request.generation !== controller.read().generation) {
           throw new Error('settings request generation is stale');
         }
         const { theme, textScale } = request;
         const updated = settings.setAppearance({ theme, textScale });
-        return { appearance: updated.appearance, recovery: settings.recovery() };
+        return { ...(await readSettings()), appearance: updated.appearance };
+      },
+      settingsModelSelect: async (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('settings request generation is stale');
+        }
+        const selection = await readModelSelection();
+        const selected = selection.options.find(
+          (option) => option.providerId === request.providerId && option.modelId === request.modelId
+        );
+        if (!selected) throw new Error('selected model is not configured in Gosling');
+        const sessions = controller.getSessionController();
+        const session = sessions?.read();
+        if (session?.status === 'active') {
+          if (!sessions) throw new Error('session runtime is unavailable');
+          await sessions.setProviderModel({
+            generation: request.generation,
+            providerId: selected.providerId,
+            modelId: selected.modelId,
+          });
+        } else {
+          const gosling = requireAcp().client.gosling;
+          if (!gosling.defaultsSave_unstable) throw new Error('model selection is unavailable');
+          await gosling.defaultsSave_unstable({
+            providerId: selected.providerId,
+            modelId: selected.modelId,
+          });
+        }
+        return readSettings();
       },
       settingsReset: async (request) => {
         if (request.generation !== controller.read().generation) {
@@ -527,7 +601,7 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
           throw new Error('settings request generation is stale');
         }
         if (!confirmation.confirmed) {
-          return { appearance: settings.read().appearance, recovery: settings.recovery() };
+          return readSettings();
         }
         const reset = settings.reset();
         // The settings file is now cleared, but directory/credentials keep their own in-memory
@@ -538,7 +612,7 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         // publishes through the existing onChanged wiring so the renderer's snapshot updates too.
         directory.clear();
         credentials.clear();
-        return { appearance: reset.appearance, recovery: settings.recovery() };
+        return { ...(await readSettings()), appearance: reset.appearance };
       },
     },
   });

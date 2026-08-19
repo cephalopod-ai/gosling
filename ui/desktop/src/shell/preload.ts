@@ -24,6 +24,7 @@ import type {
   ShellLibraryLinkFileRequest,
   ShellLibraryRemoveRequest,
   ShellSettingsAppearanceUpdateRequest,
+  ShellSettingsModelSelectRequest,
   ShellSettingsResetRequest,
 } from './ipc';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
@@ -161,6 +162,8 @@ export const goslingShellAPI: GoslingShellAPI = Object.freeze({
     read: () => invoke(shellIpcChannels.settingsRead, undefined),
     updateAppearance: (request: ShellSettingsAppearanceUpdateRequest) =>
       invoke(shellIpcChannels.settingsAppearanceUpdate, request),
+    selectModel: (request: ShellSettingsModelSelectRequest) =>
+      invoke(shellIpcChannels.settingsModelSelect, request),
     reset: (request: ShellSettingsResetRequest) => invoke(shellIpcChannels.settingsReset, request),
   }),
 });

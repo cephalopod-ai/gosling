@@ -78,7 +78,26 @@ export interface ShellAcpClient {
   listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse>;
   prompt(params: Parameters<GoslingClient['prompt']>[0]): ReturnType<GoslingClient['prompt']>;
   cancel(params: Parameters<GoslingClient['cancel']>[0]): ReturnType<GoslingClient['cancel']>;
+  setSessionConfigOption?(
+    params: Parameters<GoslingClient['setSessionConfigOption']>[0]
+  ): ReturnType<GoslingClient['setSessionConfigOption']>;
   gosling: {
+    defaultsRead_unstable?(params: Record<string, never>): Promise<{
+      providerId?: string | null;
+      modelId?: string | null;
+    }>;
+    defaultsSave_unstable?(params: {
+      providerId: string;
+      modelId?: string | null;
+    }): Promise<unknown>;
+    providersList_unstable?(params: Record<string, never>): Promise<{
+      entries: Array<{
+        providerId: string;
+        providerName: string;
+        configured: boolean;
+        models: Array<{ id: string; name?: string | null }>;
+      }>;
+    }>;
     sessionInfo_unstable(params: { sessionId: string }): Promise<GetSessionInfoResponse_unstable>;
     shellProvisioningRead_unstable(params: {
       workingDir?: string;
@@ -145,6 +164,11 @@ export interface ShellAcpConnection {
     workingDir: string;
     credentialProfileId?: string | null;
   }): Promise<ShellSession>;
+  setSessionProviderModel(input: {
+    sessionId: string;
+    providerId: string;
+    modelId: string;
+  }): Promise<void>;
   resumeSession(sessionId: string, workingDir: string): Promise<ShellSession>;
   listSessions(workingDir: string): Promise<ShellSessionSummary[]>;
   validateDirectory(directory: string): Promise<ShellDirectoryValidateResponse_unstable>;
@@ -598,6 +622,22 @@ export async function connectShellAcp(input: {
         });
         return asShellSession(String(created.sessionId), cwd, {
           modelId: created.models?.currentModelId,
+        });
+      },
+      setSessionProviderModel: async ({ sessionId, providerId, modelId }) => {
+        const fixedSessionId = assertSessionId(sessionId);
+        if (!client.setSessionConfigOption) {
+          throw new Error('model selection is unavailable');
+        }
+        await client.setSessionConfigOption({
+          sessionId: fixedSessionId,
+          configId: 'provider',
+          value: providerId,
+        });
+        await client.setSessionConfigOption({
+          sessionId: fixedSessionId,
+          configId: 'model',
+          value: modelId,
         });
       },
       resumeSession: async (sessionId, workingDir) => {

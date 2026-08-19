@@ -63,6 +63,11 @@ export interface ShellSessionTransport {
     libraryItemIds?: string[];
   }): Promise<unknown>;
   cancel(input: { sessionId: string }): Promise<void>;
+  setProviderModel?(input: {
+    sessionId: string;
+    providerId: string;
+    modelId: string;
+  }): Promise<void>;
 }
 
 export interface ShellSessionController {
@@ -78,6 +83,11 @@ export interface ShellSessionController {
     promptAttemptId: string;
   };
   cancel(input: { generation: number; sessionId: string; promptAttemptId: string }): Promise<void>;
+  setProviderModel(input: {
+    generation: number;
+    providerId: string;
+    modelId: string;
+  }): Promise<ShellSessionRecord>;
   ingestUpdate(notification: SessionNotification): void;
   readTranscript(generation: number, sessionId: string): ShellTranscriptSnapshot;
   onUpdate(listener: (update: ShellSessionUpdate) => void): () => void;
@@ -334,6 +344,23 @@ export function createShellSessionController(input: {
         publishState();
         await input.transport.cancel({ sessionId });
       }
+    },
+    async setProviderModel({ generation, providerId, modelId }) {
+      assertCurrent(generation, session.sessionId);
+      if (session.promptAttempt) throw new Error('model changes require an idle session');
+      if (!providerId || providerId.length > 256 || !modelId || modelId.length > 512) {
+        throw new Error('provider and model must be bounded strings');
+      }
+      if (!input.transport.setProviderModel) throw new Error('model selection is unavailable');
+      await input.transport.setProviderModel({
+        sessionId: session.sessionId,
+        providerId,
+        modelId,
+      });
+      assertCurrent(generation, session.sessionId);
+      session = { ...session, providerId, modelId };
+      publishState();
+      return copySession(session);
     },
     ingestUpdate(notification) {
       if (notification.sessionId !== session.sessionId) return;

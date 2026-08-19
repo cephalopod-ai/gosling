@@ -198,6 +198,7 @@ export function createFakeShellApi(
         settings = next;
         return record('settings.appearance.update', request, next);
       },
+      selectModel: (request) => record('settings.model.select', request, settings),
       reset: (request) => record('settings.reset', request, settings),
     },
   };

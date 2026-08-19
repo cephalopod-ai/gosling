@@ -203,6 +203,7 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
             productName={displayName}
             onThemeChange={(theme) => void actions.updateAppearance({ theme })}
             onTextScaleChange={(textScale) => void actions.updateAppearance({ textScale })}
+            onModelSelect={(providerId, modelId) => void actions.selectModel(providerId, modelId)}
             onReset={() => void actions.resetSettings()}
             onClose={() => actions.setView('workspace')}
           />

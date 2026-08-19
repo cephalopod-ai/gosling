@@ -82,6 +82,7 @@ describe('shell preload surface', () => {
     expect(Object.keys(goslingShellAPI.settings).sort()).toEqual([
       'read',
       'reset',
+      'selectModel',
       'updateAppearance',
     ]);
     expect(Object.isFrozen(goslingShellAPI)).toBe(true);
@@ -139,6 +140,7 @@ describe('shell preload surface', () => {
       approve: false,
     };
     const appearanceUpdate = { ...generation, theme: 'dark' as const };
+    const modelSelect = { ...generation, providerId: 'anthropic', modelId: 'claude-sonnet-4-5' };
     const settingsReset = { ...generation, userGesture: true as const };
 
     await goslingShellAPI.runtime.read();
@@ -170,6 +172,7 @@ describe('shell preload surface', () => {
     await goslingShellAPI.external.open('https://support.example.test/help');
     await goslingShellAPI.settings.read();
     await goslingShellAPI.settings.updateAppearance(appearanceUpdate);
+    await goslingShellAPI.settings.selectModel(modelSelect);
     await goslingShellAPI.settings.reset(settingsReset);
 
     expect(electron.invoke.mock.calls).toEqual([
@@ -202,6 +205,7 @@ describe('shell preload surface', () => {
       [shellIpcChannels.externalOpen, 'https://support.example.test/help'],
       [shellIpcChannels.settingsRead],
       [shellIpcChannels.settingsAppearanceUpdate, appearanceUpdate],
+      [shellIpcChannels.settingsModelSelect, modelSelect],
       [shellIpcChannels.settingsReset, settingsReset],
     ]);
   });

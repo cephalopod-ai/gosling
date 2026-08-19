@@ -34,6 +34,7 @@ export type ShellUiPendingOperation =
   | 'runtime.retry'
   | 'runtime.stop'
   | 'settings.update'
+  | 'settings.model.select'
   | 'settings.reset';
 
 export interface ShellUiState {

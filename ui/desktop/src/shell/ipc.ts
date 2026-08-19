@@ -54,6 +54,7 @@ export const shellIpcChannels = {
   externalOpen: 'external.open',
   settingsRead: 'settings.read',
   settingsAppearanceUpdate: 'settings.appearance.update',
+  settingsModelSelect: 'settings.model.select',
   settingsReset: 'settings.reset',
   runtimeChanged: 'runtime.changed',
   sessionUpdated: 'session.updated',
@@ -92,6 +93,7 @@ export type ShellIpcInvokeChannel =
   | (typeof shellIpcChannels)['externalOpen']
   | (typeof shellIpcChannels)['settingsRead']
   | (typeof shellIpcChannels)['settingsAppearanceUpdate']
+  | (typeof shellIpcChannels)['settingsModelSelect']
   | (typeof shellIpcChannels)['settingsReset'];
 
 export type ShellIpcEventChannel =
@@ -226,12 +228,32 @@ export interface ShellSettingsResetRequest extends ShellGenerationRequest {
   userGesture: true;
 }
 
+export interface ShellSettingsModelSelectRequest extends ShellGenerationRequest {
+  providerId: string;
+  modelId: string;
+}
+
+export interface ShellModelOption {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelName: string;
+}
+
+export interface ShellModelSelection {
+  status: 'available' | 'unavailable';
+  providerId: string | null;
+  modelId: string | null;
+  options: ShellModelOption[];
+}
+
 export interface ShellSettingsSnapshot {
   appearance: {
     theme: ShellTheme;
     textScale: number;
   };
   recovery: ShellSettingsRecovery;
+  modelSelection?: ShellModelSelection;
 }
 
 export interface ShellIpcRequestMap {
@@ -264,6 +286,7 @@ export interface ShellIpcRequestMap {
   [shellIpcChannels.externalOpen]: string;
   [shellIpcChannels.settingsRead]: undefined;
   [shellIpcChannels.settingsAppearanceUpdate]: ShellSettingsAppearanceUpdateRequest;
+  [shellIpcChannels.settingsModelSelect]: ShellSettingsModelSelectRequest;
   [shellIpcChannels.settingsReset]: ShellSettingsResetRequest;
 }
 
@@ -297,6 +320,7 @@ export interface ShellIpcResponseMap {
   [shellIpcChannels.externalOpen]: ShellOpenResult;
   [shellIpcChannels.settingsRead]: ShellSettingsSnapshot;
   [shellIpcChannels.settingsAppearanceUpdate]: ShellSettingsSnapshot;
+  [shellIpcChannels.settingsModelSelect]: ShellSettingsSnapshot;
   [shellIpcChannels.settingsReset]: ShellSettingsSnapshot;
 }
 

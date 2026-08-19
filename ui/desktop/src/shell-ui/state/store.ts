@@ -56,6 +56,7 @@ export interface ShellStoreActions {
   retryRuntime(): Promise<void>;
   stopRuntime(): Promise<void>;
   updateAppearance(update: { theme?: ShellTheme; textScale?: number }): Promise<void>;
+  selectModel(providerId: string, modelId: string): Promise<void>;
   resetSettings(): Promise<void>;
 }
 
@@ -448,6 +449,14 @@ export function createShellStore(api: GoslingShellAPI): ShellStore {
       await run(
         'settings.update',
         (current) => api.settings.updateAppearance({ generation: current, ...update }),
+        (settings) => dispatch({ type: 'settings/replaced', settings })
+      );
+    },
+
+    async selectModel(providerId, modelId) {
+      await run(
+        'settings.model.select',
+        (current) => api.settings.selectModel({ generation: current, providerId, modelId }),
         (settings) => dispatch({ type: 'settings/replaced', settings })
       );
     },

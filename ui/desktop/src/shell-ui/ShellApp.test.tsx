@@ -448,6 +448,41 @@ describe('accessibility', () => {
     expect(document.documentElement.style.getPropertyValue('--gsh-text-scale')).toBe('2');
   });
 
+  it('applies the selected shared provider and model from settings', async () => {
+    const { fake, store } = await mount();
+    act(() => {
+      store.dispatch({
+        type: 'settings/replaced',
+        settings: settings({
+          modelSelection: {
+            status: 'available',
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4-5',
+            options: [
+              {
+                providerId: 'anthropic',
+                providerName: 'Anthropic',
+                modelId: 'claude-sonnet-4-5',
+                modelName: 'Claude Sonnet 4.5',
+              },
+            ],
+          },
+        }),
+      });
+      store.actions.setView('settings');
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Apply model' }));
+    await waitFor(() => {
+      expect(
+        fake.calls.find((call) => call.operation === 'settings.model.select')?.request
+      ).toEqual({
+        generation: 1,
+        providerId: 'anthropic',
+        modelId: 'claude-sonnet-4-5',
+      });
+    });
+  });
+
   it('labels the transcript gap notice as a live status', async () => {
     const { store } = await mount();
     act(() =>
