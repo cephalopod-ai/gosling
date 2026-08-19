@@ -294,8 +294,8 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
 session before starting a new chat`, and `does not create a new chat when detaching the active
 session fails`.
 - Validation/evidence: the pre-patch installed renderer remained on the dashboard with no composer;
-  focused Vitest failed before the patch and passed afterward. Packaged-app validation is recorded
-  after installation.
+  focused Vitest failed before the patch and passed afterward. In the rebuilt installed app, the
+  same click opened the chat workspace and exposed the Your request composer.
 - Residual risk: New Chat remains unavailable while the runtime omits `session.create`, or while an
   active session cannot safely detach because it is streaming or awaiting an interaction.
 
