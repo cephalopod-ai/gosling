@@ -60,6 +60,14 @@ impl GoslingAcpAgent {
         self.on_list_shell_modules(req).await
     }
 
+    #[custom_method(ShellArtifactListRequest)]
+    async fn dispatch_list_shell_artifacts(
+        &self,
+        req: ShellArtifactListRequest,
+    ) -> Result<ShellArtifactListResponse, agent_client_protocol::Error> {
+        self.on_list_shell_artifacts(req).await
+    }
+
     #[custom_method(DomainSnapshotRequest)]
     async fn dispatch_domain_snapshot(
         &self,

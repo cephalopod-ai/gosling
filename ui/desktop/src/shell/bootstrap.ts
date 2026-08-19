@@ -236,6 +236,18 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         if (!sessions) throw new Error('session runtime is unavailable');
         return sessions.readTranscript(request.generation, request.sessionId);
       },
+      sessionArtifactsRead: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('artifact inventory generation is stale');
+        }
+        const sessions = controller.getSessionController();
+        if (!sessions) throw new Error('session runtime is unavailable');
+        const session = sessions.read();
+        if (session.status !== 'active' || session.sessionId !== request.sessionId) {
+          throw new Error('artifact inventory is limited to the active session');
+        }
+        return requireAcp().listArtifacts(request.sessionId);
+      },
       sessionDetach: (request) => {
         if (request.generation !== controller.read().generation) {
           throw new Error('session detach generation is stale');

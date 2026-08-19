@@ -4,6 +4,7 @@ import type {
   DomainSnapshotResponse_unstable,
   ShellHandoffEnvelope,
   ShellHandoffPrepareRequest_unstable,
+  ShellArtifactListResponse_unstable,
 } from '@repo-makeover/gosling-sdk';
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
@@ -28,6 +29,7 @@ export const shellIpcChannels = {
   sessionList: 'session.list',
   sessionResume: 'session.resume',
   sessionTranscriptRead: 'session.transcript.read',
+  sessionArtifactsRead: 'session.artifacts.read',
   sessionDetach: 'session.detach',
   promptSubmit: 'prompt.submit',
   promptCancel: 'prompt.cancel',
@@ -60,6 +62,7 @@ export type ShellIpcInvokeChannel =
   | (typeof shellIpcChannels)['sessionList']
   | (typeof shellIpcChannels)['sessionResume']
   | (typeof shellIpcChannels)['sessionTranscriptRead']
+  | (typeof shellIpcChannels)['sessionArtifactsRead']
   | (typeof shellIpcChannels)['sessionDetach']
   | (typeof shellIpcChannels)['promptSubmit']
   | (typeof shellIpcChannels)['promptCancel']
@@ -199,6 +202,7 @@ export interface ShellIpcRequestMap {
   [shellIpcChannels.sessionList]: ShellGenerationRequest;
   [shellIpcChannels.sessionResume]: ShellSessionResumeRequest;
   [shellIpcChannels.sessionTranscriptRead]: ShellSessionResumeRequest;
+  [shellIpcChannels.sessionArtifactsRead]: ShellSessionResumeRequest;
   [shellIpcChannels.sessionDetach]: ShellGenerationRequest;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitRequest;
   [shellIpcChannels.promptCancel]: ShellPromptCancelRequest;
@@ -226,6 +230,7 @@ export interface ShellIpcResponseMap {
   [shellIpcChannels.sessionList]: ShellSessionSummary[];
   [shellIpcChannels.sessionResume]: ShellSessionRecord;
   [shellIpcChannels.sessionTranscriptRead]: ShellTranscriptSnapshot;
+  [shellIpcChannels.sessionArtifactsRead]: ShellArtifactListResponse_unstable;
   [shellIpcChannels.sessionDetach]: ShellSessionDetachResult;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitResult;
   [shellIpcChannels.promptCancel]: undefined;

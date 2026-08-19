@@ -1,8 +1,10 @@
 # Default Shell template: pre-GUI contract and implementation plan
 
-Status: DS-1 through DS-7 closed. The generic Default Shell GUI is implemented at
-`ui/desktop/src/shell-ui/` (Gate 3) and verified in a reconstructed environment only; the Outputs
-panel remains blocked by SHP-DEF-054. No named shell is implemented.
+Status: DS-1 through DS-7 closed. The generic Default Shell GUI, including its declaration-gated
+Outputs panel, is implemented at `ui/desktop/src/shell-ui/` and locally verified in the operator
+checkout. A supported-host package/readback also passes. Exact-revision CI and the packaged
+startup/close/restart/coexistence replay remain the final evidence gate. No named shell is
+implemented.
 Date: 2026-08-18
 Authority: ADR-0007–0012 and ADR-0014
 
@@ -201,12 +203,12 @@ GO recommendation for generic GUI planning, and the operator's acceptance above 
 
 ## Design gate status
 
-| Gate                                   | State                                     | Deliverable                                                                                                      |
-| -------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Gate 1 — product and workflow design   | authorized 2026-08-18                     | [`../build/shell-productization/gui/gate-1-product-workflow-design.md`](../build/shell-productization/gui/gate-1-product-workflow-design.md) |
-| Gate 2 — front-end handoff             | authorized 2026-08-18                     | [`../build/shell-productization/gui/gate-2-frontend-handoff.md`](../build/shell-productization/gui/gate-2-frontend-handoff.md)               |
-| Gate 3 — build                         | implemented 2026-08-18, re-run pending    | [`../build/shell-productization/gui/gate-3-build-record.md`](../build/shell-productization/gui/gate-3-build-record.md) and `ui/desktop/src/shell-ui/` |
-| Gates 4-6 — integrate, validate, ship  | not started                               | none                                                                                                             |
+| Gate                                  | State                                                                                                    | Deliverable                                                                                                                                           |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gate 1 — product and workflow design  | complete 2026-08-18                                                                                      | [`../build/shell-productization/gui/gate-1-product-workflow-design.md`](../build/shell-productization/gui/gate-1-product-workflow-design.md)          |
+| Gate 2 — front-end handoff            | complete 2026-08-18                                                                                      | [`../build/shell-productization/gui/gate-2-frontend-handoff.md`](../build/shell-productization/gui/gate-2-frontend-handoff.md)                        |
+| Gate 3 — build                        | locally complete 2026-08-18                                                                              | [`../build/shell-productization/gui/gate-3-build-record.md`](../build/shell-productization/gui/gate-3-build-record.md) and `ui/desktop/src/shell-ui/` |
+| Gates 4-6 — integrate, validate, ship | local integration and package/readback complete; exact-revision CI and packaged lifecycle replay pending | [`../build/shell-productization/gui/gate-3-build-record.md`](../build/shell-productization/gui/gate-3-build-record.md)                                |
 
 ## GUI implementation order after DS-7
 

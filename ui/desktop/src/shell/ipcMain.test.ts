@@ -99,6 +99,7 @@ function harness() {
       truncated: false,
       updates: [],
     })),
+    sessionArtifactsRead: vi.fn(() => ({ artifacts: [], totalCount: 0, truncated: false })),
     promptSubmit: vi.fn(() => ({ promptAttemptId: 'attempt' })),
     promptCancel: vi.fn(),
     permissionRespond: vi.fn(),
@@ -247,7 +248,7 @@ describe('shell IPC registration', () => {
     registration.dispose();
   });
 
-  it('fences session discovery and transcript repair behind their declared capabilities', async () => {
+  it('fences session discovery, transcript repair, and Outputs behind declared capabilities', async () => {
     const value = harness();
     value.registration.dispose();
     const registration = registerShellIpc({
@@ -263,6 +264,13 @@ describe('shell IPC registration', () => {
     ).resolves.toEqual([]);
     await expectShellFailure(
       value.handlers.get(shellIpcChannels.sessionTranscriptRead)!(value.event, {
+        generation: 1,
+        sessionId: 'session',
+      }),
+      'CAPABILITY_UNAVAILABLE'
+    );
+    await expectShellFailure(
+      value.handlers.get(shellIpcChannels.sessionArtifactsRead)!(value.event, {
         generation: 1,
         sessionId: 'session',
       }),

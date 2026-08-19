@@ -28,6 +28,7 @@ import {
   type ShellSettingsSnapshot,
 } from './ipc';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
+import type { ShellArtifactListResponse_unstable } from '@repo-makeover/gosling-sdk';
 import type { ShellSessionSummary } from './acpRuntime';
 import type {
   ShellSessionRecord,
@@ -52,6 +53,7 @@ const CAPABILITY_BY_CHANNEL: Partial<Record<ShellIpcInvokeChannel, string>> = {
   [shellIpcChannels.sessionList]: 'session.list',
   [shellIpcChannels.sessionResume]: 'session.resume',
   [shellIpcChannels.sessionTranscriptRead]: 'session.transcript.read',
+  [shellIpcChannels.sessionArtifactsRead]: 'session.artifacts.read',
   [shellIpcChannels.sessionDetach]: 'session.detach',
   [shellIpcChannels.promptSubmit]: 'prompt.submit',
   [shellIpcChannels.promptCancel]: 'prompt.cancel',
@@ -98,6 +100,9 @@ export interface ShellIpcOperations {
   sessionTranscriptRead(
     request: ShellSessionResumeRequest
   ): Promise<ShellTranscriptSnapshot> | ShellTranscriptSnapshot;
+  sessionArtifactsRead(
+    request: ShellSessionResumeRequest
+  ): Promise<ShellArtifactListResponse_unstable> | ShellArtifactListResponse_unstable;
   sessionDetach(
     request: ShellGenerationRequest
   ): Promise<ShellSessionDetachResult> | ShellSessionDetachResult;
@@ -457,6 +462,7 @@ function responseLimit(channel: ShellIpcInvokeChannel): number {
     channel === shellIpcChannels.credentialSelect ||
     channel === shellIpcChannels.sessionList ||
     channel === shellIpcChannels.sessionTranscriptRead ||
+    channel === shellIpcChannels.sessionArtifactsRead ||
     channel === shellIpcChannels.handoffPrepare ||
     channel === shellIpcChannels.domainSnapshot ||
     channel === shellIpcChannels.domainAction ||
@@ -518,6 +524,10 @@ export function registerShellIpc(input: {
     [
       shellIpcChannels.sessionTranscriptRead,
       (request) => operations.sessionTranscriptRead(parseSessionResumeRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionArtifactsRead,
+      (request) => operations.sessionArtifactsRead(parseSessionResumeRequest(request)),
     ],
     [
       shellIpcChannels.sessionDetach,

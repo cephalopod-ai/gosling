@@ -408,6 +408,61 @@ pub struct ShellModuleListResponse {
     pub modules: Vec<ShellModuleSummary>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellArtifactKind {
+    Code,
+    Text,
+    Image,
+    Document,
+    Data,
+    #[default]
+    Other,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellArtifactRelation {
+    Created,
+    Modified,
+    #[default]
+    Referenced,
+}
+
+/// Metadata a shell may render for a durable session artifact.
+///
+/// This projection deliberately omits paths, workspace identifiers, source identifiers, and any
+/// operation that would authorize reading the underlying file.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellArtifactSummary {
+    pub name: String,
+    pub kind: ShellArtifactKind,
+    pub relation: ShellArtifactRelation,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/session/artifacts/list",
+    response = ShellArtifactListResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellArtifactListRequest {
+    pub session_id: String,
+}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellArtifactListResponse {
+    #[serde(default)]
+    pub artifacts: Vec<ShellArtifactSummary>,
+    pub total_count: usize,
+    #[serde(default)]
+    pub truncated: bool,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DomainResourceReference {

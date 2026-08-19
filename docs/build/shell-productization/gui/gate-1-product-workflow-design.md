@@ -26,7 +26,7 @@ Requirements: SHP-REQ-055, SHP-REQ-056
 A reduced Gosling desktop application, larger than a workspace chat window, that a user opens to do
 one task at a time inside one folder they chose, with an agent whose instructions the product owns.
 
-It is *not* a Gosling replacement, a workspace manager, a settings editor, a file browser, an IDE, or
+It is _not_ a Gosling replacement, a workspace manager, a settings editor, a file browser, an IDE, or
 a multi-session console. Every one of those is deliberately absent from the v1 capability envelope,
 and the UI must not imply their existence.
 
@@ -37,11 +37,11 @@ designed from what main will actually give it.
 
 ## 2. Who uses it and what they are trying to do
 
-| User | Their job | What the design owes them |
-| ---- | --------- | ------------------------- |
-| Operator running the neutral template | Prove the shell works end to end before a named product exists | Every state reachable and legible; diagnostics one click away |
-| A future shell product's end user | Get one task done in one folder without learning Gosling | A first-run path with no dead ends and no jargon |
-| A future shell product's builder | See exactly which surfaces are theirs to replace | Declaration-gated slots that visibly disappear when undeclared |
+| User                                  | Their job                                                      | What the design owes them                                      |
+| ------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------- |
+| Operator running the neutral template | Prove the shell works end to end before a named product exists | Every state reachable and legible; diagnostics one click away  |
+| A future shell product's end user     | Get one task done in one folder without learning Gosling       | A first-run path with no dead ends and no jargon               |
+| A future shell product's builder      | See exactly which surfaces are theirs to replace               | Declaration-gated slots that visibly disappear when undeclared |
 
 ## 3. Window and information architecture
 
@@ -76,62 +76,62 @@ acceptance requirement (§11).
 
 Region ownership:
 
-| Region | Source of truth | Notes |
-| ------ | --------------- | ----- |
-| A title bar | `snapshot.identity`, `snapshot.lifecycleState` | `identity` is `null` until ACP is verified — show the packaged name from the profile only, never a guess |
-| B context bar | `snapshot.directory`, `snapshot.credentials`, `snapshot.session` | provider/model come from `session.providerId`/`session.modelId` and are `null` before a session exists |
-| C conversation | `session.transcript.read` + `session.onUpdated` | reconciled by `updateSeq`, never by arrival order |
-| D interaction dock | `snapshot.pendingInteractions` + the three `on*Requested` events | at most one visible; queue depth shown if >1 |
-| E composer | renderer-local draft + `snapshot.session.promptAttempt` | draft is renderer-owned and survives generation bumps |
-| F modules strip | `snapshot.modules`, `snapshot.adapter` | hidden entirely when only `core:session` is present |
+| Region             | Source of truth                                                  | Notes                                                                                                    |
+| ------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| A title bar        | `snapshot.identity`, `snapshot.lifecycleState`                   | `identity` is `null` until ACP is verified — show the packaged name from the profile only, never a guess |
+| B context bar      | `snapshot.directory`, `snapshot.credentials`, `snapshot.session` | provider/model come from `session.providerId`/`session.modelId` and are `null` before a session exists   |
+| C conversation     | `session.transcript.read` + `session.onUpdated`                  | reconciled by `updateSeq`, never by arrival order                                                        |
+| D interaction dock | `snapshot.pendingInteractions` + the three `on*Requested` events | at most one visible; queue depth shown if >1                                                             |
+| E composer         | renderer-local draft + `snapshot.session.promptAttempt`          | draft is renderer-owned and survives generation bumps                                                    |
+| F modules strip    | `snapshot.modules`, `snapshot.adapter`                           | hidden entirely when only `core:session` is present                                                      |
 
 ## 4. Screen and state inventory
 
 Screens are shells around the same window. IDs are stable for Gate 2 traceability.
 
-| ID | Screen / state | Entry condition (source) | Primary action | Secondary |
-| -- | -------------- | ------------------------ | -------------- | --------- |
-| S-01 | Starting | `lifecycleState` `booting` | none | Stop |
-| S-02 | Checking your setup | `validating` | none | Stop, Save diagnostics |
-| S-03 | Choose a folder | `ready` and `directory.state === 'unselected'` | Choose folder | Settings, Help |
-| S-04 | Choose an account | `ready`, directory selected, `credentials.selectionStatus === 'none'` and `catalogStatus === 'available'` | Choose account | Change folder |
-| S-05 | Sessions | `ready`, directory + credential settled, no active session | Start new task | Resume a listed session |
-| S-05b | Sessions — empty | as S-05, list length 0 | Start new task | — |
-| S-06 | Conversation (idle) | `session.status === 'active'`, `promptAttempt === null` | Send | Stop task, Sessions, Settings |
-| S-07 | Conversation (streaming) | `promptAttempt.phase === 'streaming'` | Stop | — |
-| S-08 | Conversation (cancelling) | `promptAttempt.phase === 'cancelling'` | none | — |
-| S-09 | Permission request | pending interaction `kind: 'permission'` | Allow once | Deny |
-| S-10 | Form request | pending interaction `kind: 'elicitation'` | Submit | Decline, Cancel |
-| S-11 | Action confirmation | pending interaction `kind: 'confirm'` | Approve | Reject |
-| S-09q | Queued interactions | `pendingInteractions.length > 1` | resolve the front one | — |
-| S-12 | Transcript gap | `ShellTranscriptSnapshot.integrity !== 'complete'` or `truncated` | Repair | Continue anyway |
-| S-13 | Resume uncertainty | `session.resumeIntegrity === 'uncertain'` | Continue | Start new task instead |
-| S-14 | Needs attention (degraded) | `degraded` | Retry | Save diagnostics, Open in Gosling |
-| S-15 | Reconnect an account | `relink_required` | Open in Gosling | Save diagnostics, Quit |
-| S-16 | Version mismatch | `incompatible` | Open in Gosling | Save diagnostics, Quit |
-| S-17 | Can't reach the backend | `offline` | Retry | Save diagnostics, Quit |
-| S-18 | Something went wrong | `fatal` | Save diagnostics | Quit |
-| S-19 | Shutting down | `stopping` | none | Save diagnostics |
-| S-20 | Stopped | `stopped` | Restart | Quit |
-| S-21 | Settings | user opens from B | Close | Reset settings |
-| S-22 | Settings need review | `settingsRecovery.status !== 'loaded'` and `!== 'absent'` | Reset settings | Continue without saving |
-| S-23 | Folder unavailable | `directory.state` `missing` or `invalid` | Choose folder | Save diagnostics |
-| S-24 | Account unavailable | `credentials.selectionStatus` `missing` or `relink_required` | Choose account | Open in Gosling |
-| S-25 | Setup problems | `provisioningIssues.length > 0` while otherwise usable | Save diagnostics | Open in Gosling |
-| S-26 | Module unavailable | any `modules[].status !== 'ready'` | Save diagnostics | dismiss |
-| S-27 | Adapter unavailable | `adapter.status !== 'ready'` | Save diagnostics | dismiss |
-| S-28 | Hand off to Gosling | user chose handoff | Open Gosling | Cancel |
-| S-29 | Outputs | **gated — see §12 gap G-1** | — | — |
+| ID    | Screen / state             | Entry condition (source)                                                                                  | Primary action        | Secondary                         |
+| ----- | -------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------- |
+| S-01  | Starting                   | `lifecycleState` `booting`                                                                                | none                  | Stop                              |
+| S-02  | Checking your setup        | `validating`                                                                                              | none                  | Stop, Save diagnostics            |
+| S-03  | Choose a folder            | `ready` and `directory.state === 'unselected'`                                                            | Choose folder         | Settings, Help                    |
+| S-04  | Choose an account          | `ready`, directory selected, `credentials.selectionStatus === 'none'` and `catalogStatus === 'available'` | Choose account        | Change folder                     |
+| S-05  | Sessions                   | `ready`, directory + credential settled, no active session                                                | Start new task        | Resume a listed session           |
+| S-05b | Sessions — empty           | as S-05, list length 0                                                                                    | Start new task        | —                                 |
+| S-06  | Conversation (idle)        | `session.status === 'active'`, `promptAttempt === null`                                                   | Send                  | Stop task, Sessions, Settings     |
+| S-07  | Conversation (streaming)   | `promptAttempt.phase === 'streaming'`                                                                     | Stop                  | —                                 |
+| S-08  | Conversation (cancelling)  | `promptAttempt.phase === 'cancelling'`                                                                    | none                  | —                                 |
+| S-09  | Permission request         | pending interaction `kind: 'permission'`                                                                  | Allow once            | Deny                              |
+| S-10  | Form request               | pending interaction `kind: 'elicitation'`                                                                 | Submit                | Decline, Cancel                   |
+| S-11  | Action confirmation        | pending interaction `kind: 'confirm'`                                                                     | Approve               | Reject                            |
+| S-09q | Queued interactions        | `pendingInteractions.length > 1`                                                                          | resolve the front one | —                                 |
+| S-12  | Transcript gap             | `ShellTranscriptSnapshot.integrity !== 'complete'` or `truncated`                                         | Repair                | Continue anyway                   |
+| S-13  | Resume uncertainty         | `session.resumeIntegrity === 'uncertain'`                                                                 | Continue              | Start new task instead            |
+| S-14  | Needs attention (degraded) | `degraded`                                                                                                | Retry                 | Save diagnostics, Open in Gosling |
+| S-15  | Reconnect an account       | `relink_required`                                                                                         | Open in Gosling       | Save diagnostics, Quit            |
+| S-16  | Version mismatch           | `incompatible`                                                                                            | Open in Gosling       | Save diagnostics, Quit            |
+| S-17  | Can't reach the backend    | `offline`                                                                                                 | Retry                 | Save diagnostics, Quit            |
+| S-18  | Something went wrong       | `fatal`                                                                                                   | Save diagnostics      | Quit                              |
+| S-19  | Shutting down              | `stopping`                                                                                                | none                  | Save diagnostics                  |
+| S-20  | Stopped                    | `stopped`                                                                                                 | Restart               | Quit                              |
+| S-21  | Settings                   | user opens from B                                                                                         | Close                 | Reset settings                    |
+| S-22  | Settings need review       | `settingsRecovery.status !== 'loaded'` and `!== 'absent'`                                                 | Reset settings        | Continue without saving           |
+| S-23  | Folder unavailable         | `directory.state` `missing` or `invalid`                                                                  | Choose folder         | Save diagnostics                  |
+| S-24  | Account unavailable        | `credentials.selectionStatus` `missing` or `relink_required`                                              | Choose account        | Open in Gosling                   |
+| S-25  | Setup problems             | `provisioningIssues.length > 0` while otherwise usable                                                    | Save diagnostics      | Open in Gosling                   |
+| S-26  | Module unavailable         | any `modules[].status !== 'ready'`                                                                        | Save diagnostics      | dismiss                           |
+| S-27  | Adapter unavailable        | `adapter.status !== 'ready'`                                                                              | Save diagnostics      | dismiss                           |
+| S-28  | Hand off to Gosling        | user chose handoff                                                                                        | Open Gosling          | Cancel                            |
+| S-29  | Outputs                    | active session and declared `session.artifacts.read`                                                      | View safe inventory   | refresh on session change         |
 
 Three failure overlays are not screens but states any conversation route can enter. They are
 enumerated separately because Gate 2 gives them their own component (C-25) and the wireframe shows
 them:
 
-| ID | Overlay | Entry condition | Affordance |
-| -- | ------- | --------------- | ---------- |
-| F-01 | Failure, draft preserved | decoded failure with `preservesDraft: true` | the `recovery` affordance; composer text retained |
-| F-02 | Failure, stale request | `code === 'STALE_REQUEST'` | quiet Refresh; never a modal |
-| F-03 | Failure, capability unavailable | `code === 'CAPABILITY_UNAVAILABLE'` | Open in Gosling |
+| ID   | Overlay                         | Entry condition                             | Affordance                                        |
+| ---- | ------------------------------- | ------------------------------------------- | ------------------------------------------------- |
+| F-01 | Failure, draft preserved        | decoded failure with `preservesDraft: true` | the `recovery` affordance; composer text retained |
+| F-02 | Failure, stale request          | `code === 'STALE_REQUEST'`                  | quiet Refresh; never a modal                      |
+| F-03 | Failure, capability unavailable | `code === 'CAPABILITY_UNAVAILABLE'`         | Open in Gosling                                   |
 
 ## 5. The nine-step path, walked
 
@@ -141,7 +141,7 @@ operation and the real thing that can go wrong.
 ### Step 1 — Start and show verified facts
 
 `booting` → `validating` → `ready`. The title bar shows the packaged product name immediately, but
-the *verified* identity badge appears only once `snapshot.identity !== null`, which happens only
+the _verified_ identity badge appears only once `snapshot.identity !== null`, which happens only
 after ACP preflight succeeds. `compatibility.status` moves `unverified` → `compatible`.
 
 Design consequence: never show "connected" during `validating`. S-02 says what is happening —
@@ -161,7 +161,7 @@ userGesture: true }` and no path, ever. Three results, all normal:
 - `rejected` — S-23 with the `reasonCode`, and the design must not editorialize: show the honest
   reason and re-offer the chooser.
 
-On relaunch, main restores the remembered directory *before* the compatibility gate. If the
+On relaunch, main restores the remembered directory _before_ the compatibility gate. If the
 remembered folder is gone, `directory.state` is `missing` and `remembered` may be `true` — S-23 must
 distinguish "the folder you used last time is gone" from "you haven't picked one yet". Switching
 folders while a session exists requires `session.detach` first; the UI must ask for that explicitly
@@ -171,11 +171,11 @@ folders while a session exists requires `session.detach` first; the UI must ask 
 
 Behavior depends on the product's provisioned `credentialPolicy`:
 
-| `catalogStatus` | Meaning | Surface |
-| --------------- | ------- | ------- |
-| `available` | `selectable_catalog`; up to 128 four-field profiles | S-04 picker, and a Change control in B |
-| `denied` | `fixed` profile; the product chose the account | No picker at all. B shows the pinned account name, not a menu |
-| `unavailable` | catalog read failed or timed out fail-closed | B shows "Accounts unavailable", Retry, and Save diagnostics |
+| `catalogStatus` | Meaning                                             | Surface                                                       |
+| --------------- | --------------------------------------------------- | ------------------------------------------------------------- |
+| `available`     | `selectable_catalog`; up to 128 four-field profiles | S-04 picker, and a Change control in B                        |
+| `denied`        | `fixed` profile; the product chose the account      | No picker at all. B shows the pinned account name, not a menu |
+| `unavailable`   | catalog read failed or timed out fail-closed        | B shows "Accounts unavailable", Retry, and Save diagnostics   |
 
 Each profile shows exactly `name`, `providerOrServiceId`, and `status`. There is no fourth column,
 no secret, no field list, and no "test connection" — those are Gosling's.
@@ -234,7 +234,7 @@ single-use and fenced by `actionId` + `generation` + `sessionId`.
   copy names the action and states that it is not reversible by the shell.
 
 Critical rule from SHP-DEF-052: streamed tool progress must never dismiss a pending interaction. The
-dock clears only on a *terminal* session outcome — `completed`, `cancelled`, or `failed`.
+dock clears only on a _terminal_ session outcome — `completed`, `cancelled`, or `failed`.
 
 Interaction IDs are capped at **4,096 per runtime**. On exhaustion, new interactions fail closed and
 the only honest surface is S-14 with Retry, which restarts the runtime.
@@ -250,7 +250,10 @@ An adapter, when present, shows `descriptorId`, `protocolVersion`, its `actions`
 Adapter mutations route through S-11. Adapter payload rendering is consumer-owned and data-only; the
 generic template ships an empty slot.
 
-**Outputs is not designed in this gate.** See §12 gap G-1.
+Closure addendum: Outputs is a read-only panel for the active session. Each row contains only a
+filename, coarse kind, and relation (`created`, `modified`, or `referenced`). It shows an honest
+empty state, reports truncation, and offers no open, reveal, copy, move, delete, or filesystem
+operation. The panel is absent unless the consumer declares `session.artifacts.read`.
 
 ### Step 9 — Recover, or leave honestly
 
@@ -266,14 +269,14 @@ Three exits, in escalating order:
 
 ## 6. Decisions the UI must ask rather than assume
 
-| ID | Situation | Why it cannot be silent |
-| -- | --------- | ----------------------- |
-| D-1 | Reset settings | `settings.reset` needs `userGesture: true` and discards the local document |
-| D-2 | Save diagnostics | needs `userGesture: true`; writes a file to the user's disk |
-| D-3 | Change folder with an active session | requires `session.detach` first, which releases the local slot |
-| D-4 | Any adapter mutation | server-owned single-use confirmation; the shell cannot undo it |
-| D-5 | Hand off to Gosling | leaves the shell and carries context to another application |
-| D-6 | Restart after `stopped` | begins a new generation and abandons runtime state |
+| ID  | Situation                            | Why it cannot be silent                                                    |
+| --- | ------------------------------------ | -------------------------------------------------------------------------- |
+| D-1 | Reset settings                       | `settings.reset` needs `userGesture: true` and discards the local document |
+| D-2 | Save diagnostics                     | needs `userGesture: true`; writes a file to the user's disk                |
+| D-3 | Change folder with an active session | requires `session.detach` first, which releases the local slot             |
+| D-4 | Any adapter mutation                 | server-owned single-use confirmation; the shell cannot undo it             |
+| D-5 | Hand off to Gosling                  | leaves the shell and carries context to another application                |
+| D-6 | Restart after `stopped`              | begins a new generation and abandons runtime state                         |
 
 ## 7. Lifecycle → surface map
 
@@ -283,19 +286,19 @@ all pending interactions, the transcript ledger. Only the renderer's own draft a
 settings survive. The UI must set that expectation before the user clicks Retry, and must restore
 focus to the composer with the draft intact afterwards.
 
-| State | Screen | Actions the host allows | Copy | Recoverable in place? |
-| ----- | ------ | ----------------------- | ---- | --------------------- |
-| `booting` | S-01 | stop | "Starting <name>…" | — |
-| `validating` | S-02 | stop, diagnostics | "Checking your setup…" | — |
-| `ready` | S-03…S-06 | stop, diagnostics, handoff | — | — |
-| `busy` | S-07 | stop, diagnostics | — | — |
-| `degraded` | S-14 | retry, stop, diagnostics, handoff | "<name> started with a problem it couldn't work around." | Retry restarts the runtime |
-| `relink_required` | S-15 | stop, diagnostics, handoff | "An account this shell needs isn't connected any more. Reconnect it in Gosling, then start <name> again." | **No.** No retry is allowed |
-| `incompatible` | S-16 | stop, diagnostics, handoff | "This version of <name> doesn't match the Gosling core it shipped with." | **No** |
-| `offline` | S-17 | retry, stop, diagnostics | "<name> can't reach its backend." | Retry restarts the runtime |
-| `stopping` | S-19 | diagnostics | "Shutting down…" | — |
-| `stopped` | S-20 | none | "<name> has stopped." | Restart begins a new generation |
-| `fatal` | S-18 | stop, diagnostics | "<name> hit a problem it can't recover from." | **No** |
+| State             | Screen    | Actions the host allows           | Copy                                                                                                      | Recoverable in place?           |
+| ----------------- | --------- | --------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `booting`         | S-01      | stop                              | "Starting <name>…"                                                                                        | —                               |
+| `validating`      | S-02      | stop, diagnostics                 | "Checking your setup…"                                                                                    | —                               |
+| `ready`           | S-03…S-06 | stop, diagnostics, handoff        | —                                                                                                         | —                               |
+| `busy`            | S-07      | stop, diagnostics                 | —                                                                                                         | —                               |
+| `degraded`        | S-14      | retry, stop, diagnostics, handoff | "<name> started with a problem it couldn't work around."                                                  | Retry restarts the runtime      |
+| `relink_required` | S-15      | stop, diagnostics, handoff        | "An account this shell needs isn't connected any more. Reconnect it in Gosling, then start <name> again." | **No.** No retry is allowed     |
+| `incompatible`    | S-16      | stop, diagnostics, handoff        | "This version of <name> doesn't match the Gosling core it shipped with."                                  | **No**                          |
+| `offline`         | S-17      | retry, stop, diagnostics          | "<name> can't reach its backend."                                                                         | Retry restarts the runtime      |
+| `stopping`        | S-19      | diagnostics                       | "Shutting down…"                                                                                          | —                               |
+| `stopped`         | S-20      | none                              | "<name> has stopped."                                                                                     | Restart begins a new generation |
+| `fatal`           | S-18      | stop, diagnostics                 | "<name> hit a problem it can't recover from."                                                             | **No**                          |
 
 Note the asymmetry: `degraded`, `relink_required`, `incompatible`, and `offline` can only transition
 onward to `stopping` or `fatal`. There is no path back to `ready` within a generation. Any UI that
@@ -312,20 +315,20 @@ becomes `offline`.
 All twelve `ShellOperationFailure` codes. `message` from main is already safe and user-facing; the
 UI shows it and adds only the affordance named by `recovery`.
 
-| Code | `recovery` value | Where it surfaces | Affordance the UI shows | Draft |
-| ---- | ---------------- | ----------------- | ----------------------- | ----- |
-| `CAPABILITY_UNAVAILABLE` | `open_gosling` | inline at the attempted control | Open in Gosling | no |
-| `CREDENTIAL_REQUIRED` | `select_credential` | composer banner / B | Choose account | preserved on submit |
-| `DIRECTORY_REQUIRED` | `choose_directory` | composer banner / B | Choose folder | preserved on submit |
-| `INTERACTION_PENDING` | `review_session` | composer banner | Scroll to the pending request | preserved on submit |
-| `INVALID_INPUT` | `none` | composer, field-level | none — fix the text | always preserved |
-| `INVALID_REQUEST` | `none` | inline | none | preserved on submit |
-| `OPERATION_FAILED` | `save_diagnostics` | inline | Save diagnostics | preserved on submit |
-| `RUNTIME_UNAVAILABLE` | `retry` | banner across C | Retry (`retrySafe: true`) | preserved on submit |
-| `SESSION_BUSY` | `review_session` | composer banner | Review the current task | preserved on submit |
-| `SESSION_UNAVAILABLE` | `review_session` | S-05 or C | Back to Sessions | preserved on submit |
-| `SETTINGS_RECOVERY_REQUIRED` | `reset_settings` | S-21/S-22 | Reset settings | no |
-| `STALE_REQUEST` | `refresh` | quiet inline notice | Refresh | preserved on submit |
+| Code                         | `recovery` value    | Where it surfaces               | Affordance the UI shows       | Draft               |
+| ---------------------------- | ------------------- | ------------------------------- | ----------------------------- | ------------------- |
+| `CAPABILITY_UNAVAILABLE`     | `open_gosling`      | inline at the attempted control | Open in Gosling               | no                  |
+| `CREDENTIAL_REQUIRED`        | `select_credential` | composer banner / B             | Choose account                | preserved on submit |
+| `DIRECTORY_REQUIRED`         | `choose_directory`  | composer banner / B             | Choose folder                 | preserved on submit |
+| `INTERACTION_PENDING`        | `review_session`    | composer banner                 | Scroll to the pending request | preserved on submit |
+| `INVALID_INPUT`              | `none`              | composer, field-level           | none — fix the text           | always preserved    |
+| `INVALID_REQUEST`            | `none`              | inline                          | none                          | preserved on submit |
+| `OPERATION_FAILED`           | `save_diagnostics`  | inline                          | Save diagnostics              | preserved on submit |
+| `RUNTIME_UNAVAILABLE`        | `retry`             | banner across C                 | Retry (`retrySafe: true`)     | preserved on submit |
+| `SESSION_BUSY`               | `review_session`    | composer banner                 | Review the current task       | preserved on submit |
+| `SESSION_UNAVAILABLE`        | `review_session`    | S-05 or C                       | Back to Sessions              | preserved on submit |
+| `SETTINGS_RECOVERY_REQUIRED` | `reset_settings`    | S-21/S-22                       | Reset settings                | no                  |
+| `STALE_REQUEST`              | `refresh`           | quiet inline notice             | Refresh                       | preserved on submit |
 
 `classifyShellOperationFailure` emits nine of the ten `ShellRecoveryAction` values. The tenth,
 `restart`, is never produced by a failure — it is reachable only through the lifecycle path, as
@@ -344,13 +347,13 @@ developer-tools switch. S-21 must look small on purpose.
 
 Recovery states (`settingsRecovery.status`):
 
-| Status | Surface | Copy |
-| ------ | ------- | ---- |
-| `loaded` | normal | — |
-| `absent` | normal | first run; defaults apply silently |
-| `unsupported_schema` | S-22 | "These settings were written by a newer version of <name>." |
-| `malformed` | S-22 | "<name>'s local settings can't be read." |
-| `unreadable` | S-22 | "<name> doesn't have permission to read its own settings." |
+| Status               | Surface | Copy                                                        |
+| -------------------- | ------- | ----------------------------------------------------------- |
+| `loaded`             | normal  | —                                                           |
+| `absent`             | normal  | first run; defaults apply silently                          |
+| `unsupported_schema` | S-22    | "These settings were written by a newer version of <name>." |
+| `malformed`          | S-22    | "<name>'s local settings can't be read."                    |
+| `unreadable`         | S-22    | "<name> doesn't have permission to read its own settings."  |
 
 The last three refuse writes until an explicit reset. Crucially, the shell must stay usable: a
 directory chosen during recovery applies to the running process and reports `remembered: false`. The
@@ -389,14 +392,14 @@ testable.
 
 ## 12. Gaps — design decisions the host cannot yet support
 
-| ID | Gap | Consequence | Owner |
-| -- | --- | ----------- | ----- |
-| G-1 | Outputs has no renderer projection. `_gosling/unstable/session/artifacts/list` exists under ADR-0013, but there is no shell IPC channel, no `GoslingShellAPI` namespace, no capability entry, and no snapshot field. | S-29 is specified as a slot only. The Outputs surface cannot be designed in detail or built until a narrow main-owned operation exists. A directory scan or generic passthrough is forbidden. | Gate 3, tracked as SHP-DEF-054 |
-| G-2 | No operation clears a selected directory. `ShellDirectoryController.clear()` is internal. | S-23 can re-choose but cannot return to `unselected`. Accepted; the design does not offer "forget this folder". | none — recorded as intentional |
-| G-3 | No in-shell credential relink. Relink is handoff plus `external.open`. | S-15 and S-24 must route to Gosling rather than offering an inline fix. | none — matches ADR-0014 |
-| G-6 | **Found in Gate 3.** Handoff itself is unavailable in `relink_required` and `incompatible`: `handoff.prepare` needs a non-empty session id and a live ACP connection, neither of which exists after a failed startup, even though `allowedActions` lists `handoff`. G-3's routing therefore has no destination in exactly the states that need it most. | S-15 and S-24 show instructional copy instead of a control that cannot work. The recovery story is honest but incomplete. | SHP-DEF-055, operator decision |
-| G-4 | Module inventory refreshes only via the runtime snapshot; there is no `modules.refresh`. | S-26 shows state but offers no direct re-check; Retry is the only refresh. | acceptable for v1 |
-| G-5 | Gemini OAuth provider configuration fails with `Internal error` (`docs/TODO.md`). | No claim of a polished credential/relink experience until closed. | outside this campaign |
+| ID  | Gap                                                                                                                                                                                                                                     | Consequence                                                                                                     | Owner                          |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| G-1 | **Closed 2026-08-18.** Rust now owns `_gosling/unstable/shell/session/artifacts/list`, an active-session-only projection of filename, coarse kind, and relation. Main/preload expose it only through declared `session.artifacts.read`. | S-29 is implemented without paths or filesystem authority.                                                      | SHP-DEF-054                    |
+| G-2 | No operation clears a selected directory. `ShellDirectoryController.clear()` is internal.                                                                                                                                               | S-23 can re-choose but cannot return to `unselected`. Accepted; the design does not offer "forget this folder". | none — recorded as intentional |
+| G-3 | No in-shell credential relink. Relink is handoff plus `external.open`.                                                                                                                                                                  | S-15 and S-24 must route to Gosling rather than offering an inline fix.                                         | none — matches ADR-0014        |
+| G-6 | **Closed 2026-08-18.** Handoff requires a live session and ACP connection, so the lifecycle producer no longer advertises it in `relink_required` or `incompatible`.                                                                    | S-15 and S-24 remain instructional; live-session handoff remains available in `ready` and `degraded`.           | SHP-DEF-055                    |
+| G-4 | Module inventory refreshes only via the runtime snapshot; there is no `modules.refresh`.                                                                                                                                                | S-26 shows state but offers no direct re-check; Retry is the only refresh.                                      | acceptable for v1              |
+| G-5 | Gemini OAuth provider configuration fails with `Internal error` (`docs/TODO.md`).                                                                                                                                                       | No claim of a polished credential/relink experience until closed.                                               | outside this campaign          |
 
 ## 13. Negative space — what this UI must never offer
 
@@ -417,9 +420,8 @@ behavior.
 - [x] Cancel, decline, and stale are designed as normal outcomes.
 - [x] Gaps are recorded as gaps.
 - [x] No named-shell or out-of-envelope surface appears.
-- [x] Accepted and merged as PR #58; implemented by Gate 3 except S-29 (see G-1).
-- [x] Gate 3 added G-6, a gap this design could not have known without reading the host's request
-      validation.
+- [x] Accepted and merged as PR #58; all surfaces, including S-29, are now implemented locally.
+- [x] Gate 3 added G-6; the closure narrowed host actions to match actual handoff preconditions.
 
 Gate 2 handoff: [`gate-2-frontend-handoff.md`](gate-2-frontend-handoff.md).
 Wireframe: [`default-shell-wireframe.html`](default-shell-wireframe.html).

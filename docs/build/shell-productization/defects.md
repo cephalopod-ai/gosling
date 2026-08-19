@@ -89,7 +89,7 @@ These entries are not claims that implementation is broken beyond its documented
 | SHP-DEF-049 | Shell ACP activation-policy audit      | Direct `loadSession` could relocate a workspace-less shell session to the caller's directory, and a resumed session could retain extensions or skills removed from current shell provisioning | critical | Shell activation accepted the ACP caller's working directory and reused persisted extension/skill selection without reapplying the current product policy                                            | DS-1/DS-3/DS-7          | fixed locally: the Rust server canonicalizes the requested directory, requires it to equal the stored shell-session directory, revalidates current provisioning, and rebuilds current extension/skill selection before activation. The 7/7 shell-runtime E2E suite proves wrong-directory rejection, removal of a formerly enabled developer shell, and clearing of obsolete skill-selection state on correct resume                                |
 | SHP-DEF-050 | Exact-final Rust acceptance rerun      | The documented full-workspace test path could block indefinitely while reading the operator's real macOS Keychain                                                                             | high     | Unit-test `Config::global()` selected production system-keyring storage; workspace migration probed configured provider secrets during otherwise isolated tests                                      | DS-7                    | fixed locally: test builds force both default and custom `Config` instances onto file-backed secret storage while production selection remains unchanged. A feature-enabled regression passes, the formerly blocked test completes without an override, and the exact-final full workspace passes with `GOSLING_DISABLE_KEYRING` explicitly absent                                                                                                  |
 | SHP-DEF-051 | Exact-source packaged shutdown replay  | A selectable-catalog shell could reach `ready` but leave a timed-out macOS Keychain lookup alive, forcing normal backend cleanup to escalate from `SIGTERM` to `SIGKILL`                      | high     | The managed backend allowed protected-store UI from a headless child, and its timed-out `spawn_blocking` credential lookup remained live during Tokio runtime shutdown                               | DS-4/DS-7               | fixed locally: Electron-managed backends enforce noninteractive protected-store access, so unlocked credentials remain readable while a prompt-required lookup fails instead of blocking; main also gives ACP transport closure a bounded grace interval before backend termination. The rebuilt package reports an available catalog, reaches `ready` in 23 ms, stops in 6 ms, exits the backend with code 0, and leaves an empty process registry |
-| SHP-DEF-052 | Post-patch interaction lifecycle audit | A streamed tool-progress update cleared the session's pending permission or form before the user could answer it                                                                             | critical | Runtime cleanup treated every update other than prompt start as terminal even though ACP `tool_call_update` and content progress are nonterminal                                               | R3/DS-7                 | fixed locally: pending interactions survive all streamed progress and are cleared only by completed, cancelled, or failed session outcomes. Regressions hold a real permission across `tool_call_update` and a form across agent content, then resolve each explicitly; the full Desktop suite passes 795/795 |
+| SHP-DEF-052 | Post-patch interaction lifecycle audit | A streamed tool-progress update cleared the session's pending permission or form before the user could answer it                                                                              | critical | Runtime cleanup treated every update other than prompt start as terminal even though ACP `tool_call_update` and content progress are nonterminal                                                     | R3/DS-7                 | fixed locally: pending interactions survive all streamed progress and are cleared only by completed, cancelled, or failed session outcomes. Regressions hold a real permission across `tool_call_update` and a form across agent content, then resolve each explicitly; the full Desktop suite passes 795/795                                                                                                                                       |
 
 ## Findings from DS-7 operator acceptance (2026-08-18)
 
@@ -116,7 +116,11 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
 - Security/data/process/release impact: process only. Design Gates 1-2 read contracts and add no
   code, so they are unaffected. Gate 3 would build a renderer against evidence that no longer
   matches its own source tree.
-- Disposition: `open` — explicit Gate 3 entry condition.
+- Disposition: `partially validated`. On the current working tree, the full Rust workspace, full
+  Desktop suite, shell profile, lint/type/i18n checks, focused adversarial shell suites, real
+  authenticated child integration, and supported-host package/readback pass. Exact-revision CI and
+  the packaged startup/close/restart/coexistence replay remain outstanding because the closure is
+  not yet committed or pushed.
 - Patch/files: none; this is a validation obligation, not a code change.
 - Regression test or not-testable reason: not a code defect. Closure requires reproducing the DS-7
   battery on one clean revision: full Rust workspace, full Desktop suite,
@@ -124,9 +128,10 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
   `shell:conformance`, a supported-host package/readback with recorded profile and backend hashes,
   a packaged renderer-to-backend startup and close/restart replay, and green current CI for that
   exact revision.
-- Validation/evidence: none yet.
-- Residual risk: if Gate 3 starts before closure, a renderer would be built and validated against a
-  foundation whose packaged behavior is unverified on the revision it ships from.
+- Validation/evidence: `gui/gate-3-build-record.md` §4 and
+  `../../logs/session/2026-08-18-default-shell-closure.md`.
+- Residual risk: local and package-readback evidence is not a substitute for current CI or a live
+  packaged lifecycle/coexistence replay on the exact committed revision.
 
 ### SHP-DEF-054 — the durable Outputs inventory has no shell renderer projection
 
@@ -149,17 +154,20 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
   is that Gate 3 closes the gap the wrong way, with a renderer-side directory scan or a generic
   artifact passthrough, either of which would create a second authority over output provenance and
   contradict ADR-0013.
-- Disposition: `open` — must be closed by a narrow main-owned operation in Gate 3, before any
-  Outputs surface is built.
-- Patch/files: none yet. The expected shape is one bounded `session.artifacts.read` invoke channel
-  with a matching declared capability, a size-bounded metadata-only response, and no path or
-  filesystem authority in the renderer.
+- Disposition: `fixed locally`.
+- Patch/files: Rust exposes `_gosling/unstable/shell/session/artifacts/list` as a bounded,
+  active-session-only projection containing only `name`, coarse `kind`, and `relation`; it returns
+  at most 100 items plus `totalCount` and `truncated`. The generated SDK, consumer capability
+  `session.artifacts.read`, typed main/preload bridge, and C-26 `OutputsPanel` carry that projection
+  without path or filesystem authority.
 - Regression test or not-testable reason: closure requires negative-space tests proving the renderer
   cannot reach the filesystem or an undeclared artifact, plus a live-child test that the projection
   matches the ADR-0013 inventory for the active session only.
-- Validation/evidence: none yet.
-- Residual risk: designing the Outputs surface in Gate 1 against a capability that does not exist.
-  Gate 1 and Gate 2 both mark the Outputs panel as gated on this defect.
+- Validation/evidence: the Rust leakage regression, custom-method registry test, capability-gated
+  main/preload/UI tests, negative-space suite, real authenticated `gosling serve` child test, full
+  Rust/Desktop suites, and supported-host package/readback pass. See the Gate 3 build record §4.
+- Residual risk: the projection is read-only and intentionally cannot open an artifact; adding file
+  access later requires a separate authority and review.
 
 ## Findings from the Gate 3 GUI build (2026-08-18)
 
@@ -180,26 +188,19 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
 - Root cause: `allowedActions` describes lifecycle intent, not operation preconditions. The two were
   never reconciled, because no renderer existed to act on the list.
 - Security/data/process/release impact: none — the operation fails closed. The impact is on recovery:
-  Gate 1 §7 names "Open in Gosling" as the *only* honest action for `relink_required`, so a user whose
+  Gate 1 §7 names "Open in Gosling" as the _only_ honest action for `relink_required`, so a user whose
   credential was revoked has no in-product path at all.
-- Disposition: `open` — needs an operator decision, because the two candidate fixes differ in
-  authority. (a) Narrow `allowedActions` so `handoff` appears only when a session and ACP exist; the
-  states that most need handoff then offer nothing but instructional copy. (b) Allow a
-  sessionless handoff envelope, which means preparing it without the server — ADR-0012 assigns
-  envelope preparation to the server, so this is an architecture change, not a patch.
-- Patch/files: partially mitigated in the renderer only.
-  `ui/desktop/src/shell-ui/state/route.ts` adds `canHandOff`, which requires
-  `allowedActions` to include `handoff` **and** `identity !== null` (a faithful proxy for a live ACP
-  connection, since `runtimeController` populates `identity` only while `acp` is set) **and** a
-  non-empty session id. `ui/desktop/src/shell-ui/state/store.ts` refuses the operation and raises a
-  visible `CAPABILITY_UNAVAILABLE` rather than sending a request it knows will be rejected.
-  `LifecycleFailureScreen` and `CredentialProblem` render instructional copy in place of the control.
+- Disposition: `fixed locally` by selecting the least-authority option: `handoff` is no longer an
+  allowed lifecycle action in `relink_required` or `incompatible`. Server-owned envelope creation
+  remains unchanged and live-session handoff remains available in `ready` and `degraded`.
+- Patch/files: `ui/desktop/src/shell/lifecycle.ts` narrows the producer; the renderer's independent
+  session/identity checks remain defense in depth.
 - Regression test or not-testable reason: `ShellApp.test.tsx` asserts no handoff button in
   `relink_required` and `incompatible` with no identity or session, that the button appears and sends
   the real session id in `degraded`, and that the store refuses a sessionless handoff.
 - Validation/evidence: `gui/gate-3-build-record.md` §4.
-- Residual risk: the mitigation makes the product honest, not capable. Until the operator picks (a) or
-  (b), a revoked credential discovered at startup leaves the user to open Gosling themselves.
+- Residual risk: startup credential failures remain instructional and require the user to open full
+  Gosling themselves; the shell no longer advertises an operation that cannot succeed.
 
 ### SHP-DEF-056 — the renderer bundle acquired `node:fs` and `node:path` through the settings module
 
@@ -227,7 +228,7 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
   may be imported for values from `../shell/*`, and that no kit module imports a Node builtin. The
   renderer build reports zero externalised modules.
 - Validation/evidence: `gui/gate-3-build-record.md` §3 and §4.
-- Residual risk: the executable check is import-shape based. A transitive leak through a *new* pure
+- Residual risk: the executable check is import-shape based. A transitive leak through a _new_ pure
   module that itself imports Node would pass the import test and be caught only by the build warning,
   so the renderer build must stay part of the acceptance battery.
 
@@ -244,12 +245,14 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
 - Root cause: environment, not code.
 - Security/data/process/release impact: none directly. The impact is evidential: §4 of the build
   record is not revision-bound, lockfile-bound, or CI-bound.
-- Disposition: `open` — closes when the operator reproduces the §7 command list locally.
+- Disposition: `fixed`. Verification ran in the operator checkout using its installed,
+  lockfile-resolved dependencies and Hermit-managed toolchain.
 - Patch/files: none. The container's `package.json` edit was deliberately not transferred; the
   repository copy is untouched.
 - Regression test or not-testable reason: not a code defect.
-- Validation/evidence: `gui/gate-3-build-record.md` §6 records every divergence.
-- Residual risk: a version-specific failure could exist that the container did not reproduce.
+- Validation/evidence: `gui/gate-3-build-record.md` §4 records the focused and full local results.
+- Residual risk: none specific to the reconstructed environment; exact-revision CI remains tracked
+  separately by SHP-DEF-053.
 
 ## New entry template
 

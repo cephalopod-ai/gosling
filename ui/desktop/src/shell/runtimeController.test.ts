@@ -190,6 +190,7 @@ function harness(
       validateDirectory,
       listCredentials: vi.fn().mockResolvedValue({ status: 'denied' as const, profiles: [] }),
       listModules: vi.fn().mockResolvedValue({ contractVersion: 1, modules: [] }),
+      listArtifacts: vi.fn().mockResolvedValue({ artifacts: [], totalCount: 0, truncated: false }),
       closed: transport.promise,
       close,
     };
@@ -738,6 +739,7 @@ describe('shell runtime controller', () => {
         })),
         listCredentials: vi.fn(async () => ({ status: 'denied' as const, profiles: [] })),
         listModules: vi.fn(async () => ({ contractVersion: 1, modules: [] })),
+        listArtifacts: vi.fn(async () => ({ artifacts: [], totalCount: 0, truncated: false })),
         closed: transport.promise,
         close: vi.fn(),
       };

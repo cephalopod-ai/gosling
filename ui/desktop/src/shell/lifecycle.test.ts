@@ -50,14 +50,14 @@ describe('shell lifecycle', () => {
   );
 
   it.each(['relink_required', 'incompatible'] as const)(
-    '%s allows diagnostics and handoff but not retry',
+    '%s allows diagnostics but not retry or handoff',
     (failure) => {
       let state = transitionShellLifecycle(
         initialShellLifecycle(1, 'boot'),
         move('validating')
       ).state;
       state = transitionShellLifecycle(state, move(failure)).state;
-      expect(state.allowedActions).toEqual(['stop', 'diagnostics', 'handoff']);
+      expect(state.allowedActions).toEqual(['stop', 'diagnostics']);
     }
   );
 

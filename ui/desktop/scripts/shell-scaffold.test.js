@@ -264,6 +264,7 @@ test('the committed neutral Default Shell sample stays conformant', () => {
     'permission.respond',
     'prompt.cancel',
     'prompt.submit',
+    'session.artifacts.read',
     'session.create',
     'session.detach',
     'session.list',

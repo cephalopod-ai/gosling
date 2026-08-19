@@ -287,6 +287,43 @@ export const zShellModuleListResponse_unstable = z.object({
     modules: z.array(zShellModuleSummary).optional().default([])
 });
 
+export const zShellArtifactListRequest_unstable = z.object({
+    sessionId: z.string()
+});
+
+export const zShellArtifactKind = z.enum([
+    'code',
+    'text',
+    'image',
+    'document',
+    'data',
+    'other'
+]);
+
+export const zShellArtifactRelation = z.enum([
+    'created',
+    'modified',
+    'referenced'
+]);
+
+/**
+ * Metadata a shell may render for a durable session artifact.
+ *
+ * This projection deliberately omits paths, workspace identifiers, source identifiers, and any
+ * operation that would authorize reading the underlying file.
+ */
+export const zShellArtifactSummary = z.object({
+    name: z.string(),
+    kind: zShellArtifactKind,
+    relation: zShellArtifactRelation
+});
+
+export const zShellArtifactListResponse_unstable = z.object({
+    artifacts: z.array(zShellArtifactSummary).optional().default([]),
+    totalCount: z.number().int().gte(0),
+    truncated: z.boolean().optional().default(false)
+});
+
 export const zDomainSnapshotRequest_unstable = z.object({
     input: z.unknown().optional().default(null)
 });
@@ -2891,6 +2928,7 @@ export const zExtRequest = z.object({
             zShellDirectoryValidateRequest_unstable,
             zShellCredentialListRequest_unstable,
             zShellModuleListRequest_unstable,
+            zShellArtifactListRequest_unstable,
             zDomainSnapshotRequest_unstable,
             zDomainActionRequest_unstable,
             zDomainActionConfirmRequest_unstable,
@@ -3012,6 +3050,7 @@ export const zExtResponse = z.union([
                 zShellDirectoryValidateResponse_unstable,
                 zShellCredentialListResponse_unstable,
                 zShellModuleListResponse_unstable,
+                zShellArtifactListResponse_unstable,
                 zDomainSnapshotResponse_unstable,
                 zDomainActionResponse_unstable,
                 zDomainActionConfirmResponse_unstable,

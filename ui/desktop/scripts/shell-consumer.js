@@ -15,6 +15,7 @@ const APPLICATION_OPERATIONS = new Set([
   'credential.select',
   'directory.select',
   'session.create',
+  'session.artifacts.read',
   'session.detach',
   'session.list',
   'session.resume',
@@ -33,6 +34,7 @@ const CUSTOM_METHODS_BY_OPERATION = {
   'domain.snapshot': '_gosling/unstable/shell/domain/snapshot',
   'domain.action': '_gosling/unstable/shell/domain/action',
   'confirmation.respond': '_gosling/unstable/shell/domain/action/confirm',
+  'session.artifacts.read': '_gosling/unstable/shell/session/artifacts/list',
 };
 const AGENT_CAPABILITIES_BY_OPERATION = {
   'session.create': 'loadSession',
@@ -44,6 +46,7 @@ const OPERATION_PREREQUISITES = {
   'prompt.cancel': ['prompt.submit'],
   'prompt.submit': ['elicitation.respond', 'permission.respond', 'session.create'],
   'session.create': ['directory.select'],
+  'session.artifacts.read': ['session.create'],
   'session.detach': ['session.create'],
   'session.list': ['directory.select'],
   'session.resume': ['session.list'],

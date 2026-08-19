@@ -104,6 +104,32 @@ describe('interaction lifetime (R-5)', () => {
     }
   );
 
+  it('refreshes Outputs after a terminal update for the active session only', () => {
+    let state = withSnapshot();
+    state = shellUiReducer(state, {
+      type: 'outputs/loaded',
+      items: [{ name: 'old.txt', kind: 'text', relation: 'created' }],
+      totalCount: 1,
+      truncated: false,
+    });
+    state = shellUiReducer(state, {
+      type: 'session/updated',
+      update: update({ kind: 'stream', updateSeq: 2 }),
+    });
+    expect(state.outputs.status).toBe('loaded');
+
+    state = shellUiReducer(state, {
+      type: 'session/updated',
+      update: update({ kind: 'completed', updateSeq: 3 }),
+    });
+    expect(state.outputs).toEqual({
+      status: 'idle',
+      items: [],
+      totalCount: 0,
+      truncated: false,
+    });
+  });
+
   it('never re-adds an interaction that was already answered', () => {
     let state = withSnapshot();
     const interaction = permissionInteraction();

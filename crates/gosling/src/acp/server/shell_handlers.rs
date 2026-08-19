@@ -1,6 +1,8 @@
 use super::*;
 
 const SHELL_CREDENTIAL_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+const SHELL_ARTIFACT_LIMIT: usize = 100;
+const SHELL_ARTIFACT_NAME_LIMIT: usize = 256;
 // A failed lookup (timeout, panic, or read error) is usually transient — a locked keychain or a
 // momentarily unreadable workspace document — so callers back off for this long instead of
 // retrying on every request, but still retry on the next call after it elapses rather than
@@ -235,6 +237,34 @@ impl GoslingAcpAgent {
         })
     }
 
+    pub(super) async fn on_list_shell_artifacts(
+        &self,
+        request: ShellArtifactListRequest,
+    ) -> Result<ShellArtifactListResponse, agent_client_protocol::Error> {
+        self.require_active_shell_session(
+            &request.session_id,
+            "SHELL_SESSION_INVALID",
+            "SHELL_SESSION_UNAVAILABLE",
+        )
+        .await?;
+        let page = self
+            .session_manager
+            .list_session_artifacts(&request.session_id, None, SHELL_ARTIFACT_LIMIT)
+            .await
+            .map_err(|error| {
+                agent_client_protocol::Error::internal_error().data(error.to_string())
+            })?;
+        Ok(ShellArtifactListResponse {
+            truncated: page.next_cursor.is_some(),
+            total_count: page.total_count,
+            artifacts: page
+                .artifacts
+                .into_iter()
+                .map(shell_artifact_summary)
+                .collect(),
+        })
+    }
+
     pub(super) async fn on_domain_snapshot(
         &self,
         request: DomainSnapshotRequest,
@@ -246,8 +276,12 @@ impl GoslingAcpAgent {
         &self,
         request: DomainActionRequest,
     ) -> Result<DomainActionResponse, agent_client_protocol::Error> {
-        self.require_active_domain_session(&request.session_id)
-            .await?;
+        self.require_active_shell_session(
+            &request.session_id,
+            "DOMAIN_SESSION_INVALID",
+            "DOMAIN_SESSION_UNAVAILABLE",
+        )
+        .await?;
         self.shell_runtime.perform_domain_action(request).await
     }
 
@@ -255,24 +289,30 @@ impl GoslingAcpAgent {
         &self,
         request: DomainActionConfirmRequest,
     ) -> Result<DomainActionConfirmResponse, agent_client_protocol::Error> {
-        self.require_active_domain_session(&request.session_id)
-            .await?;
+        self.require_active_shell_session(
+            &request.session_id,
+            "DOMAIN_SESSION_INVALID",
+            "DOMAIN_SESSION_UNAVAILABLE",
+        )
+        .await?;
         self.shell_runtime.confirm_domain_action(request).await
     }
 
-    async fn require_active_domain_session(
+    async fn require_active_shell_session(
         &self,
         session_id: &str,
+        invalid_code: &str,
+        unavailable_code: &str,
     ) -> Result<(), agent_client_protocol::Error> {
         if session_id.is_empty() || session_id.len() > 512 {
             return Err(agent_client_protocol::Error::invalid_params()
-                .data(serde_json::json!({ "code": "DOMAIN_SESSION_INVALID" })));
+                .data(serde_json::json!({ "code": invalid_code })));
         }
         if self.sessions.lock().await.contains_key(session_id) {
             return Ok(());
         }
         Err(agent_client_protocol::Error::invalid_params()
-            .data(serde_json::json!({ "code": "DOMAIN_SESSION_UNAVAILABLE" })))
+            .data(serde_json::json!({ "code": unavailable_code })))
     }
 
     pub(super) fn on_prepare_shell_handoff(
@@ -281,6 +321,122 @@ impl GoslingAcpAgent {
     ) -> ShellHandoffPrepareResponse {
         ShellHandoffPrepareResponse {
             handoff: self.shell_runtime.prepare_handoff(request),
+        }
+    }
+}
+
+fn shell_artifact_summary(artifact: SessionArtifact) -> ShellArtifactSummary {
+    let file_name = std::path::Path::new(&artifact.resolved_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Output");
+    let name = sanitize_unicode_tags(file_name)
+        .chars()
+        .take(SHELL_ARTIFACT_NAME_LIMIT)
+        .collect::<String>();
+    let extension = std::path::Path::new(&name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase);
+    let mime_type = artifact.mime_type.as_deref().unwrap_or_default();
+    let kind = if mime_type.starts_with("image/") {
+        ShellArtifactKind::Image
+    } else if mime_type == "application/pdf"
+        || matches!(
+            extension.as_deref(),
+            Some("pdf" | "doc" | "docx" | "ppt" | "pptx")
+        )
+    {
+        ShellArtifactKind::Document
+    } else if matches!(
+        extension.as_deref(),
+        Some(
+            "rs" | "js"
+                | "jsx"
+                | "ts"
+                | "tsx"
+                | "py"
+                | "go"
+                | "java"
+                | "c"
+                | "h"
+                | "cpp"
+                | "hpp"
+                | "swift"
+                | "kt"
+                | "rb"
+                | "sh"
+                | "css"
+                | "html"
+                | "sql"
+        )
+    ) {
+        ShellArtifactKind::Code
+    } else if mime_type == "application/json"
+        || matches!(
+            extension.as_deref(),
+            Some("csv" | "tsv" | "json" | "xlsx" | "xls")
+        )
+    {
+        ShellArtifactKind::Data
+    } else if mime_type.starts_with("text/")
+        || matches!(extension.as_deref(), Some("txt" | "md" | "rtf"))
+    {
+        ShellArtifactKind::Text
+    } else {
+        ShellArtifactKind::Other
+    };
+    ShellArtifactSummary {
+        name: if name.is_empty() {
+            "Output".to_string()
+        } else {
+            name
+        },
+        kind,
+        relation: match artifact.relation {
+            SessionArtifactRelation::Created => ShellArtifactRelation::Created,
+            SessionArtifactRelation::Modified => ShellArtifactRelation::Modified,
+            SessionArtifactRelation::Referenced => ShellArtifactRelation::Referenced,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shell_artifact_projection_exposes_only_safe_metadata() {
+        let artifact = SessionArtifact {
+            session_id: "secret-session".into(),
+            display_path: "/private/project/reports/result.pdf".into(),
+            resolved_path: "/private/project/reports/result.pdf".into(),
+            base_working_dir: "/private/project".into(),
+            workspace_id: Some("secret-workspace".into()),
+            mime_type: Some("application/pdf".into()),
+            relation: SessionArtifactRelation::Created,
+            provenance: SessionArtifactProvenance::BuiltInTool,
+            source_id: Some("secret-source".into()),
+            first_seen_at: chrono::Utc::now(),
+            last_seen_at: chrono::Utc::now(),
+        };
+
+        let json = serde_json::to_value(shell_artifact_summary(artifact)).unwrap();
+        assert_eq!(json["name"], "result.pdf");
+        assert_eq!(json["kind"], "document");
+        assert_eq!(json["relation"], "created");
+        assert_eq!(json.as_object().unwrap().len(), 3);
+        for forbidden in [
+            "sessionId",
+            "displayPath",
+            "resolvedPath",
+            "baseWorkingDir",
+            "workspaceId",
+            "mimeType",
+            "provenance",
+            "sourceId",
+        ] {
+            assert!(json.get(forbidden).is_none());
         }
     }
 }

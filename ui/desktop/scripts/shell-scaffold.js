@@ -22,6 +22,7 @@ const DECLARED_CAPABILITIES = [
   'permission.respond',
   'prompt.cancel',
   'prompt.submit',
+  'session.artifacts.read',
   'session.create',
   'session.detach',
   'session.list',

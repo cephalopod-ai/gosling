@@ -23,6 +23,7 @@ const methods = [
   '_gosling/unstable/shell/handoff/prepare',
   '_gosling/unstable/shell/provisioning/read',
   '_gosling/unstable/shell/provisioning/validate',
+  '_gosling/unstable/shell/session/artifacts/list',
 ];
 const domainMethods = [
   '_gosling/unstable/shell/domain/action',
@@ -605,6 +606,12 @@ describe('shell session runtime integration', () => {
       expect(controller.read().runtimeNamespace).toBe(namespace);
       const sessions = controller.getSessionController()!;
       const session = await sessions.create(1);
+      await expect(controller.getAcp()!.listArtifacts('not-the-active-session')).rejects.toThrow();
+      await expect(controller.getAcp()!.listArtifacts(session.sessionId)).resolves.toEqual({
+        artifacts: [],
+        totalCount: 0,
+        truncated: false,
+      });
       const updates: unknown[] = [];
       controller.onSessionUpdated((update) => updates.push(update));
 

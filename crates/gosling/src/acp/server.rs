@@ -4840,6 +4840,7 @@ print(\"hello, world\")
         );
         assert!(methods.windows(2).all(|pair| pair[0] < pair[1]));
         assert!(methods.contains(&"_gosling/unstable/shell/provisioning/read".to_string()));
+        assert!(methods.contains(&"_gosling/unstable/shell/session/artifacts/list".to_string()));
         assert!(methods.contains(&"_gosling/unstable/shell/handoff/prepare".to_string()));
     }
 

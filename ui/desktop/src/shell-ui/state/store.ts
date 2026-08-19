@@ -32,6 +32,7 @@ export interface ShellStoreActions {
   resumeSession(sessionId: string): Promise<void>;
   detachSession(): Promise<void>;
   repairTranscript(sessionId?: string): Promise<void>;
+  readOutputs(): Promise<void>;
   submitPrompt(): Promise<void>;
   cancelPrompt(): Promise<void>;
   respondPermission(actionId: string, allowOnce: boolean): Promise<void>;
@@ -184,6 +185,24 @@ export function createShellStore(api: GoslingShellAPI): ShellStore {
         'session.transcript.read',
         (current) => api.session.readTranscript({ generation: current, sessionId }),
         (transcript) => dispatch({ type: 'transcript/loaded', transcript })
+      );
+    },
+
+    async readOutputs() {
+      if (!requireCapability('session.artifacts.read')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      dispatch({ type: 'outputs/loading' });
+      await run(
+        'session.artifacts.read',
+        (current) => api.session.readArtifacts({ generation: current, sessionId }),
+        (response) =>
+          dispatch({
+            type: 'outputs/loaded',
+            items: response.artifacts ?? [],
+            totalCount: response.totalCount,
+            truncated: response.truncated ?? false,
+          })
       );
     },
 

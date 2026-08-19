@@ -164,8 +164,8 @@ describe('state matrix', () => {
 
 describe('lifecycle actions derive from allowedActions', () => {
   it.each([
-    ['relink_required', ['stop', 'diagnostics', 'handoff']],
-    ['incompatible', ['stop', 'diagnostics', 'handoff']],
+    ['relink_required', ['stop', 'diagnostics']],
+    ['incompatible', ['stop', 'diagnostics']],
     ['fatal', ['stop', 'diagnostics']],
   ] as const)('offers no retry in %s', async (lifecycleState, allowedActions) => {
     await mount({ lifecycleState, allowedActions: [...allowedActions] });
@@ -470,6 +470,37 @@ describe('accessibility', () => {
 });
 
 describe('sessions and transcript', () => {
+  it('loads and renders only the safe Outputs projection for the active session', async () => {
+    const { fake } = await mount();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Outputs' })).toBeInTheDocument();
+      expect(screen.getByText('summary.md')).toBeInTheDocument();
+    });
+    expect(fake.calls.find((call) => call.operation === 'session.artifacts.read')?.request).toEqual(
+      {
+        generation: 1,
+        sessionId: 'sess-1',
+      }
+    );
+    expect(document.body.textContent).not.toContain('/work/project');
+
+    fake.emitSessionUpdate(update({ updateSeq: 7, kind: 'completed', stream: undefined }));
+    await waitFor(() => {
+      expect(fake.calls.filter((call) => call.operation === 'session.artifacts.read')).toHaveLength(
+        2
+      );
+    });
+  });
+
+  it('does not render or request Outputs when the consumer omits the capability', async () => {
+    const capabilities = ALL_CAPABILITIES.filter(
+      (capability) => capability !== 'session.artifacts.read'
+    );
+    const { fake } = await mount({ declaredCapabilities: capabilities });
+    expect(screen.queryByRole('heading', { name: 'Outputs' })).toBeNull();
+    expect(fake.calls.some((call) => call.operation === 'session.artifacts.read')).toBe(false);
+  });
+
   it('states the twenty-session cap in the heading', async () => {
     await mount({ session: null });
     await waitFor(() => {
@@ -532,11 +563,10 @@ describe('teardown', () => {
 });
 
 describe('audit regressions', () => {
-  // SHP-DEF-055: `handoff.prepare` needs a live ACP connection and a non-empty session id, but the
-  // host lists `handoff` in `allowedActions` for states where neither exists.
+  // SHP-DEF-055: states without a live ACP connection and session must not advertise handoff.
   it.each([
-    ['relink_required', ['stop', 'diagnostics', 'handoff']],
-    ['incompatible', ['stop', 'diagnostics', 'handoff']],
+    ['relink_required', ['stop', 'diagnostics']],
+    ['incompatible', ['stop', 'diagnostics']],
   ] as const)('offers no dead handoff button in %s', async (lifecycleState, allowedActions) => {
     await mount({
       lifecycleState,
@@ -545,7 +575,7 @@ describe('audit regressions', () => {
       session: null,
     });
     expect(screen.queryByRole('button', { name: 'Open in Gosling' })).toBeNull();
-    expect(screen.getByText(/Open Gosling yourself/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 
   it('offers handoff when a live connection and session exist', async () => {

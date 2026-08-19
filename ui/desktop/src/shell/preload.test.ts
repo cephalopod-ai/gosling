@@ -56,6 +56,7 @@ describe('shell preload surface', () => {
       'detach',
       'list',
       'onUpdated',
+      'readArtifacts',
       'readTranscript',
       'resume',
     ]);
@@ -131,6 +132,7 @@ describe('shell preload surface', () => {
     await goslingShellAPI.session.list(generation);
     await goslingShellAPI.session.resume(resume);
     await goslingShellAPI.session.readTranscript(resume);
+    await goslingShellAPI.session.readArtifacts(resume);
     await goslingShellAPI.session.detach(generation);
     await goslingShellAPI.prompt.submit(submit);
     await goslingShellAPI.prompt.cancel(cancel);
@@ -157,6 +159,7 @@ describe('shell preload surface', () => {
       [shellIpcChannels.sessionList, generation],
       [shellIpcChannels.sessionResume, resume],
       [shellIpcChannels.sessionTranscriptRead, resume],
+      [shellIpcChannels.sessionArtifactsRead, resume],
       [shellIpcChannels.sessionDetach, generation],
       [shellIpcChannels.promptSubmit, submit],
       [shellIpcChannels.promptCancel, cancel],

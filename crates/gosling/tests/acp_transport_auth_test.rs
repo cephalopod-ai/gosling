@@ -188,13 +188,14 @@ async fn authenticated_acp_router_allows_packaged_desktop_null_websocket_origin(
     let status = send(
         &router,
         Method::GET,
-        &format!("/acp?token={SECRET}"),
+        "/acp",
         &[
             ("origin", "null"),
             ("connection", "upgrade"),
             ("upgrade", "websocket"),
             ("sec-websocket-version", "13"),
             ("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            ("sec-websocket-protocol", &format!("gosling.token.{SECRET}")),
         ],
     )
     .await;
@@ -331,13 +332,13 @@ async fn header_token_is_accepted() {
 }
 
 #[tokio::test]
-async fn query_token_is_accepted() {
+async fn query_token_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let router = test_router(true, &dir);
 
     let uri = format!("/acp?token={SECRET}");
     let status = send(&router, Method::GET, &uri, &[]).await;
-    assert_eq!(status, StatusCode::NOT_ACCEPTABLE);
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]

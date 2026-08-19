@@ -5,6 +5,7 @@ import type { ShellRuntimeSnapshot } from '../../shell/runtimeSnapshot';
 import type { ShellSessionSummary } from '../../shell/acpRuntime';
 import type { ShellSessionUpdate, ShellTranscriptSnapshot } from '../../shell/sessionController';
 import type { ShellHandoffEnvelope } from '@repo-makeover/gosling-sdk';
+import type { ShellArtifactSummary } from '@repo-makeover/gosling-sdk';
 import type { TranscriptState } from './transcript';
 
 export type ShellUiView = 'workspace' | 'sessions' | 'settings' | 'handoff';
@@ -16,6 +17,7 @@ export type ShellUiPendingOperation =
   | 'session.list'
   | 'session.resume'
   | 'session.transcript.read'
+  | 'session.artifacts.read'
   | 'session.detach'
   | 'prompt.submit'
   | 'prompt.cancel'
@@ -34,6 +36,12 @@ export interface ShellUiState {
   transcript: TranscriptState;
   interactions: ShellInteraction[];
   sessions: { status: 'idle' | 'loading' | 'loaded'; items: ShellSessionSummary[] };
+  outputs: {
+    status: 'idle' | 'loading' | 'loaded';
+    items: ShellArtifactSummary[];
+    totalCount: number;
+    truncated: boolean;
+  };
   draft: string;
   failure: ShellOperationFailure | null;
   pending: ShellUiPendingOperation | null;
@@ -53,6 +61,13 @@ export type ShellUiAction =
   | { type: 'interaction/responded'; actionId: string }
   | { type: 'sessions/loading' }
   | { type: 'sessions/loaded'; items: ShellSessionSummary[] }
+  | { type: 'outputs/loading' }
+  | {
+      type: 'outputs/loaded';
+      items: ShellArtifactSummary[];
+      totalCount: number;
+      truncated: boolean;
+    }
   | { type: 'draft/changed'; draft: string }
   | { type: 'failure/raised'; failure: ShellOperationFailure }
   | { type: 'failure/cleared' }
@@ -79,6 +94,7 @@ export function initialShellUiState(): ShellUiState {
     },
     interactions: [],
     sessions: { status: 'idle', items: [] },
+    outputs: { status: 'idle', items: [], totalCount: 0, truncated: false },
     draft: '',
     failure: null,
     pending: null,

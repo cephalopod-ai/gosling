@@ -154,6 +154,8 @@ import type {
   SetToolPermissionsResponse_unstable,
   ShareSessionNostrRequest_unstable,
   ShareSessionNostrResponse_unstable,
+  ShellArtifactListRequest_unstable,
+  ShellArtifactListResponse_unstable,
   ShellCredentialListRequest_unstable,
   ShellCredentialListResponse_unstable,
   ShellDirectoryValidateRequest_unstable,
@@ -253,6 +255,7 @@ import {
   zSessionWorkingDirsResponse_unstable,
   zSetToolPermissionsResponse_unstable,
   zShareSessionNostrResponse_unstable,
+  zShellArtifactListResponse_unstable,
   zShellCredentialListResponse_unstable,
   zShellDirectoryValidateResponse_unstable,
   zShellHandoffPrepareResponse_unstable,
@@ -330,6 +333,18 @@ export class GoslingExtClient {
     return zShellModuleListResponse_unstable.parse(
       raw,
     ) as ShellModuleListResponse_unstable;
+  }
+
+  async shellSessionArtifactsList_unstable(
+    params: ShellArtifactListRequest_unstable,
+  ): Promise<ShellArtifactListResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/session/artifacts/list",
+      params,
+    );
+    return zShellArtifactListResponse_unstable.parse(
+      raw,
+    ) as ShellArtifactListResponse_unstable;
   }
 
   async shellDomainSnapshot_unstable(

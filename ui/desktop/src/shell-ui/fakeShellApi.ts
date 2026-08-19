@@ -99,6 +99,12 @@ export function createFakeShellApi(
           truncated: false,
           updates: [],
         }),
+      readArtifacts: (request) =>
+        record('session.artifacts.read', request, {
+          artifacts: [{ name: 'summary.md', kind: 'text' as const, relation: 'created' as const }],
+          totalCount: 1,
+          truncated: false,
+        }),
       detach: (request) => record('session.detach', request, { detached: true, sessionId: null }),
       onUpdated: (listener) => subscribe(sessionListeners, listener),
     },

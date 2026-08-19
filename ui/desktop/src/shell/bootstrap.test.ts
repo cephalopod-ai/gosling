@@ -326,6 +326,51 @@ describe('shell bootstrap', () => {
     expect(JSON.stringify(response)).not.toMatch(/token|secret|acp/i);
   });
 
+  it('reads Outputs only for the active session through the safe ACP projection', async () => {
+    const value = harness();
+    const manifestPath = path.join(value.value.root, 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.consumer = {
+      consumerId: 'fixture-consumer',
+      consumerHash: 'c'.repeat(64),
+      rendererHash: 'd'.repeat(64),
+      declaredCapabilities: ['session.artifacts.read'],
+      requiredAgentCapabilities: [],
+      requiredMethods: ['_gosling/unstable/shell/session/artifacts/list'],
+    };
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+    const readArtifacts = vi.fn(async () => ({
+      artifacts: [{ name: 'result.pdf', kind: 'document', relation: 'created' }],
+      totalCount: 1,
+      truncated: false,
+    }));
+    controller.value.getSessionController.mockReturnValue({
+      read: vi.fn(() => ({ status: 'active', sessionId: 'session-1' })),
+    } as never);
+    controller.value.getAcp.mockReturnValue({ listArtifacts: readArtifacts } as never);
+    await bootstrapShell(value.adapter as never);
+    const event = {
+      sender: value.window.webContents as unknown as Electron.WebContents,
+      senderFrame: value.mainFrame as Electron.WebFrameMain,
+    };
+
+    await expect(
+      value.handlers.get(shellIpcChannels.sessionArtifactsRead)!(event, {
+        generation: 1,
+        sessionId: 'other-session',
+      })
+    ).rejects.toThrow();
+    expect(readArtifacts).not.toHaveBeenCalled();
+
+    await expect(
+      value.handlers.get(shellIpcChannels.sessionArtifactsRead)!(event, {
+        generation: 1,
+        sessionId: 'session-1',
+      })
+    ).resolves.toMatchObject({ artifacts: [{ name: 'result.pdf' }] });
+    expect(readArtifacts).toHaveBeenCalledWith('session-1');
+  });
+
   it('reads and updates real product-local settings through the store, never a raw file', async () => {
     const value = harness();
     await bootstrapShell(value.adapter as never);

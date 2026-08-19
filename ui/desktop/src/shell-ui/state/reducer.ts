@@ -24,6 +24,7 @@ function onGenerationAdvanced(state: ShellUiState): ShellUiState {
     transcript: emptyTranscript(),
     interactions: [],
     sessions: { status: 'idle', items: [] },
+    outputs: { status: 'idle', items: [], totalCount: 0, truncated: false },
     respondedActionIds: [],
     pending: null,
     handoff: null,
@@ -47,7 +48,15 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
         action.snapshot.pendingInteractions,
         action.snapshot.generation
       );
-      return { ...merged, snapshot: action.snapshot };
+      const priorSessionId = base.snapshot?.session?.sessionId ?? null;
+      const nextSessionId = action.snapshot.session?.sessionId ?? null;
+      return {
+        ...merged,
+        snapshot: action.snapshot,
+        ...(priorSessionId !== nextSessionId
+          ? { outputs: { status: 'idle' as const, items: [], totalCount: 0, truncated: false } }
+          : {}),
+      };
     }
 
     case 'settings/replaced':
@@ -69,7 +78,12 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
         action.update.kind === 'failed' && action.update.failure
           ? action.update.failure
           : state.failure;
-      return { ...state, transcript, interactions, failure };
+      const activeSessionId = state.snapshot?.session?.sessionId;
+      const outputs =
+        terminalKind(action.update.kind) && action.update.sessionId === activeSessionId
+          ? { status: 'idle' as const, items: [], totalCount: 0, truncated: false }
+          : state.outputs;
+      return { ...state, transcript, interactions, failure, outputs };
     }
 
     case 'interaction/requested': {
@@ -96,6 +110,20 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
 
     case 'sessions/loaded':
       return { ...state, sessions: { status: 'loaded', items: action.items } };
+
+    case 'outputs/loading':
+      return { ...state, outputs: { ...state.outputs, status: 'loading' } };
+
+    case 'outputs/loaded':
+      return {
+        ...state,
+        outputs: {
+          status: 'loaded',
+          items: action.items,
+          totalCount: action.totalCount,
+          truncated: action.truncated,
+        },
+      };
 
     case 'draft/changed':
       return { ...state, draft: action.draft };

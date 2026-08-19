@@ -188,6 +188,7 @@ export const COPY = {
   rememberedFolder: 'Remembered folder',
   preferredAccount: 'Preferred account',
   settingsReadOnly: 'read-only until reset',
-  outputsBlocked:
-    'Outputs are not available in this build. The shell has no authorized route to the session artifact inventory yet.',
+  outputsHeading: 'Outputs',
+  outputsEmpty: 'No durable outputs have been recorded for this session.',
+  outputsTruncated: 'Showing the first recorded outputs.',
 } as const;

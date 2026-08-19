@@ -1,6 +1,6 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-18 after implementing the generic Default Shell GUI (`plan-webapp-design` Gate 3)
+Updated: 2026-08-18 after closing the generic Default Shell implementation gaps locally
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -13,15 +13,13 @@ Completed gate: **DS-7 — the operator accepted the nonvisual Default Shell fou
 2026-08-18 and authorized generic GUI design. See
 [`audits/ds-7-operator-acceptance.md`](audits/ds-7-operator-acceptance.md).**
 Completed gate: **`plan-webapp-design` Gates 1-2 — design accepted and merged as PR #58.**
-Completed gate: **Gate 3 — the generic Default Shell GUI is implemented at
-`ui/desktop/src/shell-ui/` and verified in a reconstructed environment. See
-[`gui/gate-3-build-record.md`](gui/gate-3-build-record.md), and read its §6 before trusting its §4:
-the evidence is not lockfile-bound, packaged, or CI-bound (SHP-DEF-057).**
-Current gate: **operator re-verification on the real checkout, then Gates 4-6. Three defects gate
-progress: SHP-DEF-053 (DS-7 battery not re-run on current `main`), SHP-DEF-054 (Outputs has no
-renderer projection, so that one panel is unbuilt), and SHP-DEF-055 (the host advertises handoff in
-states where it cannot succeed — needs an operator decision). Named shells remain blocked until
-M5.**
+Completed gate: **Gate 3 — the generic Default Shell GUI, including C-26 Outputs, is implemented at
+`ui/desktop/src/shell-ui/` and verified in the operator checkout against the repository lockfile.
+SHP-DEF-054, SHP-DEF-055, and SHP-DEF-057 are closed; see
+[`gui/gate-3-build-record.md`](gui/gate-3-build-record.md).**
+Current gate: **bind the completed working tree to one committed revision, run current CI for that
+revision, and reproduce packaged startup/close/restart/coexistence. SHP-DEF-053 remains partially
+validated until those exact-revision checks exist. Named shells remain blocked until M5.**
 
 ## Intent
 
@@ -151,7 +149,31 @@ Full details and source references are in the reassessment.
 
 ## Current observed validation
 
-Local at `436c846f0`:
+Closure working tree based on `main` at `900aa97e0c52d79eccc3cd95e7bcca49568145a3`:
+
+```text
+cargo fmt --all                                             passed
+cargo clippy --all-targets -- -D warnings                  passed
+cargo test                                                  passed, full workspace
+ACP transport authentication                               25/25 passed
+safe Outputs projection and method registry                passed
+focused shell/UI suites                                    353/353 passed
+focused adversarial shell suites                           160/160 passed
+full Desktop suite                                         978/978 passed across 118 files
+pnpm --dir ui/desktop run lint:check                       passed
+pnpm --dir ui/desktop run shell:test-profile               57/57 passed
+consumer/scaffold tests                                    12/12 passed
+real authenticated gosling serve child                     passed
+macOS arm64 package/readback                               passed
+```
+
+The package has profile hash
+`830f6143a45ea309c42f03cb440410b3eb6484009c86cda4aa98f0a7e1282950` and embedded backend
+hash `baa192dfe82d419c29c1de2ed2bb17c09460be5e31c7088f10efaad2e238c095`. This evidence is
+working-tree-bound, not commit/CI-bound. Packaged startup/close/restart/coexistence has not been
+replayed for it. SHP-DEF-053 records that remaining gate.
+
+Historical local evidence at `436c846f0`:
 
 ```text
 source bin/activate-hermit
@@ -283,22 +305,15 @@ condition-by-condition disposition, current-CI result, and the one residual gap 
 package-readback could not be reproduced in the accepting sandbox; `linux-x64` readback stands in
 as the supported-host-target proof).
 
-DS-1 through DS-7 are closed. The remaining sequence is:
+DS-1 through DS-7 and the generic GUI implementation are closed locally. The remaining sequence is:
 
-1. Reproduce the Gate 3 verification on the real checkout against the committed lockfile — the
-   exact command list is [`gui/gate-3-build-record.md`](gui/gate-3-build-record.md) §7. This closes
-   SHP-DEF-057 and is the precondition for treating the GUI as evidence rather than a draft.
-2. Close SHP-DEF-053 by reproducing the DS-7 battery on one current clean revision with current CI.
-3. Disposition SHP-DEF-055: either narrow `allowedActions` so `handoff` appears only when a session
-   and ACP exist, or authorize a sessionless handoff envelope, which is an ADR-0012 change. The GUI
-   is honest either way today, but a revoked credential found at startup has no in-product path.
-4. Close SHP-DEF-054 with a **Rust-owned** safe artifact projection, then build the Outputs panel.
-   `SessionArtifactDto` exposes `resolvedPath`/`baseWorkingDir`, and `display_path` can be absolute,
-   so an Electron-side filter would create a second authority against the DS-4 precedent. The SDK is
-   generated from Rust, so this needs the Rust schema generation run.
-5. Then Gates 4-6 (integrate, validate, ship) and M5 conformance for the reusable GUI.
-6. R6-R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
-   publication) remain open and unauthorized.
+1. Commit the reviewed working tree and close SHP-DEF-053 by running current CI against that exact
+   revision. This requires explicit commit/push authorization.
+2. Reproduce packaged renderer-to-backend startup, close/restart cleanup, and coexistence against
+   the same revision. Package construction and exact readback already pass locally.
+3. Complete the remaining manual accessibility checks and M5 reusable-GUI conformance.
+4. R6-R8 cross-platform workflow coverage, signing/release/publication, and updater activation
+   remain open and unauthorized.
 
 ## Named-shell start policy
 

@@ -1,6 +1,7 @@
 # Default Shell GUI — Gate 3: build record
 
-Status: implemented and verified in the operator checkout; **not packaged and not CI-bound**
+Status: locally complete and package/readback verified; **not committed or CI-bound, and packaged
+lifecycle/coexistence replay remains pending**
 Date: 2026-08-18
 Gate: `plan-webapp-design` Gate 3
 Implements: [`gate-1-product-workflow-design.md`](gate-1-product-workflow-design.md),
@@ -9,34 +10,46 @@ Requirements: SHP-REQ-058–061
 
 ## 1. What exists now
 
-A reusable, generic Default Shell application under `ui/desktop/src/shell-ui/` (31 files), composed
-by the neutral consumer through one stable specifier.
+A reusable, generic Default Shell application under `ui/desktop/src/shell-ui/`, composed by the
+neutral consumer through one stable specifier.
 
-| Area | Files | Notes |
-| ---- | ----- | ----- |
-| State | `state/{types,reducer,transcript,route,store}.ts` | R-1…R-8 from Gate 2 §4 |
-| Bridge | `api.ts` | the only module that touches `window.goslingShell` |
-| Copy | `copy.ts` | every user-facing string, product name injected |
-| Components | `components/*.tsx`, `ShellApp.tsx` | C-01…C-25 |
-| Styling | `shell.css` | hand-authored, no framework |
-| Entry | `mount.tsx`, `index.ts` | `mountDefaultShell()` |
-| Tests | 6 files, 162 tests | see §4 |
+| Area       | Files                                             | Notes                                              |
+| ---------- | ------------------------------------------------- | -------------------------------------------------- |
+| State      | `state/{types,reducer,transcript,route,store}.ts` | R-1…R-8 from Gate 2 §4                             |
+| Bridge     | `api.ts`                                          | the only module that touches `window.goslingShell` |
+| Copy       | `copy.ts`                                         | every user-facing string, product name injected    |
+| Components | `components/*.tsx`, `ShellApp.tsx`                | C-01…C-26                                          |
+| Styling    | `shell.css`                                       | hand-authored, no framework                        |
+| Entry      | `mount.tsx`, `index.ts`                           | `mountDefaultShell()`                              |
+| Tests      | 6 files, 162 tests                                | see §4                                             |
 
 Component coverage against the Gate 2 inventory: C-01 `ShellApp`, C-02 `StatusPill`,
 C-03 `IdentityBadge`, C-04/C-05/C-06 `ContextBar`, C-07 `SessionPicker`,
 C-08/C-09/C-10/C-11 `Transcript`, C-12 `Composer`, C-13/C-14/C-15/C-16 `InteractionDock`,
 C-17/C-18 `ModulesStrip`, C-19/C-20 `SettingsPanel`, C-21/C-22/C-23 `LifecycleFailureScreen`,
-C-24 `HandoffDialog`, C-25 `FailureBanner`. **C-26 `OutputsPanel` is not built** — see §5.
+C-24 `HandoffDialog`, C-25 `FailureBanner`, C-26 `OutputsPanel`.
 
 ## 2. Host changes
 
-Four host changes were required. All are generic; none is consumer-specific.
+The host changes are generic; none is consumer-specific.
+
+**H-1 — safe Outputs projection (implemented).** Rust owns
+`_gosling/unstable/shell/session/artifacts/list` and builds each result field explicitly. The
+active-session-only response contains a filename, coarse kind, and relation, is capped at 100
+items, and carries `totalCount`/`truncated`. Generated SDK types flow through the declared
+`session.artifacts.read` capability and typed main/preload bridge. No path, workspace identifier,
+source identifier, MIME value, provenance payload, or file operation reaches the renderer.
+
+**H-4 — truthful handoff actions (implemented).** `relink_required` and `incompatible` no longer
+advertise `handoff`, because neither has the live session and ACP connection required for the
+server-owned envelope. `ready` and `degraded` retain live-session handoff. ADR-0012 authority is
+unchanged.
 
 **H-3 — `declaredCapabilities` on the runtime snapshot (implemented).** `ShellRuntimeSnapshot` now
 carries the consumer's declared capability list, sorted, projected from the manifest the runtime
 controller already held. Without it the renderer could only infer its own capabilities from failed
 operations, so it could not distinguish "nothing pending" from "this consumer cannot answer
-interactions". It leaks nothing: the renderer *is* the consumer, and the value is its own
+interactions". It leaks nothing: the renderer _is_ the consumer, and the value is its own
 declaration.
 
 **H-2 — minimum window size (already satisfied; no change).** `createMinimalShellWindowOptions` in
@@ -71,41 +84,40 @@ its own tree; the host gained no consumer-specific branch.
 
 Four defects were found and fixed before this record was written. Each has a regression test.
 
-| Finding | Severity | Disposition |
-| ------- | -------- | ----------- |
-| `SettingsPanel` value-imported `localSettings`, pulling `node:fs`/`node:path` into the renderer bundle. Vite externalised them, so a call would have thrown at runtime in the renderer. | high | fixed by the `settingsSchema` extraction; the renderer build now reports zero externalised modules, and the negative-space suite no longer whitelists that module |
-| `repairTranscript` read the session id from the runtime snapshot, which main publishes asynchronously. Resuming a session therefore skipped its own transcript replay. | high | fixed: resume passes the id from the operation result |
-| The single-use interaction guard used React state, so two clicks inside one batch could both observe the stale value and send two responses for one `actionId`. | medium | fixed: the guard is a ref |
-| The usage meter set a `data-percent` attribute that no CSS rule consumed, so the bar never filled. | low | fixed: width written through the CSSOM |
+| Finding                                                                                                                                                                                 | Severity | Disposition                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SettingsPanel` value-imported `localSettings`, pulling `node:fs`/`node:path` into the renderer bundle. Vite externalised them, so a call would have thrown at runtime in the renderer. | high     | fixed by the `settingsSchema` extraction; the renderer build now reports zero externalised modules, and the negative-space suite no longer whitelists that module |
+| `repairTranscript` read the session id from the runtime snapshot, which main publishes asynchronously. Resuming a session therefore skipped its own transcript replay.                  | high     | fixed: resume passes the id from the operation result                                                                                                             |
+| The single-use interaction guard used React state, so two clicks inside one batch could both observe the stale value and send two responses for one `actionId`.                         | medium   | fixed: the guard is a ref                                                                                                                                         |
+| The usage meter set a `data-percent` attribute that no CSS rule consumed, so the bar never filled.                                                                                      | low      | fixed: width written through the CSSOM                                                                                                                            |
 
-A fifth finding is a **host** defect, not a GUI one, and is recorded as **SHP-DEF-055**: the host
-lists `handoff` in `allowedActions` for `relink_required` and `incompatible`, but `handoff.prepare`
-requires a non-empty `sessionId` (`assertString` rejects `''`) **and** a live ACP connection
-(`bootstrap.ts` throws when `controller.getAcp()` is null). In both of those states neither exists.
-Gate 1 §7 named "Open in Gosling" as the *only* honest action for `relink_required`, so this is a
-gap in the recovery story, not a cosmetic issue. The GUI now refuses to render a control that cannot
-work and explains what to do instead; the underlying contradiction is left for the operator to
-decide, because fixing it properly means letting a handoff envelope be prepared without a server,
-which ADR-0012 assigns to the server.
+The follow-up closure fixed both recorded host gaps: SHP-DEF-054 through H-1's Rust-owned Outputs
+projection, and SHP-DEF-055 through H-4's least-authority lifecycle narrowing.
 
 ## 4. Verification performed
 
 Verified in the operator checkout with the repository's Hermit-managed toolchain. The earlier
 reconstructed-environment limits and the remaining packaging/CI gaps are preserved in §6.
 
-| Check | Result |
-| ----- | ------ |
-| `tsc --noEmit` over `src/**` | pass, 0 errors |
-| `vitest run src/shell-ui/` | pass, 162/162 |
-| `vitest run src/shell/` (existing foundation suite) | pass, 188/188 |
-| `vitest run` (whole Desktop suite) | pass, 974/974 across 118 files |
-| `shell:test-profile` | pass, 57/57 |
-| Default consumer conformance | pass, no findings |
-| Real shell renderer build via `vite.shell.renderer.config.mts` | pass; `shell.html` 0.73 kB, CSS 11.29 kB as a linked asset, JS 239.72 kB |
-| Renderer bundle free of externalised Node modules | pass, 0 warnings (was 2 before the `settingsSchema` fix) |
-| Consumer/profile resolution through the strict resolver | pass — the build only runs once `resolveConsumerManifest` accepts the manifest, profile, icons, and Git metadata |
-| `cargo fmt --all -- --check` | pass |
-| `cargo clippy --all-targets -- -D warnings` | pass |
+| Check                                                          | Result                                                                                                                                                                          |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsc --noEmit` over `src/**`                                   | pass, 0 errors                                                                                                                                                                  |
+| Focused `src/shell-ui/` and `src/shell/` suites                | pass, 353/353 across 24 files                                                                                                                                                   |
+| Focused adversarial shell suites                               | pass, 160/160 across 5 files                                                                                                                                                    |
+| `vitest run` (whole Desktop suite)                             | pass, 978/978 across 118 files                                                                                                                                                  |
+| `shell:test-profile`                                           | pass, 57/57                                                                                                                                                                     |
+| Consumer/scaffold tests                                        | pass, 12/12                                                                                                                                                                     |
+| `lint:check`                                                   | pass: TypeScript, ESLint, i18n checks, 21 i18n tests, 15 locales                                                                                                                |
+| Real shell renderer build via `vite.shell.renderer.config.mts` | pass; `shell.html` 0.73 kB, CSS 11.29 kB as a linked asset, JS 239.72 kB                                                                                                        |
+| Renderer bundle free of externalised Node modules              | pass, 0 warnings (was 2 before the `settingsSchema` fix)                                                                                                                        |
+| Consumer/profile resolution through the strict resolver        | pass — the build only runs once `resolveConsumerManifest` accepts the manifest, profile, icons, and Git metadata                                                                |
+| ACP transport-auth integration                                 | pass, 25/25; query credentials rejected and WebSocket subprotocol credentials accepted                                                                                          |
+| Rust safe-projection and custom-method registry regressions    | pass                                                                                                                                                                            |
+| Real authenticated `gosling serve` child                       | pass; fake session rejected, active session safe inventory accepted                                                                                                             |
+| `cargo fmt --all`                                              | pass                                                                                                                                                                            |
+| `cargo clippy --all-targets -- -D warnings`                    | pass                                                                                                                                                                            |
+| `cargo test` (full workspace)                                  | pass; no failures                                                                                                                                                               |
+| macOS arm64 package/readback                                   | pass; profile hash `830f6143a45ea309c42f03cb440410b3eb6484009c86cda4aa98f0a7e1282950`, embedded backend hash `baa192dfe82d419c29c1de2ed2bb17c09460be5e31c7088f10efaad2e238c095` |
 
 Test coverage of the Gate 1 and Gate 2 obligations:
 
@@ -120,6 +132,8 @@ Test coverage of the Gate 1 and Gate 2 obligations:
 - no retry control in `relink_required`, `incompatible`, or `fatal`;
 - no handoff control where handoff cannot succeed (SHP-DEF-055);
 - capability gating: an undeclared capability is never invoked and its control is absent;
+- Outputs is requested only for the active session and only when `session.artifacts.read` is
+  declared; the renderer receives filename/kind/relation only;
 - accessibility A-2, A-3, A-4, A-5, A-8, A-9 asserted in jsdom;
 - negative space: no `require`, Electron import, `ipcRenderer`, Node builtin, `fetch`,
   `XMLHttpRequest`, `WebSocket`, `localStorage`, `sessionStorage`, `eval`,
@@ -129,14 +143,8 @@ Test coverage of the Gate 1 and Gate 2 obligations:
 
 ## 5. What is deliberately absent
 
-- **Outputs (C-26 / S-29).** Still blocked by **SHP-DEF-054**. Closing it needs a *Rust-owned* safe
-  projection, not an Electron-side filter: `SessionArtifactDto` carries `resolvedPath` and
-  `baseWorkingDir`, and `display_path` can itself be absolute
-  (`DiscoveredArtifact::from_path` normalises an absolute input rather than rejecting it). DS-4 set
-  the precedent that a catalog projection is built field by field in Rust so a future field cannot
-  reach a shell by merely existing. Doing it in Electron would create a second authority. The SDK is
-  generated from Rust, so a new method cannot be added correctly without running the Rust schema
-  generation. That work is outside Gate 3's renderer scope.
+- Opening, revealing, copying, moving, deleting, or otherwise authorizing an Output. C-26 is a
+  metadata-only inventory and does not expose paths.
 - Everything in the v1 negative-space list (Gate 1 §13). No developer tools, no global settings, no
   file tree, no arbitrary backend URL, no "always allow", no telemetry.
 - Any named shell. No DAWES, math, Project ABC, or Physics/CST concept appears in the kit, the
@@ -169,10 +177,14 @@ limitations describe that initial pass and are retained as provenance:
    unexecuted for this revision.
 
 The operator checkout was subsequently revalidated with the committed lockfile and
-Hermit-managed pnpm 10.30.3. TypeScript, the targeted and full Desktop suites, shell profile tests,
-consumer conformance, the real renderer build, Rust formatting, and full Clippy all passed as
-reported in §4. That closes initial limitations 1, 3, 4, and 5. Packaging, real-window walkthroughs,
-cross-platform replay, and CI remain unverified.
+Hermit-managed toolchain. TypeScript, lint, i18n, targeted/adversarial/full Desktop suites, shell
+profile and consumer/scaffold tests, the renderer build, Rust formatting/Clippy/full workspace,
+real authenticated child integration, and an actual macOS arm64 package/readback all passed as
+reported in §4. That closes initial limitations 1–5 and the package-construction/readback portion of 6. Real-window accessibility, packaged startup/close/restart/coexistence, cross-platform replay,
+and exact-revision CI remain unverified. The repository-wide Prettier check still reports 62
+unrelated pre-existing files; every file touched by this closure passes Prettier. The schema
+regeneration is reproducible, while the HEAD-comparison check necessarily remains red until the
+intentional generated changes are committed.
 
 ## 7. Operator commands to reproduce §4 locally
 
@@ -192,6 +204,11 @@ GOSLING_SHELL_CONSUMER_MANIFEST=$PWD/fixtures/shell-consumers/default-shell-temp
 scripts/test-with-rusty-v8-cache.sh
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
+cargo test
+pnpm --dir ui/desktop run shell:package-local -- \
+  ../../fixtures/shell-products/default-shell-template/product-profile.json \
+  --consumer ../../fixtures/shell-consumers/default-shell-template/shell-consumer.json \
+  --platform darwin --arch arm64
 ```
 
 Then run the shell for real (`just run-ui` is full Gosling; the shell needs its own packaged or dev
@@ -199,7 +216,7 @@ invocation with the consumer manifest set) and walk the Gate 1 §4 screen list.
 
 ## 8. Exit criteria for Gate 3
 
-- [x] Every Gate 1 state has an implemented surface, except the one blocked by SHP-DEF-054.
+- [x] Every Gate 1 state has an implemented surface, including C-26/S-29 Outputs.
 - [x] Every Gate 2 reducer rule implemented and tested.
 - [x] Accessibility criteria A-2…A-5, A-8, A-9 asserted; A-1, A-6, A-7, A-10 remain manual (§9).
 - [x] Negative space enforced by executable tests.
@@ -207,8 +224,10 @@ invocation with the consumer manifest set) and walk the Gate 1 §4 screen list.
 - [x] Defects found during the build fixed with regression tests, or recorded as host defects.
 - [x] Suites re-run on the operator's checkout against the committed lockfile.
 - [ ] SHP-DEF-053 closed (the standing Gate 3 entry condition, still open).
-- [ ] SHP-DEF-054 closed and the Outputs surface built.
-- [ ] SHP-DEF-055 dispositioned by the operator.
+- [x] SHP-DEF-054 closed and the Outputs surface built.
+- [x] SHP-DEF-055 closed with least-authority lifecycle narrowing.
+- [x] SHP-DEF-057 closed by operator-checkout, lockfile-resolved validation.
+- [x] Supported-host package construction and readback for this working tree.
 - [ ] Packaged startup, close/restart, and coexistence replays for this revision.
 - [ ] Green CI for this revision.
 

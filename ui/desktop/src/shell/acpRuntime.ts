@@ -9,6 +9,7 @@ import {
   type GetSessionInfoResponse_unstable,
   type GoslingClientCallbacks,
   type ShellCredentialListResponse_unstable,
+  type ShellArtifactListResponse_unstable,
   type ShellDirectoryValidateResponse_unstable,
   type ShellHandoffPrepareRequest_unstable,
   type ShellHandoffPrepareResponse_unstable,
@@ -88,6 +89,9 @@ export interface ShellAcpClient {
     shellModulesList_unstable(params: {
       workingDir?: string;
     }): Promise<ShellModuleListResponse_unstable>;
+    shellSessionArtifactsList_unstable(params: {
+      sessionId: string;
+    }): Promise<ShellArtifactListResponse_unstable>;
     shellHandoffPrepare_unstable(
       params: ShellHandoffPrepareRequest_unstable
     ): Promise<ShellHandoffPrepareResponse_unstable>;
@@ -119,6 +123,7 @@ export interface ShellAcpConnection {
   validateDirectory(directory: string): Promise<ShellDirectoryValidateResponse_unstable>;
   listCredentials(): Promise<ShellCredentialListResponse_unstable>;
   listModules(workingDir: string | null): Promise<ShellModuleListResponse_unstable>;
+  listArtifacts(sessionId: string): Promise<ShellArtifactListResponse_unstable>;
   prompt(input: { sessionId: string; text: string; messageId: string }): Promise<unknown>;
   cancel(input: { sessionId: string }): Promise<void>;
   prepareHandoff(
@@ -622,6 +627,15 @@ export async function connectShellAcp(input: {
           ),
           ACP_PREFLIGHT_TIMEOUT_MS,
           'ACP module inventory timed out',
+          dependencies
+        ),
+      listArtifacts: (sessionId) =>
+        withTimeout(
+          client.gosling.shellSessionArtifactsList_unstable({
+            sessionId: assertSessionId(sessionId),
+          }),
+          ACP_PREFLIGHT_TIMEOUT_MS,
+          'ACP artifact inventory timed out',
           dependencies
         ),
       prepareHandoff: (request) => client.gosling.shellHandoffPrepare_unstable(request),

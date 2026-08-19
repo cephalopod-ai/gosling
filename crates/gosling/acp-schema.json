@@ -667,6 +667,83 @@
         "incompatible"
       ]
     },
+    "ShellArtifactListRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/artifacts/list"
+    },
+    "ShellArtifactListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShellArtifactSummary"
+          },
+          "default": []
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "totalCount"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/artifacts/list"
+    },
+    "ShellArtifactSummary": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ShellArtifactKind"
+        },
+        "relation": {
+          "$ref": "#/$defs/ShellArtifactRelation"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "relation"
+      ],
+      "description": "Metadata a shell may render for a durable session artifact.\n\nThis projection deliberately omits paths, workspace identifiers, source identifiers, and any\noperation that would authorize reading the underlying file."
+    },
+    "ShellArtifactKind": {
+      "type": "string",
+      "enum": [
+        "code",
+        "text",
+        "image",
+        "document",
+        "data",
+        "other"
+      ]
+    },
+    "ShellArtifactRelation": {
+      "type": "string",
+      "enum": [
+        "created",
+        "modified",
+        "referenced"
+      ]
+    },
     "DomainSnapshotRequest_unstable": {
       "type": "object",
       "properties": {
@@ -7002,6 +7079,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ShellArtifactListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/session/artifacts/list",
+                  "title": "ShellArtifactListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/DomainSnapshotRequest_unstable"
                     }
                   ],
@@ -7995,6 +8081,14 @@
                         }
                       ],
                       "title": "ShellModuleListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellArtifactListResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellArtifactListResponse_unstable"
                     },
                     {
                       "allOf": [

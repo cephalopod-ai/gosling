@@ -23,6 +23,7 @@ import type {
   ShellSettingsResetRequest,
   ShellSettingsSnapshot,
 } from './ipc';
+import type { ShellArtifactListResponse_unstable } from '@repo-makeover/gosling-sdk';
 import type { ShellCredentialSnapshot } from './credentialController';
 import type { ShellDirectorySelectResult } from './directoryController';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
@@ -59,6 +60,7 @@ export interface GoslingShellAPI {
     list(request: ShellGenerationRequest): Promise<ShellSessionSummary[]>;
     resume(request: ShellSessionResumeRequest): Promise<ShellSessionRecord>;
     readTranscript(request: ShellSessionResumeRequest): Promise<ShellTranscriptSnapshot>;
+    readArtifacts(request: ShellSessionResumeRequest): Promise<ShellArtifactListResponse_unstable>;
     detach(request: ShellGenerationRequest): Promise<ShellSessionDetachResult>;
     onUpdated(listener: (update: ShellSessionUpdate) => void): () => void;
   };

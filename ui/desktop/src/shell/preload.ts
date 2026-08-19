@@ -67,6 +67,8 @@ export const goslingShellAPI: GoslingShellAPI = Object.freeze({
     resume: (request: ShellSessionResumeRequest) => invoke(shellIpcChannels.sessionResume, request),
     readTranscript: (request: ShellSessionResumeRequest) =>
       invoke(shellIpcChannels.sessionTranscriptRead, request),
+    readArtifacts: (request: ShellSessionResumeRequest) =>
+      invoke(shellIpcChannels.sessionArtifactsRead, request),
     detach: (request: ShellGenerationRequest) => invoke(shellIpcChannels.sessionDetach, request),
     onUpdated: (listener: (update: ShellSessionUpdate) => void) => {
       const wrapped = (

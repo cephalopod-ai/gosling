@@ -143,6 +143,9 @@ function harness() {
   );
   const listCredentials = vi.fn(() => Promise.resolve({ status: 'denied' as const, profiles: [] }));
   const listModules = vi.fn(() => Promise.resolve({ contractVersion: 1, modules: [] }));
+  const listArtifacts = vi.fn(() =>
+    Promise.resolve({ artifacts: [], totalCount: 0, truncated: false })
+  );
   const prepare = vi.fn(() => Promise.reject(new Error('not used')));
   const snapshot = vi.fn<() => Promise<DomainSnapshotResponse_unstable>>(() =>
     Promise.reject(new Error('not used'))
@@ -169,6 +172,7 @@ function harness() {
       shellDirectoryValidate_unstable: validateDirectory,
       shellCredentialsList_unstable: listCredentials,
       shellModulesList_unstable: listModules,
+      shellSessionArtifactsList_unstable: listArtifacts,
       shellHandoffPrepare_unstable: prepare,
       shellDomainSnapshot_unstable: snapshot,
       shellDomainAction_unstable: action,
@@ -274,6 +278,11 @@ describe('shell ACP runtime', () => {
     });
     expect(await callbacks.unstable_createElicitation!({} as never)).toEqual({ action: 'decline' });
     expect(connection.compatibility).toEqual({ compatible: true });
+    await expect(connection.listArtifacts('session-1')).resolves.toEqual({
+      artifacts: [],
+      totalCount: 0,
+      truncated: false,
+    });
     expect(value.newSession).not.toHaveBeenCalled();
     expect(value.loadSession).not.toHaveBeenCalled();
     expect(value.close).not.toHaveBeenCalled();

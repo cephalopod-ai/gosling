@@ -7,6 +7,7 @@ import { HandoffDialog } from './components/HandoffDialog';
 import { InteractionDock } from './components/InteractionDock';
 import { LifecycleFailureScreen } from './components/LifecycleFailureScreen';
 import { ModulesStrip } from './components/ModulesStrip';
+import { OutputsPanel } from './components/OutputsPanel';
 import { CredentialPicker, CredentialProblem, DirectoryPrompt } from './components/Pickers';
 import { ShellButton, ShellButtonRow, ShellCentered, ShellNotice } from './components/primitives';
 import { SessionPicker } from './components/SessionPicker';
@@ -58,6 +59,16 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
   useEffect(() => {
     if (route === 'S-05' && state.sessions.status === 'idle') void actions.listSessions();
   }, [route, state.sessions.status, actions]);
+
+  useEffect(() => {
+    if (
+      route === 'S-06' &&
+      state.outputs.status === 'idle' &&
+      isDeclared(state, 'session.artifacts.read')
+    ) {
+      void actions.readOutputs();
+    }
+  }, [route, state.outputs.status, state, actions]);
 
   const recoveryHandlers = useMemo<RecoveryHandlers>(
     () => ({
@@ -248,11 +259,16 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
 
       default:
         return (
-          <TranscriptView
-            transcript={state.transcript}
-            onRepair={() => void actions.repairTranscript()}
-            canRepair={isDeclared(state, 'session.transcript.read')}
-          />
+          <div className="gsh-workspace">
+            <TranscriptView
+              transcript={state.transcript}
+              onRepair={() => void actions.repairTranscript()}
+              canRepair={isDeclared(state, 'session.transcript.read')}
+            />
+            {isDeclared(state, 'session.artifacts.read') ? (
+              <OutputsPanel outputs={state.outputs} />
+            ) : null}
+          </div>
         );
     }
   })();

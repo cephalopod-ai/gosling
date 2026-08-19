@@ -26,6 +26,11 @@
       "responseType": "ShellModuleListResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/shell/session/artifacts/list",
+      "requestType": "ShellArtifactListRequest_unstable",
+      "responseType": "ShellArtifactListResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/shell/domain/snapshot",
       "requestType": "DomainSnapshotRequest_unstable",
       "responseType": "DomainSnapshotResponse_unstable"

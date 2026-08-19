@@ -15,20 +15,20 @@ rather than coding around it.
 
 Source of record:
 
-| Concern | File |
-| ------- | ---- |
-| Renderer API shape | `ui/desktop/src/shell/preloadApi.ts` |
-| Channels, request/response types | `ui/desktop/src/shell/ipc.ts` |
-| Capability gating, byte bounds, sender trust | `ui/desktop/src/shell/ipcMain.ts` |
-| Snapshot shape | `ui/desktop/src/shell/runtimeSnapshot.ts` |
-| Lifecycle states and legal transitions | `ui/desktop/src/shell/lifecycle.ts` |
-| Failure taxonomy | `ui/desktop/src/shell/operationFailure.ts` |
-| Session record, updates, transcript | `ui/desktop/src/shell/sessionController.ts` |
-| Stream projection | `ui/desktop/src/shell/sessionUpdateProjection.ts` |
-| Interaction records | `ui/desktop/src/shell/interactionController.ts` |
-| Directory / credential snapshots | `ui/desktop/src/shell/directoryController.ts`, `credentialController.ts` |
-| Settings schema and bounds | `ui/desktop/src/shell/localSettings.ts` |
-| Module summary | `ui/sdk/src/generated/types.gen.ts` (`ShellModuleSummary`) |
+| Concern                                      | File                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| Renderer API shape                           | `ui/desktop/src/shell/preloadApi.ts`                                     |
+| Channels, request/response types             | `ui/desktop/src/shell/ipc.ts`                                            |
+| Capability gating, byte bounds, sender trust | `ui/desktop/src/shell/ipcMain.ts`                                        |
+| Snapshot shape                               | `ui/desktop/src/shell/runtimeSnapshot.ts`                                |
+| Lifecycle states and legal transitions       | `ui/desktop/src/shell/lifecycle.ts`                                      |
+| Failure taxonomy                             | `ui/desktop/src/shell/operationFailure.ts`                               |
+| Session record, updates, transcript          | `ui/desktop/src/shell/sessionController.ts`                              |
+| Stream projection                            | `ui/desktop/src/shell/sessionUpdateProjection.ts`                        |
+| Interaction records                          | `ui/desktop/src/shell/interactionController.ts`                          |
+| Directory / credential snapshots             | `ui/desktop/src/shell/directoryController.ts`, `credentialController.ts` |
+| Settings schema and bounds                   | `ui/desktop/src/shell/localSettings.ts`                                  |
+| Module summary                               | `ui/sdk/src/generated/types.gen.ts` (`ShellModuleSummary`)               |
 
 The renderer's entire world is `window.goslingShell`. There is no `require`, no Node integration, no
 `fetch` to a backend, no filesystem. Anything not on that object does not exist.
@@ -39,32 +39,32 @@ Twenty-four invoke channels. "Capability" is the string the consumer manifest mu
 `declaredCapabilities`; a blank cell means the operation is ungated. Response bound is enforced in
 main and a violation throws.
 
-| API call | Channel | Request | Response | Capability | Resp. bound |
-| -------- | ------- | ------- | -------- | ---------- | ----------- |
-| `runtime.read()` | `runtime.read` | *(none — passing one throws)* | `ShellRuntimeSnapshot` | — | 64 KiB |
-| `runtime.retry(r)` | `runtime.retry` | `{generation}` | `ShellActionResult` | — | 8 KiB |
-| `runtime.stop(r)` | `runtime.stop` | `{generation}` | `ShellActionResult` | — | 8 KiB |
-| `directory.select(r)` | `directory.select` | `{generation, userGesture: true}` | `ShellDirectorySelectResult` | `directory.select` | 8 KiB |
-| `credential.select(r)` | `credential.select` | `{generation, profileId: string\|null}` | `ShellCredentialSnapshot` | `credential.select` | 64 KiB |
-| `session.create(r)` | `session.create` | `{generation}` | `ShellSessionRecord` | `session.create` | 8 KiB |
-| `session.list(r)` | `session.list` | `{generation}` | `ShellSessionSummary[]` | `session.list` | 64 KiB |
-| `session.resume(r)` | `session.resume` | `{generation, sessionId}` | `ShellSessionRecord` | `session.resume` | 8 KiB |
-| `session.readTranscript(r)` | `session.transcript.read` | `{generation, sessionId}` | `ShellTranscriptSnapshot` | `session.transcript.read` | 64 KiB |
-| `session.detach(r)` | `session.detach` | `{generation}` | `ShellSessionDetachResult` | `session.detach` | 8 KiB |
-| `prompt.submit(r)` | `prompt.submit` | `{generation, sessionId, text}` | `{promptAttemptId}` | `prompt.submit` | 8 KiB |
-| `prompt.cancel(r)` | `prompt.cancel` | `{generation, sessionId, promptAttemptId}` | `void` | `prompt.cancel` | 8 KiB |
-| `permission.respond(r)` | `permission.respond` | `{generation, sessionId, actionId, allowOnce}` | `void` | `permission.respond` | 8 KiB |
-| `elicitation.respond(r)` | `elicitation.respond` | `{generation, sessionId, actionId, action, fields?}` | `void` | `elicitation.respond` | 8 KiB |
-| `domain.snapshot(r)` | `domain.snapshot` | `{generation, input?}` | `DomainSnapshotResponse_unstable` | `domain.snapshot` | 64 KiB |
-| `domain.action(r)` | `domain.action` | `{generation, sessionId, action, input?}` | `DomainActionResponse_unstable` | `domain.action` | 64 KiB |
-| `domain.confirm(r)` | `confirmation.respond` | `{generation, sessionId, actionId, approve}` | `DomainActionConfirmResponse_unstable` | `confirmation.respond` | 64 KiB |
-| `diagnostics.save(r)` | `diagnostics.save` | `{generation, userGesture: true}` | `{status:'canceled'}\|{status:'saved',fileName}` | — | 8 KiB |
-| `handoff.prepare(r)` | `handoff.prepare` | `ShellHandoffPrepareRequest` | `{generation, handoff}` | — | 64 KiB |
-| `handoff.confirm(r)` | `handoff.confirm` | `{generation, handoffId}` | `{opened}` | — | 8 KiB |
-| `external.open(url)` | `external.open` | `string` (≤2 KiB, allowlisted origin) | `{opened}` | — | 8 KiB |
-| `settings.read()` | `settings.read` | *(none — passing one throws)* | `ShellSettingsSnapshot` | — | 8 KiB |
-| `settings.updateAppearance(r)` | `settings.appearance.update` | `{generation, theme?, textScale?}` | `ShellSettingsSnapshot` | — | 8 KiB |
-| `settings.reset(r)` | `settings.reset` | `{generation, userGesture: true}` | `ShellSettingsSnapshot` | — | 8 KiB |
+| API call                       | Channel                      | Request                                              | Response                                         | Capability                | Resp. bound |
+| ------------------------------ | ---------------------------- | ---------------------------------------------------- | ------------------------------------------------ | ------------------------- | ----------- |
+| `runtime.read()`               | `runtime.read`               | _(none — passing one throws)_                        | `ShellRuntimeSnapshot`                           | —                         | 64 KiB      |
+| `runtime.retry(r)`             | `runtime.retry`              | `{generation}`                                       | `ShellActionResult`                              | —                         | 8 KiB       |
+| `runtime.stop(r)`              | `runtime.stop`               | `{generation}`                                       | `ShellActionResult`                              | —                         | 8 KiB       |
+| `directory.select(r)`          | `directory.select`           | `{generation, userGesture: true}`                    | `ShellDirectorySelectResult`                     | `directory.select`        | 8 KiB       |
+| `credential.select(r)`         | `credential.select`          | `{generation, profileId: string\|null}`              | `ShellCredentialSnapshot`                        | `credential.select`       | 64 KiB      |
+| `session.create(r)`            | `session.create`             | `{generation}`                                       | `ShellSessionRecord`                             | `session.create`          | 8 KiB       |
+| `session.list(r)`              | `session.list`               | `{generation}`                                       | `ShellSessionSummary[]`                          | `session.list`            | 64 KiB      |
+| `session.resume(r)`            | `session.resume`             | `{generation, sessionId}`                            | `ShellSessionRecord`                             | `session.resume`          | 8 KiB       |
+| `session.readTranscript(r)`    | `session.transcript.read`    | `{generation, sessionId}`                            | `ShellTranscriptSnapshot`                        | `session.transcript.read` | 64 KiB      |
+| `session.detach(r)`            | `session.detach`             | `{generation}`                                       | `ShellSessionDetachResult`                       | `session.detach`          | 8 KiB       |
+| `prompt.submit(r)`             | `prompt.submit`              | `{generation, sessionId, text}`                      | `{promptAttemptId}`                              | `prompt.submit`           | 8 KiB       |
+| `prompt.cancel(r)`             | `prompt.cancel`              | `{generation, sessionId, promptAttemptId}`           | `void`                                           | `prompt.cancel`           | 8 KiB       |
+| `permission.respond(r)`        | `permission.respond`         | `{generation, sessionId, actionId, allowOnce}`       | `void`                                           | `permission.respond`      | 8 KiB       |
+| `elicitation.respond(r)`       | `elicitation.respond`        | `{generation, sessionId, actionId, action, fields?}` | `void`                                           | `elicitation.respond`     | 8 KiB       |
+| `domain.snapshot(r)`           | `domain.snapshot`            | `{generation, input?}`                               | `DomainSnapshotResponse_unstable`                | `domain.snapshot`         | 64 KiB      |
+| `domain.action(r)`             | `domain.action`              | `{generation, sessionId, action, input?}`            | `DomainActionResponse_unstable`                  | `domain.action`           | 64 KiB      |
+| `domain.confirm(r)`            | `confirmation.respond`       | `{generation, sessionId, actionId, approve}`         | `DomainActionConfirmResponse_unstable`           | `confirmation.respond`    | 64 KiB      |
+| `diagnostics.save(r)`          | `diagnostics.save`           | `{generation, userGesture: true}`                    | `{status:'canceled'}\|{status:'saved',fileName}` | —                         | 8 KiB       |
+| `handoff.prepare(r)`           | `handoff.prepare`            | `ShellHandoffPrepareRequest`                         | `{generation, handoff}`                          | —                         | 64 KiB      |
+| `handoff.confirm(r)`           | `handoff.confirm`            | `{generation, handoffId}`                            | `{opened}`                                       | —                         | 8 KiB       |
+| `external.open(url)`           | `external.open`              | `string` (≤2 KiB, allowlisted origin)                | `{opened}`                                       | —                         | 8 KiB       |
+| `settings.read()`              | `settings.read`              | _(none — passing one throws)_                        | `ShellSettingsSnapshot`                          | —                         | 8 KiB       |
+| `settings.updateAppearance(r)` | `settings.appearance.update` | `{generation, theme?, textScale?}`                   | `ShellSettingsSnapshot`                          | —                         | 8 KiB       |
+| `settings.reset(r)`            | `settings.reset`             | `{generation, userGesture: true}`                    | `ShellSettingsSnapshot`                          | —                         | 8 KiB       |
 
 Requests are bounded at 64 KiB (2 KiB for `external.open`). Every rejection arrives as an `Error`
 whose message carries an encoded `ShellOperationFailure`; use `decodeShellOperationFailure`. **Never
@@ -84,13 +84,13 @@ component must be gated on the declaration, not on the event.
 
 ## 2. Event inventory
 
-| API | Channel | Payload | Bound |
-| --- | ------- | ------- | ----- |
-| `runtime.onChanged` | `runtime.changed` | `ShellRuntimeSnapshot` | 64 KiB |
-| `session.onUpdated` | `session.updated` | `ShellSessionUpdate` | 64 KiB |
-| `permission.onRequested` | `permission.requested` | interaction, `kind:'permission'` | 8 KiB |
-| `elicitation.onRequested` | `elicitation.requested` | interaction, `kind:'elicitation'` | 8 KiB |
-| `domain.onConfirmationRequested` | `confirmation.requested` | interaction, `kind:'confirm'` | 8 KiB |
+| API                              | Channel                  | Payload                           | Bound  |
+| -------------------------------- | ------------------------ | --------------------------------- | ------ |
+| `runtime.onChanged`              | `runtime.changed`        | `ShellRuntimeSnapshot`            | 64 KiB |
+| `session.onUpdated`              | `session.updated`        | `ShellSessionUpdate`              | 64 KiB |
+| `permission.onRequested`         | `permission.requested`   | interaction, `kind:'permission'`  | 8 KiB  |
+| `elicitation.onRequested`        | `elicitation.requested`  | interaction, `kind:'elicitation'` | 8 KiB  |
+| `domain.onConfirmationRequested` | `confirmation.requested` | interaction, `kind:'confirm'`     | 8 KiB  |
 
 Each subscribe returns an unsubscribe function. Main drops deliveries to a destroyed renderer and
 suppresses snapshots from a superseded generation, so the renderer never needs to defend against
@@ -102,14 +102,14 @@ event and snapshot ordering across channels is not guaranteed.
 Exactly one store, seeded by `runtime.read()` and `settings.read()` at mount, then advanced only by
 events and operation results.
 
-| Slice | Owner | Rule |
-| ----- | ----- | ----- |
-| `snapshot` | main | replace wholesale on `runtime.changed`; never patch a field locally |
-| `settings` | main | replace wholesale on each settings operation result |
-| `transcript` | renderer, derived | ordered by `updateSeq`; built from `readTranscript` then appended from `session.updated` |
-| `interactions` | main + events | keyed by `actionId`; union of `snapshot.pendingInteractions` and arriving events |
-| `draft` | **renderer only** | must survive generation bumps; never derived from the snapshot |
-| `route` | renderer, derived | computed from snapshot per Gate 1 §4; never independently assigned |
+| Slice          | Owner             | Rule                                                                                     |
+| -------------- | ----------------- | ---------------------------------------------------------------------------------------- |
+| `snapshot`     | main              | replace wholesale on `runtime.changed`; never patch a field locally                      |
+| `settings`     | main              | replace wholesale on each settings operation result                                      |
+| `transcript`   | renderer, derived | ordered by `updateSeq`; built from `readTranscript` then appended from `session.updated` |
+| `interactions` | main + events     | keyed by `actionId`; union of `snapshot.pendingInteractions` and arriving events         |
+| `draft`        | **renderer only** | must survive generation bumps; never derived from the snapshot                           |
+| `route`        | renderer, derived | computed from snapshot per Gate 1 §4; never independently assigned                       |
 
 Anti-requirement: the renderer must not maintain a parallel copy of directory, credential, session,
 module, or lifecycle state. Those exist once, in `snapshot`. Optimistic local mutation of any of them
@@ -155,34 +155,34 @@ and `diagnostics.save` → `canceled` are all normal outcomes. No error styling,
 
 Props are derived types, not new shapes. `Snap = ShellRuntimeSnapshot`.
 
-| ID | Component | Props | Renders when | Emits |
-| -- | --------- | ----- | ------------ | ----- |
-| C-01 | `ShellFrame` | `{snapshot, settings}` | always | route selection |
-| C-02 | `StatusPill` | `{state: Snap['lifecycleState'], compatibility: Snap['compatibility']}` | always | — |
-| C-03 | `IdentityBadge` | `{identity: Snap['identity']}` | always; unverified until non-null | — |
-| C-04 | `DirectoryChip` | `{directory: Snap['directory'], canChange: boolean}` | always | `directory.select` |
-| C-05 | `CredentialChip` | `{credentials: Snap['credentials']}` | always; menu only when `catalogStatus === 'available'` | `credential.select` |
-| C-06 | `SessionContext` | `{session: Snap['session']}` | when session non-null | — |
-| C-07 | `SessionPicker` | `{sessions: ShellSessionSummary[], loading, failure}` | route S-05 | `session.create`, `session.resume` |
-| C-08 | `Transcript` | `{blocks, hasGap, integrity, resumeIntegrity}` | route S-06+ | Repair → `session.readTranscript` |
-| C-09 | `ToolActivityRow` | `{toolCallId, title, toolKind, status}` | per `tool` stream | — |
-| C-10 | `UsageMeter` | `{used, size}` | on `usage` stream | — |
-| C-11 | `TranscriptGapNotice` | `{integrity, truncated, firstSeq, lastSeq}` | `integrity !== 'complete' \|\| truncated` | Repair |
-| C-12 | `Composer` | `{draft, phase, disabledReason, failure}` | route S-06+ | `prompt.submit`, `prompt.cancel` |
-| C-13 | `InteractionDock` | `{interactions: ShellInteraction[], queueDepth}` | any pending | routes to C-14/15/16 |
-| C-14 | `PermissionRequest` | permission `summary` | dock | `permission.respond` |
-| C-15 | `ElicitationForm` | elicitation `summary` | dock | `elicitation.respond` |
-| C-16 | `ConfirmationRequest` | confirm `summary` | dock | `domain.confirm` |
-| C-17 | `ModulesStrip` | `{modules: Snap['modules'], adapter: Snap['adapter']}` | any non-`core` module or adapter | — |
-| C-18 | `DomainSlot` | `{adapter, declared: boolean}` | `declared && adapter !== null` | `domain.snapshot`/`action` |
-| C-19 | `SettingsPanel` | `{settings, recovery}` | route S-21 | `settings.updateAppearance`, `settings.reset` |
-| C-20 | `SettingsRecoveryNotice` | `{recovery}` | `status` not `loaded`/`absent` | `settings.reset` |
-| C-21 | `LifecycleFailureScreen` | `{state, reasonCode, allowedActions}` | S-14…S-20 | `runtime.retry`, `runtime.stop`, diagnostics, handoff |
-| C-22 | `ProvisioningIssueList` | `{issues: Snap['provisioningIssues']}` | `issues.length > 0` | diagnostics |
-| C-23 | `DiagnosticsAction` | `{generation}` | wherever `allowedActions` includes `diagnostics` | `diagnostics.save` |
-| C-24 | `HandoffDialog` | `{envelope}` | route S-28 | `handoff.prepare`/`confirm`, `external.open` |
-| C-25 | `FailureBanner` | `{failure: ShellOperationFailure}` | on decoded failure | recovery action |
-| C-26 | `OutputsPanel` | — | **blocked by SHP-DEF-054** | — |
+| ID   | Component                | Props                                                                   | Renders when                                           | Emits                                                 |
+| ---- | ------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
+| C-01 | `ShellFrame`             | `{snapshot, settings}`                                                  | always                                                 | route selection                                       |
+| C-02 | `StatusPill`             | `{state: Snap['lifecycleState'], compatibility: Snap['compatibility']}` | always                                                 | —                                                     |
+| C-03 | `IdentityBadge`          | `{identity: Snap['identity']}`                                          | always; unverified until non-null                      | —                                                     |
+| C-04 | `DirectoryChip`          | `{directory: Snap['directory'], canChange: boolean}`                    | always                                                 | `directory.select`                                    |
+| C-05 | `CredentialChip`         | `{credentials: Snap['credentials']}`                                    | always; menu only when `catalogStatus === 'available'` | `credential.select`                                   |
+| C-06 | `SessionContext`         | `{session: Snap['session']}`                                            | when session non-null                                  | —                                                     |
+| C-07 | `SessionPicker`          | `{sessions: ShellSessionSummary[], loading, failure}`                   | route S-05                                             | `session.create`, `session.resume`                    |
+| C-08 | `Transcript`             | `{blocks, hasGap, integrity, resumeIntegrity}`                          | route S-06+                                            | Repair → `session.readTranscript`                     |
+| C-09 | `ToolActivityRow`        | `{toolCallId, title, toolKind, status}`                                 | per `tool` stream                                      | —                                                     |
+| C-10 | `UsageMeter`             | `{used, size}`                                                          | on `usage` stream                                      | —                                                     |
+| C-11 | `TranscriptGapNotice`    | `{integrity, truncated, firstSeq, lastSeq}`                             | `integrity !== 'complete' \|\| truncated`              | Repair                                                |
+| C-12 | `Composer`               | `{draft, phase, disabledReason, failure}`                               | route S-06+                                            | `prompt.submit`, `prompt.cancel`                      |
+| C-13 | `InteractionDock`        | `{interactions: ShellInteraction[], queueDepth}`                        | any pending                                            | routes to C-14/15/16                                  |
+| C-14 | `PermissionRequest`      | permission `summary`                                                    | dock                                                   | `permission.respond`                                  |
+| C-15 | `ElicitationForm`        | elicitation `summary`                                                   | dock                                                   | `elicitation.respond`                                 |
+| C-16 | `ConfirmationRequest`    | confirm `summary`                                                       | dock                                                   | `domain.confirm`                                      |
+| C-17 | `ModulesStrip`           | `{modules: Snap['modules'], adapter: Snap['adapter']}`                  | any non-`core` module or adapter                       | —                                                     |
+| C-18 | `DomainSlot`             | `{adapter, declared: boolean}`                                          | `declared && adapter !== null`                         | `domain.snapshot`/`action`                            |
+| C-19 | `SettingsPanel`          | `{settings, recovery}`                                                  | route S-21                                             | `settings.updateAppearance`, `settings.reset`         |
+| C-20 | `SettingsRecoveryNotice` | `{recovery}`                                                            | `status` not `loaded`/`absent`                         | `settings.reset`                                      |
+| C-21 | `LifecycleFailureScreen` | `{state, reasonCode, allowedActions}`                                   | S-14…S-20                                              | `runtime.retry`, `runtime.stop`, diagnostics, handoff |
+| C-22 | `ProvisioningIssueList`  | `{issues: Snap['provisioningIssues']}`                                  | `issues.length > 0`                                    | diagnostics                                           |
+| C-23 | `DiagnosticsAction`      | `{generation}`                                                          | wherever `allowedActions` includes `diagnostics`       | `diagnostics.save`                                    |
+| C-24 | `HandoffDialog`          | `{envelope}`                                                            | route S-28                                             | `handoff.prepare`/`confirm`, `external.open`          |
+| C-25 | `FailureBanner`          | `{failure: ShellOperationFailure}`                                      | on decoded failure                                     | recovery action                                       |
+| C-26 | `OutputsPanel`           | `{artifacts, totalCount, truncated}`                                    | active session and declared `session.artifacts.read`   | `session.readArtifacts`                               |
 
 C-21 must render buttons from `allowedActions` alone. Hard-coding Retry produces a dead button in
 `relink_required`, `incompatible`, and `fatal`, where the host rejects it.
@@ -191,21 +191,21 @@ C-21 must render buttons from `allowedActions` alone. Hard-coding Retry produces
 
 Enforced in main; the UI must respect them proactively so the user never trips a limit blind.
 
-| Thing | Bound | UI obligation |
-| ----- | ----- | ------------- |
-| Prompt text | 64 KiB | live counter near the limit; block Send past it |
-| Transcript ledger | 256 updates / 48 KiB | gap notice; never claim completeness |
-| Session list | 20 | label the cap in the heading |
-| Credential profiles | 128 | scrollable list |
-| Credential field length | 256 chars | truncate with full value on focus |
-| Elicitation | 32 fields / 64 options / 8 KiB | render all; no pagination needed |
-| Interaction IDs | 4,096 per runtime | on exhaustion route to S-14 |
-| Settings document | 16 KiB | not user-visible |
-| Directory path / label | 4096 / 128 chars | label in chip, path on hover |
-| Stream text / tool title | 60 KiB / 4 KiB | virtualize long transcripts |
-| Diagnostics bundle | 1 MiB | show the saved filename |
-| Text scale | 0.8–2.0 | clamp the control to this range |
-| ACP preflight | 10 s | S-02 must not look hung before it |
+| Thing                    | Bound                          | UI obligation                                   |
+| ------------------------ | ------------------------------ | ----------------------------------------------- |
+| Prompt text              | 64 KiB                         | live counter near the limit; block Send past it |
+| Transcript ledger        | 256 updates / 48 KiB           | gap notice; never claim completeness            |
+| Session list             | 20                             | label the cap in the heading                    |
+| Credential profiles      | 128                            | scrollable list                                 |
+| Credential field length  | 256 chars                      | truncate with full value on focus               |
+| Elicitation              | 32 fields / 64 options / 8 KiB | render all; no pagination needed                |
+| Interaction IDs          | 4,096 per runtime              | on exhaustion route to S-14                     |
+| Settings document        | 16 KiB                         | not user-visible                                |
+| Directory path / label   | 4096 / 128 chars               | label in chip, path on hover                    |
+| Stream text / tool title | 60 KiB / 4 KiB                 | virtualize long transcripts                     |
+| Diagnostics bundle       | 1 MiB                          | show the saved filename                         |
+| Text scale               | 0.8–2.0                        | clamp the control to this range                 |
+| ACP preflight            | 10 s                           | S-02 must not look hung before it               |
 
 ## 7. Theme and tokens
 
@@ -227,18 +227,18 @@ alone.
 
 Each is a test, not an aspiration.
 
-| ID | Criterion | How it is verified |
-| -- | --------- | ------------------ |
-| A-1 | Every action is keyboard reachable in documented order | keyboard-only walkthrough of every route in Gate 1 §4 |
-| A-2 | An arriving interaction moves focus to the dock | assert `document.activeElement` after the event |
-| A-3 | Resolving an interaction returns focus to its prior owner | focus assertion before/after |
-| A-4 | A generation bump restores focus to the composer with the draft intact | simulate `runtime.retry`, assert draft and focus |
-| A-5 | Text scale 0.8–2.0 causes no clipping or horizontal scroll | render each route at both bounds |
-| A-6 | Reduced motion removes animation without losing information | render with `prefers-reduced-motion` |
-| A-7 | Layout usable at the declared minimum window size | render each route at that size |
-| A-8 | Lifecycle failures, terminal outcomes, and interactions are announced | assert live-region content |
-| A-9 | Status is never color-only | badge and pill snapshots include text or shape |
-| A-10 | Contrast passes in all three themes | automated contrast check per theme |
+| ID   | Criterion                                                              | How it is verified                                    |
+| ---- | ---------------------------------------------------------------------- | ----------------------------------------------------- |
+| A-1  | Every action is keyboard reachable in documented order                 | keyboard-only walkthrough of every route in Gate 1 §4 |
+| A-2  | An arriving interaction moves focus to the dock                        | assert `document.activeElement` after the event       |
+| A-3  | Resolving an interaction returns focus to its prior owner              | focus assertion before/after                          |
+| A-4  | A generation bump restores focus to the composer with the draft intact | simulate `runtime.retry`, assert draft and focus      |
+| A-5  | Text scale 0.8–2.0 causes no clipping or horizontal scroll             | render each route at both bounds                      |
+| A-6  | Reduced motion removes animation without losing information            | render with `prefers-reduced-motion`                  |
+| A-7  | Layout usable at the declared minimum window size                      | render each route at that size                        |
+| A-8  | Lifecycle failures, terminal outcomes, and interactions are announced  | assert live-region content                            |
+| A-9  | Status is never color-only                                             | badge and pill snapshots include text or shape        |
+| A-10 | Contrast passes in all three themes                                    | automated contrast check per theme                    |
 
 ## 9. Per-component acceptance criteria (selected)
 
@@ -281,12 +281,12 @@ Each is a test, not an aspiration.
 
 ## 11. What Gate 3 must add to the host
 
-| ID | Need | Disposition after Gate 3 |
-| -- | ---- | ------------------------ |
-| H-1 | Outputs projection (SHP-DEF-054) | **still open.** Gate 3 established it needs a *Rust-owned* projection, not an Electron filter: `SessionArtifactDto` carries `resolvedPath`/`baseWorkingDir` and `display_path` can be absolute, and the SDK is generated from Rust. The Outputs panel is unbuilt. |
-| H-2 | Declared minimum window size | **no change needed.** `createMinimalShellWindowOptions` in `ui/desktop/src/shellHost.ts` already sets `minWidth: 760`, `minHeight: 520`. This gap was wrong; the stylesheet targets those bounds. |
-| H-3 | Renderer-visible capability list | **implemented.** `ShellRuntimeSnapshot.declaredCapabilities` is a sorted projection of the consumer manifest. Components gate on it rather than inferring from failures. |
-| H-4 | Handoff preconditions vs `allowedActions` | **new, open (SHP-DEF-055).** `handoff.prepare` needs a non-empty session id and a live ACP connection, but the host lists `handoff` for `relink_required` and `incompatible`. The GUI hides the control and explains why; the contradiction needs an operator decision. |
+| ID  | Need                                      | Disposition after Gate 3                                                                                                                                                                                                                                                                            |
+| --- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H-1 | Outputs projection (SHP-DEF-054)          | **implemented.** Rust builds a field-by-field, active-session-only projection with `name`, coarse `kind`, and `relation`; the response is bounded to 100 items and carries `totalCount`/`truncated`. Generated SDK and capability-gated main/preload/UI paths expose no location or file authority. |
+| H-2 | Declared minimum window size              | **no change needed.** `createMinimalShellWindowOptions` in `ui/desktop/src/shellHost.ts` already sets `minWidth: 760`, `minHeight: 520`. This gap was wrong; the stylesheet targets those bounds.                                                                                                   |
+| H-3 | Renderer-visible capability list          | **implemented.** `ShellRuntimeSnapshot.declaredCapabilities` is a sorted projection of the consumer manifest. Components gate on it rather than inferring from failures.                                                                                                                            |
+| H-4 | Handoff preconditions vs `allowedActions` | **closed.** `relink_required` and `incompatible` no longer advertise `handoff`; live-session states retain it. This preserves ADR-0012's server-owned envelope authority.                                                                                                                           |
 
 H-3 mattered because without it C-13/C-14/C-15 could not distinguish "no interaction pending" from
 "this consumer cannot answer interactions", and C-18 could not hide cleanly.
