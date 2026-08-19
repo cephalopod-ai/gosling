@@ -260,12 +260,22 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
         return (
           <SessionPicker
             sessions={state.sessions}
+            directory={snapshot.directory}
+            credentials={snapshot.credentials}
             canCreate={isDeclared(state, 'session.create')}
             canResume={isDeclared(state, 'session.resume')}
             canList={isDeclared(state, 'session.list')}
+            canSelectDirectory={canChangeDirectory(state) && isDeclared(state, 'directory.select')}
+            canSelectCredential={
+              snapshot.credentials.catalogStatus === 'available' &&
+              isDeclared(state, 'credential.select')
+            }
             onCreate={() => void actions.createSession()}
             onResume={(sessionId) => void actions.resumeSession(sessionId)}
             onRefresh={() => void actions.listSessions()}
+            onChooseDirectory={() => void actions.selectDirectory()}
+            onChooseCredential={() => void actions.selectCredential(null)}
+            onOpenSettings={() => actions.setView('settings')}
           />
         );
 

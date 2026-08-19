@@ -162,6 +162,37 @@ describe('state matrix', () => {
   });
 });
 
+describe('default dashboard', () => {
+  it('renders workspace, task, and recent-task panels with their declared actions', async () => {
+    await mount({ session: null });
+
+    expect(screen.getByRole('navigation', { name: 'Workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start new task' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+
+  it('routes dashboard actions through the existing typed operations', async () => {
+    const { fake } = await mount({ session: null });
+    await userEvent.click(screen.getByRole('button', { name: 'Change folder' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Change account' }));
+
+    await waitFor(() => {
+      expect(fake.calls.map((call) => call.operation)).toEqual(
+        expect.arrayContaining(['directory.select', 'credential.select'])
+      );
+    });
+
+    const second = await mount({ session: null });
+    const startButtons = screen.getAllByRole('button', { name: 'Start new task' });
+    await userEvent.click(startButtons[startButtons.length - 1]);
+    await waitFor(() => {
+      expect(second.fake.calls.some((call) => call.operation === 'session.create')).toBe(true);
+    });
+  });
+});
+
 describe('lifecycle actions derive from allowedActions', () => {
   it.each([
     ['relink_required', ['stop', 'diagnostics']],

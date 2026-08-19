@@ -264,21 +264,15 @@ const SCREENS = [
      </div></div>`,
      `<div class="composer"><div class="row">${b("Use this account","primary")}${b("Change folder")}</div></div>`])},
 
-  {group: "Session", id: "S-05", title: "Sessions", cond: "ready && no active session",
-   note: "session.list returns at most 20 active sessions whose workingDir equals the accepted canonical directory. The heading states the cap so the UI never implies a full archive.",
+  {group: "Session", id: "S-05", title: "Dashboard", cond: "ready && no active session",
+   note: "The default screen mirrors normal Gosling with three functional panels: Workspace routes through the existing folder/account/settings actions; Tasks makes Start new task primary; Recent tasks remains the bounded 20-session list.",
    render: () => win([titlebar(pill("ok","ready"), true), ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
-     `<div class="body"><div class="listhead">Recent tasks in this folder (up to 20)</div><div class="list">
-       <div class="row"><span class="t">Changelog cleanup</span><span class="m">14 messages · 2h ago</span></div>
-       <div class="row"><span class="t">Build script review</span><span class="m">6 messages · yesterday</span></div>
-       <div class="row"><span class="t">Untitled task</span><span class="m">2 messages · 3 days ago</span></div>
-     </div></div>`,
-     `<div class="composer"><div class="row">${b("Start new task","primary")}${b("Resume selected")}</div></div>`])},
+     `<div class="body"><div class="listhead">Workspace</div><div class="row"><span class="t">Folder</span><span>design-notes</span></div><div class="row"><span class="t">Account</span><span>Work Anthropic</span></div><div class="row">${b("Change folder")}${b("Change account")}${b("Settings")}</div><br/><div class="listhead">Tasks</div><div class="empty">Start a new task in this folder, or pick up a recent one.</div><div class="row">${b("Start new task","primary")}</div><br/><div class="listhead">Recent tasks in this folder (up to 20)</div><div class="list"><div class="row"><span class="t">Changelog cleanup</span><span class="m">14 messages · 2h ago</span></div><div class="row"><span class="t">Build script review</span><span class="m">6 messages · yesterday</span></div><div class="row"><span class="t">Untitled task</span><span class="m">2 messages · 3 days ago</span></div></div></div>`])},
 
-  {group: "Session", id: "S-05b", title: "Sessions — empty (first run)", cond: "ready && session list is empty",
-   note: "First-run end state. One primary action, no empty-state illustration, no upsell.",
+  {group: "Session", id: "S-05b", title: "Dashboard — empty (first run)", cond: "ready && session list is empty",
+   note: "First-run end state preserves the same three panels. Start new task remains the single primary action, with no empty-state illustration or upsell.",
    render: () => win([titlebar(pill("ok","ready"), true), ctxbar({dir:"design-notes", dirState:"selected", cred:"Work Anthropic", credState:"configured"}),
-     `<div class="body"><div class="listhead">Recent tasks in this folder (up to 20)</div><div class="empty">No tasks here yet.</div></div>`,
-     `<div class="composer"><div class="row">${b("Start new task","primary")}</div></div>`])},
+     `<div class="body"><div class="listhead">Workspace</div><div class="row"><span class="t">Folder</span><span>design-notes</span></div><div class="row"><span class="t">Account</span><span>Work Anthropic</span></div><br/><div class="listhead">Tasks</div><div class="row">${b("Start new task","primary")}</div><br/><div class="listhead">Recent tasks in this folder (up to 20)</div><div class="empty">No tasks here yet.</div></div>`])},
 
   {group: "Conversation", id: "S-06", title: "Conversation — idle", cond: "session.status === 'active' && promptAttempt === null",
    note: "provider and model come from the session record and are null before a session exists. The composer counter appears as the 64 KiB prompt bound approaches.",

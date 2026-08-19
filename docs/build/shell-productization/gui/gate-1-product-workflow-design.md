@@ -95,8 +95,8 @@ Screens are shells around the same window. IDs are stable for Gate 2 traceabilit
 | S-02  | Checking your setup        | `validating`                                                                                              | none                  | Stop, Save diagnostics            |
 | S-03  | Choose a folder            | `ready` and `directory.state === 'unselected'`                                                            | Choose folder         | Settings, Help                    |
 | S-04  | Choose an account          | `ready`, directory selected, `credentials.selectionStatus === 'none'` and `catalogStatus === 'available'` | Choose account        | Change folder                     |
-| S-05  | Sessions                   | `ready`, directory + credential settled, no active session                                                | Start new task        | Resume a listed session           |
-| S-05b | Sessions — empty           | as S-05, list length 0                                                                                    | Start new task        | —                                 |
+| S-05  | Dashboard                  | `ready`, directory + credential settled, no active session                                                | Start new task        | Change folder/account, resume a listed session, Settings |
+| S-05b | Dashboard — empty          | as S-05, list length 0                                                                                    | Start new task        | Change folder/account, Settings   |
 | S-06  | Conversation (idle)        | `session.status === 'active'`, `promptAttempt === null`                                                   | Send                  | Stop task, Sessions, Settings     |
 | S-07  | Conversation (streaming)   | `promptAttempt.phase === 'streaming'`                                                                     | Stop                  | —                                 |
 | S-08  | Conversation (cancelling)  | `promptAttempt.phase === 'cancelling'`                                                                    | none                  | —                                 |
@@ -187,8 +187,11 @@ retry that cannot work.
 ### Step 4 — Discover, then create or resume
 
 `session.list` returns at most **20** active ACP sessions whose `workingDir` equals the accepted
-canonical directory. S-05 is therefore a short list, not a searchable archive, and the copy must not
-promise history beyond it: "Recent tasks in this folder (up to 20)".
+canonical directory. S-05 is a three-panel dashboard: the Workspace panel shows the existing safe
+folder/account projection and routes to the existing change actions; the Tasks panel makes Start new
+task the single primary action; and the Recent tasks panel is the bounded session list. The list is
+not a searchable archive, and the copy must not promise history beyond it: "Recent tasks in this
+folder (up to 20)".
 
 Each row shows `title` (or a neutral fallback), `updatedAt`, and `messageCount`. `resume` may fail
 with `SESSION_UNAVAILABLE` — including when a renderer-known ID points outside the accepted

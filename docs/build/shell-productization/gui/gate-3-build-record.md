@@ -29,6 +29,14 @@ C-08/C-09/C-10/C-11 `Transcript`, C-12 `Composer`, C-13/C-14/C-15/C-16 `Interact
 C-17/C-18 `ModulesStrip`, C-19/C-20 `SettingsPanel`, C-21/C-22/C-23 `LifecycleFailureScreen`,
 C-24 `HandoffDialog`, C-25 `FailureBanner`, C-26 `OutputsPanel`.
 
+### S-05 dashboard amendment — 2026-08-19
+
+With explicit operator approval, S-05 now mirrors the normal Gosling layout with three functional
+panels: Workspace (the existing safe folder/account/settings actions), Tasks (the primary Start new
+task action), and Recent tasks (the existing bounded create/resume list). The amendment adds no IPC,
+backend authority, or capability: every control routes through the existing typed operation and
+declaration gate.
+
 ## 2. Host changes
 
 The host changes are generic; none is consumer-specific.
