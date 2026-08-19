@@ -35,6 +35,7 @@ export const SessionPicker = ({
   onChooseDirectory,
   onChooseCredential,
 }: SessionPickerProps) => {
+  const showCredentials = canSelectCredential || credentials.selectionStatus !== 'none';
   const selectedCredential = credentials.profiles.find(
     (profile) => profile.id === credentials.selectedProfileId
   );
@@ -48,10 +49,12 @@ export const SessionPicker = ({
             <dt>Folder</dt>
             <dd>{directory.label ?? 'No folder chosen'}</dd>
           </div>
-          <div>
-            <dt>Account</dt>
-            <dd>{selectedCredential?.name ?? 'No account chosen'}</dd>
-          </div>
+          {showCredentials ? (
+            <div>
+              <dt>Account</dt>
+              <dd>{selectedCredential?.name ?? 'No account chosen'}</dd>
+            </div>
+          ) : null}
         </dl>
         <ShellButtonRow>
           {canSelectDirectory ? (

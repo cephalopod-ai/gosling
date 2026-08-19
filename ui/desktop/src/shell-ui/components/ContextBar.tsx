@@ -126,40 +126,46 @@ export const ContextBar = ({
   canSelectCredential,
   onChooseDirectory,
   onChooseAccount,
-}: ContextBarProps) => (
-  <div className="gsh-ctxbar">
-    <span className="gsh-ctxbar__group">
-      <span className="gsh-ctxbar__label">Folder</span>
-      {directoryChip(directory)}
-      {canSelectDirectory ? (
-        <ShellButton
-          label={directory.state === 'selected' ? COPY.change : COPY.chooseFolder}
-          onClick={onChooseDirectory}
-          emphasis="ghost"
-          disabled={!canChangeDirectory}
-          describedBy={canChangeDirectory ? undefined : 'gsh-directory-locked'}
-        />
-      ) : null}
-      {canChangeDirectory ? null : (
-        <span id="gsh-directory-locked" className="gsh-hint">
-          Stop or leave the current task before changing folder.
-        </span>
-      )}
-    </span>
-    <span className="gsh-ctxbar__group">
-      <span className="gsh-ctxbar__label">Account</span>
-      {credentialChip(credentials)}
-      {canSelectCredential && credentials.catalogStatus === 'available' ? (
-        <ShellButton label={COPY.change} onClick={onChooseAccount} emphasis="ghost" />
-      ) : null}
-    </span>
-    {session && session.providerId ? (
+}: ContextBarProps) => {
+  const showCredentials = canSelectCredential || credentials.selectionStatus !== 'none';
+
+  return (
+    <div className="gsh-ctxbar">
       <span className="gsh-ctxbar__group">
-        <ShellChip
-          label={`${session.providerId}${session.modelId ? ` · ${session.modelId}` : ''}`}
-          muted
-        />
+        <span className="gsh-ctxbar__label">Folder</span>
+        {directoryChip(directory)}
+        {canSelectDirectory ? (
+          <ShellButton
+            label={directory.state === 'selected' ? COPY.change : COPY.chooseFolder}
+            onClick={onChooseDirectory}
+            emphasis="ghost"
+            disabled={!canChangeDirectory}
+            describedBy={canChangeDirectory ? undefined : 'gsh-directory-locked'}
+          />
+        ) : null}
+        {canChangeDirectory ? null : (
+          <span id="gsh-directory-locked" className="gsh-hint">
+            Stop or leave the current task before changing folder.
+          </span>
+        )}
       </span>
-    ) : null}
-  </div>
-);
+      {showCredentials ? (
+        <span className="gsh-ctxbar__group">
+          <span className="gsh-ctxbar__label">Account</span>
+          {credentialChip(credentials)}
+          {canSelectCredential && credentials.catalogStatus === 'available' ? (
+            <ShellButton label={COPY.change} onClick={onChooseAccount} emphasis="ghost" />
+          ) : null}
+        </span>
+      ) : null}
+      {session && session.providerId ? (
+        <span className="gsh-ctxbar__group">
+          <ShellChip
+            label={`${session.providerId}${session.modelId ? ` · ${session.modelId}` : ''}`}
+            muted
+          />
+        </span>
+      ) : null}
+    </div>
+  );
+};

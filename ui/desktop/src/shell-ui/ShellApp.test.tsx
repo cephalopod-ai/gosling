@@ -174,6 +174,26 @@ describe('default dashboard', () => {
     expect(screen.queryByRole('button', { name: 'Skills' })).toBeNull();
   });
 
+  it('shows no account catalog or controls when credentials are owned by main Gosling', async () => {
+    await mount({
+      session: null,
+      declaredCapabilities: ALL_CAPABILITIES.filter(
+        (capability) => capability !== 'credential.select'
+      ),
+      credentials: {
+        catalogStatus: 'denied',
+        profiles: [],
+        selectedProfileId: null,
+        selectionStatus: 'none',
+      },
+    });
+
+    expect(screen.queryByText('Account')).toBeNull();
+    expect(screen.queryByText('No account chosen')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Change account' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Choose an account' })).toBeNull();
+  });
+
   it('renders workspace, task, and recent-task panels with their declared actions', async () => {
     await mount({ session: null });
 

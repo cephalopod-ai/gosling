@@ -436,3 +436,9 @@ persistent navigation is New Chat, Session History, Workspace, and Chats. Settin
 Extensions entry points are absent. S-21 and the user-opened settings actions described above are
 superseded; S-22 remains only as bounded recovery behavior for an unreadable product-local settings
 document. This changes presentation and routing only and grants no global Gosling authority.
+
+The committed Default Shell template also supersedes its selectable-account states: it declares
+fixed credential policy without a profile ID and does not declare `credential.select`. Its UI must
+not list Gosling credential profiles or render Account controls. Credentials and provider APIs are
+configured in the main Gosling application. The selectable-catalog states remain valid only for a
+different shell product that explicitly provisions and declares that authority.

@@ -253,3 +253,8 @@ views and removes `SettingsPanel` plus all settings navigation. Tests assert tha
 Session History remain available while Settings, Skills, Extensions, provider selection, and model
 selection do not render. No preload, IPC, capability, credential, or global-settings authority was
 added.
+
+The committed template now uses fixed credential policy and omits `credential.select`; generated
+neutral scaffolds do the same. Account catalog UI is absent unless another product explicitly
+declares selection authority. A regression also proves denied catalog access nulls a stale local
+profile preference before session creation.

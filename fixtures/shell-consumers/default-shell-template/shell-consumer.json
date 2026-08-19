@@ -5,7 +5,6 @@
   "productProfilePath": "fixtures/shell-products/default-shell-template/product-profile.json",
   "rendererEntry": "renderer.ts",
   "declaredCapabilities": [
-    "credential.select",
     "directory.select",
     "elicitation.respond",
     "permission.respond",

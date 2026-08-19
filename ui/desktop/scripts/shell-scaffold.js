@@ -16,7 +16,6 @@ const NAMED_DOMAIN_PATTERN = /(dawes|physics|cst|chemistry|biology|mathematics)/
 const REQUIRED_TARGETS = ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64'];
 const ICON_EXTENSIONS = ['.icns', '.ico', '.png', '.svg'];
 const DECLARED_CAPABILITIES = [
-  'credential.select',
   'directory.select',
   'elicitation.respond',
   'permission.respond',

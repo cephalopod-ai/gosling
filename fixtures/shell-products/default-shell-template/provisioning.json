@@ -10,12 +10,10 @@
   "settingsSchemaVersion": 1,
   "protocolPolicy": {
     "mode": "restricted",
-    "deniedMethods": [
-      "_gosling/unstable/config/upsert"
-    ]
+    "deniedMethods": ["_gosling/unstable/config/upsert"]
   },
   "session": {
-    "credentialPolicy": "selectable_catalog",
+    "credentialPolicy": "fixed",
     "extensions": [],
     "skillIds": []
   },

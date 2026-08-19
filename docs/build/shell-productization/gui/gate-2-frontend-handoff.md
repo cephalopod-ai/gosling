@@ -314,3 +314,9 @@ isolated preload, and the existing declaration-gated store/actions. `SettingsPan
 user-opened settings routing are removed. Local settings may still be read by the store for runtime
 appearance and recovered through the bounded reset action, but no Settings, Skills, Extensions, or
 global-settings control is rendered.
+
+For the committed Default Shell template, `credential.select` is also absent and fixed credential
+policy has no profile ID. `ContextBar` and `SessionPicker` omit Account content in that state. The
+credential controller ignores any stale product-local preferred profile when the backend denies
+catalog access, so switching a previously selectable development template back to fixed cannot
+retain or submit that selection.

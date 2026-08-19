@@ -12,6 +12,10 @@ Temporary UI direction (2026-08-19): the generic shell mirrors the normal Goslin
 and navigation while continuing to use the isolated shell preload/runtime. It intentionally omits
 Settings, Skills, and Extensions navigation. Product-local settings remain an internal runtime and
 recovery concern; the renderer exposes no settings editor and receives no global-settings authority.
+The committed Default Shell template also uses fixed credential policy with no profile ID: it does
+not enumerate or select Gosling credential profiles. Provider/API credentials are configured in the
+main Gosling application; a product that needs a fixed profile must provision that opaque profile ID
+explicitly.
 
 Detailed execution for DS-3 through DS-7 is frozen in
 [`../build/shell-productization/default-shell-ds3-ds7-implementation-plan.md`](../build/shell-productization/default-shell-ds3-ds7-implementation-plan.md).

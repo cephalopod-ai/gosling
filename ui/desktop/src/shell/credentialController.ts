@@ -8,11 +8,7 @@ const MAX_CREDENTIAL_PROFILES = 128;
 const MAX_CREDENTIAL_FIELD_LENGTH = 256;
 
 export type ShellCredentialCatalogStatus = 'available' | 'denied' | 'unavailable';
-export type ShellCredentialSelectionStatus =
-  | 'none'
-  | 'configured'
-  | 'relink_required'
-  | 'missing';
+export type ShellCredentialSelectionStatus = 'none' | 'configured' | 'relink_required' | 'missing';
 
 export interface ShellCredentialSnapshot {
   catalogStatus: ShellCredentialCatalogStatus;
@@ -125,11 +121,12 @@ export function createShellCredentialController(
       catalogStatus === 'available'
         ? (response.profiles ?? []).filter(isSafeSummary).slice(0, MAX_CREDENTIAL_PROFILES)
         : [];
+    const effectiveSelectedProfileId = catalogStatus === 'denied' ? null : selectedProfileId;
     return publish({
       catalogStatus,
       profiles,
-      selectedProfileId,
-      selectionStatus: selectionStatus(profiles, selectedProfileId),
+      selectedProfileId: effectiveSelectedProfileId,
+      selectionStatus: selectionStatus(profiles, effectiveSelectedProfileId),
     });
   };
 

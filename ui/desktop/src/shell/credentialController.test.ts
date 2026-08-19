@@ -65,7 +65,10 @@ function harness(options?: {
 
 describe('shell credential controller', () => {
   it('reports a denied catalog with no profiles for fixed provisioning', async () => {
-    const { controller } = harness({ response: { status: 'denied', profiles: [] } });
+    const { controller } = harness({
+      preferred: 'work',
+      response: { status: 'denied', profiles: [] },
+    });
 
     await expect(controller.refresh()).resolves.toEqual({
       catalogStatus: 'denied',
@@ -73,6 +76,7 @@ describe('shell credential controller', () => {
       selectedProfileId: null,
       selectionStatus: 'none',
     });
+    expect(controller.selected()).toBeNull();
     await expect(controller.select(1, 'work')).rejects.toThrow('not permitted');
   });
 
@@ -94,7 +98,9 @@ describe('shell credential controller', () => {
     const { controller, settings } = harness();
     await controller.refresh();
 
-    await expect(controller.select(1, 'unknown')).rejects.toThrow('not in the current safe catalog');
+    await expect(controller.select(1, 'unknown')).rejects.toThrow(
+      'not in the current safe catalog'
+    );
     await expect(controller.select(2, 'work')).rejects.toThrow('generation is stale');
     expect(settings.read().workspace.preferredCredentialProfileId).toBeNull();
   });
