@@ -116,11 +116,12 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
 - Security/data/process/release impact: process only. Design Gates 1-2 read contracts and add no
   code, so they are unaffected. Gate 3 would build a renderer against evidence that no longer
   matches its own source tree.
-- Disposition: `partially validated`. On the 2026-08-19 campaign working tree, Clippy, the full
+- Disposition: `partially validated`. On implementation commit `27c520e60`, Clippy, the full
   Desktop suite, shell profile, lint/type/i18n checks, the 15-case authenticated child integration,
   supported-host package/readback, packaged backend-loss/retry, explicit stop, clean close, fresh
   launch, and two-product coexistence pass. The reusable four-target workflow is locally schema-
-  and policy-checked. Exact-revision remote CI remains outstanding because push was not authorized.
+  and policy-checked, and profiles resolve the clean exact revision. Exact-revision remote CI
+  remains outstanding because push was not authorized.
 - Patch/files: `.github/workflows/shell-package-reusable.yml`,
   `.github/workflows/shell-package-smoke.yml`, `ui/desktop/scripts/shell-package-lifecycle.js`, and
   their contract tests make the formerly manual validation obligation repeatable.

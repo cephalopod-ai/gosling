@@ -113,6 +113,8 @@ or publication authority.
 ## Campaign outcome before remote authorization
 
 - Group A committed as `a317f77d4`; Group B committed as `afc8451c9`.
+- Group C committed as `27c520e60`; all profiles resolve that exact implementation revision with
+  `sourceClean:true`.
 - Group C locally implements the reusable four-target acceptance workflow and passes supported-host
   package/readback, backend-loss/retry, explicit stop, fresh launch, and two-product coexistence.
 - SHP-DEF-028 and SHP-DEF-030 are locally fixed. SHP-DEF-053 remains partially validated because

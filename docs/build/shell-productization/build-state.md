@@ -17,8 +17,8 @@ Completed gate: **Gate 3 — the generic Default Shell GUI, including C-26 Outpu
 `ui/desktop/src/shell-ui/` and verified in the operator checkout against the repository lockfile.
 SHP-DEF-054, SHP-DEF-055, and SHP-DEF-057 are closed; see
 [`gui/gate-3-build-record.md`](gui/gate-3-build-record.md).**
-Current gate: **commit and push the validated campaign tree, then run current CI and the new
-four-target shell package acceptance on that exact revision. Supported-host packaged
+Current gate: **push the committed campaign tree, then run current CI and the new four-target shell
+package acceptance on that exact revision. Supported-host packaged
 startup/recovery/stop/relaunch/coexistence now passes locally; SHP-DEF-053 remains partially
 validated only for the unauthorized remote step. Named shells remain blocked until M5.**
 
@@ -179,8 +179,9 @@ The 2026-08-19 campaign additionally passed 67/67 shell contract tests, 15/15 au
 integration cases, 990/990 Desktop tests, lint/type/i18n, Clippy, macOS arm64 package/readback, a
 two-cycle packaged recovery/stop replay, and Default-Shell-plus-fixture-A coexistence with empty
 registries. The reusable workflow statically covers macOS arm64/x64, Linux x64, and Windows x64.
-This evidence is still working-tree-bound until the Group C commit below is created and cannot be
-called remote-CI-bound until push is authorized.
+The implementation is committed at `27c520e6016c40a6a659badbfe5b2d8852c9d609`, and all profiles
+resolve that revision with `sourceClean:true`. The evidence cannot be called remote-CI-bound until
+push is authorized.
 
 The earlier package has profile hash
 `830f6143a45ea309c42f03cb440410b3eb6484009c86cda4aa98f0a7e1282950` and embedded backend
@@ -321,8 +322,8 @@ as the supported-host-target proof).
 
 DS-1 through DS-7 and the generic GUI implementation are closed locally. The remaining sequence is:
 
-1. Commit the reviewed Group C working tree, then obtain explicit push authorization and run current
-   CI plus the four-target reusable shell acceptance against that exact revision.
+1. Obtain explicit push authorization and run current CI plus the four-target reusable shell
+   acceptance against the exact final campaign revision.
 2. Record the remote run URLs and hashes, rerun `shell:check-profiles` with `sourceClean:true`, and
    close SHP-DEF-053 only if every required job is green.
 3. Complete the remaining manual accessibility checks and M5 reusable-GUI conformance.

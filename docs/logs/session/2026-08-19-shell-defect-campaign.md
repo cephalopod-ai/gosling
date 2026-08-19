@@ -40,7 +40,7 @@ records without erasing historical evidence.
 | --- | --- | --- | --- |
 | A — CI truth and record reconciliation | complete | focused 12/12; Desktop 990/990; typecheck and lint pass | `a317f77d4` |
 | B — external consumer boundary | complete | external archive 2/2; complete shell profile suite 59/59; all profiles resolve | `afc8451c9` |
-| C — reusable package/lifecycle acceptance | locally complete; remote gate pending | shell 67/67; integration 15/15; Desktop 990/990; lint/type/i18n; Clippy; package/readback/lifecycle/coexistence pass | pending |
+| C — reusable package/lifecycle acceptance | locally complete; remote gate pending | shell 67/67; integration 15/15; Desktop 990/990; lint/type/i18n; Clippy; package/readback/lifecycle/coexistence pass | `27c520e60` |
 
 ## Decisions and deviations
 
@@ -51,9 +51,8 @@ records without erasing historical evidence.
 
 ## Exact next action
 
-Commit the reviewed Group C diff, rerun profile resolution with a clean source tree, then obtain
-explicit push authorization. Do not close SHP-DEF-053 until required CI and the reusable four-target
-acceptance workflow are green on that exact commit.
+Obtain explicit push authorization for the final campaign head. Do not close SHP-DEF-053 until
+required CI and the reusable four-target acceptance workflow are green on that exact commit.
 
 ## Group A — CI truth and record reconciliation
 
@@ -175,6 +174,8 @@ part of this build-input proof.
 - Real Default-Shell/fixture-A coexistence passed with both at generation 1, independent shutdown,
   and one empty registry per product.
 - Workflow YAML parsing, security/static contract tests, and `git diff --check`: passed.
+- After Group C commit `27c520e6016c40a6a659badbfe5b2d8852c9d609`, all three profiles
+  resolved that exact revision with `sourceClean:true`.
 
 ### Residual gate
 
