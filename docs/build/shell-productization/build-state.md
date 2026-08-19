@@ -37,8 +37,8 @@ Finish a copy-free, least-privilege shared foundation before DAWES, math, Projec
 `240ab751585afc03c68a710f8be10ea891ab168f`, authorizing `plan-webapp-design` Gates 1-2 for the
 generic Default Shell and nothing further. Acceptance carries three conditions: revision drift from
 the accepted revision to current `main` is acknowledged and must be reconciled before Gate 3
-(SHP-DEF-053); the Gemini OAuth provider defect blocks any claim of a polished credential/relink
-experience; and design documents may not invent host surface. Historical host substrate remains
+(SHP-DEF-053); the Gemini OAuth provider defect was subsequently repaired and is no longer a gate;
+and design documents may not invent host surface. Historical host substrate remains
 accepted on its own recorded revision.
 
 2026-08-15 corrective status: merged `main` at

@@ -52,10 +52,9 @@ No production signing, notarization, publication, updater promotion, production 
 DS-1–DS-7 are closed, and `plan-webapp-design` Gates 1–3 are done: the design was accepted as
 PR #58 and the generic Default Shell GUI is implemented at `ui/desktop/src/shell-ui/`. Read
 [`gui/gate-3-build-record.md`](gui/gate-3-build-record.md) §6 before treating its §4 as evidence —
-verification ran in a reconstructed Linux environment, not on the operator's checkout, so it is not
-lockfile-bound, packaged, or CI-bound (SHP-DEF-057). Three defects gate further progress:
-SHP-DEF-053 (DS-7 battery not re-run on current `main`), SHP-DEF-054 (no renderer projection for the
-durable Outputs inventory, so that panel is unbuilt and needs a Rust-owned projection), and
-SHP-DEF-055 (the host advertises handoff in states where it cannot succeed). The historical PG-50 and
-DS-7 evidence remain valid only for their exact recorded revisions, and every named shell remains
-blocked until M5.
+verification originally ran in a reconstructed Linux environment, not on the operator's checkout.
+The later operator-checkout replay in [`gui/gate-3-build-record.md`](gui/gate-3-build-record.md)
+closed SHP-DEF-054, SHP-DEF-055, and SHP-DEF-057. SHP-DEF-053 remains partial: the final candidate
+still needs green required CI plus repeatable packaged startup/close/restart/coexistence evidence on
+that exact revision. The historical PG-50 and DS-7 evidence remain valid only for their exact
+recorded revisions, and every named shell remains blocked until M5.

@@ -83,6 +83,13 @@ async function expectFailure(pending: Promise<unknown>, code: string): Promise<v
   throw new Error(`expected ${code}`);
 }
 
+const unavailableModelSelection = {
+  status: 'unavailable',
+  providerId: null,
+  modelId: null,
+  options: [],
+} as const;
+
 const roots: string[] = [];
 afterEach(() => {
   vi.clearAllMocks();
@@ -382,6 +389,7 @@ describe('shell bootstrap', () => {
     const initial = await value.handlers.get(shellIpcChannels.settingsRead)!(event);
     expect(initial).toEqual({
       appearance: { theme: 'system', textScale: 1 },
+      modelSelection: unavailableModelSelection,
       recovery: { status: 'absent', schemaVersion: null },
     });
 
@@ -391,6 +399,7 @@ describe('shell bootstrap', () => {
     });
     expect(updated).toEqual({
       appearance: { theme: 'dark', textScale: 1 },
+      modelSelection: unavailableModelSelection,
       recovery: { status: 'loaded', schemaVersion: 1 },
     });
     const reread = await value.handlers.get(shellIpcChannels.settingsRead)!(event);
@@ -417,6 +426,7 @@ describe('shell bootstrap', () => {
     });
     expect(cancelled).toEqual({
       appearance: { theme: 'dark', textScale: 1.5 },
+      modelSelection: unavailableModelSelection,
       recovery: { status: 'loaded', schemaVersion: 1 },
     });
 
@@ -427,6 +437,7 @@ describe('shell bootstrap', () => {
     });
     expect(reset).toEqual({
       appearance: { theme: 'system', textScale: 1 },
+      modelSelection: unavailableModelSelection,
       recovery: { status: 'loaded', schemaVersion: 1 },
     });
     expect(value.adapter.showConfirmDialog).toHaveBeenCalledWith(
