@@ -296,8 +296,8 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
   first, and stops if detach fails.
 - Patch/files: `ui/desktop/src/shell-ui/ShellApp.tsx`, `state/store.ts`, and focused component tests.
 - Regression test: `starts a session from the New Chat navigation action`, `detaches an active
-session before starting a new chat`, and `does not create a new chat when detaching the active
-session fails`.
+  session before starting a new chat`, and `does not create a new chat when detaching the active
+  session fails`.
 - Validation/evidence: the pre-patch installed renderer remained on the dashboard with no composer;
   focused Vitest failed before the patch and passed afterward. In the rebuilt installed app, the
   same click opened the chat workspace and exposed the Your request composer.
@@ -330,8 +330,6 @@ session fails`.
 - Residual risk: remote CI remains revision-bound; the final campaign commit must receive a green
   required Desktop job before SHP-DEF-053 can close.
 
-## New entry template
-
 ### SHP-DEF-058 — Default template exposed Gosling's credential catalog
 
 - Discovered at gate / audit: operator live GUI review, 2026-08-19.
@@ -355,6 +353,8 @@ session fails`.
 - Validation/evidence: focused shell/scaffold tests, desktop lint/typecheck, package/readback, and
   live installed-app inspection.
 - Residual risk: explicitly provisioned selectable-catalog products retain their existing behavior.
+
+## New entry template
 
 ### SHP-DEF-NNN — title
 

@@ -182,3 +182,19 @@ part of this build-input proof.
 Push, PR creation, signing, publication, deployment, updater activation, and production credentials
 were not authorized. SHP-DEF-053 therefore remains `partially validated` until the final local
 commit is pushed and required CI plus all four package-matrix jobs are green at that same revision.
+
+## Completion audit continuation
+
+- Re-read the supplied ledger attachment and compared its 60 concrete IDs with the authoritative
+  repository ledger. All attachment IDs SHP-DEF-001 through SHP-DEF-060 remain present; the campaign
+  additionally records SHP-DEF-061. No supplied finding was dropped.
+- SHP-DEF-004 and SHP-DEF-006 remain protected, intentionally deferred work. The operator did not
+  reopen either exact ID, so the campaign did not reinterpret them as ordinary repair work.
+- Corrected a ledger-structure error that placed fixed SHP-DEF-058 beneath the “New entry template”
+  heading, and repaired the malformed continuation indentation in SHP-DEF-060's regression record.
+- Read-only GitHub inspection found no remote `codex/repair-shell-defect-campaign` branch and no PR.
+  Remote `main` remains `386a7442a38165fd524c4910a8b493afaae5d3eb`; no push or other outward
+  action occurred.
+- The remaining local acceptance work is an exact-head full Rust test, Default Shell conformance,
+  and fresh package/readback/lifecycle/coexistence replay. The remaining external acceptance work is
+  still an explicitly authorized push followed by green required CI and all four package jobs.
