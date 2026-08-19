@@ -1,0 +1,56 @@
+name: Shell package smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/shell-package-*.yml"
+      - "crates/**"
+      - "fixtures/shell-consumers/**"
+      - "fixtures/shell-products/**"
+      - "ui/desktop/**"
+      - "ui/shell-kit/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/shell-package-*.yml"
+      - "crates/**"
+      - "fixtures/shell-consumers/**"
+      - "fixtures/shell-products/**"
+      - "ui/desktop/**"
+      - "ui/shell-kit/**"
+  schedule:
+    - cron: "23 7 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shell-package-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin
+            architecture: arm64
+          - runner: macos-15-intel
+            platform: darwin
+            architecture: x64
+          - runner: ubuntu-24.04
+            platform: linux
+            architecture: x64
+          - runner: windows-2025
+            platform: win32
+            architecture: x64
+    uses: ./.github/workflows/shell-package-reusable.yml
+    with:
+      runner: ${{ matrix.runner }}
+      platform: ${{ matrix.platform }}
+      architecture: ${{ matrix.architecture }}
+      coexistence: true

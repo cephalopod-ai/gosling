@@ -109,3 +109,13 @@ or publication authority.
 | Shell workflows are reusable and guarded | workflow schema/static review, package/readback/lifecycle outputs, no signing/publish credentials |
 | Gate-4 acceptance debt is not hidden | every reopened path maps to executable evidence or remains explicitly partial |
 | SHP-DEF-053 is closed honestly | one exact commit has green required CI and supported-host lifecycle/coexistence evidence |
+
+## Campaign outcome before remote authorization
+
+- Group A committed as `a317f77d4`; Group B committed as `afc8451c9`.
+- Group C locally implements the reusable four-target acceptance workflow and passes supported-host
+  package/readback, backend-loss/retry, explicit stop, fresh launch, and two-product coexistence.
+- SHP-DEF-028 and SHP-DEF-030 are locally fixed. SHP-DEF-053 remains partially validated because
+  its last acceptance oracle is green required CI and package-matrix execution on the final pushed
+  commit, and push was outside the campaign's granted authority.
+- SHP-DEF-004 and SHP-DEF-006 remain deliberately deferred and unchanged.

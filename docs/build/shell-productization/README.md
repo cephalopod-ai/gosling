@@ -54,7 +54,9 @@ PR #58 and the generic Default Shell GUI is implemented at `ui/desktop/src/shell
 [`gui/gate-3-build-record.md`](gui/gate-3-build-record.md) §6 before treating its §4 as evidence —
 verification originally ran in a reconstructed Linux environment, not on the operator's checkout.
 The later operator-checkout replay in [`gui/gate-3-build-record.md`](gui/gate-3-build-record.md)
-closed SHP-DEF-054, SHP-DEF-055, and SHP-DEF-057. SHP-DEF-053 remains partial: the final candidate
-still needs green required CI plus repeatable packaged startup/close/restart/coexistence evidence on
+closed SHP-DEF-054, SHP-DEF-055, and SHP-DEF-057. The 2026-08-19 repair campaign added the external
+shell kit plus reusable four-target unsigned package acceptance and passed supported-host packaged
+startup, backend-loss/retry, stop, close, fresh launch, and two-product coexistence. SHP-DEF-053
+remains partial only until the final campaign commit is pushed and required remote CI is green on
 that exact revision. The historical PG-50 and DS-7 evidence remain valid only for their exact
 recorded revisions, and every named shell remains blocked until M5.

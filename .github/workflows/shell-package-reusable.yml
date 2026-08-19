@@ -1,0 +1,158 @@
+name: Reusable shell package acceptance
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: Pinned GitHub-hosted runner label
+        required: true
+        type: string
+      platform:
+        description: Electron platform (darwin, linux, or win32)
+        required: true
+        type: string
+      architecture:
+        description: Electron architecture (arm64 or x64)
+        required: true
+        type: string
+      profile:
+        description: Source-controlled shell product profile
+        required: false
+        default: fixtures/shell-products/default-shell-template/product-profile.json
+        type: string
+      consumer:
+        description: Source-controlled shell consumer manifest
+        required: false
+        default: fixtures/shell-consumers/default-shell-template/shell-consumer.json
+        type: string
+      package_name:
+        description: Forge package directory basename derived from the reviewed profile
+        required: false
+        default: Default Shell Template
+        type: string
+      coexistence:
+        description: Also package a second neutral identity and run the coexistence harness
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  package-and-smoke:
+    name: Shell package and lifecycle (${{ inputs.platform }}-${{ inputs.architecture }})
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+      APPLE_TEAM_ID: ""
+      APPLE_ID: ""
+      APPLE_ID_PASSWORD: ""
+      KEYCHAIN_PATH: ""
+      WINDOWS_CERTIFICATE_FILE: ""
+      WINDOW_SIGNING_ROLE: ""
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+
+      - name: Add selected Rust target
+        shell: bash
+        env:
+          TARGET: ${{ inputs.platform == 'darwin' && (inputs.architecture == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin') || (inputs.platform == 'win32' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu') }}
+        run: rustup target add "$TARGET"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.10.0
+
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@10.30.3
+
+      - name: Install Linux runtime dependencies
+        if: inputs.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev gnome-keyring libxcb1-dev libnss3 libatk-bridge2.0-0 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxss1 libasound2t64 xvfb
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: shell-package-${{ inputs.platform }}-${{ inputs.architecture }}
+
+      - name: Install locked Desktop dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: ui/desktop
+
+      - name: Validate shell contracts and failure paths
+        run: |
+          pnpm run shell:test-profile
+          pnpm exec vitest run --config vitest.integration.config.ts tests/integration/shell_session_runtime.test.ts
+        working-directory: ui/desktop
+
+      - name: Build and verify unsigned local shell package
+        shell: bash
+        env:
+          PROFILE: ${{ inputs.profile }}
+          CONSUMER: ${{ inputs.consumer }}
+          PLATFORM: ${{ inputs.platform }}
+          ARCHITECTURE: ${{ inputs.architecture }}
+        run: |
+          pnpm run shell:package-local -- "../../${PROFILE}" --consumer "../../${CONSUMER}" --platform "$PLATFORM" --arch "$ARCHITECTURE"
+        working-directory: ui/desktop
+
+      - name: Exercise packaged startup, stop, retry, close, and restart
+        shell: bash
+        env:
+          PROFILE: ${{ inputs.profile }}
+          CONSUMER: ${{ inputs.consumer }}
+          PLATFORM: ${{ inputs.platform }}
+          ARCHITECTURE: ${{ inputs.architecture }}
+          PACKAGE_NAME: ${{ inputs.package_name }}
+        run: |
+          command=(pnpm run shell:test-package-lifecycle -- --profile "../../${PROFILE}" --consumer "../../${CONSUMER}" --package "out/${PACKAGE_NAME}-${PLATFORM}-${ARCHITECTURE}" --platform "$PLATFORM" --arch "$ARCHITECTURE" --report "build/shell-acceptance/${PLATFORM}-${ARCHITECTURE}.json")
+          if [ "$PLATFORM" = linux ]; then
+            xvfb-run -a "${command[@]}"
+          else
+            "${command[@]}"
+          fi
+        working-directory: ui/desktop
+
+      - name: Build and verify second neutral shell package
+        if: inputs.coexistence
+        shell: bash
+        run: |
+          pnpm run shell:package-local -- ../../fixtures/shell-products/fixture-a/product-profile.json --consumer ../../fixtures/shell-consumers/consumer-a/shell-consumer.json --platform "${{ inputs.platform }}" --arch "${{ inputs.architecture }}"
+        working-directory: ui/desktop
+
+      - name: Exercise concurrent identity and shutdown isolation
+        if: inputs.coexistence
+        shell: bash
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          ARCHITECTURE: ${{ inputs.architecture }}
+          PACKAGE_NAME: ${{ inputs.package_name }}
+        run: |
+          node -e 'const fs=require("node:fs"); const platform=process.env.PLATFORM; const architecture=process.env.ARCHITECTURE; const input={schemaVersion:1,applications:[{profileFile:"../../fixtures/shell-products/default-shell-template/product-profile.json",consumerFile:"../../fixtures/shell-consumers/default-shell-template/shell-consumer.json",packageDirectory:`out/${process.env.PACKAGE_NAME}-${platform}-${architecture}`},{profileFile:"../../fixtures/shell-products/fixture-a/product-profile.json",consumerFile:"../../fixtures/shell-consumers/consumer-a/shell-consumer.json",packageDirectory:`out/Gosling Shell Fixture A-${platform}-${architecture}`}]}; fs.mkdirSync("build/shell-acceptance",{recursive:true}); fs.writeFileSync("build/shell-acceptance/coexistence-input.json",JSON.stringify(input));'
+          command=(pnpm run shell:test-package-coexistence -- --input build/shell-acceptance/coexistence-input.json --platform "$PLATFORM" --arch "$ARCHITECTURE" --report "build/shell-acceptance/coexistence-${PLATFORM}-${ARCHITECTURE}.json")
+          if [ "$PLATFORM" = linux ]; then
+            xvfb-run -a "${command[@]}"
+          else
+            "${command[@]}"
+          fi
+        working-directory: ui/desktop
+
+      - name: Upload bounded acceptance report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shell-acceptance-${{ inputs.platform }}-${{ inputs.architecture }}
+          path: ui/desktop/build/shell-acceptance/*.json
+          if-no-files-found: warn
+          retention-days: 5

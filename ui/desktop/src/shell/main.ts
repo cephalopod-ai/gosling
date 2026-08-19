@@ -8,6 +8,14 @@ declare const __GOSLING_SHELL_RESOURCE_FILES__: ShellResourceFiles;
 declare const SHELL_WINDOW_VITE_DEV_SERVER_URL: string;
 declare const SHELL_WINDOW_VITE_NAME: string;
 
+const playwrightPathRoot = process.env.GOSLING_PLAYWRIGHT_USER_DATA_DIR?.trim();
+if (process.env.ENABLE_PLAYWRIGHT === 'true' && playwrightPathRoot) {
+  const root = path.resolve(playwrightPathRoot);
+  app.setPath('appData', path.join(root, 'app-data'));
+  app.setPath('sessionData', path.join(root, 'session-data'));
+  app.setPath('temp', path.join(root, 'temp'));
+}
+
 function rendererUrl(): string {
   return SHELL_WINDOW_VITE_DEV_SERVER_URL
     ? new URL('shell.html', SHELL_WINDOW_VITE_DEV_SERVER_URL).toString()
