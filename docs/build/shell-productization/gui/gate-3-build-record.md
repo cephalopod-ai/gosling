@@ -244,3 +244,12 @@ invocation with the consumer manifest set) and walk the Gate 1 §4 screen list.
 A-1 (full keyboard walkthrough), A-6 (reduced motion), A-7 (usable at 760×520), and A-10 (contrast in
 all three themes) are asserted in the stylesheet and structure but not machine-verified. jsdom has no
 layout engine, so A-7 and A-10 in particular need a real window. These belong to Gate 5 validation.
+
+## 10. Temporary desktop-parity amendment (2026-08-19)
+
+The operator replaced the original standalone shell chrome with the normal Gosling desktop frame.
+The implementation adds persistent desktop-style navigation around the existing isolated shell
+views and removes `SettingsPanel` plus all settings navigation. Tests assert that New Chat and
+Session History remain available while Settings, Skills, Extensions, provider selection, and model
+selection do not render. No preload, IPC, capability, credential, or global-settings authority was
+added.

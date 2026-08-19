@@ -111,7 +111,7 @@ describe('state matrix', () => {
   );
 
   it.each(['loaded', 'absent', 'unsupported_schema', 'malformed', 'unreadable'] as const)(
-    'renders settings recovery status %s',
+    'keeps settings controls unavailable for recovery status %s',
     async (status) => {
       const { store } = await mount({ settingsRecovery: { status, schemaVersion: 1 } });
       act(() => {
@@ -121,7 +121,8 @@ describe('state matrix', () => {
         });
         store.actions.setView('settings');
       });
-      expect(document.querySelector('.gsh-settings')).not.toBeNull();
+      expect(document.querySelector('.gsh-settings')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
     }
   );
 
@@ -163,12 +164,22 @@ describe('state matrix', () => {
 });
 
 describe('default dashboard', () => {
+  it('uses the Gosling desktop navigation without global administration links', async () => {
+    await mount({ session: null });
+
+    expect(screen.getByRole('button', { name: 'New Chat' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Session History' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Extensions' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Skills' })).toBeNull();
+  });
+
   it('renders workspace, task, and recent-task panels with their declared actions', async () => {
     await mount({ session: null });
 
     expect(screen.getByRole('navigation', { name: 'Workspace' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Tasks' })).toBeInTheDocument();
-    expect(screen.getByRole('complementary')).toBeInTheDocument();
+    expect(screen.getAllByRole('complementary')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Start new task' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
@@ -462,7 +473,7 @@ describe('accessibility', () => {
 
   it('reports status with text rather than colour alone (A-9)', async () => {
     await mount({ lifecycleState: 'busy' });
-    expect(screen.getByText('working')).toBeInTheDocument();
+    expect(screen.getAllByText('working')).toHaveLength(2);
   });
 
   it('applies the theme and text scale from settings (A-5)', async () => {
@@ -479,8 +490,8 @@ describe('accessibility', () => {
     expect(document.documentElement.style.getPropertyValue('--gsh-text-scale')).toBe('2');
   });
 
-  it('applies the selected shared provider and model from settings', async () => {
-    const { fake, store } = await mount();
+  it('does not expose provider or model settings controls', async () => {
+    const { store } = await mount();
     act(() => {
       store.dispatch({
         type: 'settings/replaced',
@@ -502,16 +513,8 @@ describe('accessibility', () => {
       });
       store.actions.setView('settings');
     });
-    await userEvent.click(screen.getByRole('button', { name: 'Apply model' }));
-    await waitFor(() => {
-      expect(
-        fake.calls.find((call) => call.operation === 'settings.model.select')?.request
-      ).toEqual({
-        generation: 1,
-        providerId: 'anthropic',
-        modelId: 'claude-sonnet-4-5',
-      });
-    });
+    expect(screen.queryByRole('button', { name: 'Apply model' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull();
   });
 
   it('labels the transcript gap notice as a live status', async () => {

@@ -43,8 +43,6 @@ export function selectRoute(state: ShellUiState): ShellRoute {
   if (lifecycleRoute) return lifecycleRoute;
 
   if (state.view === 'handoff' && state.handoff) return 'S-28';
-  if (state.view === 'settings') return 'S-21';
-
   const directory = snapshot.directory;
   if (directory.state === 'missing' || directory.state === 'invalid') return 'S-23';
   if (directory.state === 'unselected') return 'S-03';

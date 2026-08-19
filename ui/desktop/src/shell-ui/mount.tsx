@@ -22,12 +22,14 @@ export function mountDefaultShell(options: MountDefaultShellOptions = {}): Mount
   const container = options.container ?? document.querySelector<HTMLElement>('#root');
   if (!container) throw new Error('the Gosling shell renderer requires a #root container');
   container.textContent = '';
+  const productName = options.productName ?? document.title;
+  document.title = productName;
 
   const store = createShellStore(resolveShellApi());
   const root: Root = createRoot(container);
   root.render(
     <StrictMode>
-      <ShellApp store={store} productName={options.productName ?? document.title} />
+      <ShellApp store={store} productName={productName} />
     </StrictMode>
   );
   void store.start();

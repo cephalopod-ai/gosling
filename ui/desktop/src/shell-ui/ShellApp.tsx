@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { COPY, lifecycleCopy } from './copy';
 import { Composer } from './components/Composer';
 import { ContextBar, IdentityBadge, StatusPill } from './components/ContextBar';
+import { DesktopShellNavigation } from './components/DesktopShellNavigation';
 import { FailureBanner, type RecoveryHandlers } from './components/FailureBanner';
 import { HandoffDialog } from './components/HandoffDialog';
 import { InteractionDock } from './components/InteractionDock';
@@ -12,7 +13,6 @@ import { LibraryPanel } from './components/LibraryPanel';
 import { CredentialPicker, CredentialProblem, DirectoryPrompt } from './components/Pickers';
 import { ShellButton, ShellButtonRow, ShellCentered, ShellNotice } from './components/primitives';
 import { SessionPicker } from './components/SessionPicker';
-import { SettingsPanel } from './components/SettingsPanel';
 import { TranscriptView } from './components/Transcript';
 import { canChangeDirectory, canHandOff, isDeclared, selectRoute } from './state/route';
 import type { ShellStore } from './state/store';
@@ -33,6 +33,7 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
   const actions = store.actions;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const generationRef = useRef<number | null>(null);
+  const [navigationExpanded, setNavigationExpanded] = useState(true);
   const route = selectRoute(state);
   const snapshot = state.snapshot;
 
@@ -58,8 +59,15 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
   }, [snapshot?.generation]);
 
   useEffect(() => {
-    if (route === 'S-05' && state.sessions.status === 'idle') void actions.listSessions();
-  }, [route, state.sessions.status, actions]);
+    if (
+      snapshot?.lifecycleState === 'ready' &&
+      snapshot.directory.state === 'selected' &&
+      state.sessions.status === 'idle' &&
+      isDeclared(state, 'session.list')
+    ) {
+      void actions.listSessions();
+    }
+  }, [snapshot, state.sessions.status, state, actions]);
 
   useEffect(() => {
     if (
@@ -88,7 +96,7 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
       chooseDirectory: () => void actions.selectDirectory(),
       selectCredential: () => actions.setView('workspace'),
       reviewSession: () => actions.setView('workspace'),
-      resetSettings: () => actions.setView('settings'),
+      resetSettings: () => void actions.resetSettings(),
       openGosling: () => void actions.prepareHandoff(COPY.handoffQuestion, RELINK_CAPABILITY),
       saveDiagnostics: () => void actions.saveDiagnostics(),
       restart: () => void actions.retryRuntime(),
@@ -187,28 +195,11 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
       canSelectCredential={isDeclared(state, 'credential.select')}
       onChooseDirectory={() => void actions.selectDirectory()}
       onChooseAccount={() => actions.setView('workspace')}
-      onOpenSessions={() => actions.setView('sessions')}
-      onOpenSettings={() => actions.setView('settings')}
     />
   );
 
   const body = (() => {
     switch (route) {
-      case 'S-21':
-        return state.settings ? (
-          <SettingsPanel
-            settings={state.settings}
-            directory={snapshot.directory}
-            credentials={snapshot.credentials}
-            productName={displayName}
-            onThemeChange={(theme) => void actions.updateAppearance({ theme })}
-            onTextScaleChange={(textScale) => void actions.updateAppearance({ textScale })}
-            onModelSelect={(providerId, modelId) => void actions.selectModel(providerId, modelId)}
-            onReset={() => void actions.resetSettings()}
-            onClose={() => actions.setView('workspace')}
-          />
-        ) : null;
-
       case 'S-28':
         return state.handoff ? (
           <HandoffDialog
@@ -275,7 +266,6 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
             onRefresh={() => void actions.listSessions()}
             onChooseDirectory={() => void actions.selectDirectory()}
             onChooseCredential={() => void actions.selectCredential(null)}
-            onOpenSettings={() => actions.setView('settings')}
           />
         );
 
@@ -313,42 +303,74 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
     }
   })();
 
+  const hasActiveSession = Boolean(snapshot.session && snapshot.session.status !== 'none');
+  const canOpenNewTask =
+    isDeclared(state, 'session.create') &&
+    (!hasActiveSession || isDeclared(state, 'session.detach'));
+
+  const openNewTask = async () => {
+    if (hasActiveSession) await actions.detachSession();
+    actions.setView('workspace');
+  };
+
   return (
-    <div className="gsh-app">
-      {header}
-      {contextBar}
-      {snapshot.provisioningIssues.length > 0 ? (
-        <ShellNotice tone="warn" message={COPY.provisioningHeading} live>
-          <ShellButton
-            label={COPY.saveDiagnostics}
-            onClick={() => void actions.saveDiagnostics()}
-            emphasis="ghost"
-          />
-        </ShellNotice>
-      ) : null}
-      <main className="gsh-main">{body}</main>
-      {dock}
-      {failure}
-      {route === 'S-06' ? (
-        <Composer
-          ref={composerRef}
-          draft={state.draft}
-          session={snapshot.session}
-          blockedByInteraction={blockedByInteraction}
-          canSubmit={isDeclared(state, 'prompt.submit')}
-          canCancel={isDeclared(state, 'prompt.cancel')}
-          attachmentCount={state.library.selectedItemIds.length}
-          onDraftChange={actions.setDraft}
-          onSubmit={() => void actions.submitPrompt()}
-          onCancel={() => void actions.cancelPrompt()}
-        />
-      ) : null}
-      <ModulesStrip
-        modules={snapshot.modules}
-        adapter={snapshot.adapter}
-        domainDeclared={isDeclared(state, 'domain.action')}
-        onSaveDiagnostics={() => void actions.saveDiagnostics()}
+    <div className="gsh-app gsh-app--desktop">
+      <DesktopShellNavigation
+        expanded={navigationExpanded}
+        productName={displayName}
+        snapshot={snapshot}
+        sessions={state.sessions}
+        canCreate={canOpenNewTask}
+        canResume={isDeclared(state, 'session.resume')}
+        canChangeDirectory={canChangeDirectory(state) && isDeclared(state, 'directory.select')}
+        onToggle={() => setNavigationExpanded((expanded) => !expanded)}
+        onNewTask={() => void openNewTask()}
+        onOpenSessions={() => actions.setView('sessions')}
+        onChooseDirectory={() => void actions.selectDirectory()}
+        onResume={(sessionId) => void actions.resumeSession(sessionId)}
       />
+      <section className="gsh-desktop-main">
+        <header className="gsh-desktop-main__titlebar">
+          <IdentityBadge identity={snapshot.identity} fallbackName={productName} />
+          <StatusPill
+            lifecycleState={snapshot.lifecycleState}
+            compatibility={snapshot.compatibility}
+          />
+        </header>
+        {contextBar}
+        {snapshot.provisioningIssues.length > 0 ? (
+          <ShellNotice tone="warn" message={COPY.provisioningHeading} live>
+            <ShellButton
+              label={COPY.saveDiagnostics}
+              onClick={() => void actions.saveDiagnostics()}
+              emphasis="ghost"
+            />
+          </ShellNotice>
+        ) : null}
+        <main className="gsh-main">{body}</main>
+        {dock}
+        {failure}
+        {route === 'S-06' ? (
+          <Composer
+            ref={composerRef}
+            draft={state.draft}
+            session={snapshot.session}
+            blockedByInteraction={blockedByInteraction}
+            canSubmit={isDeclared(state, 'prompt.submit')}
+            canCancel={isDeclared(state, 'prompt.cancel')}
+            attachmentCount={state.library.selectedItemIds.length}
+            onDraftChange={actions.setDraft}
+            onSubmit={() => void actions.submitPrompt()}
+            onCancel={() => void actions.cancelPrompt()}
+          />
+        ) : null}
+        <ModulesStrip
+          modules={snapshot.modules}
+          adapter={snapshot.adapter}
+          domainDeclared={isDeclared(state, 'domain.action')}
+          onSaveDiagnostics={() => void actions.saveDiagnostics()}
+        />
+      </section>
     </div>
   );
 };

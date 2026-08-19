@@ -8,6 +8,11 @@ implemented.
 Date: 2026-08-18
 Authority: ADR-0007–0012 and ADR-0014–0015
 
+Temporary UI direction (2026-08-19): the generic shell mirrors the normal Gosling desktop frame
+and navigation while continuing to use the isolated shell preload/runtime. It intentionally omits
+Settings, Skills, and Extensions navigation. Product-local settings remain an internal runtime and
+recovery concern; the renderer exposes no settings editor and receives no global-settings authority.
+
 Detailed execution for DS-3 through DS-7 is frozen in
 [`../build/shell-productization/default-shell-ds3-ds7-implementation-plan.md`](../build/shell-productization/default-shell-ds3-ds7-implementation-plan.md).
 
@@ -40,7 +45,7 @@ DAWES, math, Physics/CST, and all other named shells remain outside the mileston
 | Tools and skills   | provisioning plus backend validation               | declared availability and permission requests                               | undeclared builtin, raw MCP/ACP connection                            |
 | Optional modules   | Gosling extension or supervised adapter contracts  | declared bounded snapshots/actions                                          | arbitrary process launch or RPC routing                               |
 | Conversation       | Gosling session runtime                            | bounded updates/replay, session/provider/model facts, interaction summaries | server secret, transport endpoint, private reasoning, raw tool values |
-| Input library      | Gosling session store plus Electron main           | opaque ID, safe metadata, scope/status, selection state                      | linked path, listed payload, generic file operation                   |
+| Input library      | Gosling session store plus Electron main           | opaque ID, safe metadata, scope/status, selection state                     | linked path, listed payload, generic file operation                   |
 
 “Read credentials” means that the backend may resolve a selected profile and use the credential for
 a provider request. The shell UI reads only safe catalog metadata; it never reads secret bytes.

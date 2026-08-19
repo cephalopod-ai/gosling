@@ -155,34 +155,34 @@ and `diagnostics.save` → `canceled` are all normal outcomes. No error styling,
 
 Props are derived types, not new shapes. `Snap = ShellRuntimeSnapshot`.
 
-| ID   | Component                | Props                                                                   | Renders when                                           | Emits                                                 |
-| ---- | ------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
-| C-01 | `ShellFrame`             | `{snapshot, settings}`                                                  | always                                                 | route selection                                       |
-| C-02 | `StatusPill`             | `{state: Snap['lifecycleState'], compatibility: Snap['compatibility']}` | always                                                 | —                                                     |
-| C-03 | `IdentityBadge`          | `{identity: Snap['identity']}`                                          | always; unverified until non-null                      | —                                                     |
-| C-04 | `DirectoryChip`          | `{directory: Snap['directory'], canChange: boolean}`                    | always                                                 | `directory.select`                                    |
-| C-05 | `CredentialChip`         | `{credentials: Snap['credentials']}`                                    | always; menu only when `catalogStatus === 'available'` | `credential.select`                                   |
-| C-06 | `SessionContext`         | `{session: Snap['session']}`                                            | when session non-null                                  | —                                                     |
-| C-07 | `SessionPicker`          | `{directory, credentials, sessions, loading, declared actions}`         | route S-05; Workspace, Tasks, and Recent tasks panels | existing directory/credential/settings/session actions |
-| C-08 | `Transcript`             | `{blocks, hasGap, integrity, resumeIntegrity}`                          | route S-06+                                            | Repair → `session.readTranscript`                     |
-| C-09 | `ToolActivityRow`        | `{toolCallId, title, toolKind, status}`                                 | per `tool` stream                                      | —                                                     |
-| C-10 | `UsageMeter`             | `{used, size}`                                                          | on `usage` stream                                      | —                                                     |
-| C-11 | `TranscriptGapNotice`    | `{integrity, truncated, firstSeq, lastSeq}`                             | `integrity !== 'complete' \|\| truncated`              | Repair                                                |
-| C-12 | `Composer`               | `{draft, phase, disabledReason, failure}`                               | route S-06+                                            | `prompt.submit`, `prompt.cancel`                      |
-| C-13 | `InteractionDock`        | `{interactions: ShellInteraction[], queueDepth}`                        | any pending                                            | routes to C-14/15/16                                  |
-| C-14 | `PermissionRequest`      | permission `summary`                                                    | dock                                                   | `permission.respond`                                  |
-| C-15 | `ElicitationForm`        | elicitation `summary`                                                   | dock                                                   | `elicitation.respond`                                 |
-| C-16 | `ConfirmationRequest`    | confirm `summary`                                                       | dock                                                   | `domain.confirm`                                      |
-| C-17 | `ModulesStrip`           | `{modules: Snap['modules'], adapter: Snap['adapter']}`                  | any non-`core` module or adapter                       | —                                                     |
-| C-18 | `DomainSlot`             | `{adapter, declared: boolean}`                                          | `declared && adapter !== null`                         | `domain.snapshot`/`action`                            |
-| C-19 | `SettingsPanel`          | `{settings, recovery}`                                                  | route S-21                                             | `settings.updateAppearance`, `settings.reset`         |
-| C-20 | `SettingsRecoveryNotice` | `{recovery}`                                                            | `status` not `loaded`/`absent`                         | `settings.reset`                                      |
-| C-21 | `LifecycleFailureScreen` | `{state, reasonCode, allowedActions}`                                   | S-14…S-20                                              | `runtime.retry`, `runtime.stop`, diagnostics, handoff |
-| C-22 | `ProvisioningIssueList`  | `{issues: Snap['provisioningIssues']}`                                  | `issues.length > 0`                                    | diagnostics                                           |
-| C-23 | `DiagnosticsAction`      | `{generation}`                                                          | wherever `allowedActions` includes `diagnostics`       | `diagnostics.save`                                    |
-| C-24 | `HandoffDialog`          | `{envelope}`                                                            | route S-28                                             | `handoff.prepare`/`confirm`, `external.open`          |
-| C-25 | `FailureBanner`          | `{failure: ShellOperationFailure}`                                      | on decoded failure                                     | recovery action                                       |
-| C-26 | `OutputsPanel`           | `{artifacts, totalCount, truncated}`                                    | active session and declared `session.artifacts.read`   | `session.readArtifacts`                               |
+| ID   | Component                | Props                                                                   | Renders when                                           | Emits                                                  |
+| ---- | ------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ |
+| C-01 | `ShellFrame`             | `{snapshot, settings}`                                                  | always                                                 | route selection                                        |
+| C-02 | `StatusPill`             | `{state: Snap['lifecycleState'], compatibility: Snap['compatibility']}` | always                                                 | —                                                      |
+| C-03 | `IdentityBadge`          | `{identity: Snap['identity']}`                                          | always; unverified until non-null                      | —                                                      |
+| C-04 | `DirectoryChip`          | `{directory: Snap['directory'], canChange: boolean}`                    | always                                                 | `directory.select`                                     |
+| C-05 | `CredentialChip`         | `{credentials: Snap['credentials']}`                                    | always; menu only when `catalogStatus === 'available'` | `credential.select`                                    |
+| C-06 | `SessionContext`         | `{session: Snap['session']}`                                            | when session non-null                                  | —                                                      |
+| C-07 | `SessionPicker`          | `{directory, credentials, sessions, loading, declared actions}`         | route S-05; Workspace, Tasks, and Recent tasks panels  | existing directory/credential/settings/session actions |
+| C-08 | `Transcript`             | `{blocks, hasGap, integrity, resumeIntegrity}`                          | route S-06+                                            | Repair → `session.readTranscript`                      |
+| C-09 | `ToolActivityRow`        | `{toolCallId, title, toolKind, status}`                                 | per `tool` stream                                      | —                                                      |
+| C-10 | `UsageMeter`             | `{used, size}`                                                          | on `usage` stream                                      | —                                                      |
+| C-11 | `TranscriptGapNotice`    | `{integrity, truncated, firstSeq, lastSeq}`                             | `integrity !== 'complete' \|\| truncated`              | Repair                                                 |
+| C-12 | `Composer`               | `{draft, phase, disabledReason, failure}`                               | route S-06+                                            | `prompt.submit`, `prompt.cancel`                       |
+| C-13 | `InteractionDock`        | `{interactions: ShellInteraction[], queueDepth}`                        | any pending                                            | routes to C-14/15/16                                   |
+| C-14 | `PermissionRequest`      | permission `summary`                                                    | dock                                                   | `permission.respond`                                   |
+| C-15 | `ElicitationForm`        | elicitation `summary`                                                   | dock                                                   | `elicitation.respond`                                  |
+| C-16 | `ConfirmationRequest`    | confirm `summary`                                                       | dock                                                   | `domain.confirm`                                       |
+| C-17 | `ModulesStrip`           | `{modules: Snap['modules'], adapter: Snap['adapter']}`                  | any non-`core` module or adapter                       | —                                                      |
+| C-18 | `DomainSlot`             | `{adapter, declared: boolean}`                                          | `declared && adapter !== null`                         | `domain.snapshot`/`action`                             |
+| C-19 | `SettingsPanel`          | `{settings, recovery}`                                                  | route S-21                                             | `settings.updateAppearance`, `settings.reset`          |
+| C-20 | `SettingsRecoveryNotice` | `{recovery}`                                                            | `status` not `loaded`/`absent`                         | `settings.reset`                                       |
+| C-21 | `LifecycleFailureScreen` | `{state, reasonCode, allowedActions}`                                   | S-14…S-20                                              | `runtime.retry`, `runtime.stop`, diagnostics, handoff  |
+| C-22 | `ProvisioningIssueList`  | `{issues: Snap['provisioningIssues']}`                                  | `issues.length > 0`                                    | diagnostics                                            |
+| C-23 | `DiagnosticsAction`      | `{generation}`                                                          | wherever `allowedActions` includes `diagnostics`       | `diagnostics.save`                                     |
+| C-24 | `HandoffDialog`          | `{envelope}`                                                            | route S-28                                             | `handoff.prepare`/`confirm`, `external.open`           |
+| C-25 | `FailureBanner`          | `{failure: ShellOperationFailure}`                                      | on decoded failure                                     | recovery action                                        |
+| C-26 | `OutputsPanel`           | `{artifacts, totalCount, truncated}`                                    | active session and declared `session.artifacts.read`   | `session.readArtifacts`                                |
 
 C-21 must render buttons from `allowedActions` alone. Hard-coding Retry produces a dead button in
 `relink_required`, `incompatible`, and `fatal`, where the host rejects it.
@@ -306,3 +306,11 @@ inline `<style>` in dev). Both would violate `script-src 'self'` / `style-src 's
 - [x] Required host additions are named and scoped.
 - [x] Accepted and merged as PR #58; implemented by Gate 3.
 - [ ] SHP-DEF-053 closed — still open, independent of this document.
+
+## 13. Temporary desktop-parity handoff amendment (2026-08-19)
+
+The renderer now mirrors the normal Gosling desktop frame while retaining `GoslingShellAPI`, its
+isolated preload, and the existing declaration-gated store/actions. `SettingsPanel` and all
+user-opened settings routing are removed. Local settings may still be read by the store for runtime
+appearance and recovered through the bounded reset action, but no Settings, Skills, Extensions, or
+global-settings control is rendered.

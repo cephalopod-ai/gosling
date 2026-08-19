@@ -131,9 +131,9 @@ describe('route derivation', () => {
     expect(selectRoute(stateWith({}))).toBe('S-06');
   });
 
-  it('lets the settings view win over the workspace but not over a lifecycle failure', () => {
+  it('ignores the retired settings view so the shell cannot route to settings', () => {
     const ready = { ...stateWith({}), view: 'settings' as const };
-    expect(selectRoute(ready)).toBe('S-21');
+    expect(selectRoute(ready)).toBe('S-06');
     const failed = { ...stateWith({ lifecycleState: 'fatal' }), view: 'settings' as const };
     expect(selectRoute(failed)).toBe('S-18');
   });

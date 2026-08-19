@@ -89,39 +89,39 @@ Region ownership:
 
 Screens are shells around the same window. IDs are stable for Gate 2 traceability.
 
-| ID    | Screen / state             | Entry condition (source)                                                                                  | Primary action        | Secondary                         |
-| ----- | -------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------- |
-| S-01  | Starting                   | `lifecycleState` `booting`                                                                                | none                  | Stop                              |
-| S-02  | Checking your setup        | `validating`                                                                                              | none                  | Stop, Save diagnostics            |
-| S-03  | Choose a folder            | `ready` and `directory.state === 'unselected'`                                                            | Choose folder         | Settings, Help                    |
-| S-04  | Choose an account          | `ready`, directory selected, `credentials.selectionStatus === 'none'` and `catalogStatus === 'available'` | Choose account        | Change folder                     |
+| ID    | Screen / state             | Entry condition (source)                                                                                  | Primary action        | Secondary                                                |
+| ----- | -------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------- |
+| S-01  | Starting                   | `lifecycleState` `booting`                                                                                | none                  | Stop                                                     |
+| S-02  | Checking your setup        | `validating`                                                                                              | none                  | Stop, Save diagnostics                                   |
+| S-03  | Choose a folder            | `ready` and `directory.state === 'unselected'`                                                            | Choose folder         | Settings, Help                                           |
+| S-04  | Choose an account          | `ready`, directory selected, `credentials.selectionStatus === 'none'` and `catalogStatus === 'available'` | Choose account        | Change folder                                            |
 | S-05  | Dashboard                  | `ready`, directory + credential settled, no active session                                                | Start new task        | Change folder/account, resume a listed session, Settings |
-| S-05b | Dashboard — empty          | as S-05, list length 0                                                                                    | Start new task        | Change folder/account, Settings   |
-| S-06  | Conversation (idle)        | `session.status === 'active'`, `promptAttempt === null`                                                   | Send                  | Stop task, Sessions, Settings     |
-| S-07  | Conversation (streaming)   | `promptAttempt.phase === 'streaming'`                                                                     | Stop                  | —                                 |
-| S-08  | Conversation (cancelling)  | `promptAttempt.phase === 'cancelling'`                                                                    | none                  | —                                 |
-| S-09  | Permission request         | pending interaction `kind: 'permission'`                                                                  | Allow once            | Deny                              |
-| S-10  | Form request               | pending interaction `kind: 'elicitation'`                                                                 | Submit                | Decline, Cancel                   |
-| S-11  | Action confirmation        | pending interaction `kind: 'confirm'`                                                                     | Approve               | Reject                            |
-| S-09q | Queued interactions        | `pendingInteractions.length > 1`                                                                          | resolve the front one | —                                 |
-| S-12  | Transcript gap             | `ShellTranscriptSnapshot.integrity !== 'complete'` or `truncated`                                         | Repair                | Continue anyway                   |
-| S-13  | Resume uncertainty         | `session.resumeIntegrity === 'uncertain'`                                                                 | Continue              | Start new task instead            |
-| S-14  | Needs attention (degraded) | `degraded`                                                                                                | Retry                 | Save diagnostics, Open in Gosling |
-| S-15  | Reconnect an account       | `relink_required`                                                                                         | Open in Gosling       | Save diagnostics, Quit            |
-| S-16  | Version mismatch           | `incompatible`                                                                                            | Open in Gosling       | Save diagnostics, Quit            |
-| S-17  | Can't reach the backend    | `offline`                                                                                                 | Retry                 | Save diagnostics, Quit            |
-| S-18  | Something went wrong       | `fatal`                                                                                                   | Save diagnostics      | Quit                              |
-| S-19  | Shutting down              | `stopping`                                                                                                | none                  | Save diagnostics                  |
-| S-20  | Stopped                    | `stopped`                                                                                                 | Restart               | Quit                              |
-| S-21  | Settings                   | user opens from B                                                                                         | Close                 | Reset settings                    |
-| S-22  | Settings need review       | `settingsRecovery.status !== 'loaded'` and `!== 'absent'`                                                 | Reset settings        | Continue without saving           |
-| S-23  | Folder unavailable         | `directory.state` `missing` or `invalid`                                                                  | Choose folder         | Save diagnostics                  |
-| S-24  | Account unavailable        | `credentials.selectionStatus` `missing` or `relink_required`                                              | Choose account        | Open in Gosling                   |
-| S-25  | Setup problems             | `provisioningIssues.length > 0` while otherwise usable                                                    | Save diagnostics      | Open in Gosling                   |
-| S-26  | Module unavailable         | any `modules[].status !== 'ready'`                                                                        | Save diagnostics      | dismiss                           |
-| S-27  | Adapter unavailable        | `adapter.status !== 'ready'`                                                                              | Save diagnostics      | dismiss                           |
-| S-28  | Hand off to Gosling        | user chose handoff                                                                                        | Open Gosling          | Cancel                            |
-| S-29  | Outputs                    | active session and declared `session.artifacts.read`                                                      | View safe inventory   | refresh on session change         |
+| S-05b | Dashboard — empty          | as S-05, list length 0                                                                                    | Start new task        | Change folder/account, Settings                          |
+| S-06  | Conversation (idle)        | `session.status === 'active'`, `promptAttempt === null`                                                   | Send                  | Stop task, Sessions, Settings                            |
+| S-07  | Conversation (streaming)   | `promptAttempt.phase === 'streaming'`                                                                     | Stop                  | —                                                        |
+| S-08  | Conversation (cancelling)  | `promptAttempt.phase === 'cancelling'`                                                                    | none                  | —                                                        |
+| S-09  | Permission request         | pending interaction `kind: 'permission'`                                                                  | Allow once            | Deny                                                     |
+| S-10  | Form request               | pending interaction `kind: 'elicitation'`                                                                 | Submit                | Decline, Cancel                                          |
+| S-11  | Action confirmation        | pending interaction `kind: 'confirm'`                                                                     | Approve               | Reject                                                   |
+| S-09q | Queued interactions        | `pendingInteractions.length > 1`                                                                          | resolve the front one | —                                                        |
+| S-12  | Transcript gap             | `ShellTranscriptSnapshot.integrity !== 'complete'` or `truncated`                                         | Repair                | Continue anyway                                          |
+| S-13  | Resume uncertainty         | `session.resumeIntegrity === 'uncertain'`                                                                 | Continue              | Start new task instead                                   |
+| S-14  | Needs attention (degraded) | `degraded`                                                                                                | Retry                 | Save diagnostics, Open in Gosling                        |
+| S-15  | Reconnect an account       | `relink_required`                                                                                         | Open in Gosling       | Save diagnostics, Quit                                   |
+| S-16  | Version mismatch           | `incompatible`                                                                                            | Open in Gosling       | Save diagnostics, Quit                                   |
+| S-17  | Can't reach the backend    | `offline`                                                                                                 | Retry                 | Save diagnostics, Quit                                   |
+| S-18  | Something went wrong       | `fatal`                                                                                                   | Save diagnostics      | Quit                                                     |
+| S-19  | Shutting down              | `stopping`                                                                                                | none                  | Save diagnostics                                         |
+| S-20  | Stopped                    | `stopped`                                                                                                 | Restart               | Quit                                                     |
+| S-21  | Settings                   | user opens from B                                                                                         | Close                 | Reset settings                                           |
+| S-22  | Settings need review       | `settingsRecovery.status !== 'loaded'` and `!== 'absent'`                                                 | Reset settings        | Continue without saving                                  |
+| S-23  | Folder unavailable         | `directory.state` `missing` or `invalid`                                                                  | Choose folder         | Save diagnostics                                         |
+| S-24  | Account unavailable        | `credentials.selectionStatus` `missing` or `relink_required`                                              | Choose account        | Open in Gosling                                          |
+| S-25  | Setup problems             | `provisioningIssues.length > 0` while otherwise usable                                                    | Save diagnostics      | Open in Gosling                                          |
+| S-26  | Module unavailable         | any `modules[].status !== 'ready'`                                                                        | Save diagnostics      | dismiss                                                  |
+| S-27  | Adapter unavailable        | `adapter.status !== 'ready'`                                                                              | Save diagnostics      | dismiss                                                  |
+| S-28  | Hand off to Gosling        | user chose handoff                                                                                        | Open Gosling          | Cancel                                                   |
+| S-29  | Outputs                    | active session and declared `session.artifacts.read`                                                      | View safe inventory   | refresh on session change                                |
 
 Three failure overlays are not screens but states any conversation route can enter. They are
 enumerated separately because Gate 2 gives them their own component (C-25) and the wireframe shows
@@ -428,3 +428,11 @@ behavior.
 
 Gate 2 handoff: [`gate-2-frontend-handoff.md`](gate-2-frontend-handoff.md).
 Wireframe: [`default-shell-wireframe.html`](default-shell-wireframe.html).
+
+## 15. Temporary desktop-parity override (2026-08-19)
+
+The operator directed the generic shell to use the normal Gosling desktop frame for now. The
+persistent navigation is New Chat, Session History, Workspace, and Chats. Settings, Skills, and
+Extensions entry points are absent. S-21 and the user-opened settings actions described above are
+superseded; S-22 remains only as bounded recovery behavior for an unreadable product-local settings
+document. This changes presentation and routing only and grants no global Gosling authority.

@@ -18,7 +18,6 @@ export interface SessionPickerProps {
   onRefresh: () => void;
   onChooseDirectory: () => void;
   onChooseCredential: () => void;
-  onOpenSettings: () => void;
 }
 
 export const SessionPicker = ({
@@ -35,7 +34,6 @@ export const SessionPicker = ({
   onRefresh,
   onChooseDirectory,
   onChooseCredential,
-  onOpenSettings,
 }: SessionPickerProps) => {
   const selectedCredential = credentials.profiles.find(
     (profile) => profile.id === credentials.selectedProfileId
@@ -62,7 +60,6 @@ export const SessionPicker = ({
           {canSelectCredential ? (
             <ShellButton label="Change account" onClick={onChooseCredential} emphasis="ghost" />
           ) : null}
-          <ShellButton label={COPY.settings} onClick={onOpenSettings} emphasis="ghost" />
         </ShellButtonRow>
       </nav>
 

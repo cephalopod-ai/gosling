@@ -115,8 +115,6 @@ export interface ContextBarProps {
   canSelectCredential: boolean;
   onChooseDirectory: () => void;
   onChooseAccount: () => void;
-  onOpenSessions: () => void;
-  onOpenSettings: () => void;
 }
 
 export const ContextBar = ({
@@ -128,8 +126,6 @@ export const ContextBar = ({
   canSelectCredential,
   onChooseDirectory,
   onChooseAccount,
-  onOpenSessions,
-  onOpenSettings,
 }: ContextBarProps) => (
   <div className="gsh-ctxbar">
     <span className="gsh-ctxbar__group">
@@ -165,8 +161,5 @@ export const ContextBar = ({
         />
       </span>
     ) : null}
-    <span className="gsh-ctxbar__spacer" />
-    <ShellButton label={COPY.sessions} onClick={onOpenSessions} emphasis="ghost" />
-    <ShellButton label={COPY.settings} onClick={onOpenSettings} emphasis="ghost" />
   </div>
 );
