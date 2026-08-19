@@ -1,0 +1,30 @@
+{
+  "name": "@repo-makeover/gosling-shell-kit",
+  "version": "0.1.0",
+  "description": "Versioned build and conformance interface for external Gosling shell consumers",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cephalopod-ai/gosling.git"
+  },
+  "goslingRevision": "386a7442a38165fd524c4910a8b493afaae5d3eb",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./consumer": "./src/shell-consumer.js",
+    "./profile": "./src/shell-profile.js"
+  },
+  "bin": {
+    "gosling-shell": "./bin/gosling-shell.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    ".prettierrc.json"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

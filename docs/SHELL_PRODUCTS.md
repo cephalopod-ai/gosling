@@ -9,9 +9,42 @@ The binding schema and security boundaries are in
 [`architecture/shell-productization-contracts.md`](architecture/shell-productization-contracts.md)
 and [ADR-0007](adr/0007-shell-product-profile.md).
 
+## External consumer package
+
+Projects owned outside this repository use the versioned
+`@repo-makeover/gosling-shell-kit` package in `ui/shell-kit`. They do not copy Gosling scripts or
+host source. Until a separately authorized registry publication exists, build a local package
+archive and install it without changing the consumer's exact dependency declaration:
+
+```bash
+cd ui/shell-kit
+npm pack --pack-destination /tmp/gosling-shell-kit
+
+cd /path/to/external-consumer
+npm pkg set 'dependencies.@repo-makeover/gosling-shell-kit=0.1.0'
+npm install --ignore-scripts --no-save /tmp/gosling-shell-kit/repo-makeover-gosling-shell-kit-0.1.0.tgz
+npx gosling-shell init --id example-shell --display-name "Example Shell"
+npx gosling-shell check shell-consumer.json
+npx gosling-shell resolve --manifest shell-consumer.json --target linux-x64
+```
+
+The exact dependency and `requiredShellKit` version must both equal the installed package version.
+For an external consumer, the resolver derives its approved root from the nearest non-symlinked
+`package.json` carrying that exact dependency. The manifest cannot nominate or widen the root.
+Profile, provisioning, assets, and renderer paths must stay inside the registered package and pass
+the same strict schemas, secret rejection, asset validation, canonical hashing, and traversal/
+symlink checks used by the in-tree fixtures. `init` creates an unsigned, non-publishable,
+updater-disabled neutral template and refuses to overwrite existing product files.
+
+`resolve` is the stable build-input boundary: it writes canonical profile and manifest artifacts,
+including consumer/profile/renderer hashes and the shell-kit package's pinned Gosling revision,
+under the consumer's own `build/` directory. Actual Electron packaging remains a Gosling-hosted
+workflow until the reusable packaging work tracked by SHP-DEF-030 is complete.
+
 ## Approved roots
 
-Source-controlled profiles and all referenced provisioning/assets must remain under one of:
+In this repository, source-controlled profiles and all referenced provisioning/assets must remain
+under one of:
 
 - `shell-products/` for future operator-approved non-fixture profiles;
 - `fixtures/shell-products/` for neutral, permanently non-publishable test profiles.

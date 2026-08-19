@@ -38,8 +38,8 @@ records without erasing historical evidence.
 
 | Group | Status | Validation | Commit |
 | --- | --- | --- | --- |
-| A — CI truth and record reconciliation | complete | focused 12/12; Desktop 990/990; typecheck and lint pass | pending |
-| B — external consumer boundary | planned | pending | pending |
+| A — CI truth and record reconciliation | complete | focused 12/12; Desktop 990/990; typecheck and lint pass | `a317f77d4` |
+| B — external consumer boundary | complete | external archive 2/2; complete shell profile suite 59/59; all profiles resolve | pending |
 | C — reusable package/lifecycle acceptance | planned | pending | pending |
 
 ## Decisions and deviations
@@ -51,8 +51,8 @@ records without erasing historical evidence.
 
 ## Exact next action
 
-Freeze and review the Group A diff, run its final formatting/record checks, and commit it. Then begin
-Group B at the accepted ADR-0010 external-consumer boundary.
+Freeze and commit the Group B diff, then begin Group C: reusable guarded package/readback and
+lifecycle/coexistence workflows for SHP-DEF-028, SHP-DEF-030, and SHP-DEF-053.
 
 ## Group A — CI truth and record reconciliation
 
@@ -87,3 +87,39 @@ protects the full safe response shape, including model-selection status and empt
 provider flow, persisted setting, IPC schema, renderer authority, or release behavior changed. The
 records distinguish local closure of SHP-DEF-061 from the final revision-bound remote CI required to
 close SHP-DEF-053.
+
+## Group B — external consumer boundary
+
+### Repair
+
+- Extracted the canonical profile and consumer resolvers into the packable, dependency-free
+  `@repo-makeover/gosling-shell-kit` package. Thin Desktop wrappers retain the established in-tree
+  interface; there is one resolver implementation, not an external fork.
+- Added an external registration path that derives its trust root from the nearest non-symlinked
+  consumer `package.json`, requires an exact dependency matching the installed kit version, and
+  requires `requiredShellKit` to match. The manifest still has no approved-root field.
+- Added `gosling-shell init`, `check`, and `resolve`. Init is non-overwriting and emits only neutral,
+  non-publishable, unsigned, updater-disabled files. Resolve emits canonical profile/build manifests
+  under the consumer's own `build/` tree.
+- Documented the archive-install path in `docs/SHELL_PRODUCTS.md` and reconciled SHP-DEF-029 plus
+  SHP-REQ-033/SHP-REQ-040 status without claiming registry publication or packaged-app acceptance.
+
+### Validation
+
+- Packed-archive external consumer: 2/2 tests pass. The archive is installed with `npm` into a
+  temporary package outside Gosling; init/check/resolve succeed without a Gosling checkout.
+- Negative-space proof: an unpinned dependency, manifest/package version drift, and a caller-defined
+  `approvedRoot` all fail closed.
+- Full shell profile/consumer/package resolver suite: 59/59 tests pass, including two unchanged
+  in-tree renderer bundles and package-verifier tamper cases.
+- `shell:check-profiles`: all three committed product profiles resolve.
+- New CLI syntax check and repository diff whitespace check pass.
+
+### Adversarial and diff review
+
+The external root is not an API/manifest input: it is the real package directory containing the
+exact dependency declaration. All referenced files are still non-symlinked, containment checked,
+schema checked, secret scanned, canonically hashed, and bound to the installed kit's version/core
+revision. No host main/preload source, signing, updater, publisher, credential, or runtime authority
+was added. Full Electron packaging is intentionally left to Group C rather than being mislabeled as
+part of this build-input proof.
