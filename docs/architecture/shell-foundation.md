@@ -49,6 +49,11 @@ Gosling remains the settings authority. Namespaced shell runtimes share the
 main Gosling configuration and protected credential catalog while separating
 data and state directories, including session databases and caches.
 
+Record visibility is directional: a shell reads and writes only its namespaced data/state store,
+while main Gosling retains parent-side supervisory access to each child namespace. Main's own
+session database and every shell database remain distinct; parent access is not reciprocal sharing
+and is not exposed through shell session APIs.
+
 ## Domain adapters and handoff
 
 `DomainAdapter` keeps only a common transport envelope: descriptor, snapshot,

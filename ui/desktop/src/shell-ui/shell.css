@@ -770,9 +770,9 @@ body {
 }
 
 .gsh-app--desktop .gsh-dashboard {
-  width: min(100%, 900px);
+  width: min(100%, 1180px);
   margin: 0 auto;
-  grid-template-columns: minmax(220px, 0.75fr) minmax(300px, 1.4fr);
+  grid-template-columns: minmax(180px, 0.8fr) minmax(260px, 1.35fr) minmax(220px, 1fr);
   align-content: center;
 }
 

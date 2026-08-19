@@ -204,6 +204,46 @@ describe('default dashboard', () => {
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
 
+  it('starts a session from the New Chat navigation action', async () => {
+    const { fake } = await mount({ session: null });
+
+    await userEvent.click(screen.getByRole('button', { name: 'New Chat' }));
+
+    await waitFor(() => {
+      expect(fake.calls.some((call) => call.operation === 'session.create')).toBe(true);
+    });
+  });
+
+  it('detaches an active session before starting a new chat', async () => {
+    const { fake } = await mount();
+    const callsBeforeClick = fake.calls.length;
+
+    await userEvent.click(screen.getByRole('button', { name: 'New Chat' }));
+
+    await waitFor(() => {
+      expect(
+        fake.calls
+          .slice(callsBeforeClick)
+          .map((call) => call.operation)
+          .filter((operation) =>
+            ['session.detach', 'session.list', 'session.create'].includes(operation)
+          )
+      ).toEqual(['session.detach', 'session.list', 'session.create']);
+    });
+  });
+
+  it('does not create a new chat when detaching the active session fails', async () => {
+    const { fake } = await mount();
+    fake.failNext('session.detach', new Error('detach failed'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'New Chat' }));
+
+    await waitFor(() => {
+      expect(fake.calls.some((call) => call.operation === 'session.detach')).toBe(true);
+    });
+    expect(fake.calls.some((call) => call.operation === 'session.create')).toBe(false);
+  });
+
   it('routes dashboard actions through the existing typed operations', async () => {
     const { fake } = await mount({ session: null });
     await userEvent.click(screen.getByRole('button', { name: 'Change folder' }));

@@ -309,8 +309,9 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
     (!hasActiveSession || isDeclared(state, 'session.detach'));
 
   const openNewTask = async () => {
-    if (hasActiveSession) await actions.detachSession();
     actions.setView('workspace');
+    if (hasActiveSession && !(await actions.detachSession())) return;
+    await actions.createSession();
   };
 
   return (

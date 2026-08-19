@@ -135,6 +135,20 @@ namespace; exact platform roots use Electron/OS APIs rather than string-literal 
 A path matrix mismatch is a Gate 6 blocker; no fallback silently converts an isolated path to a
 shared one or vice versa.
 
+### Directional record ownership
+
+Each focused shell is the sole application writer and ordinary reader of records under its
+validated `data/shells/<runtimeNamespace>` and `state/shells/<runtimeNamespace>` roots. A shell
+runtime is constructed with only those scoped paths, so it cannot list main Gosling sessions or a
+sibling shell's sessions through `SessionManager`.
+
+Main Gosling owns the parent data/state roots and therefore retains supervisory access to every
+shell namespace for inspection, export, recovery, or an explicitly designed read-only aggregate
+view. That parent access does not merge databases and is never projected into a shell renderer or
+shell ACP connection. Any future main-Gosling UI over shell work must open the named child store
+from the parent side and must not make sibling or main records visible through a shell's own
+session-list API.
+
 ## Narrow preload and IPC allowlist
 
 The renderer bridge exposes exactly these operations; later additions require ADR/change-control

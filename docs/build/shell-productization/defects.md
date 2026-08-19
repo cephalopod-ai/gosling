@@ -254,6 +254,51 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
 - Residual risk: none specific to the reconstructed environment; exact-revision CI remains tracked
   separately by SHP-DEF-053.
 
+### SHP-DEF-059 — Desktop override collapsed the right dashboard panel
+
+- Discovered at gate / audit: operator live GUI review, 2026-08-19.
+- Requirement(s): Default Shell desktop-parity override; Gate 1 layout hierarchy.
+- Severity: medium.
+- Symptom and reproduction: at normal desktop width, Recent tasks rendered below Workspace instead
+  of as the third panel on the right.
+- Root cause: the desktop-specific stylesheet overrode the base three-column dashboard grid with a
+  two-column grid and a 900 px maximum width.
+- Security/data/process/release impact: none; the regression hid the intended desktop information
+  hierarchy and wasted the right side of the canvas.
+- Disposition: `fixed` on 2026-08-19. The desktop override now retains three columns through normal
+  desktop widths and stacks only at the existing narrow breakpoint.
+- Patch/files: `ui/desktop/src/shell-ui/shell.css` and the active GUI/session records.
+- Regression test or not-testable reason: jsdom has no layout engine, so the existing focused tests
+  protect the panel content and breakpoint classes while installed-renderer inspection proves the
+  column bounds.
+- Validation/evidence: Desktop lint/typecheck/focused tests, package/sign/install/readback, and a
+  Playwright CDP inspection of the installed Electron renderer passed. The three panels shared the
+  same y-coordinate and had strictly increasing x-coordinates at 1440 px viewport width.
+- Residual risk: the existing responsive breakpoint still intentionally stacks panels below 800 px.
+
+### SHP-DEF-060 — New Chat navigation action did not create a session
+
+- Discovered at gate / audit: operator live GUI review, 2026-08-19.
+- Requirement(s): Default Shell desktop-parity navigation; Gate 1 primary-action behavior.
+- Severity: high.
+- Symptom and reproduction: clicking New Chat on the default dashboard left the same dashboard
+  visible and produced no error or composer.
+- Root cause: the navigation handler only changed the local view to `workspace`; unlike Start new
+  task, it never invoked the typed `session.create` operation.
+- Security/data/process/release impact: the primary navigation action was inert. Starting from an
+  active chat also needed ordered detach-before-create behavior to avoid overlapping sessions.
+- Disposition: `fixed` on 2026-08-19. New Chat now creates immediately, detaches an active session
+  first, and stops if detach fails.
+- Patch/files: `ui/desktop/src/shell-ui/ShellApp.tsx`, `state/store.ts`, and focused component tests.
+- Regression test: `starts a session from the New Chat navigation action`, `detaches an active
+session before starting a new chat`, and `does not create a new chat when detaching the active
+session fails`.
+- Validation/evidence: the pre-patch installed renderer remained on the dashboard with no composer;
+  focused Vitest failed before the patch and passed afterward. Packaged-app validation is recorded
+  after installation.
+- Residual risk: New Chat remains unavailable while the runtime omits `session.create`, or while an
+  active session cannot safely detach because it is streaming or awaiting an interaction.
+
 ## New entry template
 
 ### SHP-DEF-058 — Default template exposed Gosling's credential catalog

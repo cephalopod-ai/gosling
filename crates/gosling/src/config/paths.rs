@@ -157,8 +157,12 @@ mod runtime_paths_tests {
         let math = RuntimePaths::for_namespace(&base, "math_mcp").unwrap();
 
         assert_eq!(dawes.config_dir, PathBuf::from("config"));
+        assert!(dawes.data_dir.starts_with(&base.data_dir));
+        assert!(dawes.state_dir.starts_with(&base.state_dir));
         assert_eq!(math.data_dir, PathBuf::from("data/shells/math_mcp"));
         assert_ne!(dawes, math);
+        assert!(!dawes.data_dir.starts_with(&math.data_dir));
+        assert!(!math.data_dir.starts_with(&dawes.data_dir));
         assert!(RuntimePaths::for_namespace(&base, "../escape").is_err());
         assert!(RuntimePaths::for_namespace(&base, "Uppercase").is_err());
     }

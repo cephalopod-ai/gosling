@@ -31,7 +31,7 @@ export interface ShellStoreActions {
   listSessions(): Promise<void>;
   createSession(): Promise<void>;
   resumeSession(sessionId: string): Promise<void>;
-  detachSession(): Promise<void>;
+  detachSession(): Promise<boolean>;
   repairTranscript(sessionId?: string): Promise<void>;
   readOutputs(): Promise<void>;
   readLibrary(): Promise<void>;
@@ -88,21 +88,23 @@ export function createShellStore(api: GoslingShellAPI): ShellStore {
     pending: ShellUiPendingOperation,
     operation: (currentGeneration: number) => Promise<T>,
     onSuccess?: (result: T) => void
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const current = generation();
-    if (current === null) return;
+    if (current === null) return false;
     dispatch({ type: 'pending/changed', pending });
     try {
       const result = await operation(current);
-      if (disposed) return;
+      if (disposed) return false;
       // The failure clears on success rather than on start, so a banner the user still needs is not
       // erased by a background refresh.
       dispatch({ type: 'failure/cleared' });
       onSuccess?.(result);
       dispatch({ type: 'pending/changed', pending: null });
+      return true;
     } catch (error) {
-      if (disposed) return;
+      if (disposed) return false;
       dispatch({ type: 'failure/raised', failure: asOperationFailure(error) });
+      return false;
     }
   };
 
@@ -181,9 +183,13 @@ export function createShellStore(api: GoslingShellAPI): ShellStore {
     },
 
     async detachSession() {
-      if (!requireCapability('session.detach')) return;
-      await run('session.detach', (current) => api.session.detach({ generation: current }));
+      if (!requireCapability('session.detach')) return false;
+      const detached = await run('session.detach', (current) =>
+        api.session.detach({ generation: current })
+      );
+      if (!detached) return false;
       await actions.listSessions();
+      return true;
     },
 
     async repairTranscript(explicitSessionId) {

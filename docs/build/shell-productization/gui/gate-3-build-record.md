@@ -258,3 +258,13 @@ The committed template now uses fixed credential policy and omits `credential.se
 neutral scaffolds do the same. Account catalog UI is absent unless another product explicitly
 declares selection authority. A regression also proves denied catalog access nulls a stale local
 profile preference before session creation.
+
+The desktop dashboard keeps its three intended panels in one row at normal desktop widths:
+Workspace on the left, Tasks in the center, and Recent tasks on the right. The panels stack only at
+the existing narrow breakpoint. Shell record ownership remains namespaced; main Gosling owns the
+parent records root for one-way supervisory access without merging stores or projecting parent or
+sibling records into a shell.
+
+The desktop New Chat navigation action follows the same typed session-create path as Start new task.
+When a session is already active, it completes a safe detach before creating the replacement and
+does not continue if detach fails.
