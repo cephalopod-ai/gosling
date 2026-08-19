@@ -186,6 +186,7 @@ export function createShellRuntimeController(
           }
         : null,
       runtimeNamespace: acp?.runtimeNamespace ?? null,
+      declaredCapabilities: [...declaredCapabilities].sort(),
       compatibility: {
         status: acp ? 'compatible' : state.name === 'incompatible' ? 'incompatible' : 'unverified',
       },

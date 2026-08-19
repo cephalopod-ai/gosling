@@ -25,6 +25,7 @@ function state(generation = 1): import('./runtimeSnapshot').ShellRuntimeSnapshot
     allowedActions: ['stop' as const],
     identity: null,
     runtimeNamespace: null,
+    declaredCapabilities: [],
     compatibility: { status: 'unverified' },
     provisioningIssues: [],
     directory: {

@@ -19,6 +19,7 @@ for the relationship to cephalopod-ai/gosling.
 - [build/shell-productization/audits/ds-7-operator-acceptance.md](build/shell-productization/audits/ds-7-operator-acceptance.md) — operator acceptance of DS-7, its conditions, and the Gate 3 entry condition
 - [build/shell-productization/gui/gate-1-product-workflow-design.md](build/shell-productization/gui/gate-1-product-workflow-design.md) — Default Shell GUI product and workflow design: screen/state inventory, workflow walkthroughs, failure and recovery copy, negative space
 - [build/shell-productization/gui/gate-2-frontend-handoff.md](build/shell-productization/gui/gate-2-frontend-handoff.md) — Default Shell GUI front-end handoff: operation/event contract, state ownership, reducer rules, component inventory, bounds, accessibility criteria
+- [build/shell-productization/gui/gate-3-build-record.md](build/shell-productization/gui/gate-3-build-record.md) — Default Shell GUI build record: what was implemented, the defects the build found, the verification performed, and the limits of that verification
 - [build/shell-productization/execution-plan.md](build/shell-productization/execution-plan.md) — historical original plan; forward Gates 5–8 are superseded
 - [build/shell-productization/build-state.md](build/shell-productization/build-state.md) — current resumable status and verify-before-execution handoff
 - [build/shell-productization/evidence/r0.md](build/shell-productization/evidence/r0.md) — R0 Linux CI repair, two clean Rust executions, and Gate 4 acceptance reconciliation

@@ -1,0 +1,750 @@
+/*
+ * Hand-authored so the shell renderer needs no CSS framework and no inline <style> element: the
+ * shell CSP is `style-src 'self'`, and this file is referenced from shell.html so Vite keeps it a
+ * linked stylesheet in both dev and build. Only CSSOM writes (the text-scale variable) happen at
+ * runtime, which CSP does not restrict.
+ */
+
+:root {
+  --gsh-text-scale: 1;
+  --gsh-surface-base: #f6f6f5;
+  --gsh-surface-raised: #ffffff;
+  --gsh-surface-sunken: #ecebe9;
+  --gsh-text-primary: #1a1a19;
+  --gsh-text-secondary: #5f5e5b;
+  --gsh-border-subtle: #dcdbd8;
+  --gsh-border-strong: #a3a19c;
+  --gsh-focus-ring: #2f5d8f;
+  --gsh-status-ok: #1f5b40;
+  --gsh-status-busy: #6b4f0f;
+  --gsh-status-warn: #7a4d0d;
+  --gsh-status-error: #7d2822;
+  --gsh-status-neutral: #5f5e5b;
+  --gsh-effect-read: #1f5b40;
+  --gsh-effect-write: #7a4d0d;
+  --gsh-effect-execute: #7d2822;
+  --gsh-effect-network: #2f5d8f;
+  --gsh-effect-other: #5f5e5b;
+}
+
+:root[data-gsh-theme='dark'] {
+  --gsh-surface-base: #1b1b1a;
+  --gsh-surface-raised: #252523;
+  --gsh-surface-sunken: #131312;
+  --gsh-text-primary: #ecebe8;
+  --gsh-text-secondary: #aeaca7;
+  --gsh-border-subtle: #3a3936;
+  --gsh-border-strong: #625f5a;
+  --gsh-focus-ring: #8ab4e8;
+  --gsh-status-ok: #8fd0ac;
+  --gsh-status-busy: #e0bf68;
+  --gsh-status-warn: #e8ae6b;
+  --gsh-status-error: #ee9a90;
+  --gsh-status-neutral: #aeaca7;
+  --gsh-effect-read: #8fd0ac;
+  --gsh-effect-write: #e8ae6b;
+  --gsh-effect-execute: #ee9a90;
+  --gsh-effect-network: #8ab4e8;
+  --gsh-effect-other: #aeaca7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-gsh-theme='system'] {
+    --gsh-surface-base: #1b1b1a;
+    --gsh-surface-raised: #252523;
+    --gsh-surface-sunken: #131312;
+    --gsh-text-primary: #ecebe8;
+    --gsh-text-secondary: #aeaca7;
+    --gsh-border-subtle: #3a3936;
+    --gsh-border-strong: #625f5a;
+    --gsh-focus-ring: #8ab4e8;
+    --gsh-status-ok: #8fd0ac;
+    --gsh-status-busy: #e0bf68;
+    --gsh-status-warn: #e8ae6b;
+    --gsh-status-error: #ee9a90;
+    --gsh-status-neutral: #aeaca7;
+    --gsh-effect-read: #8fd0ac;
+    --gsh-effect-write: #e8ae6b;
+    --gsh-effect-execute: #ee9a90;
+    --gsh-effect-network: #8ab4e8;
+    --gsh-effect-other: #aeaca7;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--gsh-surface-sunken);
+  color: var(--gsh-text-primary);
+  font-family:
+    ui-sans-serif,
+    -apple-system,
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+  font-size: calc(14px * var(--gsh-text-scale));
+  line-height: 1.5;
+}
+
+/* A-7: the layout must stay usable at the host's minWidth 760 / minHeight 520. */
+.gsh-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 340px;
+  background: var(--gsh-surface-raised);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gsh-focus-ring);
+  outline-offset: 2px;
+}
+
+.gsh-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.6em 0.9em;
+  background: var(--gsh-surface-base);
+  border-bottom: 1px solid var(--gsh-border-subtle);
+}
+
+.gsh-identity {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  min-width: 0;
+}
+
+.gsh-identity__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gsh-identity__version,
+.gsh-identity__verified {
+  color: var(--gsh-text-secondary);
+  font-size: 0.85em;
+}
+
+.gsh-pill {
+  margin-left: auto;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 0.7em;
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+
+.gsh-pill--ok {
+  color: var(--gsh-status-ok);
+}
+.gsh-pill--busy {
+  color: var(--gsh-status-busy);
+}
+.gsh-pill--warn {
+  color: var(--gsh-status-warn);
+}
+.gsh-pill--error {
+  color: var(--gsh-status-error);
+}
+.gsh-pill--neutral {
+  color: var(--gsh-status-neutral);
+}
+
+.gsh-ctxbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.55em 0.9em;
+  border-bottom: 1px solid var(--gsh-border-subtle);
+  font-size: 0.9em;
+}
+
+.gsh-ctxbar__group {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  min-width: 0;
+}
+
+.gsh-ctxbar__label {
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-ctxbar__spacer {
+  flex: 1 1 auto;
+}
+
+.gsh-chip {
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 4px;
+  padding: 0.1em 0.5em;
+  background: var(--gsh-surface-base);
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gsh-chip--muted {
+  border-style: dashed;
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-chip--error {
+  color: var(--gsh-status-error);
+  border-color: currentColor;
+}
+
+.gsh-chip--warn {
+  color: var(--gsh-status-warn);
+  border-color: currentColor;
+}
+
+.gsh-btn {
+  border: 1px solid var(--gsh-border-strong);
+  background: var(--gsh-surface-base);
+  color: var(--gsh-text-primary);
+  border-radius: 4px;
+  padding: 0.25em 0.75em;
+  font: inherit;
+  font-size: 0.92em;
+  cursor: pointer;
+}
+
+.gsh-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.gsh-btn--primary {
+  border-color: var(--gsh-focus-ring);
+  box-shadow: inset 0 0 0 1px var(--gsh-focus-ring);
+  font-weight: 600;
+}
+
+.gsh-btn--ghost {
+  border-style: dashed;
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-btnrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-top: 0.6em;
+}
+
+.gsh-hint {
+  color: var(--gsh-text-secondary);
+  font-size: 0.85em;
+}
+
+.gsh-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9em;
+}
+
+.gsh-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.5em;
+  padding: 2em 1em;
+  flex: 1 1 auto;
+}
+
+.gsh-center__heading {
+  margin: 0;
+  font-size: 1.15em;
+}
+
+.gsh-center__detail {
+  margin: 0;
+  color: var(--gsh-text-secondary);
+  max-width: 52ch;
+}
+
+.gsh-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6em;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  padding: 0.5em 0.7em;
+  margin-bottom: 0.7em;
+  font-size: 0.92em;
+}
+
+.gsh-notice--warn {
+  color: var(--gsh-status-warn);
+}
+.gsh-notice--error {
+  color: var(--gsh-status-error);
+}
+.gsh-notice--ok {
+  color: var(--gsh-status-ok);
+}
+.gsh-notice--busy {
+  color: var(--gsh-status-busy);
+}
+.gsh-notice--neutral {
+  color: var(--gsh-status-neutral);
+}
+
+.gsh-notice__text {
+  flex: 1 1 20ch;
+}
+
+.gsh-transcript__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gsh-msg {
+  display: block;
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 5px;
+  padding: 0.5em 0.7em;
+  margin-bottom: 0.5em;
+  background: var(--gsh-surface-base);
+}
+
+.gsh-msg--history {
+  opacity: 0.78;
+}
+
+.gsh-msg__who {
+  display: block;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gsh-text-secondary);
+  margin-bottom: 0.2em;
+}
+
+.gsh-msg__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gsh-seam {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  color: var(--gsh-text-secondary);
+  font-size: 0.8em;
+  margin: 0.7em 0;
+}
+
+.gsh-seam::before,
+.gsh-seam::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--gsh-border-subtle);
+}
+
+.gsh-tool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  border: 1px dashed var(--gsh-border-subtle);
+  border-radius: 4px;
+  padding: 0.35em 0.6em;
+  margin-bottom: 0.5em;
+  color: var(--gsh-text-secondary);
+  font-size: 0.9em;
+}
+
+.gsh-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  font-size: 0.9em;
+  margin: 0.4em 0 0.7em;
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-outcome--failed {
+  color: var(--gsh-status-error);
+}
+
+.gsh-usage {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-size: 0.82em;
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-usage__track {
+  flex: 0 0 8em;
+  height: 0.5em;
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.gsh-usage__fill {
+  display: block;
+  height: 100%;
+  background: var(--gsh-status-busy);
+  width: 0;
+}
+
+.gsh-dock {
+  border-top: 1px solid var(--gsh-border-strong);
+  background: var(--gsh-surface-sunken);
+  padding: 0.8em 0.9em;
+}
+
+.gsh-dock__heading {
+  margin: 0 0 0.4em;
+  font-size: 1em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+
+.gsh-dock__message {
+  margin: 0 0 0.5em;
+  color: var(--gsh-text-secondary);
+  font-size: 0.92em;
+}
+
+.gsh-dock__detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15em 0.8em;
+  margin: 0 0 0.5em;
+  font-size: 0.9em;
+}
+
+.gsh-dock__detail dt {
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-dock__detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.gsh-badge {
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 0.45em;
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.gsh-badge--read {
+  color: var(--gsh-effect-read);
+}
+.gsh-badge--write {
+  color: var(--gsh-effect-write);
+}
+.gsh-badge--execute {
+  color: var(--gsh-effect-execute);
+}
+.gsh-badge--network {
+  color: var(--gsh-effect-network);
+}
+.gsh-badge--other {
+  color: var(--gsh-effect-other);
+}
+
+.gsh-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+  margin-bottom: 0.6em;
+  max-width: 44ch;
+}
+
+.gsh-form__label {
+  font-size: 0.9em;
+}
+
+.gsh-form__required {
+  color: var(--gsh-status-error);
+}
+
+.gsh-form__description {
+  color: var(--gsh-text-secondary);
+  font-size: 0.82em;
+}
+
+.gsh-form__field input,
+.gsh-form__field select {
+  font: inherit;
+  font-size: 0.92em;
+  padding: 0.25em 0.4em;
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 4px;
+  background: var(--gsh-surface-raised);
+  color: var(--gsh-text-primary);
+}
+
+.gsh-composer {
+  border-top: 1px solid var(--gsh-border-subtle);
+  padding: 0.7em 0.9em;
+}
+
+.gsh-composer__label {
+  display: block;
+  font-size: 0.82em;
+  color: var(--gsh-text-secondary);
+  margin-bottom: 0.25em;
+}
+
+.gsh-composer__input {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 0.95em;
+  padding: 0.5em 0.6em;
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 5px;
+  background: var(--gsh-surface-base);
+  color: var(--gsh-text-primary);
+  resize: vertical;
+}
+
+.gsh-composer__row {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  margin-top: 0.45em;
+}
+
+.gsh-composer__count {
+  margin-left: auto;
+  font-size: 0.8em;
+  color: var(--gsh-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.gsh-composer__count--over {
+  color: var(--gsh-status-error);
+}
+
+.gsh-failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6em;
+  border: 1px solid var(--gsh-status-error);
+  color: var(--gsh-status-error);
+  border-radius: 5px;
+  padding: 0.5em 0.7em;
+  margin: 0 0.9em 0.7em;
+  font-size: 0.92em;
+}
+
+.gsh-failure--quiet {
+  border-color: var(--gsh-border-subtle);
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-failure__message {
+  flex: 1 1 24ch;
+}
+
+.gsh-failure__code {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+
+.gsh-sessions__head,
+.gsh-sessions__row,
+.gsh-credentials__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.gsh-sessions__heading,
+.gsh-credentials__heading,
+.gsh-handoff__heading,
+.gsh-issues__heading {
+  margin: 0 0 0.4em;
+  font-size: 1em;
+}
+
+.gsh-sessions__list,
+.gsh-credentials__list,
+.gsh-issues__list,
+.gsh-modules__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gsh-sessions__row,
+.gsh-credentials__row,
+.gsh-issues__row {
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 4px;
+  padding: 0.45em 0.6em;
+  margin-bottom: 0.4em;
+  background: var(--gsh-surface-base);
+  font-size: 0.92em;
+}
+
+.gsh-sessions__title,
+.gsh-credentials__name {
+  font-weight: 600;
+}
+
+.gsh-sessions__meta,
+.gsh-credentials__provider,
+.gsh-credentials__status,
+.gsh-issues__path {
+  color: var(--gsh-text-secondary);
+  font-size: 0.9em;
+}
+
+.gsh-credentials__status--warn {
+  color: var(--gsh-status-warn);
+}
+
+.gsh-sessions__empty {
+  border: 1px dashed var(--gsh-border-strong);
+  border-radius: 5px;
+  padding: 1.4em;
+  text-align: center;
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-issues__code,
+.gsh-module__id {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.gsh-modules {
+  border-top: 1px solid var(--gsh-border-subtle);
+  padding: 0.6em 0.9em;
+}
+
+.gsh-module {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 4px;
+  padding: 0.15em 0.55em;
+  margin: 0 0.4em 0.4em 0;
+  background: var(--gsh-surface-base);
+  font-size: 0.82em;
+}
+
+.gsh-module--warn {
+  color: var(--gsh-status-warn);
+  border-color: currentColor;
+}
+
+.gsh-module--error {
+  color: var(--gsh-status-error);
+  border-color: currentColor;
+}
+
+.gsh-module__kind,
+.gsh-module__status,
+.gsh-module__version,
+.gsh-module__actions {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.gsh-settings__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.5em 0;
+  border-bottom: 1px solid var(--gsh-border-subtle);
+  font-size: 0.92em;
+}
+
+.gsh-settings__row:last-of-type {
+  border-bottom: 0;
+}
+
+.gsh-settings__label {
+  min-width: 12em;
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-settings__row select,
+.gsh-settings__row input {
+  font: inherit;
+  font-size: 0.92em;
+}
+
+.gsh-handoff__list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2em 0.9em;
+  font-size: 0.92em;
+  margin: 0.5em 0 0;
+}
+
+.gsh-handoff__list dt {
+  color: var(--gsh-text-secondary);
+}
+
+.gsh-handoff__list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.gsh-handoff__detail,
+.gsh-credentials__detail {
+  color: var(--gsh-text-secondary);
+  margin: 0 0 0.5em;
+  max-width: 60ch;
+}
+
+.gsh-lifecycle {
+  display: flex;
+  flex: 1 1 auto;
+}
+
+.gsh-lifecycle__reason {
+  margin: 0;
+  color: var(--gsh-text-secondary);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

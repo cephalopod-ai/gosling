@@ -1,5 +1,3 @@
-const root = document.querySelector<HTMLElement>('#root');
+import { mountDefaultShell } from "@gosling-shell-ui";
 
-if (root) {
-  root.textContent = 'Default Shell Template conformance surface';
-}
+mountDefaultShell({ productName: "Default Shell Template" });

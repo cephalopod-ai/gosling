@@ -14,6 +14,16 @@ const resolvedVirtualConsumerRenderer = `\0${virtualConsumerRenderer}`;
 
 export default defineConfig({
   base: './',
+  resolve: {
+    alias: {
+      // The stable specifier a consumer renderer imports to compose the reusable Default Shell
+      // application. Consumers may ignore it entirely and render their own tree.
+      '@gosling-shell-ui': resolve(__dirname, 'src/shell-ui'),
+    },
+  },
+  // No React plugin: its dev preamble injects an inline script, which shell.html's
+  // `script-src 'self'` CSP forbids. Vite's esbuild transform handles .tsx through the
+  // `jsx: react-jsx` setting in tsconfig.json, so the shell builds and serves without it.
   build: {
     target: 'esnext',
     rollupOptions: {

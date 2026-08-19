@@ -394,6 +394,7 @@ testable.
 | G-1 | Outputs has no renderer projection. `_gosling/unstable/session/artifacts/list` exists under ADR-0013, but there is no shell IPC channel, no `GoslingShellAPI` namespace, no capability entry, and no snapshot field. | S-29 is specified as a slot only. The Outputs surface cannot be designed in detail or built until a narrow main-owned operation exists. A directory scan or generic passthrough is forbidden. | Gate 3, tracked as SHP-DEF-054 |
 | G-2 | No operation clears a selected directory. `ShellDirectoryController.clear()` is internal. | S-23 can re-choose but cannot return to `unselected`. Accepted; the design does not offer "forget this folder". | none — recorded as intentional |
 | G-3 | No in-shell credential relink. Relink is handoff plus `external.open`. | S-15 and S-24 must route to Gosling rather than offering an inline fix. | none — matches ADR-0014 |
+| G-6 | **Found in Gate 3.** Handoff itself is unavailable in `relink_required` and `incompatible`: `handoff.prepare` needs a non-empty session id and a live ACP connection, neither of which exists after a failed startup, even though `allowedActions` lists `handoff`. G-3's routing therefore has no destination in exactly the states that need it most. | S-15 and S-24 show instructional copy instead of a control that cannot work. The recovery story is honest but incomplete. | SHP-DEF-055, operator decision |
 | G-4 | Module inventory refreshes only via the runtime snapshot; there is no `modules.refresh`. | S-26 shows state but offers no direct re-check; Retry is the only refresh. | acceptable for v1 |
 | G-5 | Gemini OAuth provider configuration fails with `Internal error` (`docs/TODO.md`). | No claim of a polished credential/relink experience until closed. | outside this campaign |
 
@@ -416,7 +417,9 @@ behavior.
 - [x] Cancel, decline, and stale are designed as normal outcomes.
 - [x] Gaps are recorded as gaps.
 - [x] No named-shell or out-of-envelope surface appears.
-- [ ] Operator review of this document.
+- [x] Accepted and merged as PR #58; implemented by Gate 3 except S-29 (see G-1).
+- [x] Gate 3 added G-6, a gap this design could not have known without reading the host's request
+      validation.
 
 Gate 2 handoff: [`gate-2-frontend-handoff.md`](gate-2-frontend-handoff.md).
 Wireframe: [`default-shell-wireframe.html`](default-shell-wireframe.html).

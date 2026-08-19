@@ -281,15 +281,21 @@ Each is a test, not an aspiration.
 
 ## 11. What Gate 3 must add to the host
 
-| ID | Need | Shape (proposed, not accepted) |
-| -- | ---- | ------------------------------ |
-| H-1 | Outputs projection (SHP-DEF-054) | one bounded `session.artifacts.read` invoke channel, a matching declared capability, metadata-only response, no path authority in the renderer |
-| H-2 | Declared minimum window size | a profile or consumer-manifest field, so identity owns it rather than renderer CSS |
-| H-3 | Renderer-visible capability list | today the renderer cannot ask what the consumer declared; it infers from failures. A read-only `declaredCapabilities` array on the snapshot would let components gate correctly instead of reactively |
+| ID | Need | Disposition after Gate 3 |
+| -- | ---- | ------------------------ |
+| H-1 | Outputs projection (SHP-DEF-054) | **still open.** Gate 3 established it needs a *Rust-owned* projection, not an Electron filter: `SessionArtifactDto` carries `resolvedPath`/`baseWorkingDir` and `display_path` can be absolute, and the SDK is generated from Rust. The Outputs panel is unbuilt. |
+| H-2 | Declared minimum window size | **no change needed.** `createMinimalShellWindowOptions` in `ui/desktop/src/shellHost.ts` already sets `minWidth: 760`, `minHeight: 520`. This gap was wrong; the stylesheet targets those bounds. |
+| H-3 | Renderer-visible capability list | **implemented.** `ShellRuntimeSnapshot.declaredCapabilities` is a sorted projection of the consumer manifest. Components gate on it rather than inferring from failures. |
+| H-4 | Handoff preconditions vs `allowedActions` | **new, open (SHP-DEF-055).** `handoff.prepare` needs a non-empty session id and a live ACP connection, but the host lists `handoff` for `relink_required` and `incompatible`. The GUI hides the control and explains why; the contradiction needs an operator decision. |
 
-H-3 matters: without it, C-13/C-14/C-15 cannot distinguish "no interaction pending" from "this
-consumer cannot answer interactions", and C-18 cannot hide cleanly. It is a small additive snapshot
-field, but it is a host change and therefore Gate 3 work, not a design decision.
+H-3 mattered because without it C-13/C-14/C-15 could not distinguish "no interaction pending" from
+"this consumer cannot answer interactions", and C-18 could not hide cleanly.
+
+Gate 3's build record is [`gate-3-build-record.md`](gate-3-build-record.md). Two design decisions in
+this document were overtaken by the shell's CSP during implementation and are recorded there: the
+renderer ships without `@vitejs/plugin-react` (its dev preamble is an inline script) and the
+stylesheet is linked from `shell.html` rather than imported from JavaScript (a JS import becomes an
+inline `<style>` in dev). Both would violate `script-src 'self'` / `style-src 'self'`.
 
 ## 12. Exit criteria for Gate 2
 
@@ -298,5 +304,5 @@ field, but it is a host change and therefore Gate 3 work, not a design decision.
 - [x] Reducer rules cover fencing, ordering, delivery, interaction lifetime, and failures.
 - [x] Accessibility criteria are testable.
 - [x] Required host additions are named and scoped.
-- [ ] Operator review of this document.
-- [ ] SHP-DEF-053 closed — Gate 3 entry condition, independent of this review.
+- [x] Accepted and merged as PR #58; implemented by Gate 3.
+- [ ] SHP-DEF-053 closed — still open, independent of this document.

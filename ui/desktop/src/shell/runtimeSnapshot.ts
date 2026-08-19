@@ -11,6 +11,7 @@ export interface ShellRuntimeSnapshot extends ShellLifecycleState {
   lifecycleState: ShellLifecycleStateName;
   identity: { id: string; displayName: string; version: string } | null;
   runtimeNamespace: string | null;
+  declaredCapabilities: string[];
   compatibility: { status: 'unverified' | 'compatible' | 'incompatible' };
   provisioningIssues: ShellProvisioningIssueSummary[];
   directory: ShellDirectorySnapshot;

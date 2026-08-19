@@ -1,7 +1,6 @@
 # Build state — Gosling project-shell readiness
 
-Updated: 2026-08-18 after the operator accepted DS-7 and authorized generic Default Shell GUI
-design Gates 1-2
+Updated: 2026-08-18 after implementing the generic Default Shell GUI (`plan-webapp-design` Gate 3)
 R0 implementation revision: `3feffca7c86c7f429b65ee749b8596e5ff4b3d9d` on merged `main`
 R1 planning baseline: branch `claude/pre-gui-backend-plan-0wnijv` from `main` at `33a5e73`
 Evidence branch: `codex/r0-evidence-reconciliation`
@@ -13,10 +12,16 @@ Completed gate: **R3/R4 — main-owned application runtime and live neutral doma
 Completed gate: **DS-7 — the operator accepted the nonvisual Default Shell foundation on
 2026-08-18 and authorized generic GUI design. See
 [`audits/ds-7-operator-acceptance.md`](audits/ds-7-operator-acceptance.md).**
-Current gate: **`plan-webapp-design` Gate 1 (product/workflow design) and Gate 2 (front-end
-handoff) for the generic Default Shell. Design-only: no renderer source, host source, IPC channel,
-ACP method, or capability is added. Gate 3 (build) is blocked by SHP-DEF-053. Named shells remain
-blocked until M5.**
+Completed gate: **`plan-webapp-design` Gates 1-2 — design accepted and merged as PR #58.**
+Completed gate: **Gate 3 — the generic Default Shell GUI is implemented at
+`ui/desktop/src/shell-ui/` and verified in a reconstructed environment. See
+[`gui/gate-3-build-record.md`](gui/gate-3-build-record.md), and read its §6 before trusting its §4:
+the evidence is not lockfile-bound, packaged, or CI-bound (SHP-DEF-057).**
+Current gate: **operator re-verification on the real checkout, then Gates 4-6. Three defects gate
+progress: SHP-DEF-053 (DS-7 battery not re-run on current `main`), SHP-DEF-054 (Outputs has no
+renderer projection, so that one panel is unbuilt), and SHP-DEF-055 (the host advertises handoff in
+states where it cannot succeed — needs an operator decision). Named shells remain blocked until
+M5.**
 
 ## Intent
 
@@ -94,9 +99,9 @@ process boundary is useful and merged; the former instruction to begin Gate 5 UI
 and that R2–R4/PG-50 gate is itself now closed — see
 [`audits/pg-50-pre-gui-acceptance.md`](audits/pg-50-pre-gui-acceptance.md).
 
-`ShellRuntimeProvider` and all renderer *implementation* remain paused until `plan-webapp-design`
-Gate 3 opens; DS-7 acceptance authorized design Gates 1-2 only. Do not start any named project
-shell (DAWES, math, physics/CST, or other) before M5. R4's conformance is revision-bound and local: the desktop
+The generic Default Shell renderer now exists as a reusable host-owned kit; `ShellRuntimeProvider`
+is superseded by `ui/desktop/src/shell-ui/state/store.ts`. Do not start any named project shell
+(DAWES, math, physics/CST, or other) before M5. R4's conformance is revision-bound and local: the desktop
 CI job runs only the default `vitest.config.ts` (`src/**`), not `vitest.integration.config.ts`, so
 the non-visual consumer/runtime/adapter conformance suite's evidence is local-only, not CI-backed
 (see `audits/pg-50-pre-gui-acceptance.md`). R6/R8 must still reproduce it in packaged and
@@ -280,17 +285,20 @@ as the supported-host-target proof).
 
 DS-1 through DS-7 are closed. The remaining sequence is:
 
-1. Complete `plan-webapp-design` Gate 1 and Gate 2 for the generic Default Shell —
-   [`gui/gate-1-product-workflow-design.md`](gui/gate-1-product-workflow-design.md) and
-   [`gui/gate-2-frontend-handoff.md`](gui/gate-2-frontend-handoff.md).
-2. Close SHP-DEF-053 by reproducing the DS-7 check battery on one current clean revision with
-   current CI. This is the Gate 3 entry condition; Gate 3 must not start before it.
-3. Close SHP-DEF-054 before the Outputs surface is built: `_gosling/unstable/session/artifacts/list`
-   exists under ADR-0013 but no shell IPC channel, preload operation, or declared capability
-   projects it to a renderer. Gate 3 must add that narrow operation rather than a directory scan.
-4. Execute Gates 3–6 only after the above, then M5 conformance for the reusable GUI.
-5. R6–R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
-   publication) remain open and unauthorized by this acceptance.
+1. Reproduce the Gate 3 verification on the real checkout against the committed lockfile — the
+   exact command list is [`gui/gate-3-build-record.md`](gui/gate-3-build-record.md) §7. This closes
+   SHP-DEF-057 and is the precondition for treating the GUI as evidence rather than a draft.
+2. Close SHP-DEF-053 by reproducing the DS-7 battery on one current clean revision with current CI.
+3. Disposition SHP-DEF-055: either narrow `allowedActions` so `handoff` appears only when a session
+   and ACP exist, or authorize a sessionless handoff envelope, which is an ADR-0012 change. The GUI
+   is honest either way today, but a revoked credential found at startup has no in-product path.
+4. Close SHP-DEF-054 with a **Rust-owned** safe artifact projection, then build the Outputs panel.
+   `SessionArtifactDto` exposes `resolvedPath`/`baseWorkingDir`, and `display_path` can be absolute,
+   so an Electron-side filter would create a second authority against the DS-4 precedent. The SDK is
+   generated from Rust, so this needs the Rust schema generation run.
+5. Then Gates 4-6 (integrate, validate, ship) and M5 conformance for the reusable GUI.
+6. R6-R8 (packaged restart/coexistence, cross-platform workflow coverage, signing/release/
+   publication) remain open and unauthorized.
 
 ## Named-shell start policy
 

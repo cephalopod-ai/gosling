@@ -1,0 +1,297 @@
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { COPY, lifecycleCopy } from './copy';
+import { Composer } from './components/Composer';
+import { ContextBar, IdentityBadge, StatusPill } from './components/ContextBar';
+import { FailureBanner, type RecoveryHandlers } from './components/FailureBanner';
+import { HandoffDialog } from './components/HandoffDialog';
+import { InteractionDock } from './components/InteractionDock';
+import { LifecycleFailureScreen } from './components/LifecycleFailureScreen';
+import { ModulesStrip } from './components/ModulesStrip';
+import { CredentialPicker, CredentialProblem, DirectoryPrompt } from './components/Pickers';
+import { ShellButton, ShellButtonRow, ShellCentered, ShellNotice } from './components/primitives';
+import { SessionPicker } from './components/SessionPicker';
+import { SettingsPanel } from './components/SettingsPanel';
+import { TranscriptView } from './components/Transcript';
+import { canChangeDirectory, canHandOff, isDeclared, selectRoute } from './state/route';
+import type { ShellStore } from './state/store';
+
+const RELINK_CAPABILITY = 'credential.relink';
+
+export interface ShellAppProps {
+  store: ShellStore;
+  productName: string;
+}
+
+function useShellState(store: ShellStore) {
+  return useSyncExternalStore(store.subscribe, store.getState, store.getState);
+}
+
+export const ShellApp = ({ store, productName }: ShellAppProps) => {
+  const state = useShellState(store);
+  const actions = store.actions;
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const generationRef = useRef<number | null>(null);
+  const route = selectRoute(state);
+  const snapshot = state.snapshot;
+
+  const displayName = snapshot?.identity?.displayName ?? productName;
+
+  useEffect(() => {
+    const theme = state.settings?.appearance.theme ?? 'system';
+    const scale = state.settings?.appearance.textScale ?? 1;
+    const root = document.documentElement;
+    root.setAttribute('data-gsh-theme', theme);
+    root.style.setProperty('--gsh-text-scale', String(scale));
+  }, [state.settings]);
+
+  // A-4: a generation bump destroys runtime state, so focus returns to the composer and the draft
+  // the user still has is left untouched.
+  useEffect(() => {
+    const generation = snapshot?.generation ?? null;
+    const previous = generationRef.current;
+    generationRef.current = generation;
+    if (previous !== null && generation !== null && generation > previous) {
+      composerRef.current?.focus();
+    }
+  }, [snapshot?.generation]);
+
+  useEffect(() => {
+    if (route === 'S-05' && state.sessions.status === 'idle') void actions.listSessions();
+  }, [route, state.sessions.status, actions]);
+
+  const recoveryHandlers = useMemo<RecoveryHandlers>(
+    () => ({
+      retry: () => void actions.retryRuntime(),
+      refresh: () => void actions.refreshRuntime(),
+      chooseDirectory: () => void actions.selectDirectory(),
+      selectCredential: () => actions.setView('workspace'),
+      reviewSession: () => actions.setView('workspace'),
+      resetSettings: () => actions.setView('settings'),
+      openGosling: () => void actions.prepareHandoff(COPY.handoffQuestion, RELINK_CAPABILITY),
+      saveDiagnostics: () => void actions.saveDiagnostics(),
+      restart: () => void actions.retryRuntime(),
+    }),
+    [actions]
+  );
+
+  if (!snapshot) {
+    const copy = lifecycleCopy('booting', productName);
+    return (
+      <div className="gsh-app">
+        <ShellCentered heading={copy.heading} detail={copy.detail} />
+      </div>
+    );
+  }
+
+  const blockedByInteraction = state.interactions.length > 0;
+  const dock = (
+    <InteractionDock
+      interactions={state.interactions}
+      productName={displayName}
+      onPermission={(actionId, allowOnce) => void actions.respondPermission(actionId, allowOnce)}
+      onElicitation={(actionId, action, fields) =>
+        void actions.respondElicitation(actionId, action, fields)
+      }
+      onConfirmation={(actionId, approve) => void actions.respondConfirmation(actionId, approve)}
+    />
+  );
+
+  const failure = state.failure ? (
+    <FailureBanner failure={state.failure} handlers={recoveryHandlers} />
+  ) : null;
+
+  const header = (
+    <header className="gsh-titlebar">
+      <IdentityBadge identity={snapshot.identity} fallbackName={productName} />
+      <StatusPill lifecycleState={snapshot.lifecycleState} compatibility={snapshot.compatibility} />
+    </header>
+  );
+
+  if (
+    route === 'S-01' ||
+    route === 'S-02' ||
+    route === 'S-14' ||
+    route === 'S-15' ||
+    route === 'S-16' ||
+    route === 'S-17' ||
+    route === 'S-18' ||
+    route === 'S-19' ||
+    route === 'S-20'
+  ) {
+    const copy = lifecycleCopy(snapshot.lifecycleState, productName);
+    const startup = route === 'S-01' || route === 'S-02' || route === 'S-19';
+    return (
+      <div className="gsh-app">
+        {header}
+        {startup ? (
+          <ShellCentered heading={copy.heading} detail={copy.detail}>
+            <ShellButtonRow>
+              {snapshot.allowedActions.includes('diagnostics') ? (
+                <ShellButton
+                  label={COPY.saveDiagnostics}
+                  onClick={() => void actions.saveDiagnostics()}
+                />
+              ) : null}
+              {snapshot.allowedActions.includes('stop') ? (
+                <ShellButton label={COPY.quit} onClick={() => void actions.stopRuntime()} />
+              ) : null}
+            </ShellButtonRow>
+          </ShellCentered>
+        ) : (
+          <LifecycleFailureScreen
+            snapshot={snapshot}
+            productName={productName}
+            savedDiagnosticsFile={state.savedDiagnosticsFile}
+            canHandOff={canHandOff(state)}
+            onRetry={() => void actions.retryRuntime()}
+            onStop={() => void actions.stopRuntime()}
+            onSaveDiagnostics={() => void actions.saveDiagnostics()}
+            onHandoff={recoveryHandlers.openGosling}
+            onRestart={() => void actions.retryRuntime()}
+          />
+        )}
+        {failure}
+      </div>
+    );
+  }
+
+  const contextBar = (
+    <ContextBar
+      directory={snapshot.directory}
+      credentials={snapshot.credentials}
+      session={snapshot.session}
+      canChangeDirectory={canChangeDirectory(state)}
+      canSelectDirectory={isDeclared(state, 'directory.select')}
+      canSelectCredential={isDeclared(state, 'credential.select')}
+      onChooseDirectory={() => void actions.selectDirectory()}
+      onChooseAccount={() => actions.setView('workspace')}
+      onOpenSessions={() => actions.setView('sessions')}
+      onOpenSettings={() => actions.setView('settings')}
+    />
+  );
+
+  const body = (() => {
+    switch (route) {
+      case 'S-21':
+        return state.settings ? (
+          <SettingsPanel
+            settings={state.settings}
+            directory={snapshot.directory}
+            credentials={snapshot.credentials}
+            productName={displayName}
+            onThemeChange={(theme) => void actions.updateAppearance({ theme })}
+            onTextScaleChange={(textScale) => void actions.updateAppearance({ textScale })}
+            onReset={() => void actions.resetSettings()}
+            onClose={() => actions.setView('workspace')}
+          />
+        ) : null;
+
+      case 'S-28':
+        return state.handoff ? (
+          <HandoffDialog
+            handoff={state.handoff}
+            productName={displayName}
+            onConfirm={() => void actions.confirmHandoff()}
+            onCancel={() => store.dispatch({ type: 'handoff/cleared' })}
+          />
+        ) : null;
+
+      case 'S-23':
+      case 'S-03':
+        return (
+          <DirectoryPrompt
+            directory={snapshot.directory}
+            productName={productName}
+            canSelect={isDeclared(state, 'directory.select')}
+            cancelled={state.directoryCancelled}
+            onChoose={() => void actions.selectDirectory()}
+            onSaveDiagnostics={() => void actions.saveDiagnostics()}
+          />
+        );
+
+      case 'S-24':
+        return (
+          <CredentialProblem
+            credentials={snapshot.credentials}
+            productName={productName}
+            canSelect={isDeclared(state, 'credential.select')}
+            canHandOff={canHandOff(state)}
+            onOpenGosling={recoveryHandlers.openGosling}
+            onChooseAnother={() => void actions.selectCredential(null)}
+          />
+        );
+
+      case 'S-04':
+        return (
+          <CredentialPicker
+            credentials={snapshot.credentials}
+            productName={productName}
+            canSelect={isDeclared(state, 'credential.select')}
+            onSelect={(profileId) => void actions.selectCredential(profileId)}
+            onRetry={() => void actions.retryRuntime()}
+            onSaveDiagnostics={() => void actions.saveDiagnostics()}
+          />
+        );
+
+      case 'S-05':
+        return (
+          <SessionPicker
+            sessions={state.sessions}
+            canCreate={isDeclared(state, 'session.create')}
+            canResume={isDeclared(state, 'session.resume')}
+            canList={isDeclared(state, 'session.list')}
+            onCreate={() => void actions.createSession()}
+            onResume={(sessionId) => void actions.resumeSession(sessionId)}
+            onRefresh={() => void actions.listSessions()}
+          />
+        );
+
+      default:
+        return (
+          <TranscriptView
+            transcript={state.transcript}
+            onRepair={() => void actions.repairTranscript()}
+            canRepair={isDeclared(state, 'session.transcript.read')}
+          />
+        );
+    }
+  })();
+
+  return (
+    <div className="gsh-app">
+      {header}
+      {contextBar}
+      {snapshot.provisioningIssues.length > 0 ? (
+        <ShellNotice tone="warn" message={COPY.provisioningHeading} live>
+          <ShellButton
+            label={COPY.saveDiagnostics}
+            onClick={() => void actions.saveDiagnostics()}
+            emphasis="ghost"
+          />
+        </ShellNotice>
+      ) : null}
+      <main className="gsh-main">{body}</main>
+      {dock}
+      {failure}
+      {route === 'S-06' ? (
+        <Composer
+          ref={composerRef}
+          draft={state.draft}
+          session={snapshot.session}
+          blockedByInteraction={blockedByInteraction}
+          canSubmit={isDeclared(state, 'prompt.submit')}
+          canCancel={isDeclared(state, 'prompt.cancel')}
+          onDraftChange={actions.setDraft}
+          onSubmit={() => void actions.submitPrompt()}
+          onCancel={() => void actions.cancelPrompt()}
+        />
+      ) : null}
+      <ModulesStrip
+        modules={snapshot.modules}
+        adapter={snapshot.adapter}
+        domainDeclared={isDeclared(state, 'domain.action')}
+        onSaveDiagnostics={() => void actions.saveDiagnostics()}
+      />
+    </div>
+  );
+};

@@ -161,6 +161,96 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
 - Residual risk: designing the Outputs surface in Gate 1 against a capability that does not exist.
   Gate 1 and Gate 2 both mark the Outputs panel as gated on this defect.
 
+## Findings from the Gate 3 GUI build (2026-08-18)
+
+### SHP-DEF-055 — the host offers handoff in states where handoff cannot succeed
+
+- Discovered at gate / audit: Gate 3 build audit, `gui/gate-3-build-record.md`
+- Requirement(s): SHP-REQ-053, SHP-REQ-056
+- Severity: high
+- Symptom and reproduction: `lifecycle.ts` lists `handoff` in `allowedActions` for
+  `relink_required` and `incompatible`. The operation cannot work in either state:
+  `parseHandoffPrepareRequest` in `ui/desktop/src/shell/ipcMain.ts` calls
+  `assertString(value.sessionId, 'sessionId', 512)`, which rejects an empty string, and
+  `handoffPrepare` in `ui/desktop/src/shell/bootstrap.ts` throws
+  `handoff request generation is stale or unavailable` when `controller.getAcp()` is null. After a
+  failed startup there is no session and no ACP connection. A GUI that trusted `allowedActions`
+  would render a primary "Open in Gosling" button that always fails, and the failure classifies as
+  `STALE_REQUEST` with recovery `refresh`, which is misleading.
+- Root cause: `allowedActions` describes lifecycle intent, not operation preconditions. The two were
+  never reconciled, because no renderer existed to act on the list.
+- Security/data/process/release impact: none — the operation fails closed. The impact is on recovery:
+  Gate 1 §7 names "Open in Gosling" as the *only* honest action for `relink_required`, so a user whose
+  credential was revoked has no in-product path at all.
+- Disposition: `open` — needs an operator decision, because the two candidate fixes differ in
+  authority. (a) Narrow `allowedActions` so `handoff` appears only when a session and ACP exist; the
+  states that most need handoff then offer nothing but instructional copy. (b) Allow a
+  sessionless handoff envelope, which means preparing it without the server — ADR-0012 assigns
+  envelope preparation to the server, so this is an architecture change, not a patch.
+- Patch/files: partially mitigated in the renderer only.
+  `ui/desktop/src/shell-ui/state/route.ts` adds `canHandOff`, which requires
+  `allowedActions` to include `handoff` **and** `identity !== null` (a faithful proxy for a live ACP
+  connection, since `runtimeController` populates `identity` only while `acp` is set) **and** a
+  non-empty session id. `ui/desktop/src/shell-ui/state/store.ts` refuses the operation and raises a
+  visible `CAPABILITY_UNAVAILABLE` rather than sending a request it knows will be rejected.
+  `LifecycleFailureScreen` and `CredentialProblem` render instructional copy in place of the control.
+- Regression test or not-testable reason: `ShellApp.test.tsx` asserts no handoff button in
+  `relink_required` and `incompatible` with no identity or session, that the button appears and sends
+  the real session id in `degraded`, and that the store refuses a sessionless handoff.
+- Validation/evidence: `gui/gate-3-build-record.md` §4.
+- Residual risk: the mitigation makes the product honest, not capable. Until the operator picks (a) or
+  (b), a revoked credential discovered at startup leaves the user to open Gosling themselves.
+
+### SHP-DEF-056 — the renderer bundle acquired `node:fs` and `node:path` through the settings module
+
+- Discovered at gate / audit: Gate 3 build, first real renderer build
+- Requirement(s): SHP-REQ-055, SHP-REQ-059
+- Severity: high
+- Symptom and reproduction: the Default Shell settings panel renders the theme list and the
+  0.8–2.0 text-scale bounds. Importing those values from `ui/desktop/src/shell/localSettings.ts`
+  dragged that whole main-process module into the renderer graph. Reproduced by
+  `vite build --config vite.shell.renderer.config.mts`, which reported
+  `Module "node:fs" has been externalized for browser compatibility` and the same for `node:path`.
+  Vite externalises rather than fails, so the bundle shipped with stubs that throw when called.
+- Root cause: a values import across the main/renderer boundary. The type-only discipline was
+  followed everywhere else, and the negative-space suite wrongly whitelisted this one module.
+- Security/data/process/release impact: no secret or path crossed the boundary — the module was
+  reachable but never called from the renderer. The risk was structural: a later change could have
+  called a filesystem function from renderer code and been externalised silently.
+- Disposition: `fixed`.
+- Patch/files: `ui/desktop/src/shell/settingsSchema.ts` (new) holds the schema version, theme values,
+  scale bounds, and validators with no Node or Electron import.
+  `ui/desktop/src/shell/localSettings.ts` re-exports every symbol, so no existing importer changed
+  and there is still one source of truth. `SettingsPanel` and the store import from
+  `settingsSchema`. The whitelist was removed from `negativeSpace.test.ts`.
+- Regression test or not-testable reason: `negativeSpace.test.ts` asserts that only `settingsSchema`
+  may be imported for values from `../shell/*`, and that no kit module imports a Node builtin. The
+  renderer build reports zero externalised modules.
+- Validation/evidence: `gui/gate-3-build-record.md` §3 and §4.
+- Residual risk: the executable check is import-shape based. A transitive leak through a *new* pure
+  module that itself imports Node would pass the import test and be caught only by the build warning,
+  so the renderer build must stay part of the acceptance battery.
+
+### SHP-DEF-057 — Gate 3 verification did not run on the operator's checkout or against the committed lockfile
+
+- Discovered at gate / audit: Gate 3 build, environment assessment
+- Requirement(s): SHP-REQ-061
+- Severity: medium
+- Symptom and reproduction: the operator's `ui/node_modules` was installed on macOS; the file bridge
+  that reaches it executes Linux binaries, so `rollup`'s native module fails to load and neither
+  `vitest` nor `vite` can start there. Verification therefore ran on a reconstructed Linux copy
+  installed with `--no-frozen-lockfile` (`vitest` 4.1.0, `vite` 7.3.1), as root, with Electron
+  packaging dependencies removed from that copy's `package.json`.
+- Root cause: environment, not code.
+- Security/data/process/release impact: none directly. The impact is evidential: §4 of the build
+  record is not revision-bound, lockfile-bound, or CI-bound.
+- Disposition: `open` — closes when the operator reproduces the §7 command list locally.
+- Patch/files: none. The container's `package.json` edit was deliberately not transferred; the
+  repository copy is untouched.
+- Regression test or not-testable reason: not a code defect.
+- Validation/evidence: `gui/gate-3-build-record.md` §6 records every divergence.
+- Residual risk: a version-specific failure could exist that the container did not reproduce.
+
 ## New entry template
 
 ### SHP-DEF-NNN — title

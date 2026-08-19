@@ -5,26 +5,22 @@ const MAX_SETTINGS_BYTES = 16 * 1024;
 const MAX_PATH_LENGTH = 4096;
 const MAX_REFERENCE_LENGTH = 128;
 
-export const SHELL_SETTINGS_SCHEMA_VERSION = 1;
+export {
+  SHELL_SETTINGS_SCHEMA_VERSION,
+  SHELL_THEME_VALUES,
+  MIN_SHELL_TEXT_SCALE,
+  MAX_SHELL_TEXT_SCALE,
+  isValidShellTheme,
+  isValidShellTextScale,
+} from './settingsSchema';
+export type { ShellTheme } from './settingsSchema';
 
-export type ShellTheme = 'system' | 'light' | 'dark';
-
-export const SHELL_THEME_VALUES: readonly ShellTheme[] = ['system', 'light', 'dark'];
-const MIN_SHELL_TEXT_SCALE = 0.8;
-const MAX_SHELL_TEXT_SCALE = 2;
-
-export function isValidShellTheme(value: unknown): value is ShellTheme {
-  return typeof value === 'string' && (SHELL_THEME_VALUES as readonly string[]).includes(value);
-}
-
-export function isValidShellTextScale(value: unknown): value is number {
-  return (
-    typeof value === 'number' &&
-    Number.isFinite(value) &&
-    value >= MIN_SHELL_TEXT_SCALE &&
-    value <= MAX_SHELL_TEXT_SCALE
-  );
-}
+import {
+  SHELL_SETTINGS_SCHEMA_VERSION,
+  isValidShellTextScale,
+  isValidShellTheme,
+} from './settingsSchema';
+import type { ShellTheme } from './settingsSchema';
 
 export interface ShellLocalSettings {
   schemaVersion: 1;

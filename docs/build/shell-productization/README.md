@@ -27,6 +27,9 @@ This package is the durable, resumable plan for turning the merged Gosling shell
     [`gui/gate-2-frontend-handoff.md`](gui/gate-2-frontend-handoff.md) — the authorized
     `plan-webapp-design` Gate 1 and Gate 2 design deliverables, plus
     [`gui/default-shell-wireframe.html`](gui/default-shell-wireframe.html).
+19. [`gui/gate-3-build-record.md`](gui/gate-3-build-record.md) — the implemented generic Default
+    Shell GUI, the defects the build surfaced, and an explicit statement of what its verification
+    does and does not prove.
 
 ## Current status
 
@@ -46,11 +49,13 @@ blocked until M5 and R6–R8 respectively.
 
 No production signing, notarization, publication, updater promotion, production identifier, release destination, or named project shell is authorized or implemented. Resume from `build-state.md` and verify the current repository instead of trusting an earlier checkpoint blindly.
 
-DS-1–DS-7 are closed. The operator accepted DS-7 on 2026-08-18 against revision
-`240ab751585afc03c68a710f8be10ea891ab168f` and authorized `plan-webapp-design` **Gate 1
-(product/workflow design) and Gate 2 (front-end handoff) only** — see
-[`audits/ds-7-operator-acceptance.md`](audits/ds-7-operator-acceptance.md). Renderer implementation
-(Gate 3) is blocked by SHP-DEF-053 until the DS-7 check battery is reproduced on a current clean
-revision, because `main` has since advanced and one commit touched shell runtime source. SHP-DEF-054
-must also close before any Outputs surface is built. The historical PG-50 and DS-7 evidence remain
-valid only for their exact recorded revisions, and every named shell remains blocked until M5.
+DS-1–DS-7 are closed, and `plan-webapp-design` Gates 1–3 are done: the design was accepted as
+PR #58 and the generic Default Shell GUI is implemented at `ui/desktop/src/shell-ui/`. Read
+[`gui/gate-3-build-record.md`](gui/gate-3-build-record.md) §6 before treating its §4 as evidence —
+verification ran in a reconstructed Linux environment, not on the operator's checkout, so it is not
+lockfile-bound, packaged, or CI-bound (SHP-DEF-057). Three defects gate further progress:
+SHP-DEF-053 (DS-7 battery not re-run on current `main`), SHP-DEF-054 (no renderer projection for the
+durable Outputs inventory, so that panel is unbuilt and needs a Rust-owned projection), and
+SHP-DEF-055 (the host advertises handoff in states where it cannot succeed). The historical PG-50 and
+DS-7 evidence remain valid only for their exact recorded revisions, and every named shell remains
+blocked until M5.
