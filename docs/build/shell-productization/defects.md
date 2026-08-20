@@ -259,31 +259,6 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
 - Residual risk: none specific to the reconstructed environment; exact-revision CI remains tracked
   separately by SHP-DEF-053.
 
-### SHP-DEF-058 — Default template exposed Gosling's credential catalog
-
-- Discovered at gate / audit: operator live GUI review, 2026-08-19.
-- Requirement(s): SHP-REQ-046; SHP-RSK-042.
-- Severity: high.
-- Symptom and reproduction: launching the committed Default Shell displayed the operator's
-  `featherless` credential profile and offered “Use this account,” even though credential/provider
-  selection belongs in the main Gosling application.
-- Root cause: the committed fixture overrode the scaffold's fixed credential policy with
-  `selectable_catalog`, and both the fixture and scaffold declared `credential.select`.
-- Security/data/process/release impact: the projection contained only approved safe metadata, but
-  it exceeded the intended authority and exposed an unrelated account-selection workflow.
-- Disposition: `fixed` on 2026-08-19. The default fixture and generated scaffolds use fixed policy
-  without catalog capability; fixed-policy snapshots ignore stale local selections; account UI is
-  absent without explicit selection authority.
-- Patch/files: Default Shell fixture provisioning/consumer manifest, shell scaffold generator,
-  credential controller, shell UI, tests, and active design records.
-- Regression test or not-testable reason: scaffold conformance rejects the credential list method;
-  controller tests cover stale selection under denied policy; ShellApp tests prove no account
-  catalog or controls render.
-- Validation/evidence: focused shell/scaffold tests, desktop lint/typecheck, package/readback, and
-  live installed-app inspection.
-- Residual risk: explicitly provisioned selectable-catalog products retain their existing behavior.
-
-
 ### SHP-DEF-059 — Desktop override collapsed the right dashboard panel
 
 - Discovered at gate / audit: operator live GUI review, 2026-08-19.
@@ -354,6 +329,30 @@ recorded here so `plan-webapp-design` Gate 3 cannot start by assuming either is 
   `docs/logs/session/2026-08-19-shell-defect-campaign.md`.
 - Residual risk: remote CI remains revision-bound; the final campaign commit must receive a green
   required Desktop job before SHP-DEF-053 can close.
+
+### SHP-DEF-058 — Default template exposed Gosling's credential catalog
+
+- Discovered at gate / audit: operator live GUI review, 2026-08-19.
+- Requirement(s): SHP-REQ-046; SHP-RSK-042.
+- Severity: high.
+- Symptom and reproduction: launching the committed Default Shell displayed the operator's
+  `featherless` credential profile and offered “Use this account,” even though credential/provider
+  selection belongs in the main Gosling application.
+- Root cause: the committed fixture overrode the scaffold's fixed credential policy with
+  `selectable_catalog`, and both the fixture and scaffold declared `credential.select`.
+- Security/data/process/release impact: the projection contained only approved safe metadata, but
+  it exceeded the intended authority and exposed an unrelated account-selection workflow.
+- Disposition: `fixed` on 2026-08-19. The default fixture and generated scaffolds use fixed policy
+  without catalog capability; fixed-policy snapshots ignore stale local selections; account UI is
+  absent without explicit selection authority.
+- Patch/files: Default Shell fixture provisioning/consumer manifest, shell scaffold generator,
+  credential controller, shell UI, tests, and active design records.
+- Regression test or not-testable reason: scaffold conformance rejects the credential list method;
+  controller tests cover stale selection under denied policy; ShellApp tests prove no account
+  catalog or controls render.
+- Validation/evidence: focused shell/scaffold tests, desktop lint/typecheck, package/readback, and
+  live installed-app inspection.
+- Residual risk: explicitly provisioned selectable-catalog products retain their existing behavior.
 
 ## New entry template
 
