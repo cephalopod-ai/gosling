@@ -1528,6 +1528,7 @@ fn build_action_required_message(request: &RequestPermissionRequest) -> Option<M
                 tool_title,
                 arguments,
                 prompt,
+                None,
             )
             .user_only(),
     )

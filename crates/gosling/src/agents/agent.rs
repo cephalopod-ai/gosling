@@ -715,7 +715,8 @@ impl Agent {
 
         // Add security inspector (highest priority - runs first)
         tool_inspection_manager.add_inspector(Box::new(SecurityInspector::new()));
-        tool_inspection_manager.add_inspector(Box::new(EgressInspector::new()));
+        tool_inspection_manager
+            .add_inspector(Box::new(EgressInspector::new(permission_manager.clone())));
 
         // Add adversary inspector (LLM-based review, enabled by ~/.config/gosling/adversary.md)
         tool_inspection_manager.add_inspector(Box::new(AdversaryInspector::new(
@@ -5248,6 +5249,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                     confidence: 1.0,
                     inspector_name: self.name().to_string(),
                     finding_id: None,
+                    metadata: None,
                 })
                 .collect())
         }
@@ -5351,6 +5353,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 "permission-1",
                 "Write".to_string(),
                 serde_json::Map::new(),
+                None,
                 None,
             );
 

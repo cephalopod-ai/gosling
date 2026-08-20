@@ -48,6 +48,7 @@ impl SecurityInspector {
             confidence: security_result.confidence,
             inspector_name: self.name().to_string(),
             finding_id: Some(security_result.finding_id.clone()),
+            metadata: None,
         }
     }
 }

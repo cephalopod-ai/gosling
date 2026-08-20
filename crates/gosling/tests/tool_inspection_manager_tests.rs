@@ -64,6 +64,7 @@ async fn test_inspect_tools_aggregates_and_handles_errors() {
             confidence: 0.95,
             inspector_name: "ok".to_string(),
             finding_id: None,
+            metadata: None,
         },
         InspectionResult {
             tool_request_id: "req_2".to_string(),
@@ -72,6 +73,7 @@ async fn test_inspect_tools_aggregates_and_handles_errors() {
             confidence: 0.7,
             inspector_name: "ok".to_string(),
             finding_id: Some("FND-123".to_string()),
+            metadata: None,
         },
     ];
 

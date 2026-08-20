@@ -105,8 +105,9 @@ impl Agent {
         try_stream! {
         for request in tool_requests.iter() {
             if let Ok(tool_call) = request.tool_call.clone() {
-                let security_message = inspection_results.iter()
-                    .find(|result| result.tool_request_id == request.id)
+                let matching_result = inspection_results.iter()
+                    .find(|result| result.tool_request_id == request.id);
+                let security_message = matching_result
                     .and_then(|result| {
                         if let crate::tool_inspection::InspectionAction::RequireApproval(Some(message)) = &result.action {
                             Some(message.clone())
@@ -114,6 +115,17 @@ impl Agent {
                             None
                         }
                     });
+                // A domain-scoped "always allow" is only offered when the
+                // inspector flagged exactly one still-unresolved domain --
+                // more than one would make a single-click grant ambiguous
+                // about what it actually covers.
+                let single_flagged_domain = matching_result
+                    .and_then(|result| result.metadata.as_ref())
+                    .and_then(|metadata| metadata.get("domains"))
+                    .and_then(|domains| domains.as_array())
+                    .filter(|domains| domains.len() == 1)
+                    .and_then(|domains| domains[0].as_str())
+                    .map(|domain| domain.to_string());
 
                 let mut mode_changes = self.gosling_mode_changes.subscribe();
                 let confirmation_rx = self.tool_confirmation_router.register(request.id.clone()).await;
@@ -126,6 +138,7 @@ impl Agent {
                         tool_call.name.to_string().clone(),
                         tool_call.arguments.clone().unwrap_or_default(),
                         security_message.clone(),
+                        single_flagged_domain.clone(),
                     )
                     .user_only();
                 if !auto_approve {
@@ -178,7 +191,10 @@ impl Agent {
                     );
                 }
 
-                if confirmation.permission == Permission::AllowOnce || confirmation.permission == Permission::AlwaysAllow {
+                if confirmation.permission == Permission::AllowOnce
+                    || confirmation.permission == Permission::AlwaysAllow
+                    || confirmation.permission == Permission::AlwaysAllowDomain
+                {
                     let (req_id, tool_result) = self.dispatch_conversation_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session).await;
 
                     tool_futures.push((req_id, match tool_result {
@@ -198,6 +214,12 @@ impl Agent {
                         self.tool_inspection_manager
                             .update_permission_manager(&tool_call.name, PermissionLevel::AlwaysAllow)
                             .await;
+                    } else if confirmation.permission == Permission::AlwaysAllowDomain {
+                        if let Some(domain) = &single_flagged_domain {
+                            self.tool_inspection_manager
+                                .update_egress_domain_permission(domain, PermissionLevel::AlwaysAllow)
+                                .await;
+                        }
                     }
                 } else {
                     if let Some(response) = request_to_response_map.get_mut(&request.id) {

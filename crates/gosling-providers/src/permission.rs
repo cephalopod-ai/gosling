@@ -5,6 +5,9 @@ use utoipa::ToSchema;
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
     AlwaysAllow,
+    /// Like `AlwaysAllow`, but scoped to the single domain an egress prompt
+    /// flagged rather than the tool as a whole.
+    AlwaysAllowDomain,
     AllowOnce,
     Cancel,
     DenyOnce,

@@ -11,6 +11,11 @@ use strum::{Display, EnumString};
 #[strum(serialize_all = "snake_case")]
 pub enum PermissionDecision {
     AllowAlways,
+    /// Distinct from `AllowAlways`: the ACP option carrying this id still
+    /// reports `PermissionOptionKind::AllowAlways` (the kind enum has no
+    /// domain-scoped variant), but its `option_id` string is unique, so this
+    /// decision can be told apart from a tool-wide always-allow.
+    AllowAlwaysDomain,
     AllowOnce,
     RejectAlways,
     RejectOnce,
@@ -32,6 +37,7 @@ impl From<Permission> for PermissionDecision {
     fn from(p: Permission) -> Self {
         match p {
             Permission::AlwaysAllow => Self::AllowAlways,
+            Permission::AlwaysAllowDomain => Self::AllowAlwaysDomain,
             Permission::AllowOnce => Self::AllowOnce,
             Permission::DenyOnce => Self::RejectOnce,
             Permission::AlwaysDeny => Self::RejectAlways,
@@ -44,6 +50,7 @@ impl From<PermissionDecision> for Permission {
     fn from(d: PermissionDecision) -> Self {
         match d {
             PermissionDecision::AllowAlways => Self::AlwaysAllow,
+            PermissionDecision::AllowAlwaysDomain => Self::AlwaysAllowDomain,
             PermissionDecision::AllowOnce => Self::AllowOnce,
             PermissionDecision::RejectOnce => Self::DenyOnce,
             PermissionDecision::RejectAlways => Self::AlwaysDeny,
@@ -76,6 +83,11 @@ pub fn map_permission_response(
             find_option(&request.options, PermissionOptionKind::AllowAlways)
                 .or_else(|| find_option(&request.options, PermissionOptionKind::AllowOnce))
         }
+        PermissionDecision::AllowAlwaysDomain => {
+            find_option_by_id(&request.options, PermissionDecision::AllowAlwaysDomain)
+                .or_else(|| find_option(&request.options, PermissionOptionKind::AllowAlways))
+                .or_else(|| find_option(&request.options, PermissionOptionKind::AllowOnce))
+        }
         PermissionDecision::AllowOnce => {
             find_option(&request.options, PermissionOptionKind::AllowOnce)
                 .or_else(|| find_option(&request.options, PermissionOptionKind::AllowAlways))
@@ -104,6 +116,16 @@ fn find_option(options: &[PermissionOption], kind: PermissionOptionKind) -> Opti
     options
         .iter()
         .find(|opt| opt.kind == kind)
+        .map(|opt| opt.option_id.0.to_string())
+}
+
+/// The domain-scoped always-allow option shares `PermissionOptionKind::AllowAlways`
+/// with the tool-wide one, so it can only be found by its distinct option id.
+fn find_option_by_id(options: &[PermissionOption], decision: PermissionDecision) -> Option<String> {
+    let id = decision.to_string();
+    options
+        .iter()
+        .find(|opt| opt.option_id.0.as_ref() == id)
         .map(|opt| opt.option_id.0.to_string())
 }
 

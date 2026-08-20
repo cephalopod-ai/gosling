@@ -112,6 +112,8 @@ export type ActionRequiredData =
       id: string;
       prompt?: string | null;
       toolName: string;
+      /** The single flagged egress domain, if any (see EgressInspector). */
+      domain?: string | null;
     }
   | {
       actionType: 'elicitation';
@@ -377,6 +379,7 @@ export interface ToolConfirmationData {
   toolName: string;
   arguments: Record<string, unknown>;
   prompt?: string | null;
+  domain?: string | null;
 }
 
 export function getAnyToolConfirmationData(message: Message): ToolConfirmationData | undefined {
@@ -397,6 +400,7 @@ export function getAnyToolConfirmationData(message: Message): ToolConfirmationDa
       toolName: actionRequired.data.toolName,
       arguments: actionRequired.data.arguments,
       prompt: actionRequired.data.prompt,
+      domain: actionRequired.data.domain,
     };
   }
 

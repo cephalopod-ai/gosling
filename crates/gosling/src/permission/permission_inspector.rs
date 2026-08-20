@@ -218,6 +218,7 @@ impl ToolInspector for PermissionInspector {
                     confidence: 1.0, // Permission decisions are definitive
                     inspector_name: self.name().to_string(),
                     finding_id: None,
+                    metadata: None,
                 });
             }
         }
@@ -280,6 +281,7 @@ impl ToolInspector for PermissionInspector {
                     confidence: 1.0, // Permission decisions are definitive
                     inspector_name: self.name().to_string(),
                     finding_id: None,
+                    metadata: None,
                 });
             }
         }

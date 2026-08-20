@@ -71,6 +71,7 @@ impl ToolInspector for WorkingDirScopeInspector {
                             confidence: 1.0,
                             inspector_name: self.name().to_string(),
                             finding_id: Some("AUD-GOS-003".to_string()),
+                            metadata: None,
                         });
                         continue;
                     }
@@ -87,6 +88,7 @@ impl ToolInspector for WorkingDirScopeInspector {
                             confidence: 1.0,
                             inspector_name: self.name().to_string(),
                             finding_id: Some("AUD-GOS-003".to_string()),
+                            metadata: None,
                         });
                         continue;
                     }
@@ -115,6 +117,7 @@ impl ToolInspector for WorkingDirScopeInspector {
                 confidence: 1.0,
                 inspector_name: self.name().to_string(),
                 finding_id: None,
+                metadata: None,
             });
         }
         Ok(results)

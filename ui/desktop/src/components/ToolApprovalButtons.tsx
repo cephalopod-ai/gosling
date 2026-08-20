@@ -18,6 +18,10 @@ const i18n = defineMessages({
     id: 'toolApprovalButtons.alwaysAllowExtension',
     defaultMessage: 'Always Allow all {extensionName} tools',
   },
+  alwaysAllowDomain: {
+    id: 'toolApprovalButtons.alwaysAllowDomain',
+    defaultMessage: 'Always allow {domain}',
+  },
   deny: {
     id: 'toolApprovalButtons.deny',
     defaultMessage: 'Deny',
@@ -33,6 +37,10 @@ const i18n = defineMessages({
   alwaysAllowedExtension: {
     id: 'toolApprovalButtons.alwaysAllowedExtension',
     defaultMessage: 'Always allowed ({extensionName} tools)',
+  },
+  alwaysAllowedDomain: {
+    id: 'toolApprovalButtons.alwaysAllowedDomain',
+    defaultMessage: 'Always allowed ({domain})',
   },
   denied: {
     id: 'toolApprovalButtons.denied',
@@ -95,13 +103,14 @@ export interface ToolApprovalData {
   id: string;
   toolName: string;
   prompt?: string;
+  domain?: string;
   sessionId: string;
   isClicked?: boolean;
 }
 
 export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }) {
   const intl = useIntl();
-  const { id, toolName, prompt, sessionId, isClicked: initialIsClicked } = data;
+  const { id, toolName, prompt, domain, sessionId, isClicked: initialIsClicked } = data;
 
   const storedState = globalApprovalState.get(id);
   const [decision, setDecision] = useState<Permission | null>(storedState?.decision ?? null);
@@ -184,6 +193,9 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
               extensionName: bulkAllowedExtension,
             })
           : intl.formatMessage(i18n.alwaysAllowed),
+      always_allow_domain: intl.formatMessage(i18n.alwaysAllowedDomain, {
+        domain: domain ?? '',
+      }),
       always_deny: intl.formatMessage(i18n.denied),
       deny_once: intl.formatMessage(i18n.deniedOnce),
       cancel: intl.formatMessage(i18n.cancelled),
@@ -228,6 +240,15 @@ export default function ToolApprovalButtons({ data }: { data: ToolApprovalData }
             onClick={() => handleAction('always_allow')}
           >
             {intl.formatMessage(i18n.alwaysAllow)}
+          </Button>
+        )}
+        {prompt && domain && (
+          <Button
+            className="rounded-full"
+            variant="ghost"
+            onClick={() => handleAction('always_allow_domain')}
+          >
+            {intl.formatMessage(i18n.alwaysAllowDomain, { domain })}
           </Button>
         )}
         {!prompt && extensionName && (

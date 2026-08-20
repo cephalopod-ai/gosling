@@ -130,6 +130,7 @@ impl ToolInspector for RepetitionInspector {
                         confidence: 1.0,
                         inspector_name: "repetition".to_string(),
                         finding_id: Some("REP-001".to_string()),
+                        metadata: None,
                     });
                 }
             }

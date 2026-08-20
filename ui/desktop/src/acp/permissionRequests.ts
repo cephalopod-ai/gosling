@@ -86,6 +86,14 @@ function permissionOptionIdForAction(
   request: RequestPermissionRequest,
   action: Permission
 ): string | undefined {
+  // The domain-scoped option shares `allow_always`'s kind with the tool-wide
+  // one (ACP has no domain-scoped kind), so it can only be told apart by its
+  // distinct option id rather than by kind.
+  if (action === 'always_allow_domain') {
+    return request.options.find((candidate) => candidate.optionId === 'allow_always_domain')
+      ?.optionId;
+  }
+
   const kind = permissionOptionKindForAction(action);
   if (!kind) {
     return undefined;
@@ -104,6 +112,7 @@ function permissionOptionKindForAction(action: Permission) {
       return 'reject_once';
     case 'always_deny':
       return 'reject_always';
+    case 'always_allow_domain':
     case 'cancel':
       return undefined;
   }

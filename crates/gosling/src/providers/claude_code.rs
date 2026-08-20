@@ -1062,7 +1062,7 @@ impl Provider for ClaudeCodeProvider {
                                         pending_confirmations.lock().await.insert(request_id.clone(), tx);
 
                                         let action_msg = Message::assistant().with_action_required(
-                                            request_id.clone(), tool_name, input.clone(), None,
+                                            request_id.clone(), tool_name, input.clone(), None, None,
                                         );
                                         yield (Some(action_msg), None);
 

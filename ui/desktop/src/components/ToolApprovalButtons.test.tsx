@@ -141,4 +141,79 @@ describe('ToolApprovalButtons', () => {
       screen.getByText('developer__shell - Always allowed (developer tools)')
     ).toBeInTheDocument();
   });
+
+  it('offers a domain-scoped always-allow button only for a security prompt with a flagged domain', () => {
+    renderWithIntl(
+      <ToolApprovalButtons
+        data={{
+          id: 'tool-call-egress',
+          toolName: 'developer__shell',
+          sessionId: 'session-1',
+          prompt: 'Egress destinations detected: https://arxiv.org/e-print/1',
+          domain: 'arxiv.org',
+        }}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Always allow arxiv.org' })).toBeInTheDocument();
+    // The tool-wide grant stays withheld on any security prompt (WFG-GOS-006).
+    expect(screen.queryByRole('button', { name: 'Always Allow' })).not.toBeInTheDocument();
+  });
+
+  it('omits the domain-scoped button when the security prompt has no single flagged domain', () => {
+    renderWithIntl(
+      <ToolApprovalButtons
+        data={{
+          id: 'tool-call-egress-multi',
+          toolName: 'developer__shell',
+          sessionId: 'session-1',
+          prompt: 'Egress destinations detected: https://a.example, https://b.example',
+        }}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /Always allow/ })).not.toBeInTheDocument();
+  });
+
+  it('omits the domain-scoped button for a non-security prompt even if a domain were supplied', () => {
+    renderWithIntl(
+      <ToolApprovalButtons
+        data={{
+          id: 'tool-call-plain',
+          toolName: 'developer__shell',
+          sessionId: 'session-1',
+        }}
+      />
+    );
+
+    expect(
+      screen.queryByRole('button', { name: 'Always allow arxiv.org' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Always Allow' })).toBeInTheDocument();
+  });
+
+  it('resolves a domain-scoped always-allow decision distinctly from a tool-wide one', async () => {
+    resolveAcpPermissionRequestMock.mockReturnValueOnce(true);
+
+    renderWithIntl(
+      <ToolApprovalButtons
+        data={{
+          id: 'tool-call-egress-approve',
+          toolName: 'developer__shell',
+          sessionId: 'session-1',
+          prompt: 'Egress destinations detected: https://arxiv.org/e-print/1',
+          domain: 'arxiv.org',
+        }}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Always allow arxiv.org' }));
+
+    expect(resolveAcpPermissionRequestMock).toHaveBeenCalledWith(
+      'session-1',
+      'tool-call-egress-approve',
+      'always_allow_domain'
+    );
+    expect(screen.getByText('developer__shell - Always allowed (arxiv.org)')).toBeInTheDocument();
+  });
 });

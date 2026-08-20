@@ -452,6 +452,7 @@ impl ToolInspector for AdversaryInspector {
                         confidence: 1.0,
                         inspector_name: self.name().to_string(),
                         finding_id: None,
+                        metadata: None,
                     });
                 }
                 Ok((false, reason)) => {
@@ -471,6 +472,7 @@ impl ToolInspector for AdversaryInspector {
                         confidence: 1.0,
                         inspector_name: self.name().to_string(),
                         finding_id: None,
+                        metadata: None,
                     });
                 }
                 Err(e) => {
@@ -493,6 +495,7 @@ impl ToolInspector for AdversaryInspector {
                         confidence: 0.0,
                         inspector_name: self.name().to_string(),
                         finding_id: None,
+                        metadata: None,
                     });
                 }
             }

@@ -1937,6 +1937,11 @@
               "arguments": {
                 "$ref": "#/components/schemas/JsonObject"
               },
+              "domain": {
+                "type": "string",
+                "description": "The single egress domain this prompt is about, if any. Present only\nwhen a security inspector flagged exactly the destinations of one\ndomain, so the client can offer a domain-scoped \"always allow\"\noption without being able to widen it to the whole tool.",
+                "nullable": true
+              },
               "id": {
                 "type": "string"
               },
@@ -4079,6 +4084,7 @@
         "type": "string",
         "enum": [
           "always_allow",
+          "always_allow_domain",
           "allow_once",
           "cancel",
           "deny_once",

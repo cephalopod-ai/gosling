@@ -744,6 +744,7 @@ mod tests {
             "developer__shell".to_string(),
             serde_json::Map::new(),
             None,
+            None,
         );
         let mut fake_stream = pending_forever_after(Ok(AgentEvent::Message(action_required_msg)));
 

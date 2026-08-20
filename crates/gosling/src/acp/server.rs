@@ -1746,6 +1746,7 @@ impl GoslingAcpAgent {
                     tool_name,
                     arguments,
                     prompt,
+                    domain,
                 } => {
                     self.handle_tool_permission_request(
                         cx,
@@ -1755,6 +1756,7 @@ impl GoslingAcpAgent {
                         tool_name.clone(),
                         arguments.clone(),
                         prompt.clone(),
+                        domain.clone(),
                     )?;
                 }
                 ActionRequiredData::Elicitation {
@@ -2269,6 +2271,7 @@ impl GoslingAcpAgent {
         tool_name: String,
         arguments: serde_json::Map<String, serde_json::Value>,
         prompt: Option<String>,
+        domain: Option<String>,
     ) -> Result<(), agent_client_protocol::Error> {
         let cx = cx.clone();
         let agent = agent.clone();
@@ -2314,6 +2317,19 @@ impl GoslingAcpAgent {
         let mut options = Vec::new();
         if !is_security_prompt {
             options.push(option(PermissionOptionKind::AllowAlways));
+        } else if let Some(domain) = &domain {
+            // A domain-scoped grant is a narrower, more auditable claim than
+            // the tool-wide always-allow withheld above by WFG-GOS-006: it
+            // covers only the flagged destination, not every future call of
+            // the tool. The ACP `PermissionOptionKind` enum has no
+            // domain-scoped variant, so this reuses `AllowAlways` for the
+            // kind hint but carries a distinct `option_id` so the response
+            // can be told apart from a tool-wide grant.
+            options.push(PermissionOption::new(
+                PermissionDecision::AllowAlwaysDomain.to_string(),
+                format!("Always allow {domain}"),
+                PermissionOptionKind::AllowAlways,
+            ));
         }
         options.extend([
             option(PermissionOptionKind::AllowOnce),

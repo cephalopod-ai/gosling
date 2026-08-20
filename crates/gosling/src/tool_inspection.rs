@@ -6,6 +6,7 @@ use crate::config::GoslingMode;
 use crate::conversation::message::{Message, ToolRequest};
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
+use crate::security::egress_inspector::EgressInspector;
 
 /// Result of inspecting a tool call
 #[derive(Debug, Clone)]
@@ -16,6 +17,12 @@ pub struct InspectionResult {
     pub confidence: f32,
     pub inspector_name: String,
     pub finding_id: Option<String>,
+    /// Inspector-specific structured data an approval-response handler may
+    /// need after the user answers a `RequireApproval` prompt (e.g. the
+    /// egress inspector's flagged domains, so "always allow this domain"
+    /// can be persisted without adding an egress-specific field every
+    /// inspector's result type would otherwise carry).
+    pub metadata: Option<serde_json::Value>,
 }
 
 /// Action to take based on inspection result
@@ -150,6 +157,7 @@ impl ToolInspectionManager {
                             confidence: 1.0,
                             inspector_name: inspector.name().to_string(),
                             finding_id: None,
+                            metadata: None,
                         });
                     }
                 }
@@ -169,6 +177,13 @@ impl ToolInspectionManager {
             .iter()
             .find(|i| i.name() == "permission")
             .and_then(|i| i.as_any().downcast_ref::<PermissionInspector>())
+    }
+
+    fn get_egress_inspector(&self) -> Option<&EgressInspector> {
+        self.inspectors
+            .iter()
+            .find(|i| i.name() == "egress")
+            .and_then(|i| i.as_any().downcast_ref::<EgressInspector>())
     }
 
     pub fn apply_tool_annotations(&self, tools: &[rmcp::model::Tool]) {
@@ -198,6 +213,29 @@ impl ToolInspectionManager {
                     security.level = %level_for_log,
                     error = %e,
                     "permission decision applied for this session but could not be saved; \
+                     it will not survive a restart"
+                );
+            }
+        }
+    }
+
+    pub async fn update_egress_domain_permission(
+        &self,
+        domain: &str,
+        permission_level: crate::config::permission::PermissionLevel,
+    ) {
+        if let Some(inspector) = self.get_egress_inspector() {
+            let level_for_log = format!("{permission_level:?}");
+            if let Err(e) = inspector
+                .permission_manager
+                .update_egress_domain_permission(domain, permission_level)
+            {
+                tracing::error!(
+                    security.event_type = "permission_persist_failed",
+                    security.domain = domain,
+                    security.level = %level_for_log,
+                    error = %e,
+                    "egress domain decision applied for this session but could not be saved; \
                      it will not survive a restart"
                 );
             }
@@ -361,6 +399,7 @@ mod tests {
             confidence: 0.9,
             inspector_name: "test_inspector".to_string(),
             finding_id: Some("TEST-001".to_string()),
+            metadata: None,
         }];
 
         let updated_result =
@@ -392,6 +431,7 @@ mod tests {
                 confidence: 1.0,
                 inspector_name: "deny".to_string(),
                 finding_id: None,
+                metadata: None,
             },
             InspectionResult {
                 tool_request_id: "req_1".to_string(),
@@ -400,6 +440,7 @@ mod tests {
                 confidence: 1.0,
                 inspector_name: "fallback".to_string(),
                 finding_id: None,
+                metadata: None,
             },
         ];
 
@@ -434,6 +475,7 @@ mod tests {
                     confidence: 0.6,
                     inspector_name: self.name().to_string(),
                     finding_id: None,
+                    metadata: None,
                 })
                 .collect())
         }
@@ -516,6 +558,7 @@ mod tests {
                     confidence: 1.0,
                     inspector_name: self.name().to_string(),
                     finding_id: None,
+                    metadata: None,
                 })
                 .collect())
         }

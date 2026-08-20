@@ -41,6 +41,7 @@ pub struct PermissionManager {
 // Constants representing specific permission categories
 const USER_PERMISSION: &str = "user";
 const SMART_APPROVE_PERMISSION: &str = "smart_approve";
+const EGRESS_DOMAIN_PERMISSION: &str = "egress_domain";
 
 impl PermissionManager {
     pub fn new(config_dir: PathBuf) -> Self {
@@ -132,6 +133,11 @@ impl PermissionManager {
     /// Retrieves the smart approve permission level for a specific tool.
     pub fn get_smart_approve_permission(&self, principal_name: &str) -> Option<PermissionLevel> {
         self.get_permission(SMART_APPROVE_PERMISSION, principal_name)
+    }
+
+    /// Retrieves the always-allow/never-allow status for a specific egress domain.
+    pub fn get_egress_domain_permission(&self, domain: &str) -> Option<PermissionLevel> {
+        self.get_permission(EGRESS_DOMAIN_PERMISSION, domain)
     }
 
     /// Retrieves the config file path.
@@ -238,6 +244,15 @@ impl PermissionManager {
         level: PermissionLevel,
     ) -> Result<(), String> {
         self.update_permission(SMART_APPROVE_PERMISSION, principal_name, level)
+    }
+
+    /// Updates the always-allow/never-allow status for a specific egress domain.
+    pub fn update_egress_domain_permission(
+        &self,
+        domain: &str,
+        level: PermissionLevel,
+    ) -> Result<(), String> {
+        self.update_permission(EGRESS_DOMAIN_PERMISSION, domain, level)
     }
 
     /// Helper function to update a permission level for a specific tool in a given permission category.

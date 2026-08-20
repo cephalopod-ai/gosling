@@ -203,6 +203,12 @@ pub enum ActionRequiredData {
         tool_name: String,
         arguments: JsonObject,
         prompt: Option<String>,
+        /// The single egress domain this prompt is about, if any. Present only
+        /// when a security inspector flagged exactly the destinations of one
+        /// domain, so the client can offer a domain-scoped "always allow"
+        /// option without being able to widen it to the whole tool.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        domain: Option<String>,
     },
     Elicitation {
         id: String,
@@ -457,6 +463,7 @@ impl MessageContent {
         tool_name: String,
         arguments: JsonObject,
         prompt: Option<String>,
+        domain: Option<String>,
     ) -> Self {
         MessageContent::ActionRequired(ActionRequired {
             data: ActionRequiredData::ToolConfirmation {
@@ -464,6 +471,7 @@ impl MessageContent {
                 tool_name,
                 arguments,
                 prompt,
+                domain,
             },
         })
     }
@@ -925,9 +933,10 @@ impl Message {
         tool_name: String,
         arguments: JsonObject,
         prompt: Option<String>,
+        domain: Option<String>,
     ) -> Self {
         self.with_content(MessageContent::action_required(
-            id, tool_name, arguments, prompt,
+            id, tool_name, arguments, prompt, domain,
         ))
     }
 

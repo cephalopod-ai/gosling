@@ -144,4 +144,49 @@ describe('ACP permission requests', () => {
       },
     });
   });
+
+  it('resolves always_allow_domain to the domain-scoped option, not the tool-wide one', async () => {
+    // Both options share `kind: 'allow_always'` (ACP has no domain-scoped
+    // kind), so only the exact option id can tell them apart.
+    const response = requestAcpPermission({
+      sessionId: 'session-1',
+      options: [
+        { optionId: 'allow_always_domain', name: 'Always allow arxiv.org', kind: 'allow_always' },
+        { optionId: 'reject-once', name: 'Deny once', kind: 'reject_once' },
+      ],
+      toolCall: {
+        toolCallId: 'tool-1',
+        title: 'Run shell command',
+        rawInput: { command: 'curl https://arxiv.org/e-print/1' },
+        content: [
+          {
+            type: 'content',
+            content: {
+              type: 'text',
+              text: 'Egress destinations detected: https://arxiv.org/e-print/1',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(resolveAcpPermissionRequest('session-1', 'tool-1', 'always_allow_domain')).toBe(true);
+    await expect(response).resolves.toEqual({
+      outcome: {
+        outcome: 'selected',
+        optionId: 'allow_always_domain',
+      },
+    });
+  });
+
+  it('cancels when no always_allow_domain option is offered', async () => {
+    const response = requestAcpPermission(permissionRequest('session-1', 'tool-1'));
+
+    expect(resolveAcpPermissionRequest('session-1', 'tool-1', 'always_allow_domain')).toBe(true);
+    await expect(response).resolves.toEqual({
+      outcome: {
+        outcome: 'cancelled',
+      },
+    });
+  });
 });
