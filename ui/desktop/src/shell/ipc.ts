@@ -2,6 +2,9 @@ import type {
   DomainActionConfirmResponse_unstable,
   DomainActionResponse_unstable,
   DomainSnapshotResponse_unstable,
+  GetAvailableExtensionsResponse_unstable,
+  GetSessionExtensionsResponse_unstable,
+  GoslingExtension,
   ShellHandoffEnvelope,
   ShellHandoffPrepareRequest_unstable,
   ShellArtifactListResponse_unstable,
@@ -40,6 +43,10 @@ export const shellIpcChannels = {
   sessionLibraryAddImage: 'session.library.addImage',
   sessionLibraryLinkFile: 'session.library.linkFile',
   sessionLibraryRemove: 'session.library.remove',
+  extensionsAvailableRead: 'extensions.available.read',
+  sessionExtensionsRead: 'session.extensions.read',
+  sessionExtensionsAdd: 'session.extensions.add',
+  sessionExtensionsRemove: 'session.extensions.remove',
   sessionDetach: 'session.detach',
   promptSubmit: 'prompt.submit',
   promptCancel: 'prompt.cancel',
@@ -79,6 +86,10 @@ export type ShellIpcInvokeChannel =
   | (typeof shellIpcChannels)['sessionLibraryAddImage']
   | (typeof shellIpcChannels)['sessionLibraryLinkFile']
   | (typeof shellIpcChannels)['sessionLibraryRemove']
+  | (typeof shellIpcChannels)['extensionsAvailableRead']
+  | (typeof shellIpcChannels)['sessionExtensionsRead']
+  | (typeof shellIpcChannels)['sessionExtensionsAdd']
+  | (typeof shellIpcChannels)['sessionExtensionsRemove']
   | (typeof shellIpcChannels)['sessionDetach']
   | (typeof shellIpcChannels)['promptSubmit']
   | (typeof shellIpcChannels)['promptCancel']
@@ -164,6 +175,14 @@ export interface ShellLibraryRemoveRequest extends ShellSessionResumeRequest {
 export type ShellLibraryLinkFileResult =
   | { status: 'canceled' }
   | { status: 'added'; item: ShellLibraryItemSummary };
+
+export interface ShellSessionExtensionAddRequest extends ShellSessionResumeRequest {
+  extension: GoslingExtension;
+}
+
+export interface ShellSessionExtensionRemoveRequest extends ShellSessionResumeRequest {
+  name: string;
+}
 
 export interface ShellPromptCancelRequest extends ShellSessionResumeRequest {
   promptAttemptId: string;
@@ -272,6 +291,10 @@ export interface ShellIpcRequestMap {
   [shellIpcChannels.sessionLibraryAddImage]: ShellLibraryAddImageRequest;
   [shellIpcChannels.sessionLibraryLinkFile]: ShellLibraryLinkFileRequest;
   [shellIpcChannels.sessionLibraryRemove]: ShellLibraryRemoveRequest;
+  [shellIpcChannels.extensionsAvailableRead]: ShellGenerationRequest;
+  [shellIpcChannels.sessionExtensionsRead]: ShellSessionResumeRequest;
+  [shellIpcChannels.sessionExtensionsAdd]: ShellSessionExtensionAddRequest;
+  [shellIpcChannels.sessionExtensionsRemove]: ShellSessionExtensionRemoveRequest;
   [shellIpcChannels.sessionDetach]: ShellGenerationRequest;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitRequest;
   [shellIpcChannels.promptCancel]: ShellPromptCancelRequest;
@@ -306,6 +329,10 @@ export interface ShellIpcResponseMap {
   [shellIpcChannels.sessionLibraryAddImage]: ShellLibraryAddResponse_unstable;
   [shellIpcChannels.sessionLibraryLinkFile]: ShellLibraryLinkFileResult;
   [shellIpcChannels.sessionLibraryRemove]: ShellLibraryRemoveResponse_unstable;
+  [shellIpcChannels.extensionsAvailableRead]: GetAvailableExtensionsResponse_unstable;
+  [shellIpcChannels.sessionExtensionsRead]: GetSessionExtensionsResponse_unstable;
+  [shellIpcChannels.sessionExtensionsAdd]: GetSessionExtensionsResponse_unstable;
+  [shellIpcChannels.sessionExtensionsRemove]: GetSessionExtensionsResponse_unstable;
   [shellIpcChannels.sessionDetach]: ShellSessionDetachResult;
   [shellIpcChannels.promptSubmit]: ShellPromptSubmitResult;
   [shellIpcChannels.promptCancel]: undefined;

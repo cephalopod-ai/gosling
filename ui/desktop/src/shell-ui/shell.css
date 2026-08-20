@@ -419,6 +419,55 @@ body {
   cursor: pointer;
 }
 
+.gsh-extensions {
+  margin-top: 1em;
+  padding-top: 1em;
+  border-top: 1px solid var(--gsh-border-subtle);
+}
+
+.gsh-extensions__heading {
+  margin: 0;
+  font-size: 1em;
+}
+
+.gsh-extensions__hint,
+.gsh-extensions__empty,
+.gsh-extension-item__meta {
+  color: var(--gsh-text-secondary);
+  font-size: 0.82em;
+}
+
+.gsh-extensions__hint {
+  margin: 0.35em 0 0.6em;
+}
+
+.gsh-extensions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gsh-extension-item {
+  border: 1px solid var(--gsh-border-subtle);
+  border-radius: 4px;
+  padding: 0.4em 0.5em;
+  margin-bottom: 0.4em;
+  background: var(--gsh-surface-base);
+  overflow-wrap: anywhere;
+}
+
+.gsh-extension-item__select {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+  min-width: 0;
+}
+
+.gsh-extension-item__name,
+.gsh-extension-item__meta {
+  display: block;
+}
+
 .gsh-composer__attachments {
   color: var(--gsh-text-secondary);
   font-size: 0.8em;

@@ -10,6 +10,7 @@ import { LifecycleFailureScreen } from './components/LifecycleFailureScreen';
 import { ModulesStrip } from './components/ModulesStrip';
 import { OutputsPanel } from './components/OutputsPanel';
 import { LibraryPanel } from './components/LibraryPanel';
+import { ExtensionsPanel } from './components/ExtensionsPanel';
 import { CredentialPicker, CredentialProblem, DirectoryPrompt } from './components/Pickers';
 import { ShellButton, ShellButtonRow, ShellCentered, ShellNotice } from './components/primitives';
 import { SessionPicker } from './components/SessionPicker';
@@ -88,6 +89,16 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
       void actions.readLibrary();
     }
   }, [route, state.library.status, state, actions]);
+
+  useEffect(() => {
+    if (
+      route === 'S-06' &&
+      state.extensions.status === 'idle' &&
+      isDeclared(state, 'session.extensions.read')
+    ) {
+      void actions.readExtensions();
+    }
+  }, [route, state.extensions.status, state, actions]);
 
   const recoveryHandlers = useMemo<RecoveryHandlers>(
     () => ({
@@ -278,7 +289,8 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
               canRepair={isDeclared(state, 'session.transcript.read')}
             />
             {isDeclared(state, 'session.library.read') ||
-            isDeclared(state, 'session.artifacts.read') ? (
+            isDeclared(state, 'session.artifacts.read') ||
+            isDeclared(state, 'session.extensions.read') ? (
               <aside className="gsh-reference-sidebar">
                 {isDeclared(state, 'session.library.read') ? (
                   <LibraryPanel
@@ -291,6 +303,15 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
                     onAddImage={actions.addLibraryImage}
                     onLinkFile={actions.linkLibraryFile}
                     onRemove={actions.removeLibraryItem}
+                  />
+                ) : null}
+                {isDeclared(state, 'session.extensions.read') ? (
+                  <ExtensionsPanel
+                    extensions={state.extensions}
+                    canWrite={isDeclared(state, 'session.extensions.write')}
+                    busy={state.pending === 'session.extensions.write'}
+                    onAdd={actions.addSessionExtension}
+                    onRemove={actions.removeSessionExtension}
                   />
                 ) : null}
                 {isDeclared(state, 'session.artifacts.read') ? (

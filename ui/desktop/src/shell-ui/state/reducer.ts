@@ -194,6 +194,15 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
     case 'library/selectionCleared':
       return { ...state, library: { ...state.library, selectedItemIds: [] } };
 
+    case 'extensions/loading':
+      return { ...state, extensions: { ...state.extensions, status: 'loading' } };
+
+    case 'extensions/loaded':
+      return {
+        ...state,
+        extensions: { status: 'loaded', available: action.available, selected: action.selected },
+      };
+
     case 'draft/changed':
       return { ...state, draft: action.draft };
 

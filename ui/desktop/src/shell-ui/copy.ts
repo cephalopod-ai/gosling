@@ -198,4 +198,7 @@ export const COPY = {
   libraryAddFile: 'Add file',
   libraryAddText: 'Add text',
   librarySaveText: 'Save text',
+  extensionsHeading: 'Extensions',
+  extensionsHint: 'Choose which installed extensions this task can use.',
+  extensionsEmpty: 'No extensions are installed. Install extensions from Gosling settings.',
 } as const;

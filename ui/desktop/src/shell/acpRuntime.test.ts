@@ -147,6 +147,10 @@ function harness() {
   const listArtifacts = vi.fn(() =>
     Promise.resolve({ artifacts: [], totalCount: 0, truncated: false })
   );
+  const listAvailableExtensions = vi.fn(() => Promise.resolve({ extensions: [] }));
+  const listSessionExtensions = vi.fn(() => Promise.resolve({ extensions: [] }));
+  const addSessionExtension = vi.fn(() => Promise.resolve({}));
+  const removeSessionExtension = vi.fn(() => Promise.resolve({}));
   const listLibrary = vi.fn(() => Promise.resolve({ items: [] }));
   const addLibraryText = vi.fn(() => Promise.reject(new Error('not used')));
   const addLibraryImage = vi.fn(() => Promise.reject(new Error('not used')));
@@ -181,6 +185,10 @@ function harness() {
       shellDirectoryValidate_unstable: validateDirectory,
       shellCredentialsList_unstable: listCredentials,
       shellModulesList_unstable: listModules,
+      extensionsAvailable_unstable: listAvailableExtensions,
+      sessionExtensionsList_unstable: listSessionExtensions,
+      sessionExtensionsAdd_unstable: addSessionExtension,
+      sessionExtensionsRemove_unstable: removeSessionExtension,
       shellSessionArtifactsList_unstable: listArtifacts,
       shellSessionLibraryList_unstable: listLibrary,
       shellSessionLibraryAddText_unstable: addLibraryText,

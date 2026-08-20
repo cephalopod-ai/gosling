@@ -23,6 +23,8 @@ import type {
   ShellLibraryAddImageRequest,
   ShellLibraryLinkFileRequest,
   ShellLibraryRemoveRequest,
+  ShellSessionExtensionAddRequest,
+  ShellSessionExtensionRemoveRequest,
   ShellSettingsAppearanceUpdateRequest,
   ShellSettingsModelSelectRequest,
   ShellSettingsResetRequest,
@@ -95,6 +97,16 @@ export const goslingShellAPI: GoslingShellAPI = Object.freeze({
       invoke(shellIpcChannels.sessionLibraryLinkFile, request),
     remove: (request: ShellLibraryRemoveRequest) =>
       invoke(shellIpcChannels.sessionLibraryRemove, request),
+  }),
+  extensions: Object.freeze({
+    listAvailable: (request: ShellGenerationRequest) =>
+      invoke(shellIpcChannels.extensionsAvailableRead, request),
+    listForSession: (request: ShellSessionResumeRequest) =>
+      invoke(shellIpcChannels.sessionExtensionsRead, request),
+    add: (request: ShellSessionExtensionAddRequest) =>
+      invoke(shellIpcChannels.sessionExtensionsAdd, request),
+    remove: (request: ShellSessionExtensionRemoveRequest) =>
+      invoke(shellIpcChannels.sessionExtensionsRemove, request),
   }),
   prompt: Object.freeze({
     submit: (request: ShellPromptSubmitRequest) => invoke(shellIpcChannels.promptSubmit, request),

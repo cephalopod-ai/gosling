@@ -9,6 +9,7 @@ import type {
   ShellArtifactSummary,
   ShellLibraryItemSummary,
   ShellLibraryScope,
+  GoslingExtension,
 } from '@repo-makeover/gosling-sdk';
 import type { TranscriptState } from './transcript';
 
@@ -24,6 +25,8 @@ export type ShellUiPendingOperation =
   | 'session.artifacts.read'
   | 'session.library.read'
   | 'session.library.write'
+  | 'session.extensions.read'
+  | 'session.extensions.write'
   | 'session.detach'
   | 'prompt.submit'
   | 'prompt.cancel'
@@ -54,6 +57,11 @@ export interface ShellUiState {
     items: ShellLibraryItemSummary[];
     selectedItemIds: string[];
     addScope: ShellLibraryScope;
+  };
+  extensions: {
+    status: 'idle' | 'loading' | 'loaded';
+    available: GoslingExtension[];
+    selected: GoslingExtension[];
   };
   draft: string;
   failure: ShellOperationFailure | null;
@@ -88,6 +96,12 @@ export type ShellUiAction =
   | { type: 'library/itemToggled'; itemId: string }
   | { type: 'library/selectionCleared' }
   | { type: 'library/scopeChanged'; scope: ShellLibraryScope }
+  | { type: 'extensions/loading' }
+  | {
+      type: 'extensions/loaded';
+      available: GoslingExtension[];
+      selected: GoslingExtension[];
+    }
   | { type: 'draft/changed'; draft: string }
   | { type: 'failure/raised'; failure: ShellOperationFailure }
   | { type: 'failure/cleared' }
@@ -116,6 +130,7 @@ export function initialShellUiState(): ShellUiState {
     sessions: { status: 'idle', items: [] },
     outputs: { status: 'idle', items: [], totalCount: 0, truncated: false },
     library: { status: 'idle', items: [], selectedItemIds: [], addScope: 'session' },
+    extensions: { status: 'idle', available: [], selected: [] },
     draft: '',
     failure: null,
     pending: null,

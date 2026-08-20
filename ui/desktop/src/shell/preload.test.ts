@@ -34,6 +34,7 @@ describe('shell preload surface', () => {
       'directory',
       'domain',
       'elicitation',
+      'extensions',
       'external',
       'handoff',
       'library',
@@ -66,6 +67,12 @@ describe('shell preload surface', () => {
       'addText',
       'linkFile',
       'list',
+      'remove',
+    ]);
+    expect(Object.keys(goslingShellAPI.extensions).sort()).toEqual([
+      'add',
+      'listAvailable',
+      'listForSession',
       'remove',
     ]);
     expect(Object.keys(goslingShellAPI.directory)).toEqual(['select']);
@@ -116,6 +123,11 @@ describe('shell preload surface', () => {
     };
     const libraryFile = { ...resume, scope: 'session' as const, userGesture: true as const };
     const libraryRemove = { ...resume, itemId: 'lib-one' };
+    const extensionAdd = {
+      ...resume,
+      extension: { type: 'builtin' as const, name: 'developer' },
+    };
+    const extensionRemove = { ...resume, name: 'developer' };
     const cancel = { ...resume, promptAttemptId: 'attempt' };
     const permission = {
       ...generation,
@@ -158,6 +170,10 @@ describe('shell preload surface', () => {
     await goslingShellAPI.library.addImage(libraryImage);
     await goslingShellAPI.library.linkFile(libraryFile);
     await goslingShellAPI.library.remove(libraryRemove);
+    await goslingShellAPI.extensions.listAvailable(generation);
+    await goslingShellAPI.extensions.listForSession(resume);
+    await goslingShellAPI.extensions.add(extensionAdd);
+    await goslingShellAPI.extensions.remove(extensionRemove);
     await goslingShellAPI.session.detach(generation);
     await goslingShellAPI.prompt.submit(submit);
     await goslingShellAPI.prompt.cancel(cancel);
@@ -191,6 +207,10 @@ describe('shell preload surface', () => {
       [shellIpcChannels.sessionLibraryAddImage, libraryImage],
       [shellIpcChannels.sessionLibraryLinkFile, libraryFile],
       [shellIpcChannels.sessionLibraryRemove, libraryRemove],
+      [shellIpcChannels.extensionsAvailableRead, generation],
+      [shellIpcChannels.sessionExtensionsRead, resume],
+      [shellIpcChannels.sessionExtensionsAdd, extensionAdd],
+      [shellIpcChannels.sessionExtensionsRemove, extensionRemove],
       [shellIpcChannels.sessionDetach, generation],
       [shellIpcChannels.promptSubmit, submit],
       [shellIpcChannels.promptCancel, cancel],

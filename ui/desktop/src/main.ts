@@ -1472,6 +1472,19 @@ const createChat = async (
       },
     });
     rendererDirectoryGrants.grantSelectedPath(mainWindow.webContents.id, workingDir, false);
+    if (settings.archiveFolder) {
+      try {
+        rendererDirectoryGrants.grantSelectedPath(
+          mainWindow.webContents.id,
+          settings.archiveFolder,
+          false
+        );
+      } catch (error) {
+        // The configured folder may have been moved or deleted since it was picked; the user is
+        // re-prompted to choose an archive folder rather than the window failing to open.
+        console.error('Failed to re-grant the configured archive folder:', error);
+      }
+    }
     installBackendCertificateVerifier(mainWindow.webContents.session);
     installArtifactDownloadRouter(
       mainWindow.webContents.session,

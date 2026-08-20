@@ -6,8 +6,11 @@ import {
   type DomainActionResponse_unstable,
   type DomainSnapshotRequest_unstable,
   type DomainSnapshotResponse_unstable,
+  type GetAvailableExtensionsResponse_unstable,
+  type GetSessionExtensionsResponse_unstable,
   type GetSessionInfoResponse_unstable,
   type GoslingClientCallbacks,
+  type GoslingExtension,
   type ShellCredentialListResponse_unstable,
   type ShellArtifactListResponse_unstable,
   type ShellDirectoryValidateResponse_unstable,
@@ -115,6 +118,17 @@ export interface ShellAcpClient {
     shellModulesList_unstable(params: {
       workingDir?: string;
     }): Promise<ShellModuleListResponse_unstable>;
+    extensionsAvailable_unstable(
+      params: Record<string, never>
+    ): Promise<GetAvailableExtensionsResponse_unstable>;
+    sessionExtensionsList_unstable(params: {
+      sessionId: string;
+    }): Promise<GetSessionExtensionsResponse_unstable>;
+    sessionExtensionsAdd_unstable(params: {
+      sessionId: string;
+      extension: GoslingExtension;
+    }): Promise<unknown>;
+    sessionExtensionsRemove_unstable(params: { sessionId: string; name: string }): Promise<unknown>;
     shellSessionArtifactsList_unstable(params: {
       sessionId: string;
     }): Promise<ShellArtifactListResponse_unstable>;
@@ -174,6 +188,10 @@ export interface ShellAcpConnection {
   validateDirectory(directory: string): Promise<ShellDirectoryValidateResponse_unstable>;
   listCredentials(): Promise<ShellCredentialListResponse_unstable>;
   listModules(workingDir: string | null): Promise<ShellModuleListResponse_unstable>;
+  listAvailableExtensions(): Promise<GetAvailableExtensionsResponse_unstable>;
+  listSessionExtensions(sessionId: string): Promise<GetSessionExtensionsResponse_unstable>;
+  addSessionExtension(sessionId: string, extension: GoslingExtension): Promise<void>;
+  removeSessionExtension(sessionId: string, name: string): Promise<void>;
   listArtifacts(sessionId: string): Promise<ShellArtifactListResponse_unstable>;
   listLibrary(sessionId: string): Promise<ShellLibraryListResponse_unstable>;
   addLibraryText(
@@ -733,6 +751,32 @@ export async function connectShellAcp(input: {
           'ACP module inventory timed out',
           dependencies
         ),
+      listAvailableExtensions: () =>
+        withTimeout(
+          client.gosling.extensionsAvailable_unstable({}),
+          ACP_PREFLIGHT_TIMEOUT_MS,
+          'ACP available extension inventory timed out',
+          dependencies
+        ),
+      listSessionExtensions: (sessionId) =>
+        withTimeout(
+          client.gosling.sessionExtensionsList_unstable({ sessionId: assertSessionId(sessionId) }),
+          ACP_PREFLIGHT_TIMEOUT_MS,
+          'ACP session extension inventory timed out',
+          dependencies
+        ),
+      addSessionExtension: async (sessionId, extension) => {
+        await client.gosling.sessionExtensionsAdd_unstable({
+          sessionId: assertSessionId(sessionId),
+          extension,
+        });
+      },
+      removeSessionExtension: async (sessionId, name) => {
+        await client.gosling.sessionExtensionsRemove_unstable({
+          sessionId: assertSessionId(sessionId),
+          name,
+        });
+      },
       listArtifacts: (sessionId) =>
         withTimeout(
           client.gosling.shellSessionArtifactsList_unstable({

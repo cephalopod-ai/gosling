@@ -1,6 +1,6 @@
 import type { GoslingShellAPI } from '../../shell/preloadApi';
 import type { ShellTheme } from '../../shell/settingsSchema';
-import type { ShellLibraryScope } from '@repo-makeover/gosling-sdk';
+import type { GoslingExtension, ShellLibraryScope } from '@repo-makeover/gosling-sdk';
 import { asOperationFailure } from '../api';
 import { shellUiReducer } from './reducer';
 import { isDeclared } from './route';
@@ -41,6 +41,9 @@ export interface ShellStoreActions {
   addLibraryImage(name: string, mimeType: string, data: string): Promise<void>;
   linkLibraryFile(): Promise<void>;
   removeLibraryItem(itemId: string): Promise<void>;
+  readExtensions(): Promise<void>;
+  addSessionExtension(extension: GoslingExtension): Promise<void>;
+  removeSessionExtension(name: string): Promise<void>;
   submitPrompt(): Promise<void>;
   cancelPrompt(): Promise<void>;
   respondPermission(actionId: string, allowOnce: boolean): Promise<void>;
@@ -309,6 +312,61 @@ export function createShellStore(api: GoslingShellAPI): ShellStore {
         (response) => {
           if (response.removed) dispatch({ type: 'library/itemRemoved', itemId });
         }
+      );
+    },
+
+    async readExtensions() {
+      if (!requireCapability('session.extensions.read')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      dispatch({ type: 'extensions/loading' });
+      await run(
+        'session.extensions.read',
+        async (current) => {
+          const [availableResponse, sessionResponse] = await Promise.all([
+            api.extensions.listAvailable({ generation: current }),
+            api.extensions.listForSession({ generation: current, sessionId }),
+          ]);
+          return { availableResponse, sessionResponse };
+        },
+        ({ availableResponse, sessionResponse }) =>
+          dispatch({
+            type: 'extensions/loaded',
+            available: availableResponse.extensions ?? [],
+            selected: sessionResponse.extensions ?? [],
+          })
+      );
+    },
+
+    async addSessionExtension(extension) {
+      if (!requireCapability('session.extensions.write')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      await run(
+        'session.extensions.write',
+        (current) => api.extensions.add({ generation: current, sessionId, extension }),
+        (response) =>
+          dispatch({
+            type: 'extensions/loaded',
+            available: state.extensions.available,
+            selected: response.extensions ?? [],
+          })
+      );
+    },
+
+    async removeSessionExtension(name) {
+      if (!requireCapability('session.extensions.write')) return;
+      const sessionId = state.snapshot?.session?.sessionId;
+      if (!sessionId) return;
+      await run(
+        'session.extensions.write',
+        (current) => api.extensions.remove({ generation: current, sessionId, name }),
+        (response) =>
+          dispatch({
+            type: 'extensions/loaded',
+            available: state.extensions.available,
+            selected: response.extensions ?? [],
+          })
       );
     },
 

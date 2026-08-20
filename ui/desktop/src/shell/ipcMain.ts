@@ -28,6 +28,8 @@ import {
   type ShellLibraryLinkFileRequest,
   type ShellLibraryLinkFileResult,
   type ShellLibraryRemoveRequest,
+  type ShellSessionExtensionAddRequest,
+  type ShellSessionExtensionRemoveRequest,
   type ShellSettingsAppearanceUpdateRequest,
   type ShellSettingsModelSelectRequest,
   type ShellSettingsResetRequest,
@@ -35,6 +37,8 @@ import {
 } from './ipc';
 import type { ShellRuntimeSnapshot } from './runtimeSnapshot';
 import type {
+  GetAvailableExtensionsResponse_unstable,
+  GetSessionExtensionsResponse_unstable,
   ShellArtifactListResponse_unstable,
   ShellLibraryAddResponse_unstable,
   ShellLibraryListResponse_unstable,
@@ -72,6 +76,10 @@ const CAPABILITY_BY_CHANNEL: Partial<Record<ShellIpcInvokeChannel, string>> = {
   [shellIpcChannels.sessionLibraryAddImage]: 'session.library.write',
   [shellIpcChannels.sessionLibraryLinkFile]: 'session.library.write',
   [shellIpcChannels.sessionLibraryRemove]: 'session.library.write',
+  [shellIpcChannels.extensionsAvailableRead]: 'session.extensions.read',
+  [shellIpcChannels.sessionExtensionsRead]: 'session.extensions.read',
+  [shellIpcChannels.sessionExtensionsAdd]: 'session.extensions.write',
+  [shellIpcChannels.sessionExtensionsRemove]: 'session.extensions.write',
   [shellIpcChannels.sessionDetach]: 'session.detach',
   [shellIpcChannels.promptSubmit]: 'prompt.submit',
   [shellIpcChannels.promptCancel]: 'prompt.cancel',
@@ -136,6 +144,18 @@ export interface ShellIpcOperations {
   sessionLibraryRemove(
     request: ShellLibraryRemoveRequest
   ): Promise<ShellLibraryRemoveResponse_unstable> | ShellLibraryRemoveResponse_unstable;
+  extensionsAvailableRead(
+    request: ShellGenerationRequest
+  ): Promise<GetAvailableExtensionsResponse_unstable> | GetAvailableExtensionsResponse_unstable;
+  sessionExtensionsRead(
+    request: ShellSessionResumeRequest
+  ): Promise<GetSessionExtensionsResponse_unstable> | GetSessionExtensionsResponse_unstable;
+  sessionExtensionsAdd(
+    request: ShellSessionExtensionAddRequest
+  ): Promise<GetSessionExtensionsResponse_unstable> | GetSessionExtensionsResponse_unstable;
+  sessionExtensionsRemove(
+    request: ShellSessionExtensionRemoveRequest
+  ): Promise<GetSessionExtensionsResponse_unstable> | GetSessionExtensionsResponse_unstable;
   sessionDetach(
     request: ShellGenerationRequest
   ): Promise<ShellSessionDetachResult> | ShellSessionDetachResult;
@@ -384,6 +404,35 @@ function parseLibraryRemoveRequest(value: unknown): ShellLibraryRemoveRequest {
   return value as unknown as ShellLibraryRemoveRequest;
 }
 
+function parseExtensionsAvailableReadRequest(value: unknown): ShellGenerationRequest {
+  return parseGenerationRequest(value);
+}
+
+function parseSessionExtensionAddRequest(value: unknown): ShellSessionExtensionAddRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'extension'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertObject(value.extension, 'extension');
+  const extension = value.extension as Record<string, unknown>;
+  assertString(extension.name, 'extension.name', 256);
+  if (extension.type !== 'builtin' && extension.type !== 'platform' && extension.type !== 'mcp') {
+    throw new Error('extension.type must be builtin, platform, or mcp');
+  }
+  return value as unknown as ShellSessionExtensionAddRequest;
+}
+
+function parseSessionExtensionRemoveRequest(value: unknown): ShellSessionExtensionRemoveRequest {
+  assertRequestBytes(value, MAX_INVOKE_BYTES);
+  assertObject(value, 'request');
+  assertExactKeys(value, ['generation', 'sessionId', 'name'], 'request');
+  assertGeneration(value.generation);
+  assertString(value.sessionId, 'sessionId', 512);
+  assertString(value.name, 'name', 256);
+  return { generation: value.generation, sessionId: value.sessionId, name: value.name };
+}
+
 function parsePromptCancelRequest(value: unknown): ShellPromptCancelRequest {
   assertRequestBytes(value, MAX_INVOKE_BYTES);
   assertObject(value, 'request');
@@ -596,6 +645,10 @@ function responseLimit(channel: ShellIpcInvokeChannel): number {
     channel === shellIpcChannels.sessionTranscriptRead ||
     channel === shellIpcChannels.sessionArtifactsRead ||
     channel === shellIpcChannels.sessionLibraryRead ||
+    channel === shellIpcChannels.extensionsAvailableRead ||
+    channel === shellIpcChannels.sessionExtensionsRead ||
+    channel === shellIpcChannels.sessionExtensionsAdd ||
+    channel === shellIpcChannels.sessionExtensionsRemove ||
     channel === shellIpcChannels.handoffPrepare ||
     channel === shellIpcChannels.domainSnapshot ||
     channel === shellIpcChannels.domainAction ||
@@ -681,6 +734,22 @@ export function registerShellIpc(input: {
     [
       shellIpcChannels.sessionLibraryRemove,
       (request) => operations.sessionLibraryRemove(parseLibraryRemoveRequest(request)),
+    ],
+    [
+      shellIpcChannels.extensionsAvailableRead,
+      (request) => operations.extensionsAvailableRead(parseExtensionsAvailableReadRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionExtensionsRead,
+      (request) => operations.sessionExtensionsRead(parseSessionResumeRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionExtensionsAdd,
+      (request) => operations.sessionExtensionsAdd(parseSessionExtensionAddRequest(request)),
+    ],
+    [
+      shellIpcChannels.sessionExtensionsRemove,
+      (request) => operations.sessionExtensionsRemove(parseSessionExtensionRemoveRequest(request)),
     ],
     [
       shellIpcChannels.sessionDetach,

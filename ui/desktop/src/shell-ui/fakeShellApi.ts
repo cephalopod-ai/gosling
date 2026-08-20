@@ -138,6 +138,12 @@ export function createFakeShellApi(
         record('session.library.write', request, { status: 'canceled' as const }),
       remove: (request) => record('session.library.write', request, { removed: true }),
     },
+    extensions: {
+      listAvailable: (request) => record('session.extensions.read', request, { extensions: [] }),
+      listForSession: (request) => record('session.extensions.read', request, { extensions: [] }),
+      add: (request) => record('session.extensions.write', request, { extensions: [] }),
+      remove: (request) => record('session.extensions.write', request, { extensions: [] }),
+    },
     prompt: {
       submit: (request) => record('prompt.submit', request, { promptAttemptId: 'attempt-1' }),
       cancel: (request) => record('prompt.cancel', request, undefined),

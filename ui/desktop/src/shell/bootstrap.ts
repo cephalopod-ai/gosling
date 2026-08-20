@@ -375,6 +375,28 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
         assertActiveLibrarySession(request.generation, request.sessionId);
         return requireAcp().removeLibraryItem(request.sessionId, request.itemId);
       },
+      extensionsAvailableRead: (request) => {
+        if (request.generation !== controller.read().generation) {
+          throw new Error('extension inventory generation is stale');
+        }
+        return requireAcp().listAvailableExtensions();
+      },
+      sessionExtensionsRead: (request) => {
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        return requireAcp().listSessionExtensions(request.sessionId);
+      },
+      sessionExtensionsAdd: async (request) => {
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        const acp = requireAcp();
+        await acp.addSessionExtension(request.sessionId, request.extension);
+        return acp.listSessionExtensions(request.sessionId);
+      },
+      sessionExtensionsRemove: async (request) => {
+        assertActiveLibrarySession(request.generation, request.sessionId);
+        const acp = requireAcp();
+        await acp.removeSessionExtension(request.sessionId, request.name);
+        return acp.listSessionExtensions(request.sessionId);
+      },
       sessionDetach: (request) => {
         if (request.generation !== controller.read().generation) {
           throw new Error('session detach generation is stale');

@@ -637,6 +637,39 @@ describe('sessions and transcript', () => {
     expect(fake.calls.some((call) => call.operation === 'session.library.read')).toBe(false);
   });
 
+  it('omits extensions when the consumer does not declare extensions read access', async () => {
+    const capabilities = ALL_CAPABILITIES.filter(
+      (capability) => !capability.startsWith('session.extensions.')
+    );
+    const { fake } = await mount({ declaredCapabilities: capabilities });
+    expect(screen.queryByRole('heading', { name: 'Extensions' })).toBeNull();
+    expect(fake.calls.some((call) => call.operation === 'session.extensions.read')).toBe(false);
+  });
+
+  it('lists available extensions and lets the user add a session selection', async () => {
+    const { fake, store } = await mount();
+    act(() => {
+      store.dispatch({
+        type: 'extensions/loaded',
+        available: [{ type: 'builtin', name: 'developer', display_name: 'Developer' }],
+        selected: [],
+      });
+    });
+
+    const checkbox = await screen.findByRole('checkbox', { name: /Developer/ });
+    expect(checkbox).not.toBeChecked();
+
+    await userEvent.click(checkbox);
+
+    expect(
+      fake.calls.find((call) => call.operation === 'session.extensions.write')?.request
+    ).toEqual({
+      generation: 1,
+      sessionId: 'sess-1',
+      extension: { type: 'builtin', name: 'developer', display_name: 'Developer' },
+    });
+  });
+
   it('loads and renders only the safe Outputs projection for the active session', async () => {
     const { fake } = await mount();
     await waitFor(() => {

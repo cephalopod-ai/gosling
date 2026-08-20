@@ -24,12 +24,16 @@ import type {
   ShellLibraryLinkFileRequest,
   ShellLibraryLinkFileResult,
   ShellLibraryRemoveRequest,
+  ShellSessionExtensionAddRequest,
+  ShellSessionExtensionRemoveRequest,
   ShellSettingsAppearanceUpdateRequest,
   ShellSettingsModelSelectRequest,
   ShellSettingsResetRequest,
   ShellSettingsSnapshot,
 } from './ipc';
 import type {
+  GetAvailableExtensionsResponse_unstable,
+  GetSessionExtensionsResponse_unstable,
   ShellArtifactListResponse_unstable,
   ShellLibraryAddResponse_unstable,
   ShellLibraryListResponse_unstable,
@@ -81,6 +85,18 @@ export interface GoslingShellAPI {
     addImage(request: ShellLibraryAddImageRequest): Promise<ShellLibraryAddResponse_unstable>;
     linkFile(request: ShellLibraryLinkFileRequest): Promise<ShellLibraryLinkFileResult>;
     remove(request: ShellLibraryRemoveRequest): Promise<ShellLibraryRemoveResponse_unstable>;
+  };
+  extensions: {
+    listAvailable(
+      request: ShellGenerationRequest
+    ): Promise<GetAvailableExtensionsResponse_unstable>;
+    listForSession(
+      request: ShellSessionResumeRequest
+    ): Promise<GetSessionExtensionsResponse_unstable>;
+    add(request: ShellSessionExtensionAddRequest): Promise<GetSessionExtensionsResponse_unstable>;
+    remove(
+      request: ShellSessionExtensionRemoveRequest
+    ): Promise<GetSessionExtensionsResponse_unstable>;
   };
   prompt: {
     submit(request: ShellPromptSubmitRequest): Promise<ShellPromptSubmitResult>;
