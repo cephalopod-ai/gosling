@@ -423,6 +423,10 @@ Another very long URL: https://www.example.com/very/long/path/with/many/segments
 
       const markdownContainer = document.querySelector('.prose');
       expect(markdownContainer).toBeInTheDocument();
+      expect(markdownContainer).toHaveClass('min-w-0');
+      expect(markdownContainer).toHaveClass('word-break');
+      expect(markdownContainer).toHaveClass('prose-p:whitespace-normal');
+      expect(markdownContainer).toHaveClass('prose-p:break-words');
       expect(markdownContainer).toHaveClass('prose-a:break-all');
       expect(markdownContainer).toHaveClass('prose-a:overflow-wrap-anywhere');
     });
@@ -456,6 +460,56 @@ for the result.`;
         const katexDisplay = container.querySelector('.katex-display');
         expect(katexDisplay).toBeInTheDocument();
       });
+    });
+
+    it('renders ChatGPT-style display and inline LaTeX delimiters', async () => {
+      const content = String.raw`If the density and radius are both scaled, then
+
+\[
+M \sim 23 \times 2.5^3 \approx 359 M_\oplus
+\]
+
+and \(v_{\mathrm{esc}}\) is
+
+\[
+v_{\mathrm{esc}} = 11.2\sqrt{\frac{359}{2.5}}
+\approx 134 \text{ km/s}
+\]`;
+
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
+
+      await waitFor(() => {
+        expect(container.querySelectorAll('.katex-display')).toHaveLength(2);
+        expect(container.querySelectorAll('.katex')).toHaveLength(3);
+      });
+      expect(container.querySelector('.katex-error')).not.toBeInTheDocument();
+      expect(
+        Array.from(container.querySelectorAll('p')).some((paragraph) =>
+          ['[', ']'].includes(paragraph.textContent?.trim() ?? '')
+        )
+      ).toBe(false);
+    });
+
+    it('leaves LaTeX-looking delimiters inside code unchanged', async () => {
+      const content = [
+        'Use \\(x\\) in prose, but keep `\\(inline_code\\)` and:',
+        '',
+        '```text',
+        '\\[',
+        'not_math',
+        '\\]',
+        '```',
+      ].join('\n');
+
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
+
+      await waitFor(() => {
+        expect(container.querySelectorAll('.katex')).toHaveLength(1);
+      });
+      expect(container).toHaveTextContent('\\(inline_code\\)');
+      expect(container).toHaveTextContent('\\[');
+      expect(container).toHaveTextContent('not_math');
+      expect(container).toHaveTextContent('\\]');
     });
 
     it('handles shell commands without triggering math mode', async () => {

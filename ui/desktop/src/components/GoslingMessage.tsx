@@ -106,9 +106,9 @@ function GoslingMessage({
         )}
 
         {(displayText.trim() || imagePaths.length > 0) && (
-          <div className="flex flex-col group">
+          <div className="flex min-w-0 max-w-full flex-col group">
             {displayText.trim() && (
-              <div ref={contentRef} className="w-full">
+              <div ref={contentRef} className="w-full min-w-0 max-w-full">
                 <MarkdownContent content={displayText} onLocalFileLink={handleLocalFileLink} />
                 {!isStreaming && (
                   <ArtifactMessageLinks
