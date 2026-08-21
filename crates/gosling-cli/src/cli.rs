@@ -624,6 +624,50 @@ enum SkillsCommand {
 }
 
 #[derive(Subcommand)]
+enum SecretCommand {
+    /// Store login credentials for a named server (e.g. a VPS) in the system keyring
+    #[command(about = "Store login credentials for a named server in the system keyring")]
+    Set {
+        /// Server name, used as the credential key prefix (e.g. "racknerd" -> RACKNERD_PASSWORD)
+        name: String,
+
+        #[arg(long, help = "Login/username for the server")]
+        login: Option<String>,
+
+        #[arg(long, help = "Password for the server")]
+        password: Option<String>,
+
+        #[arg(long, help = "Hostname or IP address of the server")]
+        host: Option<String>,
+
+        #[arg(long, help = "SSH/connection port for the server")]
+        port: Option<String>,
+    },
+
+    /// Print stored credential fields for a named server
+    #[command(about = "Print stored credential fields for a named server")]
+    Get {
+        /// Server name
+        name: String,
+
+        /// Only print a single field (LOGIN, PASSWORD, HOST, or PORT)
+        #[arg(long)]
+        field: Option<String>,
+    },
+
+    /// Remove all stored credentials for a named server
+    #[command(about = "Remove all stored credentials for a named server")]
+    Remove {
+        /// Server name
+        name: String,
+    },
+
+    /// List server names with stored credentials
+    #[command(about = "List server names with stored credentials")]
+    List,
+}
+
+#[derive(Subcommand)]
 enum McpSubcommand {
     /// Run one of the MCP servers bundled with gosling
     #[command(about = "Run one of the mcp servers bundled with gosling")]
@@ -938,6 +982,13 @@ enum Command {
         command: PluginCommand,
     },
 
+    /// Manage stored server credentials (e.g. VPS login/password)
+    #[command(about = "Manage stored server credentials (e.g. VPS login/password)")]
+    Secret {
+        #[command(subcommand)]
+        command: SecretCommand,
+    },
+
     /// Update the gosling CLI version
     #[cfg(feature = "update")]
     #[command(about = "Update the gosling CLI version")]
@@ -1237,6 +1288,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Update { .. }) => "update",
         Some(Command::Skills { .. }) => "skills",
         Some(Command::Plugin { .. }) => "plugin",
+        Some(Command::Secret { .. }) => "secret",
         Some(Command::Term { .. }) => "term",
         #[cfg(feature = "tui")]
         Some(Command::Tui { .. }) => "tui",
@@ -1987,6 +2039,29 @@ async fn handle_skills_subcommand(command: SkillsCommand) -> Result<()> {
     }
 }
 
+fn handle_secret_subcommand(command: SecretCommand) -> Result<()> {
+    match command {
+        SecretCommand::Set {
+            name,
+            login,
+            password,
+            host,
+            port,
+        } => crate::commands::secret::handle_set(crate::commands::secret::SetArgs {
+            name,
+            login,
+            password,
+            host,
+            port,
+        }),
+        SecretCommand::Get { name, field } => {
+            crate::commands::secret::handle_get(&name, field.as_deref())
+        }
+        SecretCommand::Remove { name } => crate::commands::secret::handle_remove(&name),
+        SecretCommand::List => crate::commands::secret::handle_list(),
+    }
+}
+
 async fn handle_term_subcommand(command: TermCommand) -> Result<()> {
     match command {
         TermCommand::Init {
@@ -2187,6 +2262,7 @@ pub async fn cli() -> anyhow::Result<()> {
         }
         Some(Command::Skills { command }) => handle_skills_subcommand(command).await,
         Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
+        Some(Command::Secret { command }) => handle_secret_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "tui")]
         Some(Command::Tui { args }) => crate::commands::tui::handle_tui(args),

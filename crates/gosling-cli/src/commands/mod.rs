@@ -5,6 +5,7 @@ pub mod mcp;
 pub mod plugin;
 pub mod project;
 pub mod review;
+pub mod secret;
 pub mod session;
 pub mod skills;
 pub mod term;
