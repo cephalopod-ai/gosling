@@ -7,6 +7,7 @@ mod pool_lifecycle;
 mod schema;
 mod session_crud;
 mod session_listing;
+mod session_transfer;
 mod summary_storage;
 mod tool_operations;
 
@@ -24,7 +25,9 @@ use crate::providers::base::Provider;
 #[cfg(test)]
 use crate::session::artifacts::SessionArtifactProvenance;
 use crate::session::artifacts::{DiscoveredArtifact, SessionArtifact};
-use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
+use crate::session::extension_data::ExtensionData;
+#[cfg(test)]
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::library::{NewSessionLibraryContent, SessionLibraryItem, SessionLibraryScope};
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
@@ -1350,185 +1353,6 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
 }
 
 impl SessionStorage {
-    async fn export_session(&self, id: &str) -> Result<String> {
-        let session = self.get_session(id, true).await?;
-        serde_json::to_string_pretty(&session).map_err(Into::into)
-    }
-
-    async fn import_session(
-        &self,
-        session_manager: &SessionManager,
-        json: &str,
-        session_type_override: Option<SessionType>,
-        working_dir: PathBuf,
-        transport: super::import_formats::SessionImportTransport,
-        source_file: Option<(&Path, String)>,
-    ) -> Result<Session> {
-        let source_format = super::import_formats::detect_format(json);
-        let normalized = super::import_formats::convert_to_gosling_session_json(json)?;
-        let mut import: Session = serde_json::from_str(&normalized)?;
-        let effective_working_dir =
-            super::import_formats::validate_import_working_dir(&working_dir)?;
-        let original_working_dir = (!import.working_dir.as_os_str().is_empty())
-            .then(|| import.working_dir.to_string_lossy().to_string());
-        let mut extension_data = import.extension_data.clone();
-        extension_data.remove_extension_state(
-            EnabledExtensionsState::EXTENSION_NAME,
-            EnabledExtensionsState::VERSION,
-        );
-        super::import_formats::SessionImportProvenance {
-            schema_version: 1,
-            transport,
-            source_format: source_format.label().to_string(),
-            original_working_dir,
-            effective_working_dir: effective_working_dir.to_string_lossy().to_string(),
-            imported_at: Utc::now(),
-            history_trusted: false,
-            source_path: source_file
-                .as_ref()
-                .map(|(path, _)| path.to_string_lossy().to_string()),
-            source_sha256: source_file.map(|(_, sha256)| sha256),
-        }
-        .to_extension_data(&mut extension_data)?;
-
-        let imported_conversation = import.conversation.take().map(|conversation| {
-            Conversation::new_unvalidated(conversation.messages().iter().cloned().map(
-                |mut message| {
-                    message.metadata = message.metadata.with_imported_untrusted();
-                    message
-                },
-            ))
-        });
-
-        // Session creation, the metadata update, and the conversation replace
-        // all run in one transaction so a process interruption between them
-        // can't leave an empty, partially-imported session stray behind — a
-        // single commit makes the whole import atomic instead of each step
-        // being its own independently committed transaction.
-        let pool = self.pool().await?;
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-
-        let session = Self::create_session_in_tx(
-            &mut tx,
-            effective_working_dir,
-            import.name.clone(),
-            session_type_override.unwrap_or(import.session_type),
-            GoslingMode::Approve,
-        )
-        .await?;
-
-        let mut builder = session_manager
-            .update(&session.id)
-            .extension_data(extension_data)
-            .restrict_tools_to_working_dirs(true)
-            .usage(import.usage)
-            .accumulated_usage(import.accumulated_usage)
-            .accumulated_cost(import.accumulated_cost);
-
-        if import.user_set_name {
-            builder = builder.user_provided_name(import.name.clone());
-        }
-
-        Self::apply_update_in_tx(&mut tx, builder).await?;
-
-        if let Some(conversation) = imported_conversation {
-            Self::replace_conversation_in_tx(&mut tx, &session.id, &conversation).await?;
-        }
-
-        tx.commit().await?;
-        #[cfg(feature = "telemetry")]
-        crate::posthog::emit_session_started();
-
-        self.get_session(&session.id, true).await
-    }
-
-    async fn copy_session(
-        &self,
-        session_manager: &SessionManager,
-        session_id: &str,
-        new_name: String,
-    ) -> Result<Session> {
-        let original_session = self.get_session(session_id, true).await?;
-
-        // Session creation, the metadata update, the conversation replace,
-        // and the artifact copy all run in one transaction so a process
-        // interruption between them can't leave an empty stray copy behind —
-        // see import_session's identical comment.
-        let pool = self.pool().await?;
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-
-        let new_session = Self::create_session_in_tx(
-            &mut tx,
-            original_session.working_dir.clone(),
-            new_name,
-            original_session.session_type,
-            original_session.gosling_mode,
-        )
-        .await?;
-
-        let mut builder = session_manager
-            .update(&new_session.id)
-            .extension_data(original_session.extension_data)
-            .restrict_tools_to_working_dirs(original_session.restrict_tools_to_working_dirs);
-
-        if !original_session.additional_working_dirs.is_empty() {
-            builder = builder.additional_working_dirs(original_session.additional_working_dirs);
-        }
-
-        if let Some(project_id) = original_session.project_id {
-            builder = builder.project_id(Some(project_id));
-        }
-        if let Some(provider_name) = original_session.provider_name {
-            builder = builder.provider_name(provider_name);
-        }
-        if let Some(model_config) = original_session.model_config {
-            builder = builder.model_config(model_config);
-        }
-        if let (Some(workspace_id), Some(workspace_name), Some(context)) = (
-            original_session.workspace_id,
-            original_session.workspace_name,
-            original_session.workspace_context,
-        ) {
-            builder = builder.workspace_snapshot(
-                workspace_id,
-                workspace_name,
-                original_session.credential_profile_id,
-                original_session.credential_profile_name,
-                original_session.credential_binding_id,
-                context,
-            );
-        }
-        builder = builder.gosling_mode(original_session.gosling_mode);
-        Self::apply_update_in_tx(&mut tx, builder).await?;
-
-        if let Some(conversation) = original_session.conversation {
-            Self::replace_conversation_in_tx(&mut tx, &new_session.id, &conversation).await?;
-        }
-
-        sqlx::query(
-            r#"
-            INSERT INTO session_artifacts (
-                session_id, display_path, resolved_path, base_working_dir, workspace_id,
-                mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
-            )
-            SELECT ?, display_path, resolved_path, base_working_dir, workspace_id,
-                   mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
-            FROM session_artifacts WHERE session_id = ?
-            ON CONFLICT(session_id, resolved_path) DO NOTHING
-            "#,
-        )
-        .bind(&new_session.id)
-        .bind(session_id)
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await?;
-        #[cfg(feature = "telemetry")]
-        crate::posthog::emit_session_started();
-
-        self.get_session(&new_session.id, true).await
-    }
-
     async fn search_chat_history(
         &self,
         query: &str,
