@@ -287,4 +287,316 @@ Risks:
 
 ## Gate 3-4 — Seam log
 
-(Filled in as each seam completes; see commits on this branch.)
+All 12 seams completed, each checkpointed as its own commit on
+`repair/modularize-session-manager-2026-08-22`, verified after every seam
+with `cargo build -p gosling`, `cargo test -p gosling --lib` (1696/1696,
+matching baseline, at every single checkpoint), `cargo fmt -p gosling`, and
+`cargo clippy -p gosling --all-targets -- -D warnings`, plus a repo-wide
+grep-based two-deep connection check per seam confirming every external
+caller still resolves through the unchanged `SessionManager`/`SessionStorage`
+public API.
+
+| # | Seam | Commit | Lines moved |
+|---|---|---|---|
+| 1 | `schema.rs` | `4a18315f8` | ~517 |
+| 2 | `migrations.rs` | `3d0ae83b9` | ~722 |
+| 3 | `legacy_import.rs` | `c2f6da27d` | ~122 |
+| 4 | `pool_lifecycle.rs` | `3d89c76bb` | ~106 |
+| 5 | `tool_operations.rs` | `5c0f39b26` | ~495 |
+| 6 | `message_storage.rs` | `07e0c3729` | ~684 |
+| 7 | `artifacts_storage.rs` | `567d91041` | ~318 |
+| 8 | `library_storage.rs` | `a93c549b7` | ~207 |
+| 9 | `summary_storage.rs` | `39c6f2ffb` | ~204 |
+| 10 | `session_crud.rs` | `2fdbe0168` | ~467 |
+| 11 | `session_listing.rs` | `f11ec202b` | ~222 |
+| 12 | `session_transfer.rs` | `0ae9cd607` | ~175 |
+
+### Rust-specific hazard confirmed during extraction (not hypothetical — hit twice)
+
+`super::x` resolves relative to the *immediate* parent module. The facade's
+own code freely wrote `super::import_formats::...` and
+`super::last_message_snippet::...` meaning `crate::session::import_formats`/
+`crate::session::last_message_snippet` (since the facade's parent is
+`crate::session`). Moving that code one level deeper, into
+`session_manager::session_listing`/`session_manager::session_transfer`,
+changes what `super::` means (now `session_manager`, not `crate::session`).
+Both were compile errors (`E0433`), caught immediately and fixed by
+rewriting to the explicit `crate::session::...` path — recorded here as
+this run's second Rust-specific hazard finding (the first, field-privacy
+direction, is in the Gate 1 inventory above).
+
+### Bug ledger
+
+No MOD-B suspects were found. Every moved function was read in full during
+extraction (Gate 1) and again while fixing each seam's compile errors; none
+showed copy-drift, swallowed errors, unchecked nulls, resource leaks,
+mutable-state hazards, races, off-by-ones, dead branches,
+success-reported-as-error, silent-fallback misconfiguration, injection,
+stale TODOs describing present defects, numeric/unit hazards, or
+docstring/behavior contract mismatches. This is a negative finding, stated
+explicitly rather than by omission.
+
+### Mistakes made and caught during this run (transparency, not polish)
+
+Three mistakes occurred during mechanical extraction, all caught by the
+compiler or the test suite before verification passed — recorded here
+because "verify" in copy-delegate-verify-delete is only meaningful if
+failures are visible, not smoothed over:
+
+1. **Seam 6** (`message_storage.rs`): `has_orphaned_tool_responses` was
+   concatenated inside the `impl SessionStorage` block instead of after it
+   (a shell-script assembly-order mistake). Surfaced immediately as
+   `cannot find function in this scope` on `cargo build`. Fixed before any
+   other check ran.
+2. **Seam 11 / Seam 12**: two `super::` path hazards (above), each a
+   compile error, fixed on sight.
+3. **Seam 12** (`session_transfer.rs`): `copy_session`'s true closing brace
+   was one line past where boundary computation placed it (a manual
+   off-by-one in reading a `sed` preview), leaving the facade with a
+   premature stray `}` and the extracted module missing `copy_session`'s
+   own closing brace. Surfaced as `unexpected closing delimiter` on
+   `cargo build`. Fixed, then re-verified with a full
+   `cargo test -p gosling --lib` run (1696/1696) specifically because a
+   brace-boundary bug is exactly the kind of mistake a compiler catches
+   syntactically but a test suite is needed to confirm didn't also
+   silently relocate a line of logic.
+
+No mistake reached a commit — each was caught by `cargo build`/`cargo test`
+within the same seam's verification step, before checkpointing.
+
+## Gate 5 — Intermediary audit
+
+- **Behavior drift**: none. Every seam is a pure code move; no MOD-B was
+  silently fixed (ledger above is empty by inspection, not by skipping the
+  check).
+- **Import cycles**: not applicable in the language-specific sense — see
+  the Rust-specific note in the Gate 2 plan. No `session_manager::*`
+  submodule imports another in a way that could cycle (they only import
+  `super::` items and occasionally call sibling `Self::` methods, which is
+  not an import-graph edge).
+- **Stale references to moved symbols**: swept via `grep -rn` per seam
+  (recorded in each commit message) plus a final repo-wide pass below
+  (MOD-V02/V03).
+- **Facade/re-export omissions**: verified per seam; the two cases needing
+  an explicit re-export (`ToolOperationStart` via
+  `pub(crate) use tool_operations::ToolOperationStart;`, and
+  `summary_covers_history_before` via a `#[cfg(test)]`-gated `use` for the
+  inline test module) are both in place and build-verified.
+- **Redundancy from the seam**: checked via a repo-wide duplicate-`fn`-name
+  scan across `session_manager.rs` and all 12 submodules — zero duplicates
+  found (see MOD-V06 below for the exact command).
+- **Tests still asserting monolith internals**: none exist. Every one of
+  the ~80 inline tests calls through `SessionManager`'s public API against
+  a real temp-file SQLite store; none reference `SessionStorage`'s internal
+  method locations by path.
+- **Docs/ledgers describing the old structure**: `docs/TODO.md:455-462` was
+  the one living-doc reference (bare file path, no line numbers) and is now
+  updated (Gate 6, below). No other living doc (`architecture.md`,
+  `docs/architecture/*`, ADRs, `README.md`, `AGENTS.md`, `docs/INDEX.md`,
+  `docs/SHELL_PRODUCTS.md`, `docs/INTENT.md`) cites a
+  `session_manager.rs:<line>` reference. `docs/cloud/*.md` and `reports/*`
+  are historical, dated audit/campaign snapshots (27 files cite
+  `session_manager.rs:<line>` across them) — these are frozen records of
+  what was true when each audit ran and are correctly left untouched, not
+  silently ignored; rewriting their line numbers would falsify the
+  historical record they exist to preserve.
+- **Bug ledger completeness for code moved**: covered above — empty,
+  explicitly.
+
+No findings required patching beyond what each seam's own commit already
+fixed (import gaps, visibility, the three mistakes above). No feature, GUI,
+deferred, high-risk, or broad-rewrite findings arose, so nothing needed
+routing elsewhere.
+
+## Gate 6 — Tests, docs, ledgers, and reality sync
+
+- **Tests**: no test changes needed or made. All ~80 inline tests already
+  verify behavior (not monolith internals) and needed no rewriting; every
+  seam's checkpoint reran the full suite unchanged.
+- **New structural regression checks**: none added — this run introduces
+  no new product behavior to test, only code motion.
+- **Docs/links/ledgers updated**: `docs/TODO.md` — see the diff in this
+  commit range; the `session_manager.rs` bullet in the six-file
+  modularization list is now `[x]` with a closure note and a pointer to
+  this log, and the remaining five files are split into their own still-open
+  bullet.
+- **Record closure**: no other source record (defect ledger, audit report,
+  `TODO`/`FIXME` comment) named this specific modularization as an open
+  item beyond `docs/TODO.md`, which is now closed for this file.
+
+## Gate 7 — Final verification sweep
+
+Full baseline command set rerun after all 12 seams, compared against Gate
+2:
+
+```
+cargo build                                        # exit 0, clean
+cargo build -p gosling                             # exit 0, clean
+cargo test -p gosling --lib                        # 1696 passed; 0 failed (matches baseline exactly)
+cargo test -p gosling --lib -p gosling-cli -p gosling-server
+                                                    # 1829 + 246 + 36 passed; 0 failed on the
+                                                    # confirming rerun (one non-reproducing flake
+                                                    # on the first combined run, see MOD-V01 below)
+cargo fmt -p gosling && cargo fmt --check -p gosling  # clean, no pending diff
+cargo clippy -p gosling --all-targets -- -D warnings   # clean
+cargo clippy --workspace --all-targets -- -D warnings  # clean
+```
+
+### MOD-V01 — Regression vs baseline
+
+Checked. `cargo test -p gosling --lib` matches the Gate 2 baseline exactly
+(1696/1696) at every one of the 12 seam checkpoints and again here at the
+end — zero deviation throughout the run.
+
+The wider `cargo test -p gosling --lib -p gosling-cli -p gosling-server`
+run (not part of the Gate 2 baseline, which was scoped to `-p gosling`
+matching this repo's documented `cargo test -p gosling` convention) showed
+1829 gosling-lib tests rather than 1696 — expected: Cargo's feature
+unification activates additional `#[cfg(feature = ...)]`-gated tests when
+built alongside other workspace members, unrelated to this run's changes.
+One test, `tracing::langfuse_layer::tests::test_create_langfuse_observer`
+(a Langfuse-observability test wholly unrelated to session storage),
+failed on the first combined run and passed on an immediate rerun of the
+identical command, and also passed in isolation
+(`cargo test -p gosling --lib tracing::langfuse_layer::tests::test_create_langfuse_observer`).
+Per the flaky-result protocol: both runs are recorded, and this is treated
+as a pre-existing test-isolation flake (very likely a process-global
+env-var race under parallel test execution, a known hazard for
+observability-client tests), not a regression this run introduced —
+nothing in the moved `session_manager` code touches tracing/Langfuse.
+
+### MOD-V02 — Broken source references
+
+Checked, per seam and again in aggregate. No import, re-export, `__all__`-
+equivalent (`pub use` list in `session/mod.rs`), entry point, or
+string-referenced module path was broken: `session/mod.rs`'s `pub use
+session_manager::{...}` and `pub(crate) use session_manager::ToolOperationStart;`
+lines resolve unchanged (verified by successful compilation of every
+dependent crate). No config, DI wiring, or plugin registry references
+`session_manager`'s internal file layout anywhere in the repo (session
+storage has no plugin/registry surface).
+
+### MOD-V03 — Broken doc links
+
+Checked — see Gate 5 and Gate 6 above. One living-doc reference
+(`docs/TODO.md`) updated; historical audit/campaign docs (`docs/cloud/*`,
+`reports/*`, `docs/logs/session/*`) intentionally left with their original
+line-number citations, which remain accurate as historical evidence of
+what was true when each was written.
+
+### MOD-V04 — Orphaned modules and symbols
+
+Checked. Every one of the 12 new `session_manager/*.rs` files is declared
+via `mod ...;` in the facade and is reachable (confirmed by the build
+succeeding — an unreferenced `mod` with `#![warn(unused)]`-equivalent
+lints, and this workspace runs `-D warnings`, would fail otherwise). No
+facade name was left with zero callers: every `pub`/`pub(super)`/
+`pub(crate)` item introduced by this run has at least one caller, verified
+per-seam via grep and by the absence of any clippy `dead_code` finding
+across `cargo clippy --workspace --all-targets -- -D warnings`.
+
+### MOD-V05 — Orphaned processes
+
+Checked. Gate 0 snapshot recorded no dev servers, watchers, or test
+runners for this repo running before the run started. Process check
+re-run now: no `cargo`/`rustc` processes remain running. Snapshot diff
+clean — nothing this run spawned was left behind.
+
+### MOD-V06 — Redundancy
+
+Checked. Repo-wide duplicate-function-name scan across
+`session_manager.rs` and all 12 submodules:
+
+```
+grep -hoE "^\s*(pub\(super\) |pub\(crate\) |pub )?(async )?fn [a-zA-Z_][a-zA-Z0-9_]*" \
+  crates/gosling/src/session/session_manager.rs crates/gosling/src/session/session_manager/*.rs \
+  | sed -E 's/^\s*//;s/^(pub\(super\)|pub\(crate\)|pub) //;s/^async //;s/^fn //' \
+  | sort | uniq -c | sort -rn | awk '$1>1'
+```
+
+Zero duplicates. No facade body was left un-delegated alongside a module
+copy (Rust's own "duplicate definition" compile error made this
+impossible to get wrong silently — see the Gate 2 Rust-specific note).
+
+### MOD-V07 — Module-identity spot checks
+
+N/a, as flagged in the Gate 2 plan: `SessionStorage`'s fields are the only
+module-identity-sensitive item, and every submodule housing a former
+`impl SessionStorage` method is a direct child of `session_manager`
+(verified by the compiler's field-privacy errors during extraction, which
+is exactly the mechanical spot-check this code demanded — see Gate 2's
+Rust-specific note). No serialization path stores a module name (`Session`/
+`SessionSummary`/etc. serialize via serde field names), no
+`getLogger(__name__)`-equivalent logger namespace exists in this file, and
+no string-keyed registry references `session_manager`'s internal layout.
+
+### MOD-V08 — Doc and comment freshness
+
+Checked. Every one of the 12 new modules carries the required header
+comment (single responsibility, `Extracted from ... in a behavior-preserving
+modularization` provenance line, and — where applicable — which facade
+re-export depends on it). No moved code contains a stale comment pointing
+at a line number, section, or "above/below" location that no longer
+applies (verified while reading each seam's extracted text; none of the
+moved code used relative "see above" phrasing to begin with).
+
+### MOD-V09 — Import graph health
+
+Checked. No new import cycles are possible in the Rust sense used here
+(see Gate 2's Rust-specific note — inherent `impl` blocks aren't subject to
+the file-order cycle hazard the language-agnostic hazard catalog assumes).
+No import-time side effects exist in any moved code (no module-level
+`static`/`const` initializers with side effects were moved; `SESSION_STORAGE`
+stays in the facade, untouched).
+
+### MOD-V10 — Test integrity
+
+Checked. Zero test files were edited. No assertion was weakened, no test
+skipped or deleted, no tolerance widened, no snapshot regenerated. The
+full inline suite (~80 tests) passed identically at every one of the 12
+seam checkpoints and at this final sweep.
+
+## Adversarial walkthrough
+
+- **Workflow/data paths**: traced the session-create → message-write →
+  tool-operation → artifact-discovery → summary → export/import/copy chain
+  across its new module boundaries; every cross-module call is a
+  `Self::method(...)` or `self.method(...)` call resolved by the compiler
+  identically to before the move (Rust does not distinguish which file an
+  inherent-impl method lives in).
+- **Imports/re-exports/public APIs**: `crate::session::session_manager::*`
+  (`SessionManager`, `SessionStorage`, `Session`, `SessionType`, and every
+  other name grepped as an external dependency at Gate 2) all resolve
+  unchanged — proven by every downstream crate (`gosling-cli`,
+  `gosling-server`, and `gosling`'s own `acp`/`agents`/`tagteam`/`workspace`
+  modules) compiling clean throughout.
+- **Error paths and fallback behavior**: unchanged — no error-handling
+  code was rewritten, only relocated; the one behavior-relevant read of
+  every moved function (Gate 1) found no fallback logic worth flagging as
+  a MOD-B suspect.
+- **Test coverage for new modules and facade**: the existing inline suite
+  already exercises every extracted responsibility through the facade's
+  public API; no coverage gap was introduced because no new public surface
+  was created (only re-exports of what already existed).
+- **Docs/ledgers/logs describing the new structure**: this log, plus the
+  `docs/TODO.md` closure entry.
+
+## Final status: `completed_verified`
+
+Summary: `crates/gosling/src/session/session_manager.rs` (9349 lines,
+independently pre-authorized by `docs/TODO.md:455-462`) is modularized
+into 12 responsibility-scoped submodules under
+`crates/gosling/src/session/session_manager/`. The facade retains every
+public type, constant, and the `SessionManager` delegating API unchanged;
+`SessionStorage`'s ~4150-line `impl` monolith is fully decomposed. Zero
+behavior changes, zero MOD-B findings, zero test edits, full workspace
+build/test/clippy/fmt clean, one confirmed-flaky (not caused) test
+recorded and explained. Three extraction mistakes were made and caught by
+the compiler/test suite before any checkpoint — recorded above rather than
+smoothed over.
+
+Recommended follow-up: the remaining five files named in
+`docs/TODO.md:459-462` (`acp/server.rs`, `agents/agent.rs`,
+`agents/extension_manager.rs`, `agents/platform_extensions/summon.rs`,
+`ui/desktop/src/main.ts`) remain open, each a separate one-file-per-run
+modularization per this same skill.

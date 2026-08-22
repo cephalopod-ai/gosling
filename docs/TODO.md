@@ -452,9 +452,18 @@ local until a separate push is authorized.
       committed an operation before a transport or process failure. Such operations
       remain visibly in doubt and require external verification; Gosling does not
       retry them automatically.
-- [ ] Modularize the routed >=2000-line files in dedicated changes, preserving
-      behavior and avoiding mixed repair/refactor commits:
-      `crates/gosling/src/session/session_manager.rs`,
+- [x] `crates/gosling/src/session/session_manager.rs` (9349 lines) modularized
+      2026-08-22: the `impl SessionStorage` monolith is carved into 12
+      `session_manager/*.rs` submodules by responsibility (schema,
+      migrations, legacy import, pool lifecycle, tool operations, message
+      storage, artifacts, library, summaries, session CRUD, listing,
+      transfer); the facade (now ~1,460 lines of production code plus the
+      untouched inline test module) keeps every public path unchanged.
+      Behavior-preserving; no MOD-B suspects surfaced. Full run log:
+      [`docs/logs/session/2026-08-22-modularize-session-manager.md`](logs/session/2026-08-22-modularize-session-manager.md).
+- [ ] Modularize the remaining routed >=2000-line files in dedicated
+      changes, preserving behavior and avoiding mixed repair/refactor
+      commits:
       `crates/gosling/src/acp/server.rs`,
       `crates/gosling/src/agents/agent.rs`,
       `crates/gosling/src/agents/extension_manager.rs`,
