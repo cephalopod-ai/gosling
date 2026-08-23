@@ -81,7 +81,7 @@ Relative to the inherited baseline, gosling implements several safety and securi
 | **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
 | **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in cache extension paths. |
 
-## What's included (targeting v1.0.0; current build is 0.1.0)
+## What's included
 
 - **Workspace-aware Desktop chats** - workspace rows filter the chat list without changing the default for future chats. Starting a chat from a workspace action preselects that workspace, while the global New Chat flow preselects the active/default workspace and still allows a per-chat override.
 - **Credential profiles in chat** - the chat composer exposes the credential-profile selector and manager, shows a session's pinned profile, and keeps missing-profile failures visible instead of silently choosing another credential.
@@ -136,9 +136,7 @@ The Rust core owns agent execution, provider contracts, permissions, session per
 
 The current validation reference is the [2026-08-15 live playtest](docs/cloud/2026-08-15-live-all-scenarios-playtest.md): 58 pass, 5 fail, 47 blocked across all 110 scenario cards. Blocked is dominated by Desktop cards, which had no GUI driver — that is missing coverage, not a pass. The [2026-08-15 audit](docs/cloud/2026-08-15-master-report.md) and its [repair campaign](docs/logs/session/2026-08-16-audit-repair-campaign.md) record what was found and what has been fixed since.
 
-The earlier [2026-07-20 playtest](docs/cloud/2026-07-20-live-all-scenarios-playtest.md) (46 pass, 32 fail, 32 blocked, with appended repair closure for 15 findings) is retained as history and should not be read as current.
-
-Before publishing v1.0.0, the release owner must complete the [release checklist](RELEASE_CHECKLIST.md), including the full build, test, Clippy, packaged-GUI, and version-alignment gates. Documentation preparation alone is not release validation.
+The next release candidate is `v1.1.0`. The source manifests must be aligned to `1.1.0` and every gate in the [release checklist](RELEASE_CHECKLIST.md) must pass before publication. The preceding stable GitHub release uses the noncanonical tag `v1.0.1-optimization-and-workspaces`; that historical discrepancy remains documented in the [release process](RELEASE.md) and will not be repaired by moving an existing tag.
 
 ## Known limits
 
@@ -150,7 +148,7 @@ Before publishing v1.0.0, the release owner must complete the [release checklist
 
 ## Get started
 
-Install a published build from the [latest GitHub release](https://github.com/repo-makeover/gosling/releases/latest), or follow the [installation manual](documentation/docs/getting-started/installation.md). After installation, confirm the artifact you received:
+Install a published build from the [latest GitHub release](https://github.com/cephalopod-ai/gosling/releases/latest), or follow the [installation manual](documentation/docs/getting-started/installation.md). After installation, confirm the artifact you received:
 
 ```bash
 gosling --version

@@ -295,12 +295,20 @@ get-prior-version version:
 
 # update version numbers in all manifests
 bump-version version:
+    @just verify-version-surface-paths
     @just validate {{ version }} || exit 1
-    @uvx --from=toml-cli toml set --toml-path=Cargo.toml "workspace.package.version" {{ version }}
-    @cd ui/desktop && npm pkg set "version={{ version }}"
+    @uvx --from=toml-cli toml set --toml-path="{{justfile_directory()}}/Cargo.toml" "workspace.package.version" {{ version }}
+    @cd "{{justfile_directory()}}/ui/desktop" && npm pkg set "version={{ version }}"
     # update Cargo.lock after bumping versions in Cargo.toml
-    @cargo update --workspace
+    @cd "{{justfile_directory()}}" && cargo update --workspace
     @just set-openapi-version {{ version }}
+
+verify-version-surface-paths:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for version_surface in Cargo.toml ui/desktop/package.json ui/desktop/openapi.json; do
+      test -f "{{justfile_directory()}}/$version_surface"
+    done
 
 # rebuild canonical model registry and mapping report from models.dev
 build-canonical-models:
@@ -321,11 +329,11 @@ prepare-release version:
     @git commit --message "chore(release): release version {{ version }}"
 
 set-openapi-version version:
-    @jq '.info.version |= "{{ version }}"' ui/desktop/openapi.json > ui/desktop/openapi.json.tmp && mv ui/desktop/openapi.json.tmp ui/desktop/openapi.json
+    @jq '.info.version |= "{{ version }}"' "{{justfile_directory()}}/ui/desktop/openapi.json" > "{{justfile_directory()}}/ui/desktop/openapi.json.tmp" && mv "{{justfile_directory()}}/ui/desktop/openapi.json.tmp" "{{justfile_directory()}}/ui/desktop/openapi.json"
 
 # extract version from Cargo.toml
 get-tag-version:
-    @uvx --from=toml-cli toml get --toml-path=Cargo.toml "workspace.package.version"
+    @uvx --from=toml-cli toml get --toml-path="{{justfile_directory()}}/Cargo.toml" "workspace.package.version"
 
 # create the git tag from Cargo.toml, checking we're on a release branch
 tag: ensure-release-branch

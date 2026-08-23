@@ -4,39 +4,37 @@ gosling releases are built and published by GitHub Actions from version tags. Pr
 
 ## Current release target
 
-The current release target is **v1.0.0**.
+The next release candidate is **v1.1.0**. This explicit minor release begins a
+new `1.1` line. Thereafter, release versions increment the single-digit patch
+component through `v1.1.1` to `v1.1.9`, then carry to `v1.2.0`.
 
-Release theme:
-
-- independent, release-ready product identity and attribution;
-- workspace-scoped Desktop chats and secure credential profiles;
-- Desktop startup, shutdown, packaged connectivity, and native windowing reliability;
-- session, CLI, ACP, MCP, context, and memory hardening;
-- security improvements around permissions, secrets, paths, plugins, providers, and workflows;
-- a rigorous scenario-card, audit, repair, and documentation evidence trail.
-
-The user-facing summary is in [the v1.0.0 release notes](documentation/docs/release-notes/v1.0.0.md). The maintainer gate is [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+The 2026-08-23 readback found that this checkout's source manifests declare
+`0.1.0`, while the previous stable GitHub release is titled `v1.0.1` but is
+tagged `v1.0.1-optimization-and-workspaces`. That historical tag does not match
+the normal `[v]major.minor.patch` grammar. Preserve it as published history: do
+not retag it or globally replace historical version strings. The historical
+[v1.0.0 release notes](documentation/docs/release-notes/v1.0.0.md) remain a
+point-in-time record, not the current release target.
 
 ## Required version alignment
 
-Before tagging `v1.0.0`, update and review every version-bearing surface, including:
+Before tagging `v1.1.0`, update and review every version-bearing surface for
+`1.1.0`, including:
 
 - `Cargo.toml` workspace package version;
 - workspace package entries in `Cargo.lock`;
 - `ui/desktop/package.json` and the applicable pnpm lockfile entries;
 - `ui/desktop/openapi.json` `info.version` and generated SDK metadata;
 - packaged Desktop metadata and About/version output;
-- README and documentation release notes.
-
-At the 2026-07-20 documentation-preparation pass, the Rust workspace and Desktop package still reported `0.1.0`. Do not create `v1.0.0` until the checklist confirms all runtime and package surfaces report `1.0.0`.
+- README and candidate-specific documentation release notes.
 
 ## Automated release path
 
-1. Run the [minor release workflow](https://github.com/repo-makeover/gosling/actions/workflows/minor-release.yaml) manually, or use its scheduled version-bump PR, if it matches the intended target.
+1. Run the [minor release workflow](https://github.com/cephalopod-ai/gosling/actions/workflows/minor-release.yaml) manually, or use its scheduled version-bump PR, if it matches the intended target.
 2. Review and merge the version-bump PR into `main`.
 3. Use the generated `release/<version>` branch and release PR for QA and release-only corrections.
 4. Complete every required item in `RELEASE_CHECKLIST.md`, including installed artifacts on supported platforms.
-5. Create and push the final `v1.0.0` tag only from the reviewed release commit.
+5. Create and push the final `v1.1.0` tag only from the reviewed release commit.
 6. Confirm `release.yml` completes and the GitHub release contains the expected signed artifacts, checksums, install scripts, and notes.
 7. Perform the post-release checks before promoting updater behavior or announcing availability.
 
@@ -44,11 +42,12 @@ At the 2026-07-20 documentation-preparation pass, the Rust workspace and Desktop
 
 ## Tagging
 
-Use the exact reviewed release commit. Replace `<release-commit>` only after the checklist is complete:
+Use the exact reviewed release commit. Replace `<release-commit>` only after the
+checklist is complete:
 
 ```bash
-git tag -a v1.0.0 <release-commit> -m "gosling v1.0.0"
-git push origin v1.0.0
+git tag -a v1.1.0 <release-commit> -m "gosling v1.1.0"
+git push origin v1.1.0
 ```
 
 Do not move or recreate a published tag to repair an artifact. Fix forward with a new patch version.

@@ -301,13 +301,18 @@ workflows, UI, branding, real publication, and updater promotion remain outside 
 DAWES, math, or other named shell begins only after milestone M5 proves a copy-free neutral consumer
 end to end, unless the operator explicitly accepts a narrower development-only exception.
 
-## v1.0.0 release readiness - 2026-07-20
+## v1.0.0 release preparation — historical
 
 - [x] Prepare the README, release notes, release process, release checklist, user-manual entry points, documentation index, inventory, and stewardship status for v1.0.0.
 - [x] Preserve the historical v0.0.6 note and audit/playtest evidence as point-in-time records.
-- [ ] Change all source, lockfile, generated API, Desktop package, About, and runtime version surfaces from `0.1.0` to `1.0.0` in a dedicated reviewed release change.
-- [ ] Complete every source, documentation, packaged-GUI, signing, checksum, scenario, and clean-install gate in `RELEASE_CHECKLIST.md`.
-- [ ] Tag, publish, verify, and announce v1.0.0. These actions remain maintainer-owned and were not performed by documentation stewardship.
+- [x] Preserve the original v1.0.0 preparation record without rewriting its published historical tag.
+
+## v1.1.0 release readiness — 2026-08-23
+
+- [x] Select `v1.1.0` as the next candidate and preserve the noncanonical historical `v1.0.1-optimization-and-workspaces` tag.
+- [x] Align the workspace, lockfile, Desktop package, and OpenAPI version surfaces to `1.1.0`.
+- [ ] Complete every source, documentation, packaged-GUI, signing, checksum, scenario, clean-install, and GitHub-readiness gate in `RELEASE_CHECKLIST.md`.
+- [ ] Tag, publish, verify, and announce `v1.1.0` only after every release gate is complete.
 
 ## Chat reliability and CLI usage backlog — 2026-07-17
 

@@ -1,12 +1,14 @@
-# gosling v1.0.0 Release Checklist
+# gosling Release Checklist
 
-This is a maintainer-owned publish gate. Documentation preparation does not check any item automatically.
+This is a maintainer-owned publish gate. Documentation preparation does not check
+any item automatically. The current candidate is `v1.1.0`; preserve published
+historical tags rather than rewriting them.
 
 ## Version and source identity
 
 - [ ] The release commit is reviewed, immutable for the tag, and based on the intended `main` revision.
-- [ ] `Cargo.toml`, `Cargo.lock`, `ui/desktop/package.json`, pnpm lockfiles, OpenAPI metadata, generated SDK metadata, packaged app metadata, About, and `gosling --version` all report `1.0.0`.
-- [ ] `README.md`, `RELEASE.md`, and `documentation/docs/release-notes/v1.0.0.md` match the final release scope.
+- [ ] `Cargo.toml`, `Cargo.lock`, `ui/desktop/package.json`, pnpm lockfiles, OpenAPI metadata, generated SDK metadata, packaged app metadata, About, and `gosling --version` all report the selected candidate version.
+- [ ] `README.md`, `RELEASE.md`, and the candidate release notes match the final release scope.
 - [ ] Contributor and goose upstream attribution remain intact.
 - [ ] No release note claims a test, platform, signature, updater state, or artifact that was not observed.
 
@@ -48,14 +50,14 @@ This is a maintainer-owned publish gate. Documentation preparation does not chec
 - [ ] Every expected CLI and Desktop artifact is present, named correctly, and associated with the correct OS/architecture.
 - [ ] Checksums verify against downloaded artifacts.
 - [ ] macOS and Windows signatures are verified where applicable.
-- [ ] The install scripts resolve `v1.0.0` correctly in an isolated environment.
-- [ ] The GitHub release body uses the final v1.0.0 notes and contains no inherited goose release boilerplate.
+- [ ] The install scripts resolve the candidate version correctly in an isolated environment.
+- [ ] The GitHub release body uses the final candidate notes and contains no inherited goose release boilerplate.
 
 ## Publish and post-release
 
-- [ ] Create and push `v1.0.0` only after all blocking items above are complete.
+- [ ] Create and push the selected candidate tag only after all blocking items above are complete.
 - [ ] Confirm the tag-triggered `release.yml` run succeeds.
 - [ ] Read back the GitHub release, assets, checksums, and install commands from an unauthenticated client.
-- [ ] Confirm `releases/latest` and the stable install path resolve to v1.0.0 only after publication is complete.
+- [ ] Confirm `releases/latest` and the stable install path resolve to the candidate version only after publication is complete.
 - [ ] Keep native macOS auto-update disabled until a compatible shipped version and updater metadata make promotion safe.
 - [ ] Record any failed or deferred gate in the release notes or a follow-up issue; do not silently waive it.

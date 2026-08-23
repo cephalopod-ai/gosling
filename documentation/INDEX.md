@@ -20,6 +20,7 @@ This file is the durable map for the repository's documentation surface.
 - [workspaces guide](./docs/guides/workspaces.md)
 - [troubleshooting](./docs/troubleshooting/)
 - [v1.0.0 release notes](./docs/release-notes/v1.0.0.md)
+- [v1.1.0 candidate notes](./docs/release-notes/v1.1.0.md)
 - [release-note archive](./docs/release-notes/)
 - [tutorials](./docs/tutorials/)
 - [experimental](./docs/experimental/)
@@ -47,7 +48,7 @@ This file is the durable map for the repository's documentation surface.
 - Root `README.md` is the product entry point; `documentation/README.md` is the docs-site build and publishing guide.
 - Session-share deep links are documented with the `gosling://` scheme only. Legacy `goose://` share-link compatibility is not part of the current docs contract.
 - Durable documentation governance artifacts currently live in this directory as point-in-time records rather than a full log/archive program.
-- v1.0.0 documentation is prepared, but version alignment, validation, tagging, signing, publication, and updater promotion remain maintainer-owned release gates.
+- The next release candidate is `v1.1.0`. Source alignment, validation, tagging, signing, publication, and updater promotion remain maintainer-owned release gates; see [the release process](../RELEASE.md).
 
 ## open follow-ups
 
