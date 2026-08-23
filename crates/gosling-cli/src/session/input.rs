@@ -23,6 +23,7 @@ pub enum InputResult {
     Model(Option<String>),
     Plan(PlanCommandOptions),
     EndPlan,
+    Status,
     Clear,
     Compact,
     ToggleFullToolOutput,
@@ -203,6 +204,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_MODEL_WITH_SPACE: &str = "/model ";
     const CMD_PLAN: &str = "/plan";
     const CMD_ENDPLAN: &str = "/endplan";
+    const CMD_STATUS: &str = "/status";
     const CMD_CLEAR: &str = "/clear";
     const CMD_COMPACT: &str = "/compact";
     const CMD_SUMMARIZE_DEPRECATED: &str = "/summarize";
@@ -282,6 +284,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
             parse_plan_command(s.get(CMD_PLAN.len()..).unwrap_or("").trim().to_string())
         }
         s if s == CMD_ENDPLAN => Some(InputResult::EndPlan),
+        s if s == CMD_STATUS => Some(InputResult::Status),
         s if s == CMD_CLEAR => Some(InputResult::Clear),
         s if s == CMD_COMPACT => Some(InputResult::Compact),
         // Match "/skills" exactly or "/skills " with args - avoids matching e.g. "/skillsextra"
@@ -497,6 +500,10 @@ mod tests {
         assert!(matches!(
             handle_slash_command("/model   "),
             Some(InputResult::Model(None))
+        ));
+        assert!(matches!(
+            handle_slash_command("/status"),
+            Some(InputResult::Status)
         ));
         if let Some(InputResult::Model(Some(model))) = handle_slash_command("/model gpt-4.1") {
             assert_eq!(model, "gpt-4.1");

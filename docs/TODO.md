@@ -311,9 +311,11 @@ end to end, unless the operator explicitly accepts a narrower development-only e
       message as soon as Enter is submitted, and store assistant output as it is
       written to the chat window, so an abrupt Gosling exit does not erase the last
       chat item.
-- [ ] For CLI usage with subscription-backed providers where usage data is
-      available, including Codex and Claude, add a way to inspect current usage
-      during a session.
+- [x] For CLI usage with subscription-backed providers where usage data is
+      available, including Codex and Claude, `/status` now shows provider,
+      model, mode, current-turn tokens, and accumulated session tokens. It
+      reports unavailable usage honestly and does not estimate a remaining
+      account allowance.
 
 ## Tagteam workflow, MCP control plane, and Run Steward
 

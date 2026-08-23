@@ -625,6 +625,9 @@ impl CliSession {
                 self.run_mode = RunMode::Normal;
                 output::render_exit_plan_mode();
             }
+            InputResult::Status => {
+                self.display_session_status().await?;
+            }
             InputResult::Clear => {
                 history.save(editor);
                 self.handle_clear().await?;
@@ -1729,6 +1732,25 @@ impl CliSession {
         }
 
         Ok(())
+    }
+
+    async fn display_session_status(&self) -> Result<()> {
+        let provider = self.agent.provider().await?;
+        let model_config = self
+            .agent
+            .model_config_for_session(&self.session_id)
+            .await?;
+        let mode = Config::global().get_gosling_mode().unwrap_or_default();
+        let session = self.get_session().await?;
+
+        output::display_session_status(
+            provider.get_name(),
+            &model_config.model_name,
+            &mode.to_string(),
+            &session.usage,
+            &session.accumulated_usage,
+        );
+        self.display_context_usage().await
     }
 
     /// Handle prompt command execution

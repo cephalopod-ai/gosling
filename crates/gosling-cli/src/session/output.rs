@@ -1434,6 +1434,67 @@ pub fn display_context_usage(total_tokens: usize, context_limit: usize) {
     );
 }
 
+fn format_token_count(tokens: i32) -> String {
+    match tokens {
+        1_000_000.. => format!("{:.1}M", tokens as f64 / 1_000_000.0),
+        1_000.. => format!("{:.0}k", tokens as f64 / 1_000.0),
+        _ => tokens.to_string(),
+    }
+}
+
+fn format_usage(usage: &Usage) -> Option<String> {
+    let mut values = Vec::new();
+
+    if let Some(total) = usage.total_tokens {
+        values.push(format!("{} total", format_token_count(total)));
+    }
+    if let Some(input) = usage.input_tokens {
+        values.push(format!("{} input", format_token_count(input)));
+    }
+    if let Some(output) = usage.output_tokens {
+        values.push(format!("{} output", format_token_count(output)));
+    }
+    if let Some(cache_read) = usage.cache_read_input_tokens {
+        values.push(format!("{} cache read", format_token_count(cache_read)));
+    }
+    if let Some(cache_write) = usage.cache_write_input_tokens {
+        values.push(format!("{} cache write", format_token_count(cache_write)));
+    }
+
+    (!values.is_empty()).then(|| values.join(", "))
+}
+
+pub fn display_session_status(
+    provider: &str,
+    model: &str,
+    mode: &str,
+    current_usage: &Usage,
+    accumulated_usage: &Usage,
+) {
+    use console::style;
+
+    println!("\n{}", style("Session status:").cyan().bold());
+    println!("  {:<10} {}", "Provider:", provider);
+    println!("  {:<10} {}", "Model:", model);
+    println!("  {:<10} {}", "Mode:", mode);
+    println!("\n{}", style("Subscription token usage:").cyan().bold());
+
+    for (label, usage) in [
+        ("This turn:", current_usage),
+        ("This session:", accumulated_usage),
+    ] {
+        match format_usage(usage) {
+            Some(summary) => println!("  {:<14} {}", label, summary),
+            None => println!("  {:<14} provider did not report token usage", label),
+        }
+    }
+
+    println!(
+        "  {}",
+        style("Account allowance is not exposed by the provider in this session.").dim()
+    );
+}
+
 fn estimate_cost_usd(provider: &str, model: &str, usage: &Usage) -> Option<f64> {
     let canonical_model = maybe_get_canonical_model(provider, model)?;
     canonical_model.cost.estimate_cost(usage)
@@ -1541,6 +1602,22 @@ mod tests {
         assert_eq!(shorten_path("/usr/bin", false), "/usr/bin");
         assert_eq!(shorten_path("/a/b/c", false), "/a/b/c");
         assert_eq!(shorten_path("file.txt", false), "file.txt");
+    }
+
+    #[test]
+    fn format_usage_includes_all_reported_token_categories() {
+        let usage =
+            Usage::new(Some(1_250), Some(80), Some(1_330)).with_cache_tokens(Some(1_000), Some(25));
+
+        assert_eq!(
+            format_usage(&usage),
+            Some("1k total, 1k input, 80 output, 1k cache read, 25 cache write".to_string())
+        );
+    }
+
+    #[test]
+    fn format_usage_omits_missing_provider_usage() {
+        assert_eq!(format_usage(&Usage::default()), None);
     }
 
     #[test]
