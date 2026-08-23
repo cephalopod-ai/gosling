@@ -8,7 +8,7 @@ use axum::routing::get;
 use axum::Router;
 use minijinja::render;
 use oauth2::TokenResponse;
-use rmcp::transport::auth::{CredentialStore, OAuthState, StoredCredentials};
+use rmcp::transport::auth::{CredentialStore, OAuthClientConfig, OAuthState, StoredCredentials};
 use rmcp::transport::AuthorizationManager;
 use serde::Deserialize;
 use std::net::SocketAddr;
@@ -21,6 +21,13 @@ const CALLBACK_TEMPLATE: &str = include_str!("oauth_callback.html");
 const CLIENT_METADATA_URL: &str = "https://gosling-docs.ai/oauth/client-metadata.json";
 const DEFAULT_OAUTH_CALLBACK_TIMEOUT_SECS: u64 = 300;
 const OAUTH_CALLBACK_TIMEOUT_ENV: &str = "GOSLING_OAUTH_CALLBACK_TIMEOUT_SECONDS";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StaticOAuthClientConfig {
+    pub client_id: String,
+    pub client_secret: Option<String>,
+    pub scopes: Vec<String>,
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -85,7 +92,12 @@ async fn wait_for_callback(
 pub async fn oauth_flow(
     mcp_server_url: &String,
     name: &String,
+    static_client: Option<&StaticOAuthClientConfig>,
 ) -> Result<AuthorizationManager, anyhow::Error> {
+    if let Some(static_client) = static_client {
+        return oauth_flow_with_static_client(mcp_server_url, name, static_client).await;
+    }
+
     let credential_store = GoslingCredentialStore::new(name.clone());
     let mut auth_manager = AuthorizationManager::new(mcp_server_url).await?;
     auth_manager.set_credential_store(credential_store.clone());
@@ -205,6 +217,118 @@ pub async fn oauth_flow(
 
     auth_manager.set_credential_store(credential_store);
 
+    Ok(auth_manager)
+}
+
+async fn oauth_flow_with_static_client(
+    mcp_server_url: &str,
+    name: &str,
+    static_client: &StaticOAuthClientConfig,
+) -> Result<AuthorizationManager, anyhow::Error> {
+    let credential_store = GoslingCredentialStore::new(name.to_string());
+    let mut auth_manager = AuthorizationManager::new(mcp_server_url).await?;
+    auth_manager.set_credential_store(credential_store.clone());
+
+    if let Some(stored) = credential_store.load().await? {
+        let has_required_scopes = static_client
+            .scopes
+            .iter()
+            .all(|scope| stored.granted_scopes.contains(scope));
+        if stored.client_id == static_client.client_id && has_required_scopes {
+            let metadata = auth_manager.discover_metadata().await?;
+            auth_manager.set_metadata(metadata);
+            let mut config = OAuthClientConfig::new(&static_client.client_id, mcp_server_url);
+            if let Some(secret) = &static_client.client_secret {
+                config = config.with_client_secret(secret);
+            }
+            if !static_client.scopes.is_empty() {
+                config = config.with_scopes(static_client.scopes.clone());
+            }
+            auth_manager.configure_client(config)?;
+
+            match auth_manager.refresh_token().await {
+                Ok(_) => return Ok(auth_manager),
+                Err(error) => warn!(
+                    "[OAuth:{}] Token refresh failed: {} - clearing stored credentials and falling back to browser auth",
+                    name, error
+                ),
+            }
+        }
+
+        if let Err(error) = credential_store.clear().await {
+            warn!("[OAuth:{}] error clearing bad credentials: {}", name, error);
+        }
+    }
+
+    let (code_sender, code_receiver) = oneshot::channel::<CallbackParams>();
+    let app_state = AppState {
+        code_receiver: Arc::new(Mutex::new(Some(code_sender))),
+    };
+    let rendered = render!(CALLBACK_TEMPLATE, name => name);
+    let handler = move |Query(params): Query<CallbackParams>, State(state): State<AppState>| {
+        let rendered = rendered.clone();
+        async move {
+            if let Some(sender) = state.code_receiver.lock().await.take() {
+                let _ = sender.send(params);
+            }
+            Html(rendered)
+        }
+    };
+    let app = Router::new()
+        .route("/oauth_callback", get(handler))
+        .with_state(app_state);
+    let port: u16 = std::env::var("GOSLING_OAUTH_CALLBACK_PORT")
+        .ok()
+        .and_then(|port| port.parse().ok())
+        .unwrap_or(0);
+    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
+    let used_addr = listener.local_addr()?;
+    let server_handle = tokio::spawn(async move {
+        if let Err(error) = axum::serve(listener, app).await {
+            eprintln!("Callback server error: {}", error);
+        }
+    });
+
+    let metadata = auth_manager.discover_metadata().await?;
+    auth_manager.set_metadata(metadata);
+    let redirect_uri = format!("http://127.0.0.1:{}/oauth_callback", used_addr.port());
+    let mut config = OAuthClientConfig::new(&static_client.client_id, redirect_uri);
+    if let Some(secret) = &static_client.client_secret {
+        config = config.with_client_secret(secret);
+    }
+    if !static_client.scopes.is_empty() {
+        config = config.with_scopes(static_client.scopes.clone());
+    }
+    auth_manager.configure_client(config)?;
+    let scopes = static_client
+        .scopes
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let authorization_url = auth_manager.get_authorization_url(&scopes).await?;
+    announce_authorization_url(name, &authorization_url);
+    if let Err(error) = webbrowser::open(&authorization_url) {
+        warn!(
+            "[OAuth:{}] Failed to open browser automatically: {}",
+            name, error
+        );
+    }
+
+    let callback_params = wait_for_callback(
+        code_receiver,
+        oauth_callback_timeout(),
+        name,
+        &authorization_url,
+    )
+    .await;
+    server_handle.abort();
+    let CallbackParams {
+        code: auth_code,
+        state: csrf_token,
+    } = callback_params?;
+    auth_manager
+        .exchange_code_for_token(&auth_code, &csrf_token)
+        .await?;
     Ok(auth_manager)
 }
 

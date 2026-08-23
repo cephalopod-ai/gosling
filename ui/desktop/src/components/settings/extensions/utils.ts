@@ -39,6 +39,10 @@ export interface ExtensionFormData {
   }[];
   installation_notes?: string;
   available_tools?: string[];
+  socket?: string | null;
+  client_id?: string | null;
+  client_secret_key?: string | null;
+  scopes?: string[] | null;
 }
 
 export function getDefaultFormData(): ExtensionFormData {
@@ -110,7 +114,10 @@ export function extensionToFormData(extension: FixedExtensionEntry): ExtensionFo
       extension.type === 'platform'
         ? 'stdio'
         : extension.type,
-    cmd: extension.type === 'stdio' ? combineCmdAndArgs(extension.cmd, extension.args ?? []) : undefined,
+    cmd:
+      extension.type === 'stdio'
+        ? combineCmdAndArgs(extension.cmd, extension.args ?? [])
+        : undefined,
     endpoint:
       extension.type === 'streamable_http' || extension.type === 'sse'
         ? (extension.uri ?? undefined)
@@ -122,6 +129,14 @@ export function extensionToFormData(extension: FixedExtensionEntry): ExtensionFo
     installation_notes: (extension as Record<string, unknown>)['installation_notes'] as
       | string
       | undefined,
+    ...(extension.type === 'streamable_http'
+      ? {
+          socket: extension.socket,
+          client_id: extension.client_id,
+          client_secret_key: extension.client_secret_key,
+          scopes: extension.scopes,
+        }
+      : {}),
     ...(availableTools ? { available_tools: availableTools } : {}),
   };
 }
@@ -173,6 +188,10 @@ export function createExtensionConfig(formData: ExtensionFormData): ExtensionCon
       uri: formData.endpoint || '',
       ...(env_keys.length > 0 ? { env_keys } : {}),
       headers,
+      ...(formData.socket ? { socket: formData.socket } : {}),
+      ...(formData.client_id ? { client_id: formData.client_id } : {}),
+      ...(formData.client_secret_key ? { client_secret_key: formData.client_secret_key } : {}),
+      ...(formData.scopes && formData.scopes.length > 0 ? { scopes: formData.scopes } : {}),
       ...availableToolsConfig(formData.available_tools),
     };
   } else if (formData.type === 'builtin') {

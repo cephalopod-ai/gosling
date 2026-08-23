@@ -1,5 +1,5 @@
-import { Sliders, Bot, LoaderCircle } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import { Sliders, Bot, History, LoaderCircle } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import { SwitchModelModal } from '../subcomponents/SwitchModelModal';
 import { View } from '../../../../utils/navigationUtils';
@@ -7,13 +7,18 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../ui/dropdown-menu';
-import { getProviderMetadata } from '../modelInterface';
+import { fetchModelReasoning, getProviderMetadata } from '../modelInterface';
 import { getModelDisplayName } from '../predefinedModelsUtils';
+import { acpReadThinkingEffort } from '../../../../acp/providers';
 
 import { defineMessages, useIntl } from '../../../../i18n';
 import type { Message } from '../../../../types/message';
+import type { RecentModel } from '../../../../utils/settings';
+import { addToRecentModels } from '../../../../utils/recentModels';
+import { trackModelChanged } from '../../../../utils/analytics';
 
 const i18n = defineMessages({
   selectModel: {
@@ -35,6 +40,10 @@ const i18n = defineMessages({
   resolvedModel: {
     id: 'modelsBottomBar.resolvedModel',
     defaultMessage: 'Resolved model',
+  },
+  recentModels: {
+    id: 'modelsBottomBar.recentModels',
+    defaultMessage: 'Recent',
   },
 });
 
@@ -61,7 +70,11 @@ export default function ModelsBottomBar({
 }: ModelsBottomBarProps) {
   // ChatInput owns the override state and passes effective model/provider as sessionModel/sessionProvider.
   // Fall back to config defaults when no session-specific model is available.
-  const { currentModel: configModel, currentProvider: configProvider } = useModelAndProvider();
+  const {
+    currentModel: configModel,
+    currentProvider: configProvider,
+    changeModel,
+  } = useModelAndProvider();
   const currentModel = sessionModel ?? configModel;
   const currentProvider = sessionProvider ?? configProvider;
 
@@ -72,6 +85,16 @@ export default function ModelsBottomBar({
   );
   const [isAddModelModalOpen, setIsAddModelModalOpen] = useState(false);
   const [providerDefaultModel, setProviderDefaultModel] = useState<string | null>(null);
+  const [recentModels, setRecentModels] = useState<RecentModel[]>([]);
+
+  const loadRecentModels = useCallback(async () => {
+    const stored = (await window.electron.getSetting('recentModels')) ?? [];
+    setRecentModels(stored);
+  }, []);
+
+  useEffect(() => {
+    void loadRecentModels();
+  }, [loadRecentModels]);
 
   // Show a visible loading placeholder while session metadata is still being fetched,
   // rather than flashing the config default or leaving the footer blank.
@@ -128,8 +151,39 @@ export default function ModelsBottomBar({
   );
 
   const handleModelSelected = (model: string, provider: string) => {
+    void loadRecentModels();
     onModelChanged({ model, provider });
   };
+
+  const handleRecentModelClick = async (recent: RecentModel) => {
+    const previousModel = currentModel;
+    const previousProvider = currentProvider;
+    const [reasoning, savedEffort] = await Promise.all([
+      fetchModelReasoning(recent.provider, recent.model),
+      acpReadThinkingEffort().catch(() => null),
+    ]);
+    const model = reasoning
+      ? {
+          name: recent.model,
+          provider: recent.provider,
+          request_params: { thinking_effort: savedEffort ?? 'off' },
+        }
+      : { name: recent.model, provider: recent.provider };
+    const success = await changeModel(sessionId, model);
+    if (!success) return;
+
+    trackModelChanged(recent.provider, recent.model);
+    if (previousModel && previousProvider) {
+      const updated = addToRecentModels(recentModels, previousProvider, previousModel);
+      await window.electron.setSetting('recentModels', updated);
+      setRecentModels(updated);
+    }
+    onModelChanged({ model: recent.model, provider: recent.provider });
+  };
+
+  const filteredRecentModels = recentModels.filter(
+    (recent) => !(recent.model === currentModel && recent.provider === currentProvider)
+  );
 
   return (
     <div className="relative flex items-center" ref={dropdownRef}>
@@ -167,6 +221,25 @@ export default function ModelsBottomBar({
                 {resolvedDisplayModelName}
               </p>
             </div>
+          )}
+          {filteredRecentModels.length > 0 && (
+            <>
+              <h6 className="text-xs text-text-primary mt-2 ml-2">
+                {intl.formatMessage(i18n.recentModels)}
+              </h6>
+              {filteredRecentModels.map((recent) => (
+                <DropdownMenuItem
+                  key={`${recent.provider}/${recent.model}`}
+                  onClick={() => void handleRecentModelClick(recent)}
+                >
+                  <History className="mr-2 h-3.5 w-3.5 flex-shrink-0 text-text-secondary" />
+                  <span className="truncate">
+                    {getModelDisplayName(recent.model)} — {recent.provider}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+            </>
           )}
           <DropdownMenuItem onClick={() => setIsAddModelModalOpen(true)}>
             <span>{intl.formatMessage(i18n.changeModel)}</span>

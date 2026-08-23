@@ -47,7 +47,7 @@ use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
 use crate::config::{get_all_extensions, AdapterRegistration, CodeExecutionRuntime, Config};
-use crate::oauth::{oauth_flow, GoslingCredentialStore};
+use crate::oauth::{oauth_flow, GoslingCredentialStore, StaticOAuthClientConfig};
 use crate::prompt_template;
 use crate::subprocess::{configure_shell_owned_subprocess, configure_subprocess};
 use rmcp::model::{
@@ -1157,6 +1157,55 @@ pub(crate) fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>
     result
 }
 
+#[allow(clippy::result_large_err)]
+fn resolve_static_oauth_client(
+    client_id: Option<&str>,
+    client_secret_key: Option<&str>,
+    scopes: &[String],
+    envs: &HashMap<String, String>,
+    config: &Config,
+) -> ExtensionResult<Option<StaticOAuthClientConfig>> {
+    let Some(client_id) = client_id else {
+        if client_secret_key.is_some() || !scopes.is_empty() {
+            return Err(ExtensionError::ConfigError(
+                "client_secret_key and scopes require client_id for streamable_http OAuth"
+                    .to_string(),
+            ));
+        }
+        return Ok(None);
+    };
+
+    let client_id = substitute_env_vars(client_id, envs);
+    if client_id.trim().is_empty() {
+        return Err(ExtensionError::ConfigError(
+            "client_id for streamable_http OAuth cannot be empty".to_string(),
+        ));
+    }
+
+    let client_secret = match client_secret_key {
+        Some(key) => match envs.get(key) {
+            Some(value) => Some(value.clone()),
+            None => config
+                .get_secret::<String>(key)
+                .ok()
+                .filter(|value| !value.is_empty()),
+        },
+        None => None,
+    };
+    if client_secret_key.is_some() && client_secret.is_none() {
+        return Err(ExtensionError::ConfigError(format!(
+            "OAuth client secret '{}' was not found",
+            client_secret_key.unwrap_or_default()
+        )));
+    }
+
+    Ok(Some(StaticOAuthClientConfig {
+        client_id,
+        client_secret,
+        scopes: scopes.to_vec(),
+    }))
+}
+
 const GOSLING_USER_AGENT: reqwest::header::HeaderValue =
     reqwest::header::HeaderValue::from_static(concat!("gosling/", env!("CARGO_PKG_VERSION")));
 
@@ -1216,6 +1265,7 @@ async fn create_streamable_http_client(
     headers: &HashMap<String, String>,
     name: &str,
     socket: Option<&str>,
+    static_oauth_client: Option<StaticOAuthClientConfig>,
     credential_store: Box<dyn CredentialStore>,
     provider: SharedProvider,
     client_name: String,
@@ -1278,7 +1328,13 @@ async fn create_streamable_http_client(
     // If we have stored OAuth credentials, try refreshing and connecting directly.
     // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
     if credential_store.load().await.is_ok_and(|c| c.is_some()) {
-        match oauth_flow(&uri.to_string(), &name.to_string()).await {
+        match oauth_flow(
+            &uri.to_string(),
+            &name.to_string(),
+            static_oauth_client.as_ref(),
+        )
+        .await
+        {
             Ok(auth_manager) => {
                 let auth_result = connect_with_auth(
                     auth_manager,
@@ -1331,7 +1387,13 @@ async fn create_streamable_http_client(
     .await;
 
     if should_attempt_oauth_fallback(&client_res) {
-        match oauth_flow(&uri.to_string(), &name.to_string()).await {
+        match oauth_flow(
+            &uri.to_string(),
+            &name.to_string(),
+            static_oauth_client.as_ref(),
+        )
+        .await
+        {
             Ok(auth_manager) => {
                 connect_with_auth(
                     auth_manager,
@@ -1552,6 +1614,9 @@ impl ExtensionManager {
                 envs,
                 env_keys,
                 socket,
+                client_id,
+                client_secret_key,
+                scopes,
                 ..
             } => {
                 let config = Config::global();
@@ -1562,12 +1627,20 @@ impl ExtensionManager {
                     .map(|(k, v)| (k.clone(), substitute_env_vars(v, &all_envs)))
                     .collect();
                 let resolved_socket = socket.as_ref().map(|s| substitute_env_vars(s, &all_envs));
+                let static_oauth_client = resolve_static_oauth_client(
+                    client_id.as_deref(),
+                    client_secret_key.as_deref(),
+                    scopes,
+                    &all_envs,
+                    config,
+                )?;
                 create_streamable_http_client(
                     &resolved_uri,
                     *timeout,
                     &resolved_headers,
                     name,
                     resolved_socket.as_deref(),
+                    static_oauth_client,
                     Box::new(GoslingCredentialStore::new(name.to_string())),
                     self.provider.clone(),
                     self.client_name.clone(),
@@ -4102,6 +4175,83 @@ mod tests {
         assert!(should_attempt_oauth_fallback(&Err(err)));
     }
 
+    #[test]
+    fn resolve_static_oauth_client_uses_registered_client_values() {
+        let config_dir = tempdir().unwrap();
+        let config = Config::new_with_file_secrets(
+            config_dir.path().join("config.yaml"),
+            config_dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        let envs = HashMap::from([
+            ("MCP_CLIENT_ID".to_string(), "registered-client".to_string()),
+            (
+                "MCP_CLIENT_SECRET".to_string(),
+                "registered-secret".to_string(),
+            ),
+        ]);
+
+        let resolved = resolve_static_oauth_client(
+            Some("${MCP_CLIENT_ID}"),
+            Some("MCP_CLIENT_SECRET"),
+            &["tools.read".to_string()],
+            &envs,
+            &config,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(resolved.client_id, "registered-client");
+        assert_eq!(resolved.client_secret.as_deref(), Some("registered-secret"));
+        assert_eq!(resolved.scopes, vec!["tools.read"]);
+    }
+
+    #[test]
+    fn resolve_static_oauth_client_rejects_orphaned_oauth_fields() {
+        let config_dir = tempdir().unwrap();
+        let config = Config::new_with_file_secrets(
+            config_dir.path().join("config.yaml"),
+            config_dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+
+        let error = resolve_static_oauth_client(
+            None,
+            Some("MCP_CLIENT_SECRET"),
+            &[],
+            &HashMap::new(),
+            &config,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("require client_id"));
+    }
+
+    #[test]
+    fn resolve_static_oauth_client_reads_client_secret_from_config() {
+        let config_dir = tempdir().unwrap();
+        let config = Config::new_with_file_secrets(
+            config_dir.path().join("config.yaml"),
+            config_dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        config
+            .set("MCP_CLIENT_SECRET", &"registered-secret", true)
+            .unwrap();
+
+        let resolved = resolve_static_oauth_client(
+            Some("registered-client"),
+            Some("MCP_CLIENT_SECRET"),
+            &[],
+            &HashMap::new(),
+            &config,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(resolved.client_secret.as_deref(), Some("registered-secret"));
+    }
+
     #[tokio::test]
     async fn test_post_refresh_auth_failure_clears_credentials() {
         use rmcp::transport::auth::{
@@ -4155,6 +4305,7 @@ mod tests {
             &headers,
             "test-ext",
             None,
+            None,
             Box::new(rmcp::transport::auth::InMemoryCredentialStore::new()),
             provider,
             "gosling-test".to_string(),
@@ -4189,6 +4340,7 @@ mod tests {
             None,
             &headers,
             "test-ext",
+            None,
             None,
             Box::new(rmcp::transport::auth::InMemoryCredentialStore::new()),
             provider,
@@ -4235,6 +4387,7 @@ mod tests {
             None,
             &headers,
             "test-ext",
+            None,
             None,
             Box::new(rmcp::transport::auth::InMemoryCredentialStore::new()),
             provider,

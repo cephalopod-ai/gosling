@@ -425,6 +425,9 @@ export type GoslingExtension = {
     description?: string | null;
     timeout?: number | null;
     socket?: string | null;
+    client_id?: string | null;
+    client_secret_key?: string | null;
+    scopes?: Array<string>;
     bundled?: boolean | null;
     /**
      * Tool allowlist for this extension. Omit this field to allow all tools.

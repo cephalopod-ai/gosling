@@ -686,6 +686,15 @@ export const zGoslingExtension = z.union([
             z.string(),
             z.null()
         ]).optional(),
+        client_id: z.union([
+            z.string(),
+            z.null()
+        ]).optional(),
+        client_secret_key: z.union([
+            z.string(),
+            z.null()
+        ]).optional(),
+        scopes: z.array(z.string()).optional(),
         bundled: z.union([
             z.boolean(),
             z.null()

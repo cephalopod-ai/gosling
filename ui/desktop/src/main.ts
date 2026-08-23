@@ -518,6 +518,46 @@ function listGitWorktreeDirs(dir: string): Promise<string[]> {
   });
 }
 
+function gitArgs(dir: string, args: string[]): string[] {
+  return ['-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false', '-C', dir, ...args];
+}
+
+function runGit(dir: string, args: string[], timeout = 3000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', gitArgs(dir, args), { timeout }, (error, stdout) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(stdout.trim());
+    });
+  });
+}
+
+async function getGitBranchInfo(dir: string): Promise<{ branch: string } | null> {
+  try {
+    const branch = await runGit(dir, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+    return branch ? { branch } : null;
+  } catch {
+    try {
+      const branch = await runGit(dir, ['rev-parse', '--short', 'HEAD']);
+      return branch ? { branch } : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function isValidGitBranch(branch: unknown): branch is string {
+  return (
+    typeof branch === 'string' &&
+    branch.length > 0 &&
+    branch.length <= 255 &&
+    !branch.startsWith('-') &&
+    !branch.includes('\0')
+  );
+}
+
 async function configureProxy() {
   const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
   const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
@@ -2063,6 +2103,39 @@ ipcMain.handle('list-recent-dirs', () => {
 ipcMain.handle('list-git-worktree-dirs', async (event, dir: string) => {
   const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
   return await listGitWorktreeDirs(authorizedDir);
+});
+
+ipcMain.handle('get-git-branch-info', async (event, dir: string) => {
+  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
+  return await getGitBranchInfo(authorizedDir);
+});
+
+ipcMain.handle('list-git-branches', async (event, dir: string) => {
+  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
+  try {
+    const output = await runGit(authorizedDir, [
+      'for-each-ref',
+      'refs/heads/',
+      '--format=%(refname:lstrip=2)',
+    ]);
+    return output ? output.split('\n').filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle('switch-git-branch', async (event, dir: string, branch: unknown) => {
+  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
+  if (!isValidGitBranch(branch)) return { success: false };
+
+  try {
+    await runGit(authorizedDir, ['check-ref-format', '--branch', branch]);
+    await runGit(authorizedDir, ['switch', '--', branch], 30000);
+    return { success: true };
+  } catch {
+    const currentBranch = await getGitBranchInfo(authorizedDir);
+    return { success: currentBranch?.branch === branch };
+  }
 });
 
 function rendererSettingValue(settings: Settings, key: SettingKey): Settings[SettingKey] {

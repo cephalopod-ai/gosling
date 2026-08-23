@@ -6,6 +6,11 @@ export interface ExternalGoslingdConfig {
   certFingerprint?: string;
 }
 
+export type RecentModel = {
+  provider: string;
+  model: string;
+};
+
 export interface KeyboardShortcuts {
   focusWindow: string | null;
   quickLauncher: string | null;
@@ -47,6 +52,7 @@ export interface Settings {
   responseStyle: string;
   showPricing: boolean;
   seenAnnouncementIds: string[];
+  recentModels: RecentModel[];
 }
 
 export const settingKeys = [
@@ -67,6 +73,7 @@ export const settingKeys = [
   'responseStyle',
   'showPricing',
   'seenAnnouncementIds',
+  'recentModels',
 ] as const satisfies readonly (keyof Settings)[];
 
 export type SettingKey = (typeof settingKeys)[number];
@@ -114,6 +121,7 @@ export const defaultSettings: Settings = {
   responseStyle: 'concise',
   showPricing: true,
   seenAnnouncementIds: [],
+  recentModels: [],
 };
 
 const languageSettings = new Set<LanguageSetting>([
@@ -142,6 +150,8 @@ const MAX_SHORTCUT_LENGTH = 256;
 const MAX_RESPONSE_STYLE_LENGTH = 100;
 const MAX_ANNOUNCEMENTS = 1_000;
 const MAX_ARCHIVED_SESSIONS = 10_000;
+const MAX_RECENT_MODELS = 5;
+const MAX_RECENT_MODEL_FIELD_LENGTH = 512;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -233,6 +243,18 @@ export function isSettingValue<K extends SettingKey>(key: K, value: unknown): va
         value.length <= MAX_ANNOUNCEMENTS &&
         value.every((id) => isBoundedString(id, 256))
       );
+    case 'recentModels':
+      return (
+        Array.isArray(value) &&
+        value.length <= MAX_RECENT_MODELS &&
+        value.every(
+          (recent) =>
+            isPlainRecord(recent) &&
+            Object.keys(recent).every((key) => key === 'provider' || key === 'model') &&
+            isBoundedString(recent.provider, MAX_RECENT_MODEL_FIELD_LENGTH) &&
+            isBoundedString(recent.model, MAX_RECENT_MODEL_FIELD_LENGTH)
+        )
+      );
   }
 }
 
@@ -259,6 +281,7 @@ export function setSettingValue<K extends SettingKey>(
     case 'responseStyle':
     case 'showPricing':
     case 'seenAnnouncementIds':
+    case 'recentModels':
       Object.assign(settings, { [key]: value });
   }
 }
@@ -270,6 +293,7 @@ function freshDefaultSettings(): Settings {
     externalGoslingd: { ...defaultSettings.externalGoslingd },
     keyboardShortcuts: { ...defaultSettings.keyboardShortcuts },
     seenAnnouncementIds: [],
+    recentModels: [],
   };
 }
 

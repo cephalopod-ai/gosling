@@ -18,6 +18,7 @@ This file is the durable map for the repository's documentation surface.
 - [getting started](./docs/getting-started/)
 - [guides](./docs/guides/)
 - [workspaces guide](./docs/guides/workspaces.md)
+- [Goose v1.47 compatibility guide](./docs/guides/goose-v1-47-compatibility.md)
 - [troubleshooting](./docs/troubleshooting/)
 - [v1.0.0 release notes](./docs/release-notes/v1.0.0.md)
 - [v1.1.0 candidate notes](./docs/release-notes/v1.1.0.md)

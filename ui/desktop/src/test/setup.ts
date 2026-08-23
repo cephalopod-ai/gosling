@@ -72,6 +72,7 @@ const mockSettings: Record<string, unknown> = {
   responseStyle: 'concise',
   showPricing: true,
   seenAnnouncementIds: [],
+  recentModels: [],
 };
 
 // Mock window.electron for renderer process

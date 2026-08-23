@@ -190,6 +190,9 @@ fn config_to_gosling_extension(
             description: empty_string_to_none(description),
             timeout: *timeout,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: Vec::new(),
             bundled: *bundled,
             available_tools: available_tools_to_wire(available_tools),
         },
@@ -201,6 +204,9 @@ fn config_to_gosling_extension(
             headers,
             timeout,
             socket,
+            client_id,
+            client_secret_key,
+            scopes,
             bundled,
             available_tools,
             ..
@@ -215,6 +221,9 @@ fn config_to_gosling_extension(
                 description: empty_string_to_none(description),
                 timeout: *timeout,
                 socket: socket.clone(),
+                client_id: client_id.clone(),
+                client_secret_key: client_secret_key.clone(),
+                scopes: scopes.clone(),
                 bundled: *bundled,
                 available_tools: available_tools_to_wire(available_tools),
             }
@@ -270,13 +279,20 @@ fn gosling_extension_to_config(
             description,
             timeout,
             socket,
+            client_id,
+            client_secret_key,
+            scopes,
             bundled,
             available_tools,
         } => match server {
             McpServer::Stdio(stdio) => {
-                if socket.is_some() {
+                if socket.is_some()
+                    || client_id.is_some()
+                    || client_secret_key.is_some()
+                    || !scopes.is_empty()
+                {
                     return Err(agent_client_protocol::Error::invalid_params()
-                        .data("socket is only supported for streamable_http MCP extensions"));
+                        .data("socket and OAuth client fields are only supported for streamable_http MCP extensions"));
                 }
                 let mut env_keys = env_keys;
                 for env in stdio.env {
@@ -311,6 +327,9 @@ fn gosling_extension_to_config(
                     .collect(),
                 timeout,
                 socket,
+                client_id,
+                client_secret_key,
+                scopes,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
             },
@@ -484,8 +503,12 @@ mod tests {
             description,
             timeout,
             socket,
+            client_id,
+            client_secret_key,
+            scopes,
             bundled,
             available_tools,
+            ..
         } = extension
         else {
             panic!("expected mcp extension");
@@ -495,6 +518,9 @@ mod tests {
         assert_eq!(description.as_deref(), Some("Test stdio"));
         assert_eq!(timeout, Some(42));
         assert_eq!(socket, None);
+        assert_eq!(client_id, None);
+        assert_eq!(client_secret_key, None);
+        assert!(scopes.is_empty());
         assert_eq!(bundled, None);
         assert_eq!(available_tools, Some(vec!["run".to_string()]));
 
@@ -525,6 +551,9 @@ mod tests {
             )]),
             timeout: Some(99),
             socket: Some("@egress.sock".to_string()),
+            client_id: Some("registered-client".to_string()),
+            client_secret_key: Some("OAUTH_CLIENT_SECRET".to_string()),
+            scopes: vec!["tools.read".to_string()],
             bundled: None,
             available_tools: vec!["fetch".to_string()],
         };
@@ -539,8 +568,12 @@ mod tests {
             description,
             timeout,
             socket,
+            client_id,
+            client_secret_key,
+            scopes,
             bundled,
             available_tools,
+            ..
         } = extension
         else {
             panic!("expected mcp extension");
@@ -550,6 +583,9 @@ mod tests {
         assert_eq!(description.as_deref(), Some("Test HTTP"));
         assert_eq!(timeout, Some(99));
         assert_eq!(socket.as_deref(), Some("@egress.sock"));
+        assert_eq!(client_id.as_deref(), Some("registered-client"));
+        assert_eq!(client_secret_key.as_deref(), Some("OAUTH_CLIENT_SECRET"));
+        assert_eq!(scopes, vec!["tools.read"]);
         assert_eq!(bundled, None);
         assert_eq!(available_tools, Some(vec!["fetch".to_string()]));
 
@@ -633,6 +669,9 @@ mod tests {
             description: Some("Test stdio".to_string()),
             timeout: Some(42),
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: Vec::new(),
             bundled: Some(true),
             available_tools: Some(vec!["run".to_string()]),
         };
@@ -684,6 +723,9 @@ mod tests {
             description: Some("Test stdio".to_string()),
             timeout: Some(42),
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: Vec::new(),
             bundled: Some(true),
             available_tools: None,
         };
@@ -727,6 +769,9 @@ mod tests {
             description: Some("Test HTTP".to_string()),
             timeout: Some(99),
             socket: Some("@egress.sock".to_string()),
+            client_id: Some("registered-client".to_string()),
+            client_secret_key: Some("OAUTH_CLIENT_SECRET".to_string()),
+            scopes: vec!["tools.read".to_string()],
             bundled: Some(true),
             available_tools: Some(vec!["fetch".to_string()]),
         };
@@ -743,8 +788,12 @@ mod tests {
             headers,
             timeout,
             socket,
+            client_id,
+            client_secret_key,
+            scopes,
             bundled,
             available_tools,
+            ..
         } = conversion.config
         else {
             panic!("expected streamable http config");
@@ -767,6 +816,9 @@ mod tests {
         );
         assert_eq!(timeout, Some(99));
         assert_eq!(socket.as_deref(), Some("@egress.sock"));
+        assert_eq!(client_id.as_deref(), Some("registered-client"));
+        assert_eq!(client_secret_key.as_deref(), Some("OAUTH_CLIENT_SECRET"));
+        assert_eq!(scopes, vec!["tools.read"]);
         assert_eq!(bundled, Some(true));
         assert_eq!(available_tools, vec!["fetch"]);
     }
@@ -844,6 +896,9 @@ mod tests {
             description: None,
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: Vec::new(),
             bundled: None,
             available_tools: None,
         };

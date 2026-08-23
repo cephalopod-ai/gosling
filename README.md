@@ -4,7 +4,7 @@
 
 # gosling
 
-_a lighter goose — your native open source AI agent for code, workflows, and everything in between_
+_an independently maintained native open source AI agent for code, workflows, and everything in between_
 
 <p align="center">
   <a href="https://opensource.org/licenses/Apache-2.0"
@@ -14,7 +14,7 @@ _a lighter goose — your native open source AI agent for code, workflows, and e
 
 gosling is a general-purpose AI agent that runs on your machine. Not just for code — use it for research, writing, automation, data analysis, or anything you need to get done.
 
-A native desktop app for macOS, Linux, and Windows. A full CLI for terminal workflows. An API to embed it anywhere. Built in Rust for performance and portability.
+A native desktop app for macOS, Linux, and Windows. A full CLI for terminal workflows. An API to embed it anywhere. Built in Rust for portability.
 
 gosling works with 15+ providers — Anthropic, OpenAI, Google, Ollama, OpenRouter, Azure, Bedrock, and more. Use API keys or your existing Claude, ChatGPT, or Gemini subscriptions via ACP. Connect to 70+ extensions via the [Model Context Protocol](https://modelcontextprotocol.io/) open standard.
 
@@ -24,36 +24,9 @@ gosling is an independently maintained descendant of [goose](https://github.com/
 
 ## Vision
 
-gosling aims to be a **lighter version of goose**: the same trusted agent core with a smaller footprint, a simpler surface, and faster iteration. The goal is an agent you can install next to (or instead of) goose that stays lean — fewer moving parts and an easier codebase to remix for custom distributions.
-
-## Footprint & performance vs. goose (historical baseline, 2026-07-04)
-
-Comparison performed **2026-07-04** between release builds of `goose-cli` from `goose` v1.41.0 (commit `181cbbe`) and `gosling` v0.0.5 (commit `5b7d039`), on the same host with matched Cargo feature flags. `code-mode` was excluded from both because this environment blocked the `v8-goose` static-library download. These are historical footprint measurements, not current startup benchmarks: the command timings below do not measure ready-to-prompt startup, and their cache state and percentile distribution were not recorded.
-
-| | goose | gosling | Δ |
-|---|---|---|---|
-| Cargo.lock packages | 1251 | 1065 | -186 (-15%) |
-| Binary size (stripped) | 151 MB | 117 MB | -22% |
-| `target/release` build dir | 3.8 GB | 2.4 GB | -37% |
-| Build time (wall) | 17m12s | 11m26s | -33% |
-| Runtime shared libs (`ldd`) | libstdc++, libgcc_s, libm, libc | libgcc_s, libm, libc | no libstdc++ |
-| Historical `--version` command timing | 8.4ms avg / 24.0 MB peak RSS | 6.1ms avg / 17.7 MB peak RSS | -27% time, -26% mem |
-| Historical `doctor` command timing | 8.8ms avg / 28.9 MB peak RSS | 6.3ms avg / 22.0 MB peak RSS | -29% time, -24% mem |
-
-The footprint reduction traces to the local-inference stack (candle, llama.cpp, MLX, Hugging Face downloads — 148 crates) that gosling extracts, along with dropping the `recipe`, `schedule`, `gateway`, and `local-models` subcommands. 
-
-### Key Performance & Resource Optimizations
-
-In addition to footprint reduction, Gosling implements several targeted performance enhancements to reduce CPU overhead, memory footprint, and latency in hot paths:
-
-* **Smart Configuration & Secret Caching**: In upstream, `Config::load` re-read, parsed, and deep-cloned the entire configuration mapping on every parameter/secret lookup (~300 call sites, several per turn). Gosling introduces a `ConfigSnapshot` cache using file modification times (mtimes) and lengths, sharing the parsed mapping behind an `Arc`. Lookups are now zero-clone cache hits.
-* **Cached Keyring Failures**: Platform keyring access failures (e.g. locked keychain in a headless or SSH session) are now cached (`KEYRING_RUNTIME_DISABLED`) to immediately fallback to file-based secret storage, preventing repeated slow OS keyring timeouts that block the runtime.
-* **Process-Wide Token Counter Cache**: Gosling replaces short-lived token counter instances with a process-wide `shared_token_counter` wrapping an LRU cache (size 1024). This persists tokenizations across agent turns, avoiding redundant re-encoding of unchanged conversation prefixes during usage estimation and compaction checks.
-* **Offloaded Tokenizer Setup**: Tokenizer BPE ranking table construction is CPU-heavy. Gosling offloads this from async worker threads using `tokio::task::spawn_blocking` and caches the result behind a `OnceCell` to prevent blocking the async runtime.
-* **Hot Path Allocation Trimming**: 
-  - **Repetition Inspector**: Replaced short-lived temporary inspector clones in the tool loop with `would_exceed_limit` checks using borrowed data, removing unnecessary map allocations.
-  - **Telemetry Clients**: Telemetry (Posthog) now reuses a single static `reqwest::Client` with an explicit 10s timeout, instead of creating a connection pool per event, preventing socket exhaustion.
-* **Memory & Event Bus Bounds**: Bound event buses and replay buffers with LRUs, and capped in-memory subprocess stdio logs to prevent unbounded memory growth during long-running sessions.
+gosling is maintained as an independently branded descendant of goose. It is
+intended to offer a focused surface that can run alongside goose and be remixed
+for custom distributions.
 
 ### Key Security Hardening
 
@@ -67,19 +40,26 @@ Relative to the inherited baseline, gosling implements several safety and securi
 * **Option Injection Protection**: Added `--` end-of-options guards to `git clone` during plugin installation, preventing command/option injection attacks via malicious URL strings starting with a hyphen.
 * **Safer Defaults for Agent Execution**: Tightened default agent permissions and fail-safe paths around code execution, provider configuration, and security scanning so uncertain states move toward review instead of silent execution.
 
-### Feature Comparison
+### Feature comparison (Goose v1.47.0 vs. gosling v1.1.0)
+
+This compatibility view is source-based: Goose is the `v1.47.0` release tag and
+gosling is the local `v1.1.0` source. It is not a benchmark, certification, or
+claim of exact behavioral parity. See the [detailed compatibility guide](documentation/docs/guides/goose-v1-47-compatibility.md).
 
 | Feature | Goose | Gosling | Notes |
 |---|---|---|---|
 | **Core AI Agent Engine** | Yes | Yes | Both support standard LLM chat and tool-calling loops. |
 | **Model Context Protocol (MCP)** | Yes | Yes | Full compatibility with 70+ external extensions and tools. |
 | **Cloud Providers** | 15+ | 15+ | Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Azure, Bedrock, etc. |
-| **Local Inference/Models** | **Yes** | **No** | Goose bundles candle, MLX, llama.cpp, and Hugging Face loaders. Gosling removed these to stay lightweight. |
+| **Local Inference/Models** | **Yes** | **No** | Goose bundles candle, MLX, llama.cpp, and Hugging Face loaders. Gosling does not include these loaders. |
 | **CLI Command Suite** | `goose`, `goose serve`, `recipe`, `schedule`, `gateway`, `local-models` | `gosling`, `gosling serve` | Gosling drops `recipe`, `schedule`, `gateway`, and `local-models` subcommands. |
 | **Coexistence** | No | **Yes** | Gosling is fully deconflicted and runs cleanly side-by-side with Goose (isolated configs, databases, keyring, and deep links). |
 | **Context Manager MVP** | No | **Yes** | Gosling features an MVP context manager with localized LLM summarization and a `FileMemorySource` backend for retrieved memory. |
 | **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
 | **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in cache extension paths. |
+| **Desktop Git branch indicator** | Yes | **Yes** | Displays the current branch for the selected, renderer-authorized working directory; gosling supports local-branch switching. |
+| **Pre-registered OAuth for Streamable HTTP MCP** | Yes | **Yes** | `client_id`, `client_secret_key`, and `scopes` configure static OAuth clients. The secret is resolved from an extension environment or gosling’s secret store, never inline. |
+| **Recently used model picker** | Yes | **Yes** | Desktop retains up to five prior successful model/provider selections and exposes them above Change Model. |
 
 ## What's included
 

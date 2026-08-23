@@ -83,6 +83,17 @@ describe('setting IPC schemas', () => {
     expect(isSettingValue('theme', 'system')).toBe(false);
     expect(isSettingValue('archiveFolder', 'x'.repeat(4097))).toBe(false);
     expect(isSettingValue('seenAnnouncementIds', new Array(1001).fill('id'))).toBe(false);
+    expect(isSettingValue('recentModels', [{ provider: 'openai' }])).toBe(false);
+    expect(
+      isSettingValue('recentModels', [
+        { provider: 'openai', model: 'gpt-5' },
+        { provider: 'anthropic', model: 'claude-sonnet' },
+        { provider: 'google', model: 'gemini-3' },
+        { provider: 'xai', model: 'grok-4' },
+        { provider: 'mistral', model: 'mistral-large' },
+        { provider: 'openrouter', model: 'qwen' },
+      ])
+    ).toBe(false);
     expect(isSettingValue('archivedSessionFiles', { session: 42 })).toBe(false);
     expect(
       isSettingValue('externalGoslingd', {

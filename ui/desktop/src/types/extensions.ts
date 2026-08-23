@@ -42,6 +42,9 @@ type StreamableHttpExtensionConfig = {
   headers?: Record<string, string>;
   timeout?: number | null;
   socket?: string | null;
+  client_id?: string | null;
+  client_secret_key?: string | null;
+  scopes?: string[] | null;
   bundled?: boolean | null;
   available_tools?: string[] | null;
   type: 'streamable_http';

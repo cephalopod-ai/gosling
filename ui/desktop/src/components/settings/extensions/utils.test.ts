@@ -247,6 +247,28 @@ describe('Extension Utils', () => {
       expect(args).toEqual(['-classpath', '/path/with spaces/lib.jar', 'Main']);
     });
 
+    it('should preserve streamable HTTP OAuth fields through the form data', () => {
+      const extension: FixedExtensionEntry = {
+        type: 'streamable_http',
+        name: 'registered-client-mcp',
+        description: 'OAuth MCP',
+        uri: 'https://example.com/mcp',
+        enabled: true,
+        socket: '@egress.sock',
+        client_id: 'registered-client',
+        client_secret_key: 'MCP_CLIENT_SECRET',
+        scopes: ['tools.read'],
+      };
+
+      expect(createExtensionConfig(extensionToFormData(extension))).toMatchObject({
+        type: 'streamable_http',
+        socket: '@egress.sock',
+        client_id: 'registered-client',
+        client_secret_key: 'MCP_CLIENT_SECRET',
+        scopes: ['tools.read'],
+      });
+    });
+
     it('should roundtrip args with double quotes and spaces through form data', () => {
       const extension: FixedExtensionEntry = {
         type: 'stdio',

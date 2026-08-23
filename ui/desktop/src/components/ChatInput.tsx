@@ -10,6 +10,7 @@ import { ChatState } from '../types/chatState';
 import debounce from 'lodash/debounce';
 import { LocalMessageStorage } from '../utils/localMessageStorage';
 import { DirSwitcher } from './bottom_menu/DirSwitcher';
+import { GitBranchIndicator } from './bottom_menu/GitBranchIndicator';
 import { ModeSwitcher } from './bottom_menu/ModeSwitcher';
 import ModelsBottomBar from './settings/models/bottom_bar/ModelsBottomBar';
 import { BottomMenuExtensionSelection } from './bottom_menu/BottomMenuExtensionSelection';
@@ -1716,6 +1717,8 @@ export default function ChatInput({
             renderChatInfo={sessionId ? renderChatInfo : undefined}
           />
         )}
+
+        {!isBottomBarNarrow && <GitBranchIndicator dir={currentWorkingDir} />}
 
         {/* Left: session mode (autonomous / manual / smart / chat) */}
         {!isBottomBarNarrow && (

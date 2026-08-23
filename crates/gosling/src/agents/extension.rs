@@ -256,6 +256,15 @@ pub enum ExtensionConfig {
         /// Use `@name` for Linux abstract sockets.
         #[serde(default)]
         socket: Option<String>,
+        /// Optional pre-registered OAuth client identifier for this MCP server.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_id: Option<String>,
+        /// Secret key that resolves the OAuth client secret from the environment or config store.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_secret_key: Option<String>,
+        /// OAuth scopes requested when using a pre-registered client.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        scopes: Vec<String>,
         #[serde(default)]
         bundled: Option<bool>,
         #[serde(default)]
@@ -332,6 +341,9 @@ impl ExtensionConfig {
             description: description.into(),
             timeout: Some(timeout.into()),
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: Vec::new(),
             bundled: None,
             available_tools: Vec::new(),
         }
@@ -515,6 +527,9 @@ impl ExtensionConfig {
                 headers,
                 timeout,
                 socket,
+                client_id,
+                client_secret_key,
+                scopes,
                 bundled,
                 available_tools,
             } => {
@@ -527,6 +542,7 @@ impl ExtensionConfig {
                     })
                     .collect();
                 let socket = socket.map(|s| substitute_env_vars(&s, &merged));
+                let client_id = client_id.map(|value| substitute_env_vars(&value, &merged));
                 Ok(Self::StreamableHttp {
                     name,
                     description,
@@ -536,6 +552,9 @@ impl ExtensionConfig {
                     headers,
                     timeout,
                     socket,
+                    client_id,
+                    client_secret_key,
+                    scopes,
                     bundled,
                     available_tools,
                 })
@@ -786,6 +805,9 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         },
@@ -807,6 +829,9 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         }
@@ -885,6 +910,9 @@ available_tools: []
             .collect(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         },
@@ -903,6 +931,9 @@ available_tools: []
                 .collect(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         }
@@ -918,6 +949,9 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         },
@@ -934,6 +968,9 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         }
@@ -997,6 +1034,9 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: Some("@egress.sock".to_string()),
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         };
@@ -1017,6 +1057,9 @@ available_tools: []
             headers: std::collections::HashMap::new(),
             timeout: None,
             socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
             bundled: None,
             available_tools: vec![],
         };
