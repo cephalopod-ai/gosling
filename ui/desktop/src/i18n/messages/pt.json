@@ -3130,5 +3130,14 @@
   },
   "artifactPane.grantAccessToPreview": {
     "defaultMessage": "Select this file to grant access and preview it"
+  },
+  "sessions.search.label": {
+    "defaultMessage": "Search chat history"
+  },
+  "toolApprovalButtons.alwaysAllowDomain": {
+    "defaultMessage": "Always allow {domain}"
+  },
+  "toolApprovalButtons.alwaysAllowedDomain": {
+    "defaultMessage": "Always allowed ({domain})"
   }
 }

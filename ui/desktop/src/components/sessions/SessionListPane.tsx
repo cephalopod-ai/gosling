@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   MessageSquareText,
   RotateCcw,
+  Search,
   Share2,
   Trash2,
 } from 'lucide-react';
@@ -19,7 +20,6 @@ import { toast } from 'react-toastify';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { ScrollArea } from '../ui/scroll-area';
-import { SearchView } from '../conversation/SearchView';
 import { Skeleton } from '../ui/skeleton';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
 import {
@@ -79,6 +79,7 @@ const i18n = defineMessages({
     id: 'sessions.search.archivedPlaceholder',
     defaultMessage: 'Search archived sessions...',
   },
+  searchLabel: { id: 'sessions.search.label', defaultMessage: 'Search chat history' },
   errorLoading: { id: 'sessions.error.loading', defaultMessage: 'Error Loading Sessions' },
   tryAgain: { id: 'sessions.error.tryAgain', defaultMessage: 'Try Again' },
   noSessions: { id: 'sessions.empty.title', defaultMessage: 'No chat sessions found' },
@@ -348,6 +349,7 @@ type SessionPaneMode = 'active' | 'archived';
 
 interface SessionListPaneProps {
   mode: SessionPaneMode;
+  isActive: boolean;
   onSelectSession?: (sessionId: string) => void;
 }
 
@@ -361,7 +363,7 @@ function archiveTimestamp(session: SessionListItem): string {
   return session.archivedAt ?? session.updatedAt;
 }
 
-export default function SessionListPane({ mode, onSelectSession }: SessionListPaneProps) {
+export default function SessionListPane({ mode, isActive, onSelectSession }: SessionListPaneProps) {
   const intl = useIntl();
   const navigate = useNavigate();
   const { saveArtifact } = useArtifactRouter();
@@ -385,10 +387,20 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
   const [nostrEnabled, setNostrEnabled] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const debouncedSearchTermRef = useRef(debouncedSearchTerm);
   const loadGenerationRef = useRef(0);
   const hasLoadedRef = useRef(false);
   debouncedSearchTermRef.current = debouncedSearchTerm;
+
+  const focusSearch = useCallback(() => {
+    if (!isActive) {
+      return;
+    }
+
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  }, [isActive]);
 
   const visibleDateGroups = useMemo(() => {
     return dateGroups.slice(0, visibleGroupsCount);
@@ -490,6 +502,27 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
       loadGenerationRef.current += 1;
     };
   }, [debouncedSearchTerm, loadSessions]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isActive) {
+        return;
+      }
+
+      const isMac = window.electron.platform === 'darwin';
+      if ((isMac ? event.metaKey : event.ctrlKey) && !event.shiftKey && event.key === 'f') {
+        event.preventDefault();
+        focusSearch();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.electron.on('find-command', focusSearch);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.electron.off('find-command', focusSearch);
+    };
+  }, [focusSearch]);
 
   useEffect(() => {
     const handleSessionUpdate = () => {
@@ -1057,16 +1090,27 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
       <div className="flex-1 min-h-0 relative">
         <ScrollArea handleScroll={handleScroll} className="h-full" data-search-scroll-area>
           <div className="relative h-full px-8">
-            <SearchView
-              onSearch={setSearchTerm}
-              className="relative"
-              placeholder={intl.formatMessage(
-                mode === 'archived' ? i18n.searchArchivesPlaceholder : i18n.searchPlaceholder
-              )}
-              showCaseSensitive={false}
-              showNavigation={false}
-              highlightMatches={false}
-            >
+            <div className="sticky top-0 z-30 bg-background-primary pb-4">
+              <label className="sr-only" htmlFor={`${mode}-session-search`}>
+                {intl.formatMessage(i18n.searchLabel)}
+              </label>
+              <div className="relative max-w-xl">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+                <input
+                  ref={searchInputRef}
+                  id={`${mode}-session-search`}
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder={intl.formatMessage(
+                    mode === 'archived' ? i18n.searchArchivesPlaceholder : i18n.searchPlaceholder
+                  )}
+                  className="h-10 w-full rounded-md border border-border-primary bg-background-secondary py-2 pl-9 pr-3 text-sm text-text-primary outline-none placeholder:text-text-secondary focus:border-border-active focus:ring-1 focus:ring-border-active"
+                />
+              </div>
+            </div>
+
+            <div className="relative">
               <div
                 className={`absolute inset-0 transition-opacity duration-300 ${
                   isLoading || showSkeleton
@@ -1104,7 +1148,7 @@ export default function SessionListPane({ mode, onSelectSession }: SessionListPa
               >
                 {renderActualContent()}
               </div>
-            </SearchView>
+            </div>
           </div>
         </ScrollArea>
       </div>

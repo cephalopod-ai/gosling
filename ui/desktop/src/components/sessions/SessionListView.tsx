@@ -232,14 +232,18 @@ const SessionListView: React.FC<SessionListViewProps> = ({
                     forceMount
                     className={activeTab === 'active' ? '' : 'hidden'}
                   >
-                    <SessionListPane mode="active" onSelectSession={onSelectSession} />
+                    <SessionListPane
+                      mode="active"
+                      isActive={activeTab === 'active'}
+                      onSelectSession={onSelectSession}
+                    />
                   </TabsContent>
                   <TabsContent
                     value="archived"
                     forceMount
                     className={activeTab === 'archived' ? '' : 'hidden'}
                   >
-                    <SessionListPane mode="archived" />
+                    <SessionListPane mode="archived" isActive={activeTab === 'archived'} />
                   </TabsContent>
                 </div>
               </Tabs>

@@ -2396,6 +2396,9 @@
   "sessions.search.archivedPlaceholder": {
     "defaultMessage": "Search archived sessions..."
   },
+  "sessions.search.label": {
+    "defaultMessage": "Search chat history"
+  },
   "sessions.search.noResults": {
     "defaultMessage": "No matching sessions found"
   },
@@ -2894,11 +2897,17 @@
   "toolApprovalButtons.alwaysAllow": {
     "defaultMessage": "Always Allow"
   },
+  "toolApprovalButtons.alwaysAllowDomain": {
+    "defaultMessage": "Always allow {domain}"
+  },
   "toolApprovalButtons.alwaysAllowExtension": {
     "defaultMessage": "Always Allow all {extensionName} tools"
   },
   "toolApprovalButtons.alwaysAllowed": {
     "defaultMessage": "Always allowed"
+  },
+  "toolApprovalButtons.alwaysAllowedDomain": {
+    "defaultMessage": "Always allowed ({domain})"
   },
   "toolApprovalButtons.alwaysAllowedExtension": {
     "defaultMessage": "Always allowed ({extensionName} tools)"
