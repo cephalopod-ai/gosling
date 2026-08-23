@@ -180,4 +180,65 @@ No MOD-B suspects and no rollback triggers surfaced.
 
 ## Gate 7 — Verification sweep
 
-Pending final baseline-equivalent rerun and MOD-V01..10 evidence capture.
+Final status: `completed_verified`.
+
+### Symbol parity and line reconciliation
+
+- Original inventory: 30 production top-level symbols plus the inline test
+  module's nested fixtures/tests.
+- Retained in the facade: the three constants, `DelegateParams`,
+  `SummonClient`, its public `new` constructor, and the unchanged test module.
+- Moved/split: every other type, helper, trait implementation, and inherent
+  method body is accounted for in exactly one of the seven child modules.
+- Removed as duplicate: zero. Unaccounted symbols: zero.
+- Original: 2,772 lines. Final facade: 1,090 lines. Facade plus child modules:
+  2,866 lines, a +94 delta consisting of seven four-line module headers,
+  module declarations/import/re-export wiring, parent-only visibility and
+  rustfmt line expansion, and the 19-line facade compatibility test.
+
+### MOD-V01..10 coverage
+
+| Code | Check | Status | Evidence |
+|---|---|---|---|
+| MOD-V01 | Regression vs baseline | pass | Exact baseline chain rerun: format check and build exit 0; focused suite 37/37 (36 baseline tests plus one compatibility test); full library suite 1,697/1,697; all-target Clippy with `-D warnings` clean. No prior passing test regressed. |
+| MOD-V02 | Broken source references | pass | Repo-wide facade search finds the platform registry plus ACP and server discovery callers unchanged; every moved implementation symbol has exactly one child-module owner; `cargo check -p gosling-server` passes. |
+| MOD-V03 | Broken doc links | pass | Active README/index/architecture/TODO/product docs have no `summon.rs:<line>` references. The static server link still resolves to the compatibility facade. Historical audit reports retain snapshot-specific citations. |
+| MOD-V04 | Orphaned modules/symbols | pass | Seven `mod` declarations match seven child files; compiler and ownership grep confirm all are reachable and every planned symbol is owned once. |
+| MOD-V05 | Orphaned processes | pass | Post-validation snapshot contains no Cargo, rustc, test runner, watcher, or repo dev server. The same pre-existing packaged Gosling processes and port 62477 remain untouched. Spawn and task cancel/reap code remain connected through `SummonClient` state. |
+| MOD-V06 | Redundancy | pass | Distinctive-body searches for capability warning, cancellation timeout, load discovery, delegate schema text, and async authority output each return one owner; no facade implementation copies remain. |
+| MOD-V07 | Module identity | n/a | No serialized Rust type paths, module-derived logger names, reflection, registry strings, or import-order registrations apply. Serde field/wire shapes and public Rust paths remain unchanged. |
+| MOD-V08 | Doc/comment freshness | pass | Every child has responsibility, exact extraction provenance, and facade/export notes; facade contains the literal `compatibility facade`; TODO and this log describe the new map. |
+| MOD-V09 | Import graph health | pass | All child modules are descendants of the facade and depend through `super`; format/build/tests/Clippy compile the full graph with no cycles or lazy-import workarounds. |
+| MOD-V10 | Test integrity | pass | No existing test/assertion was changed, removed, skipped, or weakened. Added one original-module-path test. Existing tests directly execute the moved inherent methods and free functions; Rust inherent-method identity has no separate child import surface. |
+
+### Adversarial walkthrough
+
+- Source path: repo/global agent discovery → frontmatter parse → untrusted
+  capability policy suppression → load or delegate spec creation.
+- Foreground path: MCP dispatch → validation/no-nesting check → provider/model/
+  working-directory resolution → subagent run → result/error mapping.
+- Background path: MCP dispatch → atomic slot reservation → spawned task and
+  notification bridge → peek/cancel/wait → completed-map retention/TTL → MOIM.
+- Compatibility paths: platform registry construction, ACP agent mentions, and
+  server slash-command discovery all enter through the original module path.
+- Error paths exercised by existing tests include missing sources, invalid turn
+  limits, unavailable/out-of-policy extensions, directory traversal/file/
+  missing paths, nonexistent tasks, task cancellation, and peek semantics.
+- No persistence or serialized module identity exists in this component. A live
+  provider delegation was not run because it would add external cost/network
+  state without increasing confidence beyond the deterministic unit and compile
+  coverage for a body-preserving move.
+
+### Decisions, residual risk, and follow-up
+
+- Kept the original module as a facade because three independent workflows and
+  public downstream crate code use it.
+- Used child modules so Rust privacy protects `SummonClient` state while
+  `pub(super)` exposes only the cross-seam edges required inside the facade.
+- Kept all behavior tests in the established inline module; they execute the
+  actual split inherent implementations, while the added test pins facade paths.
+- MOD-B ledger count: zero. No suspected defect was changed or routed.
+- Residual risk is limited to a live provider call not being performed; public
+  compile coverage, full deterministic tests, and unchanged bodies bound it.
+- Remaining one-file-per-run candidates are `acp/server.rs`, `agents/agent.rs`,
+  `agents/extension_manager.rs`, and `ui/desktop/src/main.ts`.
