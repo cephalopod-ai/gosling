@@ -627,6 +627,17 @@ mod tests {
         assert!(config.preserves_thinking);
     }
 
+    #[test]
+    fn test_mistral_omits_replayed_reasoning_content() {
+        let json = include_str!("../providers/declarative/mistral.json");
+        let config = deserialize_provider_config(json).expect("mistral.json should parse");
+
+        assert!(
+            !config.preserves_thinking,
+            "Mistral rejects reasoning_content on assistant request messages"
+        );
+    }
+
     fn placeholder_var_names(template: &str) -> Vec<String> {
         template
             .split("${")
