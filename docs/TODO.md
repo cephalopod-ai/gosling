@@ -239,6 +239,13 @@ a dedicated modularization pass rather than split mid-repair).
 
 ## Provider follow-up — observed 2026-08-16
 
+- [x] **Mistral API rejects replayed assistant reasoning.** Resolved 2026-08-23
+      in `8e1501aff`: the bundled Mistral profile now sets
+      `preserves_thinking` to false, so stored thinking is not serialized as
+      the unsupported `assistant.reasoning_content` request field. The focused
+      profile regression, all provider tests, the full `gosling` library suite,
+      build, and warning-denying Clippy pass. See
+      [`2026-08-23-mistral-reasoning-content-422.md`](logs/session/2026-08-23-mistral-reasoning-content-422.md).
 - [x] **Grok / xAI OAuth tool-schema rejection.** Fixed in `11806887c` —
       `formats/openai.rs::object_rooted_parameters` coerces union-rooted MCP
       tool schemas to an object root before they reach the provider. Residual:
