@@ -40,9 +40,7 @@ import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
 import { getOverrideOriginForRequest } from './requestOrigin';
 import { acpWebSocketUrlFromHttpBase, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde } from './utils/pathUtils';
-import { assertPathWithinRoots, canonicalizePotentialPath } from './utils/rendererFileAccess';
 import { writeJsonFileAtomicSync, readJsonFileWithRecoverySync } from './utils/atomicJsonStore';
-import { RendererDirectoryGrantRegistry } from './utils/rendererDirectoryGrants';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
@@ -73,9 +71,7 @@ import { buildCSP } from './utils/csp';
 import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
 import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifactRouter';
 import { installArtifactDownloadRouter } from './utils/artifactDownloads';
-import { ArtifactRoutingRegistry } from './utils/artifactRoutingRegistry';
 import { saveArtifactWithDialog } from './utils/artifactSave';
-import { assertArtifactFileAccess } from './utils/artifactFileAccess';
 import {
   dispatchFullGoslingProtocolUrl,
   findGoslingProtocolUrl,
@@ -86,6 +82,7 @@ import {
   BackendCertificateTrustRegistry,
   type BackendCertificateTrustRegistration,
 } from './main/backendCertificateTrust';
+import { RendererAccessController, resolveRendererPath } from './main/rendererAccess';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -288,137 +285,7 @@ function getSettings(): Settings {
   return settingsCache;
 }
 
-function resolveRendererPath(filePath: string): string {
-  return path.resolve(expandTilde(filePath));
-}
-
-const rendererDirectoryGrants = new RendererDirectoryGrantRegistry(RENDERER_DIRECTORY_GRANTS_FILE);
-try {
-  rendererDirectoryGrants.load();
-} catch (error) {
-  console.error('Failed to load renderer directory grants; starting with no grants:', error);
-}
-
-function rendererFileRoots(webContentsId: number): string[] {
-  return rendererDirectoryGrants.rootsFor(webContentsId);
-}
-
-function firstGrantedRecentDirectory(webContentsId = 0): string | undefined {
-  return loadRecentDirs().find((dir) =>
-    rendererDirectoryGrants.isGrantedDirectory(webContentsId, dir)
-  );
-}
-
-async function assertRendererFileAccess(webContentsId: number, filePath: string): Promise<string> {
-  const resolvedPath = resolveRendererPath(filePath);
-  return assertPathWithinRoots(resolvedPath, rendererFileRoots(webContentsId));
-}
-
-const rendererArtifactFileGrants = new Map<number, Set<string>>();
-const artifactRoutingRegistry = new ArtifactRoutingRegistry();
-const ARTIFACT_PRODUCT_TYPES = new Set([
-  'code',
-  'data',
-  'document',
-  'export',
-  'image',
-  'other',
-  'presentation',
-  'spreadsheet',
-  'video',
-]);
-
-async function assertRendererArtifactFileAccess(
-  webContentsId: number,
-  filePath: string,
-  baseDirectory?: string
-): Promise<string> {
-  const routingConfig = artifactRoutingRegistry.get(webContentsId);
-  const routedOutputRoots = routingConfig?.outputs.map((output) => output.path) ?? [];
-  const routedArtifactFiles = routingConfig?.artifactFiles ?? [];
-  const expandedPath = expandTilde(filePath);
-  const candidatePath = path.isAbsolute(expandedPath) ? resolveRendererPath(filePath) : filePath;
-  return assertArtifactFileAccess(
-    candidatePath,
-    baseDirectory ? resolveRendererPath(baseDirectory) : undefined,
-    rendererFileRoots(webContentsId),
-    routedOutputRoots,
-    new Set([...(rendererArtifactFileGrants.get(webContentsId) ?? []), ...routedArtifactFiles])
-  );
-}
-
-async function assertArtifactOutputRootAccess(
-  webContentsId: number,
-  outputPath: string
-): Promise<string> {
-  try {
-    return await assertRendererFileAccess(webContentsId, outputPath);
-  } catch (error) {
-    const canonicalPath = await canonicalizePotentialPath(resolveRendererPath(outputPath));
-    const stats = await fs.stat(canonicalPath);
-    if (!stats.isDirectory()) throw error;
-    return canonicalPath;
-  }
-}
-
-async function validateArtifactRoutingConfig(
-  webContentsId: number,
-  config: ArtifactRoutingConfig
-): Promise<ArtifactRoutingConfig | null> {
-  if (
-    (config.workspaceId !== undefined && typeof config.workspaceId !== 'string') ||
-    (config.workspaceName !== undefined && typeof config.workspaceName !== 'string') ||
-    (config.workspaceId === undefined) !== (config.workspaceName === undefined) ||
-    !Array.isArray(config.outputs) ||
-    config.outputs.length > 64 ||
-    (config.artifactFiles !== undefined &&
-      (!Array.isArray(config.artifactFiles) || config.artifactFiles.length > 256))
-  ) {
-    return null;
-  }
-
-  const outputs = [];
-  for (const output of config.outputs) {
-    if (
-      typeof output.id !== 'string' ||
-      typeof output.path !== 'string' ||
-      typeof output.isDefault !== 'boolean' ||
-      !Array.isArray(output.productTypes) ||
-      output.productTypes.length === 0 ||
-      !output.productTypes.every((productType) => ARTIFACT_PRODUCT_TYPES.has(productType))
-    ) {
-      continue;
-    }
-    try {
-      const outputPath = await assertArtifactOutputRootAccess(webContentsId, output.path);
-      const stats = await fs.stat(outputPath);
-      if (stats.isDirectory()) outputs.push({ ...output, path: outputPath });
-    } catch {
-      continue;
-    }
-  }
-
-  const artifactFiles = [];
-  for (const artifactFile of config.artifactFiles ?? []) {
-    if (
-      typeof artifactFile !== 'string' ||
-      artifactFile.length === 0 ||
-      artifactFile.length > 4096
-    ) {
-      continue;
-    }
-    try {
-      const artifactPath = await canonicalizePotentialPath(resolveRendererPath(artifactFile));
-      if ((await fs.stat(artifactPath)).isFile()) artifactFiles.push(artifactPath);
-    } catch {
-      continue;
-    }
-  }
-
-  return outputs.length > 0 || artifactFiles.length > 0
-    ? { ...config, artifactFiles: [...new Set(artifactFiles)], outputs }
-    : null;
-}
+const rendererAccess = new RendererAccessController(RENDERER_DIRECTORY_GRANTS_FILE);
 
 async function openExternalIfSafe(url: string): Promise<void> {
   if (!isProtocolSafe(url)) {
@@ -774,7 +641,7 @@ async function deliverRendererProtocolUrl(
 
 async function handleProtocolUrl(url: string, parsedUrl: URL): Promise<boolean> {
   if (!url) return false;
-  const openDir = firstGrantedRecentDirectory();
+  const openDir = rendererAccess.firstGrantedRecentDirectory();
   return dispatchFullGoslingProtocolUrl(url, {
     openChat: async (options) => {
       await createChat(app, { dir: openDir, ...options });
@@ -875,7 +742,7 @@ async function handleFileOpen(filePath: string) {
 
     // Add to recent directories
     addRecentDir(targetDir);
-    rendererDirectoryGrants.grantSelectedPath(0, targetDir);
+    rendererAccess.grantSelectedPath(0, targetDir);
 
     // Create new window for the directory
     const newWindow = await createChat(app, { dir: targetDir });
@@ -1389,14 +1256,10 @@ const createChat = async (
         partition: MAIN_WINDOW_SESSION_PARTITION,
       },
     });
-    rendererDirectoryGrants.grantSelectedPath(mainWindow.webContents.id, workingDir, false);
+    rendererAccess.grantSelectedPath(mainWindow.webContents.id, workingDir, false);
     if (settings.archiveFolder) {
       try {
-        rendererDirectoryGrants.grantSelectedPath(
-          mainWindow.webContents.id,
-          settings.archiveFolder,
-          false
-        );
+        rendererAccess.grantSelectedPath(mainWindow.webContents.id, settings.archiveFolder, false);
       } catch (error) {
         // The configured folder may have been moved or deleted since it was picked; the user is
         // re-prompted to choose an archive folder rather than the window failing to open.
@@ -1406,7 +1269,7 @@ const createChat = async (
     backendCertificateTrust.installVerifier(mainWindow.webContents.session);
     installArtifactDownloadRouter(
       mainWindow.webContents.session,
-      (webContentsId) => artifactRoutingRegistry.get(webContentsId),
+      (webContentsId) => rendererAccess.getArtifactRouting(webContentsId),
       (webContentsId, fileName) => {
         const target = BrowserWindow.getAllWindows().find(
           (window) => window.webContents.id === webContentsId
@@ -1519,9 +1382,7 @@ const createChat = async (
   const windowId = mainWindow.id;
   const webContentsId = mainWindow.webContents.id;
   mainWindow.webContents.once('destroyed', () => {
-    artifactRoutingRegistry.clear(webContentsId);
-    rendererArtifactFileGrants.delete(webContentsId);
-    rendererDirectoryGrants.clearTransient(webContentsId);
+    rendererAccess.clearWebContents(webContentsId);
   });
   const url = getAppUrl();
 
@@ -1759,7 +1620,7 @@ const showWindow = async () => {
 
   if (windows.length === 0) {
     log.info('No windows are open, creating a new one...');
-    await createChat(app, { dir: firstGrantedRecentDirectory() });
+    await createChat(app, { dir: rendererAccess.firstGrantedRecentDirectory() });
     return;
   }
 
@@ -1788,9 +1649,7 @@ const showWindow = async () => {
 };
 
 const buildRecentFilesMenu = () => {
-  const recentDirs = loadRecentDirs().filter((dir) =>
-    rendererDirectoryGrants.isGrantedDirectory(0, dir)
-  );
+  const recentDirs = loadRecentDirs().filter((dir) => rendererAccess.isGrantedDirectory(0, dir));
   return recentDirs.map((dir) => ({
     label: dir,
     click: async () => {
@@ -1877,7 +1736,7 @@ const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
     }
 
     addRecentDir(dirToAdd);
-    rendererDirectoryGrants.grantSelectedPath(currentWindow?.webContents.id ?? 0, dirToAdd);
+    rendererAccess.grantSelectedPath(currentWindow?.webContents.id ?? 0, dirToAdd);
 
     await createChat(app, { dir: dirToAdd });
   }
@@ -1963,7 +1822,7 @@ ipcMain.handle('directory-chooser', async (event) => {
     defaultPath: os.homedir(),
   });
   if (!result.canceled && result.filePaths[0]) {
-    rendererDirectoryGrants.grantSelectedPath(event.sender.id, result.filePaths[0]);
+    rendererAccess.grantSelectedPath(event.sender.id, result.filePaths[0]);
   }
   return result;
 });
@@ -1979,7 +1838,7 @@ ipcMain.handle('list-recent-dirs', () => {
 });
 
 ipcMain.handle('list-git-worktree-dirs', async (event, dir: string) => {
-  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
+  const authorizedDir = await rendererAccess.assertFileAccess(event.sender.id, dir);
   return await listGitWorktreeDirs(authorizedDir);
 });
 
@@ -2297,7 +2156,7 @@ ipcMain.handle('select-file-or-directory', async (event, defaultPath?: string) =
 
   if (!result.canceled && result.filePaths.length > 0) {
     const selectedPath = result.filePaths[0];
-    rendererDirectoryGrants.grantSelectedPath(event.sender.id, selectedPath);
+    rendererAccess.grantSelectedPath(event.sender.id, selectedPath);
     return selectedPath;
   }
   return null;
@@ -2311,11 +2170,7 @@ ipcMain.handle('select-artifact-file', async (event, defaultPath?: string) => {
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
-  const selectedPath = await canonicalizePotentialPath(resolveRendererPath(result.filePaths[0]));
-  const grants = rendererArtifactFileGrants.get(event.sender.id) ?? new Set<string>();
-  grants.add(selectedPath);
-  rendererArtifactFileGrants.set(event.sender.id, grants);
-  return selectedPath;
+  return rendererAccess.grantArtifactFile(event.sender.id, result.filePaths[0]);
 });
 
 // Native picker tailored for session imports: shows hidden files (so users can
@@ -2423,7 +2278,7 @@ const READ_FILE_MAX_BYTES = 2 * 1024 * 1024;
 
 ipcMain.handle('read-file', async (event, filePath) => {
   try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
+    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, filePath);
     // Read a bounded prefix rather than the whole file. The renderer chooses
     // the path, so an accidental multi-GB target used to be pulled entirely
     // into the main process (MEM-GSL-008). `read-artifact-file` beside this
@@ -2452,7 +2307,7 @@ ipcMain.handle('read-file', async (event, filePath) => {
 
 ipcMain.handle('read-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
   try {
-    const resolvedPath = await assertRendererArtifactFileAccess(
+    const resolvedPath = await rendererAccess.assertArtifactFileAccess(
       event.sender.id,
       filePath,
       baseDirectory
@@ -2498,7 +2353,7 @@ ipcMain.handle('read-artifact-file', async (event, filePath: string, baseDirecto
 });
 
 ipcMain.handle('open-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
-  const resolvedPath = await assertRendererArtifactFileAccess(
+  const resolvedPath = await rendererAccess.assertArtifactFileAccess(
     event.sender.id,
     filePath,
     baseDirectory
@@ -2507,7 +2362,7 @@ ipcMain.handle('open-artifact-file', async (event, filePath: string, baseDirecto
 });
 
 ipcMain.handle('reveal-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
-  const resolvedPath = await assertRendererArtifactFileAccess(
+  const resolvedPath = await rendererAccess.assertArtifactFileAccess(
     event.sender.id,
     filePath,
     baseDirectory
@@ -2517,7 +2372,7 @@ ipcMain.handle('reveal-artifact-file', async (event, filePath: string, baseDirec
 
 ipcMain.handle('write-file', async (event, filePath, content) => {
   try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
+    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, filePath);
     await fs.writeFile(expandedPath, content, { encoding: 'utf8' });
     return true;
   } catch (error) {
@@ -2528,7 +2383,7 @@ ipcMain.handle('write-file', async (event, filePath, content) => {
 
 ipcMain.handle('delete-file', async (event, filePath) => {
   try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
+    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, filePath);
     await fs.unlink(expandedPath);
     return true;
   } catch (error) {
@@ -2540,7 +2395,7 @@ ipcMain.handle('delete-file', async (event, filePath) => {
 // Enhanced file operations
 ipcMain.handle('ensure-directory', async (event, dirPath) => {
   try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, dirPath);
+    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, dirPath);
     await fs.mkdir(expandedPath, { recursive: true });
     return true;
   } catch (error) {
@@ -2551,7 +2406,7 @@ ipcMain.handle('ensure-directory', async (event, dirPath) => {
 
 ipcMain.handle('list-files', async (event, dirPath, extension) => {
   try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, dirPath);
+    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, dirPath);
     const files = await fs.readdir(expandedPath);
     if (extension) {
       return files.filter((file) => file.endsWith(extension));
@@ -2570,7 +2425,7 @@ ipcMain.handle('show-message-box', async (_event, options) => {
 ipcMain.handle('save-artifact', async (event, request: ArtifactSaveRequest) => {
   return saveArtifactWithDialog(request, {
     resolveSource: (filePath, baseDirectory) =>
-      assertRendererArtifactFileAccess(event.sender.id, filePath, baseDirectory),
+      rendererAccess.assertArtifactFileAccess(event.sender.id, filePath, baseDirectory),
     showSaveDialog: (options) => dialog.showSaveDialog(options),
   });
 });
@@ -2578,9 +2433,7 @@ ipcMain.handle('save-artifact', async (event, request: ArtifactSaveRequest) => {
 ipcMain.handle(
   'set-artifact-routing-config',
   async (event, config: ArtifactRoutingConfig | null): Promise<boolean> => {
-    return artifactRoutingRegistry.update(event.sender.id, config, (candidate) =>
-      validateArtifactRoutingConfig(event.sender.id, candidate)
-    );
+    return rendererAccess.updateArtifactRouting(event.sender.id, config);
   }
 );
 
@@ -2597,7 +2450,7 @@ ipcMain.handle('get-allowed-extensions', async () => {
 });
 
 const createNewWindow = async (app: App, dir?: string | null) => {
-  const openDir = dir || firstGrantedRecentDirectory();
+  const openDir = dir || rendererAccess.firstGrantedRecentDirectory();
   return await createChat(app, { dir: openDir });
 };
 
@@ -3067,8 +2920,8 @@ async function appMain() {
       const { query, dir, resumeSessionId, viewType } = options;
       const resolvedDir =
         typeof dir === 'string' && dir.trim()
-          ? await assertRendererFileAccess(event.sender.id, dir)
-          : firstGrantedRecentDirectory(event.sender.id);
+          ? await rendererAccess.assertFileAccess(event.sender.id, dir)
+          : rendererAccess.firstGrantedRecentDirectory(event.sender.id);
 
       const isFromLauncher = query && !resumeSessionId && !viewType;
 
@@ -3246,7 +3099,7 @@ async function appMain() {
 
   ipcMain.handle('open-directory-in-explorer', async (event, directoryPath: string) => {
     try {
-      const resolvedPath = await assertRendererFileAccess(event.sender.id, directoryPath);
+      const resolvedPath = await rendererAccess.assertFileAccess(event.sender.id, directoryPath);
       const errorMessage = await shell.openPath(resolvedPath);
       return errorMessage === '';
     } catch (error) {
