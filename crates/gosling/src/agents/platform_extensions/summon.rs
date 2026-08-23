@@ -125,6 +125,25 @@ mod tests {
     }
 
     #[test]
+    fn test_original_module_path_compatibility_facade() {
+        let _discover: fn(&Path) -> Vec<SourceEntry> =
+            crate::agents::platform_extensions::summon::discover_filesystem_sources;
+        let _params = crate::agents::platform_extensions::summon::DelegateParams::default();
+        let _background_task_size =
+            std::mem::size_of::<crate::agents::platform_extensions::summon::BackgroundTask>();
+        let _completed_task_size =
+            std::mem::size_of::<crate::agents::platform_extensions::summon::CompletedTask>();
+        let _client =
+            crate::agents::platform_extensions::summon::SummonClient::new(create_test_context())
+                .unwrap();
+
+        assert_eq!(
+            crate::agents::platform_extensions::summon::EXTENSION_NAME,
+            "summon"
+        );
+    }
+
+    #[test]
     fn test_agent_frontmatter_parsing() {
         let agent = r#"---
 name: reviewer

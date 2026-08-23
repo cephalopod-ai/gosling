@@ -116,6 +116,68 @@ the extracted responsibilities through the original `summon` facade.
 No suspected defects observed so far. Any defect noticed while moving code will
 be recorded and routed without changing behavior.
 
-## Gate 3-7 evidence
+## Gates 3-4 — Seam checkpoints and connection checks
 
-Pending extraction.
+Every seam was moved into a child of `summon`, formatted, built, exercised by
+the unchanged 36-test Summon suite, statically checked for a single symbol
+owner, and committed as a rollback point:
+
+| Seam | Module | Checkpoint | Direct / second-level connections checked |
+|---|---|---|---|
+| Source discovery and policy | `source_discovery.rs` | `c0a33b04b` | load cache, MCP instructions, delegate agent parsing; ACP mention completion and server slash-command discovery via the facade |
+| Task tracking | `task_tracking.rs` | `d8d6daeb6` | load result collection, async task registration, MCP status; load/delegate tool lifecycle |
+| Loading | `loading.rs` | `21f461409` | MCP `load`, delegate source resolution; platform-extension tool dispatch |
+| Delegation | `delegation.rs` | `205cf74a8` | MCP `delegate`, async path, task config; platform-extension registry/client construction |
+| Delegate configuration | `delegate_config.rs` | `7708b96ff` | foreground/background delegate execution; provider/model/session configuration |
+| Async delegation | `async_delegation.rs` | `dd5143a4b` | delegate async branch and task tracking; MCP load/status collection |
+| MCP adapter | `mcp.rs` | `674331e9e` | load/delegate implementations and client state; `PLATFORM_EXTENSIONS` registration and extension-manager workflows |
+
+The Rust compiler exposed two child-privacy connections during extraction:
+`kind_plural`/`AgentMetadata` and `resolve_source`. They were given
+`pub(super)` visibility only, preserving the public API. One test-only import
+was gated with `#[cfg(test)]`. These were structural wiring findings, not
+behavioral defects and not MOD-B entries.
+
+The external facade callers were inspected directly:
+
+- `agents/platform_extensions/mod.rs` constructs `SummonClient` and reads
+  `EXTENSION_NAME`; second level is platform-extension loading and MCP dispatch.
+- `acp/server/agent_mentions.rs` calls `discover_filesystem_sources`; second
+  level is ACP custom request dispatch.
+- `gosling-server/routes/config_management.rs` calls the same discovery facade;
+  second level is the HTTP slash-command route.
+
+## Gate 5 — Intermediary audit
+
+| Seam | Finding | Disposition | Complexity | Cost | Nominal agent |
+|---|---|---|---|---|---|
+| Source discovery | No duplicate owner, caller break, or behavior drift | proceed | medium | low | primary Rust agent |
+| Task tracking | Spawn/reap/cancel state remains connected at one module altitude | proceed | high | medium | primary Rust agent |
+| Loading | Cache, discovery, and task-result paths remain covered | proceed | medium | low | primary Rust agent |
+| Delegation | Trust policy, no-nesting rule, and foreground run unchanged | proceed | high | medium | primary Rust agent |
+| Delegate config | Provider/model/turn/path policies unchanged | proceed | medium | low | primary Rust agent |
+| Async delegation | Spawn and registration moved together; cleanup remains reachable | proceed | medium | low | primary Rust agent |
+| MCP adapter | Trait dispatch and facade registration compile unchanged | proceed | medium | low | primary Rust agent |
+
+No MOD-B suspects and no rollback triggers surfaced.
+
+## Gate 6 — Tests, docs, and ledgers
+
+- Existing Summon behavior tests were not weakened, skipped, deleted, or moved.
+- Added `test_original_module_path_compatibility_facade` to compile and assert
+  the original public paths (`EXTENSION_NAME`, `SummonClient`,
+  `DelegateParams`, `BackgroundTask`, `CompletedTask`, and
+  `discover_filesystem_sources`). The targeted suite is now 37 tests.
+- `cargo check -p gosling-server` passes, covering the separate crate caller of
+  the discovery facade.
+- Updated `docs/TODO.md` with the completed seven-module map and removed
+  `summon.rs` from the remaining routed list.
+- Active user docs contain no `summon.rs:<line>` references. Forty-five such
+  references exist in immutable point-in-time audit/session reports; their
+  line citations already targeted historical snapshots and were not rewritten
+  as if they described the current tree. `documentation/static/servers.json`
+  links to the original facade path, which remains valid.
+
+## Gate 7 — Verification sweep
+
+Pending final baseline-equivalent rerun and MOD-V01..10 evidence capture.

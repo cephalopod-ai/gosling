@@ -463,13 +463,19 @@ local until a separate push is authorized.
       untouched inline test module) keeps every public path unchanged.
       Behavior-preserving; no MOD-B suspects surfaced. Full run log:
       [`docs/logs/session/2026-08-22-modularize-session-manager.md`](logs/session/2026-08-22-modularize-session-manager.md).
+- [x] `crates/gosling/src/agents/platform_extensions/summon.rs` (2772 lines)
+      modularized 2026-08-23 into seven `summon/*.rs` responsibility modules
+      for source discovery, task tracking, loading, delegation, delegate
+      configuration, asynchronous delegation, and MCP dispatch. The original
+      module remains a compatibility facade and preserves every public path.
+      Behavior-preserving; no MOD-B suspects surfaced. Full run log:
+      [`docs/logs/session/2026-08-23-modularize-summon.md`](logs/session/2026-08-23-modularize-summon.md).
 - [ ] Modularize the remaining routed >=2000-line files in dedicated
       changes, preserving behavior and avoiding mixed repair/refactor
       commits:
       `crates/gosling/src/acp/server.rs`,
       `crates/gosling/src/agents/agent.rs`,
       `crates/gosling/src/agents/extension_manager.rs`,
-      `crates/gosling/src/agents/platform_extensions/summon.rs`, and
       `ui/desktop/src/main.ts`.
 - [x] Run the added Rust regression suite, workspace build, and Clippy before
       merge when explicitly authorized. The 2026-07-18 twelve-lens follow-up ran
