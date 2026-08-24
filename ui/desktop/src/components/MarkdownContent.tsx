@@ -34,6 +34,10 @@ import { ConfirmationModal } from './ui/ConfirmationModal';
 import { defineMessages, useIntl } from '../i18n';
 import { artifactKindFromPath, localFilePathFromUri } from './artifacts/artifactUtils';
 
+const inlineMathStart = 'gosling-inline-math-start-1d8b';
+const inlineMathEnd = 'gosling-inline-math-end-1d8b';
+const inlineMathPattern = new RegExp(`${inlineMathStart}([\\s\\S]*?)${inlineMathEnd}`, 'g');
+
 const i18n = defineMessages({
   copyCode: {
     id: 'markdownContent.copyCode',
@@ -78,6 +82,104 @@ interface MarkdownContentProps {
   className?: string;
   onLocalFileLink?: (path: string) => void;
 }
+
+interface MarkdownNode {
+  type?: string;
+  value?: unknown;
+  children?: MarkdownNode[];
+  data?: {
+    hName: string;
+    hProperties: {
+      className: string[];
+    };
+  };
+}
+
+function normalizeLatexMathDelimiters(content: string): string {
+  const normalizeText = (text: string) => {
+    let normalized = '';
+    let lastIndex = 0;
+    const inlineCodePattern = /(`+)([\s\S]*?)\1/g;
+
+    for (const match of text.matchAll(inlineCodePattern)) {
+      const index = match.index ?? 0;
+      normalized += normalizeMathText(text.slice(lastIndex, index));
+      normalized += match[0];
+      lastIndex = index + match[0].length;
+    }
+
+    return normalized + normalizeMathText(text.slice(lastIndex));
+  };
+
+  return content
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
+    .map((segment, index) => (index % 2 === 0 ? normalizeText(segment) : segment))
+    .join('');
+}
+
+function normalizeMathText(text: string): string {
+  return text
+    .replace(/(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]/g, (_, math) => `$$\n${math.trim()}\n$$`)
+    .replace(
+      /(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g,
+      (_, math) => `${inlineMathStart}${math}${inlineMathEnd}`
+    );
+}
+
+function splitInlineMath(text: string): MarkdownNode[] {
+  const nodes: MarkdownNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(inlineMathPattern)) {
+    const index = match.index ?? 0;
+
+    if (index > lastIndex) {
+      nodes.push({ type: 'text', value: text.slice(lastIndex, index) });
+    }
+
+    nodes.push({
+      type: 'inlineMath',
+      value: match[1],
+      data: {
+        hName: 'code',
+        hProperties: {
+          className: ['language-math', 'math-inline'],
+        },
+      },
+    });
+    lastIndex = index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push({ type: 'text', value: text.slice(lastIndex) });
+  }
+
+  return nodes;
+}
+
+function renderBackslashDelimitedInlineMath(node: MarkdownNode): void {
+  if (!node.children) {
+    return;
+  }
+
+  node.children = node.children.flatMap((child) => {
+    if (
+      child.type !== 'text' ||
+      typeof child.value !== 'string' ||
+      !child.value.includes(inlineMathStart)
+    ) {
+      return child;
+    }
+
+    return splitInlineMath(child.value);
+  });
+
+  node.children.forEach(renderBackslashDelimitedInlineMath);
+}
+
+const remarkBackslashDelimitedInlineMath = () => (tree: MarkdownNode) => {
+  renderBackslashDelimitedInlineMath(tree);
+};
 
 // Memoized CodeBlock component to prevent re-rendering when props haven't changed
 const CodeBlock = memo(function CodeBlock({
@@ -211,7 +313,7 @@ const MarkdownContent = memo(function MarkdownContent({
 
   useEffect(() => {
     try {
-      const processed = wrapHTMLInCodeBlock(content);
+      const processed = wrapHTMLInCodeBlock(normalizeLatexMathDelimiters(content));
       setProcessedContent(processed);
     } catch (error) {
       console.error('Error processing content:', error);
@@ -262,7 +364,12 @@ const MarkdownContent = memo(function MarkdownContent({
       >
         <ReactMarkdown
           urlTransform={customUrlTransform}
-          remarkPlugins={[remarkGfm, remarkBreaks, [remarkMath, { singleDollarTextMath: false }]]}
+          remarkPlugins={[
+            remarkGfm,
+            remarkBreaks,
+            [remarkMath, { singleDollarTextMath: false }],
+            remarkBackslashDelimitedInlineMath,
+          ]}
           rehypePlugins={[
             [
               rehypeKatex,

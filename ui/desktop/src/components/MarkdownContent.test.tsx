@@ -458,6 +458,35 @@ for the result.`;
       });
     });
 
+    it('renders backslash-delimited display math from provider responses', async () => {
+      const content = `One possible score is:
+
+\\[
+Q_i = \\frac{P_i(\\text{success}) \\widehat{\\Delta_i}}{k_i + \\epsilon}
+\\]`;
+
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
+
+      await waitFor(() => {
+        const katexDisplay = container.querySelector('.katex-display');
+        expect(katexDisplay).toBeInTheDocument();
+        expect(katexDisplay?.querySelector('.katex-html')).not.toHaveTextContent('\\frac');
+        expect(katexDisplay?.querySelector('.katex-html')).not.toHaveTextContent('\\widehat');
+      });
+    });
+
+    it('renders backslash-delimited inline math without enabling raw dollar math', async () => {
+      const content = 'The probability is \\(P(\\text{success})\\).';
+
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
+
+      await waitFor(() => {
+        expect(container.querySelector('.katex')).toBeInTheDocument();
+        expect(container.querySelector('.katex-display')).not.toBeInTheDocument();
+        expect(container).not.toHaveTextContent('\\text');
+      });
+    });
+
     it('handles shell commands without triggering math mode', async () => {
       const content = 'Run echo "$FOO_BAR" to see the value.';
 
@@ -476,6 +505,18 @@ for the result.`;
       const { container } = renderWithIntl(<MarkdownContent content={content} />);
 
       await waitFor(() => {
+        expect(container).toHaveTextContent('x^2');
+      });
+    });
+
+    it('does not render backslash-delimited math inside code blocks', async () => {
+      const content = ['```latex', '\\[', 'x^2', '\\]', '```'].join('\n');
+
+      const { container } = renderWithIntl(<MarkdownContent content={content} />);
+
+      await waitFor(() => {
+        expect(container.querySelector('.katex')).not.toBeInTheDocument();
+        expect(container).toHaveTextContent('\\[');
         expect(container).toHaveTextContent('x^2');
       });
     });
