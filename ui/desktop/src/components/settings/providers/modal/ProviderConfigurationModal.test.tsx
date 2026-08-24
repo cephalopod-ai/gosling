@@ -20,19 +20,19 @@ vi.mock('../../../ModelAndProviderContext', () => ({
 }));
 
 const provider: ProviderDetails = {
-  name: 'gemini_oauth',
+  name: 'test_oauth',
   is_configured: false,
   manages_own_context: false,
   provider_type: 'Builtin',
   metadata: {
-    name: 'gemini_oauth',
-    display_name: 'Gemini',
-    description: 'Sign in with Gemini',
-    default_model: 'gemini-3-flash-preview',
+    name: 'test_oauth',
+    display_name: 'Test OAuth',
+    description: 'Sign in with Test OAuth',
+    default_model: 'test-model',
     model_doc_link: '',
     config_keys: [
       {
-        name: 'GEMINI_OAUTH_TOKEN',
+        name: 'TEST_OAUTH_TOKEN',
         required: true,
         secret: true,
         oauth_flow: true,
@@ -57,10 +57,10 @@ describe('ProviderConfigurationModal', () => {
       wrapper: IntlTestWrapper,
     });
 
-    await user.click(screen.getByRole('button', { name: 'Sign in with Gemini' }));
+    await user.click(screen.getByRole('button', { name: 'Sign in with Test OAuth' }));
 
     await waitFor(() => {
-      expect(acpAuthenticateProvider).toHaveBeenCalledWith('gemini_oauth');
+      expect(acpAuthenticateProvider).toHaveBeenCalledWith('test_oauth');
     });
     expect(
       await screen.findByText(

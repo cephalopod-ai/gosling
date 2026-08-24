@@ -272,14 +272,14 @@ a dedicated modularization pass rather than split mid-repair).
       rather than re-deriving it independently — check here first if a
       `vibe-acp` protocol assumption needs to change anywhere in the fleet.
 
-## Provider authentication follow-up — observed 2026-08-15
+## Gemini OAuth retirement — 2026-08-23
 
-- [x] **Gemini OAuth error detail** — resolved 2026-08-17. The Desktop provider
-      modal now preserves the ACP error payload, so a failed sign-in shows the
-      provider-specific cause rather than only `OAuth login failed: Internal error`.
-      Regression coverage is in
-      `ProviderConfigurationModal.test.tsx`; see
-      [`2026-08-17-gemini-oauth-error-repair.md`](logs/session/2026-08-17-gemini-oauth-error-repair.md).
+- [x] **Gemini OAuth provider** — retired from the provider registry because its
+      browser sign-in flow is not reliable. Gemini remains available through
+      `Google Gemini (API Key)` with `GOOGLE_API_KEY`; no existing OAuth token
+      cache was deleted. The provider registry regression is in `init.rs` and
+      the generic OAuth-error rendering regression remains in
+      `ProviderConfigurationModal.test.tsx`.
 
 ## Shared project-shell readiness — reassessed 2026-08-13
 

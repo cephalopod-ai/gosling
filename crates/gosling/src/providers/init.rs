@@ -19,7 +19,6 @@ use super::{
     databricks_v2::DatabricksV2Provider,
     gcpvertexai::GcpVertexAIProvider,
     gemini_cli::GeminiCliProvider,
-    gemini_oauth::GeminiOAuthProvider,
     githubcopilot::GithubCopilotProvider,
     google::GoogleProvider,
     kimicode::KimiCodeProvider,
@@ -92,7 +91,6 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         );
         registry.register::<GcpVertexAIProvider>(false);
         registry.register::<GeminiCliProvider>(false);
-        registry.register::<GeminiOAuthProvider>(true);
         registry.register_with_inventory::<GithubCopilotProvider>(
             false,
             Some(registrations::github_copilot_inventory()),
@@ -152,10 +150,6 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     registry.set_cleanup(
         "chatgpt_codex",
         Arc::new(|| Box::pin(ChatGptCodexProvider::cleanup())),
-    );
-    registry.set_cleanup(
-        "gemini_oauth",
-        Arc::new(|| Box::pin(GeminiOAuthProvider::cleanup())),
     );
     registry.set_cleanup(
         "xai_oauth",
@@ -312,6 +306,21 @@ mod tests {
                 "OPENAI_API_KEY should be secret"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn gemini_oauth_is_not_registered_but_google_api_is_available() {
+        let provider_ids = providers()
+            .await
+            .into_iter()
+            .map(|(metadata, _)| metadata.name)
+            .collect::<Vec<_>>();
+
+        assert!(provider_ids.iter().any(|provider| provider == "google"));
+        assert!(!provider_ids
+            .iter()
+            .any(|provider| provider == "gemini_oauth"));
+        assert!(get_from_registry("gemini_oauth").await.is_err());
     }
 
     #[tokio::test]

@@ -256,6 +256,5 @@ conformance workflow must pass M5 first.
   are acceptance requirements, not post-MVP cleanup.
 - Product uninstall/reset must remove only that shell's state and never Gosling's credential catalog
   or another shell's settings.
-- Gemini OAuth provider configuration currently has a separately tracked login failure in
-  `docs/TODO.md`. It is not a Default Shell implementation change, but provider setup/relink workflow
-  testing must include it before claiming a polished credential-selection experience.
+- Gemini configuration uses the `Google Gemini (API Key)` provider. Provider setup/relink workflow
+  testing must cover the API-key path before claiming a polished credential-selection experience.
