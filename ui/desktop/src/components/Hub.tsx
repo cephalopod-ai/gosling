@@ -28,12 +28,35 @@ import {
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { reconcileWorkspaceWorkingDir } from '../utils/workspaceWorkingDir';
 import { useModelAndProvider } from './ModelAndProviderContext';
+import { Telescope } from 'lucide-react';
+import { researchInputTags, type SessionExperience } from '../types/sessionExperience';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
   goodAfternoon: { id: 'hub.goodAfternoon', defaultMessage: 'Good afternoon' },
   goodEvening: { id: 'hub.goodEvening', defaultMessage: 'Good evening' },
+  researchTitle: { id: 'hub.researchTitle', defaultMessage: 'Deep Research' },
+  researchDescription: {
+    id: 'hub.researchDescription',
+    defaultMessage:
+      'Start a focused research session. Dedicated report and source workflows will be added here.',
+  },
+  researchSessionTag: {
+    id: 'hub.researchSessionTag',
+    defaultMessage: 'Research session',
+  },
+  reportsTag: { id: 'hub.reportsTag', defaultMessage: 'Reports' },
+  linksTag: { id: 'hub.linksTag', defaultMessage: 'Links' },
+  textTag: { id: 'hub.textTag', defaultMessage: 'Text' },
+  promptsTag: { id: 'hub.promptsTag', defaultMessage: 'Prompts' },
 });
+
+const researchTagMessages = {
+  reports: i18n.reportsTag,
+  links: i18n.linksTag,
+  text: i18n.textTag,
+  prompts: i18n.promptsTag,
+};
 
 function useClock(): { time: string; meridiem: string; hour: number } {
   const [now, setNow] = useState(() => new Date());
@@ -54,10 +77,12 @@ export default function Hub({
   setView,
   initialMessage,
   initialWorkspaceId,
+  sessionExperience = 'chat',
 }: {
   setView: (view: View, viewOptions?: ViewOptions) => void;
   initialMessage?: UserInput;
   initialWorkspaceId?: string;
+  sessionExperience?: SessionExperience;
 }) {
   const intl = useIntl();
   const { extensionsList } = useConfig();
@@ -99,9 +124,12 @@ export default function Hub({
     );
   }, [selectedWorkspaceItem]);
   const workspaceSelectionRequired = !loading && !selectedWorkspace;
+  const isResearch = sessionExperience === 'research';
   const submitDisabledReason =
     workspaceStartIssue ??
-    (workspaceSelectionRequired ? 'Choose a workspace before starting a chat.' : undefined);
+    (workspaceSelectionRequired
+      ? `Choose a workspace before starting ${isResearch ? 'research' : 'a chat'}.`
+      : undefined);
   const [workingDir, setWorkingDir] = useState(
     selectedWorkspace?.workingFolder ?? getInitialWorkingDir()
   );
@@ -246,7 +274,11 @@ export default function Hub({
       window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
       window.dispatchEvent(
         new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-          detail: { sessionId: session.id, initialMessage: { msg: userMessage, images } },
+          detail: {
+            sessionId: session.id,
+            initialMessage: { msg: userMessage, images },
+            sessionExperience,
+          },
         })
       );
 
@@ -254,19 +286,25 @@ export default function Hub({
         disableAnimation: true,
         resumeSessionId: session.id,
         initialMessage: { msg: userMessage, images },
+        sessionExperience,
       });
       return true;
     } catch (error) {
       console.error('Failed to create session:', error);
       const detail = error instanceof Error ? error.message : String(error);
-      setSessionCreationError(`Could not start the chat: ${detail}`);
+      setSessionCreationError(
+        `Could not start the ${isResearch ? 'research session' : 'chat'}: ${detail}`
+      );
       setIsCreatingSession(false);
       return false;
     }
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 items-center justify-center px-6 relative">
+    <div
+      className="flex flex-col h-full min-h-0 items-center justify-center px-6 relative"
+      data-session-experience={sessionExperience}
+    >
       <div className="w-full max-w-2xl">
         <div className="flex items-baseline gap-2 mb-1">
           <span className="text-6xl font-light text-text-primary tracking-tight tabular-nums">
@@ -276,12 +314,47 @@ export default function Hub({
         </div>
         <p className="text-xl text-text-secondary mb-6">{greeting}</p>
 
+        {isResearch && (
+          <section
+            className="mb-4 rounded-xl border border-border-primary bg-background-secondary px-4 py-3"
+            aria-labelledby="deep-research-title"
+            data-research-intake="reports links text prompts"
+          >
+            <div className="flex items-center gap-2">
+              <Telescope className="h-5 w-5 text-text-primary" />
+              <h1 id="deep-research-title" className="text-base font-medium text-text-primary">
+                {intl.formatMessage(i18n.researchTitle)}
+              </h1>
+              <span className="rounded-full border border-border-primary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                {intl.formatMessage(i18n.researchSessionTag)}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-text-secondary">
+              {intl.formatMessage(i18n.researchDescription)}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2" aria-label="Research input types">
+              {researchInputTags.map((tag) => (
+                <span
+                  key={tag}
+                  data-research-input={tag}
+                  className="rounded-md bg-background-primary px-2 py-1 text-xs text-text-secondary"
+                >
+                  {intl.formatMessage(researchTagMessages[tag])}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="mb-3 flex items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2">
-          <label htmlFor="new-chat-workspace" className="text-sm font-medium text-text-primary">
+          <label
+            htmlFor={`new-${sessionExperience}-workspace`}
+            className="text-sm font-medium text-text-primary"
+          >
             Workspace
           </label>
           <select
-            id="new-chat-workspace"
+            id={`new-${sessionExperience}-workspace`}
             value={selectedWorkspaceId}
             onChange={(event) => handleWorkspaceChange(event.target.value)}
             disabled={loading || workspaces.length === 0}
@@ -313,13 +386,13 @@ export default function Hub({
           <div className="mb-3 grid gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-3 sm:grid-cols-2">
             <div className="min-w-0">
               <label
-                htmlFor="new-chat-credential-profile"
+                htmlFor={`new-${sessionExperience}-credential-profile`}
                 className="mb-1 block text-sm font-medium text-text-primary"
               >
                 Credential
               </label>
               <select
-                id="new-chat-credential-profile"
+                id={`new-${sessionExperience}-credential-profile`}
                 value={selectedCredentialProfileId}
                 onChange={(event) => setSelectedCredentialProfileId(event.target.value)}
                 className="w-full rounded-md border border-border-primary bg-background-primary px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

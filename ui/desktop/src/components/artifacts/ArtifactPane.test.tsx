@@ -44,6 +44,7 @@ describe('ArtifactPane', () => {
           onClick={() => {
             const artifacts: SessionArtifactDto[] = [
               'report.md',
+              'brief.docx',
               'analysis.py',
               'engine.rs',
               'build.sh',
@@ -74,7 +75,7 @@ describe('ArtifactPane', () => {
             );
           }}
         >
-          Load four outputs
+          Load mixed outputs
         </button>
         <button
           type="button"
@@ -206,7 +207,7 @@ describe('ArtifactPane', () => {
       </IntlTestWrapper>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load four outputs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load mixed outputs' }));
     fireEvent.click(screen.getByTitle('/outputs/report.md'));
 
     const grantButton = await screen.findByRole(
@@ -221,7 +222,7 @@ describe('ArtifactPane', () => {
     await waitFor(() => expect(selectArtifactFile).toHaveBeenCalledWith('report.md'));
   });
 
-  it('shows four discovered outputs without opening or reading a preview', () => {
+  it('shows only the default configured output extensions', () => {
     render(
       <IntlTestWrapper>
         <ArtifactWorkbenchProvider>
@@ -230,18 +231,58 @@ describe('ArtifactPane', () => {
       </IntlTestWrapper>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load four outputs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load mixed outputs' }));
 
-    expect(screen.getByText('Outputs 4')).toBeInTheDocument();
+    expect(screen.getByText('Outputs 2')).toBeInTheDocument();
     expect(screen.getByText('report.md')).toBeInTheDocument();
-    expect(screen.getByText('analysis.py')).toBeInTheDocument();
-    expect(screen.getByText('engine.rs')).toBeInTheDocument();
-    expect(screen.getByText('build.sh')).toBeInTheDocument();
+    expect(screen.getByText('brief.docx')).toBeInTheDocument();
+    expect(screen.queryByText('analysis.py')).not.toBeInTheDocument();
+    expect(screen.queryByText('engine.rs')).not.toBeInTheDocument();
+    expect(screen.queryByText('build.sh')).not.toBeInTheDocument();
     expect(screen.queryByText('David.Casbeer@us.af.mil')).not.toBeInTheDocument();
     expect(
       screen.queryByText('This file type does not have an in-app preview yet.')
     ).not.toBeInTheDocument();
     expect(readArtifactFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps configured files without an in-app preview available for external opening', async () => {
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load mixed outputs' }));
+    fireEvent.click(screen.getByTitle('/outputs/brief.docx'));
+
+    expect(
+      await screen.findByText('This file type does not have an in-app preview yet.')
+    ).toBeInTheDocument();
+    expect(screen.getByTitle('Open externally')).toBeInTheDocument();
+    expect(readArtifactFile).not.toHaveBeenCalled();
+  });
+
+  it('updates the displayed inventory when an extension is added in settings', async () => {
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load mixed outputs' }));
+    window.dispatchEvent(
+      new CustomEvent('outputFileExtensionsChanged', {
+        detail: ['pdf', 'md', 'txt', 'doc', 'docx', 'jpg', 'png', 'yaml', 'json', 'py'],
+      })
+    );
+
+    await waitFor(() => expect(screen.getByText('Outputs 3')).toBeInTheDocument());
+    expect(screen.getByText('analysis.py')).toBeInTheDocument();
   });
 
   it('keeps a supported PDF visible when its metadata includes a parameterized MIME type', () => {

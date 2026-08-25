@@ -4,6 +4,7 @@ import {
   artifactKindFromMetadata,
   artifactKindFromMimeType,
   artifactKindFromPath,
+  hasDisplayedFileExtension,
   isArtifactPreviewable,
   localFilePathFromUri,
   parseCsv,
@@ -29,6 +30,12 @@ describe('artifactUtils', () => {
     expect(artifactKindFromMetadata('/tmp/report.bmp', 'image/bmp')).toBe('unknown');
     expect(isArtifactPreviewable('David.Casbeer@us.af.mil')).toBe(false);
     expect(isArtifactPreviewable('/tmp/report.md')).toBe(true);
+  });
+
+  it('matches configured extensions case-insensitively, including compound extensions', () => {
+    expect(hasDisplayedFileExtension('/tmp/Report.PDF', ['pdf'])).toBe(true);
+    expect(hasDisplayedFileExtension('/tmp/archive.tar.gz?download=1', ['tar.gz'])).toBe(true);
+    expect(hasDisplayedFileExtension('/tmp/main.rs', ['md', 'txt'])).toBe(false);
   });
 
   it('parses quoted CSV cells and embedded newlines', () => {

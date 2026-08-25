@@ -1,8 +1,10 @@
 import { NavigateFunction } from 'react-router-dom';
 import { UserInput } from '../types/message';
+import type { SessionExperience } from '../types/sessionExperience';
 
 export type View =
   | 'chat'
+  | 'research'
   | 'pair'
   | 'settings'
   | 'extensions'
@@ -26,6 +28,7 @@ export type ViewOptions = {
   disableAnimation?: boolean;
   initialMessage?: UserInput;
   resumeSessionId?: string;
+  sessionExperience?: SessionExperience;
 };
 
 export const createNavigationHandler = (navigate: NavigateFunction) => {
@@ -33,6 +36,9 @@ export const createNavigationHandler = (navigate: NavigateFunction) => {
     switch (view) {
       case 'chat':
         navigate('/', { state: options });
+        break;
+      case 'research':
+        navigate('/research', { state: options });
         break;
       case 'pair': {
         // Put resumeSessionId in URL search params (not just state) so that:
@@ -42,6 +48,9 @@ export const createNavigationHandler = (navigate: NavigateFunction) => {
         const searchParams = new URLSearchParams();
         if (options?.resumeSessionId) {
           searchParams.set('resumeSessionId', options.resumeSessionId);
+        }
+        if (options?.sessionExperience === 'research') {
+          searchParams.set('sessionExperience', options.sessionExperience);
         }
         const url = searchParams.toString() ? `/pair?${searchParams.toString()}` : '/pair';
         navigate(url, { state: options });

@@ -3139,5 +3139,74 @@
   },
   "toolApprovalButtons.alwaysAllowedDomain": {
     "defaultMessage": "Always allowed ({domain})"
+  },
+  "gitBranchIndicator.currentBranch": {
+    "defaultMessage": "Current branch"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "No branches found"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "Search branches…"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "Recent"
+  },
+  "settings.outputFileExtensions.add": {
+    "defaultMessage": "Add"
+  },
+  "settings.outputFileExtensions.description": {
+    "defaultMessage": "Choose which file extensions are listed in the Outputs side panel."
+  },
+  "settings.outputFileExtensions.inputHint": {
+    "defaultMessage": "Separate multiple extensions with commas or spaces."
+  },
+  "settings.outputFileExtensions.inputLabel": {
+    "defaultMessage": "Add file extensions"
+  },
+  "settings.outputFileExtensions.inputPlaceholder": {
+    "defaultMessage": ".csv, .html"
+  },
+  "settings.outputFileExtensions.invalid": {
+    "defaultMessage": "Enter a valid extension, such as .csv or .tar.gz."
+  },
+  "settings.outputFileExtensions.remove": {
+    "defaultMessage": "Remove .{extension}"
+  },
+  "settings.outputFileExtensions.reset": {
+    "defaultMessage": "Reset defaults"
+  },
+  "settings.outputFileExtensions.saveFailed": {
+    "defaultMessage": "Could not save output file extensions."
+  },
+  "settings.outputFileExtensions.title": {
+    "defaultMessage": "Output files"
+  },
+  "baseChat.researchBadge": {
+    "defaultMessage": "Deep Research"
+  },
+  "hub.linksTag": {
+    "defaultMessage": "Links"
+  },
+  "hub.promptsTag": {
+    "defaultMessage": "Prompts"
+  },
+  "hub.reportsTag": {
+    "defaultMessage": "Reports"
+  },
+  "hub.researchDescription": {
+    "defaultMessage": "Start a focused research session. Dedicated report and source workflows will be added here."
+  },
+  "hub.researchSessionTag": {
+    "defaultMessage": "Research session"
+  },
+  "hub.researchTitle": {
+    "defaultMessage": "Deep Research"
+  },
+  "hub.textTag": {
+    "defaultMessage": "Text"
+  },
+  "navigation.itemResearch": {
+    "defaultMessage": "New Research"
   }
 }

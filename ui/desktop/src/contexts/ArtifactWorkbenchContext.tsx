@@ -180,7 +180,6 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
   const openArtifact = useCallback(
     (artifact: SessionArtifactDto) => {
       const kind = artifactKindFromMetadata(artifact.displayPath, artifact.mimeType);
-      if (kind === 'unknown') return;
       updateCurrent((state) => {
         const existing = state.tabs.find(
           (tab) =>

@@ -1,14 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  defaultOutputFileExtensions,
   defaultSettings,
   isSettingKey,
   isSettingValue,
+  normalizeOutputFileExtension,
   resolveStoredSettings,
   settingKeys,
 } from './settings';
 
 describe('resolveStoredSettings', () => {
+  it('uses the document-focused output extension defaults', () => {
+    expect(defaultSettings.outputFileExtensions).toEqual(defaultOutputFileExtensions);
+    expect(resolveStoredSettings({}).settings.outputFileExtensions).toEqual(
+      defaultOutputFileExtensions
+    );
+  });
+
   it('migrates the legacy externalGoosed key without retaining its secret', () => {
     const result = resolveStoredSettings({
       externalGoosed: {
@@ -84,6 +93,9 @@ describe('setting IPC schemas', () => {
     expect(isSettingValue('archiveFolder', 'x'.repeat(4097))).toBe(false);
     expect(isSettingValue('seenAnnouncementIds', new Array(1001).fill('id'))).toBe(false);
     expect(isSettingValue('recentModels', [{ provider: 'openai' }])).toBe(false);
+    expect(isSettingValue('outputFileExtensions', ['pdf', 'pdf'])).toBe(false);
+    expect(isSettingValue('outputFileExtensions', ['.pdf'])).toBe(false);
+    expect(isSettingValue('outputFileExtensions', ['pdf', 'tar.gz'])).toBe(true);
     expect(
       isSettingValue('recentModels', [
         { provider: 'openai', model: 'gpt-5' },
@@ -104,5 +116,11 @@ describe('setting IPC schemas', () => {
       })
     ).toBe(false);
     expect(isSettingValue('keyboardShortcuts', { focusWindow: null })).toBe(false);
+  });
+
+  it('normalizes extension input without accepting paths', () => {
+    expect(normalizeOutputFileExtension(' .CSV ')).toBe('csv');
+    expect(normalizeOutputFileExtension('.tar.gz')).toBe('tar.gz');
+    expect(normalizeOutputFileExtension('../secret')).toBeNull();
   });
 });

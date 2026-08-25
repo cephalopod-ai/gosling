@@ -37,6 +37,7 @@ import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
 import { useAcpChatSessionSnapshot } from '../acp/chatSessionStore';
 import { useArtifactRouter } from '../contexts/ArtifactRouterContext';
 import ThreadNavigator, { THREAD_TURN_ATTRIBUTE } from './conversation/ThreadNavigator';
+import type { SessionExperience } from '../types/sessionExperience';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -80,6 +81,10 @@ const i18n = defineMessages({
     id: 'baseChat.taskFailed',
     defaultMessage: 'Task failed',
   },
+  researchBadge: {
+    id: 'baseChat.researchBadge',
+    defaultMessage: 'Deep Research',
+  },
 });
 
 interface BaseChatProps {
@@ -95,6 +100,7 @@ interface BaseChatProps {
   isActiveSession: boolean;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+  sessionExperience?: SessionExperience;
 }
 
 export default function BaseChat({
@@ -106,6 +112,7 @@ export default function BaseChat({
   initialMessage,
   noAutoSubmit,
   isActiveSession,
+  sessionExperience = 'chat',
 }: BaseChatProps) {
   const intl = useIntl();
   const location = useLocation();
@@ -499,7 +506,7 @@ export default function BaseChat({
   }
 
   return (
-    <div className="h-full flex flex-col min-h-0">
+    <div className="h-full flex flex-col min-h-0" data-session-experience={sessionExperience}>
       <MainPanelLayout
         backgroundColor={'bg-background-primary'}
         removeTopPadding={true}
@@ -529,6 +536,14 @@ export default function BaseChat({
                 </span>
               </a>
               <EnvironmentBadge className="translate-y-px" />
+              {sessionExperience === 'research' && (
+                <span
+                  className="rounded-full border border-border-primary bg-background-secondary px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
+                  data-session-tag="research"
+                >
+                  {intl.formatMessage(i18n.researchBadge)}
+                </span>
+              )}
               <WorkingDirectoriesMenu session={session} onSessionChange={updateSession} compact />
               <CredentialProfileSelector
                 credentialProfileId={session?.credential_profile_id}

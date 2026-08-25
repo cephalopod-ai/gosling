@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Copy,
@@ -16,10 +16,20 @@ import { useArtifactWorkbench } from '../../contexts/ArtifactWorkbenchContext';
 import { cn } from '../../utils';
 import MarkdownContent from '../MarkdownContent';
 import { Button } from '../ui/button';
-import { addSandboxCsp, isArtifactPreviewable, parseCsv } from './artifactUtils';
+import {
+  addSandboxCsp,
+  hasDisplayedFileExtension,
+  isArtifactPreviewable,
+  parseCsv,
+} from './artifactUtils';
 import type { ArtifactTab } from './types';
 import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
 import { errorMessage } from '../../utils/conversionUtils';
+import {
+  defaultSettings,
+  isSettingValue,
+  OUTPUT_FILE_EXTENSIONS_CHANGED_EVENT,
+} from '../../utils/settings';
 
 const i18n = defineMessages({
   outputs: { id: 'artifactPane.outputs', defaultMessage: 'Outputs' },
@@ -260,12 +270,43 @@ export function ArtifactPane() {
   } = useArtifactWorkbench();
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(false);
-  const previewableArtifacts = useMemo(
+  const [outputFileExtensions, setOutputFileExtensions] = useState<string[]>(
+    defaultSettings.outputFileExtensions
+  );
+  const receivedOutputFileExtensionsChange = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.electron.getSetting('outputFileExtensions').then((extensions) => {
+      if (
+        !cancelled &&
+        !receivedOutputFileExtensionsChange.current &&
+        isSettingValue('outputFileExtensions', extensions)
+      ) {
+        setOutputFileExtensions(extensions);
+      }
+    });
+
+    const handleChange = (event: Event) => {
+      const extensions = (event as CustomEvent<unknown>).detail;
+      if (isSettingValue('outputFileExtensions', extensions)) {
+        receivedOutputFileExtensionsChange.current = true;
+        setOutputFileExtensions(extensions);
+      }
+    };
+    window.addEventListener(OUTPUT_FILE_EXTENSIONS_CHANGED_EVENT, handleChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(OUTPUT_FILE_EXTENSIONS_CHANGED_EVENT, handleChange);
+    };
+  }, []);
+
+  const displayedArtifacts = useMemo(
     () =>
       artifacts.filter((artifact) =>
-        isArtifactPreviewable(artifact.displayPath, artifact.mimeType)
+        hasDisplayedFileExtension(artifact.displayPath, outputFileExtensions)
       ),
-    [artifacts]
+    [artifacts, outputFileExtensions]
   );
 
   useEffect(() => {
@@ -402,7 +443,7 @@ export function ArtifactPane() {
       <div className="no-drag flex h-11 shrink-0 items-center gap-2 border-b border-border-primary px-2">
         <FileOutput className="h-4 w-4 text-text-secondary" />
         <span className="text-sm font-medium">
-          {intl.formatMessage(i18n.outputs)} {previewableArtifacts.length}
+          {intl.formatMessage(i18n.outputs)} {displayedArtifacts.length}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <Button
@@ -426,9 +467,9 @@ export function ArtifactPane() {
         </div>
       </div>
 
-      {previewableArtifacts.length > 0 && (
+      {displayedArtifacts.length > 0 && (
         <div className="max-h-52 shrink-0 overflow-y-auto border-b border-border-primary py-1">
-          {previewableArtifacts.map((artifact) => {
+          {displayedArtifacts.map((artifact) => {
             const selected =
               activeTab?.source.type === 'file' &&
               activeTab.source.path === artifact.displayPath &&

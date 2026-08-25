@@ -11,7 +11,7 @@ import { NavigationProvider, useNavigationContext } from './NavigationContext';
 import { Navigation } from './NavigationPanel';
 import { NAV_DIMENSIONS, Z_INDEX } from './constants';
 import { cn } from '../../utils';
-import { UserInput } from '../../types/message';
+import type { ActiveSessionView } from '../../types/sessionExperience';
 import {
   ArtifactWorkbenchProvider,
   useArtifactWorkbench,
@@ -35,11 +35,7 @@ const i18n = defineMessages({
 });
 
 interface AppLayoutContentProps {
-  activeSessions: Array<{
-    sessionId: string;
-    initialMessage?: UserInput;
-    noAutoSubmit?: boolean;
-  }>;
+  activeSessions: ActiveSessionView[];
 }
 
 const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) => {
@@ -159,11 +155,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
 };
 
 interface AppLayoutProps {
-  activeSessions: Array<{
-    sessionId: string;
-    initialMessage?: UserInput;
-    noAutoSubmit?: boolean;
-  }>;
+  activeSessions: ActiveSessionView[];
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ activeSessions }) => {

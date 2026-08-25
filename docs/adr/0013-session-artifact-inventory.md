@@ -24,9 +24,11 @@ directory scan occurs.
 ACP exposes paginated `_gosling/unstable/session/artifacts/list` and an `artifact_update` session
 notification sent only after storage succeeds. Older backends may be reconstructed conservatively from
 already-loaded trusted assistant messages. The Desktop session store owns inventory state. The Outputs
-workbench projects only entries with a supported in-app preview, and keeps that list separate from
-session-scoped preview tabs and selection; pane width and visibility remain window preferences. The
-durable metadata remains intact even when an entry is not presented.
+workbench projects entries whose file extensions match the user's persisted display list, and keeps
+that list separate from session-scoped preview tabs and selection; pane width and visibility remain
+window preferences. The default display list is `.pdf`, `.md`, `.txt`, `.doc`, `.docx`, `.jpg`, `.png`,
+`.yaml`, and `.json`. Files without an in-app renderer remain available for reveal and external opening.
+The durable metadata remains intact even when an entry is not presented.
 
 Inventory registration grants no filesystem capability. Relative paths retain their discovery working
 directory, but selection still passes through the Electron artifact guard. Existing renderer roots,
@@ -38,8 +40,9 @@ authorizes code, configuration, or MCP/tool-metadata paths.
 ## Consequences
 
 Outputs populate without click-driven side effects and survive restart, resume, and fork. Missing
-files with a supported preview type stay named, while entries with no supported in-app preview are
-omitted from the presented list and count. Common code/config extensions receive a code preview kind.
+files with a configured extension stay named, while other entries are omitted from the presented list
+and count. Common code/config extensions receive a code preview kind when the user adds them to the
+display list.
 Files are never created, copied, moved, opened, or read merely because a record exists. Files created
 by arbitrary shell commands and never referenced remain undiscovered; a future bounded observer would
 require a separate decision.

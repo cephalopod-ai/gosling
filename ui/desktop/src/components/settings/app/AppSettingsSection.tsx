@@ -19,6 +19,7 @@ import ThemeSelector from '../../GoslingSidebar/ThemeSelector';
 import GoslingLogo from '../../GoslingLogo';
 import { trackSettingToggled } from '../../../utils/analytics';
 import type { LanguageSetting } from '../../../utils/settings';
+import OutputFileExtensionsSection from './OutputFileExtensionsSection';
 
 const i18n = defineMessages({
   appearanceTitle: { id: 'settings.appearance.title', defaultMessage: 'Appearance' },
@@ -485,6 +486,8 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
           )}
         </CardContent>
       </Card>
+
+      <OutputFileExtensionsSection />
 
       <Card className="rounded-lg">
         <CardHeader className="pb-0">

@@ -135,6 +135,33 @@ describe('Hub workspace selection', () => {
     );
   });
 
+  it('scaffolds a tagged research session on the shared new-session flow', async () => {
+    const user = userEvent.setup();
+    const setView = vi.fn();
+    render(<Hub setView={setView} sessionExperience="research" />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    expect(screen.getByRole('heading', { name: 'Deep Research' })).toBeInTheDocument();
+    expect(screen.getByText('Research session')).toBeInTheDocument();
+    expect(screen.getByText('Reports')).toHaveAttribute('data-research-input', 'reports');
+    expect(screen.getByText('Links')).toHaveAttribute('data-research-input', 'links');
+    expect(screen.getByText('Text')).toHaveAttribute('data-research-input', 'text');
+    expect(screen.getByText('Prompts')).toHaveAttribute('data-research-input', 'prompts');
+
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() =>
+      expect(setView).toHaveBeenCalledWith(
+        'pair',
+        expect.objectContaining({
+          resumeSessionId: 'session-personal',
+          sessionExperience: 'research',
+        })
+      )
+    );
+  });
+
   it('does not allow a workspace with an unavailable primary folder', async () => {
     const user = userEvent.setup();
     vi.mocked(useWorkspace).mockReturnValue({

@@ -11,6 +11,20 @@ export type RecentModel = {
   model: string;
 };
 
+export const defaultOutputFileExtensions = [
+  'pdf',
+  'md',
+  'txt',
+  'doc',
+  'docx',
+  'jpg',
+  'png',
+  'yaml',
+  'json',
+] as const;
+
+export const OUTPUT_FILE_EXTENSIONS_CHANGED_EVENT = 'outputFileExtensionsChanged';
+
 export interface KeyboardShortcuts {
   focusWindow: string | null;
   quickLauncher: string | null;
@@ -53,6 +67,7 @@ export interface Settings {
   showPricing: boolean;
   seenAnnouncementIds: string[];
   recentModels: RecentModel[];
+  outputFileExtensions: string[];
 }
 
 export const settingKeys = [
@@ -74,6 +89,7 @@ export const settingKeys = [
   'showPricing',
   'seenAnnouncementIds',
   'recentModels',
+  'outputFileExtensions',
 ] as const satisfies readonly (keyof Settings)[];
 
 export type SettingKey = (typeof settingKeys)[number];
@@ -122,6 +138,7 @@ export const defaultSettings: Settings = {
   showPricing: true,
   seenAnnouncementIds: [],
   recentModels: [],
+  outputFileExtensions: [...defaultOutputFileExtensions],
 };
 
 const languageSettings = new Set<LanguageSetting>([
@@ -152,6 +169,32 @@ const MAX_ANNOUNCEMENTS = 1_000;
 const MAX_ARCHIVED_SESSIONS = 10_000;
 const MAX_RECENT_MODELS = 5;
 const MAX_RECENT_MODEL_FIELD_LENGTH = 512;
+const MAX_OUTPUT_FILE_EXTENSIONS = 100;
+const MAX_OUTPUT_FILE_EXTENSION_LENGTH = 32;
+
+export function normalizeOutputFileExtension(value: string): string | null {
+  const normalized = value.trim().toLowerCase().replace(/^\.+/, '');
+  if (
+    !normalized ||
+    normalized.length > MAX_OUTPUT_FILE_EXTENSION_LENGTH ||
+    !/^[a-z0-9][a-z0-9._+-]*$/.test(normalized)
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function isOutputFileExtensions(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_OUTPUT_FILE_EXTENSIONS &&
+    value.every(
+      (extension) =>
+        typeof extension === 'string' && normalizeOutputFileExtension(extension) === extension
+    ) &&
+    new Set(value).size === value.length
+  );
+}
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -255,6 +298,8 @@ export function isSettingValue<K extends SettingKey>(key: K, value: unknown): va
             isBoundedString(recent.model, MAX_RECENT_MODEL_FIELD_LENGTH)
         )
       );
+    case 'outputFileExtensions':
+      return isOutputFileExtensions(value);
   }
 }
 
@@ -282,6 +327,7 @@ export function setSettingValue<K extends SettingKey>(
     case 'showPricing':
     case 'seenAnnouncementIds':
     case 'recentModels':
+    case 'outputFileExtensions':
       Object.assign(settings, { [key]: value });
   }
 }
@@ -294,6 +340,7 @@ function freshDefaultSettings(): Settings {
     keyboardShortcuts: { ...defaultSettings.keyboardShortcuts },
     seenAnnouncementIds: [],
     recentModels: [],
+    outputFileExtensions: [...defaultSettings.outputFileExtensions],
   };
 }
 

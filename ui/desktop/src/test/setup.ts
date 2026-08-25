@@ -73,6 +73,7 @@ const mockSettings: Record<string, unknown> = {
   showPricing: true,
   seenAnnouncementIds: [],
   recentModels: [],
+  outputFileExtensions: ['pdf', 'md', 'txt', 'doc', 'docx', 'jpg', 'png', 'yaml', 'json'],
 };
 
 // Mock window.electron for renderer process

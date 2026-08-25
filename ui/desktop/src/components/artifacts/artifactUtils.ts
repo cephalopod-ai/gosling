@@ -237,6 +237,11 @@ export function isArtifactPreviewable(path: string, mimeType?: string | null): b
   return artifactKindFromMetadata(path, mimeType) !== 'unknown';
 }
 
+export function hasDisplayedFileExtension(path: string, extensions: readonly string[]): boolean {
+  const normalizedPath = path.split(/[?#]/, 1)[0].toLowerCase();
+  return extensions.some((extension) => normalizedPath.endsWith(`.${extension}`));
+}
+
 export function artifactTitleFromPath(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || path;

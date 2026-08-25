@@ -1650,6 +1650,7 @@ const createChat = async (
   let appPath = '/';
   const routeMap: Record<string, string> = {
     chat: '/',
+    research: '/research',
     pair: '/pair',
     settings: '/settings',
     sessions: '/sessions',

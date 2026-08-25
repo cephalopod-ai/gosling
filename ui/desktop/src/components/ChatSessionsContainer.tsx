@@ -1,15 +1,11 @@
 import { useSearchParams } from 'react-router-dom';
 import BaseChat from './BaseChat';
 import { ChatType } from '../types/chat';
-import { UserInput } from '../types/message';
+import { sessionExperienceFrom, type ActiveSessionView } from '../types/sessionExperience';
 
 interface ChatSessionsContainerProps {
   setChat: (chat: ChatType) => void;
-  activeSessions: Array<{
-    sessionId: string;
-    initialMessage?: UserInput;
-    noAutoSubmit?: boolean;
-  }>;
+  activeSessions: ActiveSessionView[];
 }
 
 /**
@@ -23,6 +19,7 @@ export default function ChatSessionsContainer({
 }: ChatSessionsContainerProps) {
   const [searchParams] = useSearchParams();
   const currentSessionId = searchParams.get('resumeSessionId') ?? undefined;
+  const currentSessionExperience = sessionExperienceFrom(searchParams.get('sessionExperience'));
 
   // Always render active sessions to keep SSE connections alive, even when not on /pair route
   if (!currentSessionId && activeSessions.length === 0) {
@@ -34,7 +31,10 @@ export default function ChatSessionsContainer({
 
   // If we have a currentSessionId that's not in activeSessions, add it (handles page refresh)
   if (currentSessionId && !activeSessions.some((s) => s.sessionId === currentSessionId)) {
-    sessionsToRender = [...activeSessions, { sessionId: currentSessionId }];
+    sessionsToRender = [
+      ...activeSessions,
+      { sessionId: currentSessionId, sessionExperience: currentSessionExperience },
+    ];
   }
 
   return (
@@ -47,12 +47,14 @@ export default function ChatSessionsContainer({
             key={session.sessionId}
             className={`absolute inset-0 ${isVisible ? 'block' : 'hidden'}`}
             data-session-id={session.sessionId}
+            data-session-experience={session.sessionExperience}
           >
             <BaseChat
               setChat={setChat}
               sessionId={session.sessionId}
               initialMessage={session.initialMessage}
               noAutoSubmit={session.noAutoSubmit}
+              sessionExperience={session.sessionExperience}
               suppressEmptyState={false}
               isActiveSession={isVisible}
             />

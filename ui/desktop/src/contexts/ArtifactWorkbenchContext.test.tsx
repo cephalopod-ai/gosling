@@ -113,14 +113,15 @@ describe('ArtifactWorkbenchProvider', () => {
         provenance: 'compatibility_inference',
       })
     );
-    expect(workbench.tabs).toHaveLength(1);
+    expect(workbench.tabs).toHaveLength(2);
+    expect(workbench.activeTab?.kind).toBe('unknown');
 
     act(() => workbench.setVisibleSession('session-b', []));
     expect(workbench.artifacts).toEqual([]);
     expect(workbench.tabs).toEqual([]);
 
     act(() => workbench.setVisibleSession('session-a', [artifact]));
-    expect(workbench.tabs).toHaveLength(1);
+    expect(workbench.tabs).toHaveLength(2);
   });
 
   it('drops unsupported persisted tabs while retaining MIME-only text previews', () => {

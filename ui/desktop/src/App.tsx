@@ -23,6 +23,7 @@ interface PairRouteState {
   resumeSessionId?: string;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+  sessionExperience?: SessionExperience;
 }
 
 interface NewChatRouteState {
@@ -53,6 +54,11 @@ import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
 import { WorkspaceProvider } from './contexts/WorkspaceContext';
+import {
+  sessionExperienceFrom,
+  type ActiveSessionView,
+  type SessionExperience,
+} from './types/sessionExperience';
 
 function PageViewTracker() {
   usePageViewTracking();
@@ -60,7 +66,11 @@ function PageViewTracker() {
 }
 
 // Route Components
-const HubRouteWrapper = () => {
+const HubRouteWrapper = ({
+  sessionExperience = 'chat',
+}: {
+  sessionExperience?: SessionExperience;
+}) => {
   const setView = useNavigation();
   const location = useLocation();
   const routeState =
@@ -71,19 +81,12 @@ const HubRouteWrapper = () => {
       setView={setView}
       initialMessage={routeState.initialMessage}
       initialWorkspaceId={routeState.initialWorkspaceId}
+      sessionExperience={sessionExperience}
     />
   );
 };
 
-const PairRouteWrapper = ({
-  activeSessions,
-}: {
-  activeSessions: Array<{
-    sessionId: string;
-    initialMessage?: UserInput;
-    noAutoSubmit?: boolean;
-  }>;
-}) => {
+const PairRouteWrapper = ({ activeSessions }: { activeSessions: ActiveSessionView[] }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const routeState =
@@ -93,12 +96,18 @@ const PairRouteWrapper = ({
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
+  const sessionExperience = sessionExperienceFrom(
+    routeState.sessionExperience ?? searchParams.get('sessionExperience')
+  );
 
   useEffect(() => {
     if (initialMessage && !resumeSessionId) {
-      navigate('/', { replace: true, state: { initialMessage } });
+      navigate(sessionExperience === 'research' ? '/research' : '/', {
+        replace: true,
+        state: { initialMessage },
+      });
     }
-  }, [initialMessage, navigate, resumeSessionId]);
+  }, [initialMessage, navigate, resumeSessionId, sessionExperience]);
 
   // Add resumed session to active sessions if not already there
   useEffect(() => {
@@ -109,11 +118,12 @@ const PairRouteWrapper = ({
             sessionId: resumeSessionId,
             initialMessage: initialMessage,
             noAutoSubmit,
+            sessionExperience,
           },
         })
       );
     }
-  }, [resumeSessionId, activeSessions, initialMessage, noAutoSubmit]);
+  }, [resumeSessionId, activeSessions, initialMessage, noAutoSubmit, sessionExperience]);
 
   return null;
 };
@@ -159,6 +169,9 @@ const PermissionRoute = () => {
           case 'chat':
             navigate('/');
             break;
+          case 'research':
+            navigate('/research');
+            break;
           case 'pair':
             navigate('/pair');
             break;
@@ -187,9 +200,7 @@ const ConfigureProvidersRoute = () => {
   return (
     <div className="w-screen h-screen bg-background-primary">
       <ProviderSettings
-        onClose={() =>
-          navigate('/settings', { state: parentViewOptions ?? { section: 'models' } })
-        }
+        onClose={() => navigate('/settings', { state: parentViewOptions ?? { section: 'models' } })}
         isOnboarding={false}
       />
     </div>
@@ -213,6 +224,9 @@ const ExtensionsRoute = () => {
         switch (view) {
           case 'chat':
             navigate('/');
+            break;
+          case 'research':
+            navigate('/research');
             break;
           case 'pair':
             navigate('/pair', { state: options });
@@ -245,17 +259,16 @@ export function AppInner() {
 
   const MAX_ACTIVE_SESSIONS = 10;
 
-  const [activeSessions, setActiveSessions] = useState<
-    Array<{ sessionId: string; initialMessage?: UserInput; noAutoSubmit?: boolean }>
-  >([]);
+  const [activeSessions, setActiveSessions] = useState<ActiveSessionView[]>([]);
 
   useEffect(() => {
     const handleAddActiveSession = (event: Event) => {
-      const { sessionId, initialMessage, noAutoSubmit } = (
+      const { sessionId, initialMessage, noAutoSubmit, sessionExperience } = (
         event as CustomEvent<{
           sessionId: string;
           initialMessage?: UserInput;
           noAutoSubmit?: boolean;
+          sessionExperience?: SessionExperience;
         }>
       ).detail;
 
@@ -269,6 +282,7 @@ export function AppInner() {
             ...existing,
             ...(initialMessage ? { initialMessage } : {}),
             ...(noAutoSubmit !== undefined ? { noAutoSubmit } : {}),
+            ...(sessionExperience ? { sessionExperience } : {}),
           };
           return [
             ...prev.slice(0, existingIndex),
@@ -278,7 +292,12 @@ export function AppInner() {
         }
 
         // New session - add to end with LRU eviction if needed
-        const newSession = { sessionId, initialMessage, noAutoSubmit };
+        const newSession: ActiveSessionView = {
+          sessionId,
+          initialMessage,
+          noAutoSubmit,
+          sessionExperience: sessionExperienceFrom(sessionExperience),
+        };
         const updated = [...prev, newSession];
         if (updated.length > MAX_ACTIVE_SESSIONS) {
           return updated.slice(updated.length - MAX_ACTIVE_SESSIONS);
@@ -562,6 +581,7 @@ export function AppInner() {
               }
             >
               <Route index element={<HubRouteWrapper />} />
+              <Route path="research" element={<HubRouteWrapper sessionExperience="research" />} />
               <Route path="pair" element={<PairRouteWrapper activeSessions={activeSessions} />} />
               <Route path="settings" element={<SettingsRoute />} />
               <Route
