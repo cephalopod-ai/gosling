@@ -61,7 +61,7 @@ describe('ResearchModelTeamSelector', () => {
     vi.mocked(acpListProviderModels).mockImplementation(async (providerId) => {
       if (providerId === 'codex') return [{ id: 'gpt-5.6-sol' }];
       if (providerId === 'claude') return [{ id: 'claude-opus-5' }];
-      return [{ id: 'llama-4' }];
+      return [{ id: 'llama-4' }, { id: 'llama-5' }];
     });
   });
 
@@ -107,6 +107,21 @@ describe('ResearchModelTeamSelector', () => {
         mode: 'trio',
         models: [
           { provider: 'codex', model: 'gpt-5.6-sol' },
+          { provider: 'claude', model: 'claude-opus-5' },
+          { provider: 'groq', model: 'llama-4' },
+        ],
+      })
+    );
+
+    await user.selectOptions(
+      screen.getByLabelText('Lead model'),
+      JSON.stringify(['groq', 'llama-5'])
+    );
+    await waitFor(() =>
+      expect(JSON.parse(screen.getByTestId('configuration').textContent ?? '{}')).toMatchObject({
+        mode: 'trio',
+        models: [
+          { provider: 'groq', model: 'llama-5' },
           { provider: 'claude', model: 'claude-opus-5' },
           { provider: 'groq', model: 'llama-4' },
         ],

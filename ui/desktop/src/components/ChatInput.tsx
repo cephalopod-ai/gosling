@@ -181,6 +181,7 @@ interface ChatInputProps {
   sessionModel?: string | null;
   sessionProvider?: string | null;
   sessionLoaded?: boolean;
+  onModelChanged?: (selection: { model: string; provider: string }) => void;
   workingDir?: string | null;
   goslingMode?: GoslingMode;
   onGoslingModeChange?: (newMode: GoslingMode) => Promise<void> | void;
@@ -219,6 +220,7 @@ export default function ChatInput({
   sessionModel,
   sessionProvider,
   sessionLoaded,
+  onModelChanged,
   workingDir,
   goslingMode,
   onGoslingModeChange,
@@ -300,6 +302,13 @@ export default function ChatInput({
   );
   const effectiveModel = modelOverride?.model ?? sessionModel ?? configModel;
   const effectiveProvider = modelOverride?.provider ?? sessionProvider ?? configProvider;
+  const handleModelChanged = useCallback(
+    (selection: { model: string; provider: string }) => {
+      setModelOverride(selection);
+      onModelChanged?.(selection);
+    },
+    [onModelChanged]
+  );
 
   // Clear override when the underlying data catches up (session props for
   // active chats, config defaults for Hub / no-session contexts).
@@ -1704,7 +1713,7 @@ export default function ChatInput({
               sessionModel={effectiveModel}
               sessionProvider={effectiveProvider}
               latestInference={latestInference}
-              onModelChanged={setModelOverride}
+              onModelChanged={handleModelChanged}
               sessionLoaded={sessionLoaded}
             />
           </div>

@@ -83,6 +83,30 @@ function useClock(): { time: string; meridiem: string; hour: number } {
   return { time, meridiem, hour };
 }
 
+function sameResearchModel(
+  left: ResearchTeamConfiguration['models'][number],
+  right: ResearchTeamConfiguration['models'][number]
+): boolean {
+  return left.provider === right.provider && left.model === right.model;
+}
+
+export function replaceResearchLead(
+  configuration: ResearchTeamConfiguration,
+  nextLead: ResearchTeamConfiguration['models'][number]
+): ResearchTeamConfiguration {
+  const models = [...configuration.models];
+  const previousLead = models[0];
+  const previousSeat = models.findIndex(
+    (model, index) => index > 0 && sameResearchModel(model, nextLead)
+  );
+
+  if (previousSeat > 0 && previousLead) {
+    models[previousSeat] = previousLead;
+  }
+  models[0] = nextLead;
+  return { ...configuration, models };
+}
+
 export default function Hub({
   setView,
   initialMessage,
@@ -138,6 +162,16 @@ export default function Hub({
   const [researchTeamConfiguration, setResearchTeamConfiguration] =
     useState<ResearchTeamConfiguration>({ mode: 'solo', models: [] });
   const [researchTeamIssue, setResearchTeamIssue] = useState<string | null>(null);
+  const researchLead = isResearch ? researchTeamConfiguration.models[0] : undefined;
+  const handleResearchComposerModelChanged = useCallback(
+    (selection: { model: string; provider: string }) => {
+      if (!isResearch) return;
+      setResearchTeamConfiguration((configuration) =>
+        replaceResearchLead(configuration, selection)
+      );
+    },
+    [isResearch]
+  );
   const submitDisabledReason =
     workspaceStartIssue ??
     (isResearch ? researchTeamIssue : null) ??
@@ -561,6 +595,9 @@ export default function Hub({
             workingDir={workingDir}
             onWorkingDirChange={handleWorkingDirChange}
             inputRef={inputRef}
+            sessionModel={researchLead?.model}
+            sessionProvider={researchLead?.provider}
+            onModelChanged={isResearch ? handleResearchComposerModelChanged : undefined}
             submitDisabled={Boolean(submitDisabledReason) || isCreatingSession}
             submitDisabledReason={submitDisabledReason}
             allowEmptySubmit={isResearch && researchInitialInputCount(researchInitialInputs) > 0}

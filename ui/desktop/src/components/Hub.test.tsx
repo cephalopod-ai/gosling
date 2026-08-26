@@ -41,21 +41,40 @@ vi.mock('./ChatInput', () => ({
     submitDisabled,
     submitDisabledReason,
     allowEmptySubmit,
+    sessionModel,
+    sessionProvider,
+    onModelChanged,
   }: {
     handleSubmit(input: { msg: string; images: [] }): void;
     initialValue?: string;
     submitDisabled?: boolean;
     submitDisabledReason?: string;
     allowEmptySubmit?: boolean;
+    sessionModel?: string;
+    sessionProvider?: string;
+    onModelChanged?(selection: { model: string; provider: string }): void;
   }) => (
-    <button
-      disabled={submitDisabled}
-      title={submitDisabledReason}
-      data-initial-value={initialValue}
-      onClick={() => handleSubmit({ msg: allowEmptySubmit ? '' : 'Start the project', images: [] })}
-    >
-      Send message
-    </button>
+    <>
+      <output data-testid="composer-model">
+        {sessionProvider && sessionModel ? `${sessionProvider}/${sessionModel}` : 'current model'}
+      </output>
+      <button
+        type="button"
+        onClick={() => onModelChanged?.({ provider: 'claude', model: 'claude-opus-5' })}
+      >
+        Use Claude in composer
+      </button>
+      <button
+        disabled={submitDisabled}
+        title={submitDisabledReason}
+        data-initial-value={initialValue}
+        onClick={() =>
+          handleSubmit({ msg: allowEmptySubmit ? '' : 'Start the project', images: [] })
+        }
+      >
+        Send message
+      </button>
+    </>
   ),
 }));
 
@@ -166,10 +185,29 @@ describe('Hub workspace selection', () => {
           setup_steps: [],
         },
       },
+      {
+        name: 'xai',
+        is_configured: true,
+        manages_own_context: false,
+        provider_type: 'Builtin',
+        metadata: {
+          name: 'xai',
+          display_name: 'C xAI',
+          description: '',
+          default_model: 'grok-4.6',
+          model_doc_link: '',
+          model_selection_hint: null,
+          config_keys: [],
+          known_models: [],
+          setup_steps: [],
+        },
+      },
     ]);
-    vi.mocked(acpListProviderModels).mockImplementation(async (providerId) =>
-      providerId === 'codex' ? [{ id: 'gpt-5.6-sol' }] : [{ id: 'claude-opus-5' }]
-    );
+    vi.mocked(acpListProviderModels).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') return [{ id: 'gpt-5.6-sol' }];
+      if (providerId === 'claude') return [{ id: 'claude-opus-5' }];
+      return [{ id: 'grok-4.6' }, { id: 'grok-4.6-mini' }];
+    });
     vi.mocked(addResearchInitialInputs).mockResolvedValue([
       'initial-notes',
       'report-one',
@@ -344,6 +382,36 @@ describe('Hub workspace selection', () => {
       RESEARCH_MODEL_TEAM_PROMPT_KEY,
       expect.stringContaining('claude/claude-opus-5 — independent researcher')
     );
+  });
+
+  it('keeps the research lead and composer model synchronized without dropping seats', async () => {
+    const user = userEvent.setup();
+    render(<Hub setView={vi.fn()} sessionExperience="research" />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    const trio = await screen.findByRole('radio', { name: 'Trio research mode' });
+    await waitFor(() => expect(trio).toBeEnabled());
+    await user.click(trio);
+
+    const lead = screen.getByLabelText('Lead model');
+    const researcher2 = screen.getByLabelText('Researcher 2');
+    const researcher3 = screen.getByLabelText('Researcher 3');
+    await waitFor(() =>
+      expect(screen.getByTestId('composer-model')).toHaveTextContent('codex/gpt-5.6-sol')
+    );
+
+    await user.selectOptions(lead, JSON.stringify(['xai', 'grok-4.6-mini']));
+    await waitFor(() =>
+      expect(screen.getByTestId('composer-model')).toHaveTextContent('xai/grok-4.6-mini')
+    );
+    expect(researcher2).toHaveValue(JSON.stringify(['claude', 'claude-opus-5']));
+    expect(researcher3).toHaveValue(JSON.stringify(['xai', 'grok-4.6']));
+
+    await user.click(screen.getByRole('button', { name: 'Use Claude in composer' }));
+    await waitFor(() => expect(lead).toHaveValue(JSON.stringify(['claude', 'claude-opus-5'])));
+    expect(researcher2).toHaveValue(JSON.stringify(['xai', 'grok-4.6-mini']));
+    expect(researcher3).toHaveValue(JSON.stringify(['xai', 'grok-4.6']));
   });
 
   it('removes an incomplete session when initial input storage fails', async () => {

@@ -73,7 +73,7 @@ export function fillResearchModelSeats(
   const size = researchTeamSize(mode);
   const available = new Map(options.map((option) => [modelKey(option), option]));
   const filled: ResearchModelSelection[] = [];
-  const candidates = [preferred, ...selected, ...options].filter(
+  const candidates = [...selected, preferred, ...options].filter(
     (candidate): candidate is ResearchModelSelection => Boolean(candidate)
   );
 
