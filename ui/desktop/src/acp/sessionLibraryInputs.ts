@@ -1,7 +1,16 @@
 import { getAcpClient } from './acpConnection';
+import type { ShellLibraryItemSummary } from '@repo-makeover/gosling-sdk';
 import type { ImageData } from '../types/message';
 import type { ResearchInitialInputs } from '../types/sessionExperience';
 import { MAX_RESEARCH_INITIAL_INPUTS, researchInitialInputCount } from '../types/sessionExperience';
+
+export async function listSessionLibraryInputs(
+  sessionId: string
+): Promise<ShellLibraryItemSummary[]> {
+  const client = await getAcpClient();
+  const response = await client.gosling.shellSessionLibraryList_unstable({ sessionId });
+  return response.items ?? [];
+}
 
 export async function addResearchInitialInputs(
   sessionId: string,

@@ -4,12 +4,16 @@ import {
   Copy,
   ExternalLink,
   File,
+  FileInput,
   FileOutput,
+  FileText,
   FolderOpen,
+  Image as ImageIcon,
   PanelRightClose,
   Save,
   X,
 } from 'lucide-react';
+import type { ShellLibraryItemSummary } from '@repo-makeover/gosling-sdk';
 import { toast } from 'react-toastify';
 import { defineMessages, useIntl } from '../../i18n';
 import { useArtifactWorkbench } from '../../contexts/ArtifactWorkbenchContext';
@@ -30,13 +34,15 @@ import {
   isSettingValue,
   OUTPUT_FILE_EXTENSIONS_CHANGED_EVENT,
 } from '../../utils/settings';
+import { listSessionLibraryInputs } from '../../acp/sessionLibraryInputs';
 
 const i18n = defineMessages({
   outputs: { id: 'artifactPane.outputs', defaultMessage: 'Outputs' },
+  inputs: { id: 'artifactPane.inputs', defaultMessage: 'Inputs' },
   missing: { id: 'artifactPane.missing', defaultMessage: 'Missing' },
   blocked: { id: 'artifactPane.blocked', defaultMessage: 'Blocked' },
   truncated: { id: 'artifactPane.truncated', defaultMessage: 'Truncated' },
-  closePane: { id: 'artifactPane.closePane', defaultMessage: 'Close outputs pane' },
+  closePane: { id: 'artifactPane.closePane', defaultMessage: 'Close inputs and outputs pane' },
   openFile: { id: 'artifactPane.openFile', defaultMessage: 'Open file' },
   emptyTitle: { id: 'artifactPane.emptyTitle', defaultMessage: 'View an output or deliverable' },
   emptyBody: {
@@ -66,7 +72,23 @@ const i18n = defineMessages({
     id: 'artifactPane.saveCopyFailed',
     defaultMessage: 'Unable to save artifact: {error}',
   },
+  inputEmptyTitle: {
+    id: 'artifactPane.inputEmptyTitle',
+    defaultMessage: 'No inputs for this session',
+  },
+  inputEmptyBody: {
+    id: 'artifactPane.inputEmptyBody',
+    defaultMessage: 'Uploaded files and pasted content added to the session will appear here.',
+  },
+  inputLoadFailed: {
+    id: 'artifactPane.inputLoadFailed',
+    defaultMessage: 'Unable to load session inputs.',
+  },
+  sessionScope: { id: 'artifactPane.sessionScope', defaultMessage: 'Session' },
+  projectScope: { id: 'artifactPane.projectScope', defaultMessage: 'Project' },
 });
+
+type InventoryTab = 'inputs' | 'outputs';
 
 interface PreviewData {
   content: string;
@@ -153,6 +175,18 @@ function CsvPreview({ content }: { content: string }) {
       </table>
     </div>
   );
+}
+
+function formatInputSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${Math.ceil(sizeBytes / 1024)} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function InputIcon({ kind }: { kind: ShellLibraryItemSummary['kind'] }) {
+  if (kind === 'image') return <ImageIcon className="h-4 w-4 shrink-0 text-text-secondary" />;
+  if (kind === 'text') return <FileText className="h-4 w-4 shrink-0 text-text-secondary" />;
+  return <File className="h-4 w-4 shrink-0 text-text-secondary" />;
 }
 
 function Preview({
@@ -266,14 +300,48 @@ export function ArtifactPane() {
     setIsOpen,
     setWidth,
     tabs,
+    visibleSessionId,
     width,
   } = useArtifactWorkbench();
+  const [inventoryTab, setInventoryTab] = useState<InventoryTab>('outputs');
+  const [inputs, setInputs] = useState<ShellLibraryItemSummary[]>([]);
+  const [inputsLoading, setInputsLoading] = useState(false);
+  const [inputsError, setInputsError] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [outputFileExtensions, setOutputFileExtensions] = useState<string[]>(
     defaultSettings.outputFileExtensions
   );
   const receivedOutputFileExtensionsChange = useRef(false);
+
+  useEffect(() => {
+    if (!visibleSessionId) {
+      setInputs([]);
+      setInputsError(false);
+      setInputsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setInputsLoading(true);
+    setInputsError(false);
+    void listSessionLibraryInputs(visibleSessionId)
+      .then((items) => {
+        if (!cancelled) setInputs(items);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInputs([]);
+          setInputsError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setInputsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleSessionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -440,21 +508,52 @@ export function ArtifactPane() {
         className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize"
         onPointerDown={resizeFrom}
       />
-      <div className="no-drag flex h-11 shrink-0 items-center gap-2 border-b border-border-primary px-2">
-        <FileOutput className="h-4 w-4 text-text-secondary" />
-        <span className="text-sm font-medium">
-          {intl.formatMessage(i18n.outputs)} {displayedArtifacts.length}
-        </span>
+      <div className="no-drag flex h-11 shrink-0 items-center gap-1 border-b border-border-primary px-2">
+        <div className="flex h-full items-end gap-1" role="tablist" aria-label="Session inventory">
+          {(['inputs', 'outputs'] as const).map((tab) => {
+            const active = inventoryTab === tab;
+            const count = tab === 'inputs' ? inputs.length : displayedArtifacts.length;
+            const label = intl.formatMessage(tab === 'inputs' ? i18n.inputs : i18n.outputs);
+            const Icon = tab === 'inputs' ? FileInput : FileOutput;
+            return (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-label={`${label} ${count}`}
+                onClick={() => setInventoryTab(tab)}
+                className={cn(
+                  'flex h-10 items-center gap-1.5 border-b-2 px-2 text-xs font-medium',
+                  active
+                    ? 'border-text-primary text-text-primary'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{label}</span>
+                <span
+                  data-testid={`${tab}-count`}
+                  className="min-w-5 rounded-md border border-border-primary bg-background-secondary px-1.5 py-0.5 text-center text-[10px] leading-none"
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
         <div className="ml-auto flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="xs"
-            className="no-drag"
-            onClick={() => void chooseFile()}
-            title={intl.formatMessage(i18n.openFile)}
-          >
-            <FolderOpen className="h-4 w-4" />
-          </Button>
+          {inventoryTab === 'outputs' && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="no-drag"
+              onClick={() => void chooseFile()}
+              title={intl.formatMessage(i18n.openFile)}
+            >
+              <FolderOpen className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="xs"
@@ -467,146 +566,210 @@ export function ArtifactPane() {
         </div>
       </div>
 
-      {displayedArtifacts.length > 0 && (
-        <div className="max-h-52 shrink-0 overflow-y-auto border-b border-border-primary py-1">
-          {displayedArtifacts.map((artifact) => {
-            const selected =
-              activeTab?.source.type === 'file' &&
-              activeTab.source.path === artifact.displayPath &&
-              activeTab.source.baseDirectory === artifact.baseWorkingDir;
-            const status = artifactStatus(artifact.displayPath);
-            return (
-              <button
-                key={artifact.resolvedPath}
-                type="button"
-                onClick={() => openArtifact(artifact)}
-                className={cn(
-                  'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-background-secondary/60',
-                  selected && 'bg-background-secondary'
-                )}
-                title={artifact.resolvedPath}
-              >
-                <File className="h-4 w-4 shrink-0 text-text-secondary" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs text-text-primary">
-                    {artifact.displayPath}
+      {inventoryTab === 'inputs' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {inputsLoading ? (
+            <div className="flex h-full items-center justify-center text-sm text-text-secondary">
+              {intl.formatMessage(i18n.loading)}
+            </div>
+          ) : inputsError ? (
+            <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+              <AlertTriangle className="h-8 w-8 text-text-secondary" />
+              <p className="mt-3 text-sm text-text-secondary">
+                {intl.formatMessage(i18n.inputLoadFailed)}
+              </p>
+            </div>
+          ) : inputs.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+              <FileInput className="h-8 w-8 text-text-secondary" />
+              <h2 className="mt-3 text-sm font-medium">
+                {intl.formatMessage(i18n.inputEmptyTitle)}
+              </h2>
+              <p className="mt-1 max-w-xs text-xs text-text-secondary">
+                {intl.formatMessage(i18n.inputEmptyBody)}
+              </p>
+            </div>
+          ) : (
+            <ul className="py-1" aria-label={intl.formatMessage(i18n.inputs)}>
+              {inputs.map((input) => (
+                <li
+                  key={input.id}
+                  className="flex items-center gap-2 border-b border-border-primary px-3 py-2.5 last:border-b-0"
+                >
+                  <InputIcon kind={input.kind} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs text-text-primary">{input.name}</span>
+                    <span className="block truncate text-[10px] text-text-secondary">
+                      {input.mimeType} ·{' '}
+                      {intl.formatMessage(
+                        input.scope === 'project' ? i18n.projectScope : i18n.sessionScope
+                      )}{' '}
+                      · {formatInputSize(input.sizeBytes)}
+                    </span>
                   </span>
-                  <span className="block truncate text-[10px] text-text-secondary">
-                    {artifact.relation} · {artifact.provenance.replace(/_/g, ' ')}
-                  </span>
-                </span>
-                {status && <span className="text-[10px] text-text-secondary">{status}</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {tabs.length > 0 && (
-        <div className="flex shrink-0 overflow-x-auto border-b border-border-primary">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTabId(tab.id)}
-              className={cn(
-                'group flex max-w-52 shrink-0 items-center gap-2 border-r border-border-primary px-3 py-2 text-xs',
-                tab.id === activeTabId
-                  ? 'bg-background-secondary text-text-primary'
-                  : 'text-text-secondary hover:bg-background-secondary/60'
-              )}
-            >
-              <span className="truncate">{tab.title}</span>
-              <X
-                className="h-3 w-3 shrink-0 opacity-60 hover:opacity-100"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  closeTab(tab.id);
-                }}
-              />
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="min-h-0 flex-1 overflow-auto">
-        {!activeTab ? (
-          <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-            <FileOutput className="h-8 w-8 text-text-secondary" />
-            <h2 className="mt-3 text-sm font-medium">{intl.formatMessage(i18n.emptyTitle)}</h2>
-            <p className="mt-1 max-w-xs text-xs text-text-secondary">
-              {intl.formatMessage(i18n.emptyBody)}
-            </p>
-            <Button className="mt-4" variant="outline" size="sm" onClick={() => void chooseFile()}>
-              <FolderOpen className="mr-2 h-4 w-4" />
-              {intl.formatMessage(i18n.openFile)}
-            </Button>
-          </div>
-        ) : loading || !preview ? (
-          <div className="flex h-full items-center justify-center text-sm text-text-secondary">
-            {intl.formatMessage(i18n.loading)}
-          </div>
-        ) : (
-          <>
-            {preview.truncated &&
-              activeTab.kind !== 'html' &&
-              activeTab.kind !== 'image' &&
-              activeTab.kind !== 'pdf' &&
-              activeTab.kind !== 'svg' && (
-                <div className="m-3 flex items-center gap-2 rounded-md border border-border-primary px-3 py-2 text-xs text-text-secondary">
-                  <AlertTriangle className="h-4 w-4" />
-                  {intl.formatMessage(i18n.previewTruncated)}
-                </div>
-              )}
-            <Preview tab={activeTab} data={preview} onGrantAccess={() => void chooseFile()} />
-          </>
-        )}
-      </div>
-
-      {activeTab && (
-        <div className="flex shrink-0 items-center gap-1 border-t border-border-primary px-2 py-1.5">
-          <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-text-secondary">
-            {filePath ?? activeTab.title}
-          </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            title={intl.formatMessage(i18n.saveCopy)}
-            aria-label={intl.formatMessage(i18n.saveCopy)}
-            disabled={loading || Boolean(preview?.error)}
-            onClick={() => void saveCopy()}
-          >
-            <Save className="h-3.5 w-3.5" />
-          </Button>
-          {filePath && (
-            <>
-              <Button
-                variant="ghost"
-                size="xs"
-                title={intl.formatMessage(i18n.copyPath)}
-                onClick={() => void window.electron.writeClipboardText(filePath)}
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
-                title={intl.formatMessage(i18n.reveal)}
-                onClick={() => void window.electron.revealArtifactFile(filePath, fileBaseDirectory)}
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
-                title={intl.formatMessage(i18n.openExternal)}
-                onClick={() => void window.electron.openArtifactFile(filePath, fileBaseDirectory)}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </Button>
-            </>
+                  {input.status === 'missing' && (
+                    <span className="rounded-md border border-border-primary px-1.5 py-0.5 text-[10px] text-text-secondary">
+                      {intl.formatMessage(i18n.missing)}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
+      ) : (
+        <>
+          {displayedArtifacts.length > 0 && (
+            <div className="max-h-52 shrink-0 overflow-y-auto border-b border-border-primary py-1">
+              {displayedArtifacts.map((artifact) => {
+                const selected =
+                  activeTab?.source.type === 'file' &&
+                  activeTab.source.path === artifact.displayPath &&
+                  activeTab.source.baseDirectory === artifact.baseWorkingDir;
+                const status = artifactStatus(artifact.displayPath);
+                return (
+                  <button
+                    key={artifact.resolvedPath}
+                    type="button"
+                    onClick={() => openArtifact(artifact)}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-background-secondary/60',
+                      selected && 'bg-background-secondary'
+                    )}
+                    title={artifact.resolvedPath}
+                  >
+                    <File className="h-4 w-4 shrink-0 text-text-secondary" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs text-text-primary">
+                        {artifact.displayPath}
+                      </span>
+                      <span className="block truncate text-[10px] text-text-secondary">
+                        {artifact.relation} · {artifact.provenance.replace(/_/g, ' ')}
+                      </span>
+                    </span>
+                    {status && <span className="text-[10px] text-text-secondary">{status}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {tabs.length > 0 && (
+            <div className="flex shrink-0 overflow-x-auto border-b border-border-primary">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTabId(tab.id)}
+                  className={cn(
+                    'group flex max-w-52 shrink-0 items-center gap-2 border-r border-border-primary px-3 py-2 text-xs',
+                    tab.id === activeTabId
+                      ? 'bg-background-secondary text-text-primary'
+                      : 'text-text-secondary hover:bg-background-secondary/60'
+                  )}
+                >
+                  <span className="truncate">{tab.title}</span>
+                  <X
+                    className="h-3 w-3 shrink-0 opacity-60 hover:opacity-100"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 overflow-auto">
+            {!activeTab ? (
+              <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+                <FileOutput className="h-8 w-8 text-text-secondary" />
+                <h2 className="mt-3 text-sm font-medium">{intl.formatMessage(i18n.emptyTitle)}</h2>
+                <p className="mt-1 max-w-xs text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.emptyBody)}
+                </p>
+                <Button
+                  className="mt-4"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void chooseFile()}
+                >
+                  <FolderOpen className="mr-2 h-4 w-4" />
+                  {intl.formatMessage(i18n.openFile)}
+                </Button>
+              </div>
+            ) : loading || !preview ? (
+              <div className="flex h-full items-center justify-center text-sm text-text-secondary">
+                {intl.formatMessage(i18n.loading)}
+              </div>
+            ) : (
+              <>
+                {preview.truncated &&
+                  activeTab.kind !== 'html' &&
+                  activeTab.kind !== 'image' &&
+                  activeTab.kind !== 'pdf' &&
+                  activeTab.kind !== 'svg' && (
+                    <div className="m-3 flex items-center gap-2 rounded-md border border-border-primary px-3 py-2 text-xs text-text-secondary">
+                      <AlertTriangle className="h-4 w-4" />
+                      {intl.formatMessage(i18n.previewTruncated)}
+                    </div>
+                  )}
+                <Preview tab={activeTab} data={preview} onGrantAccess={() => void chooseFile()} />
+              </>
+            )}
+          </div>
+
+          {activeTab && (
+            <div className="flex shrink-0 items-center gap-1 border-t border-border-primary px-2 py-1.5">
+              <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-text-secondary">
+                {filePath ?? activeTab.title}
+              </span>
+              <Button
+                variant="ghost"
+                size="xs"
+                title={intl.formatMessage(i18n.saveCopy)}
+                aria-label={intl.formatMessage(i18n.saveCopy)}
+                disabled={loading || Boolean(preview?.error)}
+                onClick={() => void saveCopy()}
+              >
+                <Save className="h-3.5 w-3.5" />
+              </Button>
+              {filePath && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    title={intl.formatMessage(i18n.copyPath)}
+                    onClick={() => void window.electron.writeClipboardText(filePath)}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    title={intl.formatMessage(i18n.reveal)}
+                    onClick={() =>
+                      void window.electron.revealArtifactFile(filePath, fileBaseDirectory)
+                    }
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    title={intl.formatMessage(i18n.openExternal)}
+                    onClick={() =>
+                      void window.electron.openArtifactFile(filePath, fileBaseDirectory)
+                    }
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

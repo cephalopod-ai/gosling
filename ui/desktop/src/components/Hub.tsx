@@ -36,7 +36,11 @@ import {
 } from '../types/sessionExperience';
 import { ResearchInitialInputsDialog } from './research/ResearchInitialInputsDialog';
 import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
-import { acpDeleteSession } from '../acp/sessions';
+import { acpAppendSessionSystemPrompt, acpDeleteSession } from '../acp/sessions';
+import {
+  RESEARCH_SCIENTIFIC_METHOD_PROMPT,
+  RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
+} from '../prompts/researchScientificMethod';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -277,6 +281,13 @@ export default function Hub({
 
       const session = await createSession(workingDir, sessionOptions);
       createdSessionId = session.id;
+      if (isResearch) {
+        await acpAppendSessionSystemPrompt(
+          session.id,
+          RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
+          RESEARCH_SCIENTIFIC_METHOD_PROMPT
+        );
+      }
       const libraryItemIds = hasResearchInitialInputs
         ? await addResearchInitialInputs(session.id, researchInitialInputs)
         : [];

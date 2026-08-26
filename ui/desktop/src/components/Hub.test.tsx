@@ -7,7 +7,11 @@ import Hub from './Hub';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { createSession } from '../sessions';
 import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
-import { acpDeleteSession } from '../acp/sessions';
+import { acpAppendSessionSystemPrompt, acpDeleteSession } from '../acp/sessions';
+import {
+  RESEARCH_SCIENTIFIC_METHOD_PROMPT,
+  RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
+} from '../prompts/researchScientificMethod';
 
 vi.mock('./ConfigContext', () => ({ useConfig: vi.fn() }));
 vi.mock('../contexts/WorkspaceContext', () => ({ useWorkspace: vi.fn() }));
@@ -16,7 +20,10 @@ vi.mock('../acp/sessionLibraryInputs', () => ({
   addResearchInitialInputs: vi.fn(),
   resolveSessionLibraryInputs: vi.fn(),
 }));
-vi.mock('../acp/sessions', () => ({ acpDeleteSession: vi.fn() }));
+vi.mock('../acp/sessions', () => ({
+  acpAppendSessionSystemPrompt: vi.fn(),
+  acpDeleteSession: vi.fn(),
+}));
 vi.mock('./LoadingGosling', () => ({ default: () => null }));
 vi.mock('./ChatInputCard', () => ({
   ChatInputCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -117,6 +124,7 @@ describe('Hub workspace selection', () => {
       setActiveWorkspace,
     } as unknown as ReturnType<typeof useWorkspace>);
     vi.mocked(createSession).mockResolvedValue({ id: 'session-personal' } as never);
+    vi.mocked(acpAppendSessionSystemPrompt).mockResolvedValue();
     vi.mocked(addResearchInitialInputs).mockResolvedValue([
       'initial-notes',
       'report-one',
@@ -147,6 +155,7 @@ describe('Hub workspace selection', () => {
       })
     );
     expect(setActiveWorkspace).not.toHaveBeenCalled();
+    expect(acpAppendSessionSystemPrompt).not.toHaveBeenCalled();
     expect(setView).toHaveBeenCalledWith(
       'pair',
       expect.objectContaining({ resumeSessionId: 'session-personal' })
@@ -202,6 +211,14 @@ describe('Hub workspace selection', () => {
       'report-one',
       'report-two',
     ]);
+    expect(acpAppendSessionSystemPrompt).toHaveBeenCalledWith(
+      'session-personal',
+      RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
+      RESEARCH_SCIENTIFIC_METHOD_PROMPT
+    );
+    expect(vi.mocked(acpAppendSessionSystemPrompt).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(addResearchInitialInputs).mock.invocationCallOrder[0]
+    );
     await waitFor(() =>
       expect(setView).toHaveBeenCalledWith(
         'pair',
@@ -215,6 +232,27 @@ describe('Hub workspace selection', () => {
           },
         })
       )
+    );
+  });
+
+  it('removes an incomplete research session when its default instruction cannot be applied', async () => {
+    const user = userEvent.setup();
+    vi.mocked(acpAppendSessionSystemPrompt).mockRejectedValueOnce(
+      new Error('The research instruction was rejected')
+    );
+    render(<Hub setView={vi.fn()} sessionExperience="research" />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Initial Inputs' }));
+    await user.type(screen.getByLabelText('Paste content'), 'A starting research prompt');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() => expect(acpDeleteSession).toHaveBeenCalledWith('session-personal'));
+    expect(addResearchInitialInputs).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The research instruction was rejected'
     );
   });
 

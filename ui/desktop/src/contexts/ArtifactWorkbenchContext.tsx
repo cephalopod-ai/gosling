@@ -51,6 +51,7 @@ interface ArtifactWorkbenchValue {
   setWidth: (width: number) => void;
   tabs: ArtifactTab[];
   toggle: () => void;
+  visibleSessionId: string | null;
   width: number;
 }
 
@@ -302,6 +303,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
       setWidth,
       tabs: current.tabs,
       toggle: () => setIsOpen((open) => !open),
+      visibleSessionId: visibleSessionId === DEFAULT_SESSION_ID ? null : visibleSessionId,
       width,
     }),
     [
@@ -318,6 +320,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
       setActiveTabId,
       setVisibleSession,
       setWidth,
+      visibleSessionId,
       width,
     ]
   );

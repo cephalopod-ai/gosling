@@ -3250,5 +3250,23 @@
   },
   "researchInitialInputs.tooMany": {
     "defaultMessage": "Add up to {count} initial inputs in total."
+  },
+  "artifactPane.inputEmptyBody": {
+    "defaultMessage": "Uploaded files and pasted content added to the session will appear here."
+  },
+  "artifactPane.inputEmptyTitle": {
+    "defaultMessage": "No inputs for this session"
+  },
+  "artifactPane.inputLoadFailed": {
+    "defaultMessage": "Unable to load session inputs."
+  },
+  "artifactPane.inputs": {
+    "defaultMessage": "Inputs"
+  },
+  "artifactPane.projectScope": {
+    "defaultMessage": "Project"
+  },
+  "artifactPane.sessionScope": {
+    "defaultMessage": "Session"
   }
 }

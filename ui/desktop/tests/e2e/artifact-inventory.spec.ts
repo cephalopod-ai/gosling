@@ -2,7 +2,9 @@ import { expect, test } from './fixtures';
 
 test.setTimeout(240_000);
 
-test('four discovered files populate Outputs before preview selection', async ({ goslingPage }) => {
+test('session inventory tabs show boxed counts before preview selection', async ({
+  goslingPage,
+}) => {
   const sessionId = 'artifact-inventory-playwright';
   await goslingPage.evaluate((id) => {
     window.location.hash = `/pair?resumeSessionId=${id}`;
@@ -16,7 +18,7 @@ test('four discovered files populate Outputs before preview selection', async ({
     const { acpChatSessionActions } = await import('/src/acp/chatSessionStore.ts');
     acpChatSessionActions.setArtifacts(
       id,
-      ['report.md', 'analysis.py', 'engine.rs', 'build.sh'].map((displayPath, index) => ({
+      ['report.md', 'brief.pdf', 'notes.txt', 'data.json'].map((displayPath, index) => ({
         sessionId: id,
         displayPath,
         resolvedPath: `/outputs/${displayPath}`,
@@ -31,9 +33,22 @@ test('four discovered files populate Outputs before preview selection', async ({
   }, sessionId);
 
   await goslingPage.getByRole('button', { name: 'Toggle outputs pane' }).click();
-  await expect(goslingPage.getByText('Outputs 4')).toBeVisible();
+  const outputsTab = goslingPage.getByRole('tab', { name: 'Outputs 4' });
+  await expect(outputsTab).toBeVisible();
+  await expect(goslingPage.getByTestId('outputs-count')).toHaveClass(/rounded-md/);
+  await expect(goslingPage.getByTestId('outputs-count')).toHaveClass(/border/);
   await expect(goslingPage.getByText('report.md')).toBeVisible();
-  await expect(goslingPage.getByText('analysis.py')).toBeVisible();
-  await expect(goslingPage.getByText('engine.rs')).toBeVisible();
-  await expect(goslingPage.getByText('build.sh')).toBeVisible();
+  await expect(goslingPage.getByText('brief.pdf')).toBeVisible();
+  await expect(goslingPage.getByText('notes.txt')).toBeVisible();
+  await expect(goslingPage.getByText('data.json')).toBeVisible();
+
+  const inputsTab = goslingPage.getByRole('tab', { name: 'Inputs 0' });
+  await expect(inputsTab).toBeVisible();
+  await expect(goslingPage.getByTestId('inputs-count')).toHaveClass(/rounded-md/);
+  await inputsTab.click();
+  await expect(inputsTab).toHaveAttribute('aria-selected', 'true');
+  await goslingPage.screenshot({
+    path: test.info().outputPath('session-inventory-tabs.png'),
+    fullPage: true,
+  });
 });

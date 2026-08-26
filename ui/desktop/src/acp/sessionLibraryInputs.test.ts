@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from './acpConnection';
-import { addResearchInitialInputs, resolveSessionLibraryInputs } from './sessionLibraryInputs';
+import {
+  addResearchInitialInputs,
+  listSessionLibraryInputs,
+  resolveSessionLibraryInputs,
+} from './sessionLibraryInputs';
 
 vi.mock('./acpConnection', () => ({ getAcpClient: vi.fn() }));
 
 const addText = vi.fn();
 const linkFile = vi.fn();
+const list = vi.fn();
 const resolve = vi.fn();
 
 describe('session library research inputs', () => {
@@ -15,6 +20,7 @@ describe('session library research inputs', () => {
       gosling: {
         shellSessionLibraryAddText_unstable: addText,
         shellSessionLibraryLinkFile_unstable: linkFile,
+        shellSessionLibraryList_unstable: list,
         shellSessionLibraryResolve_unstable: resolve,
       },
     } as never);
@@ -22,6 +28,24 @@ describe('session library research inputs', () => {
     linkFile
       .mockResolvedValueOnce({ item: { id: 'file-one' } })
       .mockResolvedValueOnce({ item: { id: 'file-two' } });
+  });
+
+  it('lists the safe stored metadata for the active session', async () => {
+    const items = [
+      {
+        id: 'notes',
+        name: 'Initial research notes',
+        kind: 'text',
+        scope: 'session',
+        status: 'available',
+        mimeType: 'text/plain',
+        sizeBytes: 42,
+      },
+    ];
+    list.mockResolvedValue({ items });
+
+    await expect(listSessionLibraryInputs('research-session')).resolves.toEqual(items);
+    expect(list).toHaveBeenCalledWith({ sessionId: 'research-session' });
   });
 
   it('stores pasted content and every selected file in session scope', async () => {

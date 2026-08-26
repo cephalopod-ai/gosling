@@ -475,6 +475,20 @@ export async function acpSetSessionMode(sessionId: string, mode: GoslingMode): P
   await client.setSessionMode({ sessionId, modeId: mode });
 }
 
+export async function acpAppendSessionSystemPrompt(
+  sessionId: string,
+  key: string,
+  text: string
+): Promise<void> {
+  const client = await getAcpClient();
+  await client.gosling.sessionSystemPromptSet_unstable({
+    sessionId,
+    mode: 'append',
+    key,
+    text,
+  });
+}
+
 export interface SessionWorkingDirs {
   workingDir: string;
   additionalWorkingDirs: string[];

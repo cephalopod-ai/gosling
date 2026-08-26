@@ -2,6 +2,7 @@ import type { SessionInfo } from '@agentclientprotocol/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
 import {
+  acpAppendSessionSystemPrompt,
   acpArchiveSession,
   acpGetSessionListItem,
   acpListRecentSessions,
@@ -285,6 +286,26 @@ describe('ACP sessions', () => {
     });
     expect(client.gosling.sessionUnarchive_unstable).toHaveBeenCalledWith({
       sessionId: 'session-1',
+    });
+  });
+
+  it('appends a keyed instruction to the session system prompt', async () => {
+    const client = {
+      gosling: {
+        sessionSystemPromptSet_unstable: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    await acpAppendSessionSystemPrompt('session-1', 'research-scientific-method', 'Instructions');
+
+    expect(client.gosling.sessionSystemPromptSet_unstable).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      mode: 'append',
+      key: 'research-scientific-method',
+      text: 'Instructions',
     });
   });
 });

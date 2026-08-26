@@ -27,7 +27,7 @@
     "defaultMessage": "Blocked"
   },
   "artifactPane.closePane": {
-    "defaultMessage": "Close outputs pane"
+    "defaultMessage": "Close inputs and outputs pane"
   },
   "artifactPane.copyPath": {
     "defaultMessage": "Copy path"
@@ -40,6 +40,18 @@
   },
   "artifactPane.grantAccessToPreview": {
     "defaultMessage": "Select this file to grant access and preview it"
+  },
+  "artifactPane.inputEmptyBody": {
+    "defaultMessage": "Uploaded files and pasted content added to the session will appear here."
+  },
+  "artifactPane.inputEmptyTitle": {
+    "defaultMessage": "No inputs for this session"
+  },
+  "artifactPane.inputLoadFailed": {
+    "defaultMessage": "Unable to load session inputs."
+  },
+  "artifactPane.inputs": {
+    "defaultMessage": "Inputs"
   },
   "artifactPane.loading": {
     "defaultMessage": "Loading…"
@@ -62,6 +74,9 @@
   "artifactPane.previewTruncated": {
     "defaultMessage": "This preview is truncated. Open the file for the complete output."
   },
+  "artifactPane.projectScope": {
+    "defaultMessage": "Project"
+  },
   "artifactPane.reveal": {
     "defaultMessage": "Reveal"
   },
@@ -73,6 +88,9 @@
   },
   "artifactPane.savedCopy": {
     "defaultMessage": "Artifact copy saved"
+  },
+  "artifactPane.sessionScope": {
+    "defaultMessage": "Session"
   },
   "artifactPane.truncated": {
     "defaultMessage": "Truncated"

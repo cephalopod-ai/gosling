@@ -7,9 +7,11 @@ import {
 } from '../../contexts/ArtifactWorkbenchContext';
 import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
 import { IntlTestWrapper } from '../../i18n/test-utils';
+import { listSessionLibraryInputs } from '../../acp/sessionLibraryInputs';
 import { ArtifactPane } from './ArtifactPane';
 
 vi.mock('../../contexts/ArtifactRouterContext', () => ({ useArtifactRouter: vi.fn() }));
+vi.mock('../../acp/sessionLibraryInputs', () => ({ listSessionLibraryInputs: vi.fn() }));
 
 describe('ArtifactPane', () => {
   const saveArtifact = vi.fn();
@@ -97,6 +99,9 @@ describe('ArtifactPane', () => {
         >
           Load MIME PDF
         </button>
+        <button type="button" onClick={() => setVisibleSession('session-inputs', [])}>
+          Load inputs
+        </button>
         <ArtifactPane />
       </>
     );
@@ -117,6 +122,7 @@ describe('ArtifactPane', () => {
       truncated: false,
     });
     Object.assign(window.electron, { readArtifactFile });
+    vi.mocked(listSessionLibraryInputs).mockResolvedValue([]);
     vi.mocked(useArtifactRouter).mockReturnValue({
       saveArtifact,
       setVisibleSessionArtifacts: vi.fn(),
@@ -157,7 +163,7 @@ describe('ArtifactPane', () => {
     );
 
     expect(screen.getByTitle('Open file')).toHaveClass('no-drag');
-    expect(screen.getByTitle('Close outputs pane')).toHaveClass('no-drag');
+    expect(screen.getByTitle('Close inputs and outputs pane')).toHaveClass('no-drag');
   });
 
   it('retries a transient route authorization failure before showing an error', async () => {
@@ -233,7 +239,10 @@ describe('ArtifactPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Load mixed outputs' }));
 
-    expect(screen.getByText('Outputs 2')).toBeInTheDocument();
+    const outputsTab = screen.getByRole('tab', { name: 'Outputs 2' });
+    expect(outputsTab).toBeInTheDocument();
+    expect(outputsTab).toHaveTextContent('2');
+    expect(screen.getByTestId('outputs-count')).toHaveClass('rounded-md', 'border');
     expect(screen.getByText('report.md')).toBeInTheDocument();
     expect(screen.getByText('brief.docx')).toBeInTheDocument();
     expect(screen.queryByText('analysis.py')).not.toBeInTheDocument();
@@ -281,7 +290,7 @@ describe('ArtifactPane', () => {
       })
     );
 
-    await waitFor(() => expect(screen.getByText('Outputs 3')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Outputs 3' })).toBeInTheDocument());
     expect(screen.getByText('analysis.py')).toBeInTheDocument();
   });
 
@@ -296,8 +305,51 @@ describe('ArtifactPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Load MIME PDF' }));
 
-    expect(screen.getByText('Outputs 1')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Outputs 1' })).toBeInTheDocument();
     expect(screen.getByText('report.pdf')).toBeInTheDocument();
     expect(readArtifactFile).not.toHaveBeenCalled();
+  });
+
+  it('shows uploaded files and stored pasted text in the Inputs tab', async () => {
+    vi.mocked(listSessionLibraryInputs).mockResolvedValue([
+      {
+        id: 'pasted-text',
+        name: 'Initial research notes',
+        kind: 'text',
+        scope: 'session',
+        status: 'available',
+        mimeType: 'text/plain',
+        sizeBytes: 182,
+      },
+      {
+        id: 'uploaded-report',
+        name: 'market-report.pdf',
+        kind: 'file',
+        scope: 'session',
+        status: 'available',
+        mimeType: 'application/pdf',
+        sizeBytes: 2_400,
+      },
+    ]);
+
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load inputs' }));
+    const inputsTab = await screen.findByRole('tab', { name: 'Inputs 2' });
+    fireEvent.click(inputsTab);
+
+    expect(inputsTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('inputs-count')).toHaveClass('rounded-md', 'border');
+    expect(screen.getByText('Initial research notes')).toBeInTheDocument();
+    expect(screen.getByText('market-report.pdf')).toBeInTheDocument();
+    expect(screen.getByText(/text\/plain · Session · 182 B/)).toBeInTheDocument();
+    expect(screen.getByText(/application\/pdf · Session · 3 KB/)).toBeInTheDocument();
+    expect(listSessionLibraryInputs).toHaveBeenCalledWith('session-inputs');
   });
 });
