@@ -29,7 +29,13 @@ const provider = (name: string, displayName: string) => ({
   },
 });
 
-function Harness() {
+function Harness({
+  currentProvider = 'codex',
+  currentModel = 'gpt-5.6-sol',
+}: {
+  currentProvider?: string;
+  currentModel?: string;
+}) {
   const [configuration, setConfiguration] = useState<ResearchTeamConfiguration>({
     mode: 'solo',
     models: [],
@@ -38,8 +44,8 @@ function Harness() {
   return (
     <>
       <ResearchModelTeamSelector
-        currentProvider="codex"
-        currentModel="gpt-5.6-sol"
+        currentProvider={currentProvider}
+        currentModel={currentModel}
         value={configuration}
         onChange={setConfiguration}
         onValidationChange={setValidation}
@@ -141,5 +147,27 @@ describe('ResearchModelTeamSelector', () => {
     expect(screen.getByRole('radio', { name: 'Trio research mode' })).toBeDisabled();
     expect(screen.getByText(/Configure at least two models/)).toBeInTheDocument();
     expect(screen.getByTestId('validation')).toHaveTextContent('valid');
+  });
+
+  it('keeps the current composer model selectable when its catalog is unavailable', async () => {
+    const user = userEvent.setup();
+    render(<Harness currentProvider="chatgpt_codex" currentModel="gpt-5.6-sol" />);
+
+    const dual = await screen.findByRole('radio', { name: 'Dual research mode' });
+    await waitFor(() => expect(dual).toBeEnabled());
+    await user.click(dual);
+
+    await waitFor(() =>
+      expect(JSON.parse(screen.getByTestId('configuration').textContent ?? '{}')).toMatchObject({
+        mode: 'dual',
+        models: [
+          { provider: 'chatgpt_codex', model: 'gpt-5.6-sol' },
+          { provider: 'claude', model: 'claude-opus-5' },
+        ],
+      })
+    );
+    expect(screen.getByLabelText('Lead model')).toHaveValue(
+      JSON.stringify(['chatgpt_codex', 'gpt-5.6-sol'])
+    );
   });
 });

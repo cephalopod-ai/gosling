@@ -103,6 +103,20 @@ export function ResearchModelTeamSelector({
         : undefined,
     [currentModel, currentProvider]
   );
+  const selectableOptions = useMemo(() => {
+    if (!preferred || options.some((option) => modelKey(option) === modelKey(preferred))) {
+      return options;
+    }
+    return [
+      ...options,
+      {
+        ...preferred,
+        providerLabel: preferred.provider,
+      },
+    ].sort((left, right) =>
+      `${left.providerLabel}/${left.model}`.localeCompare(`${right.providerLabel}/${right.model}`)
+    );
+  }, [options, preferred]);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,11 +180,11 @@ export function ResearchModelTeamSelector({
     const filled =
       value.mode === 'solo' && value.models.length === 0
         ? []
-        : fillResearchModelSeats(value.mode, value.models, options, preferred);
+        : fillResearchModelSeats(value.mode, value.models, selectableOptions, preferred);
     if (!sameModels(filled, value.models)) {
       onChange({ ...value, models: filled });
     }
-  }, [loading, onChange, options, preferred, value]);
+  }, [loading, onChange, preferred, selectableOptions, value]);
 
   const requiredSeats = researchTeamSize(value.mode);
   const selectionIsComplete =
@@ -193,7 +207,7 @@ export function ResearchModelTeamSelector({
   const changeMode = (mode: ResearchTeamMode) => {
     onChange({
       mode,
-      models: fillResearchModelSeats(mode, value.models, options, preferred),
+      models: fillResearchModelSeats(mode, value.models, selectableOptions, preferred),
     });
   };
 
@@ -248,7 +262,8 @@ export function ResearchModelTeamSelector({
         >
           {MODES.map(({ mode, label, description, detail }) => {
             const selected = value.mode === mode;
-            const unavailable = mode !== 'solo' && options.length < researchTeamSize(mode);
+            const unavailable =
+              mode !== 'solo' && selectableOptions.length < researchTeamSize(mode);
             return (
               <label
                 key={mode}
@@ -313,14 +328,14 @@ export function ResearchModelTeamSelector({
                 <select
                   aria-label={SEAT_LABELS[seat]}
                   value={selectedKey}
-                  disabled={loading || options.length === 0}
+                  disabled={loading || selectableOptions.length === 0}
                   onChange={(event) => changeSeat(seat, event.target.value)}
                   className="mt-1 w-full rounded-md border border-border-primary bg-background-primary px-2 py-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="">
                     {seat === 0 && value.mode === 'solo' ? currentModelOption : 'Choose model…'}
                   </option>
-                  {options.map((option) => {
+                  {selectableOptions.map((option) => {
                     const key = modelKey(option);
                     return (
                       <option key={key} value={key} disabled={selectedElsewhere.has(key)}>
@@ -341,7 +356,7 @@ export function ResearchModelTeamSelector({
           {catalogMessage}
         </p>
       )}
-      {!loading && options.length < 2 && (
+      {!loading && selectableOptions.length < 2 && (
         <p className="mt-2 text-xs text-text-secondary">
           Configure at least two models to enable Dual research, or continue in Solo mode.
         </p>
