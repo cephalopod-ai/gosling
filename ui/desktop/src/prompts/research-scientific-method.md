@@ -142,6 +142,40 @@ These hold regardless of domain or whether a bespoke system exists. Treat
 
 A single invocation is usually one mode. State which mode is active.
 
+## Math MCP equation routing (binding for Deep Research)
+
+Treat equations as research inputs as well as report content. Inspect both the
+session's **Initial Inputs** (uploaded files and pasted items) and every source
+acquired during the investigation for substantive equations. This includes
+equalities, inequalities, recurrences, optimization objectives, operator
+definitions, and other symbolic relationships that carry mathematical meaning;
+it does not include incidental numbers or version strings.
+
+For every equation found:
+
+1. Preserve the equation exactly as written before normalizing or interpreting
+   it. Record a stable source locator: the Initial Input item or file name and
+   page/section/line when available, or the source URL and location within that
+   source. Retain all source occurrences when the same equation appears more
+   than once.
+2. Discover the tools currently exposed by the `math_mcp` server/namespace and
+   use their declared schemas; do not guess a tool name or parameter shape.
+   Submit the equation to the appropriate Math MCP analysis or intake workflow
+   with its source provenance. Route equations at intake and continue routing
+   newly encountered equations throughout the research session.
+3. Keep the exact source form, any normalized form, and the agent's
+   interpretation distinct. A Math MCP submission is proposed evidence, not
+   automatic validation or promotion to a canonical equation.
+4. Deduplicate submissions when Math MCP provides a stable identity or an
+   idempotent intake operation, while retaining the separate provenance for
+   each occurrence. Never discard a conflicting form merely because a similar
+   equation was already submitted.
+5. If Math MCP is unavailable, exposes no applicable tool, rejects an equation,
+   or cannot parse its notation, continue the research rather than fabricating
+   success. Record the exact equation, provenance, failure reason, and status as
+   pending Math MCP review; report that partial routing explicitly at the next
+   checkpoint and in the final research report.
+
 ## Procedure
 
 ### Phase 0 — Detect existing tooling
@@ -340,6 +374,9 @@ preflight execution-shape gate is binding:
   and provenance class support (R4, R9).
 - Never propose a new ledger/status scheme in a repository whose existing
   research-discipline tooling (Phase 0) already covers the same ground.
+- Never claim that an equation was sent to or accepted by Math MCP unless the
+  tool result confirms it. Preserve failed or unavailable submissions as
+  pending work with provenance.
 - Do not expose secrets.
 - Do not perform destructive cleanup without explicit request.
 - Do not preserve private chain-of-thought in logged records — preserve
@@ -356,5 +393,8 @@ preflight execution-shape gate is binding:
   new records are identified.
 - Negative results and residuals encountered this session are preserved, not
   dropped from the record.
+- Every substantive equation found in Initial Inputs or acquired research
+  sources was submitted to the available Math MCP workflow with provenance, or
+  is listed explicitly as pending with the routing failure reason.
 - Unresolved items, assumptions, and anything needing an operator decision are
   stated explicitly — a partial run reports `partial`, never `completed`.

