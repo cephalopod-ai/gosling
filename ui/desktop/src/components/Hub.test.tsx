@@ -8,10 +8,12 @@ import { useWorkspace } from '../contexts/WorkspaceContext';
 import { createSession } from '../sessions';
 import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
 import { acpAppendSessionSystemPrompt, acpDeleteSession } from '../acp/sessions';
+import { acpListProviderDetails, acpListProviderModels } from '../acp/providers';
 import {
   RESEARCH_SCIENTIFIC_METHOD_PROMPT,
   RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
 } from '../prompts/researchScientificMethod';
+import { RESEARCH_MODEL_TEAM_PROMPT_KEY } from '../prompts/researchModelTeam';
 
 vi.mock('./ConfigContext', () => ({ useConfig: vi.fn() }));
 vi.mock('../contexts/WorkspaceContext', () => ({ useWorkspace: vi.fn() }));
@@ -23,6 +25,10 @@ vi.mock('../acp/sessionLibraryInputs', () => ({
 vi.mock('../acp/sessions', () => ({
   acpAppendSessionSystemPrompt: vi.fn(),
   acpDeleteSession: vi.fn(),
+}));
+vi.mock('../acp/providers', () => ({
+  acpListProviderDetails: vi.fn(),
+  acpListProviderModels: vi.fn(),
 }));
 vi.mock('./LoadingGosling', () => ({ default: () => null }));
 vi.mock('./ChatInputCard', () => ({
@@ -125,6 +131,45 @@ describe('Hub workspace selection', () => {
     } as unknown as ReturnType<typeof useWorkspace>);
     vi.mocked(createSession).mockResolvedValue({ id: 'session-personal' } as never);
     vi.mocked(acpAppendSessionSystemPrompt).mockResolvedValue();
+    vi.mocked(acpListProviderDetails).mockResolvedValue([
+      {
+        name: 'codex',
+        is_configured: true,
+        manages_own_context: false,
+        provider_type: 'Builtin',
+        metadata: {
+          name: 'codex',
+          display_name: 'A Codex',
+          description: '',
+          default_model: 'gpt-5.6-sol',
+          model_doc_link: '',
+          model_selection_hint: null,
+          config_keys: [],
+          known_models: [],
+          setup_steps: [],
+        },
+      },
+      {
+        name: 'claude',
+        is_configured: true,
+        manages_own_context: false,
+        provider_type: 'Builtin',
+        metadata: {
+          name: 'claude',
+          display_name: 'B Anthropic',
+          description: '',
+          default_model: 'claude-opus-5',
+          model_doc_link: '',
+          model_selection_hint: null,
+          config_keys: [],
+          known_models: [],
+          setup_steps: [],
+        },
+      },
+    ]);
+    vi.mocked(acpListProviderModels).mockImplementation(async (providerId) =>
+      providerId === 'codex' ? [{ id: 'gpt-5.6-sol' }] : [{ id: 'claude-opus-5' }]
+    );
     vi.mocked(addResearchInitialInputs).mockResolvedValue([
       'initial-notes',
       'report-one',
@@ -263,6 +308,39 @@ describe('Hub workspace selection', () => {
     expect(addResearchInitialInputs).not.toHaveBeenCalled();
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The research instruction was rejected'
+    );
+  });
+
+  it('starts Dual research with the selected lead and a fixed delegation protocol', async () => {
+    const user = userEvent.setup();
+    render(<Hub setView={vi.fn()} sessionExperience="research" />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    const dual = await screen.findByRole('radio', { name: /Dual/ });
+    await waitFor(() => expect(dual).toBeEnabled());
+    await user.click(dual);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Lead model')).toHaveValue(
+        JSON.stringify(['codex', 'gpt-5.6-sol'])
+      )
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('/Users/tester/Work', {
+        allExtensions: [],
+        workspaceId: 'default',
+        workspaceWorkingDir: '/Users/tester/Work',
+        provider: 'codex',
+        model: 'gpt-5.6-sol',
+      })
+    );
+    expect(acpAppendSessionSystemPrompt).toHaveBeenCalledWith(
+      'session-personal',
+      RESEARCH_MODEL_TEAM_PROMPT_KEY,
+      expect.stringContaining('claude/claude-opus-5 — independent researcher')
     );
   });
 

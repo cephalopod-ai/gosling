@@ -2,6 +2,24 @@ import type { UserInput } from './message';
 
 export type SessionExperience = 'chat' | 'research';
 
+export type ResearchTeamMode = 'solo' | 'dual' | 'trio';
+
+export interface ResearchModelSelection {
+  provider: string;
+  model: string;
+}
+
+export interface ResearchTeamConfiguration {
+  mode: ResearchTeamMode;
+  models: ResearchModelSelection[];
+}
+
+export function researchTeamSize(mode: ResearchTeamMode): number {
+  if (mode === 'trio') return 3;
+  if (mode === 'dual') return 2;
+  return 1;
+}
+
 export interface ActiveSessionView {
   sessionId: string;
   initialMessage?: UserInput;

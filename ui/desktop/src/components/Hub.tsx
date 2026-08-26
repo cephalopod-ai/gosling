@@ -32,15 +32,21 @@ import { Telescope } from 'lucide-react';
 import {
   researchInitialInputCount,
   type ResearchInitialInputs,
+  type ResearchTeamConfiguration,
   type SessionExperience,
 } from '../types/sessionExperience';
 import { ResearchInitialInputsDialog } from './research/ResearchInitialInputsDialog';
+import { ResearchModelTeamSelector } from './research/ResearchModelTeamSelector';
 import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
 import { acpAppendSessionSystemPrompt, acpDeleteSession } from '../acp/sessions';
 import {
   RESEARCH_SCIENTIFIC_METHOD_PROMPT,
   RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
 } from '../prompts/researchScientificMethod';
+import {
+  buildResearchModelTeamPrompt,
+  RESEARCH_MODEL_TEAM_PROMPT_KEY,
+} from '../prompts/researchModelTeam';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -129,8 +135,12 @@ export default function Hub({
   }, [selectedWorkspaceItem]);
   const workspaceSelectionRequired = !loading && !selectedWorkspace;
   const isResearch = sessionExperience === 'research';
+  const [researchTeamConfiguration, setResearchTeamConfiguration] =
+    useState<ResearchTeamConfiguration>({ mode: 'solo', models: [] });
+  const [researchTeamIssue, setResearchTeamIssue] = useState<string | null>(null);
   const submitDisabledReason =
     workspaceStartIssue ??
+    (isResearch ? researchTeamIssue : null) ??
     (workspaceSelectionRequired
       ? `Choose a workspace before starting ${isResearch ? 'research' : 'a chat'}.`
       : undefined);
@@ -236,6 +246,7 @@ export default function Hub({
     if (
       !(images.length > 0 || userMessage.trim() || hasResearchInitialInputs) ||
       isCreatingSession ||
+      (isResearch && researchTeamIssue) ||
       !selectedWorkspace ||
       !selectedWorkspaceItem.validation.validForSession
     ) {
@@ -250,14 +261,25 @@ export default function Hub({
       const selectedExtensions = nextChatExtensionDraft
         ? selectNextChatExtensions(extensionsList, nextChatExtensionDraft)
         : [];
+      const enabledResearchExtensionNames = (
+        nextChatExtensionDraft
+          ? selectedExtensions
+          : extensionsList.filter((extension) => extension.enabled)
+      ).map((extension) => extension.name);
+      const researchTeamPrompt = isResearch
+        ? buildResearchModelTeamPrompt(researchTeamConfiguration, enabledResearchExtensionNames)
+        : null;
+      const selectedResearchLead = isResearch ? researchTeamConfiguration.models[0] : undefined;
+      const sessionProvider = selectedResearchLead?.provider ?? currentProvider;
+      const sessionModel = selectedResearchLead?.model ?? currentModel;
       const sessionOptions =
         selectedExtensions.length > 0
           ? {
               extensionConfigs: selectedExtensions,
               workspaceId: selectedWorkspace.id,
               workspaceWorkingDir: workingDir,
-              ...(currentProvider ? { provider: currentProvider } : {}),
-              ...(currentModel ? { model: currentModel } : {}),
+              ...(sessionProvider ? { provider: sessionProvider } : {}),
+              ...(sessionModel ? { model: sessionModel } : {}),
               ...(selectedCredentialProfileId
                 ? { workspaceCredentialProfileId: selectedCredentialProfileId }
                 : {}),
@@ -269,8 +291,8 @@ export default function Hub({
               allExtensions: extensionsList,
               workspaceId: selectedWorkspace.id,
               workspaceWorkingDir: workingDir,
-              ...(currentProvider ? { provider: currentProvider } : {}),
-              ...(currentModel ? { model: currentModel } : {}),
+              ...(sessionProvider ? { provider: sessionProvider } : {}),
+              ...(sessionModel ? { model: sessionModel } : {}),
               ...(selectedCredentialProfileId
                 ? { workspaceCredentialProfileId: selectedCredentialProfileId }
                 : {}),
@@ -287,6 +309,13 @@ export default function Hub({
           RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
           RESEARCH_SCIENTIFIC_METHOD_PROMPT
         );
+        if (researchTeamPrompt) {
+          await acpAppendSessionSystemPrompt(
+            session.id,
+            RESEARCH_MODEL_TEAM_PROMPT_KEY,
+            researchTeamPrompt
+          );
+        }
       }
       const libraryItemIds = hasResearchInitialInputs
         ? await addResearchInitialInputs(session.id, researchInitialInputs)
@@ -374,6 +403,13 @@ export default function Hub({
             <ResearchInitialInputsDialog
               value={researchInitialInputs}
               onApply={setResearchInitialInputs}
+            />
+            <ResearchModelTeamSelector
+              currentModel={currentModel}
+              currentProvider={currentProvider}
+              value={researchTeamConfiguration}
+              onChange={setResearchTeamConfiguration}
+              onValidationChange={setResearchTeamIssue}
             />
           </section>
         )}
