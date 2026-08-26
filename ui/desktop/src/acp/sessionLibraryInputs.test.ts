@@ -48,22 +48,32 @@ describe('session library research inputs', () => {
     expect(list).toHaveBeenCalledWith({ sessionId: 'research-session' });
   });
 
-  it('stores pasted content and every selected file in session scope', async () => {
+  it('stores each pasted input and every selected file separately in session scope', async () => {
+    addText
+      .mockResolvedValueOnce({ item: { id: 'input-one' } })
+      .mockResolvedValueOnce({ item: { id: 'input-two' } });
+
     await expect(
       addResearchInitialInputs('research-session', {
-        text: 'Compare the reports with https://example.com.',
+        texts: ['Compare the reports with https://example.com.', 'Second pasted report.'],
         files: [
           { id: 'one', name: 'one.pdf', path: '/inputs/one.pdf', sizeBytes: 100 },
           { id: 'two', name: 'two.txt', path: '/inputs/two.txt', sizeBytes: 200 },
         ],
       })
-    ).resolves.toEqual(['notes', 'file-one', 'file-two']);
+    ).resolves.toEqual(['input-one', 'input-two', 'file-one', 'file-two']);
 
-    expect(addText).toHaveBeenCalledWith({
+    expect(addText).toHaveBeenNthCalledWith(1, {
       sessionId: 'research-session',
       scope: 'session',
-      name: 'Initial research notes',
+      name: 'Initial research input 1',
       text: 'Compare the reports with https://example.com.',
+    });
+    expect(addText).toHaveBeenNthCalledWith(2, {
+      sessionId: 'research-session',
+      scope: 'session',
+      name: 'Initial research input 2',
+      text: 'Second pasted report.',
     });
     expect(linkFile).toHaveBeenNthCalledWith(1, {
       sessionId: 'research-session',
@@ -100,7 +110,7 @@ describe('session library research inputs', () => {
   it('rejects more inputs than the session prompt boundary permits', async () => {
     await expect(
       addResearchInitialInputs('research-session', {
-        text: 'One pasted input',
+        texts: ['One pasted input'],
         files: Array.from({ length: 16 }, (_, index) => ({
           id: String(index),
           name: `${index}.txt`,

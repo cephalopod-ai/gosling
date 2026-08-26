@@ -2133,7 +2133,7 @@
     "defaultMessage": "Cancel"
   },
   "researchInitialInputs.description": {
-    "defaultMessage": "Paste reports, links, notes, or prompts, and add any files the research session should begin with."
+    "defaultMessage": "Paste reports, links, notes, or prompts. Use Next to keep each pasted item separate, and add any files the research session should begin with."
   },
   "researchInitialInputs.done": {
     "defaultMessage": "Done"
@@ -2156,6 +2156,9 @@
   "researchInitialInputs.inputCount": {
     "defaultMessage": "{count,plural,one{# input} other{# inputs}}"
   },
+  "researchInitialInputs.next": {
+    "defaultMessage": "Next"
+  },
   "researchInitialInputs.noFiles": {
     "defaultMessage": "No files selected."
   },
@@ -2165,8 +2168,17 @@
   "researchInitialInputs.pastePlaceholder": {
     "defaultMessage": "Paste links, prompts, report excerpts, notes, or other source material…"
   },
+  "researchInitialInputs.pastedHeading": {
+    "defaultMessage": "Pasted inputs"
+  },
+  "researchInitialInputs.pastedInput": {
+    "defaultMessage": "Pasted input {number}"
+  },
   "researchInitialInputs.removeFile": {
     "defaultMessage": "Remove {name}"
+  },
+  "researchInitialInputs.removePastedInput": {
+    "defaultMessage": "Remove pasted input {number}"
   },
   "researchInitialInputs.title": {
     "defaultMessage": "Initial Inputs"

@@ -145,7 +145,7 @@ export default function Hub({
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [sessionCreationError, setSessionCreationError] = useState<string | null>(null);
   const [researchInitialInputs, setResearchInitialInputs] = useState<ResearchInitialInputs>({
-    text: '',
+    texts: [],
     files: [],
   });
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =

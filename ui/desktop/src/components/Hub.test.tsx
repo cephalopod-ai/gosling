@@ -180,6 +180,13 @@ describe('Hub workspace selection', () => {
       screen.getByLabelText('Paste content'),
       'Review https://example.com and compare the uploaded reports.'
     );
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByLabelText('Paste content')).toHaveValue('');
+    expect(screen.getByText('Pasted input 1')).toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText('Paste content'),
+      'Treat this second pasted item as a separate source.'
+    );
     await user.upload(screen.getByLabelText('Choose initial research files'), [
       new File(['report one'], 'report-one.txt', { type: 'text/plain' }),
       new File(['report two'], 'report-two.pdf', { type: 'application/pdf' }),
@@ -187,13 +194,16 @@ describe('Hub workspace selection', () => {
     expect(screen.getByText('report-one.txt')).toBeInTheDocument();
     expect(screen.getByText('report-two.pdf')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Done' }));
-    expect(screen.getByText('3 inputs')).toBeInTheDocument();
+    expect(screen.getByText('4 inputs')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
     await waitFor(() =>
       expect(addResearchInitialInputs).toHaveBeenCalledWith('session-personal', {
-        text: 'Review https://example.com and compare the uploaded reports.',
+        texts: [
+          'Review https://example.com and compare the uploaded reports.',
+          'Treat this second pasted item as a separate source.',
+        ],
         files: [
           expect.objectContaining({
             name: 'report-one.txt',

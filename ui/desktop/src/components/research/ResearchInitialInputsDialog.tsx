@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { FileText, Paperclip, Trash2 } from 'lucide-react';
+import { ChevronRight, FileText, Paperclip, Trash2 } from 'lucide-react';
 import { defineMessages, useIntl } from '../../i18n';
 import {
   MAX_RESEARCH_INITIAL_FILE_BYTES,
@@ -42,7 +42,7 @@ const i18n = defineMessages({
   description: {
     id: 'researchInitialInputs.description',
     defaultMessage:
-      'Paste reports, links, notes, or prompts, and add any files the research session should begin with.',
+      'Paste reports, links, notes, or prompts. Use Next to keep each pasted item separate, and add any files the research session should begin with.',
   },
   pasteLabel: {
     id: 'researchInitialInputs.pasteLabel',
@@ -51,6 +51,19 @@ const i18n = defineMessages({
   pastePlaceholder: {
     id: 'researchInitialInputs.pastePlaceholder',
     defaultMessage: 'Paste links, prompts, report excerpts, notes, or other source material…',
+  },
+  next: { id: 'researchInitialInputs.next', defaultMessage: 'Next' },
+  pastedHeading: {
+    id: 'researchInitialInputs.pastedHeading',
+    defaultMessage: 'Pasted inputs',
+  },
+  pastedInput: {
+    id: 'researchInitialInputs.pastedInput',
+    defaultMessage: 'Pasted input {number}',
+  },
+  removePastedInput: {
+    id: 'researchInitialInputs.removePastedInput',
+    defaultMessage: 'Remove pasted input {number}',
   },
   browse: { id: 'researchInitialInputs.browse', defaultMessage: 'Browse files' },
   filePicker: {
@@ -105,21 +118,37 @@ export function ResearchInitialInputsDialog({
 }) {
   const intl = useIntl();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
   const [open, setOpen] = useState(false);
-  const [draftText, setDraftText] = useState(value.text);
+  const [draftTexts, setDraftTexts] = useState<string[]>(value.texts);
+  const [draftText, setDraftText] = useState('');
   const [draftFiles, setDraftFiles] = useState<ResearchInitialInputFile[]>(value.files);
   const [fileError, setFileError] = useState<string | null>(null);
   const appliedCount = researchInitialInputCount(value);
-  const draftCount = researchInitialInputCount({ text: draftText, files: draftFiles });
+  const pendingText = draftText.trim();
+  const draftCount = researchInitialInputCount({
+    texts: [...draftTexts, ...(pendingText ? [pendingText] : [])],
+    files: draftFiles,
+  });
   const isOverLimit = draftCount > MAX_RESEARCH_INITIAL_INPUTS;
+  const canQueueText =
+    pendingText.length > 0 && draftTexts.length + draftFiles.length < MAX_RESEARCH_INITIAL_INPUTS;
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (nextOpen) {
-      setDraftText(value.text);
+      setDraftTexts(value.texts);
+      setDraftText('');
       setDraftFiles(value.files);
       setFileError(null);
     }
+  };
+
+  const queueDraftText = () => {
+    if (!canQueueText) return;
+    setDraftTexts((texts) => [...texts, pendingText]);
+    setDraftText('');
+    window.requestAnimationFrame(() => textInputRef.current?.focus());
   };
 
   const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,7 +185,10 @@ export function ResearchInitialInputsDialog({
 
   const applyInputs = () => {
     if (isOverLimit) return;
-    onApply({ text: draftText, files: draftFiles });
+    onApply({
+      texts: [...draftTexts, ...(pendingText ? [pendingText] : [])],
+      files: draftFiles,
+    });
     setOpen(false);
   };
 
@@ -190,6 +222,7 @@ export function ResearchInitialInputsDialog({
               {intl.formatMessage(i18n.pasteLabel)}
             </label>
             <textarea
+              ref={textInputRef}
               id="research-initial-input-text"
               value={draftText}
               rows={7}
@@ -198,6 +231,59 @@ export function ResearchInitialInputsDialog({
               className="w-full resize-y rounded-lg border border-border-primary bg-background-secondary px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onChange={(event) => setDraftText(event.target.value)}
             />
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                disabled={!canQueueText}
+                onClick={queueDraftText}
+              >
+                {intl.formatMessage(i18n.next)}
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {draftTexts.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium">{intl.formatMessage(i18n.pastedHeading)}</h3>
+                <ul className="max-h-40 space-y-2 overflow-y-auto" aria-label="Pasted inputs">
+                  {draftTexts.map((text, index) => (
+                    <li
+                      key={`${index}:${text.slice(0, 32)}`}
+                      className="flex items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2"
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background-tertiary text-xs text-text-secondary">
+                        {index + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-text-secondary">
+                          {intl.formatMessage(i18n.pastedInput, { number: index + 1 })}
+                        </p>
+                        <p className="truncate text-sm text-text-primary">{text}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        shape="round"
+                        aria-label={intl.formatMessage(i18n.removePastedInput, {
+                          number: index + 1,
+                        })}
+                        onClick={() =>
+                          setDraftTexts((texts) =>
+                            texts.filter((_, candidateIndex) => candidateIndex !== index)
+                          )
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

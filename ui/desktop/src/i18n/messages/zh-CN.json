@@ -3268,5 +3268,17 @@
   },
   "artifactPane.sessionScope": {
     "defaultMessage": "Session"
+  },
+  "researchInitialInputs.next": {
+    "defaultMessage": "Next"
+  },
+  "researchInitialInputs.pastedHeading": {
+    "defaultMessage": "Pasted inputs"
+  },
+  "researchInitialInputs.pastedInput": {
+    "defaultMessage": "Pasted input {number}"
+  },
+  "researchInitialInputs.removePastedInput": {
+    "defaultMessage": "Remove pasted input {number}"
   }
 }

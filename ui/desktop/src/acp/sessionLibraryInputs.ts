@@ -24,13 +24,13 @@ export async function addResearchInitialInputs(
 
   const client = await getAcpClient();
   const itemIds: string[] = [];
-  const text = inputs.text.trim();
+  const texts = inputs.texts.map((text) => text.trim()).filter(Boolean);
 
-  if (text) {
+  for (const [index, text] of texts.entries()) {
     const response = await client.gosling.shellSessionLibraryAddText_unstable({
       sessionId,
       scope: 'session',
-      name: 'Initial research notes',
+      name: `Initial research input ${index + 1}`,
       text,
     });
     itemIds.push(response.item.id);

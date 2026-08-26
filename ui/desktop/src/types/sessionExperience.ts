@@ -17,7 +17,7 @@ export interface ResearchInitialInputFile {
 }
 
 export interface ResearchInitialInputs {
-  text: string;
+  texts: string[];
   files: ResearchInitialInputFile[];
 }
 
@@ -25,7 +25,7 @@ export const MAX_RESEARCH_INITIAL_INPUTS = 16;
 export const MAX_RESEARCH_INITIAL_FILE_BYTES = 20 * 1024 * 1024;
 
 export function researchInitialInputCount(inputs: ResearchInitialInputs): number {
-  return inputs.files.length + (inputs.text.trim() ? 1 : 0);
+  return inputs.files.length + inputs.texts.filter((text) => text.trim()).length;
 }
 
 export function sessionExperienceFrom(value: unknown): SessionExperience {
