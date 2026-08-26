@@ -34,6 +34,7 @@ for the relationship to cephalopod-ai/gosling.
 - [adr/0013-session-artifact-inventory.md](adr/0013-session-artifact-inventory.md) — durable session-scoped Outputs inventory and preview authorization boundary
 - [adr/0014-default-shell-template-boundary.md](adr/0014-default-shell-template-boundary.md) — generic Default Shell ownership, instruction, credential, settings, launcher, and module boundary
 - [adr/0015-shell-project-session-library.md](adr/0015-shell-project-session-library.md) — least-privilege project/session input library for linked files, pasted text, images, and prompt attachment
+- [adr/0016-deep-research-library.md](adr/0016-deep-research-library.md) — durable, user-configurable Deep Research deliverable library and bounded prior-context browser
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [cloud/](cloud/) — audit and playtest reports (not cloud-hosting runbooks)

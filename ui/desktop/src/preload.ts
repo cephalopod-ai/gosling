@@ -13,6 +13,7 @@ import type {
   ArtifactSaveRequest,
   ArtifactSaveResponse,
 } from './types/artifactRouter';
+import type { ResearchLibraryFile } from './utils/researchLibrary';
 
 // Mapping from settings keys to their old localStorage keys for lazy migration
 const localStorageKeyMap: Partial<Record<SettingKey, string>> = {
@@ -116,6 +117,9 @@ type ElectronAPI = {
   reactReady: () => void;
   getConfig: () => Record<string, unknown>;
   directoryChooser: () => Promise<Electron.OpenDialogReturnValue>;
+  getResearchLibraryPath: () => Promise<string>;
+  chooseResearchLibraryPath: () => Promise<string | null>;
+  listResearchLibraryFiles: () => Promise<ResearchLibraryFile[]>;
   createChatWindow: (options?: CreateChatWindowOptions) => void;
   logInfo: (txt: string) => void;
   showNotification: (data: NotificationData) => void;
@@ -208,6 +212,9 @@ const electronAPI: ElectronAPI = {
     return config;
   },
   directoryChooser: () => ipcRenderer.invoke('directory-chooser'),
+  getResearchLibraryPath: () => ipcRenderer.invoke('get-research-library-path'),
+  chooseResearchLibraryPath: () => ipcRenderer.invoke('choose-research-library-path'),
+  listResearchLibraryFiles: () => ipcRenderer.invoke('list-research-library-files'),
   createChatWindow: (options?: CreateChatWindowOptions) =>
     ipcRenderer.send(desktopCommandChannels.createChatWindow, options || {}),
   logInfo: (txt: string) => ipcRenderer.send('logInfo', txt),

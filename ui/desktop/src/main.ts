@@ -42,6 +42,7 @@ import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
 import { errorMessage, formatErrorForLogging } from './utils/conversionUtils';
 import { readBoundedSessionImportFile } from './utils/sessionImport';
+import { defaultResearchLibraryPath, listResearchLibraryFiles } from './utils/researchLibrary';
 import type { LegacySettings, Settings, SettingKey } from './utils/settings';
 import {
   getKeyboardShortcuts,
@@ -2150,6 +2151,19 @@ function rendererSettingValue(settings: Settings, key: SettingKey): Settings[Set
   return settings[key];
 }
 
+function configuredResearchLibraryPath(): string {
+  return path.resolve(
+    getSettings().researchLibraryPath ?? defaultResearchLibraryPath(app.getPath('documents'))
+  );
+}
+
+async function ensureResearchLibrary(rendererId: number): Promise<string> {
+  const libraryPath = configuredResearchLibraryPath();
+  await fs.mkdir(libraryPath, { recursive: true });
+  rendererDirectoryGrants.grantSelectedPath(rendererId, libraryPath);
+  return libraryPath;
+}
+
 ipcMain.handle('get-setting', (_event, key: unknown) => {
   if (!isSettingKey(key)) throw new Error('Invalid setting key');
   const settings = getSettings();
@@ -2172,6 +2186,9 @@ ipcMain.handle('get-settings', (_event, keys: unknown) => {
 
 ipcMain.handle('set-setting', (_event, key: unknown, value: unknown) => {
   if (!isSettingKey(key)) throw new Error('Invalid setting key');
+  if (key === 'researchLibraryPath') {
+    throw new Error('Research Library location must be changed with the native folder chooser');
+  }
 
   if (key === 'externalGoslingd') {
     if (!isSettingValue('externalGoslingd', value)) throw new Error('Invalid setting value');
@@ -2203,6 +2220,34 @@ ipcMain.handle('set-setting', (_event, key: unknown, value: unknown) => {
   if (key === 'disableAutoDownload') {
     setAutoDownloadDisabled(value === true);
   }
+});
+
+ipcMain.handle('get-research-library-path', async (event) => {
+  return ensureResearchLibrary(event.sender.id);
+});
+
+ipcMain.handle('choose-research-library-path', async (event) => {
+  const currentPath = await ensureResearchLibrary(event.sender.id);
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: currentPath,
+    title: 'Choose Research Library',
+  });
+  const selectedPath = result.canceled ? undefined : result.filePaths[0];
+  if (!selectedPath) return null;
+
+  const resolvedPath = path.resolve(selectedPath);
+  updateSettings((settings) => {
+    setSettingValue(settings, 'researchLibraryPath', resolvedPath);
+  });
+  await fs.mkdir(resolvedPath, { recursive: true });
+  rendererDirectoryGrants.grantSelectedPath(event.sender.id, resolvedPath);
+  return resolvedPath;
+});
+
+ipcMain.handle('list-research-library-files', async (event) => {
+  const libraryPath = await ensureResearchLibrary(event.sender.id);
+  return listResearchLibraryFiles(libraryPath, getSettings().outputFileExtensions);
 });
 
 ipcMain.handle('get-acp-url', async (event) => {

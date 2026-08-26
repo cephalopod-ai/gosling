@@ -45,6 +45,10 @@ test('session inventory tabs show boxed counts before preview selection', async 
   const inputsTab = goslingPage.getByRole('tab', { name: 'Inputs 0' });
   await expect(inputsTab).toBeVisible();
   await expect(goslingPage.getByTestId('inputs-count')).toHaveClass(/rounded-md/);
+  const libraryTab = goslingPage.getByRole('tab', { name: /Library \d+/ });
+  await expect(libraryTab).toBeVisible();
+  await expect(goslingPage.getByTestId('library-count')).toHaveClass(/rounded-md/);
+  await expect(goslingPage.getByTestId('library-count')).toHaveClass(/border/);
   await inputsTab.click();
   await expect(inputsTab).toHaveAttribute('aria-selected', 'true');
   await goslingPage.screenshot({

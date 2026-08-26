@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  BookOpen,
   Copy,
   ExternalLink,
   File,
@@ -35,10 +36,12 @@ import {
   OUTPUT_FILE_EXTENSIONS_CHANGED_EVENT,
 } from '../../utils/settings';
 import { listSessionLibraryInputs } from '../../acp/sessionLibraryInputs';
+import type { ResearchLibraryFile } from '../../utils/researchLibrary';
 
 const i18n = defineMessages({
   outputs: { id: 'artifactPane.outputs', defaultMessage: 'Outputs' },
   inputs: { id: 'artifactPane.inputs', defaultMessage: 'Inputs' },
+  library: { id: 'artifactPane.library', defaultMessage: 'Library' },
   missing: { id: 'artifactPane.missing', defaultMessage: 'Missing' },
   blocked: { id: 'artifactPane.blocked', defaultMessage: 'Blocked' },
   truncated: { id: 'artifactPane.truncated', defaultMessage: 'Truncated' },
@@ -84,11 +87,23 @@ const i18n = defineMessages({
     id: 'artifactPane.inputLoadFailed',
     defaultMessage: 'Unable to load session inputs.',
   },
+  libraryEmptyTitle: {
+    id: 'artifactPane.libraryEmptyTitle',
+    defaultMessage: 'No research documents yet',
+  },
+  libraryEmptyBody: {
+    id: 'artifactPane.libraryEmptyBody',
+    defaultMessage: 'Reports and tutorials produced by Deep Research will appear here.',
+  },
+  libraryLoadFailed: {
+    id: 'artifactPane.libraryLoadFailed',
+    defaultMessage: 'Unable to load the Research Library.',
+  },
   sessionScope: { id: 'artifactPane.sessionScope', defaultMessage: 'Session' },
   projectScope: { id: 'artifactPane.projectScope', defaultMessage: 'Project' },
 });
 
-type InventoryTab = 'inputs' | 'outputs';
+type InventoryTab = 'inputs' | 'library' | 'outputs';
 
 interface PreviewData {
   content: string;
@@ -307,12 +322,38 @@ export function ArtifactPane() {
   const [inputs, setInputs] = useState<ShellLibraryItemSummary[]>([]);
   const [inputsLoading, setInputsLoading] = useState(false);
   const [inputsError, setInputsError] = useState(false);
+  const [researchLibraryFiles, setResearchLibraryFiles] = useState<ResearchLibraryFile[]>([]);
+  const [researchLibraryPath, setResearchLibraryPath] = useState<string | null>(null);
+  const [researchLibraryLoading, setResearchLibraryLoading] = useState(false);
+  const [researchLibraryError, setResearchLibraryError] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [outputFileExtensions, setOutputFileExtensions] = useState<string[]>(
     defaultSettings.outputFileExtensions
   );
   const receivedOutputFileExtensionsChange = useRef(false);
+
+  const refreshResearchLibrary = useCallback(async () => {
+    setResearchLibraryLoading(true);
+    setResearchLibraryError(false);
+    try {
+      const [libraryPath, files] = await Promise.all([
+        window.electron.getResearchLibraryPath(),
+        window.electron.listResearchLibraryFiles(),
+      ]);
+      setResearchLibraryPath(libraryPath);
+      setResearchLibraryFiles(files);
+    } catch {
+      setResearchLibraryFiles([]);
+      setResearchLibraryError(true);
+    } finally {
+      setResearchLibraryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshResearchLibrary();
+  }, [refreshResearchLibrary]);
 
   useEffect(() => {
     if (!visibleSessionId) {
@@ -440,6 +481,11 @@ export function ArtifactPane() {
     openFile(selected);
   };
 
+  const selectInventoryTab = (tab: InventoryTab) => {
+    setInventoryTab(tab);
+    if (tab === 'library') void refreshResearchLibrary();
+  };
+
   const resizeFrom = (event: React.PointerEvent) => {
     event.preventDefault();
     const startX = event.clientX;
@@ -510,11 +556,18 @@ export function ArtifactPane() {
       />
       <div className="no-drag flex h-11 shrink-0 items-center gap-1 border-b border-border-primary px-2">
         <div className="flex h-full items-end gap-1" role="tablist" aria-label="Session inventory">
-          {(['inputs', 'outputs'] as const).map((tab) => {
+          {(['inputs', 'outputs', 'library'] as const).map((tab) => {
             const active = inventoryTab === tab;
-            const count = tab === 'inputs' ? inputs.length : displayedArtifacts.length;
-            const label = intl.formatMessage(tab === 'inputs' ? i18n.inputs : i18n.outputs);
-            const Icon = tab === 'inputs' ? FileInput : FileOutput;
+            const count =
+              tab === 'inputs'
+                ? inputs.length
+                : tab === 'library'
+                  ? researchLibraryFiles.length
+                  : displayedArtifacts.length;
+            const label = intl.formatMessage(
+              tab === 'inputs' ? i18n.inputs : tab === 'library' ? i18n.library : i18n.outputs
+            );
+            const Icon = tab === 'inputs' ? FileInput : tab === 'library' ? BookOpen : FileOutput;
             return (
               <button
                 key={tab}
@@ -522,7 +575,7 @@ export function ArtifactPane() {
                 role="tab"
                 aria-selected={active}
                 aria-label={`${label} ${count}`}
-                onClick={() => setInventoryTab(tab)}
+                onClick={() => selectInventoryTab(tab)}
                 className={cn(
                   'flex h-10 items-center gap-1.5 border-b-2 px-2 text-xs font-medium',
                   active
@@ -550,6 +603,17 @@ export function ArtifactPane() {
               className="no-drag"
               onClick={() => void chooseFile()}
               title={intl.formatMessage(i18n.openFile)}
+            >
+              <FolderOpen className="h-4 w-4" />
+            </Button>
+          )}
+          {inventoryTab === 'library' && researchLibraryPath && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="no-drag"
+              onClick={() => void window.electron.openDirectoryInExplorer(researchLibraryPath)}
+              title="Open Research Library folder"
             >
               <FolderOpen className="h-4 w-4" />
             </Button>
@@ -612,6 +676,55 @@ export function ArtifactPane() {
                       {intl.formatMessage(i18n.missing)}
                     </span>
                   )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : inventoryTab === 'library' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {researchLibraryLoading ? (
+            <div className="flex h-full items-center justify-center text-sm text-text-secondary">
+              {intl.formatMessage(i18n.loading)}
+            </div>
+          ) : researchLibraryError ? (
+            <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+              <AlertTriangle className="h-8 w-8 text-text-secondary" />
+              <p className="mt-3 text-sm text-text-secondary">
+                {intl.formatMessage(i18n.libraryLoadFailed)}
+              </p>
+            </div>
+          ) : researchLibraryFiles.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+              <BookOpen className="h-8 w-8 text-text-secondary" />
+              <h2 className="mt-3 text-sm font-medium">
+                {intl.formatMessage(i18n.libraryEmptyTitle)}
+              </h2>
+              <p className="mt-1 max-w-xs text-xs text-text-secondary">
+                {intl.formatMessage(i18n.libraryEmptyBody)}
+              </p>
+            </div>
+          ) : (
+            <ul className="py-1" aria-label={intl.formatMessage(i18n.library)}>
+              {researchLibraryFiles.map((file) => (
+                <li key={file.path}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 border-b border-border-primary px-3 py-2.5 text-left last:border-b-0 hover:bg-background-secondary/60"
+                    title={file.path}
+                    onClick={() => {
+                      openFile(file.path);
+                      setInventoryTab('outputs');
+                    }}
+                  >
+                    <FileText className="h-4 w-4 shrink-0 text-text-secondary" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs text-text-primary">{file.name}</span>
+                      <span className="block truncate text-[10px] text-text-secondary">
+                        {file.relativePath} · {formatInputSize(file.sizeBytes)}
+                      </span>
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>

@@ -14,6 +14,7 @@ import {
   RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
 } from '../prompts/researchScientificMethod';
 import { RESEARCH_MODEL_TEAM_PROMPT_KEY } from '../prompts/researchModelTeam';
+import { RESEARCH_LIBRARY_PROMPT_KEY } from '../prompts/researchLibrary';
 
 vi.mock('./ConfigContext', () => ({ useConfig: vi.fn() }));
 vi.mock('../contexts/WorkspaceContext', () => ({ useWorkspace: vi.fn() }));
@@ -65,6 +66,12 @@ vi.mock('./ChatInput', () => ({
         Use Claude in composer
       </button>
       <button
+        type="button"
+        onClick={() => onModelChanged?.({ provider: 'claude-code', model: 'claude-opus-5' })}
+      >
+        Use Claude Code in composer
+      </button>
+      <button
         disabled={submitDisabled}
         title={submitDisabledReason}
         data-initial-value={initialValue}
@@ -83,6 +90,25 @@ vi.mock('./ModelAndProviderContext', () => ({
 }));
 
 const setActiveWorkspace = vi.fn();
+const researchExtensions = [
+  {
+    name: 'math_mcp',
+    enabled: false,
+    type: 'stdio' as const,
+    cmd: '/usr/local/bin/mathmcp',
+  },
+  {
+    name: 'summon',
+    enabled: true,
+    type: 'platform' as const,
+  },
+];
+
+function configureResearchExtensions() {
+  vi.mocked(useConfig).mockReturnValue({
+    extensionsList: researchExtensions,
+  } as unknown as ReturnType<typeof useConfig>);
+}
 const configuredCredentialProfile = {
   id: 'profile-personal',
   name: 'Personal API key',
@@ -202,10 +228,28 @@ describe('Hub workspace selection', () => {
           setup_steps: [],
         },
       },
+      {
+        name: 'claude-code',
+        is_configured: true,
+        manages_own_context: true,
+        provider_type: 'Builtin',
+        metadata: {
+          name: 'claude-code',
+          display_name: 'Z Claude Code',
+          description: '',
+          default_model: 'claude-opus-5',
+          model_doc_link: '',
+          model_selection_hint: null,
+          config_keys: [],
+          known_models: [],
+          setup_steps: [],
+        },
+      },
     ]);
     vi.mocked(acpListProviderModels).mockImplementation(async (providerId) => {
       if (providerId === 'codex') return [{ id: 'gpt-5.6-sol' }];
       if (providerId === 'claude') return [{ id: 'claude-opus-5' }];
+      if (providerId === 'claude-code') return [{ id: 'claude-opus-5' }];
       return [{ id: 'grok-4.6' }, { id: 'grok-4.6-mini' }];
     });
     vi.mocked(addResearchInitialInputs).mockResolvedValue([
@@ -246,6 +290,7 @@ describe('Hub workspace selection', () => {
   });
 
   it('scaffolds a tagged research session on the shared new-session flow', async () => {
+    configureResearchExtensions();
     const user = userEvent.setup();
     const setView = vi.fn();
     Object.assign(window.electron, {
@@ -311,6 +356,18 @@ describe('Hub workspace selection', () => {
       RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
       RESEARCH_SCIENTIFIC_METHOD_PROMPT
     );
+    expect(acpAppendSessionSystemPrompt).toHaveBeenCalledWith(
+      'session-personal',
+      RESEARCH_LIBRARY_PROMPT_KEY,
+      expect.stringContaining('/Users/tester/Documents/Gosling Research Library')
+    );
+    expect(createSession).toHaveBeenCalledWith(
+      '/Users/tester/Work',
+      expect.objectContaining({
+        extensionConfigs: expect.arrayContaining([expect.objectContaining({ name: 'math_mcp' })]),
+        workspaceAdditionalFolders: ['/Users/tester/Documents/Gosling Research Library'],
+      })
+    );
     expect(vi.mocked(acpAppendSessionSystemPrompt).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(addResearchInitialInputs).mock.invocationCallOrder[0]
     );
@@ -331,6 +388,7 @@ describe('Hub workspace selection', () => {
   });
 
   it('removes an incomplete research session when its default instruction cannot be applied', async () => {
+    configureResearchExtensions();
     const user = userEvent.setup();
     vi.mocked(acpAppendSessionSystemPrompt).mockRejectedValueOnce(
       new Error('The research instruction was rejected')
@@ -352,6 +410,7 @@ describe('Hub workspace selection', () => {
   });
 
   it('starts Dual research with the selected lead and a fixed delegation protocol', async () => {
+    configureResearchExtensions();
     const user = userEvent.setup();
     render(<Hub setView={vi.fn()} sessionExperience="research" />, {
       wrapper: IntlTestWrapper,
@@ -370,9 +429,13 @@ describe('Hub workspace selection', () => {
 
     await waitFor(() =>
       expect(createSession).toHaveBeenCalledWith('/Users/tester/Work', {
-        allExtensions: [],
+        extensionConfigs: expect.arrayContaining([
+          expect.objectContaining({ name: 'math_mcp' }),
+          expect.objectContaining({ name: 'summon' }),
+        ]),
         workspaceId: 'default',
         workspaceWorkingDir: '/Users/tester/Work',
+        workspaceAdditionalFolders: ['/Users/tester/Documents/Gosling Research Library'],
         provider: 'codex',
         model: 'gpt-5.6-sol',
       })
@@ -385,6 +448,7 @@ describe('Hub workspace selection', () => {
   });
 
   it('keeps the research lead and composer model synchronized without dropping seats', async () => {
+    configureResearchExtensions();
     const user = userEvent.setup();
     render(<Hub setView={vi.fn()} sessionExperience="research" />, {
       wrapper: IntlTestWrapper,
@@ -414,7 +478,29 @@ describe('Hub workspace selection', () => {
     expect(researcher3).toHaveValue(JSON.stringify(['xai', 'grok-4.6']));
   });
 
+  it('blocks a managed-context provider from becoming the multi-model Lead', async () => {
+    configureResearchExtensions();
+    const user = userEvent.setup();
+    render(<Hub setView={vi.fn()} sessionExperience="research" />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    const trio = await screen.findByRole('radio', { name: 'Trio research mode' });
+    await waitFor(() => expect(trio).toBeEnabled());
+    await user.click(trio);
+    await user.click(screen.getByRole('button', { name: 'Use Claude Code in composer' }));
+
+    const send = screen.getByRole('button', { name: 'Send message' });
+    await waitFor(() => expect(send).toBeDisabled());
+    expect(send).toHaveAttribute(
+      'title',
+      'Choose a Lead model that supports Gosling-hosted tools. This model can still be a researcher.'
+    );
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
   it('removes an incomplete session when initial input storage fails', async () => {
+    configureResearchExtensions();
     const user = userEvent.setup();
     vi.mocked(addResearchInitialInputs).mockRejectedValueOnce(new Error('The report is too large'));
     render(<Hub setView={vi.fn()} sessionExperience="research" />, {

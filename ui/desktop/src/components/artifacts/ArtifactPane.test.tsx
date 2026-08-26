@@ -122,6 +122,10 @@ describe('ArtifactPane', () => {
       truncated: false,
     });
     Object.assign(window.electron, { readArtifactFile });
+    vi.mocked(window.electron.getResearchLibraryPath).mockResolvedValue(
+      '/Users/tester/Documents/Gosling Research Library'
+    );
+    vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue([]);
     vi.mocked(listSessionLibraryInputs).mockResolvedValue([]);
     vi.mocked(useArtifactRouter).mockReturnValue({
       saveArtifact,
@@ -351,5 +355,35 @@ describe('ArtifactPane', () => {
     expect(screen.getByText(/text\/plain · Session · 182 B/)).toBeInTheDocument();
     expect(screen.getByText(/application\/pdf · Session · 3 KB/)).toBeInTheDocument();
     expect(listSessionLibraryInputs).toHaveBeenCalledWith('session-inputs');
+  });
+
+  it('browses durable research documents from the Library tab', async () => {
+    vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue([
+      {
+        name: 'bayesian-neural-networks.md',
+        path: '/Users/tester/Documents/Gosling Research Library/bnn/bayesian-neural-networks.md',
+        relativePath: 'bnn/bayesian-neural-networks.md',
+        sizeBytes: 4_096,
+        modifiedAt: '2026-08-26T12:00:00.000Z',
+      },
+    ]);
+
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    const libraryTab = await screen.findByRole('tab', { name: 'Library 1' });
+    fireEvent.click(libraryTab);
+
+    expect(screen.getByTestId('library-count')).toHaveClass('rounded-md', 'border');
+    expect(await screen.findByText('bayesian-neural-networks.md')).toBeInTheDocument();
+    expect(screen.getByText(/bnn\/bayesian-neural-networks.md · 4 KB/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('bayesian-neural-networks.md'));
+    expect(screen.getByRole('tab', { name: 'Outputs 0' })).toHaveAttribute('aria-selected', 'true');
   });
 });

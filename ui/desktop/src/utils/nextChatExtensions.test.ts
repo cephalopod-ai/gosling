@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createNextChatExtensionDraft,
+  selectResearchSessionExtensions,
   selectNextChatExtensions,
   toggleNextChatExtension,
 } from './nextChatExtensions';
@@ -34,7 +35,10 @@ describe('nextChatExtensions', () => {
   });
 
   it('selects extension configs without the enabled field', () => {
-    const extensions = [extension('developer', true), extension('memory', false)];
+    const extensions = [
+      { ...extension('developer', true), configKey: 'developer-key' },
+      extension('memory', false),
+    ];
     const selected = selectNextChatExtensions(extensions, {
       selectedNames: new Set(['memory']),
     });
@@ -46,5 +50,29 @@ describe('nextChatExtensions', () => {
         description: 'memory extension',
       },
     ]);
+  });
+
+  it('forces Math MCP into Solo research without changing its global enabled state', () => {
+    const math = extension('math_mcp', false);
+    const selected = selectResearchSessionExtensions(
+      [extension('developer', true), math],
+      null,
+      'solo'
+    );
+
+    expect(selected.extensionConfigs.map(({ name }) => name)).toEqual(['developer', 'math_mcp']);
+    expect(selected.missingRequiredNames).toEqual([]);
+    expect(math.enabled).toBe(false);
+  });
+
+  it('forces Math MCP and summon into multi-model research and reports missing requirements', () => {
+    const selected = selectResearchSessionExtensions(
+      [extension('developer', true), extension('math_mcp', false)],
+      { selectedNames: new Set() },
+      'trio'
+    );
+
+    expect(selected.extensionConfigs.map(({ name }) => name)).toEqual(['math_mcp']);
+    expect(selected.missingRequiredNames).toEqual(['summon']);
   });
 });

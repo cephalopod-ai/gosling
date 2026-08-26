@@ -68,6 +68,7 @@ export interface Settings {
   seenAnnouncementIds: string[];
   recentModels: RecentModel[];
   outputFileExtensions: string[];
+  researchLibraryPath: string | null;
 }
 
 export const settingKeys = [
@@ -90,6 +91,7 @@ export const settingKeys = [
   'seenAnnouncementIds',
   'recentModels',
   'outputFileExtensions',
+  'researchLibraryPath',
 ] as const satisfies readonly (keyof Settings)[];
 
 export type SettingKey = (typeof settingKeys)[number];
@@ -139,6 +141,7 @@ export const defaultSettings: Settings = {
   seenAnnouncementIds: [],
   recentModels: [],
   outputFileExtensions: [...defaultOutputFileExtensions],
+  researchLibraryPath: null,
 };
 
 const languageSettings = new Set<LanguageSetting>([
@@ -265,6 +268,7 @@ export function isSettingValue<K extends SettingKey>(key: K, value: unknown): va
     case 'showPricing':
       return typeof value === 'boolean';
     case 'archiveFolder':
+    case 'researchLibraryPath':
       return isNullableBoundedString(value, MAX_PATH_LENGTH);
     case 'archivedSessionFiles':
       return isArchivedSessionFiles(value);
@@ -328,6 +332,7 @@ export function setSettingValue<K extends SettingKey>(
     case 'seenAnnouncementIds':
     case 'recentModels':
     case 'outputFileExtensions':
+    case 'researchLibraryPath':
       Object.assign(settings, { [key]: value });
   }
 }

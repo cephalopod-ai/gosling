@@ -11,10 +11,10 @@ vi.mock('../../acp/providers', () => ({
   acpListProviderModels: vi.fn(),
 }));
 
-const provider = (name: string, displayName: string) => ({
+const provider = (name: string, displayName: string, managesOwnContext = false) => ({
   name,
   is_configured: true,
-  manages_own_context: false,
+  manages_own_context: managesOwnContext,
   provider_type: 'Builtin' as const,
   metadata: {
     name,
@@ -169,5 +169,45 @@ describe('ResearchModelTeamSelector', () => {
     expect(screen.getByLabelText('Lead model')).toHaveValue(
       JSON.stringify(['chatgpt_codex', 'gpt-5.6-sol'])
     );
+  });
+
+  it('keeps managed-context models in researcher seats but not the multi-model Lead seat', async () => {
+    const user = userEvent.setup();
+    vi.mocked(acpListProviderDetails).mockResolvedValue([
+      provider('claude-code', 'Claude Code', true),
+      provider('codex', 'Codex'),
+      provider('groq', 'Groq'),
+    ]);
+    vi.mocked(acpListProviderModels).mockImplementation(async (providerId) => {
+      if (providerId === 'claude-code') return [{ id: 'claude-opus-5' }];
+      if (providerId === 'codex') return [{ id: 'gpt-5.6-sol' }];
+      return [{ id: 'llama-4' }];
+    });
+    render(<Harness currentProvider="claude-code" currentModel="claude-opus-5" />);
+
+    const trio = await screen.findByRole('radio', { name: 'Trio research mode' });
+    await waitFor(() => expect(trio).toBeEnabled());
+    await user.click(trio);
+
+    await waitFor(() =>
+      expect(JSON.parse(screen.getByTestId('configuration').textContent ?? '{}')).toMatchObject({
+        mode: 'trio',
+        models: [
+          { provider: 'codex', model: 'gpt-5.6-sol' },
+          { provider: 'claude-code', model: 'claude-opus-5' },
+          { provider: 'groq', model: 'llama-4' },
+        ],
+      })
+    );
+
+    const lead = screen.getByLabelText('Lead model') as HTMLSelectElement;
+    const researcher = screen.getByLabelText('Researcher 2') as HTMLSelectElement;
+    expect(
+      Array.from(lead.options).find((option) => option.value.includes('claude-code'))
+    ).toBeDisabled();
+    expect(
+      Array.from(researcher.options).find((option) => option.value.includes('claude-code'))
+    ).not.toBeDisabled();
+    expect(screen.getByText(/Lead must support Gosling-hosted tools/)).toBeInTheDocument();
   });
 });

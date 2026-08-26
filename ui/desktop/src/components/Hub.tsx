@@ -22,13 +22,14 @@ import LoadingGosling from './LoadingGosling';
 import { UserInput } from '../types/message';
 import {
   createNextChatExtensionDraft,
+  selectResearchSessionExtensions,
   selectNextChatExtensions,
   type NextChatExtensionDraft,
 } from '../utils/nextChatExtensions';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { reconcileWorkspaceWorkingDir } from '../utils/workspaceWorkingDir';
 import { useModelAndProvider } from './ModelAndProviderContext';
-import { Telescope } from 'lucide-react';
+import { BookOpen, FolderOpen, Telescope } from 'lucide-react';
 import {
   researchInitialInputCount,
   type ResearchInitialInputs,
@@ -47,6 +48,10 @@ import {
   buildResearchModelTeamPrompt,
   RESEARCH_MODEL_TEAM_PROMPT_KEY,
 } from '../prompts/researchModelTeam';
+import {
+  buildResearchLibraryPrompt,
+  RESEARCH_LIBRARY_PROMPT_KEY,
+} from '../prompts/researchLibrary';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -172,12 +177,6 @@ export default function Hub({
     },
     [isResearch]
   );
-  const submitDisabledReason =
-    workspaceStartIssue ??
-    (isResearch ? researchTeamIssue : null) ??
-    (workspaceSelectionRequired
-      ? `Choose a workspace before starting ${isResearch ? 'research' : 'a chat'}.`
-      : undefined);
   const [workingDir, setWorkingDir] = useState(
     selectedWorkspace?.workingFolder ?? getInitialWorkingDir()
   );
@@ -194,8 +193,57 @@ export default function Hub({
   });
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
     useState<NextChatExtensionDraft | null>(null);
+  const [researchLibraryPath, setResearchLibraryPath] = useState<string | null>(null);
+  const [researchLibraryError, setResearchLibraryError] = useState<string | null>(null);
+  const [isChoosingResearchLibrary, setIsChoosingResearchLibrary] = useState(false);
+  const researchSessionExtensions = useMemo(
+    () =>
+      isResearch
+        ? selectResearchSessionExtensions(
+            extensionsList,
+            nextChatExtensionDraft,
+            researchTeamConfiguration.mode
+          )
+        : null,
+    [extensionsList, isResearch, nextChatExtensionDraft, researchTeamConfiguration.mode]
+  );
+  const researchExtensionIssue = researchSessionExtensions?.missingRequiredNames.length
+    ? `Deep Research requires configured extension${researchSessionExtensions.missingRequiredNames.length === 1 ? '' : 's'}: ${researchSessionExtensions.missingRequiredNames.join(', ')}.`
+    : null;
+  const researchLibraryIssue = isResearch
+    ? (researchLibraryError ?? (!researchLibraryPath ? 'Research Library is loading.' : null))
+    : null;
+  const submitDisabledReason =
+    workspaceStartIssue ??
+    researchExtensionIssue ??
+    researchLibraryIssue ??
+    (isResearch ? researchTeamIssue : null) ??
+    (workspaceSelectionRequired
+      ? `Choose a workspace before starting ${isResearch ? 'research' : 'a chat'}.`
+      : undefined);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { time, meridiem, hour } = useClock();
+
+  useEffect(() => {
+    if (!isResearch) return;
+    let cancelled = false;
+    setResearchLibraryError(null);
+    void window.electron
+      .getResearchLibraryPath()
+      .then((libraryPath) => {
+        if (!cancelled) setResearchLibraryPath(libraryPath);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setResearchLibraryError(
+            `Research Library is unavailable: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isResearch]);
 
   useEffect(() => {
     setSelectedWorkspaceId((current) => {
@@ -273,6 +321,22 @@ export default function Hub({
     }
   }, [isChoosingAdditionalFolder, workingDir]);
 
+  const chooseResearchLibrary = useCallback(async () => {
+    if (isChoosingResearchLibrary) return;
+    setIsChoosingResearchLibrary(true);
+    setResearchLibraryError(null);
+    try {
+      const libraryPath = await window.electron.chooseResearchLibraryPath();
+      if (libraryPath) setResearchLibraryPath(libraryPath);
+    } catch (error) {
+      setResearchLibraryError(
+        `Could not change the Research Library: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setIsChoosingResearchLibrary(false);
+    }
+  }, [isChoosingResearchLibrary]);
+
   const handleSubmit = async (input: UserInput) => {
     const { msg: userMessage, images } = input;
     const hasResearchInitialInputs =
@@ -280,7 +344,7 @@ export default function Hub({
     if (
       !(images.length > 0 || userMessage.trim() || hasResearchInitialInputs) ||
       isCreatingSession ||
-      (isResearch && researchTeamIssue) ||
+      (isResearch && (researchTeamIssue || researchExtensionIssue || researchLibraryIssue)) ||
       !selectedWorkspace ||
       !selectedWorkspaceItem.validation.validForSession
     ) {
@@ -295,21 +359,26 @@ export default function Hub({
       const selectedExtensions = nextChatExtensionDraft
         ? selectNextChatExtensions(extensionsList, nextChatExtensionDraft)
         : [];
-      const enabledResearchExtensionNames = (
-        nextChatExtensionDraft
-          ? selectedExtensions
-          : extensionsList.filter((extension) => extension.enabled)
-      ).map((extension) => extension.name);
+      const sessionExtensions = isResearch
+        ? (researchSessionExtensions?.extensionConfigs ?? [])
+        : selectedExtensions;
+      const enabledResearchExtensionNames = sessionExtensions.map((extension) => extension.name);
       const researchTeamPrompt = isResearch
         ? buildResearchModelTeamPrompt(researchTeamConfiguration, enabledResearchExtensionNames)
         : null;
       const selectedResearchLead = isResearch ? researchTeamConfiguration.models[0] : undefined;
       const sessionProvider = selectedResearchLead?.provider ?? currentProvider;
       const sessionModel = selectedResearchLead?.model ?? currentModel;
+      const sessionAdditionalFolders = [
+        ...new Set([
+          ...additionalWorkspaceFolders,
+          ...(isResearch && researchLibraryPath ? [researchLibraryPath] : []),
+        ]),
+      ];
       const sessionOptions =
-        selectedExtensions.length > 0
+        sessionExtensions.length > 0
           ? {
-              extensionConfigs: selectedExtensions,
+              extensionConfigs: sessionExtensions,
               workspaceId: selectedWorkspace.id,
               workspaceWorkingDir: workingDir,
               ...(sessionProvider ? { provider: sessionProvider } : {}),
@@ -317,8 +386,8 @@ export default function Hub({
               ...(selectedCredentialProfileId
                 ? { workspaceCredentialProfileId: selectedCredentialProfileId }
                 : {}),
-              ...(additionalWorkspaceFolders.length
-                ? { workspaceAdditionalFolders: additionalWorkspaceFolders }
+              ...(sessionAdditionalFolders.length
+                ? { workspaceAdditionalFolders: sessionAdditionalFolders }
                 : {}),
             }
           : {
@@ -330,8 +399,8 @@ export default function Hub({
               ...(selectedCredentialProfileId
                 ? { workspaceCredentialProfileId: selectedCredentialProfileId }
                 : {}),
-              ...(additionalWorkspaceFolders.length
-                ? { workspaceAdditionalFolders: additionalWorkspaceFolders }
+              ...(sessionAdditionalFolders.length
+                ? { workspaceAdditionalFolders: sessionAdditionalFolders }
                 : {}),
             };
 
@@ -343,6 +412,13 @@ export default function Hub({
           RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
           RESEARCH_SCIENTIFIC_METHOD_PROMPT
         );
+        if (researchLibraryPath) {
+          await acpAppendSessionSystemPrompt(
+            session.id,
+            RESEARCH_LIBRARY_PROMPT_KEY,
+            buildResearchLibraryPrompt(researchLibraryPath)
+          );
+        }
         if (researchTeamPrompt) {
           await acpAppendSessionSystemPrompt(
             session.id,
@@ -404,10 +480,12 @@ export default function Hub({
 
   return (
     <div
-      className="flex flex-col h-full min-h-0 items-center justify-center px-6 relative"
+      className={`flex h-full min-h-0 flex-col items-center px-6 relative ${
+        isResearch ? 'justify-start overflow-y-auto py-6' : 'justify-center'
+      }`}
       data-session-experience={sessionExperience}
     >
-      <div className="w-full max-w-2xl">
+      <div className={`w-full max-w-2xl ${isResearch ? 'my-auto' : ''}`}>
         <div className="flex items-baseline gap-2 mb-1">
           <span className="text-6xl font-light text-text-primary tracking-tight tabular-nums">
             {time}
@@ -449,6 +527,45 @@ export default function Hub({
             onChange={setResearchTeamConfiguration}
             onValidationChange={setResearchTeamIssue}
           />
+        )}
+
+        {isResearch && (
+          <section className="mb-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-3">
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-text-secondary" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-medium text-text-primary">Research Library</h2>
+                <p
+                  className="mt-0.5 truncate text-xs text-text-secondary"
+                  title={researchLibraryPath ?? undefined}
+                >
+                  {researchLibraryPath ?? 'Preparing the default Documents library…'}
+                </p>
+              </div>
+              {researchLibraryPath && (
+                <button
+                  type="button"
+                  className="rounded-md border border-border-primary px-2 py-1 text-xs text-text-primary hover:bg-background-primary"
+                  onClick={() => void window.electron.openDirectoryInExplorer(researchLibraryPath)}
+                >
+                  <FolderOpen className="mr-1 inline h-3.5 w-3.5" />
+                  Open
+                </button>
+              )}
+              <button
+                type="button"
+                className="rounded-md border border-border-primary px-2 py-1 text-xs text-text-primary hover:bg-background-primary disabled:opacity-50"
+                onClick={() => void chooseResearchLibrary()}
+                disabled={isChoosingResearchLibrary}
+              >
+                {isChoosingResearchLibrary ? 'Choosing…' : 'Change'}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-text-secondary">
+              Finished reports and tutorials are saved here. Prior reports are optional context, not
+              authoritative evidence.
+            </p>
+          </section>
         )}
 
         <div className="mb-3 flex items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2">
@@ -574,6 +691,16 @@ export default function Hub({
         {workspaceStartIssue && (
           <p role="alert" className="mb-3 text-sm text-red-600">
             {workspaceStartIssue}
+          </p>
+        )}
+        {researchExtensionIssue && (
+          <p role="alert" className="mb-3 text-sm text-red-600">
+            {researchExtensionIssue}
+          </p>
+        )}
+        {researchLibraryError && (
+          <p role="alert" className="mb-3 text-sm text-red-600">
+            {researchLibraryError}
           </p>
         )}
 

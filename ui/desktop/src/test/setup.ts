@@ -74,6 +74,7 @@ const mockSettings: Record<string, unknown> = {
   seenAnnouncementIds: [],
   recentModels: [],
   outputFileExtensions: ['pdf', 'md', 'txt', 'doc', 'docx', 'jpg', 'png', 'yaml', 'json'],
+  researchLibraryPath: null,
 };
 
 // Mock window.electron for renderer process
@@ -81,6 +82,11 @@ Object.defineProperty(window, 'electron', {
   writable: true,
   value: {
     platform: 'darwin',
+    getResearchLibraryPath: vi.fn(() =>
+      Promise.resolve('/Users/tester/Documents/Gosling Research Library')
+    ),
+    chooseResearchLibraryPath: vi.fn(() => Promise.resolve(null)),
+    listResearchLibraryFiles: vi.fn(() => Promise.resolve([])),
     getSetting: vi.fn((key: string) => Promise.resolve(mockSettings[key])),
     getSettings: vi.fn((keys: string[]) =>
       Promise.resolve(Object.fromEntries(keys.map((key) => [key, mockSettings[key]])))

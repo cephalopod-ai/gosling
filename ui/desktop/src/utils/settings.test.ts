@@ -91,6 +91,8 @@ describe('setting IPC schemas', () => {
     expect(isSettingValue('showDockIcon', 'yes')).toBe(false);
     expect(isSettingValue('theme', 'system')).toBe(false);
     expect(isSettingValue('archiveFolder', 'x'.repeat(4097))).toBe(false);
+    expect(isSettingValue('researchLibraryPath', '/Users/tester/Documents/Research')).toBe(true);
+    expect(isSettingValue('researchLibraryPath', 'x'.repeat(4097))).toBe(false);
     expect(isSettingValue('seenAnnouncementIds', new Array(1001).fill('id'))).toBe(false);
     expect(isSettingValue('recentModels', [{ provider: 'openai' }])).toBe(false);
     expect(isSettingValue('outputFileExtensions', ['pdf', 'pdf'])).toBe(false);

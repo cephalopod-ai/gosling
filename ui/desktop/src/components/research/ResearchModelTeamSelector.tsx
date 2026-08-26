@@ -9,6 +9,7 @@ import { researchTeamSize } from '../../types/sessionExperience';
 
 interface ResearchModelOption extends ResearchModelSelection {
   providerLabel: string;
+  leadEligible: boolean;
 }
 
 interface ResearchModelTeamSelectorProps {
@@ -72,12 +73,33 @@ export function fillResearchModelSeats(
 ): ResearchModelSelection[] {
   const size = researchTeamSize(mode);
   const available = new Map(options.map((option) => [modelKey(option), option]));
-  const filled: ResearchModelSelection[] = [];
+  const selectedAvailable = selected.filter(
+    (candidate, index) =>
+      available.has(modelKey(candidate)) &&
+      selected.findIndex((model) => modelKey(model) === modelKey(candidate)) === index
+  );
+  if (selectedAvailable.length === size) {
+    return selectedAvailable.map(({ provider, model }) => ({ provider, model }));
+  }
+
   const candidates = [...selected, preferred, ...options].filter(
     (candidate): candidate is ResearchModelSelection => Boolean(candidate)
   );
 
-  for (const candidate of candidates) {
+  if (mode === 'solo') {
+    const first = candidates.find((candidate) => available.has(modelKey(candidate)));
+    return first ? [{ provider: first.provider, model: first.model }] : [];
+  }
+
+  const lead = candidates.find((candidate) => available.get(modelKey(candidate))?.leadEligible);
+  if (!lead) return [];
+
+  const filled: ResearchModelSelection[] = [{ provider: lead.provider, model: lead.model }];
+  const delegateCandidates = [...selected.slice(1), preferred, selected[0], ...options].filter(
+    (candidate): candidate is ResearchModelSelection => Boolean(candidate)
+  );
+
+  for (const candidate of delegateCandidates) {
     const key = modelKey(candidate);
     if (!available.has(key) || filled.some((model) => modelKey(model) === key)) continue;
     filled.push({ provider: candidate.provider, model: candidate.model });
@@ -94,6 +116,7 @@ export function ResearchModelTeamSelector({
   onValidationChange,
 }: ResearchModelTeamSelectorProps) {
   const [options, setOptions] = useState<ResearchModelOption[]>([]);
+  const [managedContextProviders, setManagedContextProviders] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [catalogMessage, setCatalogMessage] = useState<string | null>(null);
   const preferred = useMemo(
@@ -112,11 +135,12 @@ export function ResearchModelTeamSelector({
       {
         ...preferred,
         providerLabel: preferred.provider,
+        leadEligible: !managedContextProviders.has(preferred.provider),
       },
     ].sort((left, right) =>
       `${left.providerLabel}/${left.model}`.localeCompare(`${right.providerLabel}/${right.model}`)
     );
-  }, [options, preferred]);
+  }, [managedContextProviders, options, preferred]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,6 +149,14 @@ export function ResearchModelTeamSelector({
     void acpListProviderDetails()
       .then(async (providers) => {
         const configured = providers.filter((provider) => provider.is_configured);
+        if (cancelled) return;
+        setManagedContextProviders(
+          new Set(
+            configured
+              .filter((provider) => provider.manages_own_context)
+              .map((provider) => provider.name)
+          )
+        );
         const results = await Promise.allSettled(
           configured.map(async (provider) => ({
             provider,
@@ -145,6 +177,7 @@ export function ResearchModelTeamSelector({
               provider: result.value.provider.name,
               providerLabel: result.value.provider.metadata.display_name,
               model: model.id,
+              leadEligible: !result.value.provider.manages_own_context,
             });
           }
         }
@@ -191,10 +224,20 @@ export function ResearchModelTeamSelector({
     value.mode === 'solo' ||
     (value.models.length === requiredSeats &&
       new Set(value.models.map(modelKey)).size === requiredSeats);
+  const selectedLeadOption = value.models[0]
+    ? selectableOptions.find((option) => modelKey(option) === modelKey(value.models[0]))
+    : undefined;
+  const leadIsEligible = value.mode === 'solo' || selectedLeadOption?.leadEligible === true;
 
   useEffect(() => {
-    if (selectionIsComplete) {
+    if (selectionIsComplete && leadIsEligible) {
       onValidationChange(null);
+      return;
+    }
+    if (selectionIsComplete && !leadIsEligible) {
+      onValidationChange(
+        'Choose a Lead model that supports Gosling-hosted tools. This model can still be a researcher.'
+      );
       return;
     }
     onValidationChange(
@@ -202,7 +245,7 @@ export function ResearchModelTeamSelector({
         ? 'Research models are still loading.'
         : `Choose ${requiredSeats} distinct models for ${value.mode} research.`
     );
-  }, [loading, onValidationChange, requiredSeats, selectionIsComplete, value.mode]);
+  }, [leadIsEligible, loading, onValidationChange, requiredSeats, selectionIsComplete, value.mode]);
 
   const changeMode = (mode: ResearchTeamMode) => {
     onChange({
@@ -263,7 +306,9 @@ export function ResearchModelTeamSelector({
           {MODES.map(({ mode, label, description, detail }) => {
             const selected = value.mode === mode;
             const unavailable =
-              mode !== 'solo' && selectableOptions.length < researchTeamSize(mode);
+              mode !== 'solo' &&
+              (selectableOptions.length < researchTeamSize(mode) ||
+                !selectableOptions.some((option) => option.leadEligible));
             return (
               <label
                 key={mode}
@@ -337,9 +382,16 @@ export function ResearchModelTeamSelector({
                   </option>
                   {selectableOptions.map((option) => {
                     const key = modelKey(option);
+                    const leadIneligible =
+                      seat === 0 && value.mode !== 'solo' && !option.leadEligible;
                     return (
-                      <option key={key} value={key} disabled={selectedElsewhere.has(key)}>
+                      <option
+                        key={key}
+                        value={key}
+                        disabled={selectedElsewhere.has(key) || leadIneligible}
+                      >
                         {option.providerLabel} — {option.model}
+                        {leadIneligible ? ' (researcher only)' : ''}
                       </option>
                     );
                   })}
@@ -348,6 +400,12 @@ export function ResearchModelTeamSelector({
             );
           })}
         </div>
+        {value.mode !== 'solo' && (
+          <p className="mt-2 text-xs text-text-secondary">
+            The Lead must support Gosling-hosted tools; managed-context models remain available as
+            researchers.
+          </p>
+        )}
       </div>
 
       {loading && <p className="mt-2 text-xs text-text-secondary">Loading configured models…</p>}

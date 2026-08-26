@@ -3280,5 +3280,17 @@
   },
   "researchInitialInputs.removePastedInput": {
     "defaultMessage": "Remove pasted input {number}"
+  },
+  "artifactPane.library": {
+    "defaultMessage": "Library"
+  },
+  "artifactPane.libraryEmptyBody": {
+    "defaultMessage": "Reports and tutorials produced by Deep Research will appear here."
+  },
+  "artifactPane.libraryEmptyTitle": {
+    "defaultMessage": "No research documents yet"
+  },
+  "artifactPane.libraryLoadFailed": {
+    "defaultMessage": "Unable to load the Research Library."
   }
 }
