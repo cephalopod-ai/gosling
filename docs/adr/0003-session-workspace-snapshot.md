@@ -34,7 +34,10 @@ Historical rows are readable after deletion and migration is additive. Snapshot 
 remain backward compatible; unknown future JSON fields are ignored by readers, while the
 stored session snapshot serializer emits the current canonical subset.
 
+ADR-0017 later permits an operator to add a directory to one active session's pinned snapshot. The
+workspace record and sibling snapshots remain unchanged, and explicit session copies retain the
+resulting snapshot under this ADR's existing copy semantics.
+
 ## Dependency record
 
 No new dependency; existing SQLite/sqlx and JSON facilities are reused.
-

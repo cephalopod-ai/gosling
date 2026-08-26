@@ -3292,5 +3292,11 @@
   },
   "artifactPane.libraryLoadFailed": {
     "defaultMessage": "Unable to load the Research Library."
+  },
+  "workingDirectoriesMenu.sessionAddedFullAccessHint": {
+    "defaultMessage": "Directories you add receive full read/write/run access in this session. Existing workspace folder permissions stay pinned."
+  },
+  "workingDirectoriesMenu.workspaceSessionOnlyHint": {
+    "defaultMessage": "Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access."
   }
 }

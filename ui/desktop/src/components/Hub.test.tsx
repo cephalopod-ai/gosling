@@ -641,7 +641,7 @@ describe('Hub workspace selection', () => {
   it('clears draft credentials and folders when the workspace changes', async () => {
     const user = userEvent.setup();
     Object.assign(window.electron, {
-      directoryChooser: vi.fn().mockResolvedValue({
+      sessionDirectoryChooser: vi.fn().mockResolvedValue({
         canceled: false,
         filePaths: ['/Users/tester/Shared'],
       }),

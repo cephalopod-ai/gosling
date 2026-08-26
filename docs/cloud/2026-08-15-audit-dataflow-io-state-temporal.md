@@ -964,7 +964,9 @@ Domain: Temporal
 
 Evidence:
 - `crates/gosling/src/session/session_manager.rs:479-508` — `workspace_snapshot` stores context and `effective_folder_policy()`; comment says restriction flag stays opt-in.
-- `crates/gosling/src/acp/server/manage_sessions.rs:702-710` — mutating folder policy on a workspace session is rejected: “edit the workspace and start a new session”.
+- `crates/gosling/src/acp/server/manage_sessions.rs` — replacing/removing the pinned workspace
+  policy remains rejected. As of the operator-authorized ADR-0017 amendment on 2026-08-26, an
+  existing directory may be added to one active session without refreshing from the workspace.
 - `crates/gosling/src/session/session_manager.rs:1268-1282` — load re-derives policy from the **stored** context, not from `WorkspaceService`.
 - `crates/gosling/src/workspace/service.rs:934-976` — deleting a workspace **keeps** pinned session `workspace_id`.
 
@@ -982,6 +984,9 @@ Break-it angle:
 
 Impact:
 - Stale path policy. Severity Low because the code **documents** the pin; still a freshness gap.
+
+2026-08-26 status note: still open for live workspace refresh/generation checks. ADR-0017 resolves
+only the narrower need for an explicit additive, session-private directory grant.
 
 Operational impact:
 - Blast radius: Workflow

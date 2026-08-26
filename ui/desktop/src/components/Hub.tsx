@@ -310,7 +310,7 @@ export default function Hub({
     if (isChoosingAdditionalFolder) return;
     setIsChoosingAdditionalFolder(true);
     try {
-      const result = await window.electron.directoryChooser();
+      const result = await window.electron.sessionDirectoryChooser();
       const folder = result.canceled ? undefined : result.filePaths[0];
       if (!folder || folder === workingDir) return;
       setAdditionalWorkspaceFolders((folders) =>

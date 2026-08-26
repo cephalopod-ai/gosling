@@ -117,6 +117,7 @@ type ElectronAPI = {
   reactReady: () => void;
   getConfig: () => Record<string, unknown>;
   directoryChooser: () => Promise<Electron.OpenDialogReturnValue>;
+  sessionDirectoryChooser: () => Promise<Electron.OpenDialogReturnValue>;
   getResearchLibraryPath: () => Promise<string>;
   chooseResearchLibraryPath: () => Promise<string | null>;
   listResearchLibraryFiles: () => Promise<ResearchLibraryFile[]>;
@@ -212,6 +213,7 @@ const electronAPI: ElectronAPI = {
     return config;
   },
   directoryChooser: () => ipcRenderer.invoke('directory-chooser'),
+  sessionDirectoryChooser: () => ipcRenderer.invoke('session-directory-chooser'),
   getResearchLibraryPath: () => ipcRenderer.invoke('get-research-library-path'),
   chooseResearchLibraryPath: () => ipcRenderer.invoke('choose-research-library-path'),
   listResearchLibraryFiles: () => ipcRenderer.invoke('list-research-library-files'),

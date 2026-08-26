@@ -227,7 +227,7 @@ These are the Low/Info findings a mechanical repair cannot close honestly.
 | ID | Why it stays open |
 |---|---|
 | DAT-GSL-003 | `UNIQUE(session_id, message_id)` needs a schema migration plus dedupe of existing rows, and turns duplicate inserts into runtime errors. Not a mechanical repair on a live user database. |
-| TMP-GOS-005 | The pinned-vs-live workspace folder policy is a documented product invariant; changing it alters tool-permission behavior for existing sessions. Operator decision. |
+| TMP-GOS-005 | Still open for pinned-vs-live workspace refresh. The operator authorized only additive session-private roots on 2026-08-26 (ADR-0017); existing workspace roots remain pinned. |
 | TMP-GOS-006 | Config migration versioning needs a `config_version` scheme and a dual-read deprecation window; the minimal repair would make config writes hard-fail on read-only dirs. |
 | ARCN-GSL-002 | 49 scattered `process.env` reads across ui/desktop. Consolidating needs a config owner plus a `no-restricted-properties` lint rule — a refactor, not a fix. |
 | ARC-GSL-005 | Two hand-maintained `GOOSE_EXCLUDED_SKILL_IDS` copies across a TS/JS boundary. Needs a cross-stack parity test to be a real fix. |

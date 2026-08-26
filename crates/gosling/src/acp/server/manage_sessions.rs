@@ -82,6 +82,7 @@ impl GoslingAcpAgent {
             .update(&previous_session.id)
             .working_dir(previous_session.working_dir.clone())
             .additional_working_dirs(previous_session.additional_working_dirs.clone())
+            .workspace_context(previous_session.workspace_context.clone())
             .apply()
             .await
         {
@@ -120,8 +121,11 @@ impl GoslingAcpAgent {
             return Err(agent_client_protocol::Error::invalid_params()
                 .data("working directory cannot be empty"));
         }
-        let path = std::path::PathBuf::from(&working_dir);
-        validate_absolute_cwd(&path)?;
+        let requested_path = std::path::PathBuf::from(&working_dir);
+        validate_absolute_cwd(&requested_path)?;
+        let path = std::fs::canonicalize(&requested_path).map_err(|_| {
+            agent_client_protocol::Error::invalid_params().data("invalid directory path")
+        })?;
         let session_id = &req.session_id;
 
         let session = self
@@ -132,18 +136,22 @@ impl GoslingAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
-        reject_workspace_folder_policy_mutation(&session)?;
-
         let mut additional_working_dirs = session.additional_working_dirs.clone();
         if path != session.working_dir && !additional_working_dirs.contains(&path) {
-            additional_working_dirs.push(path);
+            additional_working_dirs.push(path.clone());
         }
+        let workspace_context = workspace_context_with_added_root(&session, &path);
 
         let agent = self.get_session_agent(session_id).await?;
 
-        self.session_manager
+        let mut update = self
+            .session_manager
             .update(session_id)
-            .additional_working_dirs(additional_working_dirs.clone())
+            .additional_working_dirs(additional_working_dirs.clone());
+        if let Some(workspace_context) = workspace_context {
+            update = update.workspace_context(Some(workspace_context));
+        }
+        update
             .apply()
             .await
             .internal_err_ctx("Failed to add session working directory")?;
@@ -699,6 +707,31 @@ fn session_working_dirs_response(
     }
 }
 
+fn workspace_context_with_added_root(
+    session: &Session,
+    path: &std::path::Path,
+) -> Option<crate::workspace::WorkspaceSessionContext> {
+    let mut context = session.workspace_context.clone()?;
+    let mut policy = context.effective_folder_policy();
+    if !policy
+        .roots
+        .iter()
+        .any(|root| std::path::Path::new(&root.path) == path)
+    {
+        policy
+            .roots
+            .push(crate::workspace::WorkspaceFolderPolicyRoot {
+                path: path.to_string_lossy().to_string(),
+                access: crate::workspace::WorkspaceFolderAccess::ReadWrite,
+            });
+        policy
+            .roots
+            .sort_by(|left, right| left.path.cmp(&right.path));
+    }
+    context.folder_policy = policy;
+    Some(context)
+}
+
 fn reject_workspace_folder_policy_mutation(
     session: &Session,
 ) -> Result<(), agent_client_protocol::Error> {
@@ -775,10 +808,101 @@ mod tests {
     use super::*;
 
     #[test]
-    fn workspace_session_folder_policy_cannot_be_mutated_in_place() {
+    fn workspace_session_folder_policy_replacement_remains_blocked() {
         let mut session = Session::default();
         assert!(reject_workspace_folder_policy_mutation(&session).is_ok());
         session.workspace_id = Some("workspace".to_string());
         assert!(reject_workspace_folder_policy_mutation(&session).is_err());
+    }
+
+    #[test]
+    fn adding_a_root_changes_only_the_selected_workspace_session_context() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let private = root.path().join("private");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&private).unwrap();
+        let context = crate::workspace::WorkspaceSessionContext {
+            workspace_id: "workspace".into(),
+            workspace_name: "Workspace".into(),
+            primary_working_folder: project.to_string_lossy().to_string(),
+            folders: Vec::new(),
+            product_output_folders: Vec::new(),
+            folder_policy: crate::workspace::WorkspaceFolderPolicy {
+                roots: vec![crate::workspace::WorkspaceFolderPolicyRoot {
+                    path: project.to_string_lossy().to_string(),
+                    access: crate::workspace::WorkspaceFolderAccess::ReadWrite,
+                }],
+            },
+        };
+        let mut selected = Session {
+            workspace_context: Some(context.clone()),
+            ..Session::default()
+        };
+        let sibling = Session {
+            workspace_context: Some(context),
+            ..Session::default()
+        };
+
+        selected.workspace_context = workspace_context_with_added_root(&selected, &private);
+
+        assert!(selected
+            .workspace_context
+            .unwrap()
+            .effective_folder_policy()
+            .roots
+            .iter()
+            .any(|root| std::path::Path::new(&root.path) == private));
+        assert!(!sibling
+            .workspace_context
+            .unwrap()
+            .effective_folder_policy()
+            .roots
+            .iter()
+            .any(|root| std::path::Path::new(&root.path) == private));
+    }
+
+    #[test]
+    fn adding_an_existing_workspace_root_does_not_upgrade_its_access() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let reference = root.path().join("reference");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&reference).unwrap();
+        let session = Session {
+            workspace_context: Some(crate::workspace::WorkspaceSessionContext {
+                workspace_id: "workspace".into(),
+                workspace_name: "Workspace".into(),
+                primary_working_folder: project.to_string_lossy().to_string(),
+                folders: Vec::new(),
+                product_output_folders: Vec::new(),
+                folder_policy: crate::workspace::WorkspaceFolderPolicy {
+                    roots: vec![
+                        crate::workspace::WorkspaceFolderPolicyRoot {
+                            path: project.to_string_lossy().to_string(),
+                            access: crate::workspace::WorkspaceFolderAccess::ReadWrite,
+                        },
+                        crate::workspace::WorkspaceFolderPolicyRoot {
+                            path: reference.to_string_lossy().to_string(),
+                            access: crate::workspace::WorkspaceFolderAccess::Read,
+                        },
+                    ],
+                },
+            }),
+            ..Session::default()
+        };
+
+        let updated = workspace_context_with_added_root(&session, &reference).unwrap();
+
+        assert_eq!(
+            updated
+                .effective_folder_policy()
+                .roots
+                .iter()
+                .find(|root| std::path::Path::new(&root.path) == reference)
+                .unwrap()
+                .access,
+            crate::workspace::WorkspaceFolderAccess::Read
+        );
     }
 }

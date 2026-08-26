@@ -423,6 +423,14 @@ impl<'a> SessionUpdateBuilder<'a> {
         self
     }
 
+    pub(crate) fn workspace_context(
+        mut self,
+        workspace_context: Option<WorkspaceSessionContext>,
+    ) -> Self {
+        self.workspace_context = Some(workspace_context);
+        self
+    }
+
     pub fn restrict_tools_to_working_dirs(mut self, restrict: bool) -> Self {
         self.restrict_tools_to_working_dirs = Some(restrict);
         self

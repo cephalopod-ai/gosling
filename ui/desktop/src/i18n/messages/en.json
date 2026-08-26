@@ -3287,10 +3287,16 @@
   "workingDirectoriesMenu.restrictToggleLabel": {
     "defaultMessage": "Restrict tools to working directories"
   },
+  "workingDirectoriesMenu.sessionAddedFullAccessHint": {
+    "defaultMessage": "Directories you add receive full read/write/run access in this session. Existing workspace folder permissions stay pinned."
+  },
   "workingDirectoriesMenu.workingDirectories": {
     "defaultMessage": "Working Directories"
   },
   "workingDirectoriesMenu.workspacePinnedHint": {
     "defaultMessage": "This session’s folders are pinned by its workspace. Edit the workspace and start a new session to change them."
+  },
+  "workingDirectoriesMenu.workspaceSessionOnlyHint": {
+    "defaultMessage": "Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access."
   }
 }

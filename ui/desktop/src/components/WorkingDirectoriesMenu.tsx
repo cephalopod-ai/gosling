@@ -64,6 +64,11 @@ const i18n = defineMessages({
     id: 'workingDirectoriesMenu.fullAccessHint',
     defaultMessage: 'Gosling has full read/write/run access inside every directory listed here.',
   },
+  sessionAddedFullAccessHint: {
+    id: 'workingDirectoriesMenu.sessionAddedFullAccessHint',
+    defaultMessage:
+      'Directories you add receive full read/write/run access in this session. Existing workspace folder permissions stay pinned.',
+  },
   restrictToggleLabel: {
     id: 'workingDirectoriesMenu.restrictToggleLabel',
     defaultMessage: 'Restrict tools to working directories',
@@ -86,6 +91,11 @@ const i18n = defineMessages({
     id: 'workingDirectoriesMenu.workspacePinnedHint',
     defaultMessage:
       'This session’s folders are pinned by its workspace. Edit the workspace and start a new session to change them.',
+  },
+  workspaceSessionOnlyHint: {
+    id: 'workingDirectoriesMenu.workspaceSessionOnlyHint',
+    defaultMessage:
+      'Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access.',
   },
 });
 
@@ -115,9 +125,6 @@ export default function WorkingDirectoriesMenu({
     () => session?.additional_working_dirs ?? [],
     [session?.additional_working_dirs]
   );
-  // The server rejects folder-policy mutations for workspace sessions
-  // (folders are pinned when the workspace session is created); mirror that
-  // here so the UI doesn't offer actions that always fail.
   const isWorkspacePinned = Boolean(session?.workspace_id);
 
   const refreshRecentDirs = useCallback(async () => {
@@ -134,7 +141,7 @@ export default function WorkingDirectoriesMenu({
 
   const addDirectory = useCallback(
     async (dir: string) => {
-      if (!session || isWorkspacePinned) return;
+      if (!session) return;
       if (dir === workingDir || additionalWorkingDirs.includes(dir)) {
         toast.info(intl.formatMessage(i18n.alreadyAdded));
         return;
@@ -155,7 +162,7 @@ export default function WorkingDirectoriesMenu({
         setIsAdding(false);
       }
     },
-    [session, workingDir, additionalWorkingDirs, onSessionChange, intl, isWorkspacePinned]
+    [session, workingDir, additionalWorkingDirs, onSessionChange, intl]
   );
 
   const removeDirectory = useCallback(
@@ -177,7 +184,7 @@ export default function WorkingDirectoriesMenu({
   );
 
   const handleChooseDirectory = useCallback(async () => {
-    const result = await window.electron.directoryChooser();
+    const result = await window.electron.sessionDirectoryChooser();
     if (result.canceled || result.filePaths.length === 0) return;
     await addDirectory(result.filePaths[0]);
   }, [addDirectory]);
@@ -267,7 +274,7 @@ export default function WorkingDirectoriesMenu({
               </DropdownMenuItem>
             ))}
 
-            {!isWorkspacePinned && filteredRecentDirs.length > 0 && (
+            {filteredRecentDirs.length > 0 && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>{intl.formatMessage(i18n.recentDirectories)}</DropdownMenuLabel>
@@ -281,23 +288,26 @@ export default function WorkingDirectoriesMenu({
             )}
 
             <DropdownMenuSeparator />
-            {isWorkspacePinned ? (
+            {isWorkspacePinned && (
               <div className="px-2 py-1.5 flex items-start gap-2">
                 <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-0.5 text-text-secondary" />
                 <p className="text-[11px] leading-snug text-text-secondary">
-                  {intl.formatMessage(i18n.workspacePinnedHint)}
+                  {intl.formatMessage(i18n.workspaceSessionOnlyHint)}
                 </p>
               </div>
-            ) : (
-              <DropdownMenuItem disabled={isAdding} onSelect={() => void handleChooseDirectory()}>
-                <Plus className="mr-2 h-4 w-4" />
-                <span>{intl.formatMessage(i18n.addDirectory)}</span>
-              </DropdownMenuItem>
             )}
+            <DropdownMenuItem disabled={isAdding} onSelect={() => void handleChooseDirectory()}>
+              <Plus className="mr-2 h-4 w-4" />
+              <span>{intl.formatMessage(i18n.addDirectory)}</span>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <div className="px-2 py-1.5 text-[11px] leading-snug text-text-secondary flex gap-1.5">
               <FolderPlus className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>{intl.formatMessage(i18n.fullAccessHint)}</span>
+              <span>
+                {intl.formatMessage(
+                  isWorkspacePinned ? i18n.sessionAddedFullAccessHint : i18n.fullAccessHint
+                )}
+              </span>
             </div>
             <DropdownMenuSeparator />
             <div

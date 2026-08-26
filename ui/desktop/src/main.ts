@@ -2092,6 +2092,14 @@ ipcMain.handle('directory-chooser', async (event) => {
   return result;
 });
 
+ipcMain.handle('session-directory-chooser', () =>
+  dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: os.homedir(),
+    title: 'Add directory to this session',
+  })
+);
+
 ipcMain.handle('add-recent-dir', (_event, dir: string) => {
   if (dir) {
     addRecentDir(dir);

@@ -956,6 +956,116 @@ mod tests {
         assert!(reloaded.additional_working_dirs.contains(&output));
     }
 
+    #[tokio::test]
+    async fn workspace_session_root_is_not_granted_to_a_sibling_session() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let private = root.path().join("private");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&private).unwrap();
+
+        let session_manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let selected = session_manager
+            .create_session(
+                project.clone(),
+                "selected".into(),
+                crate::session::SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let sibling = session_manager
+            .create_session(
+                project.clone(),
+                "sibling".into(),
+                crate::session::SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let base_context = crate::workspace::WorkspaceSessionContext {
+            workspace_id: "workspace".into(),
+            workspace_name: "Workspace".into(),
+            primary_working_folder: project.to_string_lossy().to_string(),
+            folders: Vec::new(),
+            product_output_folders: Vec::new(),
+            folder_policy: WorkspaceFolderPolicy {
+                roots: vec![crate::workspace::WorkspaceFolderPolicyRoot {
+                    path: project.to_string_lossy().to_string(),
+                    access: WorkspaceFolderAccess::ReadWrite,
+                }],
+            },
+        };
+        session_manager
+            .update(&selected.id)
+            .workspace_snapshot(
+                "workspace".into(),
+                "Workspace".into(),
+                None,
+                None,
+                None,
+                crate::workspace::WorkspaceSessionContext {
+                    folder_policy: WorkspaceFolderPolicy {
+                        roots: vec![
+                            crate::workspace::WorkspaceFolderPolicyRoot {
+                                path: project.to_string_lossy().to_string(),
+                                access: WorkspaceFolderAccess::ReadWrite,
+                            },
+                            crate::workspace::WorkspaceFolderPolicyRoot {
+                                path: private.to_string_lossy().to_string(),
+                                access: WorkspaceFolderAccess::ReadWrite,
+                            },
+                        ],
+                    },
+                    ..base_context.clone()
+                },
+            )
+            .apply()
+            .await
+            .unwrap();
+        session_manager
+            .update(&sibling.id)
+            .workspace_snapshot(
+                "workspace".into(),
+                "Workspace".into(),
+                None,
+                None,
+                None,
+                base_context,
+            )
+            .apply()
+            .await
+            .unwrap();
+
+        let inspector = WorkingDirScopeInspector::new(session_manager);
+        let target = private.join("notes.md");
+        let selected_results = inspector
+            .inspect(
+                &selected.id,
+                &[write_request("selected-write", target.to_str().unwrap())],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        let sibling_results = inspector
+            .inspect(
+                &sibling.id,
+                &[write_request("sibling-write", target.to_str().unwrap())],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert!(selected_results.is_empty());
+        assert_eq!(sibling_results.len(), 1);
+        assert!(matches!(
+            sibling_results[0].action,
+            InspectionAction::RequireApproval(_)
+        ));
+    }
+
     #[test]
     fn nested_read_only_root_overrides_writable_parent_and_shell_is_fail_closed() {
         let root = tempfile::tempdir().unwrap();
