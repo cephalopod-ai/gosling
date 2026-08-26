@@ -70,10 +70,18 @@ describe('ResearchModelTeamSelector', () => {
     render(<Harness />);
 
     await waitFor(() => expect(screen.getByText('Codex — gpt-5.6-sol')).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Choose research mode' })).toBeInTheDocument();
+    expect(screen.getByText('Solo selected')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Solo research mode' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Dual research mode' })).not.toBeChecked();
+    expect(screen.getByText('Fastest and lowest cost')).toBeInTheDocument();
     expect(screen.getByLabelText('Lead model')).toHaveValue('');
+    expect(
+      (screen.getByLabelText('Lead model') as HTMLSelectElement).selectedOptions[0]?.textContent
+    ).toBe('Use current — codex/gpt-5.6-sol');
     expect(screen.getByTestId('validation')).toHaveTextContent('valid');
 
-    await user.click(screen.getByRole('radio', { name: /Dual/ }));
+    await user.click(screen.getByRole('radio', { name: 'Dual research mode' }));
     await waitFor(() =>
       expect(JSON.parse(screen.getByTestId('configuration').textContent ?? '{}')).toMatchObject({
         mode: 'dual',
@@ -83,6 +91,8 @@ describe('ResearchModelTeamSelector', () => {
         ],
       })
     );
+    expect(screen.getByText('Dual selected')).toBeInTheDocument();
+    expect(screen.getByText(/Two models research independently/)).toBeInTheDocument();
     expect(screen.getByTestId('validation')).toHaveTextContent('valid');
     const researcherSelect = screen.getByLabelText('Researcher 2') as HTMLSelectElement;
     expect(
@@ -91,7 +101,7 @@ describe('ResearchModelTeamSelector', () => {
       )
     ).toBeDisabled();
 
-    await user.click(screen.getByRole('radio', { name: /Trio/ }));
+    await user.click(screen.getByRole('radio', { name: 'Trio research mode' }));
     await waitFor(() =>
       expect(JSON.parse(screen.getByTestId('configuration').textContent ?? '{}')).toMatchObject({
         mode: 'trio',
@@ -110,8 +120,10 @@ describe('ResearchModelTeamSelector', () => {
 
     render(<Harness />);
 
-    await waitFor(() => expect(screen.getByRole('radio', { name: /Dual/ })).toBeDisabled());
-    expect(screen.getByRole('radio', { name: /Trio/ })).toBeDisabled();
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Dual research mode' })).toBeDisabled()
+    );
+    expect(screen.getByRole('radio', { name: 'Trio research mode' })).toBeDisabled();
     expect(screen.getByText(/Configure at least two models/)).toBeInTheDocument();
     expect(screen.getByTestId('validation')).toHaveTextContent('valid');
   });

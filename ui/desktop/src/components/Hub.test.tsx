@@ -218,6 +218,8 @@ describe('Hub workspace selection', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Deep Research' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Choose research mode' })).toBeInTheDocument();
+    expect(screen.getByText('Solo selected')).toBeInTheDocument();
     expect(screen.getByText('Research session')).toBeInTheDocument();
     expect(screen.queryByText('Reports')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Initial Inputs' }));
@@ -317,7 +319,7 @@ describe('Hub workspace selection', () => {
       wrapper: IntlTestWrapper,
     });
 
-    const dual = await screen.findByRole('radio', { name: /Dual/ });
+    const dual = await screen.findByRole('radio', { name: 'Dual research mode' });
     await waitFor(() => expect(dual).toBeEnabled());
     await user.click(dual);
     await waitFor(() =>

@@ -404,14 +404,17 @@ export default function Hub({
               value={researchInitialInputs}
               onApply={setResearchInitialInputs}
             />
-            <ResearchModelTeamSelector
-              currentModel={currentModel}
-              currentProvider={currentProvider}
-              value={researchTeamConfiguration}
-              onChange={setResearchTeamConfiguration}
-              onValidationChange={setResearchTeamIssue}
-            />
           </section>
+        )}
+
+        {isResearch && (
+          <ResearchModelTeamSelector
+            currentModel={currentModel}
+            currentProvider={currentProvider}
+            value={researchTeamConfiguration}
+            onChange={setResearchTeamConfiguration}
+            onValidationChange={setResearchTeamIssue}
+          />
         )}
 
         <div className="mb-3 flex items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2">
