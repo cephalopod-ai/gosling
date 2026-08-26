@@ -3185,15 +3185,6 @@
   "baseChat.researchBadge": {
     "defaultMessage": "Deep Research"
   },
-  "hub.linksTag": {
-    "defaultMessage": "Links"
-  },
-  "hub.promptsTag": {
-    "defaultMessage": "Prompts"
-  },
-  "hub.reportsTag": {
-    "defaultMessage": "Reports"
-  },
   "hub.researchDescription": {
     "defaultMessage": "Start a focused research session. Dedicated report and source workflows will be added here."
   },
@@ -3203,10 +3194,61 @@
   "hub.researchTitle": {
     "defaultMessage": "Deep Research"
   },
-  "hub.textTag": {
-    "defaultMessage": "Text"
-  },
   "navigation.itemResearch": {
     "defaultMessage": "New Research"
+  },
+  "hub.beginResearchWithInputs": {
+    "defaultMessage": "Begin the research using the initial inputs I provided."
+  },
+  "researchInitialInputs.browse": {
+    "defaultMessage": "Browse files"
+  },
+  "researchInitialInputs.button": {
+    "defaultMessage": "Initial Inputs"
+  },
+  "researchInitialInputs.cancel": {
+    "defaultMessage": "Cancel"
+  },
+  "researchInitialInputs.description": {
+    "defaultMessage": "Paste reports, links, notes, or prompts, and add any files the research session should begin with."
+  },
+  "researchInitialInputs.done": {
+    "defaultMessage": "Done"
+  },
+  "researchInitialInputs.fileHelp": {
+    "defaultMessage": "PDF, text, data, and image files up to 20 MB each."
+  },
+  "researchInitialInputs.filePicker": {
+    "defaultMessage": "Choose initial research files"
+  },
+  "researchInitialInputs.fileTooLarge": {
+    "defaultMessage": "{name} is larger than 20 MB."
+  },
+  "researchInitialInputs.fileUnavailable": {
+    "defaultMessage": "Gosling could not access {name}."
+  },
+  "researchInitialInputs.filesHeading": {
+    "defaultMessage": "Selected files"
+  },
+  "researchInitialInputs.inputCount": {
+    "defaultMessage": "{count,plural,one{# input} other{# inputs}}"
+  },
+  "researchInitialInputs.noFiles": {
+    "defaultMessage": "No files selected."
+  },
+  "researchInitialInputs.pasteLabel": {
+    "defaultMessage": "Paste content"
+  },
+  "researchInitialInputs.pastePlaceholder": {
+    "defaultMessage": "Paste links, prompts, report excerpts, notes, or other source material…"
+  },
+  "researchInitialInputs.removeFile": {
+    "defaultMessage": "Remove {name}"
+  },
+  "researchInitialInputs.title": {
+    "defaultMessage": "Initial Inputs"
+  },
+  "researchInitialInputs.tooMany": {
+    "defaultMessage": "Add up to {count} initial inputs in total."
   }
 }

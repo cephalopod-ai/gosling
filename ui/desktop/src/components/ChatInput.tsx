@@ -189,6 +189,7 @@ interface ChatInputProps {
   onNextChatExtensionDraftChange?: (draft: NextChatExtensionDraft) => void;
   submitDisabled?: boolean;
   submitDisabledReason?: string;
+  allowEmptySubmit?: boolean;
 }
 
 export default function ChatInput({
@@ -226,6 +227,7 @@ export default function ChatInput({
   onNextChatExtensionDraftChange,
   submitDisabled = false,
   submitDisabledReason,
+  allowEmptySubmit = false,
 }: ChatInputProps) {
   const [_value, setValue] = useState(initialValue);
   const [displayValue, setDisplayValue] = useState(initialValue); // For immediate visual feedback
@@ -1112,7 +1114,8 @@ export default function ChatInput({
     !queueProcessingBlocked &&
     (displayValue.trim() ||
       pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
-      allDroppedFiles.some((file) => !file.error && !file.isLoading));
+      allDroppedFiles.some((file) => !file.error && !file.isLoading) ||
+      allowEmptySubmit);
 
   const performSubmit = useCallback(
     async (text?: string) => {
@@ -1121,7 +1124,7 @@ export default function ChatInput({
       const imageData = convertImagesToImageData();
       const textToSend = appendDroppedFilePaths(text ?? displayValue.trim());
 
-      if (textToSend || imageData.length > 0) {
+      if (textToSend || imageData.length > 0 || allowEmptySubmit) {
         const accepted = await handleSubmit(buildUserInput(textToSend, imageData));
         if (accepted === false) {
           return;
@@ -1167,6 +1170,7 @@ export default function ChatInput({
       clearInputState,
       buildUserInput,
       submitDisabled,
+      allowEmptySubmit,
     ]
   );
 
@@ -1245,7 +1249,8 @@ export default function ChatInput({
       !queueProcessingBlocked &&
       (displayValue.trim() ||
         pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
-        allDroppedFiles.some((file) => !file.error && !file.isLoading));
+        allDroppedFiles.some((file) => !file.error && !file.isLoading) ||
+        allowEmptySubmit);
     if (canSubmit) {
       performSubmit();
     }
@@ -1351,7 +1356,8 @@ export default function ChatInput({
   const hasSubmittableContent =
     displayValue.trim() ||
     pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
-    allDroppedFiles.some((file) => !file.error && !file.isLoading);
+    allDroppedFiles.some((file) => !file.error && !file.isLoading) ||
+    allowEmptySubmit;
   const isAnyImageLoading = pastedImages.some((img) => img.isLoading);
   const isAnyDroppedFileLoading = allDroppedFiles.some((file) => file.isLoading);
 

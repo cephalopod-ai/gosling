@@ -6,10 +6,17 @@ import { useConfig } from './ConfigContext';
 import Hub from './Hub';
 import { useWorkspace } from '../contexts/WorkspaceContext';
 import { createSession } from '../sessions';
+import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
+import { acpDeleteSession } from '../acp/sessions';
 
 vi.mock('./ConfigContext', () => ({ useConfig: vi.fn() }));
 vi.mock('../contexts/WorkspaceContext', () => ({ useWorkspace: vi.fn() }));
 vi.mock('../sessions', () => ({ createSession: vi.fn() }));
+vi.mock('../acp/sessionLibraryInputs', () => ({
+  addResearchInitialInputs: vi.fn(),
+  resolveSessionLibraryInputs: vi.fn(),
+}));
+vi.mock('../acp/sessions', () => ({ acpDeleteSession: vi.fn() }));
 vi.mock('./LoadingGosling', () => ({ default: () => null }));
 vi.mock('./ChatInputCard', () => ({
   ChatInputCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -20,17 +27,19 @@ vi.mock('./ChatInput', () => ({
     initialValue,
     submitDisabled,
     submitDisabledReason,
+    allowEmptySubmit,
   }: {
     handleSubmit(input: { msg: string; images: [] }): void;
     initialValue?: string;
     submitDisabled?: boolean;
     submitDisabledReason?: string;
+    allowEmptySubmit?: boolean;
   }) => (
     <button
       disabled={submitDisabled}
       title={submitDisabledReason}
       data-initial-value={initialValue}
-      onClick={() => handleSubmit({ msg: 'Start the project', images: [] })}
+      onClick={() => handleSubmit({ msg: allowEmptySubmit ? '' : 'Start the project', images: [] })}
     >
       Send message
     </button>
@@ -108,6 +117,15 @@ describe('Hub workspace selection', () => {
       setActiveWorkspace,
     } as unknown as ReturnType<typeof useWorkspace>);
     vi.mocked(createSession).mockResolvedValue({ id: 'session-personal' } as never);
+    vi.mocked(addResearchInitialInputs).mockResolvedValue([
+      'initial-notes',
+      'report-one',
+      'report-two',
+    ]);
+    vi.mocked(resolveSessionLibraryInputs).mockResolvedValue({
+      assistantContext: 'Resolved initial research inputs',
+      images: [],
+    });
   });
 
   it('preselects the active workspace for a global new chat', async () => {
@@ -138,28 +156,82 @@ describe('Hub workspace selection', () => {
   it('scaffolds a tagged research session on the shared new-session flow', async () => {
     const user = userEvent.setup();
     const setView = vi.fn();
+    Object.assign(window.electron, {
+      getPathForFile: vi.fn((file: File) => `/Users/tester/Inputs/${file.name}`),
+    });
     render(<Hub setView={setView} sessionExperience="research" />, {
       wrapper: IntlTestWrapper,
     });
 
     expect(screen.getByRole('heading', { name: 'Deep Research' })).toBeInTheDocument();
     expect(screen.getByText('Research session')).toBeInTheDocument();
-    expect(screen.getByText('Reports')).toHaveAttribute('data-research-input', 'reports');
-    expect(screen.getByText('Links')).toHaveAttribute('data-research-input', 'links');
-    expect(screen.getByText('Text')).toHaveAttribute('data-research-input', 'text');
-    expect(screen.getByText('Prompts')).toHaveAttribute('data-research-input', 'prompts');
+    expect(screen.queryByText('Reports')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Initial Inputs' }));
+    await user.type(
+      screen.getByLabelText('Paste content'),
+      'Review https://example.com and compare the uploaded reports.'
+    );
+    await user.upload(screen.getByLabelText('Choose initial research files'), [
+      new File(['report one'], 'report-one.txt', { type: 'text/plain' }),
+      new File(['report two'], 'report-two.pdf', { type: 'application/pdf' }),
+    ]);
+    expect(screen.getByText('report-one.txt')).toBeInTheDocument();
+    expect(screen.getByText('report-two.pdf')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.getByText('3 inputs')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
+    await waitFor(() =>
+      expect(addResearchInitialInputs).toHaveBeenCalledWith('session-personal', {
+        text: 'Review https://example.com and compare the uploaded reports.',
+        files: [
+          expect.objectContaining({
+            name: 'report-one.txt',
+            path: '/Users/tester/Inputs/report-one.txt',
+          }),
+          expect.objectContaining({
+            name: 'report-two.pdf',
+            path: '/Users/tester/Inputs/report-two.pdf',
+          }),
+        ],
+      })
+    );
+    expect(resolveSessionLibraryInputs).toHaveBeenCalledWith('session-personal', [
+      'initial-notes',
+      'report-one',
+      'report-two',
+    ]);
     await waitFor(() =>
       expect(setView).toHaveBeenCalledWith(
         'pair',
         expect.objectContaining({
           resumeSessionId: 'session-personal',
           sessionExperience: 'research',
+          initialMessage: {
+            msg: 'Begin the research using the initial inputs I provided.',
+            images: [],
+            assistantContext: 'Resolved initial research inputs',
+          },
         })
       )
     );
+  });
+
+  it('removes an incomplete session when initial input storage fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(addResearchInitialInputs).mockRejectedValueOnce(new Error('The report is too large'));
+    render(<Hub setView={vi.fn()} sessionExperience="research" />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Initial Inputs' }));
+    await user.type(screen.getByLabelText('Paste content'), 'A starting research prompt');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() => expect(acpDeleteSession).toHaveBeenCalledWith('session-personal'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The report is too large');
   });
 
   it('does not allow a workspace with an unavailable primary folder', async () => {

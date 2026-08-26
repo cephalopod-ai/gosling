@@ -29,7 +29,14 @@ import { useWorkspace } from '../contexts/WorkspaceContext';
 import { reconcileWorkspaceWorkingDir } from '../utils/workspaceWorkingDir';
 import { useModelAndProvider } from './ModelAndProviderContext';
 import { Telescope } from 'lucide-react';
-import { researchInputTags, type SessionExperience } from '../types/sessionExperience';
+import {
+  researchInitialInputCount,
+  type ResearchInitialInputs,
+  type SessionExperience,
+} from '../types/sessionExperience';
+import { ResearchInitialInputsDialog } from './research/ResearchInitialInputsDialog';
+import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
+import { acpDeleteSession } from '../acp/sessions';
 
 const i18n = defineMessages({
   goodMorning: { id: 'hub.goodMorning', defaultMessage: 'Good morning' },
@@ -39,24 +46,17 @@ const i18n = defineMessages({
   researchDescription: {
     id: 'hub.researchDescription',
     defaultMessage:
-      'Start a focused research session. Dedicated report and source workflows will be added here.',
+      'Start a focused research session with reports, links, notes, or a starting prompt.',
   },
   researchSessionTag: {
     id: 'hub.researchSessionTag',
     defaultMessage: 'Research session',
   },
-  reportsTag: { id: 'hub.reportsTag', defaultMessage: 'Reports' },
-  linksTag: { id: 'hub.linksTag', defaultMessage: 'Links' },
-  textTag: { id: 'hub.textTag', defaultMessage: 'Text' },
-  promptsTag: { id: 'hub.promptsTag', defaultMessage: 'Prompts' },
+  beginResearchWithInputs: {
+    id: 'hub.beginResearchWithInputs',
+    defaultMessage: 'Begin the research using the initial inputs I provided.',
+  },
 });
-
-const researchTagMessages = {
-  reports: i18n.reportsTag,
-  links: i18n.linksTag,
-  text: i18n.textTag,
-  prompts: i18n.promptsTag,
-};
 
 function useClock(): { time: string; meridiem: string; hour: number } {
   const [now, setNow] = useState(() => new Date());
@@ -140,6 +140,10 @@ export default function Hub({
   );
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [sessionCreationError, setSessionCreationError] = useState<string | null>(null);
+  const [researchInitialInputs, setResearchInitialInputs] = useState<ResearchInitialInputs>({
+    text: '',
+    files: [],
+  });
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
     useState<NextChatExtensionDraft | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -223,8 +227,10 @@ export default function Hub({
 
   const handleSubmit = async (input: UserInput) => {
     const { msg: userMessage, images } = input;
+    const hasResearchInitialInputs =
+      isResearch && researchInitialInputCount(researchInitialInputs) > 0;
     if (
-      !(images.length > 0 || userMessage.trim()) ||
+      !(images.length > 0 || userMessage.trim() || hasResearchInitialInputs) ||
       isCreatingSession ||
       !selectedWorkspace ||
       !selectedWorkspaceItem.validation.validForSession
@@ -234,6 +240,7 @@ export default function Hub({
 
     setSessionCreationError(null);
     setIsCreatingSession(true);
+    let createdSessionId: string | undefined;
 
     try {
       const selectedExtensions = nextChatExtensionDraft
@@ -269,6 +276,20 @@ export default function Hub({
             };
 
       const session = await createSession(workingDir, sessionOptions);
+      createdSessionId = session.id;
+      const libraryItemIds = hasResearchInitialInputs
+        ? await addResearchInitialInputs(session.id, researchInitialInputs)
+        : [];
+      const resolvedLibraryInputs = await resolveSessionLibraryInputs(session.id, libraryItemIds);
+      const initialUserInput: UserInput = {
+        msg:
+          userMessage.trim() ||
+          (hasResearchInitialInputs ? intl.formatMessage(i18n.beginResearchWithInputs) : ''),
+        images: [...images, ...resolvedLibraryInputs.images],
+        ...(resolvedLibraryInputs.assistantContext
+          ? { assistantContext: resolvedLibraryInputs.assistantContext }
+          : {}),
+      };
       setNextChatExtensionDraft(null);
 
       window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
@@ -276,7 +297,7 @@ export default function Hub({
         new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
           detail: {
             sessionId: session.id,
-            initialMessage: { msg: userMessage, images },
+            initialMessage: initialUserInput,
             sessionExperience,
           },
         })
@@ -285,11 +306,18 @@ export default function Hub({
       setView('pair', {
         disableAnimation: true,
         resumeSessionId: session.id,
-        initialMessage: { msg: userMessage, images },
+        initialMessage: initialUserInput,
         sessionExperience,
       });
       return true;
     } catch (error) {
+      if (createdSessionId) {
+        try {
+          await acpDeleteSession(createdSessionId);
+        } catch (cleanupError) {
+          console.error('Failed to remove incomplete research session:', cleanupError);
+        }
+      }
       console.error('Failed to create session:', error);
       const detail = error instanceof Error ? error.message : String(error);
       setSessionCreationError(
@@ -318,7 +346,7 @@ export default function Hub({
           <section
             className="mb-4 rounded-xl border border-border-primary bg-background-secondary px-4 py-3"
             aria-labelledby="deep-research-title"
-            data-research-intake="reports links text prompts"
+            data-research-intake="initial-inputs"
           >
             <div className="flex items-center gap-2">
               <Telescope className="h-5 w-5 text-text-primary" />
@@ -332,17 +360,10 @@ export default function Hub({
             <p className="mt-1 text-xs text-text-secondary">
               {intl.formatMessage(i18n.researchDescription)}
             </p>
-            <div className="mt-3 flex flex-wrap gap-2" aria-label="Research input types">
-              {researchInputTags.map((tag) => (
-                <span
-                  key={tag}
-                  data-research-input={tag}
-                  className="rounded-md bg-background-primary px-2 py-1 text-xs text-text-secondary"
-                >
-                  {intl.formatMessage(researchTagMessages[tag])}
-                </span>
-              ))}
-            </div>
+            <ResearchInitialInputsDialog
+              value={researchInitialInputs}
+              onApply={setResearchInitialInputs}
+            />
           </section>
         )}
 
@@ -490,8 +511,9 @@ export default function Hub({
             workingDir={workingDir}
             onWorkingDirChange={handleWorkingDirChange}
             inputRef={inputRef}
-            submitDisabled={Boolean(submitDisabledReason)}
+            submitDisabled={Boolean(submitDisabledReason) || isCreatingSession}
             submitDisabledReason={submitDisabledReason}
+            allowEmptySubmit={isResearch && researchInitialInputCount(researchInitialInputs) > 0}
             nextChatExtensionDraft={draftForMenu}
             onNextChatExtensionDraftChange={handleNextChatExtensionDraftChange}
           />
