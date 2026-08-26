@@ -2996,6 +2996,16 @@
                 "type": "boolean",
                 "nullable": true
               },
+              "client_id": {
+                "type": "string",
+                "description": "Optional pre-registered OAuth client identifier for this MCP server.",
+                "nullable": true
+              },
+              "client_secret_key": {
+                "type": "string",
+                "description": "Secret key that resolves the OAuth client secret from the environment or config store.",
+                "nullable": true
+              },
               "description": {
                 "type": "string"
               },
@@ -3017,6 +3027,13 @@
               "name": {
                 "type": "string",
                 "description": "The name used to identify this extension"
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "OAuth scopes requested when using a pre-registered client."
               },
               "socket": {
                 "type": "string",
