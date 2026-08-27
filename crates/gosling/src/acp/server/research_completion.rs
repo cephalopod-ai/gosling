@@ -111,13 +111,14 @@ fn verify_artifact_pairs(
             );
         }
         let output_hash = sha256_file(output)?;
-        if !matching_library_files
-            .into_iter()
-            .map(|candidate| sha256_file(candidate))
-            .collect::<Result<Vec<_>>>()?
-            .iter()
-            .any(|candidate_hash| candidate_hash == &output_hash)
-        {
+        let mut found_identical_copy = false;
+        for candidate in matching_library_files {
+            if sha256_file(candidate)? == output_hash {
+                found_identical_copy = true;
+                break;
+            }
+        }
+        if !found_identical_copy {
             bail!(
                 "the Session Output and Research Library copy named {} are not identical",
                 name.to_string_lossy()

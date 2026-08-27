@@ -160,7 +160,7 @@ mod tests {
     fn permission_persist_failure_is_an_acp_error_and_rolls_back_memory() {
         let temp_dir = tempfile::tempdir().unwrap();
         let manager = PermissionManager::new(temp_dir.path().to_path_buf());
-        std::fs::create_dir(manager.get_config_path().with_extension("tmp")).unwrap();
+        std::fs::create_dir(manager.get_config_path()).unwrap();
         let request = SetToolPermissionsRequest {
             tool_permissions: vec![ToolPermissionEntry {
                 tool_name: "developer__shell".to_string(),

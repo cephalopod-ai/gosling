@@ -550,7 +550,7 @@ fn deep_research_state(
         .folder_policy
         .roots
         .iter()
-        .any(|root| PathBuf::from(&root.path) == canonical);
+        .any(|root| root.path.as_path() == canonical);
     if !listed_as_additional_folder
         || !granted_by_workspace
         || canonical == workspace.working_folder

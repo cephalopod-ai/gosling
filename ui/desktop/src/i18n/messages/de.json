@@ -3298,5 +3298,20 @@
   },
   "settingsView.tabSkills": {
     "defaultMessage": "Skills"
+  },
+  "artifactPane.libraryTruncated": {
+    "defaultMessage": "Showing the first 500 files. Open the Research Library folder to browse the complete collection."
+  },
+  "researchInitialInputs.imageTooLarge": {
+    "defaultMessage": "{name} is larger than the 5 MB image limit."
+  },
+  "researchInitialInputs.imagesTooLarge": {
+    "defaultMessage": "Selected images exceed the 10 MB total limit."
+  },
+  "researchInitialInputs.textTooLarge": {
+    "defaultMessage": "Each pasted input must be no larger than 256 KB."
+  },
+  "researchInitialInputs.textTotalTooLarge": {
+    "defaultMessage": "Pasted inputs exceed the 512 KB total limit."
   }
 }

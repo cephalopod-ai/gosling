@@ -728,7 +728,7 @@ fn extract_bounded_pdf_text(path: &std::path::Path) -> Result<String> {
             while !page_text.is_char_boundary(boundary) {
                 boundary -= 1;
             }
-            text.push_str(&page_text[..boundary]);
+            text.push_str(page_text.get(..boundary).unwrap_or_default());
             text.push_str("\n[Content truncated]");
             break;
         }

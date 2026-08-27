@@ -65,6 +65,9 @@
   "artifactPane.libraryLoadFailed": {
     "defaultMessage": "Unable to load the Research Library."
   },
+  "artifactPane.libraryTruncated": {
+    "defaultMessage": "Showing the first 500 files. Open the Research Library folder to browse the complete collection."
+  },
   "artifactPane.loading": {
     "defaultMessage": "Loading…"
   },
@@ -2145,7 +2148,7 @@
     "defaultMessage": "Done"
   },
   "researchInitialInputs.fileHelp": {
-    "defaultMessage": "PDF, text, data, and image files up to 20 MB each."
+    "defaultMessage": "Files up to 20 MB each; images up to 5 MB each and 10 MB total. Pasted text is limited to 256 KB each and 512 KB total."
   },
   "researchInitialInputs.filePicker": {
     "defaultMessage": "Choose initial research files"
@@ -2158,6 +2161,12 @@
   },
   "researchInitialInputs.filesHeading": {
     "defaultMessage": "Selected files"
+  },
+  "researchInitialInputs.imageTooLarge": {
+    "defaultMessage": "{name} is larger than the 5 MB image limit."
+  },
+  "researchInitialInputs.imagesTooLarge": {
+    "defaultMessage": "Selected images exceed the 10 MB total limit."
   },
   "researchInitialInputs.inputCount": {
     "defaultMessage": "{count,plural,one{# input} other{# inputs}}"
@@ -2185,6 +2194,12 @@
   },
   "researchInitialInputs.removePastedInput": {
     "defaultMessage": "Remove pasted input {number}"
+  },
+  "researchInitialInputs.textTooLarge": {
+    "defaultMessage": "Each pasted input must be no larger than 256 KB."
+  },
+  "researchInitialInputs.textTotalTooLarge": {
+    "defaultMessage": "Pasted inputs exceed the 512 KB total limit."
   },
   "researchInitialInputs.title": {
     "defaultMessage": "Initial Inputs"

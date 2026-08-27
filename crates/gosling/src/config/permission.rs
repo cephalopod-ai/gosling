@@ -524,7 +524,8 @@ mod tests {
         manager
             .update_user_permission("prefix__tool1", PermissionLevel::AlwaysAllow)
             .unwrap();
-        fs::create_dir(manager.config_path.with_extension("tmp")).unwrap();
+        fs::remove_file(&manager.config_path).unwrap();
+        fs::create_dir(&manager.config_path).unwrap();
 
         assert!(manager.remove_extension("prefix").is_err());
         assert_eq!(
