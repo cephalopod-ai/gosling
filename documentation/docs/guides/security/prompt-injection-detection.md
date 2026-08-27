@@ -11,7 +11,7 @@ import { PanelLeft, Settings } from 'lucide-react';
 
 Prompt injection happens when malicious instructions are hidden inside executable content. In the world of AI, prompt injection can be used to nudge AI agents (like gosling) to run unsafe commands that compromise your environment or data.
 
-You can help protect your gosling workflows by enabling prompt injection detection. This feature uses pattern matching to detect common attack techniques, including:
+Pattern-based prompt injection detection is enabled by default. You can tune or explicitly disable it in Desktop or configuration. The scanner detects common attack techniques, including:
 - Attempts to delete system files or directories
 - Commands that download and execute remote scripts
 - Attempts to access or exfiltrate sensitive data like SSH keys
@@ -25,7 +25,7 @@ These checks provide a safeguard, not a guarantee. They detect known patterns bu
 
 ## How Detection Works
 
-When enabled, gosling uses a multi-layered approach to detect threats before they run:
+When pattern detection is enabled, gosling uses a multi-layered approach to detect threats before they run:
 
 1. **Tool call is intercepted and analyzed** - When gosling prepares to execute a tool, the security system extracts the tool parameter text and checks it against [threat patterns](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/security/patterns.rs). If ML-based detection is enabled, it also uses machine learning to analyze the semantic content of the tool call and recent conversation messages to better understand context and reduce false positives.
 2. **Risk is assessed** - Detected threats are assigned confidence scores
@@ -53,7 +53,7 @@ When enabled, gosling uses a multi-layered approach to detect threats before the
 
 When in doubt, deny. 
 
-## Enabling Detection
+## Configuring Detection
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="gosling Desktop" default>
@@ -61,7 +61,7 @@ When in doubt, deny.
     1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar
     2. Click `Settings` on the sidebar
     3. Click the `Chat` tab
-    4. Toggle `Enable Prompt Injection Detection` to the on setting
+    4. The `Enable Prompt Injection Detection` toggle is on by default; leave it on or switch it off explicitly
     5. Optionally adjust the `Detection Threshold` to [configure the sensitivity](#configuring-detection-threshold)
     6. Optionally enable ML-based detection:
        1. Toggle `Enable ML-based Detection` to the on setting
@@ -72,7 +72,7 @@ When in doubt, deny.
   </TabItem>
   <TabItem value="config" label="gosling config file">
 
-    Add security prompt settings to your [`config.yaml`](/docs/guides/config-files):
+    Optionally override the default security prompt settings in your [`config.yaml`](/docs/guides/config-files):
 
     ```yaml
     SECURITY_PROMPT_ENABLED: true
@@ -103,7 +103,7 @@ The threshold (0.01-1.0) controls how strict detection is:
 | **0.70-0.90** | Strict | Working with sensitive data or systems |
 | **0.90-1.00** | Maximum | High-security environments |
 
-When the injection prompt detection feature is enabled, the default threshold is 0.8 (recommended for most users).
+The default pattern-scanner threshold is 0.8 (recommended for most users).
 
 Lower thresholds mean fewer alerts but might miss threats. Higher thresholds catch more potential issues but may flag legitimate operations. You can control this sensitivity/convenience tradeoff based on your needs.
 

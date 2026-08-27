@@ -910,3 +910,29 @@ ownership, and the README atomic-write claim now match the touched paths. No
 persisted schema or public API changed. Large files (`agent.rs`,
 `computercontroller/mod.rs`, and `main.ts`) were intentionally not split during
 the repair and remain candidates for a dedicated source-modularization run.
+
+## Second Medium repair batch — 2026-08-27
+
+Five additional Medium findings were repaired in a second bounded campaign
+slice.
+
+| Finding | Closure evidence |
+|---|---|
+| CAS-GSL-001 | Provider-bound imported messages are explicitly labeled and quoted as untrusted data; raw imported tool calls, results, images, and other non-text protocol content are omitted. The provider system prompt repeats the trust boundary. A focused regression proves the label survives and raw tool-result text does not. |
+| WFG-GSL-005 | Chat mode clears both provider and toolshim tool definitions before streaming. A hallucinated tool call is recorded as an error result rather than a successful skip. Both regressions pass. |
+| NEG-GSL-006 | Session-directory creation and Unix `0o700` enforcement now occur inside fallible pool initialization. ACP construction awaits that initialization instead of spawning and discarding its result. A deterministic simulated chmod failure is returned. |
+| CMP-GSL-001 | README now distinguishes discovery of the 70+ extension catalog from server/transport/platform compatibility and explicitly says compatibility is not exhaustively certified. |
+| CMP-GSL-003 | The prompt-injection guide, environment-variable table, and config-file table now match the runtime's default-on pattern scanner while preserving the ML scanner's opt-in status. |
+
+Validation passed: four focused Rust regressions; `cargo check -p gosling`;
+`cargo clippy -p gosling --all-targets -- -D warnings`; Rust formatting; diff
+whitespace checks; and exact stale-claim searches. The first focused compile
+exposed a lifetime mismatch in the testable chmod adapter; it was corrected and
+the complete bounded validation set was rerun successfully. Full suites and
+live GUI playtesting were not run.
+
+Architecture comparison: the persisted import marker now enforces the provider
+boundary; Chat's provider contract matches its no-tools prompt; the README's
+owner-only session-storage claim matches fail-closed initialization; and public
+documentation matches the active runtime defaults. Drift delta: no new drift;
+the recorded pre-existing drift on these five surfaces is repaired.

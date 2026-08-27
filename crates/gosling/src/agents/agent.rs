@@ -923,6 +923,24 @@ impl Agent {
         }
     }
 
+    fn record_chat_mode_tool_skip(
+        request: &ToolRequest,
+        request_to_response_map: &mut HashMap<String, Message>,
+    ) {
+        if request.tool_call.is_err() {
+            return;
+        }
+        if let Some(response) = request_to_response_map.get_mut(&request.id) {
+            response.add_tool_response_with_metadata(
+                request.id.clone(),
+                Ok(CallToolResult::error(vec![Content::text(
+                    CHAT_MODE_TOOL_SKIPPED_RESPONSE,
+                )])),
+                request.metadata.as_ref(),
+            );
+        }
+    }
+
     /// Subagents run in `GoslingMode::Auto` with nothing that can ever answer
     /// an approval prompt (`get_agent_messages` does not forward
     /// `ActionRequired` to the parent). A tool call an inspector still flags
@@ -2675,19 +2693,10 @@ impl Agent {
                                 // (STT-GOS-001)
                                 if gosling_mode == GoslingMode::Chat {
                                     for request in frontend_requests.iter() {
-                                        // Mirrors the skip below: a parse error
-                                        // must still surface as a parse error,
-                                        // not as a successful skip.
-                                        if request.tool_call.is_err() {
-                                            continue;
-                                        }
-                                        if let Some(response) = request_to_response_map.get_mut(&request.id) {
-                                            response.add_tool_response_with_metadata(
-                                                request.id.clone(),
-                                                Ok(CallToolResult::success(vec![Content::text(CHAT_MODE_TOOL_SKIPPED_RESPONSE)])),
-                                                request.metadata.as_ref(),
-                                            );
-                                        }
+                                        Self::record_chat_mode_tool_skip(
+                                            request,
+                                            &mut request_to_response_map,
+                                        );
                                     }
                                 } else {
                                     for request in frontend_requests.iter() {
@@ -2706,20 +2715,10 @@ impl Agent {
                                 }
                                 if gosling_mode == GoslingMode::Chat {
                                     for request in remaining_requests.iter() {
-                                        // An unparseable tool call should surface the parse error
-                                        // (added in the Err branch below), not a successful skip —
-                                        // otherwise the model sees a malformed call as "skipped OK"
-                                        // and can't correct the arguments.
-                                        if request.tool_call.is_err() {
-                                            continue;
-                                        }
-                                        if let Some(response) = request_to_response_map.get_mut(&request.id) {
-                                            response.add_tool_response_with_metadata(
-                                                request.id.clone(),
-                                                Ok(CallToolResult::success(vec![Content::text(CHAT_MODE_TOOL_SKIPPED_RESPONSE)])),
-                                                request.metadata.as_ref(),
-                                            );
-                                        }
+                                        Self::record_chat_mode_tool_skip(
+                                            request,
+                                            &mut request_to_response_map,
+                                        );
                                     }
                                 } else {
                                     let inspection_results = self
@@ -3849,6 +3848,33 @@ mod tests {
             has_error_tool_response,
             "a synthesized error tool response must be written instead of hanging"
         );
+    }
+
+    #[test]
+    fn chat_mode_tool_skip_is_an_error_result() {
+        let request = ToolRequest {
+            id: "req-chat".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("shell")),
+            metadata: None,
+            tool_meta: None,
+        };
+        let mut responses =
+            HashMap::from([(request.id.clone(), Message::user().with_generated_id())]);
+
+        Agent::record_chat_mode_tool_skip(&request, &mut responses);
+
+        assert!(responses[&request.id]
+            .content
+            .iter()
+            .any(|content| match content {
+                MessageContent::ToolResponse(response) => {
+                    response
+                        .tool_result
+                        .as_ref()
+                        .is_ok_and(|result| result.is_error == Some(true))
+                }
+                _ => false,
+            }));
     }
 
     #[test]

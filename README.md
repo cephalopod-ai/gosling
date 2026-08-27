@@ -49,7 +49,7 @@ claim of exact behavioral parity. See the [detailed compatibility guide](documen
 | Feature | Goose | Gosling | Notes |
 |---|---|---|---|
 | **Core AI Agent Engine** | Yes | Yes | Both support standard LLM chat and tool-calling loops. |
-| **Model Context Protocol (MCP)** | Yes | Yes | Full compatibility with 70+ external extensions and tools. |
+| **Model Context Protocol (MCP)** | Yes | Yes | Supports MCP and discovers a catalog of 70+ external extensions; compatibility varies by server, transport, and platform and is not exhaustively certified. |
 | **Cloud Providers** | 15+ | 15+ | Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Azure, Bedrock, etc. |
 | **Local Inference/Models** | **Yes** | **No** | Goose bundles candle, MLX, llama.cpp, and Hugging Face loaders. Gosling does not include these loaders. |
 | **CLI Command Suite** | `goose`, `goose serve`, `recipe`, `schedule`, `gateway`, `local-models` | `gosling`, `gosling serve` | Gosling drops `recipe`, `schedule`, `gateway`, and `local-models` subcommands. |

@@ -1153,11 +1153,7 @@ impl GoslingAcpAgent {
             );
             let session_manager = Arc::new(SessionManager::new(options.data_dir));
 
-            // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
-            let storage_clone = session_manager.storage().clone();
-            tokio::spawn(async move {
-                let _ = storage_clone.pool().await;
-            });
+            session_manager.storage().pool().await?;
 
             let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
             let provider_inventory =

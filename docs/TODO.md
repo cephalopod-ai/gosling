@@ -37,15 +37,22 @@ Closed on 2026-08-26 with focused regression and compile evidence recorded in
 
 ### Next (Medium, confirmed)
 
-- [ ] **CAS-GSL-001** — Imported `imported_untrusted` history must be labeled or
+- [x] **CAS-GSL-001** — Imported `imported_untrusted` history must be labeled or
       stripped at the model boundary, not only UI/artifacts.
-- [ ] **CON-GSL-002** — `permission.yaml` needs the same cross-process flock as
+- [x] **CON-GSL-002** — `permission.yaml` needs the same cross-process flock as
       `config.yaml`.
-- [ ] **WFG-GSL-005** — Chat mode should omit tools from the provider payload;
+- [x] **WFG-GSL-005** — Chat mode should omit tools from the provider payload;
       skips must not render as tool success.
-- [ ] **NEG-GSL-006** — Unix session-dir `0o700` failure should abort pool init.
-- [ ] **CMP-GSL-001 / CMP-GSL-003** — README “70+ full compatibility” and
+- [x] **NEG-GSL-006** — Unix session-dir `0o700` failure should abort pool init.
+- [x] **CMP-GSL-001 / CMP-GSL-003** — README “70+ full compatibility” and
       prompt-injection default-on docs.
+
+CAS-GSL-001, WFG-GSL-005, NEG-GSL-006, CMP-GSL-001, and CMP-GSL-003 were
+closed on 2026-08-27 with focused regression, compile, Clippy, formatting, and
+source/documentation consistency evidence in the second batch of
+[`docs/logs/session/2026-08-27-medium-defect-campaign.md`](logs/session/2026-08-27-medium-defect-campaign.md).
+CON-GSL-002 was already closed in `37804170e`; this pass only reconciled the
+stale duplicate checkbox with the existing closed record below.
 
 ### Needs a design decision
 

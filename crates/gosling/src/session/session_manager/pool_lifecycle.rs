@@ -21,34 +21,32 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
+#[cfg(unix)]
+fn prepare_session_directory_with<F>(path: &Path, set_permissions: F) -> std::io::Result<()>
+where
+    F: FnOnce(&Path, fs::Permissions) -> std::io::Result<()>,
+{
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::create_dir_all(path)?;
+    set_permissions(path, fs::Permissions::from_mode(0o700))
+}
+
+fn prepare_session_directory(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        prepare_session_directory_with(path, |directory, permissions| {
+            fs::set_permissions(directory, permissions)
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(path)
+    }
+}
+
 impl SessionStorage {
     fn create_pool(path: &Path) -> Pool<Sqlite> {
-        if let Some(parent) = path.parent() {
-            // Don't panic here: this runs inside a process-global LazyLock, so
-            // a panic would poison it and crash every later session access.
-            // If the directory really is unusable the first query returns a
-            // recoverable error instead.
-            if let Err(e) = fs::create_dir_all(parent) {
-                tracing::error!("Failed to create session database directory {parent:?}: {e}");
-            }
-            // sessions.db holds full conversation history (including
-            // whatever secrets a tool call happened to echo back) and
-            // SQLite creates it, its -wal, and its -shm sidecars with the
-            // platform-default permissions (typically world-readable).
-            // Restricting the directory itself to owner-only is sufficient
-            // to keep every file SQLite creates in it unreachable by other
-            // local users, without having to chase each one individually.
-            #[cfg(unix)]
-            if let Err(e) = fs::set_permissions(
-                parent,
-                <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
-            ) {
-                tracing::error!(
-                    "Failed to restrict session database directory {parent:?} to owner-only: {e}"
-                );
-            }
-        }
-
         let options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(true)
@@ -79,6 +77,12 @@ impl SessionStorage {
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
         self.initialized
             .get_or_try_init(|| async {
+                prepare_session_directory(&self.session_dir).map_err(|error| {
+                    anyhow::anyhow!(
+                        "cannot secure session database directory {:?}: {error}",
+                        self.session_dir
+                    )
+                })?;
                 // Propagate probe failures (e.g. SQLITE_BUSY past the timeout
                 // while another process holds the write lock). Treating an
                 // error as "no schema" would stamp an existing older DB with
@@ -125,7 +129,26 @@ impl SessionStorage {
 
     pub async fn create(session_dir: &Path) -> Result<Self> {
         let storage = Self::new(session_dir.to_path_buf());
-        Self::create_schema(&storage.pool).await?;
+        storage.pool().await?;
         Ok(storage)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_directory_permission_failure_is_returned() {
+        let temp = tempfile::tempdir().unwrap();
+        let error = prepare_session_directory_with(temp.path(), |_, _| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "simulated chmod failure",
+            ))
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
     }
 }
