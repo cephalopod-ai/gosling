@@ -38,6 +38,11 @@ pub trait ProviderDef: ProviderDescriptor + Send + Sync {
     /// `manages_own_context()` override.
     const MANAGES_OWN_CONTEXT: bool = false;
 
+    /// Mirrors `Self::Provider`'s `Provider::executes_tools_outside_gosling()`
+    /// so ACP session setup can reject or normalize modes before constructing
+    /// the provider.
+    const EXECUTES_TOOLS_OUTSIDE_GOSLING: bool = false;
+
     fn from_env(
         extensions: Vec<ExtensionConfig>,
         tls_config: Option<TlsConfig>,

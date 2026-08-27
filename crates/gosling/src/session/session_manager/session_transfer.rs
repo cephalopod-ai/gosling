@@ -79,6 +79,7 @@ impl SessionStorage {
         // can't leave an empty, partially-imported session stray behind — a
         // single commit makes the whole import atomic instead of each step
         // being its own independently committed transaction.
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
@@ -128,6 +129,7 @@ impl SessionStorage {
         // and the artifact copy all run in one transaction so a process
         // interruption between them can't leave an empty stray copy behind —
         // see import_session's identical comment.
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 

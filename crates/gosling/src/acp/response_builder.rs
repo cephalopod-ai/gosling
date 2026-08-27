@@ -267,13 +267,18 @@ pub(super) fn should_refresh_inventory_for_session_init(entry: &ProviderInventor
 
 pub(super) fn build_mode_state(
     current_mode: GoslingMode,
+    executes_tools_outside_gosling: bool,
 ) -> Result<SessionModeState, agent_client_protocol::Error> {
+    let current_mode = compatible_mode(current_mode, executes_tools_outside_gosling);
     let mut available = Vec::with_capacity(GoslingMode::VARIANTS.len());
     for &name in GoslingMode::VARIANTS {
         let gosling_mode: GoslingMode = name.parse().map_err(|_| {
             agent_client_protocol::Error::internal_error() // impossible but satisfy linters
                 .data(format!("Failed to parse GoslingMode variant: {}", name))
         })?;
+        if executes_tools_outside_gosling && gosling_mode == GoslingMode::Auto {
+            continue;
+        }
         let mut mode = SessionMode::new(SessionModeId::new(name), name);
         mode.description = gosling_mode.get_message().map(Into::into);
         available.push(mode);
@@ -284,18 +289,33 @@ pub(super) fn build_mode_state(
     ))
 }
 
+pub(super) fn compatible_mode(
+    mode: GoslingMode,
+    executes_tools_outside_gosling: bool,
+) -> GoslingMode {
+    if executes_tools_outside_gosling && mode == GoslingMode::Auto {
+        GoslingMode::Approve
+    } else {
+        mode
+    }
+}
+
 pub(super) async fn build_session_setup_config(
     provider_inventory: &ProviderInventoryService,
     session: &Session,
 ) -> Result<(SessionModeState, Option<Vec<SessionConfigOption>>), agent_client_protocol::Error> {
-    let mode_state = build_mode_state(session.gosling_mode)?;
-
     let (Some(provider_name), Some(model_config)) = (
         session.provider_name.as_deref(),
         session.model_config.as_ref(),
     ) else {
+        let mode_state = build_mode_state(session.gosling_mode, false)?;
         return Ok((mode_state, None));
     };
+    let executes_tools_outside_gosling = crate::providers::get_from_registry(provider_name)
+        .await
+        .map(|entry| entry.executes_tools_outside_gosling())
+        .unwrap_or(false);
+    let mode_state = build_mode_state(session.gosling_mode, executes_tools_outside_gosling)?;
     let Some(inventory) = provider_inventory
         .find_entry_for_provider(provider_name)
         .await
@@ -537,7 +557,7 @@ mod tests {
     #[test_case(GoslingMode::Auto, "auto"; "auto mode")]
     #[test_case(GoslingMode::Approve, "approve"; "approve mode")]
     fn test_build_mode_state(current_mode: GoslingMode, expected_current_mode: &str) {
-        let mode_state = build_mode_state(current_mode).unwrap();
+        let mode_state = build_mode_state(current_mode, false).unwrap();
 
         assert_eq!(mode_state.current_mode_id.0.as_ref(), expected_current_mode);
         assert_eq!(
@@ -560,6 +580,21 @@ mod tests {
                 Some("Ask before every tool call"),
                 Some("Chat only, no tool calls"),
             ]
+        );
+    }
+
+    #[test]
+    fn test_build_mode_state_normalizes_external_tool_provider_out_of_auto() {
+        let mode_state = build_mode_state(GoslingMode::Auto, true).unwrap();
+
+        assert_eq!(mode_state.current_mode_id.0.as_ref(), "approve");
+        assert_eq!(
+            mode_state
+                .available_modes
+                .iter()
+                .map(|mode| mode.id.0.as_ref())
+                .collect::<Vec<_>>(),
+            vec!["smart_approve", "approve", "chat"]
         );
     }
 
@@ -606,7 +641,7 @@ mod tests {
     }
 
     #[test_case(
-        build_mode_state(GoslingMode::Auto).unwrap(),
+        build_mode_state(GoslingMode::Auto, false).unwrap(),
         "openai",
         vec![
             SessionConfigSelectOption::new("anthropic", "anthropic"),
@@ -619,7 +654,7 @@ mod tests {
         ; "auto mode with multiple models"
     )]
     #[test_case(
-        build_mode_state(GoslingMode::Approve).unwrap(),
+        build_mode_state(GoslingMode::Approve, false).unwrap(),
         "openai",
         vec![SessionConfigSelectOption::new("openai", "openai")],
         model_selection("only-model", &["only-model"]),
@@ -713,7 +748,7 @@ mod tests {
 
     #[test]
     fn test_build_config_options_uses_current_thinking_effort() {
-        let mode_state = build_mode_state(GoslingMode::Auto).unwrap();
+        let mode_state = build_mode_state(GoslingMode::Auto, false).unwrap();
         let model_state = model_selection("claude-sonnet-4", &["claude-sonnet-4"]);
         let model_config = ModelConfig::new("claude-sonnet-4").with_merged_request_params(
             std::collections::HashMap::from([(
@@ -747,7 +782,7 @@ mod tests {
 
     #[test]
     fn test_build_config_options_masks_non_reasoning_thinking_effort() {
-        let mode_state = build_mode_state(GoslingMode::Auto).unwrap();
+        let mode_state = build_mode_state(GoslingMode::Auto, false).unwrap();
         let model_state = model_selection("gpt-4", &["gpt-4"]);
         let mut model_config =
             ModelConfig::new("gpt-4").with_merged_request_params(std::collections::HashMap::from(

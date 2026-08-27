@@ -1179,6 +1179,10 @@ impl SessionManager {
 pub struct SessionStorage {
     pool: Pool<Sqlite>,
     initialized: tokio::sync::OnceCell<()>,
+    /// Queue SQLite writers before they acquire pooled connections. Otherwise
+    /// a burst of `BEGIN IMMEDIATE` waiters can occupy the entire pool and
+    /// starve unrelated ACP prompt-state reads and writes.
+    write_gate: Arc<tokio::sync::Mutex<()>>,
     session_dir: PathBuf,
     owner_id: String,
     active_tool_operations: std::sync::Mutex<HashSet<String>>,
@@ -2472,6 +2476,55 @@ mod tests {
                 Some(&serde_json::json!({ "value": i })),
                 "key {key} must survive concurrent merges to other keys"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_queued_writers_do_not_exhaust_the_connection_pool() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = std::sync::Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "New Chat".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let write_guard = sm.storage.acquire_write_guard().await;
+        let pool = sm.storage.pool().await.unwrap();
+        let blocking_transaction = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(21));
+        let mut handles = Vec::new();
+
+        for i in 0..20 {
+            let sm = std::sync::Arc::clone(&sm);
+            let session_id = session.id.clone();
+            let barrier = std::sync::Arc::clone(&barrier);
+            handles.push(tokio::spawn(async move {
+                barrier.wait().await;
+                sm.merge_extension_state(
+                    &session_id,
+                    &format!("pool_{i}.v0"),
+                    serde_json::json!({ "value": i }),
+                )
+                .await
+            }));
+        }
+
+        barrier.wait().await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::timeout(std::time::Duration::from_secs(1), sm.healthy())
+            .await
+            .expect("queued writers must not consume every pool connection")
+            .unwrap();
+
+        blocking_transaction.rollback().await.unwrap();
+        drop(write_guard);
+        for handle in handles {
+            handle.await.unwrap().unwrap();
         }
     }
 

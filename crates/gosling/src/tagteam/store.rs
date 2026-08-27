@@ -77,6 +77,7 @@ impl TagteamRunStore {
         launch_spec.validate()?;
         let action_digest = launch_spec.action_digest()?;
         let launch_spec_json = serde_json::to_string(&launch_spec)?;
+        let _write_guard = self.storage.acquire_write_guard().await;
         let pool = self.storage.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let launch_generation_sql: i64 = sqlx::query_scalar(
@@ -161,6 +162,7 @@ impl TagteamRunStore {
         let run_dir = canonical_attachment_path(run_dir, "run directory")?;
         let state_root = canonical_attachment_path(state_root, "state root")?;
         let launch_generation_sql = sqlite_integer(launch_generation, "launch generation")?;
+        let _write_guard = self.storage.acquire_write_guard().await;
         let pool = self.storage.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let current = get_in_transaction(&mut tx, session_id, launch_generation_sql)
@@ -238,6 +240,7 @@ impl TagteamRunStore {
         observation: TagteamObservation,
     ) -> Result<BindingUpdate> {
         let launch_generation_sql = sqlite_integer(launch_generation, "launch generation")?;
+        let _write_guard = self.storage.acquire_write_guard().await;
         let pool = self.storage.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let current = get_in_transaction(&mut tx, session_id, launch_generation_sql)

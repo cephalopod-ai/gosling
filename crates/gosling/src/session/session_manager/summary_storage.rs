@@ -168,6 +168,7 @@ impl SessionStorage {
         session_id: &str,
         facts: &[SessionSummaryFact],
     ) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")

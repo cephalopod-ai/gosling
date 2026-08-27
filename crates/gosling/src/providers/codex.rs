@@ -664,6 +664,7 @@ impl gosling_providers::base::ProviderDescriptor for CodexProvider {
 
 impl ProviderDef for CodexProvider {
     type Provider = Self;
+    const EXECUTES_TOOLS_OUTSIDE_GOSLING: bool = true;
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,

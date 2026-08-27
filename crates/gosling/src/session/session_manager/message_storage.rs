@@ -344,6 +344,7 @@ impl SessionStorage {
     }
 
     pub(super) async fn add_message(&self, session_id: &str, message: &Message) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
@@ -386,6 +387,7 @@ impl SessionStorage {
     }
 
     pub(super) async fn upsert_message(&self, session_id: &str, message: &Message) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
@@ -521,6 +523,7 @@ impl SessionStorage {
         session_id: &str,
         conversation: &Conversation,
     ) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         Self::replace_conversation_inner(pool, session_id, conversation).await
     }
@@ -530,6 +533,7 @@ impl SessionStorage {
         session_id: &str,
         timestamp: i64,
     ) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query("DELETE FROM messages WHERE session_id = ? AND created_timestamp >= ?")
@@ -555,6 +559,7 @@ impl SessionStorage {
         session_id: &str,
         message_id: &str,
     ) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
@@ -601,6 +606,7 @@ impl SessionStorage {
             crate::conversation::message::MessageMetadata,
         ) -> crate::conversation::message::MessageMetadata,
     {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
@@ -652,6 +658,7 @@ impl SessionStorage {
     ) -> Result<()> {
         use crate::conversation::message::MessageContent;
 
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 

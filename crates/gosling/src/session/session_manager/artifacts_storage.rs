@@ -85,6 +85,7 @@ impl SessionStorage {
         if message.role != Role::Assistant || message.metadata.imported_untrusted {
             return Ok(());
         }
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let (working_dir, workspace_id) = sqlx::query_as::<_, (String, Option<String>)>(
@@ -172,6 +173,7 @@ impl SessionStorage {
         session_id: &str,
         artifacts: &[DiscoveredArtifact],
     ) -> Result<Vec<SessionArtifact>> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         Self::upsert_artifacts_in_tx(&mut tx, session_id, artifacts).await?;

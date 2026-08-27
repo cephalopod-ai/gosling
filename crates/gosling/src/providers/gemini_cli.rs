@@ -256,6 +256,7 @@ impl gosling_providers::base::ProviderDescriptor for GeminiCliProvider {
 impl ProviderDef for GeminiCliProvider {
     type Provider = Self;
     const MANAGES_OWN_CONTEXT: bool = true;
+    const EXECUTES_TOOLS_OUTSIDE_GOSLING: bool = true;
 
     fn from_env(
         _extensions: Vec<crate::config::ExtensionConfig>,

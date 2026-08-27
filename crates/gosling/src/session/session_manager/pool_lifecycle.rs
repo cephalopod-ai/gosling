@@ -68,10 +68,15 @@ impl SessionStorage {
         Self {
             pool: Self::create_pool(&db_path),
             initialized: tokio::sync::OnceCell::new(),
+            write_gate: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             session_dir,
             owner_id: uuid::Uuid::new_v4().to_string(),
             active_tool_operations: std::sync::Mutex::new(HashSet::new()),
         }
+    }
+
+    pub(crate) async fn acquire_write_guard(&self) -> tokio::sync::OwnedMutexGuard<()> {
+        self.write_gate.clone().lock_owned().await
     }
 
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {

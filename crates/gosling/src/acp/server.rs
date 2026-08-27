@@ -3,8 +3,9 @@ use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
 pub(super) use crate::acp::response_builder::{
     build_config_options, build_mode_state, build_model_state, build_provider_options,
-    build_session_info, build_session_setup_config, send_session_setup_notifications, session_meta,
-    session_provider_selection, session_response_meta, should_refresh_inventory_for_session_init,
+    build_session_info, build_session_setup_config, compatible_mode,
+    send_session_setup_notifications, session_meta, session_provider_selection,
+    session_response_meta, should_refresh_inventory_for_session_init,
 };
 use crate::acp::shell::ShellRuntime;
 use crate::acp::tools::AcpAwareToolMeta;
@@ -1519,14 +1520,31 @@ impl GoslingAcpAgent {
                 .data("workspace session is missing its pinned provider or model"));
         }
 
-        if session.workspace_id.is_none()
+        let effective_provider_name = if session.workspace_id.is_none()
             && (session.provider_name.is_none() || session.model_config.is_none())
         {
             let (resolved_provider, resolved_model_config) =
                 resolve_default_provider_model_config(config)?;
             builder = builder
-                .provider_name(resolved_provider)
+                .provider_name(resolved_provider.clone())
                 .model_config(resolved_model_config);
+            session_needs_update = true;
+            resolved_provider
+        } else {
+            session.provider_name.clone().ok_or_else(|| {
+                agent_client_protocol::Error::invalid_params()
+                    .data("session is missing its provider")
+            })?
+        };
+
+        let executes_tools_outside_gosling =
+            crate::providers::get_from_registry(&effective_provider_name)
+                .await
+                .internal_err_ctx("Failed to read provider capabilities")?
+                .executes_tools_outside_gosling();
+        let compatible_mode = compatible_mode(session.gosling_mode, executes_tools_outside_gosling);
+        if compatible_mode != session.gosling_mode {
+            builder = builder.gosling_mode(compatible_mode);
             session_needs_update = true;
         }
 
@@ -3382,7 +3400,11 @@ impl GoslingAcpAgent {
                 .data(format!("Unknown provider inventory: {}", provider_name)));
         };
         let model_state = build_model_state(current_model.as_str(), &inventory);
-        let mode_state = build_mode_state(gosling_mode)?;
+        let executes_tools_outside_gosling = crate::providers::get_from_registry(&provider_name)
+            .await
+            .internal_err_ctx("Failed to read provider capabilities")?
+            .executes_tools_outside_gosling();
+        let mode_state = build_mode_state(gosling_mode, executes_tools_outside_gosling)?;
         let provider_options = build_provider_options(Some(&provider_name)).await;
         let config_options = build_config_options(
             &mode_state,
@@ -3410,6 +3432,17 @@ impl GoslingAcpAgent {
         })?;
 
         let agent = self.get_session_agent(session_id).await?;
+        if mode == GoslingMode::Auto {
+            let provider = agent
+                .provider()
+                .await
+                .internal_err_ctx("Failed to get provider")?;
+            if provider.executes_tools_outside_gosling() {
+                return Err(agent_client_protocol::Error::invalid_params().data(
+                    "Auto mode is unavailable because this provider executes tools outside Gosling's inspection pipeline. Select an approval-capable mode.",
+                ));
+            }
+        }
         agent
             .update_gosling_mode(mode, session_id)
             .await
@@ -3534,6 +3567,20 @@ impl GoslingAcpAgent {
                 context_limit,
             )
             .invalid_params_err_ctx("Invalid model config")?;
+
+        let executes_tools_outside_gosling =
+            crate::providers::get_from_registry(&resolved_provider_name)
+                .await
+                .internal_err_ctx("Failed to read provider capabilities")?
+                .executes_tools_outside_gosling();
+        let compatible_mode =
+            compatible_mode(agent.gosling_mode().await, executes_tools_outside_gosling);
+        if compatible_mode != agent.gosling_mode().await {
+            agent
+                .update_gosling_mode(compatible_mode, session_id)
+                .await
+                .internal_err_ctx("Failed to select a provider-compatible mode")?;
+        }
 
         agent
             .recreate_provider_for_session(session_id, &resolved_provider_name, model_config)

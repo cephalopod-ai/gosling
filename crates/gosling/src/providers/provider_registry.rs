@@ -35,6 +35,7 @@ pub struct ProviderEntry {
     provider_type: ProviderType,
     supports_inventory_refresh: bool,
     manages_own_context: bool,
+    executes_tools_outside_gosling: bool,
     tls_config: Option<TlsConfig>,
 }
 
@@ -57,6 +58,10 @@ impl ProviderEntry {
     /// constructing a provider instance.
     pub fn manages_own_context(&self) -> bool {
         self.manages_own_context
+    }
+
+    pub fn executes_tools_outside_gosling(&self) -> bool {
+        self.executes_tools_outside_gosling
     }
 
     pub fn inventory_identity(&self) -> Result<InventoryIdentityInput> {
@@ -189,6 +194,7 @@ impl ProviderRegistry {
                 },
                 supports_inventory_refresh: inventory.supports_refresh,
                 manages_own_context: F::MANAGES_OWN_CONTEXT,
+                executes_tools_outside_gosling: F::EXECUTES_TOOLS_OUTSIDE_GOSLING,
                 tls_config: self.tls_config.clone(),
             },
         );
@@ -360,6 +366,7 @@ impl ProviderRegistry {
                 provider_type,
                 supports_inventory_refresh,
                 manages_own_context: P::MANAGES_OWN_CONTEXT,
+                executes_tools_outside_gosling: P::EXECUTES_TOOLS_OUTSIDE_GOSLING,
                 tls_config: self.tls_config.clone(),
             },
         );
@@ -408,6 +415,7 @@ impl ProviderRegistry {
 mod tests {
     use super::*;
     use crate::config::declarative_providers::ProviderEngine;
+    use crate::providers::claude_code::ClaudeCodeProvider;
     use crate::providers::openai_def::OpenAiProviderDef;
 
     fn test_config() -> DeclarativeProviderConfig {
@@ -455,5 +463,15 @@ mod tests {
         let entry = registry.entries.get("custom_gateway").unwrap();
 
         assert!(!entry.inventory_configured());
+    }
+
+    #[test]
+    fn registry_exposes_external_tool_execution_capability() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<ClaudeCodeProvider>(false);
+
+        let entry = registry.entries.get("claude-code").unwrap();
+
+        assert!(entry.executes_tools_outside_gosling());
     }
 }

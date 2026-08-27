@@ -28,6 +28,7 @@ impl SessionStorage {
         session_type: SessionType,
         gosling_mode: GoslingMode,
     ) -> Result<Session> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let session =
@@ -132,6 +133,7 @@ impl SessionStorage {
     }
 
     pub(super) async fn apply_update(&self, builder: SessionUpdateBuilder<'_>) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         Self::apply_update_in_tx(&mut tx, builder).await?;
@@ -382,6 +384,7 @@ impl SessionStorage {
     }
 
     pub(super) async fn delete_session(&self, session_id: &str) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
@@ -469,6 +472,7 @@ impl SessionStorage {
         key: &str,
         value: serde_json::Value,
     ) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 

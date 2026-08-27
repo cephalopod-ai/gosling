@@ -379,6 +379,7 @@ impl gosling_providers::base::ProviderDescriptor for CursorAgentProvider {
 
 impl ProviderDef for CursorAgentProvider {
     type Provider = Self;
+    const EXECUTES_TOOLS_OUTSIDE_GOSLING: bool = true;
 
     fn from_env(
         _extensions: Vec<crate::config::ExtensionConfig>,

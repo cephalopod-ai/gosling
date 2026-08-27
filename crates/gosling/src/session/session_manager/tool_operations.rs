@@ -36,6 +36,7 @@ impl SessionStorage {
         tool_call: &CallToolRequestParams,
         conversation_bound: bool,
     ) -> Result<ToolOperationStart> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let request_digest = tool_operation_request_digest(tool_call)?;
@@ -245,6 +246,7 @@ impl SessionStorage {
             anyhow::bail!("tool response message does not answer request {tool_request_id}");
         }
 
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let state = sqlx::query_scalar::<_, String>(
@@ -277,6 +279,7 @@ impl SessionStorage {
     }
 
     pub(super) async fn recover_tool_operations(&self, session_id: &str) -> Result<usize> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let operations = sqlx::query_as::<
@@ -439,6 +442,7 @@ impl SessionStorage {
         session_id: &str,
         cancelled_request_id: &str,
     ) -> Result<usize> {
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let operation_request_ids = sqlx::query_scalar::<_, String>(

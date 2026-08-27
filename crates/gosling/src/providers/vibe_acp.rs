@@ -46,6 +46,7 @@ impl gosling_providers::base::ProviderDescriptor for VibeAcpProvider {
 impl ProviderDef for VibeAcpProvider {
     type Provider = AcpProvider;
     const MANAGES_OWN_CONTEXT: bool = true;
+    const EXECUTES_TOOLS_OUTSIDE_GOSLING: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

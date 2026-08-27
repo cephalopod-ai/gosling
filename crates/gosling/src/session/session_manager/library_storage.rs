@@ -111,6 +111,7 @@ impl SessionStorage {
                 )
             }
         };
+        let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let count = sqlx::query_scalar::<_, i64>(

@@ -17,6 +17,7 @@ use tracing::warn;
 struct InitialSessionConfig {
     provider: String,
     model_config: ModelConfig,
+    gosling_mode: GoslingMode,
     extension_data: ExtensionData,
     project_id: Option<String>,
     workspace: Option<PreparedWorkspaceSession>,
@@ -269,6 +270,12 @@ impl GoslingAcpAgent {
                 setup.shell_credential_profile.as_ref(),
             )
             .await?;
+        let executes_tools_outside_gosling = crate::providers::get_from_registry(&provider)
+            .await
+            .internal_err_ctx("Failed to read provider capabilities")?
+            .executes_tools_outside_gosling();
+        let gosling_mode =
+            super::compatible_mode(session.gosling_mode, executes_tools_outside_gosling);
         let NewSessionSetup {
             args,
             project_id,
@@ -299,6 +306,7 @@ impl GoslingAcpAgent {
             InitialSessionConfig {
                 provider,
                 model_config,
+                gosling_mode,
                 extension_data,
                 project_id,
                 workspace,
@@ -401,6 +409,7 @@ impl GoslingAcpAgent {
             .update(session_id)
             .provider_name(config.provider)
             .model_config(config.model_config)
+            .gosling_mode(config.gosling_mode)
             .extension_data(config.extension_data);
         if let Some(project_id) = config.project_id {
             builder = builder.project_id(Some(project_id));
