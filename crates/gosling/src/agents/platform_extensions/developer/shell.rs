@@ -157,6 +157,13 @@ fn unix_shell() -> String {
 const OUTPUT_LIMIT_LINES: usize = 2000;
 pub const OUTPUT_LIMIT_BYTES: usize = 50_000;
 const OUTPUT_PREVIEW_LINES: usize = 50;
+const DEFAULT_SHELL_TIMEOUT_SECS: u64 = 300;
+
+fn effective_shell_timeout_secs(configured: Option<u64>) -> u64 {
+    configured
+        .filter(|timeout_secs| *timeout_secs > 0)
+        .unwrap_or(DEFAULT_SHELL_TIMEOUT_SECS)
+}
 
 /// Result of truncating command output.
 struct TruncateResult {
@@ -175,6 +182,7 @@ struct TruncationInfo {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ShellParams {
     pub command: String,
+    /// Positive override in seconds. Missing or zero uses the 300-second host limit.
     #[serde(default)]
     pub timeout_secs: Option<u64>,
 }
@@ -380,10 +388,11 @@ impl ShellTool {
         let login_path_ref = login_path.as_deref();
         #[cfg(windows)]
         let login_path_ref: Option<&str> = None;
+        let timeout_secs = effective_shell_timeout_secs(params.timeout_secs);
 
         let execution = match run_command(
             &params.command,
-            params.timeout_secs,
+            Some(timeout_secs),
             working_dir,
             login_path_ref,
             &cancellation_token,
@@ -451,14 +460,10 @@ impl ShellTool {
         .collect();
 
         let is_error = if execution.timed_out {
-            if let Some(timeout_secs) = params.timeout_secs {
-                rendered.push_str(&format!(
-                    "\n\nCommand timed out after {} seconds",
-                    timeout_secs
-                ));
-            } else {
-                rendered.push_str("\n\nCommand timed out");
-            }
+            rendered.push_str(&format!(
+                "\n\nCommand timed out after {} seconds",
+                timeout_secs
+            ));
             true
         } else {
             execution.exit_code.unwrap_or(1) != 0
@@ -966,6 +971,19 @@ mod tests {
             .clone()
             .expect("expected structured content");
         serde_json::from_value(value).expect("expected shell output structured content")
+    }
+
+    #[test]
+    fn shell_timeout_uses_a_default_and_preserves_positive_overrides() {
+        assert_eq!(
+            effective_shell_timeout_secs(None),
+            DEFAULT_SHELL_TIMEOUT_SECS
+        );
+        assert_eq!(
+            effective_shell_timeout_secs(Some(0)),
+            DEFAULT_SHELL_TIMEOUT_SECS
+        );
+        assert_eq!(effective_shell_timeout_secs(Some(42)), 42);
     }
 
     #[tokio::test]

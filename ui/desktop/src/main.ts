@@ -64,7 +64,11 @@ import {
 } from './utils/autoUpdater';
 import { UPDATES_ENABLED } from './updates';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
-import { openExternalUrlIfSafe, normalizeWebUrl } from './utils/urlSecurity';
+import {
+  blockTopLevelNavigation,
+  openExternalUrlIfSafe,
+  normalizeWebUrl,
+} from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
 import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
 import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifactRouter';
@@ -1621,6 +1625,9 @@ const createChat = async (
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void openExternalIfSafe(url);
     return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event) => {
+    blockTopLevelNavigation(event);
   });
 
   // Handle new-window events (alternative approach for external links)

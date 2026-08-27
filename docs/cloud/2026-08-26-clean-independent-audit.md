@@ -884,3 +884,29 @@ focused Rust/UI regressions, Desktop typecheck, and compile checks for `gosling`
 truth inventory, WFG-001–015 dispositions, architecture reconciliation, and
 validation limits are in
 [`docs/logs/session/2026-08-26-high-severity-audit-repairs.md`](../logs/session/2026-08-26-high-severity-audit-repairs.md).
+
+## Medium repair batch — 2026-08-27
+
+Five Medium findings were repaired as a bounded `repair-defect-campaign`
+slice. This is later closure evidence and does not alter the original audit
+observations.
+
+| Finding | Closure evidence |
+|---|---|
+| FSR-GSL-002 | Session extension restoration no longer persists the subset that happened to load. A mixed success/failure regression proves both configured entries remain in `enabled_extensions.v0`. |
+| REL-GSL-002 | Developer shell calls use a 300-second host default when the timeout is absent or zero, while preserving positive overrides. Focused resolution and execution tests pass. |
+| RES-GSL-001 | Computercontroller automation scripts use a 300-second host timeout around bounded output collection; a short-bound subprocess regression returns `TimedOut`. |
+| REC-GSL-001 | Backend process registry updates write a same-directory, owner-private temporary file and publish it by rename; regressions prove rename publication and temporary-file cleanup on failure. |
+| SECN-GSL-002 | The main BrowserWindow now blocks every `will-navigate` event through a tested `preventDefault` guard, matching the shell containment posture. |
+
+Validation passed: Rust format; four focused Rust tests; Rust compile checks for
+`gosling` with `code-mode` and `gosling-mcp`; targeted Clippy for both packages
+with warnings denied; nine focused Desktop tests; Desktop typecheck; changed-file
+ESLint and Prettier. Full test suites and live GUI playtesting were not run.
+
+Architecture comparison: ADR-0011's main-owned renderer boundary, ADR-0012's
+bounded subprocess lifecycle, `docs/architecture.md`'s core session/extension
+ownership, and the README atomic-write claim now match the touched paths. No
+persisted schema or public API changed. Large files (`agent.rs`,
+`computercontroller/mod.rs`, and `main.ts`) were intentionally not split during
+the repair and remain candidates for a dedicated source-modularization run.

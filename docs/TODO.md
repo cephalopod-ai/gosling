@@ -57,11 +57,16 @@ Closed on 2026-08-26 with focused regression and compile evidence recorded in
 ### Follow-up (from late SEC/REL fold-in)
 
 - [ ] **SEC-GSL-003** — goslingd unauth MCP proxy/guest need loopback peer checks.
-- [ ] **SECN-GSL-002** — main BrowserWindow needs `will-navigate` like the shell.
+- [x] **SECN-GSL-002** — main BrowserWindow needs `will-navigate` like the shell.
 - [ ] **REL-GSL-001** — pin ACP in-flight turns in AgentManager LRU.
-- [ ] **FSR-GSL-002** — do not persist-drop a failed MCP from the enabled set.
-- [ ] **REL-GSL-002 / RES-GSL-001** — host default timeouts for shell and
+- [x] **FSR-GSL-002** — do not persist-drop a failed MCP from the enabled set.
+- [x] **REC-GSL-001** — publish the Desktop backend PID registry atomically.
+- [x] **REL-GSL-002 / RES-GSL-001** — host default timeouts for shell and
       computercontroller.
+
+The five checked findings above were closed on 2026-08-27 with focused
+regression, typecheck, compile, lint, formatting, and Clippy evidence recorded
+in the source audit's repair appendix.
 
 ## Open items from the 2026-08-15 exhaustive audit — recorded 2026-08-16
 

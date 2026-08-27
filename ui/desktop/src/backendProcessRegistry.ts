@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from './goslingServe';
@@ -70,7 +71,23 @@ const writeRecords = async (
     version: 1,
     processes: records,
   };
-  await fs.writeFile(registryPath, `${JSON.stringify(file, null, 2)}\n`, 'utf8');
+  const temporaryPath = path.join(
+    path.dirname(registryPath),
+    `.${path.basename(registryPath)}.${randomUUID()}.tmp`
+  );
+  let renamed = false;
+  try {
+    await fs.writeFile(temporaryPath, `${JSON.stringify(file, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    await fs.rename(temporaryPath, registryPath);
+    renamed = true;
+  } finally {
+    if (!renamed) {
+      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+    }
+  }
 };
 
 const updateRecords = async (

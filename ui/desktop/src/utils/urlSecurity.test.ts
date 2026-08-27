@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { normalizeWebUrl, openExternalUrlIfSafe } from './urlSecurity';
+import { describe, expect, it, vi } from 'vitest';
+import { blockTopLevelNavigation, normalizeWebUrl, openExternalUrlIfSafe } from './urlSecurity';
 
 describe('normalizeWebUrl', () => {
   it('accepts HTTP URLs containing command-shell metacharacters as inert URL data', () => {
@@ -27,7 +27,7 @@ describe('openExternalUrlIfSafe', () => {
     expect(opened).toEqual(['https://example.com/report']);
   });
 
-  it.each(['file:///etc/passwd', 'javascript:alert(1)', 'data:text/plain,secret']) (
+  it.each(['file:///etc/passwd', 'javascript:alert(1)', 'data:text/plain,secret'])(
     'blocks %s before calling the host',
     async (url) => {
       const opened: string[] = [];
@@ -40,4 +40,14 @@ describe('openExternalUrlIfSafe', () => {
       expect(opened).toEqual([]);
     }
   );
+});
+
+describe('blockTopLevelNavigation', () => {
+  it('prevents renderer-controlled navigation', () => {
+    const preventDefault = vi.fn();
+
+    blockTopLevelNavigation({ preventDefault });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+  });
 });

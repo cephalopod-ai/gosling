@@ -1513,14 +1513,6 @@ impl Agent {
             .collect::<Vec<_>>();
 
         let results = futures::future::join_all(extension_futures).await;
-
-        // Persist once after all extensions are loaded
-        if results.iter().any(|r| r.success) {
-            if let Err(e) = self.persist_extension_state(&session_id).await {
-                warn!("Failed to persist extension state after bulk load: {}", e);
-            }
-        }
-
         results
     }
 
@@ -4834,13 +4826,25 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             bundled: Some(true),
             available_tools: vec![],
         };
+        let developer_config = ExtensionConfig::Platform {
+            name: "developer".to_string(),
+            description: "Developer tools".to_string(),
+            display_name: Some("Developer".to_string()),
+            bundled: Some(true),
+            available_tools: vec![],
+        };
+        agent
+            .add_extension(developer_config.clone(), &session.id)
+            .await?;
         agent
             .add_extension(code_execution_config.clone(), &session.id)
             .await?;
-        assert_eq!(
-            agent.extension_configs_for_persistence().await,
-            vec![code_execution_config.clone()]
-        );
+        let persisted_before_resume = session_manager.get_session(&session.id, false).await?;
+        let configured_before_resume =
+            EnabledExtensionsState::from_extension_data(&persisted_before_resume.extension_data)
+                .expect("enabled extension state should be present")
+                .extensions;
+        assert_eq!(configured_before_resume.len(), 2);
 
         let disabled_config = AgentConfig::new(
             session_manager.clone(),
@@ -4864,16 +4868,28 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .load_extensions_from_session(&persisted_session)
             .await;
         assert!(
-            load_results.iter().all(|result| !result.success),
-            "code_execution should not load while runtime is disabled: {load_results:?}"
+            load_results.iter().any(|result| result.success)
+                && load_results.iter().any(|result| !result.success),
+            "developer should load while code_execution remains unavailable: {load_results:?}"
         );
+
+        let persisted_after_resume = session_manager.get_session(&session.id, false).await?;
+        let configured_after_resume =
+            EnabledExtensionsState::from_extension_data(&persisted_after_resume.extension_data)
+                .expect("enabled extension state should remain present")
+                .extensions;
+        assert_eq!(configured_after_resume.len(), 2);
+        assert!(configured_after_resume.contains(&developer_config));
+        assert!(configured_after_resume.contains(&code_execution_config));
 
         let (tools, toolshim_tools, system_prompt, _model_config) = resumed_agent
             .prepare_tools_and_prompt(&session.id, &session.working_dir)
             .await?;
 
-        assert!(tools.is_empty());
-        assert!(toolshim_tools.is_empty());
+        assert!(!tools
+            .iter()
+            .chain(toolshim_tools.iter())
+            .any(|tool| tool.name == "execute_typescript"));
         assert!(!system_prompt.contains("execute_typescript"));
         Ok(())
     }

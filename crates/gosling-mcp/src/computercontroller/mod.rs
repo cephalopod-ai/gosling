@@ -27,6 +27,8 @@ use std::{
 };
 use tokio::process::Command;
 
+const DEFAULT_AUTOMATION_SCRIPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
 #[cfg(target_os = "macos")]
 use rmcp::model::Role;
 #[cfg(target_os = "macos")]
@@ -84,7 +86,14 @@ pub enum ScriptLanguage {
 /// but a runaway script can no longer exhaust process memory (`.output()`
 /// buffers everything it emits).
 async fn output_capped(
+    cmd: Command,
+) -> std::io::Result<(std::process::ExitStatus, String, String)> {
+    output_capped_with_timeout(cmd, DEFAULT_AUTOMATION_SCRIPT_TIMEOUT).await
+}
+
+async fn output_capped_with_timeout(
     mut cmd: Command,
+    timeout: std::time::Duration,
 ) -> std::io::Result<(std::process::ExitStatus, String, String)> {
     const MAX_CAPTURE: usize = 256 * 1024;
 
@@ -126,9 +135,21 @@ async fn output_capped(
     let mut child = cmd.spawn()?;
     let stdout_pipe = child.stdout.take();
     let stderr_pipe = child.stderr.take();
-    let (stdout, stderr, status) =
-        tokio::join!(drain(stdout_pipe), drain(stderr_pipe), child.wait());
-    Ok((status?, stdout, stderr))
+    tokio::time::timeout(timeout, async move {
+        let (stdout, stderr, status) =
+            tokio::join!(drain(stdout_pipe), drain(stderr_pipe), child.wait());
+        Ok((status?, stdout, stderr))
+    })
+    .await
+    .map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!(
+                "automation script exceeded the {} second host limit",
+                timeout.as_secs()
+            ),
+        )
+    })?
 }
 
 /// Enum for command parameter in cache tool
@@ -785,7 +806,7 @@ impl ComputerControllerServer {
             Create and run small PowerShell or Batch scripts for automation tasks.
             PowerShell is recommended for most tasks.
 
-            The script is saved to a temporary file and executed.
+            The script is saved to a temporary file and executed with a 300-second host limit.
             Some examples:
             - Sort unique lines: Get-Content file.txt | Sort-Object -Unique
             - Extract CSV column: Import-Csv file.csv | Select-Object -ExpandProperty Column2
@@ -807,6 +828,7 @@ impl ComputerControllerServer {
         description = "
             Create and run Shell, Ruby, or AppleScript (via osascript) scripts.
             Use shell (bash) for most tasks. AppleScript for app scripting and system settings.
+            Scripts are terminated after the 300-second host limit.
             Examples:
                 - sort file.txt | uniq
                 - awk -F ',' '{ print $2}' file.csv
@@ -828,6 +850,7 @@ impl ComputerControllerServer {
         description = "
             Create and run Shell scripts for automation tasks.
             Consider using shell script (bash) for most simple tasks first.
+            Scripts are terminated after the 300-second host limit.
             Examples:
                 - sort file.txt | uniq
                 - awk -F ',' '{ print $2}' file.csv
@@ -2137,5 +2160,34 @@ mod tool_annotation_tests {
             .expect("computer_control must declare tool annotations");
         assert_eq!(annotations.destructive_hint, Some(true));
         assert_eq!(annotations.open_world_hint, Some(true));
+    }
+}
+
+#[cfg(test)]
+mod subprocess_timeout_tests {
+    use super::{output_capped_with_timeout, Command};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn automation_script_process_has_a_host_timeout() {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("powershell");
+            command.args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = Command::new("sh");
+            command.args(["-c", "sleep 30"]);
+            command
+        };
+        command.kill_on_drop(true);
+
+        let error = output_capped_with_timeout(command, Duration::from_millis(25))
+            .await
+            .expect_err("slow automation process should time out");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
     }
 }

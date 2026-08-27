@@ -96,6 +96,10 @@ export const normalizeWebUrl = (value: unknown): string | null => {
   }
 };
 
+export const blockTopLevelNavigation = (event: { preventDefault(): void }): void => {
+  event.preventDefault();
+};
+
 /**
  * Extract the protocol from a URL string.
  */
