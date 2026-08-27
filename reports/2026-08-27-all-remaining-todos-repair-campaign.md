@@ -1,7 +1,7 @@
 # all remaining TODOs repair campaign
 
 Date: 2026-08-27  
-Branch: `codex/repair-all-remaining-todos`  
+Committed branch: local `main` (`a9de163b5`); the campaign branch remains at the baseline
 Baseline: `48946f41585c1d34456614bf0ccba0f948852e6e`
 
 ## Outcome
