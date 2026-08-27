@@ -121,4 +121,28 @@ describe('session library research inputs', () => {
     ).rejects.toThrow('up to 16 initial inputs');
     expect(getAcpClient).not.toHaveBeenCalled();
   });
+
+  it('rejects text and image byte limits before calling ACP', async () => {
+    await expect(
+      addResearchInitialInputs('research-session', {
+        texts: ['😀'.repeat(70_000)],
+        files: [],
+      })
+    ).rejects.toThrow('text exceeds the ACP input limits');
+
+    await expect(
+      addResearchInitialInputs('research-session', {
+        texts: [],
+        files: [
+          {
+            id: 'large-image',
+            name: 'figure.png',
+            path: '/inputs/figure.png',
+            sizeBytes: 5 * 1024 * 1024 + 1,
+          },
+        ],
+      })
+    ).rejects.toThrow('files exceed the ACP input limits');
+    expect(getAcpClient).not.toHaveBeenCalled();
+  });
 });

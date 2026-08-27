@@ -558,8 +558,27 @@ fn deep_research_state(
         return Err(agent_client_protocol::Error::invalid_params()
             .data("researchLibraryPath must be an explicitly granted additional session folder"));
     }
+    let output_paths = workspace
+        .context
+        .product_output_folders
+        .iter()
+        .map(|output| {
+            std::fs::canonicalize(&output.path).map_err(|_| {
+                agent_client_protocol::Error::invalid_params()
+                    .data("workspace output folders must be available directories")
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if output_paths.is_empty() || output_paths.iter().any(|path| !path.is_dir()) {
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("workspace output folders must be available directories"));
+    }
     Ok(Some(DeepResearchState {
         library_path: canonical.to_string_lossy().into_owned(),
+        output_paths: output_paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
     }))
 }
 

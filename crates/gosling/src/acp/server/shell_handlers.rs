@@ -594,6 +594,7 @@ fn shell_library_file_mime_type(path: &std::path::Path) -> Option<&'static str> 
         "gif" => Some("image/gif"),
         "json" => Some("application/json"),
         "csv" => Some("text/csv"),
+        "tsv" => Some("text/tab-separated-values"),
         "md" => Some("text/markdown"),
         "txt" | "rs" | "js" | "jsx" | "ts" | "tsx" | "py" | "go" | "java" | "c" | "h" | "cpp"
         | "hpp" | "swift" | "kt" | "rb" | "sh" | "css" | "html" | "sql" | "toml" | "yaml"

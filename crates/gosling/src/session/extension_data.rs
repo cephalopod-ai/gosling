@@ -123,6 +123,7 @@ impl ExtensionState for AcpPromptRunState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeepResearchState {
     pub library_path: String,
+    pub output_paths: Vec<String>,
 }
 
 impl ExtensionState for DeepResearchState {
@@ -280,6 +281,7 @@ mod tests {
     fn deep_research_state_round_trips_through_extension_data() {
         let state = DeepResearchState {
             library_path: "/tmp/research-library".into(),
+            output_paths: vec!["/tmp/project/Outputs".into()],
         };
         let mut extension_data = ExtensionData::new();
 

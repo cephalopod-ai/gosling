@@ -119,7 +119,13 @@ export const test = base.extend<GoslingTestFixtures>({
       }
 
       // Wait for page to be ready
-      await page.waitForLoadState('domcontentloaded');
+      try {
+        await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+      } catch {
+        console.log(
+          'DOMContentLoaded wait timed out after CDP attachment, checking mounted root...'
+        );
+      }
 
       // Try to wait for networkidle
       try {
@@ -128,14 +134,34 @@ export const test = base.extend<GoslingTestFixtures>({
         console.log('NetworkIdle timeout (likely due to MCP activity), continuing...');
       }
 
-      // Wait for React app to be ready
-      await page.waitForFunction(
-        () => {
-          const root = document.getElementById('root');
-          return root && root.children.length > 0;
-        },
-        { timeout: 30000 }
-      );
+      // Vite may finish a dependency-optimization pass after Electron opens the
+      // first page. That reload can invalidate App.tsx's lazy import, so retry
+      // the page after the optimizer settles instead of handing an error
+      // boundary to the test.
+      let rendererReady = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await page.waitForFunction(
+            () => {
+              const root = document.getElementById('root');
+              return (
+                root &&
+                root.children.length > 0 &&
+                !document.body.innerText.includes('Failed to fetch dynamically imported module')
+              );
+            },
+            { timeout: 10000 }
+          );
+          rendererReady = true;
+          break;
+        } catch {
+          console.log(`Renderer was not ready after Vite pass ${attempt}, reloading...`);
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        }
+      }
+      if (!rendererReady) {
+        throw new Error('React renderer did not become ready after Vite optimization reloads');
+      }
 
       console.log('App ready, starting test...');
 

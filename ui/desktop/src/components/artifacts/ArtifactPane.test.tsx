@@ -416,7 +416,7 @@ describe('ArtifactPane', () => {
     );
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Library 1+' }));
-    expect(screen.getByRole('status')).toHaveTextContent(
+    expect(await screen.findByRole('status')).toHaveTextContent(
       'Showing the first 500 files. Open the Research Library folder'
     );
   });

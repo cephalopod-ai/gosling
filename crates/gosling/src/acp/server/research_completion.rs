@@ -55,6 +55,15 @@ fn verify_artifact_pairs(
     if !library_root.is_dir() {
         bail!("the Research Library is unavailable");
     }
+    let output_roots = state
+        .output_paths
+        .iter()
+        .map(std::fs::canonicalize)
+        .collect::<std::io::Result<Vec<_>>>()
+        .context("a workspace output folder is unavailable")?;
+    if output_roots.is_empty() || output_roots.iter().any(|root| !root.is_dir()) {
+        bail!("a workspace output folder is unavailable");
+    }
 
     let mut output_files = Vec::new();
     let mut library_files = Vec::new();
@@ -75,7 +84,7 @@ fn verify_artifact_pairs(
         }
         if canonical.starts_with(&library_root) {
             library_files.push(canonical);
-        } else {
+        } else if output_roots.iter().any(|root| canonical.starts_with(root)) {
             output_files.push(canonical);
         }
     }
@@ -200,6 +209,7 @@ mod tests {
         fs::write(&copy, "verified report").unwrap();
         let state = DeepResearchState {
             library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
         };
         let assistant_text = format!("Reports: {} and {}", output.display(), copy.display());
 
@@ -224,6 +234,7 @@ mod tests {
         fs::write(&copy, "stale report").unwrap();
         let state = DeepResearchState {
             library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
         };
         let assistant_text = format!("Reports: {} and {}", output.display(), copy.display());
 
@@ -250,6 +261,7 @@ mod tests {
         fs::write(&copy, "final report").unwrap();
         let state = DeepResearchState {
             library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
         };
 
         let error = verify_artifact_pairs(
@@ -262,5 +274,34 @@ mod tests {
         assert!(error
             .to_string()
             .contains("did not reference a created Research Library copy"));
+    }
+
+    #[test]
+    fn rejects_a_report_outside_workspace_output_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let scratch = root.path().join("scratch");
+        let library = root.path().join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&scratch).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let misplaced = scratch.join("report.md");
+        let copy = library.join("report.md");
+        fs::write(&misplaced, "final report").unwrap();
+        fs::write(&copy, "final report").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+        let assistant_text = format!("Reports: {} and {}", misplaced.display(), copy.display());
+
+        let error = verify_artifact_pairs(
+            &state,
+            &[artifact(&misplaced), artifact(&copy)],
+            &assistant_text,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("Session Outputs"));
     }
 }
