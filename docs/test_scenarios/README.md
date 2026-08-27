@@ -155,7 +155,7 @@ technical help) · **Medium** (secondary workflow fails, unclear errors,
 stuck UI, non-persisting settings) · **Low** (confusing label, glitch,
 awkward navigation) · **Note** (observation or product question).
 
-## Files (112 scenarios)
+## Files (118 scenarios)
 
 | File | Surface | Cards | Core question |
 |---|---|---|---|
@@ -178,6 +178,7 @@ awkward navigation) · **Note** (observation or product question).
 | [`17-acp-server-and-protocol.md`](17-acp-server-and-protocol.md) | auth, origins, TLS, framing, cancellation | AP-01–10 | Are ACP transports secure, bounded, and interoperable? |
 | [`18-state-extension-and-permission-depth.md`](18-state-extension-and-permission-depth.md) | state integrity, migrations, MCP, plugins, approvals | SI-01–10 | Do cross-cutting state and safety boundaries hold under change? |
 | [`19-deep-research.md`](19-deep-research.md) | zero-input research, reports, delegate fail-fast | DR-01–02 | Does Deep Research respect an empty Initial Inputs boundary and stop invalid delegation churn? |
+| [`20-deep-research-regressions.md`](20-deep-research-regressions.md) | ACP persistence, mode compatibility, delegation, long inputs, extension failures | DR-03–08 | Do the known Deep Research failure modes remain repaired under exact replay? |
 
 ### Suggested pass shapes
 
@@ -186,9 +187,9 @@ awkward navigation) · **Note** (observation or product question).
 | Smoke / first day | 01 → 02 → 09 | Configure, one chat works, CLI is sane |
 | Core product | 01 → 05, 08, 10 | Chat, workspaces, providers, MCP, perms, settings |
 | Resilience | 04, 07, 11 | Model honesty, session portability, headless/serve |
-| Deep Research | 19 | Prompt-only scope, report routing, and bounded delegate failure |
+| Deep Research | 19 → 20 | Prompt-only scope, report routing, and known-failure regression replay |
 | Stress | 12 (after green smoke) | Concurrency, bloat, restart-under-load, env seams |
-| Full library | 01 → 19 numeric order | Release or major-regression playtest (**112 cards**) |
+| Full library | 01 → 20 numeric order | Release or major-regression playtest (**118 cards**) |
 
 ## Required coverage checklist
 
@@ -336,3 +337,9 @@ scenario (or an explicit not-applicable/blocked note):
 | SI-10 | 18 | Approval scope, persistence, and competing clients |
 | DR-01 | 19 | Prompt-only research does not discover workspace files |
 | DR-02 | 19 | Invalid delegate source fails once without retry churn |
+| DR-03 | 20 | ACP prompt persistence survives queued writers |
+| DR-04 | 20 | Solo external ACP provider selects an approval-capable mode |
+| DR-05 | 20 | Legacy `source: "dummy"` becomes an ad-hoc delegate only |
+| DR-06 | 20 | External-provider delegate runs bounded and tool-disabled |
+| DR-07 | 20 | Initial Inputs contain long and multiline content |
+| DR-08 | 20 | Invalid extension parameters fail once with diagnosable feedback |
