@@ -1,5 +1,57 @@
 # TODO
 
+## Open items from the 2026-08-26 clean independent audit
+
+Source: [`docs/cloud/2026-08-26-clean-independent-audit.md`](cloud/2026-08-26-clean-independent-audit.md).
+This pass did **not** reuse 2026-08-15 evidence. Required SEC and REL/FSR
+clusters did not finish; do not treat that report as a security/reliability
+clearance.
+
+### Patch now (High, source-confirmed)
+
+- [ ] **WFG-GSL-002** — ACP `tools/permissions/set` must not return success when
+      `permission.yaml` persist fails (`crates/gosling/src/acp/server/tools.rs`).
+- [ ] **WFG-GSL-001** — Desktop “Always Allow all extension tools” must persist
+      the bulk grant before resolving the live approval
+      (`ui/desktop/src/components/ToolApprovalButtons.tsx`).
+- [ ] **LLM-GSL-004** — Auto/subagent must not Allow `manage_extensions`
+      (`permission_inspector.rs` Auto branch before the RequireApproval arm).
+- [ ] **WFG-GSL-004** — CLI non-interactive Auto must Deny/abort confirmations,
+      including inspector-failure RequireApproval (`gosling-cli` session loop).
+- [ ] **IOP-GSL-001** — Assistant-mentioned absolute document paths must not
+      become Desktop preview grants (`artifacts.rs` + `artifactFileAccess.ts`).
+- [ ] **DAT-GSL-001** — Same-schema `workspaces.json` validation failure must
+      fail-closed, not wipe to Default (`workspace/store.rs`).
+- [ ] **AOC-GSL-001 / ARC-GSL-002** — Auto must not auto-ack vendor-CLI tool
+      confirmations; CLI providers must not silently discard `stream()` tools.
+- [ ] **LLM-GSL-001 / LLM-GSL-003** — Expand Auto explicit-grant beyond
+      write/exec (HTTP tools, mixed-risk MCP).
+
+### Next (Medium, confirmed)
+
+- [ ] **CAS-GSL-001** — Imported `imported_untrusted` history must be labeled or
+      stripped at the model boundary, not only UI/artifacts.
+- [ ] **CON-GSL-002** — `permission.yaml` needs the same cross-process flock as
+      `config.yaml`.
+- [ ] **WFG-GSL-005** — Chat mode should omit tools from the provider payload;
+      skips must not render as tool success.
+- [ ] **NEG-GSL-006** — Unix session-dir `0o700` failure should abort pool init.
+- [ ] **CMP-GSL-001 / CMP-GSL-003** — README “70+ full compatibility” and
+      prompt-injection default-on docs.
+
+### Needs a design decision
+
+- [ ] **NEG-GSL-005** — Official remote `goslingd` (`0.0.0.0` + shared secret)
+      is a multi-client control plane; product claims are local-first.
+- [ ] **PATH-GSL-001** — `~/.agents` is shared with Goose; isolate or document.
+- [ ] **CON-GSL-001** — Cross-process session lease vs “resume opens a new serve.”
+
+### Follow-up audit (incomplete this pass)
+
+- [ ] Finish `audit-security` + OWASP/Node/repo-triage/posture (cluster did not
+      complete before this report was closed).
+- [ ] Finish `audit-reliability` + failsafe family (same).
+
 ## Open items from the 2026-08-15 exhaustive audit — recorded 2026-08-16
 
 The repair campaign (`docs/logs/session/2026-08-16-audit-repair-campaign.md`)

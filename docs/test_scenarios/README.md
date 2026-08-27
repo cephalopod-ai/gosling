@@ -155,7 +155,7 @@ technical help) · **Medium** (secondary workflow fails, unclear errors,
 stuck UI, non-persisting settings) · **Low** (confusing label, glitch,
 awkward navigation) · **Note** (observation or product question).
 
-## Files (110 scenarios)
+## Files (112 scenarios)
 
 | File | Surface | Cards | Core question |
 |---|---|---|---|
@@ -177,6 +177,7 @@ awkward navigation) · **Note** (observation or product question).
 | [`16-provider-and-network-resilience.md`](16-provider-and-network-resilience.md) | limits, disconnects, OAuth, metadata, cost | PN-01–10 | Do provider failures recover without lying or losing state? |
 | [`17-acp-server-and-protocol.md`](17-acp-server-and-protocol.md) | auth, origins, TLS, framing, cancellation | AP-01–10 | Are ACP transports secure, bounded, and interoperable? |
 | [`18-state-extension-and-permission-depth.md`](18-state-extension-and-permission-depth.md) | state integrity, migrations, MCP, plugins, approvals | SI-01–10 | Do cross-cutting state and safety boundaries hold under change? |
+| [`19-deep-research.md`](19-deep-research.md) | zero-input research, reports, delegate fail-fast | DR-01–02 | Does Deep Research respect an empty Initial Inputs boundary and stop invalid delegation churn? |
 
 ### Suggested pass shapes
 
@@ -185,8 +186,9 @@ awkward navigation) · **Note** (observation or product question).
 | Smoke / first day | 01 → 02 → 09 | Configure, one chat works, CLI is sane |
 | Core product | 01 → 05, 08, 10 | Chat, workspaces, providers, MCP, perms, settings |
 | Resilience | 04, 07, 11 | Model honesty, session portability, headless/serve |
+| Deep Research | 19 | Prompt-only scope, report routing, and bounded delegate failure |
 | Stress | 12 (after green smoke) | Concurrency, bloat, restart-under-load, env seams |
-| Full library | 01 → 18 numeric order | Release or major-regression playtest (**110 cards**) |
+| Full library | 01 → 19 numeric order | Release or major-regression playtest (**112 cards**) |
 
 ## Required coverage checklist
 
@@ -218,7 +220,7 @@ scenario (or an explicit not-applicable/blocked note):
 - [ ] Server authentication, Origin validation, TLS, and protocol framing
 - [ ] Config/session migration from a previous supported release
 
-## Scenario index (110)
+## Scenario index (112)
 
 | ID | File | Name |
 |---|---|---|
@@ -332,3 +334,5 @@ scenario (or an explicit not-applicable/blocked note):
 | SI-08 | 18 | MCP secret storage and redaction |
 | SI-09 | 18 | Malformed skill/plugin and interrupted update |
 | SI-10 | 18 | Approval scope, persistence, and competing clients |
+| DR-01 | 19 | Prompt-only research does not discover workspace files |
+| DR-02 | 19 | Invalid delegate source fails once without retry churn |
