@@ -77,6 +77,54 @@ library state conflicts with the accepted pinned-session preservation contract
 in ADR-0015 and the existing workspace deletion regression, so it remains a
 design/architecture decision rather than a mechanical repair.
 
+### Medium completion batch
+
+- [x] **EAPI-GSL-001** — streamable-HTTP MCP clients now enforce the configured
+      extension timeout as a total request timeout, including a stalled body.
+- [x] **WEB-GSL-001** — tool states now use distinct accessible icons and labels
+      instead of a color-only two-pixel dot.
+- [x] **IOP-GSL-005** — updater downloads and archive extraction are bounded by
+      compressed size, expanded size, and entry count.
+- [x] **AID-GSL-001** — the architecture diagram now names session schema v28.
+- [x] **XREPO-GSL-001** — the documented live Goose compatibility adapter now
+      has a parity test that fails when its build-time and browser converters
+      diverge. The live catalog policy remains intentional.
+- [x] **RST-GSL-001** — reinspection found explicit workflow permissions in
+      every current GitHub Actions workflow; no patch was needed.
+- [x] **ACP-GSL-001** — a shared SQLite write gate is acquired before pool
+      checkout, so queued `BEGIN IMMEDIATE` writers cannot exhaust every ACP
+      connection while waiting for the write lock.
+- [x] **ACP-GSL-002** — ACP normalizes external-tool providers out of Auto and
+      exposes/persists Manual approval mode before a prompt is submitted.
+
+The source findings and two installed-app ACP defects were closed on 2026-08-27
+with focused regressions, Rust compile/Clippy/formatting, Desktop tests and
+typecheck, documentation tests, release packaging, reinstall, and installed-app
+Solo/Dual smoke evidence. See the completion section of
+[`docs/logs/session/2026-08-27-medium-defect-campaign.md`](logs/session/2026-08-27-medium-defect-campaign.md)
+and [`reports/2026-08-27-medium-defect-campaign.md`](../reports/2026-08-27-medium-defect-campaign.md).
+
+### Remaining Medium decisions and external prerequisites
+
+- [ ] **DAT-GSL-002** — decide whether workspace deletion may remove
+      workspace-keyed library data needed by preserved pinned sessions.
+- [ ] **NEG-GSL-001** — define the MCP App actor, permission, and transcript
+      contract before exposing it as a first-class chat/tool participant.
+- [ ] **RSP-GSL-001** — choose the response to RUSTSEC-2023-0071 and validate it
+      with `cargo-deny`, which is not installed in this environment.
+- [ ] **ARC-GSL-003 / ARC-GSL-004 / ARC-GSL-005** — provider-port, MCP
+      dependency, and process-global state changes require an architecture pass.
+- [ ] **INV-GSL-001** — define the credential, provider/model, workspace, and
+      extension authority that an imported snapshot is allowed to restore.
+- [ ] **CMP-GSL-004** — run a fresh Giles scan before changing advisory stale
+      compliance YAML or promoting it to repo truth.
+- [ ] **ACP-GSL-003** — decide whether managed-context/external-tool providers
+      are valid Deep Research delegate seats. The selector currently allows
+      them, while safe subagents require Auto and the ACP security boundary
+      forbids those providers in Auto. An installed Dual smoke also showed the
+      lead passing `claude-code/claude-opus-5` as a Summon `source` despite the
+      host prompt requiring an ad-hoc delegate with no `source` argument.
+
 ### Needs a design decision
 
 - [ ] **NEG-GSL-005** — Official remote `goslingd` (`0.0.0.0` + shared secret)

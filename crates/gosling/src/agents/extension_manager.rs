@@ -1310,7 +1310,8 @@ async fn create_streamable_http_client(
 
     let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
 
-    let http_client = build_streamable_http_client(default_headers, timeout_duration)?;
+    let http_client = build_streamable_http_client(default_headers, timeout_duration)
+        .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
 
     let transport = StreamableHttpClientTransport::with_client(
         http_client,
@@ -1409,7 +1410,7 @@ async fn create_streamable_http_client(
 fn build_streamable_http_client(
     default_headers: HeaderMap,
     timeout_duration: Duration,
-) -> ExtensionResult<reqwest::Client> {
+) -> reqwest::Result<reqwest::Client> {
     #[allow(unused_mut)]
     let mut builder = reqwest::Client::builder()
         .default_headers(default_headers)
@@ -1418,9 +1419,7 @@ fn build_streamable_http_client(
     {
         builder = builder.tcp_user_timeout(Some(timeout_duration));
     }
-    builder
-        .build()
-        .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))
+    builder.build()
 }
 
 #[cfg(unix)]

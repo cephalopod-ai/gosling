@@ -962,3 +962,34 @@ share one busy token; imported-history provenance is transport-consistent;
 ADR-0015's session/project library ownership is preserved; and the Ink prompt
 obeys the repository's fixed-height content budget. No persisted schema or
 public request type changed. Drift delta: no new drift.
+
+## Medium completion and live ACP closure — 2026-08-27
+
+The remaining Medium inventory was reconciled against current source and the
+repository's architecture/governance contracts. This appendix records later
+repair evidence without changing the audit's original point-in-time findings.
+
+| Finding | Later disposition |
+|---|---|
+| EAPI-GSL-001 | Fixed: streamable-HTTP MCP requests have a configured total timeout; a stalled local server regression passes. |
+| WEB-GSL-001 | Fixed: four tool states have distinct accessible icons/labels; Desktop tests pass. |
+| IOP-GSL-005 | Fixed: compressed download, expanded bytes, and entry count are bounded and regression-tested. |
+| AID-GSL-001 | Fixed: architecture documentation names schema v28. |
+| XREPO-GSL-001 | Controlled: build-time and browser Goose converters have a byte-equivalence drift gate; live Goose compatibility remains intentional policy. |
+| RST-GSL-001 | Reconciled: every current workflow declares explicit permissions, so the original observation no longer describes the tree. |
+| ACP-GSL-001 | Fixed from live incident: serialized SQLite writer admission prevents queued immediate transactions from exhausting ACP's connection pool. |
+| ACP-GSL-002 | Fixed from live incident: ACP normalizes external-tool providers from Auto to Manual/Approve before prompt submission. |
+
+Two installed-app probes passed the repaired boundaries after release packaging,
+signature verification, and reinstall: Claude Code Solo completed in Manual
+mode, and Dual Deep Research persisted and completed without a pool timeout.
+The Dual result exposed a separate degraded-seat issue, ACP-GSL-003, requiring a
+decision about external-tool providers as Auto-only subagents and enforcement of
+the ad-hoc Summon payload contract.
+
+The remaining source-audit Medium items were not silently patched because they
+require explicit decisions: SEC-GSL-003, RSP-GSL-001, DAT-GSL-002, NEG-GSL-001,
+PATH-GSL-001, ARC-GSL-003/004/005, INV-GSL-001, and CMP-GSL-004. Their conflicts
+and required authorities are recorded in
+[`docs/logs/session/2026-08-27-medium-defect-campaign.md`](../logs/session/2026-08-27-medium-defect-campaign.md)
+and [`reports/2026-08-27-medium-defect-campaign.md`](../../reports/2026-08-27-medium-defect-campaign.md).
