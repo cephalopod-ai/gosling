@@ -12,6 +12,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const MAX_UPDATE_ARCHIVE_BYTES: usize = 512 * 1024 * 1024;
+const MAX_UPDATE_EXTRACTED_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_UPDATE_ARCHIVE_ENTRIES: usize = 4096;
+
 /// Asset name for this platform (compile-time).
 fn asset_name() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -268,10 +272,7 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
             );
         }
 
-        let bytes = response
-            .bytes()
-            .await
-            .context("Failed to read response body")?;
+        let bytes = read_update_archive(response).await?;
 
         println!("Downloaded {} bytes.", bytes.len());
 
@@ -321,6 +322,58 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
     }
 }
 
+async fn read_update_archive(mut response: reqwest::Response) -> Result<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_UPDATE_ARCHIVE_BYTES as u64)
+    {
+        bail!(
+            "Release archive exceeds the {} byte download limit",
+            MAX_UPDATE_ARCHIVE_BYTES
+        );
+    }
+
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .context("Failed to read response body")?
+    {
+        if bytes.len() + chunk.len() > MAX_UPDATE_ARCHIVE_BYTES {
+            bail!(
+                "Release archive exceeds the {} byte download limit",
+                MAX_UPDATE_ARCHIVE_BYTES
+            );
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+fn account_archive_entry(
+    entry_count: &mut usize,
+    extracted_bytes: &mut u64,
+    size: u64,
+) -> Result<()> {
+    *entry_count = entry_count.saturating_add(1);
+    if *entry_count > MAX_UPDATE_ARCHIVE_ENTRIES {
+        bail!(
+            "Release archive exceeds the {} entry limit",
+            MAX_UPDATE_ARCHIVE_ENTRIES
+        );
+    }
+    *extracted_bytes = extracted_bytes
+        .checked_add(size)
+        .ok_or_else(|| anyhow::anyhow!("Release archive extracted size overflow"))?;
+    if *extracted_bytes > MAX_UPDATE_EXTRACTED_BYTES {
+        bail!(
+            "Release archive exceeds the {} byte extraction limit",
+            MAX_UPDATE_EXTRACTED_BYTES
+        );
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Archive extraction
 // ---------------------------------------------------------------------------
@@ -334,11 +387,14 @@ fn extract_zip(data: &[u8], dest: &Path) -> Result<()> {
     use std::io::Cursor;
     let cursor = Cursor::new(data);
     let mut archive = zip::ZipArchive::new(cursor).context("Failed to open zip archive")?;
+    let mut entry_count = 0;
+    let mut extracted_bytes = 0;
 
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
             .with_context(|| format!("Failed to read zip entry at index {i}"))?;
+        account_archive_entry(&mut entry_count, &mut extracted_bytes, entry.size())?;
 
         let safe_path = match entry.enclosed_name() {
             Some(p) => p.to_owned(),
@@ -383,9 +439,12 @@ fn extract_tar_bz2(data: &[u8], dest: &Path) -> Result<()> {
     use bzip2::read::BzDecoder;
     let decoder = BzDecoder::new(data);
     let mut archive = tar::Archive::new(decoder);
+    let mut entry_count = 0;
+    let mut extracted_bytes = 0;
 
     for entry in archive.entries().context("Failed to read tar entries")? {
         let mut entry = entry.context("Failed to read tar entry")?;
+        account_archive_entry(&mut entry_count, &mut extracted_bytes, entry.size())?;
         let path = entry
             .path()
             .context("Failed to read entry path")?
@@ -834,6 +893,32 @@ mod tests {
         let result = validate_entry_path(Path::new("safe/../../escape"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("path traversal"));
+    }
+
+    #[test]
+    fn test_archive_entry_limits_reject_oversized_expansion() {
+        let mut entry_count = 0;
+        let mut extracted_bytes = 0;
+
+        let result = account_archive_entry(
+            &mut entry_count,
+            &mut extracted_bytes,
+            MAX_UPDATE_EXTRACTED_BYTES + 1,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("extraction limit"));
+    }
+
+    #[test]
+    fn test_archive_entry_limits_reject_excessive_entry_count() {
+        let mut entry_count = MAX_UPDATE_ARCHIVE_ENTRIES;
+        let mut extracted_bytes = 0;
+
+        let result = account_archive_entry(&mut entry_count, &mut extracted_bytes, 0);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("entry limit"));
     }
 
     #[cfg(not(target_os = "windows"))]

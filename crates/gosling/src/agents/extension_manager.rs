@@ -1310,15 +1310,7 @@ async fn create_streamable_http_client(
 
     let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
 
-    #[allow(unused_mut)]
-    let mut http_client_builder = reqwest::Client::builder().default_headers(default_headers);
-    #[cfg(target_os = "linux")]
-    {
-        http_client_builder = http_client_builder.tcp_user_timeout(Some(timeout_duration));
-    }
-    let http_client = http_client_builder
-        .build()
-        .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
+    let http_client = build_streamable_http_client(default_headers, timeout_duration)?;
 
     let transport = StreamableHttpClientTransport::with_client(
         http_client,
@@ -1412,6 +1404,23 @@ async fn create_streamable_http_client(
     } else {
         Ok(Box::new(client_res?))
     }
+}
+
+fn build_streamable_http_client(
+    default_headers: HeaderMap,
+    timeout_duration: Duration,
+) -> ExtensionResult<reqwest::Client> {
+    #[allow(unused_mut)]
+    let mut builder = reqwest::Client::builder()
+        .default_headers(default_headers)
+        .timeout(timeout_duration);
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.tcp_user_timeout(Some(timeout_duration));
+    }
+    builder
+        .build()
+        .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))
 }
 
 #[cfg(unix)]
@@ -2886,6 +2895,27 @@ mod tests {
     use rmcp::model::ServerNotification;
 
     use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn streamable_http_client_enforces_the_extension_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        let client =
+            build_streamable_http_client(HeaderMap::new(), Duration::from_millis(25)).unwrap();
+
+        let error = client
+            .get(format!("http://{address}"))
+            .send()
+            .await
+            .unwrap_err();
+
+        assert!(error.is_timeout());
+        server.abort();
+    }
 
     #[cfg(unix)]
     #[tokio::test]

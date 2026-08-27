@@ -1,4 +1,5 @@
 import React from 'react';
+import { Check, Clock3, LoaderCircle, X } from 'lucide-react';
 import { defineMessages, useIntl } from '../i18n';
 import { cn } from '../utils';
 
@@ -34,16 +35,25 @@ export const ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = (
         return 'bg-gray-400';
     }
   };
+  const StatusIcon = {
+    pending: Clock3,
+    loading: LoaderCircle,
+    success: Check,
+    error: X,
+  }[status];
 
   return (
     <div
       className={cn(
-        'absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-border-primary',
+        'absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full border border-border-primary text-white',
         getStatusStyles(),
         className
       )}
       aria-label={intl.formatMessage(i18n.toolStatus, { status })}
-    />
+      data-status={status}
+    >
+      <StatusIcon className={cn('h-2 w-2 stroke-[3]', status === 'loading' && 'animate-spin')} aria-hidden />
+    </div>
   );
 };
 
