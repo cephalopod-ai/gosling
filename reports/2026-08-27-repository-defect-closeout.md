@@ -21,6 +21,18 @@ Clippy still cannot download the prebuilt `rusty_v8` archive because the
 environment's network proxy returns HTTP 403. Desktop validation cannot start
 because the installed pnpm 10.28.1 is older than the repository's required pnpm
 10.30.0, and Hermit bootstrap is also blocked by HTTP 403.
+A fresh closeout review found no additional source-confirmed defect that could
+be repaired without changing an unresolved product, security, or architecture
+contract. No runtime code was changed in this closeout rather than presenting a
+speculative change as a defect repair.
+
+Validation was partial. Rust formatting and repository whitespace checks pass.
+Full workspace Clippy reached dependency compilation but could not download the
+prebuilt `rusty_v8` archive because the environment's network proxy returned
+HTTP 403. Desktop validation could not start because the installed pnpm 10.28.1
+is older than the repository's required pnpm 10.30.0, and Hermit bootstrap was
+also blocked by HTTP 403. These are environment limitations, not test failures
+attributed to the source tree.
 
 ## Reviewed evidence
 
@@ -47,6 +59,13 @@ because the installed pnpm 10.28.1 is older than the repository's required pnpm
 | CMP-GSL-002 | Corrected coexistence claims to disclose intentionally shared AAIF `~/.agents` paths. |
 | AID-GSL-002 | Replaced the nonexistent, forbidden Desktop OpenAPI-client path with the existing TypeScript SDK path. |
 | SIG-GSL-005 | Reinspected and closed as stale: enabled ML classification already fails when no classifier initializes and warns on partial initialization. |
+## Repair disposition
+
+All findings that the current canonical records classify as mechanically
+repairable are already closed on this branch. The review did not reopen closed
+items without contradictory source or test evidence. It also did not turn
+historical findings, generated assets, test fixtures, or explanatory TODO text
+into new defects.
 
 ## Deferred items requiring operator input or external prerequisites
 
