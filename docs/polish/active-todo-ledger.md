@@ -17,3 +17,4 @@ copy completed or struck-through entries.
 | TODO-20260826-004 | open | P0 | CLI | Headless Auto must Deny/abort inspector-failure confirmations. | WFG-GSL-004 | CLI Auto + inspector error does not dispatch the tool. |
 | TODO-20260826-005 | open | P0 | Artifacts | Assistant absolute document paths must not become preview grants. | IOP-GSL-001 | Path outside workspace roots fails `assertArtifactFileAccess`. |
 | TODO-20260826-006 | open | P0 | Workspaces | Same-schema workspace validation failure must not wipe to Default. | DAT-GSL-001 | `workspaces: []` leaves the original file in place and errors. |
+| TODO-20260826-007 | open | P1 | Reliability | Pin ACP in-flight turns in AgentManager LRU so a 6th session cannot evict a running agent. | REL-GSL-001 | ACP prompt in flight + 6th session keeps the original agent. |

@@ -30,12 +30,13 @@ permissions or Auto/summon as a security boundary.** Do not call `v1.1.0`
 permission-persist lie are fixed.
 
 Lenses completed: ARC, IAPI, IOP, DAT, STT, CON, TMP, CAS, INV, WFG, WEB,
-PIP, EAPI, LLM, MCP, AOC, CMP, NEG, AID, ARCN, XREPO, DEAD, PATH. **Required
-lenses `audit-security` and `audit-reliability` (plus failsafe family and
-repo-hardening standalones) did not finish** before this report was closed;
-those inventories are `Not Reviewed` except where adjacent clusters quoted
-the same code. Findings below are parent-adjudicated: Confirmed only when
-the cited line was re-read in this run.
+PIP, EAPI, LLM, MCP, AOC, CMP, NEG, AID, ARCN, XREPO, DEAD, PATH, REL, FSR
+(failsafe family). **Required lens `audit-security` (plus OWASP/Node/repo
+posture/triage) did not finish** before this report was closed; that
+inventory is `Not Reviewed` except where adjacent clusters quoted the same
+code. Findings below are parent-adjudicated: Confirmed only when the cited
+line was re-read in this run. The reliability cluster completed after the
+first close and is folded in here.
 
 ## Scope
 
@@ -109,9 +110,9 @@ already contradicted by the official remote-server guide.
 | audit-security-code / owasp / nodejs | **incomplete** | same cluster |
 | audit-security-repo-posture / triage | **incomplete** | same cluster |
 | audit-security-vuln-harness | deferred | bounded hunt folded into SEC cluster; full 6-phase not run |
-| audit-reliability | **incomplete** | failsafe family cluster still running |
-| audit-failsafe-readiness / dependency-criticality / recovery-idempotency / operator-signal | **incomplete** | same |
-| audit-memory-lifecycle / resource-lifecycle | **incomplete** | same |
+| audit-reliability | applied (late fold-in) | REL-GSL-*; `/health` vs `/status` split held |
+| audit-failsafe-readiness / dependency-criticality / recovery-idempotency / operator-signal | applied (late fold-in) | FSR/REC; FSR-GSL-001 merged into WFG-GSL-004 |
+| audit-memory-lifecycle / resource-lifecycle | applied sampled | OOM capped Likely; RES-GSL-001 |
 | audit-performance-profile | deferred | no target metric |
 | audit-playtest-app | operator excluded | |
 | audit-repo-state-reconciliation | light, this pass only | working tree + this report; no prior audits |
@@ -186,6 +187,11 @@ independent of severity. Race manifestation stays **Likely**.
 | LLM-GSL-003 | High | Confirmed | source-evidenced | Security-LLM | Auto exec/write class misses mixed-risk MCP tools | 2 | Workflow | local_guardrail | S | codex |
 | IAPI-GSL-001 | High | Confirmed | source-evidenced | Architecture | Session wire contract is untyped ACP `_meta` | 2 | Workflow | local_guardrail | M | gpt |
 | CON-GSL-001 | High | Likely | source-evidenced | Concurrency | No cross-process session lease; compact can wipe sibling | 2 | Workflow | cross_process_coordination | M | claude |
+| REL-GSL-001 | High if ≥6 sessions / Medium typical | Confirmed (guard); Likely (dual-agent) | source-evidenced | Reliability | Agent LRU busy-skip does not see ACP in-flight turns | 2 | Service | cross_process_coordination | M | claude |
+| FSR-GSL-002 | Medium | Confirmed persist; drop Likely | source-evidenced | Failsafe | Failed MCP load is persisted out of the enabled set | 3 | Workflow | persistence_recovery | S | codex |
+| REL-GSL-002 | Medium | Confirmed missing guard; hang Likely | source-evidenced | Reliability | Shell tool has no default timeout | 3 | Workflow | local_guardrail | S | codex |
+| RES-GSL-001 | Medium | Confirmed missing guard; hang Likely | source-evidenced | Failsafe | computercontroller scripts wait with no timeout | 3 | Local | local_guardrail | S | codex |
+| REC-GSL-001 | Medium | Confirmed idiom; torn file Likely | source-evidenced | Failsafe | Desktop backend PID registry is in-place JSON write | 3 | Service | local_guardrail | S | codex |
 | NEG-GSL-005 | High if remote / Low loopback | Confirmed | source-evidenced | Negative-Space | Official remote `goslingd` is a shared-secret multi-client plane | 3 | Service | external_service_semantics | L | human-owner |
 | CAS-GSL-001 | Medium | Confirmed | source-evidenced | Cascade | Imported untrusted history is still model authority | 3 | Workflow | workflow_protocol | M | claude |
 | CON-GSL-002 | Medium | Likely | source-evidenced | Concurrency | `permission.yaml` RMW is in-process only | 3 | Workflow | local_guardrail | S | codex |
@@ -220,7 +226,8 @@ independent of severity. Race manifestation stays **Likely**.
 Merged aliases (do not patch twice): STT-GSL-001 → WFG-GSL-002;
 WFG-GSL-003 / PIP-GSL-001 → LLM-GSL-004; NEG-GSL-004 → CAS-GSL-001;
 DAT-GSL-004 → INV-GSL-002; DAT-GSL-006 field-drop → INV-GSL-001;
-DEAD-GSL-001 → INV-GSL-003/XREPO-GSL-001; CMP-GSL-002 ↔ PATH-GSL-001.
+DEAD-GSL-001 → INV-GSL-003/XREPO-GSL-001; CMP-GSL-002 ↔ PATH-GSL-001;
+FSR-GSL-001 → WFG-GSL-004.
 
 ## Detailed Findings
 
@@ -542,6 +549,36 @@ Calibration: race manifestation capped **Likely**.
 
 Implementation assessment: cross_process_coordination / M / tests / claude
 
+### REL-GSL-001: Agent LRU busy-skip does not observe ACP in-flight turns
+
+Severity: High if ≥ `DEFAULT_MAX_SESSION` concurrent chats; Medium on typical 1–2 window desktop  
+Confidence: Confirmed (missing registration); dual-agent manifestation Likely  
+Evidence basis: source-evidenced / simulation-reasoned  
+Domain: Reliability
+
+Evidence:
+- `crates/gosling/src/execution/manager.rs:280-313,440-442` — skip-busy uses `is_session_busy` == `cancel_tokens.contains_key`; `DEFAULT_MAX_SESSION = 5`
+- Production `try_register_cancel_token` caller is `orchestrator.rs:492` (plus tests), not ACP `reply`
+
+Observed behavior:
+- Opening a 6th ACP session can evict a session whose prompt is still running. Eviction skips `shutdown` if another Arc is held, then `get_or_create_agent` builds a second agent; last persist wins.
+
+Expected boundary:
+- Any in-flight turn (ACP or orchestrator) must pin the LRU entry.
+
+Failure mechanism:
+- Busy truth lives in ACP `active_run`; LRU consults a different map.
+
+Operational impact: Service / process + DB / compensatable / silent / unsafe
+
+Recommended mitigation:
+- Register ACP cancel tokens with AgentManager, or have LRU query ACP active runs.
+- Test: ACP prompt in flight + 6th session → original remains, no second agent.
+
+Implementation assessment: cross_process_coordination / M / tests / claude
+
+Non-goals: Do not raise `DEFAULT_MAX_SESSION` as the fix.
+
 ### NEG-GSL-005: Official remote server collapses single-operator
 
 Severity: High if bound on a network; Low on loopback  
@@ -626,10 +663,14 @@ Important seams checked and held in **current** source (parent-verified or clust
 7. AOC-GSL-001 + ARC-GSL-002 — vendor-CLI Auto and tools-capability split  
 8. CAS-GSL-001 — model-boundary handling of `imported_untrusted`  
 9. CON-GSL-002 / CON-GSL-003 — permission flock; UUID temps  
-10. CON-GSL-001 — session lease (after design)  
-11. IAPI-GSL-001 — generate SessionMeta; kill `as` cast  
-12. Docs: CMP-GSL-001/003, PATH-GSL-001/NEG-GSL-005, AID-GSL-001/002  
-13. Remaining Medium/Low in the table  
+10. REL-GSL-001 — pin ACP active runs in AgentManager LRU  
+11. FSR-GSL-002 — persist configured/failed extensions, not only survivors  
+12. REL-GSL-002 / RES-GSL-001 — host default timeouts for shell and computercontroller  
+13. REC-GSL-001 — atomic backend PID registry write  
+14. CON-GSL-001 — session lease (after design)  
+15. IAPI-GSL-001 — generate SessionMeta; kill `as` cast  
+16. Docs: CMP-GSL-001/003, PATH-GSL-001/NEG-GSL-005, AID-GSL-001/002  
+17. Remaining Medium/Low in the table  
 
 Do not start with god-object extraction (ARC-GSL-001) until the High persist/approval holes are closed.
 
@@ -655,7 +696,7 @@ Do not start with god-object extraction (ARC-GSL-001) until the High persist/app
 ## Deferred Risks
 
 - Full `audit-security` / OWASP / Node / repo-triage / vuln-harness — **not finished**. Do not treat this report as a complete SEC clearance.
-- Full `audit-reliability` / failsafe family / memory / resource — **not finished**. EAPI-GSL-001 is a sampled timeout gap only.
+- Reliability / failsafe family folded in late; memory findings remain Potential-only (no heap snapshots).
 - CON-GSL-001 compact-wipe — needs a two-process drill (`requires-authorized-drill`).
 - IOP-GSL-005 zip-bomb — Likely until measured.
 - NEG-GSL-008 outer `allow-same-origin` — Plausible until a guest-hash read is attempted.
@@ -682,7 +723,7 @@ Do not start with god-object extraction (ARC-GSL-001) until the High persist/app
 | IAPI-GSL-001 | Architecture (IAPI) | Workflow-GUI | Silent field drop |
 | CMP-GSL-001 | Compliance-Posture | Workflow-GUI | Operators read a guarantee |
 
-Incomplete required lenses: escalate a **follow-up SEC + REL/FSR** pass before any “comprehensive security/reliability clearance” claim.
+Incomplete required lenses: escalate a **follow-up SEC** pass (OWASP/Node/repo posture) before any “comprehensive security clearance” claim. REL/FSR landed in this fold-in.
 
 ## Repo-state reconciliation (this pass only)
 
@@ -700,7 +741,7 @@ Next evidence-backed action: patch WFG-GSL-002 then WFG-GSL-001, then Auto expli
 
 - Static only. No `cargo test`, Desktop, CLI live run, two-window compact, hostile MCP guest, or `0.0.0.0` bind.
 - Oracle integrity: no in-process suite used as production proof. Concurrent config/workspace tests were **read**, not re-run.
-- `audit-security` and `audit-reliability` (plus failsafe family, repo posture/triage, memory/resource) **did not complete**. Absence of those findings is not a clean bill.
+- `audit-security` (plus OWASP/Node/repo posture/triage) **did not complete**. Absence of those findings is not a SEC clearance.
 - Goose live payloads were not fetched. Contrast/a11y not measured. Gate 5 (device) not reviewed.
 - Forbidden trees were not used as defect evidence. This report does not inherit 2026-08-15 IDs except where current comments still name them in source.
 - Commit hash taken from `git rev-parse` at preflight.
@@ -709,4 +750,4 @@ Next evidence-backed action: patch WFG-GSL-002 then WFG-GSL-001, then Auto expli
 
 **Medium** overall: High for parent-confirmed persist/approval/grant/Auto-class defects; Low for incomplete SEC/REL surfaces and unreproduced races.
 
-Do not describe this run as a complete 13-lens clearance. Describe it as a clean independent audit of the completed lenses, with SEC and REL/FSR unfinished.
+Do not describe this run as a complete 13-lens clearance. Describe it as a clean independent audit of the completed lenses, with SEC unfinished.

@@ -50,7 +50,11 @@ clearance.
 
 - [ ] Finish `audit-security` + OWASP/Node/repo-triage/posture (cluster did not
       complete before this report was closed).
-- [ ] Finish `audit-reliability` + failsafe family (same).
+- [ ] **REL-GSL-001** — pin ACP in-flight turns in AgentManager LRU (folded in
+      from the late reliability cluster).
+- [ ] **FSR-GSL-002** — do not persist-drop a failed MCP from the enabled set.
+- [ ] **REL-GSL-002 / RES-GSL-001** — host default timeouts for shell and
+      computercontroller.
 
 ## Open items from the 2026-08-15 exhaustive audit — recorded 2026-08-16
 
