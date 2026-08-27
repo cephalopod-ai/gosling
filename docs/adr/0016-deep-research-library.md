@@ -24,7 +24,9 @@ The right artifact pane exposes a third, boxed-count `Library` tab. Main perform
 scan of the configured root: at most 500 document-like files, six directory levels, using the same
 configured display extensions as Outputs. Hidden entries and symbolic links are excluded. Selection
 then uses the existing artifact preview/open guard. This is a distinct browse contract; scanned files
-are never inserted into the session Outputs inventory or the input Library.
+are never inserted into the session Outputs inventory or the input Library. The listing result
+includes a truncation flag; the tab renders `500+` and an explicit complete-folder recovery action
+when more matching files exist.
 
 Every Deep Research session receives the library root as an additional working directory and a
 session system instruction that requires final user-facing reports, tutorials, appendices, and exported
@@ -36,6 +38,18 @@ requires verification of load-bearing claims against current primary evidence. I
 treating model agreement or a prior report as independent corroboration. Scratch files and caches
 remain outside the library.
 
+Desktop includes the selected Research Library path in authenticated ACP new-session metadata and
+also grants it as an explicit additional session folder. Rust canonicalizes both the library path and
+the workspace product-output roots, verifies the library is the granted additional root, and persists
+those paths as Deep Research session state.
+
+Before ACP records an otherwise successful prompt as `Completed`, Gosling verifies the terminal
+assistant message against the backend-owned session artifact inventory. A deliverable must be a
+created or modified artifact beneath a configured workspace output root, its separately reported
+library copy must be beneath the configured Research Library root with the same filename, and the
+two bounded files must have identical SHA-256 content. Missing, misplaced, unreported, oversized, or
+mismatched copies make the prompt `Failed`; cancellation remains `Cancelled`.
+
 ## Consequences
 
 - Each research deliverable has a session-specific canonical copy in Outputs and an operator-visible,
@@ -44,8 +58,9 @@ remain outside the library.
   status or auto-injecting the entire library into model context.
 - The library is not a content-addressed archive. Operators can edit, move, or delete its files, and
   the next bounded listing reflects that filesystem state.
-- The agent instruction is the dual-destination contract. Gosling does not copy arbitrary session
-  artifacts after the fact or rewrite files the user produced elsewhere.
+- The agent instruction creates and reports the dual-destination artifacts; the ACP completion gate
+  independently checks their provenance, placement, and identity. Gosling does not copy arbitrary
+  session artifacts after the fact or rewrite files the user produced elsewhere.
 
 ## Rejected alternatives
 

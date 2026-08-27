@@ -26,13 +26,21 @@ bounded typed operations. Safe list responses never contain a source path or sto
 
 Prompt submission carries at most 16 opaque library IDs. Main asks Rust to resolve only those IDs
 for the active session. Stored or linked images become standard ACP image blocks. Text files and
-pasted text become labeled ACP text blocks. PDF text extraction occurs in Rust through `lopdf`.
-Linked files remain in place and resolve on demand; a missing file is visible as `missing` and
+pasted text become labeled ACP text blocks. Linked-file suffixes select an expected supported type,
+but Rust verifies image/PDF signatures, parses JSON, and requires valid non-binary UTF-8 text both
+when linking and when resolving. A replaced file whose content no longer matches its recorded type
 cannot be attached.
 
-Bounds are enforced independently at IPC and Rust boundaries: 64 items per scope, 256 KiB pasted
-text, 5 MiB per image, 20 MiB per linked file, 512 KiB resolved prompt text, 10 MiB resolved prompt
-images, and 16 selected items. `session.library.read` gates listing and resolution;
+PDF text extraction occurs in Rust through `lopdf`. Input bytes are bounded before parsing; object
+and page counts are checked before text extraction; pages are extracted incrementally and stop at
+the resolved-text budget. Linked files remain in place and resolve on demand; a missing file is
+visible as `missing` and cannot be attached.
+
+Bounds are enforced independently at Desktop and Rust boundaries: 64 items per scope, 256 KiB per
+pasted text item, 5 MiB per image, 20 MiB per linked file, 512 KiB total selected source text,
+10 MiB total selected images, and 16 selected items. Aggregate accounting measures source payload
+bytes rather than the labels Gosling adds to resolved prompt blocks. `session.library.read` gates
+listing and resolution;
 `session.library.write` gates add, link, and remove operations and requires read capability.
 
 ## Consequences

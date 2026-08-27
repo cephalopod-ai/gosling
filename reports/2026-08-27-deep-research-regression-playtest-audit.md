@@ -5,9 +5,26 @@ Repository: `/Users/eric/Work/vscode/forked/gosling`
 Baseline: `eceaa5b3d76cb567563394b1336513fd9a632160` (`main`, synchronized with `origin/main`)  
 Authority: playtest/test-only followed by read-only workflow, pipeline, and input/output audits
 
+## Repair closure — 2026-08-27
+
+This report records the pre-repair audit. All seven findings were repaired and
+revalidated in the subsequent governed campaign. See
+`reports/2026-08-27-deep-research-repair-verification.md` for the post-repair
+workflow, data-flow, file-flow, adversarial review, and test evidence.
+
+| Finding | Closure | Repair evidence |
+|---|---|---|
+| WFG-DR-001 | Resolved | Persisted research roots; terminal-message artifact provenance, placement, filename, and SHA-256 pair verification before `Completed`. |
+| WFG-DR-002 | Resolved | Shared Desktop byte constants and preflight validation match ACP per-item and aggregate limits. |
+| WFG-DR-003 | Resolved | Per-session repetition state; exact previously failed payload is denied on first retry; generic identical calls remain capped. |
+| IOP-DR-004 | Resolved | Suffix/content agreement at link and resolve for supported images, PDF, JSON, and UTF-8 text. |
+| WFG-DR-005 | Resolved | Limit-plus-one scan returns `truncated`; renderer displays `500+` and a complete-folder warning. |
+| IOP-DR-005 | Resolved | PDF object/page gates and incremental extraction stop at the prompt budget. |
+| WFG-DR-006 | Resolved | Visible start error includes cleanup failure and manual Session History recovery. |
+
 ## Executive verdict
 
-The repaired build passes the packaged long-input GUI replay and eleven focused
+At the time of this pre-repair audit, the build passed the packaged long-input GUI replay and eleven focused
 Rust plus twenty-six focused Desktop regressions. The connection-pool guard,
 external-provider mode normalization, exact `source: "dummy"` compatibility,
 and external-delegate Chat mode all hold at their tested boundaries. One High
