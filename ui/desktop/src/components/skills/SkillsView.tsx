@@ -93,7 +93,7 @@ function SkillSkeleton() {
   );
 }
 
-export default function SkillsView() {
+export default function SkillsView({ embedded = false }: { embedded?: boolean }) {
   const intl = useIntl();
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -200,49 +200,55 @@ export default function SkillsView() {
     );
   };
 
-  return (
-    <MainPanelLayout>
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="bg-background-primary px-8 pb-8 pt-16">
-          <div className="flex flex-col page-transition">
-            <div className="flex justify-between items-center mb-1">
-              <h1 className="text-4xl font-light">{intl.formatMessage(i18n.skillsTitle)}</h1>
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-2"
-                hidden
-                title={intl.formatMessage(i18n.comingSoon)}
-              >
-                <Plus className="w-4 h-4" />
-                {intl.formatMessage(i18n.addSkill)}
-              </Button>
-            </div>
-            <p className="text-sm text-text-secondary mb-1">
-              {intl.formatMessage(i18n.skillsDescription, {
-                shortcut: getSearchShortcutText(),
-              })}
-            </p>
-          </div>
-        </div>
+  const searchContent = (
+    <SearchView
+      onSearch={(term) => setSearchTerm(term)}
+      placeholder={intl.formatMessage(i18n.searchSkillsPlaceholder)}
+    >
+      <div
+        className={`${embedded ? '' : 'h-full'} relative transition-all duration-300 ${
+          showContent || showSkeleton ? 'opacity-100 animate-in fade-in' : 'opacity-0'
+        }`}
+      >
+        {renderContent()}
+      </div>
+    </SearchView>
+  );
 
-        <div className="flex-1 min-h-0 relative px-8">
-          <ScrollArea className="h-full">
-            <SearchView
-              onSearch={(term) => setSearchTerm(term)}
-              placeholder={intl.formatMessage(i18n.searchSkillsPlaceholder)}
+  const content = (
+    <div className={embedded ? 'flex flex-col min-w-0 pb-8' : 'flex-1 flex flex-col min-h-0'}>
+      <div className={embedded ? 'pb-6 pt-2' : 'bg-background-primary px-8 pb-8 pt-16'}>
+        <div className="flex flex-col page-transition">
+          <div className="flex justify-between items-center mb-1">
+            {embedded ? (
+              <h2 className="text-xl font-semibold">{intl.formatMessage(i18n.skillsTitle)}</h2>
+            ) : (
+              <h1 className="text-4xl font-light">{intl.formatMessage(i18n.skillsTitle)}</h1>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+              hidden
+              title={intl.formatMessage(i18n.comingSoon)}
             >
-              <div
-                className={`h-full relative transition-all duration-300 ${
-                  showContent || showSkeleton ? 'opacity-100 animate-in fade-in' : 'opacity-0'
-                }`}
-              >
-                {renderContent()}
-              </div>
-            </SearchView>
-          </ScrollArea>
+              <Plus className="w-4 h-4" />
+              {intl.formatMessage(i18n.addSkill)}
+            </Button>
+          </div>
+          <p className="text-sm text-text-secondary mb-1">
+            {intl.formatMessage(i18n.skillsDescription, {
+              shortcut: getSearchShortcutText(),
+            })}
+          </p>
         </div>
       </div>
-    </MainPanelLayout>
+
+      <div className={embedded ? 'min-w-0' : 'flex-1 min-h-0 relative px-8'}>
+        {embedded ? searchContent : <ScrollArea className="h-full">{searchContent}</ScrollArea>}
+      </div>
+    </div>
   );
+
+  return embedded ? content : <MainPanelLayout>{content}</MainPanelLayout>;
 }

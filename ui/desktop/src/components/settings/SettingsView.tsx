@@ -16,11 +16,15 @@ import {
   FileText,
   Keyboard,
   KeyRound,
+  Puzzle,
+  Zap,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import ChatSettingsSection from './chat/ChatSettingsSection';
 import KeyboardShortcutsSection from './keyboard/KeyboardShortcutsSection';
 import AuthSettingsSection from './auth/AuthSettingsSection';
+import SkillsView from '../skills/SkillsView';
+import ExtensionsView from '../extensions/ExtensionsView';
 import { CONFIGURATION_ENABLED } from '../../updates';
 import { trackSettingsTabViewed } from '../../utils/analytics';
 import { defineMessages, useIntl } from '../../i18n';
@@ -53,6 +57,14 @@ const i18n = defineMessages({
   tabAuth: {
     id: 'settingsView.tabAuth',
     defaultMessage: 'Auth',
+  },
+  tabSkills: {
+    id: 'settingsView.tabSkills',
+    defaultMessage: 'Skills',
+  },
+  tabExtensions: {
+    id: 'settingsView.tabExtensions',
+    defaultMessage: 'Extensions',
   },
   tabApp: {
     id: 'settingsView.tabApp',
@@ -100,6 +112,8 @@ export default function SettingsView({
         prompts: 'prompts',
         keyboard: 'keyboard',
         auth: 'auth',
+        skills: 'skills',
+        extensions: 'extensions',
       };
 
       const targetTab = sectionToTab[viewOptions.section];
@@ -190,6 +204,22 @@ export default function SettingsView({
                     <KeyRound className="h-4 w-4" />
                     {intl.formatMessage(i18n.tabAuth)}
                   </TabsTrigger>
+                  <TabsTrigger
+                    value="skills"
+                    className="flex gap-2"
+                    data-testid="settings-skills-tab"
+                  >
+                    <Zap className="h-4 w-4" />
+                    {intl.formatMessage(i18n.tabSkills)}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="extensions"
+                    className="flex gap-2"
+                    data-testid="settings-extensions-tab"
+                  >
+                    <Puzzle className="h-4 w-4" />
+                    {intl.formatMessage(i18n.tabExtensions)}
+                  </TabsTrigger>
                   <TabsTrigger value="app" className="flex gap-2" data-testid="settings-app-tab">
                     <Monitor className="h-4 w-4" />
                     {intl.formatMessage(i18n.tabApp)}
@@ -240,6 +270,25 @@ export default function SettingsView({
                   className="mt-0 focus-visible:outline-none focus-visible:ring-0"
                 >
                   <AuthSettingsSection />
+                </TabsContent>
+
+                <TabsContent
+                  value="skills"
+                  className="mt-0 focus-visible:outline-none focus-visible:ring-0"
+                >
+                  <SkillsView embedded />
+                </TabsContent>
+
+                <TabsContent
+                  value="extensions"
+                  className="mt-0 focus-visible:outline-none focus-visible:ring-0"
+                >
+                  <ExtensionsView
+                    embedded
+                    onClose={onClose}
+                    setView={setView}
+                    viewOptions={viewOptions}
+                  />
                 </TabsContent>
 
                 <TabsContent

@@ -8,4 +8,8 @@ describe('NAV_ITEMS', () => {
       { id: 'research', label: 'New Research', path: '/research' },
     ]);
   });
+
+  it('keeps catalog management out of the primary navigation', () => {
+    expect(NAV_ITEMS.map(({ id }) => id)).toEqual(['home', 'research', 'sessions']);
+  });
 });

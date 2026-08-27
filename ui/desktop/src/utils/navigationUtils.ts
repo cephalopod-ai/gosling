@@ -63,7 +63,7 @@ export const createNavigationHandler = (navigate: NavigateFunction) => {
         navigate('/sessions', { state: options });
         break;
       case 'skills':
-        navigate('/skills', { state: options });
+        navigate('/settings?section=skills', { state: options });
         break;
       case 'permission':
         navigate('/permission', { state: options });
@@ -72,7 +72,7 @@ export const createNavigationHandler = (navigate: NavigateFunction) => {
         navigate('/configure-providers', { state: options });
         break;
       case 'extensions':
-        navigate('/extensions', { state: options });
+        navigate('/settings?section=extensions', { state: options });
         break;
       default:
         navigate('/', { state: options });

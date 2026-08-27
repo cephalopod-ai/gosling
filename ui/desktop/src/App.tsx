@@ -182,7 +182,7 @@ const PermissionRoute = () => {
             navigate('/sessions');
             break;
           case 'skills':
-            navigate('/skills');
+            navigate('/settings?section=skills');
             break;
           default:
             navigate('/');

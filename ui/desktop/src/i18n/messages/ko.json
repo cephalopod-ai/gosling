@@ -1430,9 +1430,6 @@
   "modelsSection.resetTitle": {
     "defaultMessage": "제공업체 및 모델 초기화"
   },
-  "navigation.itemExtensions": {
-    "defaultMessage": "익스텐션"
-  },
   "navigation.itemHome": {
     "defaultMessage": "새 채팅"
   },
@@ -1441,9 +1438,6 @@
   },
   "navigation.itemSettings": {
     "defaultMessage": "설정"
-  },
-  "navigation.itemSkills": {
-    "defaultMessage": "스킬"
   },
   "navigationPanel.chats": {
     "defaultMessage": "채팅"
@@ -3298,5 +3292,11 @@
   },
   "workingDirectoriesMenu.workspaceSessionOnlyHint": {
     "defaultMessage": "Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access."
+  },
+  "settingsView.tabExtensions": {
+    "defaultMessage": "Extensions"
+  },
+  "settingsView.tabSkills": {
+    "defaultMessage": "Skills"
   }
 }

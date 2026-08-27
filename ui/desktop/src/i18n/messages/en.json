@@ -1682,9 +1682,6 @@
   "modelsSection.resetTitle": {
     "defaultMessage": "Reset Provider and Model"
   },
-  "navigation.itemExtensions": {
-    "defaultMessage": "Extensions"
-  },
   "navigation.itemHome": {
     "defaultMessage": "New Chat"
   },
@@ -1696,9 +1693,6 @@
   },
   "navigation.itemSettings": {
     "defaultMessage": "Settings"
-  },
-  "navigation.itemSkills": {
-    "defaultMessage": "Skills"
   },
   "navigationPanel.archiveDetail": {
     "defaultMessage": "Archive folder: {folder}. You can restore this session from Archived."
@@ -2810,6 +2804,9 @@
   "settingsView.tabChat": {
     "defaultMessage": "Chat"
   },
+  "settingsView.tabExtensions": {
+    "defaultMessage": "Extensions"
+  },
   "settingsView.tabKeyboard": {
     "defaultMessage": "Keyboard"
   },
@@ -2821,6 +2818,9 @@
   },
   "settingsView.tabSession": {
     "defaultMessage": "Session"
+  },
+  "settingsView.tabSkills": {
+    "defaultMessage": "Skills"
   },
   "settingsView.title": {
     "defaultMessage": "Settings"

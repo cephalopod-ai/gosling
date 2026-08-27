@@ -59,10 +59,12 @@ export type ExtensionsViewOptions = {
 
 export default function ExtensionsView({
   viewOptions,
+  embedded = false,
 }: {
   onClose: () => void;
   setView: (view: View, viewOptions?: ViewOptions) => void;
   viewOptions: ExtensionsViewOptions;
+  embedded?: boolean;
 }) {
   const intl = useIntl();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -124,16 +126,24 @@ export default function ExtensionsView({
     }
   };
 
-  return (
-    <MainPanelLayout>
+  const content = (
+    <>
       <div
-        className="flex flex-col min-w-0 flex-1 overflow-y-auto relative"
+        className={
+          embedded
+            ? 'flex flex-col min-w-0 pb-8'
+            : 'flex flex-col min-w-0 flex-1 overflow-y-auto relative'
+        }
         data-search-scroll-area
       >
-        <div className="bg-background-primary px-8 pb-4 pt-16">
+        <div className={embedded ? 'pb-4 pt-2' : 'bg-background-primary px-8 pb-4 pt-16'}>
           <div className="flex flex-col page-transition">
             <div className="flex justify-between items-center mb-1">
-              <h1 className="text-4xl font-light">{intl.formatMessage(i18n.heading)}</h1>
+              {embedded ? (
+                <h2 className="text-xl font-semibold">{intl.formatMessage(i18n.heading)}</h2>
+              ) : (
+                <h1 className="text-4xl font-light">{intl.formatMessage(i18n.heading)}</h1>
+              )}
             </div>
             <p className="text-sm text-text-secondary mb-2">
               {intl.formatMessage(i18n.description, { searchShortcut: getSearchShortcutText() })}
@@ -164,7 +174,7 @@ export default function ExtensionsView({
           </div>
         </div>
 
-        <div className="px-8 pb-16">
+        <div className={embedded ? 'pb-8' : 'px-8 pb-16'}>
           <SearchView
             onSearch={(term) => setSearchTerm(term)}
             placeholder={intl.formatMessage(i18n.searchPlaceholder)}
@@ -182,11 +192,9 @@ export default function ExtensionsView({
           </SearchView>
         </div>
 
-        {/* Bottom padding space - same as in hub.tsx */}
-        <div className="block h-8" />
+        {!embedded && <div className="block h-8" />}
       </div>
 
-      {/* Modal for adding a new extension */}
       {isAddModalOpen && (
         <ExtensionModal
           title={intl.formatMessage(i18n.addCustomExtension)}
@@ -197,6 +205,8 @@ export default function ExtensionsView({
           modalType={'add'}
         />
       )}
-    </MainPanelLayout>
+    </>
   );
+
+  return embedded ? content : <MainPanelLayout>{content}</MainPanelLayout>;
 }

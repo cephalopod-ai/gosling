@@ -28,4 +28,15 @@ describe('createNavigationHandler research navigation', () => {
       }
     );
   });
+
+  it.each([
+    ['skills', '/settings?section=skills'],
+    ['extensions', '/settings?section=extensions'],
+  ] as const)('opens %s inside settings', (view, route) => {
+    const navigate = vi.fn();
+
+    createNavigationHandler(navigate)(view);
+
+    expect(navigate).toHaveBeenCalledWith(route, { state: undefined });
+  });
 });

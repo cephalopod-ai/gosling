@@ -1,4 +1,4 @@
-import { History, MessageSquarePlus, Puzzle, Settings, Telescope, Zap } from 'lucide-react';
+import { History, MessageSquarePlus, Settings, Telescope } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { defineMessages, type IntlShape, type MessageDescriptor } from 'react-intl';
 
@@ -20,8 +20,6 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'New Research',
     icon: Telescope,
   },
-  { id: 'skills', path: '/skills', label: 'Skills', icon: Zap },
-  { id: 'extensions', path: '/extensions', label: 'Extensions', icon: Puzzle },
   { id: 'sessions', path: '/sessions', label: 'Session History', icon: History },
 ];
 
@@ -43,14 +41,6 @@ const navItemMessages = defineMessages({
   research: {
     id: 'navigation.itemResearch',
     defaultMessage: 'New Research',
-  },
-  skills: {
-    id: 'navigation.itemSkills',
-    defaultMessage: 'Skills',
-  },
-  extensions: {
-    id: 'navigation.itemExtensions',
-    defaultMessage: 'Extensions',
   },
   sessions: {
     id: 'navigation.itemSessions',

@@ -1430,9 +1430,6 @@
   "modelsSection.resetTitle": {
     "defaultMessage": "Réinitialiser le fournisseur et le modèle"
   },
-  "navigation.itemExtensions": {
-    "defaultMessage": "Extensions"
-  },
   "navigation.itemHome": {
     "defaultMessage": "Nouvelle discussion"
   },
@@ -1441,9 +1438,6 @@
   },
   "navigation.itemSettings": {
     "defaultMessage": "Paramètres"
-  },
-  "navigation.itemSkills": {
-    "defaultMessage": "Compétences"
   },
   "navigationPanel.chats": {
     "defaultMessage": "Discussions"
@@ -3298,5 +3292,11 @@
   },
   "workingDirectoriesMenu.workspaceSessionOnlyHint": {
     "defaultMessage": "Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access."
+  },
+  "settingsView.tabExtensions": {
+    "defaultMessage": "Extensions"
+  },
+  "settingsView.tabSkills": {
+    "defaultMessage": "Skills"
   }
 }
