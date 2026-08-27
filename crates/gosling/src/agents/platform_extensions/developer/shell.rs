@@ -1286,11 +1286,9 @@ mod tests {
         // Zombie reaping by the test process's ancestor can lag slightly
         // behind the SIGKILL, so poll briefly rather than checking once.
         let still_alive = |pid: &str| {
-            std::process::Command::new("kill")
-                .args(["-0", pid])
-                .status()
-                .map(|status| status.success())
-                .unwrap_or(false)
+            pid.parse::<u32>()
+                .ok()
+                .is_some_and(crate::subprocess::process_is_running)
         };
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         while still_alive(background_pid) && std::time::Instant::now() < deadline {

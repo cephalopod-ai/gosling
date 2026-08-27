@@ -397,7 +397,7 @@ For the full ACP specification, see the [Agent Client Protocol documentation](ht
 **REST API (gosling-server)**:
 - Server implementation: `crates/gosling-server/src/routes/`
 - OpenAPI generation: `just generate-openapi`
-- API client example: `ui/desktop/src/api/` (generated TypeScript client)
+- SDK client implementation: `ui/sdk/src/` (generated ACP types and TypeScript client)
 
 **ACP**:
 - ACP server implementation: `crates/gosling/src/acp/server.rs`

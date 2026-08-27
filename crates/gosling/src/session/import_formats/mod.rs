@@ -167,7 +167,7 @@ pub(crate) fn build_session_json(session: ImportedSession) -> Value {
     );
     obj.insert("provider_name".into(), json!(null));
     obj.insert("model_config".into(), json!(null));
-    obj.insert("gosling_mode".into(), json!("auto"));
+    obj.insert("gosling_mode".into(), json!("smart_approve"));
     obj.insert("archived_at".into(), json!(null));
     obj.insert("project_id".into(), json!(null));
     Value::Object(obj)
@@ -376,5 +376,21 @@ mod tests {
             .unwrap();
         let error = read_session_import_file(file.path()).unwrap_err();
         assert!(error.to_string().contains("16 MiB"));
+    }
+
+    #[test]
+    fn foreign_sessions_default_to_smart_approve() {
+        let value = build_session_json(ImportedSession {
+            session_id: "foreign-session",
+            working_dir: "/tmp",
+            name: "Imported",
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            usage: Usage::default(),
+            accumulated_cost: None,
+            conversation: Conversation::default(),
+        });
+
+        assert_eq!(value["gosling_mode"], "smart_approve");
     }
 }

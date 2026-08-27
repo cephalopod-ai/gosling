@@ -14,45 +14,68 @@ pub const COMPACT_TRIGGERS: &[&str] =
 pub struct CommandDef {
     pub name: &'static str,
     pub description: &'static str,
+    handler: BuiltinCommand,
+}
+
+#[derive(Clone, Copy)]
+enum BuiltinCommand {
+    Prompts,
+    Prompt,
+    Compact,
+    Clear,
+    Skills,
+    Doctor,
+    Goal,
+    Grind,
+    Status,
 }
 
 static COMMANDS: &[CommandDef] = &[
     CommandDef {
         name: "prompts",
         description: "List available prompts, optionally filtered by extension",
+        handler: BuiltinCommand::Prompts,
     },
     CommandDef {
         name: "prompt",
         description: "Execute a prompt or show its info with --info",
+        handler: BuiltinCommand::Prompt,
     },
     CommandDef {
         name: "compact",
         description: "Compact the conversation history",
+        handler: BuiltinCommand::Compact,
     },
     CommandDef {
         name: "clear",
         description: "Clear the conversation history",
+        handler: BuiltinCommand::Clear,
     },
     CommandDef {
         name: "skills",
         description: "List installed skills and other available sources",
+        handler: BuiltinCommand::Skills,
     },
     CommandDef {
         name: "doctor",
         description: "Check that your Gosling setup is working",
+        handler: BuiltinCommand::Doctor,
     },
     CommandDef {
         name: "goal",
         description: "Set a goal the agent must satisfy before finishing, or clear with /goal off",
+        handler: BuiltinCommand::Goal,
     },
     CommandDef {
         name: "grind",
         description:
             "Set a goal the agent pursues relentlessly until max_turns, or clear with /grind off",
+        handler: BuiltinCommand::Grind,
     },
     CommandDef {
         name: "status",
         description: "Show session status: model, provider, mode, and token usage",
+        handler: BuiltinCommand::Status,
     },
 ];
 
@@ -123,17 +146,22 @@ impl Agent {
             params_str.split_whitespace().collect()
         };
 
-        match command {
-            "prompts" => self.handle_prompts_command(&params, session_id).await,
-            "prompt" => self.handle_prompt_command(&params, session_id).await,
-            "compact" => self.handle_compact_command(session_id).await,
-            "clear" => self.handle_clear_command(session_id).await,
-            "skills" => self.handle_skills_command(session_id).await,
-            "doctor" => Ok(Some(crate::doctor::run(self, session_id).await?)),
-            "status" => self.handle_status_command(session_id).await,
-            "goal" => self.handle_goal_command(params_str).await,
-            "grind" => self.handle_grind_command(params_str).await,
-            _ => {
+        match COMMANDS
+            .iter()
+            .find(|definition| definition.name == command)
+        {
+            Some(definition) => match definition.handler {
+                BuiltinCommand::Prompts => self.handle_prompts_command(&params, session_id).await,
+                BuiltinCommand::Prompt => self.handle_prompt_command(&params, session_id).await,
+                BuiltinCommand::Compact => self.handle_compact_command(session_id).await,
+                BuiltinCommand::Clear => self.handle_clear_command(session_id).await,
+                BuiltinCommand::Skills => self.handle_skills_command(session_id).await,
+                BuiltinCommand::Doctor => Ok(Some(crate::doctor::run(self, session_id).await?)),
+                BuiltinCommand::Goal => self.handle_goal_command(params_str).await,
+                BuiltinCommand::Grind => self.handle_grind_command(params_str).await,
+                BuiltinCommand::Status => self.handle_status_command(session_id).await,
+            },
+            None => {
                 self.handle_skill_command(command, params_str, session_id)
                     .await
             }
@@ -561,5 +589,17 @@ mod tests {
         assert!(list_commands()
             .iter()
             .any(|command| command.name == "status"));
+    }
+
+    #[test]
+    fn builtin_command_names_are_unique() {
+        let mut names = list_commands()
+            .iter()
+            .map(|command| command.name)
+            .collect::<Vec<_>>();
+        names.sort_unstable();
+        names.dedup();
+
+        assert_eq!(names.len(), list_commands().len());
     }
 }

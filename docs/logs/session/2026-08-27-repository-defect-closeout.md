@@ -10,16 +10,35 @@ report.
 
 - `reports/2026-08-27-repository-defect-closeout.md`
 - `docs/logs/session/2026-08-27-repository-defect-closeout.md`
+- `crates/gosling/src/acp/server/new_session.rs`
+- `crates/gosling/src/agents/execute_commands.rs`
+- `crates/gosling/src/agents/platform_extensions/developer/process_tree.rs`
+- `crates/gosling/src/agents/platform_extensions/developer/shell.rs`
+- `crates/gosling/src/config/permission.rs`
+- `crates/gosling/src/session/import_formats/mod.rs`
+- `crates/gosling/src/session/session_manager.rs`
+- `crates/gosling/src/session/session_manager/migrations.rs`
+- `crates/gosling/src/session/session_manager/schema.rs`
+- `crates/gosling/src/subprocess.rs`
+- `CUSTOM_DISTROS.md`
+- `README.md`
+- `docs/TODO.md`
 
-No runtime, test, schema, configuration, or governance source was changed. The
-canonical backlog and today's completed repair reports show that mechanically
-actionable findings are already closed on the current branch; unresolved items
-require a product/security/architecture decision or unavailable external
-validation.
+The continuation fixed a build-breaking Deep Research path comparison, aligned
+session mode defaults, distinguished Linux zombies from running processes,
+made permission-persist failure coverage root-independent, unified slash-command
+registration and dispatch, and corrected two documentation contracts. The
+canonical ledger now records these closures and the source-confirmed stale
+classifier-signal finding.
 
 ## Validation run
 
 - `cargo fmt --all -- --check` — passed.
+- Three focused `gosling` library regressions for foreign-import defaults,
+  schema defaults, and builtin command registration — passed.
+- Full `gosling` library suite with loopback excluded from the environment
+  proxy — 1,753/1,753 passed.
+- `cargo clippy -p gosling --all-targets -- -D warnings` — passed.
 - `git diff --check` — passed before the report write and repeated at closeout.
 - `cargo clippy --all-targets -- -D warnings` — blocked by an HTTP 403 while
   downloading the prebuilt `rusty_v8` archive.
