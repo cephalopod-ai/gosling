@@ -59,4 +59,6 @@ This file is the durable map for the repository's documentation surface.
 
 - The durable test ledger and scoped documentation TODO now exist and are linked
   above without replacing their source reports.
-- The `.dory/` policy decision remains open in the documentation TODO.
+- `.dory/` is ignored local operational state, not canonical documentation or
+  repository evidence. Durable evidence must be written explicitly to a
+  reviewed, committed repository log.

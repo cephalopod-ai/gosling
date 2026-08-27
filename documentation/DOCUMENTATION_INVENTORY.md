@@ -38,7 +38,7 @@ This inventory follows the repository's existing documentation layout. The canon
 | `documentation/automation/` | Docs automation | current | Docusaurus docs tooling | Discovered 2026-07-03 | Keep separate from user-facing docs. |
 | `documentation/src/pages/prompt-library/data/prompts/` | Prompt-library data | generated/current | Docusaurus app pages | 46 tracked prompt JSON files counted 2026-07-03 | Exclude from generic TODO scans unless auditing prompt content specifically. |
 | `.github/workflows/` | CI/test evidence | current | GitHub Actions | Discovered 2026-07-03 | Use as source for future test ledger. |
-| `.dory/` | Session memory/checkpoints | unknown | Local agent memory | Discovered 2026-07-03 | Decide whether this is local-only or should feed durable summaries. |
+| `.dory/` | Session memory/checkpoints | local-only operational state | Local agent memory | Decided 2026-08-27 | Keep ignored; it is not canonical evidence and must not feed documentation automatically. |
 | `.giles/` | Advisory governance state | blocked | Giles | Observed 2026-07-20 | Latest audit is blocked by a Giles internal uniqueness-constraint crash; leave advisory artifacts unchanged and do not add a repository workaround. |
 | `documentation/STRUCTURE_COMPLIANCE.md` | Stewardship report | generated/current | governance-doc-stewardship | Updated 2026-07-04 | Keep linked from `documentation/INDEX.md`. |
 | `documentation/DOCUMENTATION_INVENTORY.md` | Stewardship inventory | generated/current | governance-doc-stewardship | Updated 2026-07-04 | Keep linked from `documentation/INDEX.md`. |
@@ -56,12 +56,15 @@ This inventory follows the repository's existing documentation layout. The canon
 - No active documentation TODO ledger exists.
 - No test ledger exists.
 - `.giles/` now exists, but its latest structural audit is blocked by an internal Giles crash and is not authoritative evidence of release readiness.
-- `.dory/` contains session memory/checkpoint material, but the repo does not declare whether it is durable documentation, local agent state, or ignored operational data.
+- `.dory/` is ignored local operational state. Durable evidence is recorded
+  explicitly in reviewed, committed repository logs rather than imported from
+  transient agent memory.
 
 ## Recommended Disposition
 
 1. Add `documentation/TEST_LEDGER.md` from existing commands and CI workflows.
 2. Add `documentation/TODO_LEDGER.md` only after a scoped triage to avoid importing noisy code/test TODO examples as documentation work.
-3. Decide whether `.dory/` remains local-only operational state or should feed a future durable log policy.
+3. Keep `.dory/` local-only; add durable summaries only as explicit reviewed
+   repository logs.
 4. Keep `documentation/INDEX.md` in sync when adding or relocating major docs/governance artifacts.
 5. Align canonical source version surfaces to `1.1.0`, then complete `RELEASE_CHECKLIST.md` before creating or publishing `v1.1.0`.

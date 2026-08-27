@@ -72,10 +72,11 @@ These five findings were closed on 2026-08-27 with focused Rust and TUI
 regressions, Rust compile/Clippy/formatting, TUI typecheck, and scoped diff
 evidence in the third batch of
 [`docs/logs/session/2026-08-27-medium-defect-campaign.md`](logs/session/2026-08-27-medium-defect-campaign.md).
-`DAT-GSL-002` was investigated but not counted: deleting workspace-keyed
-library state conflicts with the accepted pinned-session preservation contract
-in ADR-0015 and the existing workspace deletion regression, so it remains a
-design/architecture decision rather than a mechanical repair.
+`DAT-GSL-002` was investigated but not counted in that batch: deleting
+workspace-keyed library state conflicts with the accepted pinned-session
+preservation contract in ADR-0015 and the existing workspace deletion
+regression. The later maintainer-authority pass closed it by recording and
+preserving that contract rather than deleting the retained data.
 
 ### Medium completion batch
 
@@ -106,37 +107,52 @@ and [`reports/2026-08-27-medium-defect-campaign.md`](../reports/2026-08-27-mediu
 
 ### Remaining Medium decisions and external prerequisites
 
-- [ ] **DAT-GSL-002** — decide whether workspace deletion may remove
-      workspace-keyed library data needed by preserved pinned sessions.
-- [ ] **NEG-GSL-001** — define the MCP App actor, permission, and transcript
-      contract before exposing it as a first-class chat/tool participant.
-- [ ] **RSP-GSL-001** — choose the response to RUSTSEC-2023-0071 and validate it
-      with `cargo-deny`, which is not installed in this environment.
+- [x] **DAT-GSL-002** — workspace deletion preserves workspace-keyed project
+      library data because pinned sessions retain the workspace snapshot and
+      may still need those rows. The existing deletion path mutates only the
+      workspace store; ADR-0015 and the workspace-service regression preserve
+      this contract.
+- [x] **NEG-GSL-001** — MCP Apps are untrusted interactive views, not
+      independent chat actors. App-proposed chat text requires explicit user
+      confirmation before it enters the transcript as user input, and app tool
+      calls retain Gosling visibility and permission inspection.
+- [x] **RSP-GSL-001** — the dependency graph no longer contains the vulnerable
+      RSA path covered by RUSTSEC-2023-0071, so the stale deny exception was
+      removed. A current `cargo-deny check advisories` validates the graph.
 - [ ] **ARC-GSL-003 / ARC-GSL-004 / ARC-GSL-005** — provider-port, MCP
       dependency, and process-global state changes require an architecture pass.
-- [ ] **INV-GSL-001** — define the credential, provider/model, workspace, and
-      extension authority that an imported snapshot is allowed to restore.
+- [x] **INV-GSL-001** — imported snapshots restore untrusted conversation and
+      non-executable extension state only. They never restore provider/model,
+      workspace, credential profile/binding, folder grants, enabled executable
+      extensions, workflow ownership, or tool-permission authority; the caller
+      selects the working directory and the new session starts in Approve.
 - [ ] **CMP-GSL-004** — run a fresh Giles scan before changing advisory stale
       compliance YAML or promoting it to repo truth.
-- [ ] **ACP-GSL-003** — decide whether managed-context/external-tool providers
-      are valid Deep Research delegate seats. The selector currently allows
-      them, while safe subagents require Auto and the ACP security boundary
-      forbids those providers in Auto. An installed Dual smoke also showed the
-      lead passing `claude-code/claude-opus-5` as a Summon `source` despite the
-      host prompt requiring an ad-hoc delegate with no `source` argument.
+- [x] **ACP-GSL-003** — managed-context/external-tool providers remain valid in
+      Solo Research but are excluded from every multi-model seat because those
+      delegates cannot safely run with Gosling-hosted research tools. The
+      multi-model prompt and Summon schema require ad-hoc delegates to omit
+      `source`; focused selector and prompt regressions enforce both boundaries.
 
 ### Needs a design decision
 
-- [ ] **NEG-GSL-005** — Official remote `goslingd` (`0.0.0.0` + shared secret)
-      is a multi-client control plane; product claims are local-first.
+- [x] **NEG-GSL-005** — `goslingd` is an enforced single-operator local control
+      plane. Configuration rejects wildcard, LAN, VPN, public, and other
+      non-loopback bind addresses, and the external-server guide documents only
+      a separately managed process on the same host.
 - [x] **PATH-GSL-001** — resolved by documenting the intentional shared AAIF
       interoperability path in the README coexistence contract while keeping
       product-owned configuration, databases, keyring, and deep links isolated.
-- [ ] **CON-GSL-001** — Cross-process session lease vs “resume opens a new serve.”
+- [x] **CON-GSL-001** — session schema v29 adds a durable, heartbeat-backed
+      per-session turn lease at the shared Agent reply boundary. A second live
+      process/window fails before message persistence or compaction; owner-matched
+      release and stale/dead-owner takeover preserve crash recovery.
 
 ### Follow-up (from late SEC/REL fold-in)
 
-- [ ] **SEC-GSL-003** — goslingd unauth MCP proxy/guest need loopback peer checks.
+- [x] **SEC-GSL-003** — goslingd's unauthenticated MCP proxy and guest routes
+      require loopback connection metadata in addition to the server-wide
+      loopback bind invariant.
 - [x] **SECN-GSL-002** — main BrowserWindow needs `will-navigate` like the shell.
 - [x] **REL-GSL-001** — ACP in-flight turns pin their AgentManager LRU entry;
       closed in the third 2026-08-27 criticality batch above.
@@ -161,12 +177,10 @@ rediscovered from scratch.
 - [x] **SEC-GOS-002** — closed in `5ea594f4b`. The guest CSP is derived
       server-side from declared domains and keyed to a single-use proxy token;
       verified live that a forged token carrying `default-src *` is refused.
-- [ ] **SEC-GOS-007** — assessed 2026-08-16 and deliberately not patched; see
-      `docs/logs/session/2026-08-16-acp-mcp-repair.md`. The state-changing route
-      (`POST /mcp-app-guest`) *is* authenticated in-handler and derives its CSP
-      server-side; the unauthenticated GETs return a static shell and a
-      UUIDv4-nonced guest. Forcing loopback would break remote MCP-app
-      deployments for a low-value gain.
+- [x] **SEC-GOS-007** — superseded by the explicit local-control-plane product
+      boundary. The unauthenticated MCP proxy and guest routes now require a
+      loopback peer, while the state-changing guest POST retains its in-handler
+      nonce authentication and server-derived CSP.
 - [~] **SECN-GSL-001** — **Warning, not actionable. Closed as re-assessed
       2026-08-16, not as fixed.** The finding assumed untrusted MCP app HTML
       runs in the frame whose URL carries the backend secret. It does not: that

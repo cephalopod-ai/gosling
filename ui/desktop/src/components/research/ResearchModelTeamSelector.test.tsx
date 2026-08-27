@@ -171,7 +171,7 @@ describe('ResearchModelTeamSelector', () => {
     );
   });
 
-  it('keeps managed-context models in researcher seats but not the multi-model Lead seat', async () => {
+  it('keeps managed-context models in Solo mode but excludes them from multi-model seats', async () => {
     const user = userEvent.setup();
     vi.mocked(acpListProviderDetails).mockResolvedValue([
       provider('claude-code', 'Claude Code', true),
@@ -185,16 +185,16 @@ describe('ResearchModelTeamSelector', () => {
     });
     render(<Harness currentProvider="claude-code" currentModel="claude-opus-5" />);
 
-    const trio = await screen.findByRole('radio', { name: 'Trio research mode' });
-    await waitFor(() => expect(trio).toBeEnabled());
-    await user.click(trio);
+    const dual = await screen.findByRole('radio', { name: 'Dual research mode' });
+    await waitFor(() => expect(dual).toBeEnabled());
+    expect(screen.getByRole('radio', { name: 'Trio research mode' })).toBeDisabled();
+    await user.click(dual);
 
     await waitFor(() =>
       expect(JSON.parse(screen.getByTestId('configuration').textContent ?? '{}')).toMatchObject({
-        mode: 'trio',
+        mode: 'dual',
         models: [
           { provider: 'codex', model: 'gpt-5.6-sol' },
-          { provider: 'claude-code', model: 'claude-opus-5' },
           { provider: 'groq', model: 'llama-4' },
         ],
       })
@@ -207,7 +207,7 @@ describe('ResearchModelTeamSelector', () => {
     ).toBeDisabled();
     expect(
       Array.from(researcher.options).find((option) => option.value.includes('claude-code'))
-    ).not.toBeDisabled();
-    expect(screen.getByText(/Lead must support Gosling-hosted tools/)).toBeInTheDocument();
+    ).toBeDisabled();
+    expect(screen.getByText(/Every seat must support Gosling-hosted tools/)).toBeInTheDocument();
   });
 });

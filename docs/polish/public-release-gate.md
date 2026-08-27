@@ -7,19 +7,16 @@ This is an advisory staging assessment, not publication authorization.
 
 ## Blockers
 
-1. The required fresh-clone drill and approved secret/history and Rust
-   dependency scanners were not completed. The documentation npm audit is now
-   current but retains 25 transitive advisories with no compatible full fix.
+1. The required fresh-clone drill and approved secret/history scanners were not
+   completed. Rust advisories and unused dependencies are clean under current
+   `cargo-deny` and `cargo-machete`; the documentation npm audit retains 25
+   transitive advisories with no compatible full fix.
 2. The public default branch has no active protection; the discovered ruleset
    remains disabled as of 2026-08-27.
-3. Baseline revision `48946f41585c1d34456614bf0ccba0f948852e6e`
-   has failed CI and shell-package runs. The deterministic shell conformance,
-   Windows cfg-warning, and cross-platform assertion failures were repaired
-   locally, but require a new remote revision to confirm.
-4. BuildNotify fails when the repository's Discord webhook secret is absent;
-   repository configuration or an intentional no-secret workflow path is
-   maintainer-owned.
-5. The release checklist installed-artifact, signing, checksum, scenario,
+3. Current source repairs pass the complete local Rust, Desktop, documentation,
+   dependency, and workflow-structure gates, but require a pushed revision and
+   green remote CI to become revision-bound evidence.
+4. The release checklist installed-artifact, signing, checksum, scenario,
    clean-install, tag, publication, verification, and announcement gates remain
    incomplete.
 
@@ -45,10 +42,10 @@ This is an advisory staging assessment, not publication authorization.
 | GHR-016 | pass | Executable files reviewed as scripts or packaged runtime inputs; no symlinks reported. |
 | GHR-017 | pass | No Windows-reserved or overlong tracked path found in the static check. |
 | GHR-018 | pass | No tracked backup/conflict artifact found; local Hermit cache is ignored. |
-| GHR-019 | finding | Exact-baseline CI and shell-package runs failed; local repairs pass their focused suites, but no remote rerun exists. BuildNotify also fails without its webhook secret. |
+| GHR-019 | partial | Local source validation is green and BuildNotify explicitly succeeds as a no-op when its optional webhook is absent; no remote run exists for this patch revision. |
 | GHR-020 | skipped | Fresh-environment build depends on the skipped clone drill. |
 | GHR-021 | pass with note | Full gosling suite passed; ignored ACP-provider tests remain visible. |
-| GHR-022 | not-verifiable | cargo-audit and cargo-deny unavailable. |
+| GHR-022 | pass with note | Current `cargo-deny check advisories` and `cargo-machete` pass; dedicated secret/history scanners remain separate. |
 | GHR-023 | pass | PR and issue templates exist. |
 | GHR-024 | finding | GitHub API reports main unprotected and ruleset disabled. |
 | GHR-025 | pass | Dependabot and other repository-gated workflows now target cephalopod-ai/gosling. |
@@ -60,8 +57,8 @@ This is an advisory staging assessment, not publication authorization.
 
 ## Next action
 
-The release owner must enable and verify branch protection, decide the
-BuildNotify no-secret behavior, run a clean-clone drill plus approved
-secret/history and Rust dependency audits, obtain green remote CI for the local
+The release owner must enable and verify branch protection, run a clean-clone
+drill plus approved secret/history scans, obtain green remote CI for the local
 repairs, address or explicitly accept the upstream documentation advisories,
-and complete `RELEASE_CHECKLIST.md` before requesting a publication run.
+and complete the installed-artifact, signing, checksum, scenario, tag, and
+publication sections of `RELEASE_CHECKLIST.md` before requesting publication.

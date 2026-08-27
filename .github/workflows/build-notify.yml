@@ -32,6 +32,10 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           HTML_URL: ${{ github.event.workflow_run.html_url }}
         run: |
+          if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+            echo "::notice::DISCORD_WEBHOOK_GOSLING_STATUS is not configured; skipping notification."
+            exit 0
+          fi
           payload=$(jq -n \
             --arg title "❌ Build Failed" \
             --arg description "**Workflow:** ${WORKFLOW_NAME}

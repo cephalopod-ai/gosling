@@ -489,7 +489,7 @@ describe('Hub workspace selection', () => {
     expect(researcher3).toHaveValue(JSON.stringify(['xai', 'grok-4.6']));
   });
 
-  it('blocks a managed-context provider from becoming the multi-model Lead', async () => {
+  it('keeps managed-context providers out of every multi-model seat', async () => {
     configureResearchExtensions();
     const user = userEvent.setup();
     render(<Hub setView={vi.fn()} sessionExperience="research" />, {
@@ -501,12 +501,14 @@ describe('Hub workspace selection', () => {
     await user.click(trio);
     await user.click(screen.getByRole('button', { name: 'Use Claude Code in composer' }));
 
-    const send = screen.getByRole('button', { name: 'Send message' });
-    await waitFor(() => expect(send).toBeDisabled());
-    expect(send).toHaveAttribute(
-      'title',
-      'Choose a Lead model that supports Gosling-hosted tools. This model can still be a researcher.'
+    const managedContextModel = JSON.stringify(['claude-code', 'claude-opus-5']);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Lead model')).not.toHaveValue(managedContextModel)
     );
+    expect(screen.getByLabelText('Researcher 2')).not.toHaveValue(managedContextModel);
+    expect(screen.getByLabelText('Researcher 3')).not.toHaveValue(managedContextModel);
+    const send = screen.getByRole('button', { name: 'Send message' });
+    await waitFor(() => expect(send).toBeEnabled());
     expect(createSession).not.toHaveBeenCalled();
   });
 

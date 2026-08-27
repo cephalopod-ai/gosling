@@ -1821,6 +1821,10 @@ impl Agent {
             }
         }
 
+        let turn_lease = session_manager
+            .acquire_session_turn_lease(&session_config.id)
+            .await?;
+
         let message_text = user_message.as_concat_text();
 
         let session = session_manager
@@ -1921,6 +1925,7 @@ impl Agent {
                     || message_text.trim() == "/clear";
 
                 return Ok(Box::pin(async_stream::try_stream! {
+                    let _turn_lease = turn_lease;
                     yield AgentEvent::Message(user_message);
                     yield AgentEvent::Message(response);
 
@@ -1986,6 +1991,7 @@ impl Agent {
         let conversation_to_compact = conversation.clone();
 
         Ok(Box::pin(async_stream::try_stream! {
+            let _turn_lease = turn_lease;
             for event in command_preamble {
                 yield event;
             }

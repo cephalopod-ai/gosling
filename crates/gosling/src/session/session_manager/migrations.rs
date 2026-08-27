@@ -734,6 +734,7 @@ impl SessionStorage {
                 }
             }
             28 => Self::create_session_library_schema(tx).await?,
+            29 => Self::create_session_turn_lease_schema(tx).await?,
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }

@@ -10,9 +10,9 @@ release execution remain canonical in [`docs/TODO.md`](../docs/TODO.md).
   `npm audit --package-lock-only` (19 high, 6 moderate). The current roots are
   `image-size`, `serialize-javascript`, and `uuid` through `sockjs`; the current
   npm lockfile has no non-breaking automated fix.
-- [ ] Decide whether `.dory/` remains local-only operational state or feeds a
-  future durable summary. This is a repository-governance choice, not a docs
-  build defect.
+- [x] Keep `.dory/` as ignored local operational state. It is not canonical
+  repository evidence and does not feed documentation automatically; durable
+  evidence is written explicitly to a reviewed, committed repository log.
 
 ## Closed on 2026-08-27
 
@@ -20,3 +20,5 @@ release execution remain canonical in [`docs/TODO.md`](../docs/TODO.md).
   tests, and production build.
 - [x] Repair the v1.1.0 release-note link that failed the broken-link build gate.
 - [x] Link the existing engineering test ledger from the documentation index.
+- [x] Declare `.dory/` local-only and keep durable documentation evidence
+  explicit and reviewable.

@@ -512,27 +512,27 @@ These variables configure the [Langfuse integration for observability](/docs/tut
 
 ## gosling Server
 
-These variables configure the `goslingd` server process. They are most often used when [running `goslingd` on a remote machine](/docs/guides/remote-gosling-server) and connecting gosling Desktop to it, but they apply to any `goslingd` invocation.
+These variables configure the local `goslingd` server process. They are most often used when [running `goslingd` as a separate local process](/docs/guides/remote-gosling-server) and connecting gosling Desktop to it.
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOSLING_HOST` | Interface the server binds to. Use `0.0.0.0` to accept connections from other machines; `localhost` or `127.0.0.1` restricts to the local machine. | Hostname or IP | `127.0.0.1` |
+| `GOSLING_HOST` | Numeric loopback interface. `127.0.0.1` and `::1` are supported; wildcard and non-loopback addresses are rejected. | Loopback IP | `127.0.0.1` |
 | `GOSLING_PORT` | TCP port the server listens on | Port number | `3000` |
-| `GOSLING_TLS` | Enable TLS with a self-signed certificate. Required when connecting gosling Desktop to a remote `goslingd`. | `true`, `false` | `true` |
+| `GOSLING_TLS` | Enable TLS with a self-signed certificate. | `true`, `false` | `true` |
 | `GOSLING_SERVER__SECRET_KEY` | Shared secret required in the `X-Secret-Key` header on all client requests. `goslingd` auto-generates one when unset; `gosling serve` requires this variable unless started with `--dangerously-unauthenticated`. | Secret string | Random for `goslingd`; required for `gosling serve` |
 
 **Examples**
 
 ```bash
-# Start a goslingd server reachable on the local network over TLS
-export GOSLING_HOST=0.0.0.0
+# Start a separately managed local goslingd server over TLS
+export GOSLING_HOST=127.0.0.1
 export GOSLING_PORT=3000
 export GOSLING_TLS=true
 export GOSLING_SERVER__SECRET_KEY='a-long-random-secret'
 goslingd agent
 ```
 
-When TLS is enabled, `goslingd` prints a `GOSLINGD_CERT_FINGERPRINT=...` line on startup. Clients (such as gosling Desktop) need this fingerprint to verify the self-signed certificate. See [Running a Remote gosling Server](/docs/guides/remote-gosling-server) for the full setup.
+When TLS is enabled, `goslingd` prints a `GOSLINGD_CERT_FINGERPRINT=...` line on startup. Desktop needs this fingerprint to verify the self-signed certificate. See [Running a Separate Local gosling Server](/docs/guides/remote-gosling-server) for the full setup.
 
 ## Development & Testing
 

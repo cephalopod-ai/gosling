@@ -92,6 +92,10 @@ impl SessionStorage {
         )
         .await?;
 
+        // Imported files are untrusted history, not an authority transfer.
+        // The caller chooses the working directory; provider/model, workspace,
+        // credential-profile, folder grants, and workflow ownership remain at
+        // their safe new-session defaults and must be selected locally.
         let mut builder = session_manager
             .update(&session.id)
             .extension_data(extension_data)

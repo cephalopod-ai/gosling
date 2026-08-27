@@ -7,7 +7,7 @@ import { PanelLeft } from 'lucide-react';
 
 # Building MCP Apps for gosling
 
-MCP Apps let MCP servers return interactive UIs that render directly inside the gosling chat interface, rather than responding with text alone. This allows users to express intent through interaction, which is useful for workflows that require input, iteration, or visual feedback.
+MCP Apps let MCP servers return interactive UIs that render directly inside the gosling chat interface, rather than responding with text alone. This allows users to express intent through interaction, which is useful for workflows that require input, iteration, or visual feedback. An app may propose a chat message, but gosling displays the exact text and requires explicit user confirmation before submitting it as user input.
 
 :::warning Experimental
 MCP Apps support in gosling is experimental and based on a draft specification. The implementation is minimal and may change, and does not yet support advanced capabilities or persistent app windows.
@@ -651,6 +651,5 @@ Even when an MCP App requests permissions, the browser will still prompt the use
 :::
 
 See the [MCP Apps Specification](https://github.com/modelcontextprotocol/ext-apps) for details on security and the full protocol.
-
 
 

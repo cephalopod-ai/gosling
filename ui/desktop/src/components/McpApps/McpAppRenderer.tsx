@@ -34,6 +34,7 @@ import type { CallToolResult, JSONRPCRequest, Tool } from '@modelcontextprotocol
 import { GripHorizontal, Maximize2, PictureInPicture2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { callMcpAppTool, readMcpAppResource } from '../../acp/mcp-apps';
+import { confirmMcpAppMessage } from './messageAuthority';
 import { getCachedTools } from './toolsCache';
 import { AppEvents } from '../../constants/events';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -813,11 +814,14 @@ export default function McpAppRenderer({
       if (!textContent || !textContent.text) {
         throw new Error('Invalid message format: content must contain a text block');
       }
+      if (!confirmMcpAppMessage(extensionName, textContent.text)) {
+        throw new Error('User declined the MCP App message');
+      }
       append(textContent.text);
       window.dispatchEvent(new CustomEvent(AppEvents.SCROLL_CHAT_TO_BOTTOM));
       return {};
     },
-    [append]
+    [append, extensionName]
   );
 
   const handleCallTool = useCallback(

@@ -23,6 +23,12 @@ MCP Apps bring interactive interfaces to gosling through the official [MCP Apps 
 
 Some MCP Apps render directly in your conversation when gosling calls a tool that returns UI. The interactive interface appears inline with the chat, letting you make selections, fill forms, or trigger actions without leaving the conversation flow.
 
+MCP Apps are untrusted interactive views rather than independent chat actors.
+When an app asks to send chat text, gosling shows the proposed text and submits
+it as your message only after you explicitly confirm it. App-initiated tool
+calls remain subject to the session's Gosling tool visibility and permission
+checks.
+
 If needed, you can just ask gosling whether the UI can be loaded in the chat window.
 
 <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto' }}>

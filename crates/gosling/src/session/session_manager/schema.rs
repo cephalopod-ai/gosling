@@ -164,6 +164,8 @@ impl SessionStorage {
 
         Self::create_session_library_schema(&mut tx).await?;
 
+        Self::create_session_turn_lease_schema(&mut tx).await?;
+
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS tagteam_run_bindings (
@@ -480,6 +482,26 @@ impl SessionStorage {
         .await?;
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_session_library_scope ON session_library_items(scope, scope_key, created_at DESC, id DESC)",
+        )
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    pub(super) async fn create_session_turn_lease_schema(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_turn_leases (
+                session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+                lease_id TEXT NOT NULL UNIQUE,
+                owner_id TEXT NOT NULL,
+                owner_pid INTEGER NOT NULL,
+                acquired_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            "#,
         )
         .execute(&mut **tx)
         .await?;

@@ -1,47 +1,34 @@
 ---
 sidebar_position: 90
-title: Running a Remote gosling Server
-sidebar_label: Remote Server
+title: Running a Separate Local gosling Server
+sidebar_label: Local External Server
 ---
 
-# Running a Remote gosling Server
+# Running a Separate Local gosling Server
 
-gosling Desktop normally runs its own `goslingd` server process in the background on the same machine. You can also run `goslingd` separately — for example, on a remote VM or a different machine on your network — and point gosling Desktop at it.
+gosling Desktop normally starts its own `goslingd` process. Advanced local setups may start that process separately and connect Desktop to it through a loopback address.
 
-This is useful when you want gosling to run somewhere with more compute, a stable IP, or shared access, while still driving it from a local Desktop UI.
-
-This guide covers:
-
-1. [Starting a `goslingd` server on a remote machine](#1-start-the-goslingd-server)
-2. [Verifying it is reachable](#2-verify-the-server-is-up)
-3. [Locating the certificate fingerprint](#3-find-the-certificate-fingerprint)
-4. [Configuring gosling Desktop to connect to it](#4-configure-gosling-desktop)
-5. [Running `goslingd` as a background service on macOS](#running-goslingd-as-a-background-service-macos)
-6. [Troubleshooting](#troubleshooting)
-
-:::warning TLS is required
-gosling Desktop will refuse to connect to a remote `goslingd` server over plain HTTP. TLS is enabled by default (`GOSLING_TLS=true`), so make sure you have not disabled it.
-:::
+`goslingd` is a single-operator local control plane. It does not support binding to a LAN, VPN, public, wildcard, or other non-loopback address. `GOSLING_HOST` must be a numeric loopback address such as `127.0.0.1` or `::1`. Use a separately designed multi-user service instead of exposing `goslingd` remotely.
 
 ## Initial Setup
 
 ### 1. Start the `goslingd` server
 
-On the remote machine, launch `goslingd` with the host, port, TLS, and a shared secret key:
+On the same machine as Desktop, launch `goslingd` with a loopback host, port, TLS, and a secret key:
 
 ```bash
-GOSLING_HOST=0.0.0.0 \
+GOSLING_HOST=127.0.0.1 \
 GOSLING_PORT=3000 \
 GOSLING_TLS=true \
 GOSLING_SERVER__SECRET_KEY='YOUR_SECRET' \
 /Applications/Gosling.app/Contents/Resources/bin/goslingd agent
 ```
 
-On Linux or Windows the path to the `goslingd` binary will differ — use the one bundled with your gosling installation, or a standalone `goslingd` build.
+On Linux or Windows the path to the binary differs. Use the binary bundled with your gosling installation or a standalone local build.
 
 | Variable | Purpose |
 |----------|---------|
-| `GOSLING_HOST` | Interface to bind to. Use `0.0.0.0` to accept connections from other machines. Binding to `localhost` or `127.0.0.1` will only accept local connections. |
+| `GOSLING_HOST` | Numeric loopback address. Use `127.0.0.1` or `::1`; non-loopback addresses are rejected. |
 | `GOSLING_PORT` | TCP port to listen on. |
 | `GOSLING_TLS` | Must be `true`. gosling Desktop will not connect to a plain HTTP server. |
 | `GOSLING_SERVER__SECRET_KEY` | Shared secret. The client must send this in the `X-Secret-Key` header. Treat it like a password. |
@@ -72,8 +59,6 @@ curl -i https://127.0.0.1:3000/config/read -k \
 ```
 
 A `200` response from the second call confirms that TLS is up, the secret key is being accepted, and the server is ready to receive client requests.
-
-If you intend to reach the server from another machine, also test from there using the server's hostname or VPN address — not `127.0.0.1`.
 
 ### 3. Find the certificate fingerprint
 
@@ -107,11 +92,11 @@ On the client machine, open gosling Desktop and navigate to **Settings → gosli
 | Setting | Value |
 |---------|-------|
 | **Use external server** | Enabled |
-| **URL** | `https://your-server-host:3000` (use the hostname or IP that the client can reach — for example a VPN/tailnet address) |
+| **URL** | `https://127.0.0.1:3000` |
 | **Secret Key** | The same value you used for `GOSLING_SERVER__SECRET_KEY` |
 | **Certificate Fingerprint** | The `GOSLINGD_CERT_FINGERPRINT` value from the server logs |
 
-After saving, gosling Desktop will route all backend requests to the remote `goslingd`. If the connection fails, see [Troubleshooting](#troubleshooting).
+After saving, gosling Desktop routes backend requests to the separately managed local `goslingd`.
 
 ## Running `goslingd` as a Background Service (macOS)
 
@@ -135,7 +120,7 @@ Create a LaunchAgent plist at `~/Library/LaunchAgents/com.gosling.goslingd.exter
 
     <key>EnvironmentVariables</key>
     <dict>
-      <key>GOSLING_HOST</key><string>0.0.0.0</string>
+      <key>GOSLING_HOST</key><string>127.0.0.1</string>
       <key>GOSLING_PORT</key><string>3000</string>
       <key>GOSLING_TLS</key><string>true</string>
       <key>GOSLING_SERVER__SECRET_KEY</key><string>YOUR_SECRET</string>
@@ -177,17 +162,15 @@ Because the secret key is stored in plain text in the plist, the file should be 
 
 ## Troubleshooting
 
-### Server only accepts local connections
+### Server rejects the configured host
 
-If `curl` works from the server but the client machine times out or gets "connection refused", check what interface `goslingd` is bound to. If `GOSLING_HOST` is `localhost` or `127.0.0.1`, only loopback connections are accepted.
-
-Set `GOSLING_HOST=0.0.0.0` to accept connections on all interfaces, then restart `goslingd`. You can verify with:
+`goslingd` intentionally rejects non-loopback and wildcard bind addresses. Set `GOSLING_HOST=127.0.0.1` or `GOSLING_HOST=::1`, then restart it. Verify the listener with:
 
 ```bash
 lsof -nP -iTCP:3000 -sTCP:LISTEN
 ```
 
-The output should show the address as `*:3000` or the specific external IP, not `127.0.0.1:3000`.
+The output should show a loopback listener, not `*:3000` or an external address.
 
 ### TLS is not enabled
 

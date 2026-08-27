@@ -10,6 +10,8 @@ pub enum ConfigError {
         #[source]
         source: std::net::AddrParseError,
     },
+    #[error("Invalid GOSLING_HOST '{host}': goslingd only supports loopback addresses")]
+    NonLoopbackHost { host: String },
     #[error("Configuration error: {0}")]
     Other(#[from] config::ConfigError),
 }

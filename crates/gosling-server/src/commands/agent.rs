@@ -181,13 +181,13 @@ pub async fn run() -> Result<()> {
             #[cfg(feature = "rustls-tls")]
             axum_server::bind_rustls(addr, tls_setup.config)
                 .handle(handle)
-                .serve(app.into_make_service())
+                .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
                 .await?;
 
             #[cfg(feature = "native-tls")]
             axum_server::bind_openssl(addr, tls_setup.config)
                 .handle(handle)
-                .serve(app.into_make_service())
+                .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
                 .await?;
         }
 
@@ -203,9 +203,12 @@ pub async fn run() -> Result<()> {
 
         info!("listening on http://{}", addr);
 
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_token.cancelled_owned())
-            .await?;
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_token.cancelled_owned())
+        .await?;
     }
 
     #[cfg(feature = "otel")]

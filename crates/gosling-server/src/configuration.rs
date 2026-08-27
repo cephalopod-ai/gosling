@@ -24,6 +24,11 @@ impl Settings {
                 host: self.host.clone(),
                 source,
             })?;
+        if !host.is_loopback() {
+            return Err(ConfigError::NonLoopbackHost {
+                host: self.host.clone(),
+            });
+        }
         Ok(SocketAddr::new(host, self.port))
     }
 
@@ -134,6 +139,22 @@ mod tests {
             let error = server_settings.socket_addr().unwrap_err();
             assert!(matches!(error, ConfigError::InvalidHost { .. }));
             assert!(error.to_string().contains("GOSLING_HOST"));
+        }
+    }
+
+    #[test]
+    fn test_non_loopback_bind_addresses_are_rejected() {
+        for host in ["0.0.0.0", "::", "192.0.2.10", "2001:db8::10"] {
+            let server_settings = Settings {
+                host: host.to_string(),
+                port: 3000,
+                tls: true,
+                tls_cert_path: None,
+                tls_key_path: None,
+            };
+            let error = server_settings.socket_addr().unwrap_err();
+            assert!(matches!(error, ConfigError::NonLoopbackHost { .. }));
+            assert!(error.to_string().contains("only supports loopback"));
         }
     }
 }

@@ -6,6 +6,7 @@ mod migrations;
 mod pool_lifecycle;
 mod schema;
 mod session_crud;
+mod session_leases;
 mod session_listing;
 mod session_transfer;
 mod summary_storage;
@@ -50,7 +51,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 28;
+pub const CURRENT_SCHEMA_VERSION: i32 = 29;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -615,6 +616,16 @@ impl SessionManager {
         let pool = self.storage.pool().await?;
         sqlx::query("SELECT 1").fetch_one(pool).await?;
         Ok(())
+    }
+
+    pub(crate) async fn acquire_session_turn_lease(
+        &self,
+        session_id: &str,
+    ) -> Result<session_leases::SessionTurnLease> {
+        self.storage
+            .clone()
+            .acquire_session_turn_lease(session_id)
+            .await
     }
 
     pub async fn create_session(
@@ -3384,6 +3395,23 @@ mod tests {
             .accumulated_usage(accumulated_usage)
             .restrict_tools_to_working_dirs(true)
             .extension_data(extension_data)
+            .provider_name("untrusted-provider")
+            .model_config(ModelConfig::new("untrusted-model"))
+            .workspace_snapshot(
+                "untrusted-workspace".into(),
+                "Untrusted workspace".into(),
+                Some("untrusted-profile".into()),
+                Some("Untrusted profile".into()),
+                Some("untrusted-binding".into()),
+                WorkspaceSessionContext {
+                    workspace_id: "untrusted-workspace".into(),
+                    workspace_name: "Untrusted workspace".into(),
+                    primary_working_folder: "/tmp/test".into(),
+                    folders: Vec::new(),
+                    product_output_folders: Vec::new(),
+                    folder_policy: Default::default(),
+                },
+            )
             .workflow_kind(SessionWorkflow::Tagteam)
             .apply()
             .await
@@ -3435,6 +3463,12 @@ mod tests {
         assert_eq!(imported.usage, usage);
         assert_eq!(imported.accumulated_usage, accumulated_usage);
         assert_eq!(imported.workflow_kind, SessionWorkflow::Standard);
+        assert!(imported.provider_name.is_none());
+        assert!(imported.model_config.is_none());
+        assert!(imported.workspace_id.is_none());
+        assert!(imported.workspace_context.is_none());
+        assert!(imported.credential_profile_id.is_none());
+        assert!(imported.credential_binding_id.is_none());
         assert!(imported.restrict_tools_to_working_dirs);
         assert!(imported.additional_working_dirs.is_empty());
         assert_eq!(imported.gosling_mode, GoslingMode::Approve);
@@ -5225,5 +5259,74 @@ mod tests {
                 .unwrap(),
             vec![shared]
         );
+    }
+
+    #[tokio::test]
+    async fn session_turn_lease_excludes_other_managers_until_release() {
+        let temp_dir = TempDir::new().unwrap();
+        let first_manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = first_manager
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Leased session".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let second_manager = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let first_lease = first_manager
+            .acquire_session_turn_lease(&session.id)
+            .await
+            .unwrap();
+        let error = second_manager
+            .acquire_session_turn_lease(&session.id)
+            .await
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("already has an active turn"));
+
+        first_lease.release().await.unwrap();
+        second_manager
+            .acquire_session_turn_lease(&session.id)
+            .await
+            .unwrap()
+            .release()
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn session_turn_lease_recovers_stale_owner() {
+        let temp_dir = TempDir::new().unwrap();
+        let first_manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = first_manager
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Stale lease session".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        first_manager
+            .acquire_session_turn_lease(&session.id)
+            .await
+            .unwrap()
+            .abandon();
+        sqlx::query("UPDATE session_turn_leases SET updated_at = 0 WHERE session_id = ?")
+            .bind(&session.id)
+            .execute(first_manager.storage().pool().await.unwrap())
+            .await
+            .unwrap();
+
+        SessionManager::new(temp_dir.path().to_path_buf())
+            .acquire_session_turn_lease(&session.id)
+            .await
+            .unwrap()
+            .release()
+            .await
+            .unwrap();
     }
 }

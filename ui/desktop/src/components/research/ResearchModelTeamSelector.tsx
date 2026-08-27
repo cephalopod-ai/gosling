@@ -9,7 +9,7 @@ import { researchTeamSize } from '../../types/sessionExperience';
 
 interface ResearchModelOption extends ResearchModelSelection {
   providerLabel: string;
-  leadEligible: boolean;
+  multiModelEligible: boolean;
 }
 
 interface ResearchModelTeamSelectorProps {
@@ -72,7 +72,9 @@ export function fillResearchModelSeats(
   preferred?: ResearchModelSelection
 ): ResearchModelSelection[] {
   const size = researchTeamSize(mode);
-  const available = new Map(options.map((option) => [modelKey(option), option]));
+  const eligibleOptions =
+    mode === 'solo' ? options : options.filter((option) => option.multiModelEligible);
+  const available = new Map(eligibleOptions.map((option) => [modelKey(option), option]));
   const selectedAvailable = selected.filter(
     (candidate, index) =>
       available.has(modelKey(candidate)) &&
@@ -91,7 +93,7 @@ export function fillResearchModelSeats(
     return first ? [{ provider: first.provider, model: first.model }] : [];
   }
 
-  const lead = candidates.find((candidate) => available.get(modelKey(candidate))?.leadEligible);
+  const lead = candidates.find((candidate) => available.has(modelKey(candidate)));
   if (!lead) return [];
 
   const filled: ResearchModelSelection[] = [{ provider: lead.provider, model: lead.model }];
@@ -135,7 +137,7 @@ export function ResearchModelTeamSelector({
       {
         ...preferred,
         providerLabel: preferred.provider,
-        leadEligible: !managedContextProviders.has(preferred.provider),
+        multiModelEligible: !managedContextProviders.has(preferred.provider),
       },
     ].sort((left, right) =>
       `${left.providerLabel}/${left.model}`.localeCompare(`${right.providerLabel}/${right.model}`)
@@ -177,7 +179,7 @@ export function ResearchModelTeamSelector({
               provider: result.value.provider.name,
               providerLabel: result.value.provider.metadata.display_name,
               model: model.id,
-              leadEligible: !result.value.provider.manages_own_context,
+              multiModelEligible: !result.value.provider.manages_own_context,
             });
           }
         }
@@ -224,20 +226,21 @@ export function ResearchModelTeamSelector({
     value.mode === 'solo' ||
     (value.models.length === requiredSeats &&
       new Set(value.models.map(modelKey)).size === requiredSeats);
-  const selectedLeadOption = value.models[0]
-    ? selectableOptions.find((option) => modelKey(option) === modelKey(value.models[0]))
-    : undefined;
-  const leadIsEligible = value.mode === 'solo' || selectedLeadOption?.leadEligible === true;
+  const selectedModelsAreEligible =
+    value.mode === 'solo' ||
+    value.models.every((model) =>
+      selectableOptions.some(
+        (option) => modelKey(option) === modelKey(model) && option.multiModelEligible
+      )
+    );
 
   useEffect(() => {
-    if (selectionIsComplete && leadIsEligible) {
+    if (selectionIsComplete && selectedModelsAreEligible) {
       onValidationChange(null);
       return;
     }
-    if (selectionIsComplete && !leadIsEligible) {
-      onValidationChange(
-        'Choose a Lead model that supports Gosling-hosted tools. This model can still be a researcher.'
-      );
+    if (selectionIsComplete && !selectedModelsAreEligible) {
+      onValidationChange('Every multi-model research seat must support Gosling-hosted tools.');
       return;
     }
     onValidationChange(
@@ -245,7 +248,14 @@ export function ResearchModelTeamSelector({
         ? 'Research models are still loading.'
         : `Choose ${requiredSeats} distinct models for ${value.mode} research.`
     );
-  }, [leadIsEligible, loading, onValidationChange, requiredSeats, selectionIsComplete, value.mode]);
+  }, [
+    loading,
+    onValidationChange,
+    requiredSeats,
+    selectedModelsAreEligible,
+    selectionIsComplete,
+    value.mode,
+  ]);
 
   const changeMode = (mode: ResearchTeamMode) => {
     onChange({
@@ -307,8 +317,8 @@ export function ResearchModelTeamSelector({
             const selected = value.mode === mode;
             const unavailable =
               mode !== 'solo' &&
-              (selectableOptions.length < researchTeamSize(mode) ||
-                !selectableOptions.some((option) => option.leadEligible));
+              selectableOptions.filter((option) => option.multiModelEligible).length <
+                researchTeamSize(mode);
             return (
               <label
                 key={mode}
@@ -382,16 +392,16 @@ export function ResearchModelTeamSelector({
                   </option>
                   {selectableOptions.map((option) => {
                     const key = modelKey(option);
-                    const leadIneligible =
-                      seat === 0 && value.mode !== 'solo' && !option.leadEligible;
+                    const multiModelIneligible =
+                      value.mode !== 'solo' && !option.multiModelEligible;
                     return (
                       <option
                         key={key}
                         value={key}
-                        disabled={selectedElsewhere.has(key) || leadIneligible}
+                        disabled={selectedElsewhere.has(key) || multiModelIneligible}
                       >
                         {option.providerLabel} — {option.model}
-                        {leadIneligible ? ' (researcher only)' : ''}
+                        {multiModelIneligible ? ' (Solo only)' : ''}
                       </option>
                     );
                   })}
@@ -402,8 +412,8 @@ export function ResearchModelTeamSelector({
         </div>
         {value.mode !== 'solo' && (
           <p className="mt-2 text-xs text-text-secondary">
-            The Lead must support Gosling-hosted tools; managed-context models remain available as
-            researchers.
+            Every seat must support Gosling-hosted tools. Managed-context models remain available in
+            Solo mode.
           </p>
         )}
       </div>
