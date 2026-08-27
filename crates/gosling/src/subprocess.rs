@@ -79,9 +79,30 @@ pub fn configure_shell_owned_subprocess(command: &mut Command) {
 
 #[cfg(unix)]
 pub async fn process_is_alive(pid: u32) -> bool {
+    process_is_running(pid)
+}
+
+#[cfg(unix)]
+pub(crate) fn process_is_running(pid: u32) -> bool {
     // SAFETY: kill(pid, 0) only probes for the process's existence; it sends no signal.
     let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
-    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    let exists = result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+    if !exists {
+        return false;
+    }
+
+    #[cfg(target_os = "linux")]
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        if stat
+            .rsplit_once(") ")
+            .and_then(|(_, fields)| fields.chars().next())
+            == Some('Z')
+        {
+            return false;
+        }
+    }
+
+    true
 }
 
 #[cfg(windows)]

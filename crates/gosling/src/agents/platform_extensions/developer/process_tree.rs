@@ -56,7 +56,9 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn process_exists(pid: i32) -> bool {
-        unsafe { libc::kill(pid, 0) == 0 }
+        u32::try_from(pid)
+            .ok()
+            .is_some_and(crate::subprocess::process_is_running)
     }
 
     #[tokio::test]

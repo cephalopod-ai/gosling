@@ -183,7 +183,7 @@ impl SessionStorage {
             8 => {
                 sqlx::query(
                     r#"
-                    ALTER TABLE sessions ADD COLUMN gosling_mode TEXT NOT NULL DEFAULT 'auto'
+                    ALTER TABLE sessions ADD COLUMN gosling_mode TEXT NOT NULL DEFAULT 'smart_approve'
                 "#,
                 )
                 .execute(&mut **tx)

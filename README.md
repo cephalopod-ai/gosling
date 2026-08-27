@@ -53,7 +53,7 @@ claim of exact behavioral parity. See the [detailed compatibility guide](documen
 | **Cloud Providers** | 15+ | 15+ | Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Azure, Bedrock, etc. |
 | **Local Inference/Models** | **Yes** | **No** | Goose bundles candle, MLX, llama.cpp, and Hugging Face loaders. Gosling does not include these loaders. |
 | **CLI Command Suite** | `goose`, `goose serve`, `recipe`, `schedule`, `gateway`, `local-models` | `gosling`, `gosling serve` | Gosling drops `recipe`, `schedule`, `gateway`, and `local-models` subcommands. |
-| **Coexistence** | No | **Yes** | Gosling is fully deconflicted and runs cleanly side-by-side with Goose (isolated configs, databases, keyring, and deep links). |
+| **Coexistence** | No | **Yes** | Gosling runs side-by-side with Goose using isolated configs, databases, keyring, and deep links. Shared AAIF paths such as `~/.agents` remain intentionally interoperable. |
 | **Context Manager MVP** | No | **Yes** | Gosling features an MVP context manager with localized LLM summarization and a `FileMemorySource` backend for retrieved memory. |
 | **Fail-Closed Tool Inspection** | No | **Yes** | Gosling escalates safety/security inspector failures to RequireApproval. Goose fails open. |
 | **Path Sandbox Enforcement** | Weak | **Yes** | Gosling restricts directory traversals (`../`) in cache extension paths. |
@@ -75,7 +75,7 @@ claim of exact behavioral parity. See the [detailed compatibility guide](documen
 ## What's new since the fork
 
 - **New name, new mark** — the goose branding has been replaced by gosling: a fresh flying-gosling logo across the desktop app, tray, docs, and installers.
-- **Runs side by side with goose** — gosling is fully deconflicted from an existing goose install:
+- **Runs side by side with goose** — gosling isolates its product-owned state from an existing goose install while intentionally sharing AAIF interoperability paths such as `~/.agents`:
   - separate config/data/state directories (`~/.config/goose` vs `~/.config/gosling`, etc.)
   - separate OS keyring service (`gosling`) for provider credentials
   - its own `gosling://` deep-link scheme (goose keeps `goose://`)

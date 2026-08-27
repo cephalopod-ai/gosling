@@ -360,14 +360,38 @@ re-assessment and a new finding are in
 ### Lower priority, mechanical but needs a judgement call
 
 ARCN-GSL-002 (49 scattered `process.env` reads), ARC-GSL-005 (duplicated
-`GOOSE_EXCLUDED_SKILL_IDS` across a TS/JS boundary), INV-GSL-003 (slash
-`COMMANDS` vs dispatch `match` exhaustiveness), MEM-GSL-004 (TUI `turns` grows
-unbounded; capping changes reachable scrollback), PERF-GSL-002 (Desktop
-`performance.spec.ts` is a single-run smoke script presented as a benchmark),
-SIG-GSL-005 (ML-classifier init failure is log-only), DAT-GSL-006 (session
-create + extension apply are two commits), NEG-GSL-003 (`GOSLING_SHELL` flavor
-is unmodeled scanner input), ARC-GSL-001 (three files over 4000 lines, routed to
-a dedicated modularization pass rather than split mid-repair).
+`GOOSE_EXCLUDED_SKILL_IDS` across a TS/JS boundary), MEM-GSL-004 (TUI `turns` grows
+unbounded; capping changes reachable scrollback), DAT-GSL-006 (session create +
+extension apply are two commits), NEG-GSL-003 (`GOSLING_SHELL` flavor is
+unmodeled scanner input), ARC-GSL-001 (three files over 4000 lines, routed to a
+dedicated modularization pass rather than split mid-repair).
+
+### Low-severity mechanical completion — 2026-08-27
+
+- [x] **BUILD-GSL-001** — Deep Research session validation compared a `String`
+      workspace root using the nonexistent `String::as_path`, breaking the
+      `gosling` test build. It now performs the intended `Path` comparison.
+- [x] **PROC-GSL-001** — Linux zombie processes were treated as live by process
+      ownership/recovery probes and orphan-cleanup regressions. Liveness now
+      distinguishes `/proc` zombie state from a running process.
+- [x] **TEST-GSL-001** — the permission persist-failure regression depended on
+      Unix mode bits, which root can bypass. It now creates a deterministic
+      non-directory parent failure and proves rollback under every user ID.
+- [x] **INV-GSL-002** — new databases, historical migrations, and foreign
+      transcript normalization now use the runtime `SmartApprove` default;
+      schema and import regressions pin the contract.
+- [x] **INV-GSL-003** — slash-command metadata now owns its typed builtin
+      handler, eliminating the independently maintained advertisement and
+      dispatch lists. A uniqueness regression prevents ambiguous names.
+- [x] **CMP-GSL-002** — coexistence copy now discloses that Gosling
+      intentionally shares AAIF interoperability paths such as `~/.agents`
+      while isolating product-owned state.
+- [x] **AID-GSL-002** — `CUSTOM_DISTROS.md` points to the existing TypeScript
+      SDK instead of the forbidden, absent Desktop OpenAPI client.
+- [x] **SIG-GSL-005** — reinspection found the scanner now returns an error if
+      enabled ML detection cannot initialize any classifier and reports partial
+      classifier initialization through warnings; the earlier log-only finding
+      is stale and no code change is needed.
 
 ### Known-failing test predating this work
 

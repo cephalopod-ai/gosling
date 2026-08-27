@@ -11,7 +11,7 @@ use agent_client_protocol::{Client, ConnectionTo};
 use gosling_providers::model::ModelConfig;
 use gosling_providers::thinking::ThinkingEffort;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::warn;
 
 struct InitialSessionConfig {
@@ -550,7 +550,7 @@ fn deep_research_state(
         .folder_policy
         .roots
         .iter()
-        .any(|root| root.path.as_path() == canonical);
+        .any(|root| Path::new(&root.path) == canonical);
     if !listed_as_additional_folder
         || !granted_by_workspace
         || canonical == workspace.working_folder

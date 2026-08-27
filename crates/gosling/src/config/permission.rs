@@ -335,22 +335,15 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_permission_that_cannot_be_saved_reports_the_failure() {
-        use std::os::unix::fs::PermissionsExt;
-
         let (manager, temp_dir) = create_test_permission_manager();
-        // Deny writes to the config directory *after* construction, so the
-        // read path stays valid and only the persist fails.
-        let mut deny = std::fs::metadata(temp_dir.path()).unwrap().permissions();
-        deny.set_mode(0o555);
-        std::fs::set_permissions(temp_dir.path(), deny).unwrap();
+        std::fs::remove_dir(temp_dir.path()).unwrap();
+        std::fs::write(temp_dir.path(), "not a directory").unwrap();
 
         let result =
             manager.update_user_permission("developer__shell", PermissionLevel::NeverAllow);
 
-        // Restore before asserting so TempDir can always clean up.
-        let mut restore = std::fs::metadata(temp_dir.path()).unwrap().permissions();
-        restore.set_mode(0o755);
-        std::fs::set_permissions(temp_dir.path(), restore).unwrap();
+        std::fs::remove_file(temp_dir.path()).unwrap();
+        std::fs::create_dir(temp_dir.path()).unwrap();
 
         assert!(
             result.is_err(),

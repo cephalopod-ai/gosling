@@ -98,7 +98,7 @@ impl SessionStorage {
                 user_recipe_values_json TEXT,
                 provider_name TEXT,
                 model_config_json TEXT,
-                gosling_mode TEXT NOT NULL DEFAULT 'auto',
+                gosling_mode TEXT NOT NULL DEFAULT 'smart_approve',
                 workflow_kind TEXT NOT NULL DEFAULT 'standard',
                 archived_at TIMESTAMP,
                 project_id TEXT

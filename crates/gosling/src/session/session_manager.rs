@@ -4652,7 +4652,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_gosling_mode_malformed_defaults_to_auto() {
+    async fn test_gosling_mode_malformed_uses_safe_default() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
 
@@ -4675,6 +4675,28 @@ mod tests {
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.gosling_mode, GoslingMode::default());
+    }
+
+    #[tokio::test]
+    async fn session_schema_default_matches_runtime_mode_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        sm.create_session(
+            temp_dir.path().to_path_buf(),
+            "test".into(),
+            SessionType::User,
+            GoslingMode::default(),
+        )
+        .await
+        .unwrap();
+        let row: (String,) = sqlx::query_as(
+            "SELECT dflt_value FROM pragma_table_info('sessions') WHERE name = 'gosling_mode'",
+        )
+        .fetch_one(&sm.storage().pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.0.trim_matches('\''), GoslingMode::default().to_string());
     }
 
     #[tokio::test]
