@@ -412,8 +412,9 @@ impl Provider for TagteamProvider {
         model_config: &ModelConfig,
         system: &str,
         messages: &[Message],
-        _tools: &[Tool],
+        tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        super::cli_common::reject_hosted_tools("Tagteam", tools)?;
         if super::cli_common::is_session_description_request(system) {
             let (message, provider_usage) = super::cli_common::generate_simple_session_description(
                 &model_config.model_name,

@@ -48,6 +48,32 @@ const WRITE_TOOL_SUFFIXES: &[&str] = &[
     "__apply",
 ];
 
+const EGRESS_TOOL_NAMES: &[&str] = &[
+    "web_fetch",
+    "web_scrape",
+    "fetch",
+    "browser_navigate",
+    "http_request",
+];
+
+const EGRESS_TOOL_SUFFIXES: &[&str] = &[
+    "__web_fetch",
+    "__web_scrape",
+    "__fetch",
+    "__browser_navigate",
+    "__http_request",
+];
+
+const EXTENSION_MANAGEMENT_TOOL_NAMES: &[&str] =
+    &["manage_extensions", "extensionmanager__manage_extensions"];
+
+const MIXED_RISK_TOOL_NAMES: &[&str] = &[
+    "computercontroller__cache",
+    "computercontroller__xlsx_tool",
+    "computercontroller__docx_tool",
+    "computercontroller__pdf_tool",
+];
+
 fn matches_name_or_suffix(name: &str, names: &[&str], suffixes: &[&str]) -> bool {
     names.contains(&name) || suffixes.iter().any(|suffix| name.ends_with(suffix))
 }
@@ -67,12 +93,20 @@ pub fn is_write_tool(name: &str) -> bool {
     matches_name_or_suffix(name, WRITE_TOOL_NAMES, WRITE_TOOL_SUFFIXES)
 }
 
+pub fn is_egress_tool(name: &str) -> bool {
+    matches_name_or_suffix(name, EGRESS_TOOL_NAMES, EGRESS_TOOL_SUFFIXES)
+}
+
 /// Tools that carry enough authority that an autonomous agent must not run
 /// them on an implicit grant. `Auto` has no operator attached, so these
 /// require an explicit user permission rather than the blanket approval Auto
 /// previously handed out (SEC-GOS-003).
 pub fn requires_explicit_grant_in_auto(name: &str) -> bool {
-    is_code_execution_tool(name) || is_write_tool(name)
+    is_code_execution_tool(name)
+        || is_write_tool(name)
+        || is_egress_tool(name)
+        || EXTENSION_MANAGEMENT_TOOL_NAMES.contains(&name)
+        || MIXED_RISK_TOOL_NAMES.contains(&name)
 }
 
 #[cfg(test)]
@@ -117,7 +151,21 @@ mod tests {
         assert!(requires_explicit_grant_in_auto(
             "computercontroller__automation_script"
         ));
+        assert!(requires_explicit_grant_in_auto("web_fetch"));
+        assert!(requires_explicit_grant_in_auto("network__http_request"));
+        assert!(requires_explicit_grant_in_auto(
+            "extensionmanager__manage_extensions"
+        ));
+        assert!(requires_explicit_grant_in_auto("computercontroller__cache"));
         assert!(!requires_explicit_grant_in_auto("read"));
         assert!(!requires_explicit_grant_in_auto("developer__read"));
+    }
+
+    #[test]
+    fn egress_tools_are_recognized_bare_and_namespaced() {
+        assert!(is_egress_tool("web_fetch"));
+        assert!(is_egress_tool("computercontroller__web_scrape"));
+        assert!(is_egress_tool("network__http_request"));
+        assert!(!is_egress_tool("read_http_cache"));
     }
 }

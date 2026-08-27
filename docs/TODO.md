@@ -3,29 +3,37 @@
 ## Open items from the 2026-08-26 clean independent audit
 
 Source: [`docs/cloud/2026-08-26-clean-independent-audit.md`](cloud/2026-08-26-clean-independent-audit.md).
-This pass did **not** reuse 2026-08-15 evidence. Required SEC and REL/FSR
-clusters did not finish; do not treat that report as a security/reliability
-clearance.
+This pass did **not** reuse 2026-08-15 evidence. Playtest was excluded.
 
 ### Patch now (High, source-confirmed)
 
-- [ ] **WFG-GSL-002** — ACP `tools/permissions/set` must not return success when
+- [x] **SEC-GSL-001** — Artifact routing IPC must not grant arbitrary dirs/files
+      (`assertArtifactOutputRootAccess` catch-all + `artifactFiles` with no
+      grant check).
+- [x] **SEC-GSL-002** — Enforce `GOSLING_ALLOWLIST` in Rust on ACP/HTTP/CLI
+      add-extension; stop prefix-matching in the deep-link modal.
+- [x] **SECN-GSL-001** — Shell `openExternal` must use the same protocol
+      allowlist as desktop `openExternalIfSafe`.
+- [x] **WFG-GSL-002** — ACP `tools/permissions/set` must not return success when
       `permission.yaml` persist fails (`crates/gosling/src/acp/server/tools.rs`).
-- [ ] **WFG-GSL-001** — Desktop “Always Allow all extension tools” must persist
+- [x] **WFG-GSL-001** — Desktop “Always Allow all extension tools” must persist
       the bulk grant before resolving the live approval
       (`ui/desktop/src/components/ToolApprovalButtons.tsx`).
-- [ ] **LLM-GSL-004** — Auto/subagent must not Allow `manage_extensions`
+- [x] **LLM-GSL-004** — Auto/subagent must not Allow `manage_extensions`
       (`permission_inspector.rs` Auto branch before the RequireApproval arm).
-- [ ] **WFG-GSL-004** — CLI non-interactive Auto must Deny/abort confirmations,
+- [x] **WFG-GSL-004** — CLI non-interactive Auto must Deny/abort confirmations,
       including inspector-failure RequireApproval (`gosling-cli` session loop).
-- [ ] **IOP-GSL-001** — Assistant-mentioned absolute document paths must not
+- [x] **IOP-GSL-001** — Assistant-mentioned absolute document paths must not
       become Desktop preview grants (`artifacts.rs` + `artifactFileAccess.ts`).
-- [ ] **DAT-GSL-001** — Same-schema `workspaces.json` validation failure must
+- [x] **DAT-GSL-001** — Same-schema `workspaces.json` validation failure must
       fail-closed, not wipe to Default (`workspace/store.rs`).
-- [ ] **AOC-GSL-001 / ARC-GSL-002** — Auto must not auto-ack vendor-CLI tool
+- [x] **AOC-GSL-001 / ARC-GSL-002** — Auto must not auto-ack vendor-CLI tool
       confirmations; CLI providers must not silently discard `stream()` tools.
-- [ ] **LLM-GSL-001 / LLM-GSL-003** — Expand Auto explicit-grant beyond
+- [x] **LLM-GSL-001 / LLM-GSL-003** — Expand Auto explicit-grant beyond
       write/exec (HTTP tools, mixed-risk MCP).
+
+Closed on 2026-08-26 with focused regression and compile evidence recorded in
+[`docs/logs/session/2026-08-26-high-severity-audit-repairs.md`](logs/session/2026-08-26-high-severity-audit-repairs.md).
 
 ### Next (Medium, confirmed)
 
@@ -46,12 +54,11 @@ clearance.
 - [ ] **PATH-GSL-001** — `~/.agents` is shared with Goose; isolate or document.
 - [ ] **CON-GSL-001** — Cross-process session lease vs “resume opens a new serve.”
 
-### Follow-up audit (incomplete this pass)
+### Follow-up (from late SEC/REL fold-in)
 
-- [ ] Finish `audit-security` + OWASP/Node/repo-triage/posture (cluster did not
-      complete before this report was closed).
-- [ ] **REL-GSL-001** — pin ACP in-flight turns in AgentManager LRU (folded in
-      from the late reliability cluster).
+- [ ] **SEC-GSL-003** — goslingd unauth MCP proxy/guest need loopback peer checks.
+- [ ] **SECN-GSL-002** — main BrowserWindow needs `will-navigate` like the shell.
+- [ ] **REL-GSL-001** — pin ACP in-flight turns in AgentManager LRU.
 - [ ] **FSR-GSL-002** — do not persist-drop a failed MCP from the enabled set.
 - [ ] **REL-GSL-002 / RES-GSL-001** — host default timeouts for shell and
       computercontroller.

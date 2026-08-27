@@ -160,6 +160,19 @@ fn take_tool_confirmation_requests(message: &mut Message) -> Vec<String> {
     request_ids
 }
 
+fn ensure_provider_can_run_in_mode(
+    gosling_mode: GoslingMode,
+    provider_name: &str,
+    executes_tools_outside_gosling: bool,
+) -> Result<()> {
+    if gosling_mode == GoslingMode::Auto && executes_tools_outside_gosling {
+        anyhow::bail!(
+            "Provider '{provider_name}' executes tools outside Gosling's inspection pipeline and cannot run in Auto mode. Use an approval-capable mode or a provider whose tools are hosted by Gosling."
+        );
+    }
+    Ok(())
+}
+
 fn extract_string_arg(input: &Value, keys: &[&str]) -> Option<String> {
     let obj = input.as_object()?;
     for k in keys {
@@ -2221,6 +2234,11 @@ impl Agent {
         }
 
         let provider = self.provider().await?;
+        ensure_provider_can_run_in_mode(
+            gosling_mode,
+            provider.get_name(),
+            provider.executes_tools_outside_gosling(),
+        )?;
         let provider_name = provider.get_name().to_string();
         let requested_model = model_config.model_name.clone();
         let inference = provider
@@ -2514,7 +2532,7 @@ impl Agent {
                                             request_id,
                                             PermissionConfirmation {
                                                 principal_type: PrincipalType::Tool,
-                                                permission: Permission::AllowOnce,
+                                                permission: Permission::DenyOnce,
                                             },
                                         )
                                         .await;
@@ -5365,5 +5383,12 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .content
             .iter()
             .all(|content| !matches!(content, MessageContent::ActionRequired(_))));
+    }
+
+    #[test]
+    fn auto_rejects_providers_that_execute_tools_outside_gosling() {
+        assert!(ensure_provider_can_run_in_mode(GoslingMode::Auto, "vendor-cli", true).is_err());
+        assert!(ensure_provider_can_run_in_mode(GoslingMode::Approve, "vendor-cli", true).is_ok());
+        assert!(ensure_provider_can_run_in_mode(GoslingMode::Auto, "hosted-tools", false).is_ok());
     }
 }

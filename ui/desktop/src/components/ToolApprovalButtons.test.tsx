@@ -1,12 +1,16 @@
 import { render, type RenderOptions, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveAcpPermissionRequest } from '../acp/permissionRequests';
+import {
+  isAcpPermissionRequestPending,
+  resolveAcpPermissionRequest,
+} from '../acp/permissionRequests';
 import { listTools, setToolPermissions } from '../acp/permissions';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import ToolApprovalButtons from './ToolApprovalButtons';
 
 vi.mock('../acp/permissionRequests', () => ({
+  isAcpPermissionRequestPending: vi.fn(),
   resolveAcpPermissionRequest: vi.fn(),
 }));
 
@@ -19,12 +23,14 @@ const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
   render(ui, { wrapper: IntlTestWrapper, ...options });
 
 const resolveAcpPermissionRequestMock = vi.mocked(resolveAcpPermissionRequest);
+const isAcpPermissionRequestPendingMock = vi.mocked(isAcpPermissionRequestPending);
 const listToolsMock = vi.mocked(listTools);
 const setToolPermissionsMock = vi.mocked(setToolPermissions);
 
 describe('ToolApprovalButtons', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isAcpPermissionRequestPendingMock.mockReturnValue(true);
   });
 
   it('marks the approval accepted when the ACP request resolves', async () => {
@@ -75,7 +81,7 @@ describe('ToolApprovalButtons', () => {
   });
 
   it('does not mutate extension permissions when the approval request is stale', async () => {
-    resolveAcpPermissionRequestMock.mockReturnValueOnce(false);
+    isAcpPermissionRequestPendingMock.mockReturnValueOnce(false);
 
     renderWithIntl(
       <ToolApprovalButtons
@@ -89,11 +95,7 @@ describe('ToolApprovalButtons', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Always Allow all developer tools' }));
 
-    expect(resolveAcpPermissionRequestMock).toHaveBeenCalledWith(
-      'session-1',
-      'tool-call-stale',
-      'always_allow'
-    );
+    expect(resolveAcpPermissionRequestMock).not.toHaveBeenCalled();
     expect(listToolsMock).not.toHaveBeenCalled();
     expect(setToolPermissionsMock).not.toHaveBeenCalled();
     expect(screen.getByText('This approval request is no longer active.')).toBeInTheDocument();
@@ -104,6 +106,10 @@ describe('ToolApprovalButtons', () => {
 
   it('validates the approval request before mutating extension permissions', async () => {
     const callOrder: string[] = [];
+    isAcpPermissionRequestPendingMock.mockImplementation(() => {
+      callOrder.push('pending');
+      return true;
+    });
     resolveAcpPermissionRequestMock.mockImplementationOnce(() => {
       callOrder.push('resolve');
       return true;
@@ -128,7 +134,13 @@ describe('ToolApprovalButtons', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Always Allow all developer tools' }));
 
-    expect(callOrder).toEqual(['resolve', 'listTools', 'setToolPermissions']);
+    expect(callOrder).toEqual([
+      'pending',
+      'listTools',
+      'pending',
+      'setToolPermissions',
+      'resolve',
+    ]);
     expect(resolveAcpPermissionRequestMock).toHaveBeenCalledWith(
       'session-1',
       'tool-call-live',
@@ -140,6 +152,27 @@ describe('ToolApprovalButtons', () => {
     expect(
       screen.getByText('developer__shell - Always allowed (developer tools)')
     ).toBeInTheDocument();
+  });
+
+  it('leaves the live approval pending when bulk persistence fails', async () => {
+    listToolsMock.mockResolvedValueOnce([]);
+    setToolPermissionsMock.mockRejectedValueOnce(new Error('permission.yaml is read-only'));
+
+    renderWithIntl(
+      <ToolApprovalButtons
+        data={{
+          id: 'tool-call-persist-failure',
+          toolName: 'developer__shell',
+          sessionId: 'session-1',
+        }}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Always Allow all developer tools' }));
+
+    expect(setToolPermissionsMock).toHaveBeenCalled();
+    expect(resolveAcpPermissionRequestMock).not.toHaveBeenCalled();
+    expect(screen.getByText('Failed to update permissions for this extension')).toBeInTheDocument();
   });
 
   it('offers a domain-scoped always-allow button only for a security prompt with a flagged domain', () => {

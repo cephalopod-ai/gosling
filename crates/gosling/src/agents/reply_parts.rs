@@ -290,7 +290,11 @@ impl Agent {
 
         // Clone owned data to move into the async stream
         let system_prompt = system_prompt.to_owned();
-        let tools = tools.to_owned();
+        let tools = if provider.executes_tools_outside_gosling() {
+            Vec::new()
+        } else {
+            tools.to_owned()
+        };
         let toolshim_tools = toolshim_tools.to_owned();
         let provider = provider.clone();
 

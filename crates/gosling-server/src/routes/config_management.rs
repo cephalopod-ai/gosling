@@ -356,6 +356,10 @@ pub async fn add_extension(
 
     let is_update = extensions.iter().any(|e| e.config.key() == key);
 
+    gosling::config::extension_allowlist::enforce_extension(&extension_query.config)
+        .await
+        .map_err(|error| ErrorResponse::bad_request(error.to_string()))?;
+
     gosling::config::set_extension(ExtensionEntry {
         enabled: extension_query.enabled,
         activation_paths: None,

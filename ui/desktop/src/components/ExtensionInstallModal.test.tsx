@@ -89,6 +89,22 @@ describe('ExtensionInstallModal', () => {
       expect(screen.getAllByRole('button')).toHaveLength(3);
     });
 
+    it('does not trust a command that only prefixes an allowlist entry', async () => {
+      mockElectron.getAllowedExtensions.mockResolvedValue(['npx test-extension']);
+
+      renderWithIntl(<ExtensionInstallModal addExtension={mockAddExtension} setView={mockSetView} />);
+
+      const eventHandler = getAddExtensionEventHandler();
+      await act(async () => {
+        await eventHandler(
+          {},
+          'gosling://extension?cmd=npx&arg=test-extension&arg=--unsafe-extra&name=PrefixedExt'
+        );
+      });
+
+      expect(screen.getByText('Extension Installation Blocked')).toBeInTheDocument();
+    });
+
     it('should handle warning mode', async () => {
       mockElectron.getConfig.mockReturnValue({
         GOSLING_ALLOWLIST_WARNING: true,

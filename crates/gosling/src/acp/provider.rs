@@ -469,6 +469,10 @@ impl Provider for AcpProvider {
         true
     }
 
+    fn executes_tools_outside_gosling(&self) -> bool {
+        true
+    }
+
     async fn handle_permission_confirmation(
         &self,
         request_id: &str,
@@ -487,8 +491,10 @@ impl Provider for AcpProvider {
         model_config: &ModelConfig,
         _system: &str,
         messages: &[Message],
-        _tools: &[Tool],
+        tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        crate::providers::cli_common::reject_hosted_tools(&self.name, tools)?;
+
         let session_id = self.acp_session_id();
 
         self.apply_model_if_changed(&model_config.model_name)
@@ -1611,7 +1617,7 @@ fn resolve_mode(
 
 fn permission_decision_from_mode(gosling_mode: GoslingMode) -> Option<PermissionDecision> {
     match gosling_mode {
-        GoslingMode::Auto => Some(PermissionDecision::AllowOnce),
+        GoslingMode::Auto => Some(PermissionDecision::RejectOnce),
         GoslingMode::Chat => Some(PermissionDecision::RejectOnce),
         GoslingMode::Approve | GoslingMode::SmartApprove => None,
     }
@@ -1658,6 +1664,13 @@ mod tests {
             },
             ModelConfig::new("test-model"),
         )
+    }
+
+    #[test]
+    fn acp_provider_declares_external_tool_execution() {
+        let (provider, _) = test_provider();
+
+        assert!(provider.executes_tools_outside_gosling());
     }
 
     #[test]
@@ -1977,7 +1990,7 @@ mod tests {
         assert!(filtered.is_empty());
     }
 
-    #[test_case(GoslingMode::Auto => Some(PermissionDecision::AllowOnce) ; "auto allows")]
+    #[test_case(GoslingMode::Auto => Some(PermissionDecision::RejectOnce) ; "auto rejects")]
     #[test_case(GoslingMode::Chat => Some(PermissionDecision::RejectOnce) ; "chat rejects")]
     #[test_case(GoslingMode::Approve => None ; "approve defers")]
     #[test_case(GoslingMode::SmartApprove => None ; "smart_approve defers")]

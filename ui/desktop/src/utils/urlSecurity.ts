@@ -77,6 +77,15 @@ export const isProtocolSafe = (url: string): boolean => {
   }
 };
 
+export async function openExternalUrlIfSafe(
+  url: string,
+  openExternal: (url: string) => Promise<unknown>
+): Promise<boolean> {
+  if (!isProtocolSafe(url)) return false;
+  await openExternal(url);
+  return true;
+}
+
 export const normalizeWebUrl = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   try {

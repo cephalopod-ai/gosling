@@ -1,5 +1,3 @@
-IMPORTANT: currently GOSLING_ALLOWLIST is used in main.ts in ui/desktop, and not in gosling-server. The following is for reference when it is used on the server side for launch time enforcement.
-
 # gosling Extension Allowlist
 
 The allowlist feature provides a security mechanism for controlling which MCP commands can be used by gosling. 
@@ -26,12 +24,13 @@ If this environment variable is not set, no allowlist restrictions will be appli
 In certain development or testing scenarios, you may need to bypass the allowlist restrictions. You can do this by setting the `GOSLING_ALLOWLIST_BYPASS` environment variable to `true`:
 
 ```bash
-# For the GUI, you can have it show a warning instead of blocking (but it will always show a warning):
-export GOSLING_ALLOWLIST_WARNING=true
+export GOSLING_ALLOWLIST_BYPASS=true
 ```
 
 
-When this environment variable is set to `true` (case-insensitive), the allowlist check will be bypassed and all commands will be allowed, even if the `GOSLING_ALLOWLIST` environment variable is set.
+When this environment variable is set to `true` (case-insensitive), the Rust
+execution and configuration sinks bypass the allowlist. Use it only in an
+isolated development or test environment.
 
 ## Allowlist File Format
 
@@ -57,4 +56,6 @@ extensions:
     command: uvx mcp_jira
 ```
 
-Note that the command should be the full command to launch the MCP (environment variables are provided for context by gosling). Additional arguments will be rejected (to avoid injection attacks)
+The command must be the full command and argument vector used to launch the MCP
+(environment variables are not part of the comparison). Additional arguments
+are rejected.

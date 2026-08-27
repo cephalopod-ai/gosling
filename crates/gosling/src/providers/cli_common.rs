@@ -4,7 +4,19 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::utils::safe_truncate;
 use gosling_providers::conversation::token_usage::{ProviderUsage, Usage};
 use gosling_providers::errors::ProviderError;
-use rmcp::model::Role;
+use rmcp::model::{Role, Tool};
+
+pub(crate) fn reject_hosted_tools(
+    provider_name: &str,
+    tools: &[Tool],
+) -> Result<(), ProviderError> {
+    if tools.is_empty() {
+        return Ok(());
+    }
+    Err(ProviderError::ExecutionError(format!(
+        "{provider_name} executes tools outside Gosling and cannot accept Gosling-hosted tool definitions"
+    )))
+}
 
 pub(crate) fn extract_usage_tokens(usage_info: &Value) -> Usage {
     let get = |key: &str| {
@@ -102,4 +114,17 @@ pub(crate) fn generate_simple_session_description(
         message,
         ProviderUsage::new(model_name.to_string(), Usage::default()),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmcp::object;
+
+    #[test]
+    fn external_tool_providers_reject_hosted_tool_definitions() {
+        assert!(reject_hosted_tools("vendor", &[]).is_ok());
+        let tool = Tool::new("read".to_string(), "read".to_string(), object!({}));
+        assert!(reject_hosted_tools("vendor", &[tool]).is_err());
+    }
 }

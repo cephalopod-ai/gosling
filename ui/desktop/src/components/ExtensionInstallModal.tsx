@@ -189,8 +189,8 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
         return 'untrusted';
       }
 
-      const isCommandAllowed = allowedCommands.some((allowedCmd: string) =>
-        command.startsWith(allowedCmd)
+      const isCommandAllowed = allowedCommands.some(
+        (allowedCmd: string) => command === allowedCmd
       );
 
       return isCommandAllowed ? 'trusted' : 'blocked';

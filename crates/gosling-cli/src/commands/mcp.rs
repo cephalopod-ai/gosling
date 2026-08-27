@@ -21,7 +21,7 @@ pub struct InstallArgs {
     pub goose_config: Option<PathBuf>,
 }
 
-pub fn handle_install(args: InstallArgs) -> Result<()> {
+pub async fn handle_install(args: InstallArgs) -> Result<()> {
     let env_pairs = parse_key_values(&args.envs, "--env")?;
     let secret_pairs = parse_secret_values(&args.secrets)?;
 
@@ -68,6 +68,8 @@ pub fn handle_install(args: InstallArgs) -> Result<()> {
             );
         }
     }
+
+    gosling::config::extension_allowlist::enforce_extension(&entry.config).await?;
 
     let key = entry.config.key();
     let previous = get_all_extensions()

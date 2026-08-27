@@ -202,8 +202,11 @@ impl WorkspaceStore {
         let lock = self.open_lock()?;
         lock.lock_exclusive()?;
         let result = if self.path.exists() {
-            match self.read_document(&self.path) {
-                Ok(document) => Ok(document),
+            match self.deserialize_document(&self.path) {
+                Ok(document) => {
+                    document.validate()?;
+                    Ok(document)
+                }
                 Err(_error) if self.is_recoverable_malformed_store(&self.path)? => {
                     self.recover_malformed_store(working_folder)
                 }
@@ -260,11 +263,16 @@ impl WorkspaceStore {
     }
 
     fn read_document(&self, path: &Path) -> Result<WorkspaceStoreDocument> {
+        let document = self.deserialize_document(path)?;
+        document.validate()?;
+        Ok(document)
+    }
+
+    fn deserialize_document(&self, path: &Path) -> Result<WorkspaceStoreDocument> {
         let bytes = fs::read(path)
             .with_context(|| format!("could not read workspace store {}", path.display()))?;
         let document: WorkspaceStoreDocument = serde_json::from_slice(&bytes)
             .with_context(|| format!("workspace store {} is malformed", path.display()))?;
-        document.validate()?;
         Ok(document)
     }
 
@@ -527,19 +535,41 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_workspace_identity_is_quarantined_on_startup() {
+    fn duplicate_workspace_identity_fails_closed_without_reinitializing() {
         let temp = tempfile::tempdir().unwrap();
         let working = tempfile::tempdir().unwrap();
         let store = WorkspaceStore::new(temp.path());
         let initialized = store.load_or_initialize(working.path()).unwrap();
         let mut corrupted = initialized.clone();
         corrupted.workspaces.push(initialized.workspaces[0].clone());
-        fs::write(store.path(), serde_json::to_vec(&corrupted).unwrap()).unwrap();
+        let original = serde_json::to_vec(&corrupted).unwrap();
+        fs::write(store.path(), &original).unwrap();
 
-        let recovered = store.load_or_initialize(working.path()).unwrap();
+        let error = store.load_or_initialize(working.path()).unwrap_err();
 
-        assert_eq!(recovered.workspaces.len(), 1);
-        assert!(fs::read_dir(store.path().parent().unwrap())
+        assert!(error.to_string().contains("duplicate workspace IDs"));
+        assert_eq!(fs::read(store.path()).unwrap(), original);
+        assert!(!fs::read_dir(store.path().parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .any(|name| name.to_string_lossy().starts_with("workspaces.corrupt-")));
+    }
+
+    #[test]
+    fn empty_current_schema_store_fails_closed_without_reinitializing() {
+        let temp = tempfile::tempdir().unwrap();
+        let working = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore::new(temp.path());
+        let mut document = store.load_or_initialize(working.path()).unwrap();
+        document.workspaces.clear();
+        let original = serde_json::to_vec(&document).unwrap();
+        fs::write(store.path(), &original).unwrap();
+
+        let error = store.load_or_initialize(working.path()).unwrap_err();
+
+        assert!(error.to_string().contains("contains no workspaces"));
+        assert_eq!(fs::read(store.path()).unwrap(), original);
+        assert!(!fs::read_dir(store.path().parent().unwrap())
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .any(|name| name.to_string_lossy().starts_with("workspaces.corrupt-")));

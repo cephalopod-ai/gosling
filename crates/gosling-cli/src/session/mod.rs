@@ -1208,29 +1208,23 @@ impl CliSession {
                                 first_token_at = Some(Instant::now());
                             }
                             if let Some((id, security_prompt)) = find_tool_confirmation(&message) {
-                                let permission = if interactive {
-                                    prompt_tool_confirmation(&security_prompt)?
-                                } else {
-                                    // Non-interactive/headless mode: refuse to run in
-                                    // Approve/SmartApprove modes since auto-allowing would
-                                    // bypass the safety contract those modes are meant to enforce.
+                                if !interactive {
                                     let config = Config::global();
-                                    let gosling_mode =
-                                        config.get_gosling_mode().unwrap_or_default();
-                                    if gosling_mode == GoslingMode::Approve || gosling_mode == GoslingMode::SmartApprove {
-                                        cancel_token_clone.cancel();
-                                        drop(stream);
-                                        return Err(anyhow::anyhow!(
-                                            "Tool approval required in non-interactive mode with GoslingMode::{gosling_mode}. \
-                                             This is an invalid configuration — Approve/SmartApprove modes require an \
-                                             interactive terminal. Use GoslingMode::Auto for headless sessions."
-                                        ));
-                                    }
-                                    tracing::warn!(
-                                        "Tool confirmation required in non-interactive mode, auto-allowing"
-                                    );
-                                    Permission::AllowOnce
-                                };
+                                    let gosling_mode = config.get_gosling_mode().unwrap_or_default();
+                                    self.agent.handle_confirmation(id.clone(), PermissionConfirmation {
+                                        principal_type: PrincipalType::Tool,
+                                        permission: non_interactive_confirmation_permission(),
+                                    }).await;
+                                    self.agent.config.session_manager
+                                        .cancel_undispatched_tool_requests(&self.session_id, &id)
+                                        .await?;
+                                    cancel_token_clone.cancel();
+                                    drop(stream);
+                                    return Err(anyhow::anyhow!(
+                                        "Tool approval required in non-interactive mode with GoslingMode::{gosling_mode}; the tool was denied because no operator is available."
+                                    ));
+                                }
+                                let permission = prompt_tool_confirmation(&security_prompt)?;
 
                                 if permission == Permission::Cancel {
                                     output::render_text("Tool call cancelled. Returning to chat...", Some(Color::Yellow), true);
@@ -2023,6 +2017,10 @@ fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permissi
     }
 }
 
+fn non_interactive_confirmation_permission() -> Permission {
+    Permission::DenyOnce
+}
+
 /// Extract tool confirmation request from a message
 fn find_tool_confirmation(message: &Message) -> Option<(String, Option<String>)> {
     message.content.iter().find_map(|content| {
@@ -2792,4 +2790,11 @@ mod tests {
             expected
         );
     }
+}
+#[test]
+fn non_interactive_confirmations_are_denied() {
+    assert_eq!(
+        non_interactive_confirmation_permission(),
+        Permission::DenyOnce
+    );
 }

@@ -730,8 +730,10 @@ pub trait Provider: Send + Sync {
         false
     }
 
-    /// Whether this provider can invoke tools without routing them through
-    /// Gosling's tool inspection and permission pipeline.
+    /// Whether this provider invokes tools outside Gosling's inspection and
+    /// permission pipeline. Callers must not run such providers in Auto mode
+    /// or pass them Gosling-hosted tool definitions; implementations must
+    /// reject a non-empty hosted tool list rather than silently discarding it.
     fn executes_tools_outside_gosling(&self) -> bool {
         false
     }

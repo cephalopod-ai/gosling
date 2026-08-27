@@ -1324,17 +1324,20 @@ async fn handle_mcp_subcommand(command: McpSubcommand) -> Result<()> {
             cwd,
             from_goose,
             goose_config,
-        } => mcp::handle_install(mcp::InstallArgs {
-            name,
-            cmd,
-            envs,
-            secrets,
-            timeout,
-            description,
-            cwd,
-            from_goose,
-            goose_config,
-        }),
+        } => {
+            mcp::handle_install(mcp::InstallArgs {
+                name,
+                cmd,
+                envs,
+                secrets,
+                timeout,
+                description,
+                cwd,
+                from_goose,
+                goose_config,
+            })
+            .await
+        }
         McpSubcommand::Remove { name } => mcp::handle_remove(&name),
         McpSubcommand::List => mcp::handle_list(),
     }

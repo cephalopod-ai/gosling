@@ -1553,6 +1553,9 @@ impl ExtensionManager {
         container: Option<&Container>,
         session_id: Option<&str>,
     ) -> ExtensionResult<()> {
+        crate::config::extension_allowlist::enforce_extension(&config)
+            .await
+            .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;
         let sanitized_name = config.key();
 
         // Compare both the unresolved config (to detect structural changes like

@@ -2,6 +2,7 @@ pub mod base;
 pub mod declarative_providers;
 pub mod domain_adapters;
 mod experiments;
+pub mod extension_allowlist;
 pub mod extensions;
 mod migrations;
 pub mod paths;

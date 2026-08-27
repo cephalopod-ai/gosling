@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { bootstrapShell } from './bootstrap';
 import type { ShellResourceFiles } from './resources';
+import { openExternalUrlIfSafe } from '../utils/urlSecurity';
 
 declare const __GOSLING_SHELL_RESOURCE_FILES__: ShellResourceFiles;
 declare const SHELL_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -47,7 +48,11 @@ void bootstrapShell({
     });
     return { confirmed: result.response === 1 };
   },
-  openExternal: (url) => shell.openExternal(url),
+  openExternal: async (url) => {
+    if (!(await openExternalUrlIfSafe(url, (safeUrl) => shell.openExternal(safeUrl)))) {
+      console.warn(`[Shell] Blocked unsafe external URL: ${url}`);
+    }
+  },
   resourcesPath: process.resourcesPath,
   preloadPath: path.join(__dirname, 'shell-preload.js'),
   rendererUrl: rendererUrl(),

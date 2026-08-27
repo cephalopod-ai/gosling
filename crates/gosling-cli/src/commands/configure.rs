@@ -271,7 +271,7 @@ async fn handle_existing_config() -> anyhow::Result<()> {
 
     match action {
         "toggle" => toggle_extensions_dialog(),
-        "add" => configure_extensions_dialog(),
+        "add" => configure_extensions_dialog().await,
         "remove" => remove_extension_dialog(),
         "settings" => configure_settings_dialog().await,
         "providers" => configure_provider_dialog().await.map(|_| ()),
@@ -1028,7 +1028,7 @@ fn configure_builtin_extension() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn configure_stdio_extension() -> anyhow::Result<()> {
+async fn configure_stdio_extension() -> anyhow::Result<()> {
     let name = prompt_extension_name("my-extension")?;
 
     let command_str: String = cliclack::input("What command should be run?")
@@ -1055,7 +1055,7 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
     let description = prompt_extension_description()?;
     let (envs, env_keys) = collect_env_vars()?;
 
-    set_extension(ExtensionEntry {
+    let entry = ExtensionEntry {
         enabled: true,
         activation_paths: None,
         config: ExtensionConfig::Stdio {
@@ -1070,7 +1070,9 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
             bundled: None,
             available_tools: Vec::new(),
         },
-    })?;
+    };
+    gosling::config::extension_allowlist::enforce_extension(&entry.config).await?;
+    set_extension(entry)?;
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
     Ok(())
@@ -1124,7 +1126,7 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn configure_extensions_dialog() -> anyhow::Result<()> {
+pub async fn configure_extensions_dialog() -> anyhow::Result<()> {
     let extension_type = cliclack::select("What type of extension would you like to add?")
         .item(
             "built-in",
@@ -1145,7 +1147,7 @@ pub fn configure_extensions_dialog() -> anyhow::Result<()> {
 
     match extension_type {
         "built-in" => configure_builtin_extension()?,
-        "stdio" => configure_stdio_extension()?,
+        "stdio" => configure_stdio_extension().await?,
         "streamable_http" => configure_streamable_http_extension()?,
         _ => unreachable!(),
     };

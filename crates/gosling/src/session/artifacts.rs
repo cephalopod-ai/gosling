@@ -126,6 +126,15 @@ impl DiscoveredArtifact {
         } else {
             lexical_normalize(&working_dir.join(path))
         };
+        let working_dir = lexical_normalize(working_dir);
+        if matches!(
+            provenance,
+            SessionArtifactProvenance::AssistantMessage
+                | SessionArtifactProvenance::CompatibilityInference
+        ) && !resolved.starts_with(&working_dir)
+        {
+            return None;
+        }
         Some(Self {
             display_path,
             resolved_path: resolved.to_string_lossy().to_string(),
@@ -601,5 +610,42 @@ mod tests {
             None,
         )
         .is_none());
+    }
+
+    #[test]
+    fn assistant_absolute_paths_cannot_escape_the_working_directory() {
+        assert!(DiscoveredArtifact::from_path(
+            "/outside/private-notes.txt",
+            Path::new("/workspace"),
+            None,
+            None,
+            SessionArtifactRelation::Referenced,
+            SessionArtifactProvenance::AssistantMessage,
+            None,
+        )
+        .is_none());
+
+        let inside = DiscoveredArtifact::from_path(
+            "/workspace/reports/result.txt",
+            Path::new("/workspace"),
+            None,
+            None,
+            SessionArtifactRelation::Referenced,
+            SessionArtifactProvenance::AssistantMessage,
+            None,
+        )
+        .expect("an assistant reference inside the working directory remains discoverable");
+        assert_eq!(inside.resolved_path, "/workspace/reports/result.txt");
+
+        assert!(DiscoveredArtifact::from_path(
+            "/outside/tool-output.txt",
+            Path::new("/workspace"),
+            None,
+            None,
+            SessionArtifactRelation::Created,
+            SessionArtifactProvenance::BuiltInTool,
+            None,
+        )
+        .is_some());
     }
 }

@@ -10,13 +10,15 @@ operator-excluded.
 This pass found **no Critical** (unauthenticated remote privileged write)
 defect on the current local-first default. It did find a cluster of
 **High, source-confirmed** defects on operator-facing security controls:
-ACP reports permission grants as success when disk persist failed; Desktop
-“Always Allow all extension tools” consumes the live approval before the
-durable write; Auto and subagents can enable extensions without the approval
-the UI advertises; headless CLI Auto auto-allows inspector-failure
-confirmations that Desktop would still show; assistant-mentioned absolute
-document paths become Desktop preview grants; and current-schema workspace
-validation failure is recovered by wiping to a new Default workspace.
+Desktop artifact-routing IPC can grant arbitrary filesystem paths; the
+`GOSLING_ALLOWLIST` is UI-only and prefix-matched; the shell host
+`openExternal` has no protocol allowlist; ACP reports permission grants as
+success when disk persist failed; Desktop “Always Allow all extension tools”
+consumes the live approval before the durable write; Auto and subagents can
+enable extensions without the approval the UI advertises; headless CLI Auto
+auto-allows inspector-failure confirmations that Desktop would still show;
+and current-schema workspace validation failure is recovered by wiping to a
+new Default workspace.
 
 CLI/vendor providers (`executes_tools_outside_gosling`) discard the
 `Provider::stream` tool list and Auto auto-acks their native confirmations.
@@ -24,19 +26,18 @@ Imported sessions are marked untrusted for artifacts and UI, then still
 fed to the model. These are Confirmed code properties, not speculation.
 
 **Do not pause local-single-user merge** for a remote-exploit pause, but
-**patch the High persist/approval/grant findings before treating Desktop
-permissions or Auto/summon as a security boundary.** Do not call `v1.1.0`
-“hardened and fully compatible” until README compatibility claims and the
-permission-persist lie are fixed.
+**patch the High FS-grant / allowlist / persist / Auto findings before
+treating Desktop IPC, MCP install, permissions, or Auto/summon as a
+security boundary.** Do not call `v1.1.0` “hardened and fully compatible”
+until README compatibility claims and the permission-persist lie are fixed.
 
 Lenses completed: ARC, IAPI, IOP, DAT, STT, CON, TMP, CAS, INV, WFG, WEB,
 PIP, EAPI, LLM, MCP, AOC, CMP, NEG, AID, ARCN, XREPO, DEAD, PATH, REL, FSR
-(failsafe family). **Required lens `audit-security` (plus OWASP/Node/repo
-posture/triage) did not finish** before this report was closed; that
-inventory is `Not Reviewed` except where adjacent clusters quoted the same
-code. Findings below are parent-adjudicated: Confirmed only when the cited
-line was re-read in this run. The reliability cluster completed after the
-first close and is folded in here.
+(failsafe family), SEC (including OWASP/Node/repo posture/triage, late
+fold-in). Findings below are parent-adjudicated: Confirmed only when the
+cited line was re-read in this run. Reliability and security clusters
+completed after the first close and are folded in here. Playtest remains
+excluded.
 
 ## Scope
 
@@ -106,10 +107,10 @@ already contradicted by the official remote-server guide.
 | audit-agent-orchestration-code | applied | |
 | audit-compliance-posture | applied | many CMP codes N/A (not a scanner) |
 | audit-negative-space | applied | last among completed lenses |
-| audit-security | **incomplete** | cluster still running at close |
-| audit-security-code / owasp / nodejs | **incomplete** | same cluster |
-| audit-security-repo-posture / triage | **incomplete** | same cluster |
-| audit-security-vuln-harness | deferred | bounded hunt folded into SEC cluster; full 6-phase not run |
+| audit-security | applied (late fold-in) | SEC-GSL-*; local-first, no multi-tenant IDOR |
+| audit-security-code / owasp / nodejs | applied (late fold-in) | CSEC/SECN sampled; SECN-GSL-001/002 |
+| audit-security-repo-posture / triage | applied (late fold-in) | RST/RSP; posture `partial` |
+| audit-security-vuln-harness | bounded static | full 6-phase nested harness not run |
 | audit-reliability | applied (late fold-in) | REL-GSL-*; `/health` vs `/status` split held |
 | audit-failsafe-readiness / dependency-criticality / recovery-idempotency / operator-signal | applied (late fold-in) | FSR/REC; FSR-GSL-001 merged into WFG-GSL-004 |
 | audit-memory-lifecycle / resource-lifecycle | applied sampled | OOM capped Likely; RES-GSL-001 |
@@ -174,6 +175,9 @@ independent of severity. Race manifestation stays **Likely**.
 
 | ID | Severity | Confidence | Evidence Basis | Domain | Title | Patch Priority | Blast Radius | Complexity | Cost | Nominal Agent |
 |---|---|---|---|---|---|---|---|---|---|---|
+| SEC-GSL-001 | High | Confirmed | source-evidenced | Security | Artifact routing IPC can grant arbitrary FS paths | 1 | Local | local_guardrail | S | codex |
+| SEC-GSL-002 | High | Confirmed | source-evidenced | Security | Extension allowlist is UI-only and prefix-matched | 1 | Workflow | workflow_protocol | M | claude |
+| SECN-GSL-001 | High | Confirmed | source-evidenced | Security | Shell `openExternal` has no protocol allowlist | 1 | Local | local_guardrail | XS | codex |
 | WFG-GSL-002 | High | Confirmed | source-evidenced | Workflow-GUI | ACP `tools/permissions/set` succeeds when persist failed | 1 | Workflow | local_guardrail | S | codex |
 | WFG-GSL-001 | High | Confirmed | source-evidenced | Workflow-GUI | Always Allow all extension tools consumes then bulk-writes | 1 | Workflow | workflow_protocol | S | codex |
 | LLM-GSL-004 | High | Confirmed | source-evidenced | Security-LLM | Auto/subagent can `manage_extensions` without approval | 1 | Workflow | local_guardrail | S | codex |
@@ -193,6 +197,10 @@ independent of severity. Race manifestation stays **Likely**.
 | RES-GSL-001 | Medium | Confirmed missing guard; hang Likely | source-evidenced | Failsafe | computercontroller scripts wait with no timeout | 3 | Local | local_guardrail | S | codex |
 | REC-GSL-001 | Medium | Confirmed idiom; torn file Likely | source-evidenced | Failsafe | Desktop backend PID registry is in-place JSON write | 3 | Service | local_guardrail | S | codex |
 | NEG-GSL-005 | High if remote / Low loopback | Confirmed | source-evidenced | Negative-Space | Official remote `goslingd` is a shared-secret multi-client plane | 3 | Service | external_service_semantics | L | human-owner |
+| SEC-GSL-003 | Medium (High if non-loopback bind) | Confirmed | source-evidenced | Security | goslingd unauth MCP proxy/guest lack loopback peer check | 3 | Service | local_guardrail | S | codex |
+| SECN-GSL-002 | Medium | Confirmed | source-evidenced | Security | Main window missing `will-navigate` (shell has it) | 3 | Local | local_guardrail | XS | codex |
+| RST-GSL-001 | Medium | Confirmed | source-evidenced | Security | Workflows without top-level `permissions:` | 5 | Repo | local_guardrail | XS | human-owner |
+| RSP-GSL-001 | Medium | Confirmed | source-evidenced | Compliance-Posture | `deny.toml` ignores RUSTSEC-2023-0071 | 5 | Repo | governance_decision | M | human-owner |
 | CAS-GSL-001 | Medium | Confirmed | source-evidenced | Cascade | Imported untrusted history is still model authority | 3 | Workflow | workflow_protocol | M | claude |
 | CON-GSL-002 | Medium | Likely | source-evidenced | Concurrency | `permission.yaml` RMW is in-process only | 3 | Workflow | local_guardrail | S | codex |
 | CON-GSL-003 | Medium | Likely | source-evidenced | Concurrency | Shared stem `.tmp` for atomic writes | 3 | Local | local_guardrail | S | codex |
@@ -227,9 +235,106 @@ Merged aliases (do not patch twice): STT-GSL-001 → WFG-GSL-002;
 WFG-GSL-003 / PIP-GSL-001 → LLM-GSL-004; NEG-GSL-004 → CAS-GSL-001;
 DAT-GSL-004 → INV-GSL-002; DAT-GSL-006 field-drop → INV-GSL-001;
 DEAD-GSL-001 → INV-GSL-003/XREPO-GSL-001; CMP-GSL-002 ↔ PATH-GSL-001;
-FSR-GSL-001 → WFG-GSL-004.
+FSR-GSL-001 → WFG-GSL-004. IOP-GSL-001 (discovery→preview) is adjacent to
+SEC-GSL-001 (IPC can add arbitrary output roots/files); patch both.
 
 ## Detailed Findings
+
+### SEC-GSL-001: Artifact routing IPC can grant arbitrary filesystem paths
+
+Severity: High  
+Confidence: Confirmed  
+Evidence basis: source-evidenced  
+Domain: Security
+
+Evidence:
+- `ui/desktop/src/main.ts:341-352` — `assertArtifactOutputRootAccess` falls back to any existing directory if grant check fails
+- `ui/desktop/src/main.ts:392-407` — `artifactFiles` accepted if they `stat` as files, with no grant check
+- `ui/desktop/src/utils/artifactFileAccess.ts:9-15` — `grantedFiles.has(resolvedPath)` short-circuits root checks
+
+Observed behavior:
+- Renderer IPC `set-artifact-routing-config` can add an existing directory as an output root after a failed grant check, and can allowlist arbitrary files. Subsequent artifact read APIs treat those as authorized. IOP-GSL-001 is the assistant-mention discovery path into the same grant set.
+
+Expected boundary:
+- Main process must not expand FS authority from renderer-supplied paths.
+
+Failure mechanism:
+- The grant registry is the renderer/main trust boundary; this path treats the renderer as a source of new roots.
+
+Break-it angle:
+- Compromised renderer: `setArtifactRoutingConfig` with `/etc` or `~/.ssh/id_rsa`.
+
+Impact:
+- Read of files outside the user-selected workspace.
+
+Operational impact: Local / file / irreversible (exfil) / silent / unsafe
+
+Recommended mitigation:
+- Delete the catch-all fallback; require `assertRendererFileAccess` / `assertPathWithinRoots` for every output root and artifact file.
+- Test: renderer with only `~/Work/proj` cannot add `/etc`.
+
+Implementation assessment: local_guardrail / S / tests / codex
+
+### SEC-GSL-002: Extension allowlist is UI-only and prefix-matched
+
+Severity: High  
+Confidence: Confirmed  
+Evidence basis: source-evidenced  
+Domain: Security
+
+Evidence:
+- `crates/gosling-server/ALLOWLIST.md:1` — allowlist used in desktop `main.ts`, **not** gosling-server
+- Zero `GOSLING_ALLOWLIST` matches in `*.rs`
+- `ui/desktop/src/components/ExtensionInstallModal.tsx:192-194` — `command.startsWith(allowedCmd)`
+- ACP `on_add_session_extension` and HTTP `POST /config/extensions` have no allowlist
+
+Observed behavior:
+- `GOSLING_ALLOWLIST` only changes deep-link modal copy. Settings, ACP, HTTP, and CLI add extensions with only the process token. Prefix match widens even that UI gate.
+
+Expected boundary:
+- One Rust-enforced allowlist on every install sink; exact command/argv match.
+
+Impact:
+- Operators believe MCP install is allowlisted; any token-holding client can install arbitrary stdio MCP.
+
+Operational impact: Workflow / process / compensatable / silent vs stated policy / unsafe
+
+Recommended mitigation:
+- Enforce allowlist in `add_extension` / ACP / HTTP; fail closed if the URL is set and the command is not an exact match.
+- Test: ACP add of a non-listed command errors even when the UI is skipped.
+
+Implementation assessment: workflow_protocol / M / tests / claude
+
+### SECN-GSL-001: Shell host `openExternal` has no protocol allowlist
+
+Severity: High  
+Confidence: Confirmed  
+Evidence basis: source-evidenced  
+Domain: Security
+
+Evidence:
+- `ui/desktop/src/shell/main.ts:50` — `openExternal: (url) => shell.openExternal(url)`
+- Sibling: `ui/desktop/src/main.ts:414-420` — `openExternalIfSafe` + `isProtocolSafe`
+
+Observed behavior:
+- Desktop main blocks `file:`, `javascript:`, `data:`. Shell product IPC calls `shell.openExternal` with no protocol filter.
+
+Expected boundary:
+- Same `isProtocolSafe` on every `openExternal` sink.
+
+Break-it angle:
+- Shell renderer `externalOpen('file:///etc/passwd')`.
+
+Impact:
+- Local file/app-handler invocation from shell UI.
+
+Operational impact: Local / process / irreversible / OS-dependent / unsafe
+
+Recommended mitigation:
+- Reuse `isProtocolSafe` in the shell adapter.
+- Test: `file:` / `javascript:` / `data:` do not call `openExternal`.
+
+Implementation assessment: local_guardrail / XS / tests / codex
 
 ### WFG-GSL-002: ACP permission set reports success when persist failed
 
@@ -654,23 +759,26 @@ Important seams checked and held in **current** source (parent-verified or clust
 
 ## Recommended Patch Order
 
-1. WFG-GSL-002 — ACP must not `Ok` persist failure  
-2. WFG-GSL-001 — persist bulk grant before resolving the live request  
-3. LLM-GSL-004 / LLM-GSL-001 / LLM-GSL-003 — Auto explicit-grant class (extensions, HTTP, mixed MCP)  
-4. WFG-GSL-004 — CLI non-interactive Deny/abort on any confirmation  
-5. IOP-GSL-001 — root-constrain artifact grants and discovery  
-6. DAT-GSL-001 — fail-closed on same-schema workspace validation failure  
-7. AOC-GSL-001 + ARC-GSL-002 — vendor-CLI Auto and tools-capability split  
-8. CAS-GSL-001 — model-boundary handling of `imported_untrusted`  
-9. CON-GSL-002 / CON-GSL-003 — permission flock; UUID temps  
-10. REL-GSL-001 — pin ACP active runs in AgentManager LRU  
-11. FSR-GSL-002 — persist configured/failed extensions, not only survivors  
-12. REL-GSL-002 / RES-GSL-001 — host default timeouts for shell and computercontroller  
-13. REC-GSL-001 — atomic backend PID registry write  
-14. CON-GSL-001 — session lease (after design)  
-15. IAPI-GSL-001 — generate SessionMeta; kill `as` cast  
-16. Docs: CMP-GSL-001/003, PATH-GSL-001/NEG-GSL-005, AID-GSL-001/002  
-17. Remaining Medium/Low in the table  
+1. SEC-GSL-001 — drop artifact-routing grant fallback; root-constrain `artifactFiles`  
+2. SEC-GSL-002 — enforce extension allowlist in Rust on every install sink  
+3. SECN-GSL-001 — protocol-filter shell `openExternal`  
+4. WFG-GSL-002 — ACP must not `Ok` persist failure  
+5. WFG-GSL-001 — persist bulk grant before resolving the live request  
+6. LLM-GSL-004 / LLM-GSL-001 / LLM-GSL-003 — Auto explicit-grant class (extensions, HTTP, mixed MCP)  
+7. WFG-GSL-004 — CLI non-interactive Deny/abort on any confirmation  
+8. IOP-GSL-001 — root-constrain artifact discovery (same grant set as SEC-GSL-001)  
+9. DAT-GSL-001 — fail-closed on same-schema workspace validation failure  
+10. AOC-GSL-001 + ARC-GSL-002 — vendor-CLI Auto and tools-capability split  
+11. CAS-GSL-001 — model-boundary handling of `imported_untrusted`  
+12. CON-GSL-002 / CON-GSL-003 — permission flock; UUID temps  
+13. REL-GSL-001 — pin ACP active runs in AgentManager LRU  
+14. FSR-GSL-002 — persist configured/failed extensions, not only survivors  
+15. REL-GSL-002 / RES-GSL-001 — host default timeouts for shell and computercontroller  
+16. REC-GSL-001 — atomic backend PID registry write  
+17. CON-GSL-001 — session lease (after design)  
+18. IAPI-GSL-001 — generate SessionMeta; kill `as` cast  
+19. Docs: CMP-GSL-001/003, PATH-GSL-001/NEG-GSL-005, AID-GSL-001/002  
+20. Remaining Medium/Low in the table (SEC-GSL-003, SECN-GSL-002, RST/RSP)  
 
 Do not start with god-object extraction (ARC-GSL-001) until the High persist/approval holes are closed.
 
@@ -695,7 +803,7 @@ Do not start with god-object extraction (ARC-GSL-001) until the High persist/app
 
 ## Deferred Risks
 
-- Full `audit-security` / OWASP / Node / repo-triage / vuln-harness — **not finished**. Do not treat this report as a complete SEC clearance.
+- Full six-phase vuln-harness nested agents were not run (bounded static hunt only).
 - Reliability / failsafe family folded in late; memory findings remain Potential-only (no heap snapshots).
 - CON-GSL-001 compact-wipe — needs a two-process drill (`requires-authorized-drill`).
 - IOP-GSL-005 zip-bomb — Likely until measured.
@@ -723,7 +831,7 @@ Do not start with god-object extraction (ARC-GSL-001) until the High persist/app
 | IAPI-GSL-001 | Architecture (IAPI) | Workflow-GUI | Silent field drop |
 | CMP-GSL-001 | Compliance-Posture | Workflow-GUI | Operators read a guarantee |
 
-Incomplete required lenses: escalate a **follow-up SEC** pass (OWASP/Node/repo posture) before any “comprehensive security clearance” claim. REL/FSR landed in this fold-in.
+All 13 required lenses plus applicable standalones in the coverage matrix were applied. Consensus overlay was not requested. Playtest remains excluded.
 
 ## Repo-state reconciliation (this pass only)
 
@@ -741,13 +849,38 @@ Next evidence-backed action: patch WFG-GSL-002 then WFG-GSL-001, then Auto expli
 
 - Static only. No `cargo test`, Desktop, CLI live run, two-window compact, hostile MCP guest, or `0.0.0.0` bind.
 - Oracle integrity: no in-process suite used as production proof. Concurrent config/workspace tests were **read**, not re-run.
-- `audit-security` (plus OWASP/Node/repo posture/triage) **did not complete**. Absence of those findings is not a SEC clearance.
+- SEC cluster was static-only; CSEC-029/034/035/037/043/045/055–057 and some workflows were Not Reviewed (see SEC cluster validation limits).
 - Goose live payloads were not fetched. Contrast/a11y not measured. Gate 5 (device) not reviewed.
 - Forbidden trees were not used as defect evidence. This report does not inherit 2026-08-15 IDs except where current comments still name them in source.
 - Commit hash taken from `git rev-parse` at preflight.
 
 ## Final Confidence
 
-**Medium** overall: High for parent-confirmed persist/approval/grant/Auto-class defects; Low for incomplete SEC/REL surfaces and unreproduced races.
+**Medium** overall: High for parent-confirmed FS-grant, allowlist, persist, Auto-class, and vendor-CLI defects; races/hangs remain Likely because they were not drilled. Some CSEC/SECN codes were sampled only.
 
-Do not describe this run as a complete 13-lens clearance. Describe it as a clean independent audit of the completed lenses, with SEC unfinished.
+This run is a complete 13-lens static audit of applicable skills, with playtest excluded and the vuln-harness nested phase deferred. Confidence remains Medium because races/hangs were not drilled and some CSEC/SECN codes were sampled.
+
+## Repair closure — 2026-08-26
+
+The High, source-confirmed patch set from this report was repaired and
+target-validated. This appendix records later evidence; it does not rewrite the
+point-in-time observations above.
+
+| Finding | Closure evidence |
+|---|---|
+| SEC-GSL-001 / IOP-GSL-001 | Main-process artifact routing is constrained to existing renderer roots; assistant paths outside authorized roots are rejected. Focused Rust and Desktop artifact tests pass. |
+| SEC-GSL-002 | Exact command/argv Rust allowlist enforcement covers runtime, ACP/HTTP, and CLI stdio add paths; the modal no longer prefix-matches. Focused Rust and Desktop tests pass. |
+| SECN-GSL-001 | Shell external-open uses the shared HTTP/HTTPS protocol guard; focused protocol tests pass. |
+| WFG-GSL-002 | Permission persistence rolls memory back on disk failure and ACP returns an error; the persist-failure regression passes. |
+| WFG-GSL-001 | Desktop bulk approval performs pending check, durable bulk write, then live resolution; failure stays pending. Focused UI tests pass. |
+| LLM-GSL-004 / LLM-GSL-001 / LLM-GSL-003 | Shared classifications require explicit grants for extension management, egress, and mixed-risk MCP tools. Focused inspector/classification tests pass. |
+| WFG-GSL-004 | Non-interactive confirmations deny, cancel, and return an error without dispatch. Focused CLI regression passes. |
+| DAT-GSL-001 | Parsed current-schema validation failures preserve original workspace bytes and fail closed. Focused store regressions pass. |
+| AOC-GSL-001 / ARC-GSL-002 | Vendor CLI and ACP providers declare external tool execution, cannot run in Auto, and reject nonempty hosted-tool definitions. Focused provider tests pass. |
+
+Validation was intentionally bounded rather than a full-suite run: Rust format,
+focused Rust/UI regressions, Desktop typecheck, and compile checks for `gosling`,
+`gosling-providers`, `gosling-cli`, and `gosling-server` passed. The detailed
+truth inventory, WFG-001–015 dispositions, architecture reconciliation, and
+validation limits are in
+[`docs/logs/session/2026-08-26-high-severity-audit-repairs.md`](../logs/session/2026-08-26-high-severity-audit-repairs.md).

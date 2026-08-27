@@ -95,29 +95,54 @@ impl PermissionManager {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Persist the current permission map. Persists are serialized and the
-    /// snapshot is taken under the persist lock, so whichever writer runs
-    /// last always writes the newest state (a per-caller snapshot could
-    /// persist an older clone over a newer one). IO happens outside the map
-    /// lock.
-    ///
-    /// Returns the write error instead of swallowing it. A failure still keeps
-    /// the in-memory update — the decision holds for this session — but the
-    /// caller is responsible for telling the operator that it will not survive
-    /// a restart. Silently logging a lost `NeverAllow` let a user believe a
-    /// tool was permanently denied when it was not. (STT-GOS-005)
-    fn persist(&self) -> Result<(), String> {
+    fn apply_permission_updates(
+        &self,
+        category: &str,
+        updates: &[(String, PermissionLevel)],
+    ) -> Result<(), String> {
         let _persist_guard = self
             .persist_lock
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let snapshot = self.read_map().clone();
-        serde_yaml::to_string(&snapshot)
+        let mut map = self.write_map();
+        let previous = map.clone();
+        let permission_config = map.entry(category.to_string()).or_default();
+
+        for (principal_name, level) in updates {
+            permission_config
+                .always_allow
+                .retain(|principal| principal != principal_name);
+            permission_config
+                .ask_before
+                .retain(|principal| principal != principal_name);
+            permission_config
+                .never_allow
+                .retain(|principal| principal != principal_name);
+
+            match level {
+                PermissionLevel::AlwaysAllow => {
+                    permission_config.always_allow.push(principal_name.clone())
+                }
+                PermissionLevel::AskBefore => {
+                    permission_config.ask_before.push(principal_name.clone())
+                }
+                PermissionLevel::NeverAllow => {
+                    permission_config.never_allow.push(principal_name.clone())
+                }
+            }
+        }
+
+        let result = serde_yaml::to_string(&*map)
             .map_err(|e| e.to_string())
             .and_then(|yaml| {
                 crate::config::base::write_file_atomic(&self.config_path, &yaml)
                     .map_err(|e| e.to_string())
-            })
+            });
+        if let Err(error) = result {
+            *map = previous;
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// Returns a list of all the names (keys) in the permission map.
@@ -167,37 +192,17 @@ impl PermissionManager {
     }
 
     fn bulk_update_smart_approve_permissions(&self, tool_names: &[String], level: PermissionLevel) {
-        {
-            let mut map = self.write_map();
-            let permission_config = map.entry(SMART_APPROVE_PERMISSION.to_string()).or_default();
-
-            for tool_name in tool_names {
-                // Remove from all lists to avoid duplicates
-                permission_config.always_allow.retain(|p| p != tool_name);
-                permission_config.ask_before.retain(|p| p != tool_name);
-                permission_config.never_allow.retain(|p| p != tool_name);
-
-                // Add to the appropriate list
-                match &level {
-                    PermissionLevel::AlwaysAllow => {
-                        permission_config.always_allow.push(tool_name.clone())
-                    }
-                    PermissionLevel::AskBefore => {
-                        permission_config.ask_before.push(tool_name.clone())
-                    }
-                    PermissionLevel::NeverAllow => {
-                        permission_config.never_allow.push(tool_name.clone())
-                    }
-                }
-            }
-        }
-
-        if let Err(e) = self.persist() {
+        let updates = tool_names
+            .iter()
+            .cloned()
+            .map(|tool_name| (tool_name, level.clone()))
+            .collect::<Vec<_>>();
+        if let Err(e) = self.apply_permission_updates(SMART_APPROVE_PERMISSION, &updates) {
             tracing::error!(
                 security.event_type = "permission_persist_failed",
                 error = %e,
                 path = ?self.config_path,
-                "tool annotations were applied in memory but could not be saved"
+                "tool annotations could not be saved; the in-memory update was rolled back"
             );
         }
     }
@@ -237,6 +242,13 @@ impl PermissionManager {
         self.update_permission(USER_PERMISSION, principal_name, level)
     }
 
+    pub fn bulk_update_user_permissions(
+        &self,
+        updates: &[(String, PermissionLevel)],
+    ) -> Result<(), String> {
+        self.apply_permission_updates(USER_PERMISSION, updates)
+    }
+
     /// Updates the smart approve permission level for a specific tool.
     pub fn update_smart_approve_permission(
         &self,
@@ -262,35 +274,7 @@ impl PermissionManager {
         principal_name: &str,
         level: PermissionLevel,
     ) -> Result<(), String> {
-        {
-            let mut map = self.write_map();
-            // Get or create a new PermissionConfig for the specified category
-            let permission_config = map.entry(name.to_string()).or_default();
-
-            // Remove the principal from all existing lists to avoid duplicates
-            permission_config
-                .always_allow
-                .retain(|p| p != principal_name);
-            permission_config.ask_before.retain(|p| p != principal_name);
-            permission_config
-                .never_allow
-                .retain(|p| p != principal_name);
-
-            // Add the principal to the appropriate list
-            match level {
-                PermissionLevel::AlwaysAllow => permission_config
-                    .always_allow
-                    .push(principal_name.to_string()),
-                PermissionLevel::AskBefore => permission_config
-                    .ask_before
-                    .push(principal_name.to_string()),
-                PermissionLevel::NeverAllow => permission_config
-                    .never_allow
-                    .push(principal_name.to_string()),
-            }
-        }
-
-        self.persist()
+        self.apply_permission_updates(name, &[(principal_name.to_string(), level)])
     }
 
     /// Removes all permission entries in an extension's tool namespace.
@@ -372,11 +356,7 @@ mod tests {
             result.is_err(),
             "a permission write that cannot be persisted must not report success"
         );
-        // The decision still applies for the running session.
-        assert_eq!(
-            manager.get_user_permission("developer__shell"),
-            Some(PermissionLevel::NeverAllow)
-        );
+        assert_eq!(manager.get_user_permission("developer__shell"), None);
     }
 
     #[test]
@@ -385,6 +365,26 @@ mod tests {
         assert!(manager
             .update_user_permission("developer__shell", PermissionLevel::NeverAllow)
             .is_ok());
+    }
+
+    #[test]
+    fn bulk_user_permission_update_persists_all_entries_together() {
+        let (manager, _temp_dir) = create_test_permission_manager();
+        manager
+            .bulk_update_user_permissions(&[
+                ("extension__one".to_string(), PermissionLevel::AlwaysAllow),
+                ("extension__two".to_string(), PermissionLevel::NeverAllow),
+            ])
+            .unwrap();
+
+        assert_eq!(
+            manager.get_user_permission("extension__one"),
+            Some(PermissionLevel::AlwaysAllow)
+        );
+        assert_eq!(
+            manager.get_user_permission("extension__two"),
+            Some(PermissionLevel::NeverAllow)
+        );
     }
 
     #[test]

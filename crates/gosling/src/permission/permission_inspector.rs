@@ -166,15 +166,15 @@ impl ToolInspector for PermissionInspector {
                         // confused deputy: a delegating parent that merely
                         // enabled an extension would hand the child write and
                         // shell authority it never named. Execution and write
-                        // tools now need an explicit user permission; reads
-                        // stay allowed so autonomous work still functions.
+                        // tools with execution, mutation, egress, extension
+                        // management, or mixed-action authority now need an
+                        // explicit user permission; ordinary reads stay allowed.
                         // (SEC-GOS-003, LLM-GSL-001, AOC-GOS-001, NEG-GSL-001)
                         if tool_class::requires_explicit_grant_in_auto(tool_name) {
                             (
                                 InspectionAction::Deny,
-                                "Auto mode has no operator to approve this tool; it requires an \
-                                 explicit user permission because it can execute code or modify \
-                                 files"
+                                "Auto mode has no operator to approve this tool; its side effects \
+                                 require an explicit user permission"
                                     .to_string(),
                             )
                         } else {
@@ -434,8 +434,11 @@ mod tests {
     #[test_case("developer__shell"; "auto_denies_ungranted_shell")]
     #[test_case("developer__edit"; "auto_denies_ungranted_write")]
     #[test_case("computercontroller__automation_script"; "auto_denies_ungranted_automation_script")]
+    #[test_case("network__http_request"; "auto_denies_ungranted_http_request")]
+    #[test_case("extensionmanager__manage_extensions"; "auto_denies_ungranted_extension_management")]
+    #[test_case("computercontroller__cache"; "auto_denies_ungranted_mixed_risk_cache")]
     #[tokio::test]
-    async fn auto_denies_execution_and_write_tools_without_an_explicit_grant(tool_name: &str) {
+    async fn auto_denies_side_effecting_tools_without_an_explicit_grant(tool_name: &str) {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
         let inspector = new_inspector(pm);
 
@@ -465,7 +468,7 @@ mod tests {
     }
 
     // Autonomous work still needs to read. Denying reads too would make Auto
-    // useless, so the gate is scoped to execution and write authority.
+    // useless, so the gate is scoped to tools with recognized side effects.
     #[tokio::test]
     async fn auto_still_allows_read_only_tools_without_an_explicit_grant() {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));

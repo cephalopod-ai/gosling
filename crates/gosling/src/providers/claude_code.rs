@@ -439,8 +439,8 @@ impl ClaudeCodeProvider {
     fn apply_permission_flags(cmd: &mut Command, gosling_mode: GoslingMode) -> bool {
         match gosling_mode {
             GoslingMode::Auto => {
-                cmd.arg("--dangerously-skip-permissions");
-                false
+                cmd.arg("--permission-prompt-tool").arg("stdio");
+                true
             }
             GoslingMode::SmartApprove | GoslingMode::Approve => {
                 cmd.arg("--permission-prompt-tool").arg("stdio");
@@ -843,8 +843,9 @@ impl Provider for ClaudeCodeProvider {
         model_config: &ModelConfig,
         system: &str,
         messages: &[Message],
-        _tools: &[Tool],
+        tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        super::cli_common::reject_hosted_tools("Claude Code", tools)?;
         let session_id = crate::session_context::current_session_id().unwrap_or_default();
         if super::cli_common::is_session_description_request(system) {
             let (message, usage) = super::cli_common::generate_simple_session_description(
@@ -1043,9 +1044,8 @@ impl Provider for ClaudeCodeProvider {
                                         if mode == GoslingMode::Auto {
                                             let resp = ControlResponse::success(
                                                 request_id,
-                                                PermissionResponse::Allow {
-                                                    updated_input: input,
-                                                    tool_use_id,
+                                                PermissionResponse::Deny {
+                                                    message: "Gosling Auto mode cannot approve provider-native tools".to_string(),
                                                 },
                                             );
                                             let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
@@ -1142,9 +1142,9 @@ mod tests {
 
     #[test_case(
         GoslingMode::Auto,
-        false,
-        vec!["--dangerously-skip-permissions"];
-        "auto_skips_permission_protocol"
+        true,
+        vec!["--permission-prompt-tool", "stdio"];
+        "auto_routes_permission_protocol_for_denial"
     )]
     #[test_case(
         GoslingMode::SmartApprove,

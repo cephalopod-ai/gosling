@@ -5,6 +5,28 @@ use crate::config::permission::PermissionLevel;
 use gosling_sdk_types::custom_requests::{ToolListItem, ToolPermissionLevel};
 use rmcp::model::CallToolRequestParams;
 
+fn persist_tool_permissions(
+    permission_manager: &PermissionManager,
+    req: &SetToolPermissionsRequest,
+) -> Result<SetToolPermissionsResponse, agent_client_protocol::Error> {
+    let updates = req
+        .tool_permissions
+        .iter()
+        .map(|entry| {
+            let level = match entry.permission {
+                ToolPermissionLevel::AlwaysAllow => PermissionLevel::AlwaysAllow,
+                ToolPermissionLevel::AskBefore => PermissionLevel::AskBefore,
+                ToolPermissionLevel::NeverAllow => PermissionLevel::NeverAllow,
+            };
+            (entry.tool_name.clone(), level)
+        })
+        .collect::<Vec<_>>();
+    permission_manager
+        .bulk_update_user_permissions(&updates)
+        .internal_err()?;
+    Ok(SetToolPermissionsResponse {})
+}
+
 impl GoslingAcpAgent {
     pub(super) async fn on_get_tools(
         &self,
@@ -125,23 +147,28 @@ impl GoslingAcpAgent {
         req: SetToolPermissionsRequest,
     ) -> Result<SetToolPermissionsResponse, agent_client_protocol::Error> {
         let permission_manager = self.permission_manager();
-        for entry in &req.tool_permissions {
-            let level = match entry.permission {
-                ToolPermissionLevel::AlwaysAllow => PermissionLevel::AlwaysAllow,
-                ToolPermissionLevel::AskBefore => PermissionLevel::AskBefore,
-                ToolPermissionLevel::NeverAllow => PermissionLevel::NeverAllow,
-            };
-            let level_for_log = format!("{level:?}");
-            if let Err(e) = permission_manager.update_user_permission(&entry.tool_name, level) {
-                tracing::error!(
-                    security.event_type = "permission_persist_failed",
-                    security.tool = %entry.tool_name,
-                    security.level = %level_for_log,
-                    error = %e,
-                    "permission decision applied for this session but could not be saved"
-                );
-            }
-        }
-        Ok(SetToolPermissionsResponse {})
+        persist_tool_permissions(&permission_manager, &req)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gosling_sdk_types::custom_requests::ToolPermissionEntry;
+
+    #[test]
+    fn permission_persist_failure_is_an_acp_error_and_rolls_back_memory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = PermissionManager::new(temp_dir.path().to_path_buf());
+        std::fs::create_dir(manager.get_config_path().with_extension("tmp")).unwrap();
+        let request = SetToolPermissionsRequest {
+            tool_permissions: vec![ToolPermissionEntry {
+                tool_name: "developer__shell".to_string(),
+                permission: ToolPermissionLevel::AlwaysAllow,
+            }],
+        };
+
+        assert!(persist_tool_permissions(&manager, &request).is_err());
+        assert_eq!(manager.get_user_permission("developer__shell"), None);
     }
 }

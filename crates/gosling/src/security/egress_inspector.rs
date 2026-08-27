@@ -351,16 +351,9 @@ fn detect_direction(command: &str) -> EgressDirection {
     EgressDirection::Unknown
 }
 
-use crate::permission::tool_class::is_code_execution_tool as is_shell_tool;
-
-fn is_web_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "web_fetch" | "fetch" | "browser_navigate" | "http_request"
-    ) || name.ends_with("__web_fetch")
-        || name.ends_with("__fetch")
-        || name.ends_with("__browser_navigate")
-}
+use crate::permission::tool_class::{
+    is_code_execution_tool as is_shell_tool, is_egress_tool as is_web_tool,
+};
 
 fn extract_text_for_inspection(
     tool_call: &rmcp::model::CallToolRequestParams,

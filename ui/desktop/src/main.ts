@@ -64,7 +64,7 @@ import {
 } from './utils/autoUpdater';
 import { UPDATES_ENABLED } from './updates';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
-import { isProtocolSafe, normalizeWebUrl } from './utils/urlSecurity';
+import { openExternalUrlIfSafe, normalizeWebUrl } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
 import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
 import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifactRouter';
@@ -326,7 +326,6 @@ async function assertRendererArtifactFileAccess(
 ): Promise<string> {
   const routingConfig = artifactRoutingRegistry.get(webContentsId);
   const routedOutputRoots = routingConfig?.outputs.map((output) => output.path) ?? [];
-  const routedArtifactFiles = routingConfig?.artifactFiles ?? [];
   const expandedPath = expandTilde(filePath);
   const candidatePath = path.isAbsolute(expandedPath) ? resolveRendererPath(filePath) : filePath;
   return assertArtifactFileAccess(
@@ -334,7 +333,7 @@ async function assertRendererArtifactFileAccess(
     baseDirectory ? resolveRendererPath(baseDirectory) : undefined,
     rendererFileRoots(webContentsId),
     routedOutputRoots,
-    new Set([...(rendererArtifactFileGrants.get(webContentsId) ?? []), ...routedArtifactFiles])
+    rendererArtifactFileGrants.get(webContentsId) ?? new Set()
   );
 }
 
@@ -342,14 +341,7 @@ async function assertArtifactOutputRootAccess(
   webContentsId: number,
   outputPath: string
 ): Promise<string> {
-  try {
-    return await assertRendererFileAccess(webContentsId, outputPath);
-  } catch (error) {
-    const canonicalPath = await canonicalizePotentialPath(resolveRendererPath(outputPath));
-    const stats = await fs.stat(canonicalPath);
-    if (!stats.isDirectory()) throw error;
-    return canonicalPath;
-  }
+  return assertRendererFileAccess(webContentsId, outputPath);
 }
 
 async function validateArtifactRoutingConfig(
@@ -399,7 +391,10 @@ async function validateArtifactRoutingConfig(
       continue;
     }
     try {
-      const artifactPath = await canonicalizePotentialPath(resolveRendererPath(artifactFile));
+      const artifactPath = await assertPathWithinRoots(
+        resolveRendererPath(artifactFile),
+        rendererFileRoots(webContentsId)
+      );
       if ((await fs.stat(artifactPath)).isFile()) artifactFiles.push(artifactPath);
     } catch {
       continue;
@@ -412,12 +407,9 @@ async function validateArtifactRoutingConfig(
 }
 
 async function openExternalIfSafe(url: string): Promise<void> {
-  if (!isProtocolSafe(url)) {
+  if (!(await openExternalUrlIfSafe(url, (safeUrl) => shell.openExternal(safeUrl)))) {
     console.warn(`[Main] Blocked unsafe external URL: ${url}`);
-    return;
   }
-
-  await shell.openExternal(url);
 }
 
 function loopbackHttpBaseFromAcpUrl(acpUrl: string): string | null {
