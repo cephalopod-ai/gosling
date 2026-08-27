@@ -445,6 +445,15 @@ describe('Hub workspace selection', () => {
       RESEARCH_MODEL_TEAM_PROMPT_KEY,
       expect.stringContaining('claude/claude-opus-5 — independent researcher')
     );
+    expect(acpAppendSessionSystemPrompt).toHaveBeenCalledWith(
+      'session-personal',
+      RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
+      expect.stringContaining('No Initial Inputs were supplied')
+    );
+    const teamPromptCall = vi
+      .mocked(acpAppendSessionSystemPrompt)
+      .mock.calls.find(([, key]) => key === RESEARCH_MODEL_TEAM_PROMPT_KEY);
+    expect(teamPromptCall?.[2]).not.toContain('Initial Input');
   });
 
   it('keeps the research lead and composer model synchronized without dropping seats', async () => {

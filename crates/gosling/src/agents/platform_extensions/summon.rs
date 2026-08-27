@@ -77,6 +77,22 @@ pub struct DelegateParams {
     pub r#async: bool,
 }
 
+impl DelegateParams {
+    fn normalize(mut self) -> Self {
+        self.instructions = non_blank(self.instructions);
+        self.source = non_blank(self.source);
+        self.context = non_blank(self.context);
+        self
+    }
+}
+
+fn non_blank(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    })
+}
+
 pub struct SummonClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
@@ -622,6 +638,35 @@ You review code."#;
             ..Default::default()
         };
         assert!(client.validate_delegate_params(&params).is_ok());
+    }
+
+    #[test]
+    fn test_delegate_params_normalize_blank_optional_strings() {
+        let params = DelegateParams {
+            instructions: Some("  research this  ".to_string()),
+            source: Some("   ".to_string()),
+            context: Some("  supporting context  ".to_string()),
+            ..Default::default()
+        }
+        .normalize();
+
+        assert_eq!(params.instructions.as_deref(), Some("research this"));
+        assert_eq!(params.source, None);
+        assert_eq!(params.context.as_deref(), Some("supporting context"));
+    }
+
+    #[tokio::test]
+    async fn test_delegate_schema_constrains_source_and_documents_adhoc_shape() {
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let tool = client.create_delegate_tool();
+        let schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+
+        assert_eq!(schema["properties"]["source"]["minLength"], 1);
+        assert_eq!(schema["properties"]["instructions"]["minLength"], 1);
+        assert!(schema["properties"]["source"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("omit this argument entirely"));
     }
 
     #[test]

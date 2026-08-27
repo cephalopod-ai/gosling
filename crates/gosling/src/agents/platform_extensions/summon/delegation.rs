@@ -11,11 +11,13 @@ impl SummonClient {
             "properties": {
                 "instructions": {
                     "type": "string",
+                    "minLength": 1,
                     "description": "Task instructions. Required for ad-hoc tasks."
                 },
                 "source": {
                     "type": "string",
-                    "description": "Name of an agent to run."
+                    "minLength": 1,
+                    "description": "Name of an existing agent to run. For an ad-hoc task, omit this argument entirely; never send an empty or null source."
                 },
                 "extensions": {
                     "type": "array",
@@ -59,7 +61,7 @@ impl SummonClient {
             "delegate",
             "Delegate a task to a subagent that runs independently with its own context.\n\n\
              Modes:\n\
-             1. Ad-hoc: Provide `instructions` for a custom task\n\
+             1. Ad-hoc: Provide `instructions` for a custom task and omit `source` entirely\n\
              2. Source-based: Provide `source` name to run an agent\n\
              3. Combined: Pair a source with a task (e.g., source: \"reviewer\", instructions: \"review the auth module\")\n\n\
              Effective Delegation:\n\
@@ -68,6 +70,7 @@ impl SummonClient {
              - Parallel: async: true, then load(taskId) to wait and get results. Single: sync.\n\n\
              Research (read-only): parallelize freely - delegates explore and report back.\n\
              Work (writes): partition files strictly - no two delegates touch the same file.\n\n\
+             Validation failures are final for that launch attempt; do not retry with empty or alternate source values.\n\n\
              Decompose → async delegates → load(taskId) for each → synthesize."
                 .to_string(),
             schema.as_object().unwrap().clone(),
@@ -83,10 +86,11 @@ impl SummonClient {
         self.cleanup_completed_tasks().await;
 
         let params: DelegateParams = arguments
-            .map(|args| serde_json::from_value(serde_json::Value::Object(args)))
+            .map(|args| serde_json::from_value::<DelegateParams>(serde_json::Value::Object(args)))
             .transpose()
             .map_err(|e| format!("Invalid parameters: {}", e))?
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .normalize();
 
         self.validate_delegate_params(&params)?;
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildResearchScientificMethodPrompt,
   RESEARCH_SCIENTIFIC_METHOD_PROMPT,
   RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
 } from './researchScientificMethod';
@@ -23,5 +24,17 @@ describe('embedded research scientific method prompt', () => {
     );
     expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT).toContain('pending Math MCP review');
     expect(RESEARCH_SCIENTIFIC_METHOD_PROMPT.length).toBeGreaterThan(20_000);
+  });
+
+  it('marks file and repository discovery inapplicable when no initial inputs exist', () => {
+    const prompt = buildResearchScientificMethodPrompt(false);
+
+    expect(prompt).toContain('No Initial Inputs were supplied');
+    expect(prompt).toContain('Do not inspect workspace files');
+    expect(prompt).toContain('Treat Phase 0 and the internal-program portion of Phase 2 as N/A');
+  });
+
+  it('retains initial-input inspection when the session has inputs', () => {
+    expect(buildResearchScientificMethodPrompt(true)).toBe(RESEARCH_SCIENTIFIC_METHOD_PROMPT);
   });
 });

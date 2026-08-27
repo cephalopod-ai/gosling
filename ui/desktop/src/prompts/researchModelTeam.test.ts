@@ -4,7 +4,7 @@ import { buildResearchModelTeamPrompt, RESEARCH_MODEL_TEAM_PROMPT_KEY } from './
 describe('research model team prompt', () => {
   it('keeps solo research on the existing single-model path', () => {
     expect(RESEARCH_MODEL_TEAM_PROMPT_KEY).toBe('research-model-team');
-    expect(buildResearchModelTeamPrompt({ mode: 'solo', models: [] }, [])).toBeNull();
+    expect(buildResearchModelTeamPrompt({ mode: 'solo', models: [] }, [], false)).toBeNull();
   });
 
   it('pins exact models, independent drafts, critique, and explicit degradation', () => {
@@ -17,7 +17,8 @@ describe('research model team prompt', () => {
           { provider: 'groq', model: 'llama-4' },
         ],
       },
-      ['search', 'math_mcp']
+      ['search', 'math_mcp'],
+      true
     );
 
     expect(prompt).toContain('codex/gpt-5.6-sol — lead researcher');
@@ -28,13 +29,33 @@ describe('research model team prompt', () => {
     expect(prompt).toContain('exactly one bounded critique round');
     expect(prompt).toContain('label the result degraded');
     expect(prompt).toContain('extensions: ["search","math_mcp"]');
+    expect(prompt).toContain('relevant Initial Input contents or stable locators');
+    expect(prompt).toContain('omit the `source` argument entirely');
+    expect(prompt).toContain('Do not retry a rejected launch');
+  });
+
+  it('omits initial-input work when the session has no initial inputs', () => {
+    const prompt = buildResearchModelTeamPrompt(
+      {
+        mode: 'dual',
+        models: [
+          { provider: 'codex', model: 'gpt-5.6-sol' },
+          { provider: 'claude', model: 'claude-opus-5' },
+        ],
+      },
+      [],
+      false
+    );
+
+    expect(prompt).not.toContain('Initial Input');
   });
 
   it('rejects incomplete and duplicate rosters', () => {
     expect(() =>
       buildResearchModelTeamPrompt(
         { mode: 'dual', models: [{ provider: 'codex', model: 'gpt-5.6-sol' }] },
-        []
+        [],
+        false
       )
     ).toThrow('requires exactly 2 selected models');
 
@@ -47,7 +68,8 @@ describe('research model team prompt', () => {
             { provider: 'codex', model: 'gpt-5.6-sol' },
           ],
         },
-        []
+        [],
+        false
       )
     ).toThrow('must be distinct');
   });

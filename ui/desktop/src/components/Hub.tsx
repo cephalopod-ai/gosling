@@ -41,7 +41,7 @@ import { ResearchModelTeamSelector } from './research/ResearchModelTeamSelector'
 import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
 import { acpAppendSessionSystemPrompt, acpDeleteSession } from '../acp/sessions';
 import {
-  RESEARCH_SCIENTIFIC_METHOD_PROMPT,
+  buildResearchScientificMethodPrompt,
   RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
 } from '../prompts/researchScientificMethod';
 import {
@@ -363,8 +363,13 @@ export default function Hub({
         ? (researchSessionExtensions?.extensionConfigs ?? [])
         : selectedExtensions;
       const enabledResearchExtensionNames = sessionExtensions.map((extension) => extension.name);
+      const hasInitialInputs = hasResearchInitialInputs || images.length > 0;
       const researchTeamPrompt = isResearch
-        ? buildResearchModelTeamPrompt(researchTeamConfiguration, enabledResearchExtensionNames)
+        ? buildResearchModelTeamPrompt(
+            researchTeamConfiguration,
+            enabledResearchExtensionNames,
+            hasInitialInputs
+          )
         : null;
       const selectedResearchLead = isResearch ? researchTeamConfiguration.models[0] : undefined;
       const sessionProvider = selectedResearchLead?.provider ?? currentProvider;
@@ -410,7 +415,7 @@ export default function Hub({
         await acpAppendSessionSystemPrompt(
           session.id,
           RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
-          RESEARCH_SCIENTIFIC_METHOD_PROMPT
+          buildResearchScientificMethodPrompt(hasInitialInputs)
         );
         if (researchLibraryPath) {
           await acpAppendSessionSystemPrompt(
