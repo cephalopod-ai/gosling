@@ -27,28 +27,31 @@ then uses the existing artifact preview/open guard. This is a distinct browse co
 are never inserted into the session Outputs inventory or the input Library.
 
 Every Deep Research session receives the library root as an additional working directory and a
-session system instruction that routes user-facing reports, tutorials, appendices, and exported data
-summaries there. The instruction permits relevant prior reports as optional secondary context, labels
-them potentially stale, and requires verification of load-bearing claims against current primary
-evidence. It explicitly forbids treating model agreement or a prior report as independent
-corroboration. Scratch files and caches remain outside the library.
+session system instruction that requires final user-facing reports, tutorials, appendices, and exported
+data summaries in two places: a canonical copy in the session's active workspace output location, and
+a separate, identical final copy in the library. The first retains the session-specific Outputs
+provenance defined by ADR-0013; the second is a cross-session, cross-thread archive. The instruction
+permits relevant prior reports as optional secondary context, labels them potentially stale, and
+requires verification of load-bearing claims against current primary evidence. It explicitly forbids
+treating model agreement or a prior report as independent corroboration. Scratch files and caches
+remain outside the library.
 
 ## Consequences
 
-- Research deliverables live in an operator-visible filesystem location independent of session
-  retention and remain browsable from Gosling.
+- Each research deliverable has a session-specific canonical copy in Outputs and an operator-visible,
+  cross-session archive copy in the Research Library; both remain browsable from Gosling.
 - Future research can consult relevant prior work without silently elevating it to source-of-truth
   status or auto-injecting the entire library into model context.
 - The library is not a content-addressed archive. Operators can edit, move, or delete its files, and
   the next bounded listing reflects that filesystem state.
-- The agent instruction is the destination-routing contract; Gosling does not copy arbitrary session
+- The agent instruction is the dual-destination contract. Gosling does not copy arbitrary session
   artifacts after the fact or rewrite files the user produced elsewhere.
 
 ## Rejected alternatives
 
-| Alternative | Reason rejected |
-| --- | --- |
-| Scan workspace Outputs globally | Loses session provenance and turns unrelated workspace files into research inventory. |
-| Store generated reports in the input Library database | Conflates supplied evidence with generated analysis and duplicates filesystem documents. |
-| Let renderer code submit a library path directly | Creates a generic persistent directory-grant primitive. |
-| Auto-attach every prior report to every research prompt | Causes unbounded context growth and turns stale generated work into implicit authority. |
+| Alternative                                             | Reason rejected                                                                          |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Scan workspace Outputs globally                         | Loses session provenance and turns unrelated workspace files into research inventory.    |
+| Store generated reports in the input Library database   | Conflates supplied evidence with generated analysis and duplicates filesystem documents. |
+| Let renderer code submit a library path directly        | Creates a generic persistent directory-grant primitive.                                  |
+| Auto-attach every prior report to every research prompt | Causes unbounded context growth and turns stale generated work into implicit authority.  |
