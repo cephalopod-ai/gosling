@@ -366,6 +366,7 @@ describe('Hub workspace selection', () => {
       expect.objectContaining({
         extensionConfigs: expect.arrayContaining([expect.objectContaining({ name: 'math_mcp' })]),
         workspaceAdditionalFolders: ['/Users/tester/Documents/Gosling Research Library'],
+        researchLibraryPath: '/Users/tester/Documents/Gosling Research Library',
       })
     );
     expect(vi.mocked(acpAppendSessionSystemPrompt).mock.invocationCallOrder[0]).toBeLessThan(
@@ -436,6 +437,7 @@ describe('Hub workspace selection', () => {
         workspaceId: 'default',
         workspaceWorkingDir: '/Users/tester/Work',
         workspaceAdditionalFolders: ['/Users/tester/Documents/Gosling Research Library'],
+        researchLibraryPath: '/Users/tester/Documents/Gosling Research Library',
         provider: 'codex',
         model: 'gpt-5.6-sol',
       })
@@ -523,6 +525,25 @@ describe('Hub workspace selection', () => {
 
     await waitFor(() => expect(acpDeleteSession).toHaveBeenCalledWith('session-personal'));
     expect(await screen.findByRole('alert')).toHaveTextContent('The report is too large');
+  });
+
+  it('surfaces failed incomplete-session cleanup for manual recovery', async () => {
+    configureResearchExtensions();
+    const user = userEvent.setup();
+    vi.mocked(addResearchInitialInputs).mockRejectedValueOnce(new Error('The report is too large'));
+    vi.mocked(acpDeleteSession).mockRejectedValueOnce(new Error('database busy'));
+    render(<Hub setView={vi.fn()} sessionExperience="research" />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Initial Inputs' }));
+    await user.type(screen.getByLabelText('Paste content'), 'A starting research prompt');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The incomplete session could not be removed: database busy. Open Session History and remove it manually.'
+    );
   });
 
   it('does not allow a workspace with an unavailable primary folder', async () => {

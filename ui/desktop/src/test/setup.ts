@@ -87,7 +87,7 @@ Object.defineProperty(window, 'electron', {
       Promise.resolve('/Users/tester/Documents/Gosling Research Library')
     ),
     chooseResearchLibraryPath: vi.fn(() => Promise.resolve(null)),
-    listResearchLibraryFiles: vi.fn(() => Promise.resolve([])),
+    listResearchLibraryFiles: vi.fn(() => Promise.resolve({ files: [], truncated: false })),
     getSetting: vi.fn((key: string) => Promise.resolve(mockSettings[key])),
     getSettings: vi.fn((keys: string[]) =>
       Promise.resolve(Object.fromEntries(keys.map((key) => [key, mockSettings[key]])))

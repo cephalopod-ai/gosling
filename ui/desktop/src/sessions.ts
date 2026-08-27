@@ -48,6 +48,7 @@ interface CreateSessionOptions {
   workspaceAdditionalFolders?: string[];
   provider?: string;
   model?: string;
+  researchLibraryPath?: string;
 }
 
 function selectedExtensionConfigs(options?: CreateSessionOptions): ExtensionConfig[] {
@@ -87,6 +88,9 @@ async function createAcpSession(
           : {}),
         ...(options.provider ? { provider: options.provider } : {}),
         ...(options.model ? { model: options.model } : {}),
+        ...(options.researchLibraryPath
+          ? { researchLibraryPath: options.researchLibraryPath }
+          : {}),
       }
     : undefined;
   if (workspaceLaunchOptions && Object.keys(workspaceLaunchOptions).length > 0) {

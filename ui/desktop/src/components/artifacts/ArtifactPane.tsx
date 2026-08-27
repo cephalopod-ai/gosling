@@ -99,6 +99,11 @@ const i18n = defineMessages({
     id: 'artifactPane.libraryLoadFailed',
     defaultMessage: 'Unable to load the Research Library.',
   },
+  libraryTruncated: {
+    id: 'artifactPane.libraryTruncated',
+    defaultMessage:
+      'Showing the first 500 files. Open the Research Library folder to browse the complete collection.',
+  },
   sessionScope: { id: 'artifactPane.sessionScope', defaultMessage: 'Session' },
   projectScope: { id: 'artifactPane.projectScope', defaultMessage: 'Project' },
 });
@@ -323,6 +328,7 @@ export function ArtifactPane() {
   const [inputsLoading, setInputsLoading] = useState(false);
   const [inputsError, setInputsError] = useState(false);
   const [researchLibraryFiles, setResearchLibraryFiles] = useState<ResearchLibraryFile[]>([]);
+  const [researchLibraryTruncated, setResearchLibraryTruncated] = useState(false);
   const [researchLibraryPath, setResearchLibraryPath] = useState<string | null>(null);
   const [researchLibraryLoading, setResearchLibraryLoading] = useState(false);
   const [researchLibraryError, setResearchLibraryError] = useState(false);
@@ -337,14 +343,16 @@ export function ArtifactPane() {
     setResearchLibraryLoading(true);
     setResearchLibraryError(false);
     try {
-      const [libraryPath, files] = await Promise.all([
+      const [libraryPath, listing] = await Promise.all([
         window.electron.getResearchLibraryPath(),
         window.electron.listResearchLibraryFiles(),
       ]);
       setResearchLibraryPath(libraryPath);
-      setResearchLibraryFiles(files);
+      setResearchLibraryFiles(listing.files);
+      setResearchLibraryTruncated(listing.truncated);
     } catch {
       setResearchLibraryFiles([]);
+      setResearchLibraryTruncated(false);
       setResearchLibraryError(true);
     } finally {
       setResearchLibraryLoading(false);
@@ -567,6 +575,8 @@ export function ArtifactPane() {
             const label = intl.formatMessage(
               tab === 'inputs' ? i18n.inputs : tab === 'library' ? i18n.library : i18n.outputs
             );
+            const countLabel =
+              tab === 'library' && researchLibraryTruncated ? `${count}+` : String(count);
             const Icon = tab === 'inputs' ? FileInput : tab === 'library' ? BookOpen : FileOutput;
             return (
               <button
@@ -574,7 +584,7 @@ export function ArtifactPane() {
                 type="button"
                 role="tab"
                 aria-selected={active}
-                aria-label={`${label} ${count}`}
+                aria-label={`${label} ${countLabel}`}
                 onClick={() => selectInventoryTab(tab)}
                 className={cn(
                   'flex h-10 items-center gap-1.5 border-b-2 px-2 text-xs font-medium',
@@ -589,7 +599,7 @@ export function ArtifactPane() {
                   data-testid={`${tab}-count`}
                   className="min-w-5 rounded-md border border-border-primary bg-background-secondary px-1.5 py-0.5 text-center text-[10px] leading-none"
                 >
-                  {count}
+                  {countLabel}
                 </span>
               </button>
             );
@@ -705,29 +715,42 @@ export function ArtifactPane() {
               </p>
             </div>
           ) : (
-            <ul className="py-1" aria-label={intl.formatMessage(i18n.library)}>
-              {researchLibraryFiles.map((file) => (
-                <li key={file.path}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 border-b border-border-primary px-3 py-2.5 text-left last:border-b-0 hover:bg-background-secondary/60"
-                    title={file.path}
-                    onClick={() => {
-                      openFile(file.path);
-                      setInventoryTab('outputs');
-                    }}
-                  >
-                    <FileText className="h-4 w-4 shrink-0 text-text-secondary" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs text-text-primary">{file.name}</span>
-                      <span className="block truncate text-[10px] text-text-secondary">
-                        {file.relativePath} · {formatInputSize(file.sizeBytes)}
+            <div>
+              {researchLibraryTruncated && (
+                <div
+                  role="status"
+                  className="m-3 flex items-start gap-2 rounded-md border border-border-primary px-3 py-2 text-xs text-text-secondary"
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {intl.formatMessage(i18n.libraryTruncated)}
+                </div>
+              )}
+              <ul className="py-1" aria-label={intl.formatMessage(i18n.library)}>
+                {researchLibraryFiles.map((file) => (
+                  <li key={file.path}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 border-b border-border-primary px-3 py-2.5 text-left last:border-b-0 hover:bg-background-secondary/60"
+                      title={file.path}
+                      onClick={() => {
+                        openFile(file.path);
+                        setInventoryTab('outputs');
+                      }}
+                    >
+                      <FileText className="h-4 w-4 shrink-0 text-text-secondary" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs text-text-primary">
+                          {file.name}
+                        </span>
+                        <span className="block truncate text-[10px] text-text-secondary">
+                          {file.relativePath} · {formatInputSize(file.sizeBytes)}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       ) : (

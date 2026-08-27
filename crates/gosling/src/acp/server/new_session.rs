@@ -2,7 +2,7 @@ use crate::acp::custom_requests::{GoslingExtension, ShellCredentialPolicy};
 use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
-use crate::session::{ExtensionData, Session, SessionType};
+use crate::session::{DeepResearchState, ExtensionData, ExtensionState, Session, SessionType};
 use crate::workspace::{PreparedWorkspaceSession, WorkspaceSessionLaunchOverrides};
 
 use super::GoslingAcpAgent;
@@ -294,12 +294,18 @@ impl GoslingAcpAgent {
         } else {
             meta_gosling_extensions(args.meta.as_ref())?
         };
-        let extension_data = self.build_enabled_extensions_data(
+        let deep_research_state = deep_research_state(args.meta.as_ref(), workspace.as_ref())?;
+        let mut extension_data = self.build_enabled_extensions_data(
             config,
             session,
             args.mcp_servers,
             gosling_extensions,
         )?;
+        if let Some(state) = deep_research_state {
+            state
+                .to_extension_data(&mut extension_data)
+                .internal_err_ctx("Failed to initialize Deep Research state")?;
+        }
 
         self.apply_initial_session_config(
             &session.id,
@@ -504,6 +510,59 @@ fn workspace_launch_overrides(
     })
 }
 
+fn deep_research_state(
+    meta: Option<&Meta>,
+    workspace: Option<&PreparedWorkspaceSession>,
+) -> Result<Option<DeepResearchState>, agent_client_protocol::Error> {
+    let Some(requested) = meta_string(meta, "researchLibraryPath")? else {
+        return Ok(None);
+    };
+    let requested = PathBuf::from(requested);
+    if !requested.is_absolute() {
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("researchLibraryPath must be an absolute path"));
+    }
+    let canonical = std::fs::canonicalize(&requested).map_err(|_| {
+        agent_client_protocol::Error::invalid_params()
+            .data("researchLibraryPath must identify an available directory")
+    })?;
+    if !canonical.is_dir() {
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("researchLibraryPath must identify a directory"));
+    }
+    let Some(workspace) = workspace else {
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("researchLibraryPath requires a workspace session"));
+    };
+    let listed_as_additional_folder = meta
+        .and_then(|value| value.get("workspaceAdditionalFolders"))
+        .and_then(|value| value.as_array())
+        .is_some_and(|folders| {
+            folders.iter().any(|folder| {
+                folder
+                    .as_str()
+                    .and_then(|folder| std::fs::canonicalize(folder).ok())
+                    .is_some_and(|folder| folder == canonical)
+            })
+        });
+    let granted_by_workspace = workspace
+        .context
+        .folder_policy
+        .roots
+        .iter()
+        .any(|root| PathBuf::from(&root.path) == canonical);
+    if !listed_as_additional_folder
+        || !granted_by_workspace
+        || canonical == workspace.working_folder
+    {
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("researchLibraryPath must be an explicitly granted additional session folder"));
+    }
+    Ok(Some(DeepResearchState {
+        library_path: canonical.to_string_lossy().into_owned(),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -565,5 +624,20 @@ mod tests {
         )]);
 
         assert!(workspace_launch_overrides(Some(&meta)).is_err());
+    }
+
+    #[test]
+    fn deep_research_state_rejects_ungranted_library_path() {
+        let root = tempfile::tempdir().unwrap();
+        let library = root.path().join("library");
+        std::fs::create_dir(&library).unwrap();
+        let meta = serde_json::Map::from_iter([(
+            "researchLibraryPath".to_string(),
+            serde_json::Value::String(library.to_string_lossy().into_owned()),
+        )]);
+
+        let error = deep_research_state(Some(&meta), None).unwrap_err();
+
+        assert!(format!("{error:?}").contains("requires a workspace session"));
     }
 }

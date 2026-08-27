@@ -33,11 +33,25 @@ describe('research library', () => {
     await fs.writeFile(path.join(root, '.private.md'), 'hidden');
     await fs.symlink(path.join(root, 'bayesian-networks'), path.join(root, 'linked'));
 
-    const files = await listResearchLibraryFiles(root, ['md', 'txt']);
+    const listing = await listResearchLibraryFiles(root, ['md', 'txt']);
 
-    expect(files.map((file) => file.relativePath).sort()).toEqual([
+    expect(listing.files.map((file) => file.relativePath).sort()).toEqual([
       'bayesian-networks/report.md',
       'notes.txt',
     ]);
+    expect(listing.truncated).toBe(false);
+  });
+
+  it('reports when the bounded listing omits additional matching files', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-research-library-'));
+    temporaryDirectories.push(root);
+    await Promise.all(
+      ['one.md', 'two.md', 'three.md'].map((name) => fs.writeFile(path.join(root, name), name))
+    );
+
+    const listing = await listResearchLibraryFiles(root, ['md'], 2);
+
+    expect(listing.files).toHaveLength(2);
+    expect(listing.truncated).toBe(true);
   });
 });

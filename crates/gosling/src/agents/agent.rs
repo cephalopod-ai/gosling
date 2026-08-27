@@ -749,8 +749,7 @@ impl Agent {
         tool_inspection_manager
             .add_inspector(Box::new(WorkingDirScopeInspector::new(session_manager)));
 
-        // Add repetition inspector (lower priority - basic repetition checking)
-        tool_inspection_manager.add_inspector(Box::new(RepetitionInspector::new(None)));
+        tool_inspection_manager.add_inspector(Box::new(RepetitionInspector::new(Some(3))));
 
         tool_inspection_manager
     }

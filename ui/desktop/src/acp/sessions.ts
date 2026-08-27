@@ -397,6 +397,7 @@ export interface AcpWorkspaceLaunchOptions {
   additionalFolders?: string[];
   provider?: string;
   model?: string;
+  researchLibraryPath?: string;
 }
 
 export async function acpNewSession(
@@ -427,6 +428,9 @@ export async function acpNewSession(
   }
   if (workspaceLaunchOptions?.model) {
     meta.model = workspaceLaunchOptions.model;
+  }
+  if (workspaceLaunchOptions?.researchLibraryPath) {
+    meta.researchLibraryPath = workspaceLaunchOptions.researchLibraryPath;
   }
   const request: NewSessionRequest = { cwd, mcpServers: [], _meta: meta };
   const response = await client.newSession(request);

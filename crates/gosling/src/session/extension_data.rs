@@ -120,6 +120,16 @@ impl ExtensionState for AcpPromptRunState {
     const VERSION: &'static str = "v1";
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeepResearchState {
+    pub library_path: String,
+}
+
+impl ExtensionState for DeepResearchState {
+    const EXTENSION_NAME: &'static str = "deep_research";
+    const VERSION: &'static str = "v1";
+}
+
 /// TODO extension state implementation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoState {
@@ -264,6 +274,21 @@ mod tests {
             .unwrap();
         let completed = AcpPromptRunState::from_extension_data(&extension_data).unwrap();
         assert!(completed.has_terminal_outcome());
+    }
+
+    #[test]
+    fn deep_research_state_round_trips_through_extension_data() {
+        let state = DeepResearchState {
+            library_path: "/tmp/research-library".into(),
+        };
+        let mut extension_data = ExtensionData::new();
+
+        state.to_extension_data(&mut extension_data).unwrap();
+
+        assert_eq!(
+            DeepResearchState::from_extension_data(&extension_data),
+            Some(state)
+        );
     }
 
     #[test]

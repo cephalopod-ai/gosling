@@ -2,9 +2,15 @@ import { useRef, useState } from 'react';
 import { ChevronRight, FileText, Paperclip, Trash2 } from 'lucide-react';
 import { defineMessages, useIntl } from '../../i18n';
 import {
+  isResearchInitialImageFile,
   MAX_RESEARCH_INITIAL_FILE_BYTES,
+  MAX_RESEARCH_INITIAL_IMAGE_BYTES,
   MAX_RESEARCH_INITIAL_INPUTS,
+  MAX_RESEARCH_INITIAL_TEXT_BYTES,
+  MAX_RESEARCH_INITIAL_TOTAL_IMAGE_BYTES,
+  MAX_RESEARCH_INITIAL_TOTAL_TEXT_BYTES,
   researchInitialInputCount,
+  researchInitialTextBytes,
   type ResearchInitialInputFile,
   type ResearchInitialInputs,
 } from '../../types/sessionExperience';
@@ -77,7 +83,8 @@ const i18n = defineMessages({
   noFiles: { id: 'researchInitialInputs.noFiles', defaultMessage: 'No files selected.' },
   fileHelp: {
     id: 'researchInitialInputs.fileHelp',
-    defaultMessage: 'PDF, text, data, and image files up to 20 MB each.',
+    defaultMessage:
+      'Files up to 20 MB each; images up to 5 MB each and 10 MB total. Pasted text is limited to 256 KB each and 512 KB total.',
   },
   removeFile: {
     id: 'researchInitialInputs.removeFile',
@@ -96,6 +103,22 @@ const i18n = defineMessages({
   fileTooLarge: {
     id: 'researchInitialInputs.fileTooLarge',
     defaultMessage: '{name} is larger than 20 MB.',
+  },
+  imageTooLarge: {
+    id: 'researchInitialInputs.imageTooLarge',
+    defaultMessage: '{name} is larger than the 5 MB image limit.',
+  },
+  imagesTooLarge: {
+    id: 'researchInitialInputs.imagesTooLarge',
+    defaultMessage: 'Selected images exceed the 10 MB total limit.',
+  },
+  textTooLarge: {
+    id: 'researchInitialInputs.textTooLarge',
+    defaultMessage: 'Each pasted input must be no larger than 256 KB.',
+  },
+  textTotalTooLarge: {
+    id: 'researchInitialInputs.textTotalTooLarge',
+    defaultMessage: 'Pasted inputs exceed the 512 KB total limit.',
   },
   fileUnavailable: {
     id: 'researchInitialInputs.fileUnavailable',
@@ -131,8 +154,18 @@ export function ResearchInitialInputsDialog({
     files: draftFiles,
   });
   const isOverLimit = draftCount > MAX_RESEARCH_INITIAL_INPUTS;
+  const pendingTextBytes = researchInitialTextBytes(pendingText);
+  const totalTextBytes = [...draftTexts, ...(pendingText ? [pendingText] : [])].reduce(
+    (total, text) => total + researchInitialTextBytes(text),
+    0
+  );
+  const isTextTooLarge = pendingTextBytes > MAX_RESEARCH_INITIAL_TEXT_BYTES;
+  const isTextTotalTooLarge = totalTextBytes > MAX_RESEARCH_INITIAL_TOTAL_TEXT_BYTES;
   const canQueueText =
-    pendingText.length > 0 && draftTexts.length + draftFiles.length < MAX_RESEARCH_INITIAL_INPUTS;
+    pendingText.length > 0 &&
+    !isTextTooLarge &&
+    !isTextTotalTooLarge &&
+    draftTexts.length + draftFiles.length < MAX_RESEARCH_INITIAL_INPUTS;
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
@@ -157,12 +190,25 @@ export function ResearchInitialInputsDialog({
     if (selectedFiles.length === 0) return;
 
     const nextFiles = [...draftFiles];
+    let selectedImageBytes = nextFiles
+      .filter((file) => isResearchInitialImageFile(file.name))
+      .reduce((total, file) => total + file.sizeBytes, 0);
     let nextError: string | null = null;
 
     for (const file of selectedFiles) {
       if (file.size > MAX_RESEARCH_INITIAL_FILE_BYTES) {
         nextError = intl.formatMessage(i18n.fileTooLarge, { name: file.name });
         continue;
+      }
+      if (isResearchInitialImageFile(file.name)) {
+        if (file.size > MAX_RESEARCH_INITIAL_IMAGE_BYTES) {
+          nextError = intl.formatMessage(i18n.imageTooLarge, { name: file.name });
+          continue;
+        }
+        if (selectedImageBytes + file.size > MAX_RESEARCH_INITIAL_TOTAL_IMAGE_BYTES) {
+          nextError = intl.formatMessage(i18n.imagesTooLarge);
+          continue;
+        }
       }
 
       try {
@@ -174,6 +220,7 @@ export function ResearchInitialInputsDialog({
           path,
           sizeBytes: file.size,
         });
+        if (isResearchInitialImageFile(file.name)) selectedImageBytes += file.size;
       } catch {
         nextError = intl.formatMessage(i18n.fileUnavailable, { name: file.name });
       }
@@ -184,7 +231,7 @@ export function ResearchInitialInputsDialog({
   };
 
   const applyInputs = () => {
-    if (isOverLimit) return;
+    if (isOverLimit || isTextTooLarge || isTextTotalTooLarge) return;
     onApply({
       texts: [...draftTexts, ...(pendingText ? [pendingText] : [])],
       files: draftFiles,
@@ -229,7 +276,6 @@ export function ResearchInitialInputsDialog({
               value={draftText}
               rows={7}
               wrap="soft"
-              maxLength={256 * 1024}
               placeholder={intl.formatMessage(i18n.pastePlaceholder)}
               className="block min-w-0 max-w-full w-full resize-y whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-lg border border-border-primary bg-background-secondary px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onChange={(event) => setDraftText(event.target.value)}
@@ -365,11 +411,15 @@ export function ResearchInitialInputsDialog({
             )}
           </div>
 
-          {(isOverLimit || fileError) && (
+          {(isOverLimit || isTextTooLarge || isTextTotalTooLarge || fileError) && (
             <p role="alert" className="text-sm text-red-500">
               {isOverLimit
                 ? intl.formatMessage(i18n.tooMany, { count: MAX_RESEARCH_INITIAL_INPUTS })
-                : fileError}
+                : isTextTooLarge
+                  ? intl.formatMessage(i18n.textTooLarge)
+                  : isTextTotalTooLarge
+                    ? intl.formatMessage(i18n.textTotalTooLarge)
+                    : fileError}
             </p>
           )}
         </div>
@@ -380,7 +430,11 @@ export function ResearchInitialInputsDialog({
               {intl.formatMessage(i18n.cancel)}
             </Button>
           </DialogClose>
-          <Button type="button" disabled={isOverLimit} onClick={applyInputs}>
+          <Button
+            type="button"
+            disabled={isOverLimit || isTextTooLarge || isTextTotalTooLarge}
+            onClick={applyInputs}
+          >
             {intl.formatMessage(i18n.done)}
           </Button>
         </DialogFooter>

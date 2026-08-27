@@ -98,6 +98,7 @@ describe('ACP sessions', () => {
       workingDir: '/workspace/project/feature',
       credentialProfileId: 'profile-1',
       additionalFolders: ['/workspace/reference'],
+      researchLibraryPath: '/workspace/reference',
     });
 
     expect(client.newSession).toHaveBeenCalledWith({
@@ -109,6 +110,7 @@ describe('ACP sessions', () => {
         workspaceWorkingDir: '/workspace/project/feature',
         workspaceCredentialProfileId: 'profile-1',
         workspaceAdditionalFolders: ['/workspace/reference'],
+        researchLibraryPath: '/workspace/reference',
       },
     });
   });

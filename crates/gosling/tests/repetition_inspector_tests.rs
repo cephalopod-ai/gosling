@@ -10,7 +10,7 @@ use rmcp::object;
 #[test]
 fn test_repetition_inspector_denies_after_exceeding_and_resets_on_param_change() {
     // Allow at most 2 consecutive identical calls
-    let mut inspector = RepetitionInspector::new(Some(2));
+    let inspector = RepetitionInspector::new(Some(2));
 
     // First identical call → allowed
     let call_v1 = CallToolRequestParams::new("fetch_user").with_arguments(object!({"id": 123}));

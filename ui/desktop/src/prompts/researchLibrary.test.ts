@@ -12,6 +12,8 @@ describe('research library prompt', () => {
     expect(prompt).toContain("session's Outputs inventory");
     expect(prompt).toContain('across sessions and threads');
     expect(prompt).toContain('identical final content');
+    expect(prompt).toContain('reference the exact path of both copies');
+    expect(prompt).toContain('compares the file contents');
     expect(prompt).toContain('Never overwrite either copy silently');
     expect(prompt).toContain('secondary, potentially stale context');
     expect(prompt).toContain('not as a source of truth');

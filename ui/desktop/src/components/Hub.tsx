@@ -394,6 +394,7 @@ export default function Hub({
               ...(sessionAdditionalFolders.length
                 ? { workspaceAdditionalFolders: sessionAdditionalFolders }
                 : {}),
+              ...(researchLibraryPath ? { researchLibraryPath } : {}),
             }
           : {
               allExtensions: extensionsList,
@@ -407,6 +408,7 @@ export default function Hub({
               ...(sessionAdditionalFolders.length
                 ? { workspaceAdditionalFolders: sessionAdditionalFolders }
                 : {}),
+              ...(researchLibraryPath ? { researchLibraryPath } : {}),
             };
 
       const session = await createSession(workingDir, sessionOptions);
@@ -466,17 +468,24 @@ export default function Hub({
       });
       return true;
     } catch (error) {
+      let cleanupFailure: string | null = null;
       if (createdSessionId) {
         try {
           await acpDeleteSession(createdSessionId);
         } catch (cleanupError) {
           console.error('Failed to remove incomplete research session:', cleanupError);
+          cleanupFailure =
+            cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
         }
       }
       console.error('Failed to create session:', error);
       const detail = error instanceof Error ? error.message : String(error);
       setSessionCreationError(
-        `Could not start the ${isResearch ? 'research session' : 'chat'}: ${detail}`
+        `Could not start the ${isResearch ? 'research session' : 'chat'}: ${detail}${
+          cleanupFailure
+            ? ` The incomplete session could not be removed: ${cleanupFailure}. Open Session History and remove it manually.`
+            : ''
+        }`
       );
       setIsCreatingSession(false);
       return false;

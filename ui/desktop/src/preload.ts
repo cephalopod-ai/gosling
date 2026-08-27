@@ -13,7 +13,7 @@ import type {
   ArtifactSaveRequest,
   ArtifactSaveResponse,
 } from './types/artifactRouter';
-import type { ResearchLibraryFile } from './utils/researchLibrary';
+import type { ResearchLibraryListing } from './utils/researchLibrary';
 
 // Mapping from settings keys to their old localStorage keys for lazy migration
 const localStorageKeyMap: Partial<Record<SettingKey, string>> = {
@@ -120,7 +120,7 @@ type ElectronAPI = {
   sessionDirectoryChooser: () => Promise<Electron.OpenDialogReturnValue>;
   getResearchLibraryPath: () => Promise<string>;
   chooseResearchLibraryPath: () => Promise<string | null>;
-  listResearchLibraryFiles: () => Promise<ResearchLibraryFile[]>;
+  listResearchLibraryFiles: () => Promise<ResearchLibraryListing>;
   createChatWindow: (options?: CreateChatWindowOptions) => void;
   logInfo: (txt: string) => void;
   showNotification: (data: NotificationData) => void;

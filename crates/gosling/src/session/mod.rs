@@ -26,7 +26,7 @@ pub use diagnostics::{
     DiagnosticsTextFile, SystemInfo,
 };
 pub use extension_data::{
-    AcpPromptRunState, EnabledExtensionsState, ExtensionData, ExtensionState,
+    AcpPromptRunState, DeepResearchState, EnabledExtensionsState, ExtensionData, ExtensionState,
     ShellSkillSelectionState, TodoState,
 };
 pub use library::{

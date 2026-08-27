@@ -12,6 +12,8 @@ const SHELL_LIBRARY_IMAGE_LIMIT: usize = 5 * 1024 * 1024;
 const SHELL_LIBRARY_PROMPT_ITEM_LIMIT: usize = 16;
 const SHELL_LIBRARY_PROMPT_TEXT_LIMIT: usize = 512 * 1024;
 const SHELL_LIBRARY_PROMPT_IMAGE_LIMIT: usize = 10 * 1024 * 1024;
+const SHELL_LIBRARY_PDF_PAGE_LIMIT: usize = 256;
+const SHELL_LIBRARY_PDF_OBJECT_LIMIT: usize = 50_000;
 // A failed lookup (timeout, panic, or read error) is usually transient — a locked keychain or a
 // momentarily unreadable workspace document — so callers back off for this long instead of
 // retrying on every request, but still retry on the next call after it elapses rather than
@@ -332,6 +334,9 @@ impl GoslingAcpAgent {
         if decoded.is_empty() || decoded.len() > SHELL_LIBRARY_IMAGE_LIMIT {
             return Err(shell_library_invalid("SHELL_LIBRARY_IMAGE_INVALID"));
         }
+        if !bytes_match_mime(&decoded, &request.mime_type) {
+            return Err(shell_library_invalid("SHELL_LIBRARY_IMAGE_TYPE_INVALID"));
+        }
         let item = self
             .session_manager
             .add_session_library_item(
@@ -368,6 +373,9 @@ impl GoslingAcpAgent {
         }
         let mime_type = shell_library_file_mime_type(&path)
             .ok_or_else(|| shell_library_invalid("SHELL_LIBRARY_FILE_TYPE_INVALID"))?;
+        if mime_type.starts_with("image/") && metadata.len() > SHELL_LIBRARY_IMAGE_LIMIT as u64 {
+            return Err(shell_library_invalid("SHELL_LIBRARY_FILE_INVALID"));
+        }
         let name = path
             .file_name()
             .and_then(|value| value.to_str())
@@ -431,21 +439,10 @@ impl GoslingAcpAgent {
         let mut image_bytes = 0usize;
         let mut items = Vec::with_capacity(stored.len());
         for item in stored {
-            let content = resolve_shell_library_item(&item)
+            let resolved = resolve_shell_library_item(&item)
                 .map_err(|_| shell_library_invalid("SHELL_LIBRARY_ITEM_UNAVAILABLE"))?;
-            match &content {
-                ShellLibraryResolvedContent::Text { text } => {
-                    text_bytes = text_bytes.saturating_add(text.len());
-                }
-                ShellLibraryResolvedContent::Image { data, .. } => {
-                    image_bytes = image_bytes.saturating_add(
-                        base64::engine::general_purpose::STANDARD
-                            .decode(data)
-                            .map_err(|_| shell_library_invalid("SHELL_LIBRARY_ITEM_UNAVAILABLE"))?
-                            .len(),
-                    );
-                }
-            }
+            text_bytes = text_bytes.saturating_add(resolved.text_bytes);
+            image_bytes = image_bytes.saturating_add(resolved.image_bytes);
             if text_bytes > SHELL_LIBRARY_PROMPT_TEXT_LIMIT
                 || image_bytes > SHELL_LIBRARY_PROMPT_IMAGE_LIMIT
             {
@@ -454,7 +451,7 @@ impl GoslingAcpAgent {
             items.push(ShellLibraryResolvedItem {
                 id: item.id,
                 name: item.name,
-                content,
+                content: resolved.content,
             });
         }
         Ok(ShellLibraryResolveResponse { items })
@@ -584,7 +581,7 @@ fn shell_library_summary(item: SessionLibraryItem) -> ShellLibraryItemSummary {
 }
 
 fn shell_library_file_mime_type(path: &std::path::Path) -> Option<&'static str> {
-    match path
+    let extension_mime = match path
         .extension()
         .and_then(|value| value.to_str())?
         .to_ascii_lowercase()
@@ -597,61 +594,106 @@ fn shell_library_file_mime_type(path: &std::path::Path) -> Option<&'static str> 
         "gif" => Some("image/gif"),
         "json" => Some("application/json"),
         "csv" => Some("text/csv"),
-        "tsv" => Some("text/tab-separated-values"),
         "md" => Some("text/markdown"),
         "txt" | "rs" | "js" | "jsx" | "ts" | "tsx" | "py" | "go" | "java" | "c" | "h" | "cpp"
         | "hpp" | "swift" | "kt" | "rb" | "sh" | "css" | "html" | "sql" | "toml" | "yaml"
         | "yml" | "xml" => Some("text/plain"),
         _ => None,
+    }?;
+    let bytes = fs::read(path).ok()?;
+    bytes_match_mime(&bytes, extension_mime).then_some(extension_mime)
+}
+
+fn bytes_match_mime(bytes: &[u8], mime_type: &str) -> bool {
+    match mime_type {
+        "application/pdf" => bytes.starts_with(b"%PDF-"),
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
+        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        "image/webp" => bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP",
+        "application/json" => serde_json::from_slice::<serde_json::Value>(bytes).is_ok(),
+        mime if mime.starts_with("text/") => {
+            !bytes.contains(&0) && std::str::from_utf8(bytes).is_ok()
+        }
+        _ => false,
     }
 }
 
-fn resolve_shell_library_item(item: &SessionLibraryItem) -> Result<ShellLibraryResolvedContent> {
+struct ResolvedShellLibraryContent {
+    content: ShellLibraryResolvedContent,
+    text_bytes: usize,
+    image_bytes: usize,
+}
+
+fn resolve_shell_library_item(item: &SessionLibraryItem) -> Result<ResolvedShellLibraryContent> {
     match item.kind {
-        SessionLibraryItemKind::Text => Ok(ShellLibraryResolvedContent::Text {
-            text: wrap_library_text(
-                &item.name,
-                item.text_content
-                    .as_deref()
-                    .ok_or_else(|| anyhow::anyhow!("stored text is missing"))?,
-            ),
-        }),
-        SessionLibraryItemKind::Image => Ok(ShellLibraryResolvedContent::Image {
-            data: item
+        SessionLibraryItemKind::Text => {
+            let text = item
+                .text_content
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("stored text is missing"))?;
+            Ok(ResolvedShellLibraryContent {
+                content: ShellLibraryResolvedContent::Text {
+                    text: wrap_library_text(&item.name, text),
+                },
+                text_bytes: text.len(),
+                image_bytes: 0,
+            })
+        }
+        SessionLibraryItemKind::Image => {
+            let data = item
                 .image_data
                 .clone()
-                .ok_or_else(|| anyhow::anyhow!("stored image is missing"))?,
-            mime_type: item.mime_type.clone(),
-        }),
+                .ok_or_else(|| anyhow::anyhow!("stored image is missing"))?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(&data)?;
+            anyhow::ensure!(
+                bytes_match_mime(&bytes, &item.mime_type),
+                "image type changed"
+            );
+            Ok(ResolvedShellLibraryContent {
+                content: ShellLibraryResolvedContent::Image {
+                    data,
+                    mime_type: item.mime_type.clone(),
+                },
+                text_bytes: 0,
+                image_bytes: bytes.len(),
+            })
+        }
         SessionLibraryItemKind::File => resolve_shell_library_file(item),
     }
 }
 
-fn resolve_shell_library_file(item: &SessionLibraryItem) -> Result<ShellLibraryResolvedContent> {
+fn resolve_shell_library_file(item: &SessionLibraryItem) -> Result<ResolvedShellLibraryContent> {
     let path = item
         .file_path
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("linked file path is missing"))?;
     let metadata = fs::metadata(path)?;
     anyhow::ensure!(
-        metadata.is_file() && metadata.len() <= SHELL_LIBRARY_FILE_LIMIT,
+        metadata.is_file() && metadata.len() > 0 && metadata.len() <= SHELL_LIBRARY_FILE_LIMIT,
         "linked file is unavailable"
     );
+    let detected_mime = shell_library_file_mime_type(std::path::Path::new(path))
+        .ok_or_else(|| anyhow::anyhow!("linked file type is invalid"))?;
+    anyhow::ensure!(detected_mime == item.mime_type, "linked file type changed");
     if item.mime_type.starts_with("image/") {
         let bytes = fs::read(path)?;
         anyhow::ensure!(
             bytes.len() <= SHELL_LIBRARY_IMAGE_LIMIT,
             "image is too large"
         );
-        return Ok(ShellLibraryResolvedContent::Image {
-            data: base64::engine::general_purpose::STANDARD.encode(bytes),
-            mime_type: item.mime_type.clone(),
+        let image_bytes = bytes.len();
+        return Ok(ResolvedShellLibraryContent {
+            content: ShellLibraryResolvedContent::Image {
+                data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                mime_type: item.mime_type.clone(),
+            },
+            text_bytes: 0,
+            image_bytes,
         });
     }
     let text = if item.mime_type == "application/pdf" {
-        let document = lopdf::Document::load(path)?;
-        let pages = document.get_pages().keys().copied().collect::<Vec<_>>();
-        document.extract_text(&pages)?
+        extract_bounded_pdf_text(std::path::Path::new(path))?
     } else {
         let mut file = fs::File::open(path)?;
         let mut bytes = Vec::new();
@@ -660,9 +702,50 @@ fn resolve_shell_library_file(item: &SessionLibraryItem) -> Result<ShellLibraryR
             .read_to_end(&mut bytes)?;
         String::from_utf8(bytes)?
     };
-    Ok(ShellLibraryResolvedContent::Text {
-        text: wrap_library_text(&item.name, &truncate_library_text(text)),
+    let text = truncate_library_text(text);
+    let text_bytes = text.len().min(SHELL_LIBRARY_PROMPT_TEXT_LIMIT);
+    Ok(ResolvedShellLibraryContent {
+        content: ShellLibraryResolvedContent::Text {
+            text: wrap_library_text(&item.name, &text),
+        },
+        text_bytes,
+        image_bytes: 0,
     })
+}
+
+fn extract_bounded_pdf_text(path: &std::path::Path) -> Result<String> {
+    let document = lopdf::Document::load(path)?;
+    let pages = document.get_pages();
+    ensure_pdf_complexity(document.objects.len(), pages.len())?;
+
+    let mut text = String::new();
+    for page in pages.keys().copied() {
+        let page_text = document.extract_text(&[page])?;
+        if text.len().saturating_add(page_text.len()) > SHELL_LIBRARY_PROMPT_TEXT_LIMIT {
+            let remaining = SHELL_LIBRARY_PROMPT_TEXT_LIMIT.saturating_sub(text.len());
+            let mut boundary = remaining.min(page_text.len());
+            while !page_text.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            text.push_str(&page_text[..boundary]);
+            text.push_str("\n[Content truncated]");
+            break;
+        }
+        text.push_str(&page_text);
+    }
+    Ok(text)
+}
+
+fn ensure_pdf_complexity(object_count: usize, page_count: usize) -> Result<()> {
+    anyhow::ensure!(
+        object_count <= SHELL_LIBRARY_PDF_OBJECT_LIMIT,
+        "PDF has too many objects"
+    );
+    anyhow::ensure!(
+        page_count <= SHELL_LIBRARY_PDF_PAGE_LIMIT,
+        "PDF has too many pages"
+    );
+    Ok(())
 }
 
 fn truncate_library_text(mut text: String) -> String {
@@ -841,10 +924,41 @@ mod tests {
         };
 
         assert_eq!(
-            resolve_shell_library_item(&item).unwrap(),
+            resolve_shell_library_item(&item).unwrap().content,
             ShellLibraryResolvedContent::Text {
                 text: "[Library item: Meeting notes]\nDecide today".into()
             }
         );
+    }
+
+    #[test]
+    fn linked_file_type_requires_matching_content() {
+        let root = tempfile::tempdir().unwrap();
+        let disguised_pdf = root.path().join("report.pdf");
+        fs::write(&disguised_pdf, "not a PDF").unwrap();
+        assert_eq!(shell_library_file_mime_type(&disguised_pdf), None);
+
+        let json = root.path().join("evidence.json");
+        fs::write(&json, br#"{"verified":true}"#).unwrap();
+        assert_eq!(
+            shell_library_file_mime_type(&json),
+            Some("application/json")
+        );
+        fs::write(&json, "{not valid json}").unwrap();
+        assert_eq!(shell_library_file_mime_type(&json), None);
+    }
+
+    #[test]
+    fn rejects_pdf_complexity_before_extraction() {
+        ensure_pdf_complexity(SHELL_LIBRARY_PDF_OBJECT_LIMIT, SHELL_LIBRARY_PDF_PAGE_LIMIT)
+            .unwrap();
+        assert!(ensure_pdf_complexity(SHELL_LIBRARY_PDF_OBJECT_LIMIT + 1, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("too many objects"));
+        assert!(ensure_pdf_complexity(1, SHELL_LIBRARY_PDF_PAGE_LIMIT + 1)
+            .unwrap_err()
+            .to_string()
+            .contains("too many pages"));
     }
 }

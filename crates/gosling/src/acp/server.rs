@@ -111,6 +111,7 @@ mod onboarding;
 mod presentation;
 mod prompts;
 mod providers;
+mod research_completion;
 mod resources;
 mod shell_handlers;
 mod slash_commands;
@@ -3053,6 +3054,7 @@ impl GoslingAcpAgent {
         // are processed.
         let mut chain_buffer: Vec<(String, String)> = Vec::new();
         let mut stream_error = None;
+        let mut terminal_assistant_text = String::new();
 
         loop {
             let event = tokio::select! {
@@ -3081,6 +3083,19 @@ impl GoslingAcpAgent {
                 Ok(crate::agents::AgentEvent::Message(message)) => {
                     // Agent persists messages via session_manager.add_message() internally.
                     let stored_message_id = message.id.clone();
+
+                    if message.role == Role::Assistant {
+                        let mut message_text = String::new();
+                        for content_item in &message.content {
+                            if let MessageContent::Text(text) = content_item {
+                                message_text.push_str(&text.text);
+                                message_text.push('\n');
+                            }
+                        }
+                        if !message_text.is_empty() {
+                            terminal_assistant_text = message_text;
+                        }
+                    }
 
                     let mut sessions = self.sessions.lock().await;
                     let Some(session) = sessions.get_mut(&session_id) else {
@@ -3181,6 +3196,19 @@ impl GoslingAcpAgent {
         self.clear_active_run(&session_id, &run_id).await;
         Self::send_active_run_update(cx, &args.session_id, None)?;
         was_cancelled |= cancel_token.is_cancelled();
+        if stream_error.is_none() && !was_cancelled {
+            if let Err(error) = research_completion::verify_deep_research_completion(
+                &self.session_manager,
+                &session_id,
+                &terminal_assistant_text,
+            )
+            .await
+            {
+                stream_error = Some(agent_client_protocol::Error::internal_error().data(format!(
+                    "Deep Research completion was not verified: {error}"
+                )));
+            }
+        }
         let terminal_state = if stream_error.is_some() {
             AcpPromptRunState::Failed
         } else if was_cancelled {

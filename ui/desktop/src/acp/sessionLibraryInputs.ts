@@ -2,7 +2,17 @@ import { getAcpClient } from './acpConnection';
 import type { ShellLibraryItemSummary } from '@repo-makeover/gosling-sdk';
 import type { ImageData } from '../types/message';
 import type { ResearchInitialInputs } from '../types/sessionExperience';
-import { MAX_RESEARCH_INITIAL_INPUTS, researchInitialInputCount } from '../types/sessionExperience';
+import {
+  isResearchInitialImageFile,
+  MAX_RESEARCH_INITIAL_FILE_BYTES,
+  MAX_RESEARCH_INITIAL_IMAGE_BYTES,
+  MAX_RESEARCH_INITIAL_INPUTS,
+  MAX_RESEARCH_INITIAL_TEXT_BYTES,
+  MAX_RESEARCH_INITIAL_TOTAL_IMAGE_BYTES,
+  MAX_RESEARCH_INITIAL_TOTAL_TEXT_BYTES,
+  researchInitialInputCount,
+  researchInitialTextBytes,
+} from '../types/sessionExperience';
 
 export async function listSessionLibraryInputs(
   sessionId: string
@@ -22,9 +32,28 @@ export async function addResearchInitialInputs(
     );
   }
 
+  const texts = inputs.texts.map((text) => text.trim()).filter(Boolean);
+  const textSizes = texts.map(researchInitialTextBytes);
+  if (
+    textSizes.some((size) => size > MAX_RESEARCH_INITIAL_TEXT_BYTES) ||
+    textSizes.reduce((total, size) => total + size, 0) > MAX_RESEARCH_INITIAL_TOTAL_TEXT_BYTES
+  ) {
+    throw new Error('Initial research text exceeds the ACP input limits.');
+  }
+
+  const imageBytes = inputs.files
+    .filter((file) => isResearchInitialImageFile(file.name))
+    .map((file) => file.sizeBytes);
+  if (
+    inputs.files.some((file) => file.sizeBytes > MAX_RESEARCH_INITIAL_FILE_BYTES) ||
+    imageBytes.some((size) => size > MAX_RESEARCH_INITIAL_IMAGE_BYTES) ||
+    imageBytes.reduce((total, size) => total + size, 0) > MAX_RESEARCH_INITIAL_TOTAL_IMAGE_BYTES
+  ) {
+    throw new Error('Initial research files exceed the ACP input limits.');
+  }
+
   const client = await getAcpClient();
   const itemIds: string[] = [];
-  const texts = inputs.texts.map((text) => text.trim()).filter(Boolean);
 
   for (const [index, text] of texts.entries()) {
     const response = await client.gosling.shellSessionLibraryAddText_unstable({

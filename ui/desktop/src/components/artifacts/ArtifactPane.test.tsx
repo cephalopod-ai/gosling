@@ -125,7 +125,10 @@ describe('ArtifactPane', () => {
     vi.mocked(window.electron.getResearchLibraryPath).mockResolvedValue(
       '/Users/tester/Documents/Gosling Research Library'
     );
-    vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue([]);
+    vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue({
+      files: [],
+      truncated: false,
+    });
     vi.mocked(listSessionLibraryInputs).mockResolvedValue([]);
     vi.mocked(useArtifactRouter).mockReturnValue({
       saveArtifact,
@@ -358,15 +361,18 @@ describe('ArtifactPane', () => {
   });
 
   it('browses durable research documents from the Library tab', async () => {
-    vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue([
-      {
-        name: 'bayesian-neural-networks.md',
-        path: '/Users/tester/Documents/Gosling Research Library/bnn/bayesian-neural-networks.md',
-        relativePath: 'bnn/bayesian-neural-networks.md',
-        sizeBytes: 4_096,
-        modifiedAt: '2026-08-26T12:00:00.000Z',
-      },
-    ]);
+    vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue({
+      files: [
+        {
+          name: 'bayesian-neural-networks.md',
+          path: '/Users/tester/Documents/Gosling Research Library/bnn/bayesian-neural-networks.md',
+          relativePath: 'bnn/bayesian-neural-networks.md',
+          sizeBytes: 4_096,
+          modifiedAt: '2026-08-26T12:00:00.000Z',
+        },
+      ],
+      truncated: false,
+    });
 
     render(
       <IntlTestWrapper>
@@ -385,5 +391,33 @@ describe('ArtifactPane', () => {
 
     fireEvent.click(screen.getByText('bayesian-neural-networks.md'));
     expect(screen.getByRole('tab', { name: 'Outputs 0' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('surfaces a truncated Research Library listing', async () => {
+    vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue({
+      files: [
+        {
+          name: 'first.md',
+          path: '/library/first.md',
+          relativePath: 'first.md',
+          sizeBytes: 1,
+          modifiedAt: '2026-08-26T12:00:00.000Z',
+        },
+      ],
+      truncated: true,
+    });
+
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Library 1+' }));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Showing the first 500 files. Open the Research Library folder'
+    );
   });
 });
