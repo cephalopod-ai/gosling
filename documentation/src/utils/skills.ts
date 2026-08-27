@@ -242,7 +242,12 @@ function determineInstallMethod(
   skillId: string,
 ): SkillInstallMethod {
   if (!sourceUrl) return "download";
-  if (sourceUrl.includes("repo-makeover/gosling")) return "npx-multi";
+  if (
+    sourceUrl.includes("cephalopod-ai/gosling") ||
+    sourceUrl.includes("repo-makeover/gosling")
+  ) {
+    return "npx-multi";
+  }
 
   const simpleRepoPattern = /^https:\/\/github\.com\/[^\/]+\/[^\/]+\/?$/;
   if (simpleRepoPattern.test(sourceUrl)) return "npx-single";

@@ -16,7 +16,7 @@ on:
 jobs:
   machete:
     runs-on: ubuntu-latest
-    if: github.repository == 'repo-makeover/gosling'
+    if: github.repository == 'cephalopod-ai/gosling'
     permissions:
       contents: read
     steps:

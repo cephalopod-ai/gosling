@@ -8,7 +8,7 @@
 # Supported Architectures: x86_64
 #
 # Usage:
-#   Invoke-WebRequest -Uri "https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.ps1" -OutFile "download_cli.ps1"; .\download_cli.ps1
+#   Invoke-WebRequest -Uri "https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.ps1" -OutFile "download_cli.ps1"; .\download_cli.ps1
 #   Or simply: .\download_cli.ps1
 #
 # Environment variables:
@@ -25,7 +25,7 @@
 $ErrorActionPreference = "Stop"
 
 # --- 1) Variables ---
-$REPO = "repo-makeover/gosling"
+$REPO = "cephalopod-ai/gosling"
 $OUT_FILE = "gosling.exe"
 
 # Set default bin directory if not specified

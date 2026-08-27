@@ -57,7 +57,7 @@ function defaultProjection(env = process.env) {
     extraResource: ['src/bin', 'src/images', 'src/app-update.yml'],
     update: {
       enabled: true,
-      owner: env.GITHUB_OWNER || 'repo-makeover',
+      owner: env.GITHUB_OWNER || 'cephalopod-ai',
       repository: env.GITHUB_REPO || 'gosling',
     },
     shellResources: undefined,

@@ -49,7 +49,7 @@ pkg install cmake protobuf clang build-essential
 
 ### 1. Clone and Setup
 ```bash
-git clone https://github.com/repo-makeover/gosling.git
+git clone https://github.com/cephalopod-ai/gosling.git
 cd gosling
 ```
 

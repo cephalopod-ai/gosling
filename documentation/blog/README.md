@@ -9,7 +9,7 @@ This guide explains how to write and structure blog posts for the gosling docume
 
 1. Clone the gosling repository:
 ```bash
-git clone https://github.com/repo-makeover/gosling.git
+git clone https://github.com/cephalopod-ai/gosling.git
 cd gosling
 ```
 

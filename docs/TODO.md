@@ -129,7 +129,9 @@ and [`reports/2026-08-27-medium-defect-campaign.md`](../reports/2026-08-27-mediu
 
 - [ ] **NEG-GSL-005** — Official remote `goslingd` (`0.0.0.0` + shared secret)
       is a multi-client control plane; product claims are local-first.
-- [ ] **PATH-GSL-001** — `~/.agents` is shared with Goose; isolate or document.
+- [x] **PATH-GSL-001** — resolved by documenting the intentional shared AAIF
+      interoperability path in the README coexistence contract while keeping
+      product-owned configuration, databases, keyring, and deep links isolated.
 - [ ] **CON-GSL-001** — Cross-process session lease vs “resume opens a new serve.”
 
 ### Follow-up (from late SEC/REL fold-in)
@@ -332,17 +334,12 @@ re-assessment and a new finding are in
       tool-pair summarization only clones after finding eligible pairs. Per-turn
       full-history tokenization and the remaining session reload are still open;
       no wall-time profile was captured, so this is not claimed as a measured win.
-      Re-verified open against current HEAD: per-turn full-history tokenization and multiple
-      `Conversation` clones (O(n)/turn, ~O(T²)/session). Re-verified open against
-      current HEAD: clones at `agent.rs:2391` (`inject_moim(... conversation.clone()`)
-      and `agent.rs:2435` (`maybe_summarize_tool_pairs(... conversation.clone()`);
-      `inject_moim` takes `Conversation` by value (`moim.rs:41`); per-turn session
-      reload at `agent.rs:2339` plus a second inside `inject_moim` (`moim.rs:53`).
       The process-wide LRU encode-cache already removes the expensive re-encode;
-      the residual quadratic is blake3 keying on every cache hit
-      (`token_counter.rs:35-40,54-55`) plus the clones. Not fixed: per Amdahl this
-      sits behind `p ≀ 0.01` and the audit's own §6 says do not touch it until a
-      profile (the PERF-GSL-003 break-it harness) shows a non-trivial share.
+      the residual includes blake3 keying on every cache hit and session reloads.
+      The stale clone call-site claims were removed after current source
+      inspection. Not fixed: per Amdahl this sits behind `p ≀ 0.01` and the
+      audit's own §6 says do not touch it until a profile (the PERF-GSL-003
+      break-it harness) shows a non-trivial share.
       `audit-performance-profile.md:284`.
 - [x] **PERF-GSL-004** — resolved 2026-08-17: fallback pattern scanning now uses a
       case-insensitive `RegexSet` to select matching patterns before running
@@ -424,7 +421,9 @@ dedicated modularization pass rather than split mid-repair).
       still declares an `anyOf`/`oneOf` root upstream.
       Original report:
 
-- [ ] ~~**Grok / xAI OAuth tool-schema rejection.**~~ `gosling` with the
+- [x] ~~**Grok / xAI OAuth tool-schema rejection.**~~ Duplicate historical row;
+      closed by the provider-seam normalization recorded immediately above.
+      The original report was: `gosling` with the
       `xai_oauth` provider fails a tool call with
       `Bad request (400): math_mcp__math_analyze: tool parameter root must be an
       object type (root schema is an anyOf/oneOf union with a non-object
@@ -485,11 +484,32 @@ end to end, unless the operator explicitly accepts a narrower development-only e
 - [ ] Complete every source, documentation, packaged-GUI, signing, checksum, scenario, clean-install, and GitHub-readiness gate in `RELEASE_CHECKLIST.md`.
 - [ ] Tag, publish, verify, and announce `v1.1.0` only after every release gate is complete.
 
+## Documentation and CI repair follow-up — 2026-08-27
+
+- [x] **DOC-GSL-001** — align Docusaurus runtime and type packages, repair the
+      documentation TypeScript errors and broken release-checklist link, and
+      restore a passing production site build.
+- [~] **CI-GSL-001** — the shell consumer validator, scaffold defaults, and
+      conformance regression now agree on session-extension capabilities;
+      cross-platform test assertions normalize path separators and line endings.
+      Local shell tests pass; the next remote revision must confirm every runner.
+- [~] **CI-GSL-002** — Windows-only Rust warnings are cfg-scoped so
+      `RUSTFLAGS=-D warnings` does not reject imports, arguments, or helpers used
+      only on Unix. Host validation passes; authoritative Windows validation
+      requires the next remote revision.
+- [ ] **RSP-GSL-004** — documentation `npm audit --package-lock-only` reports
+      25 transitive advisories (19 high, 6 moderate) rooted in Docusaurus build
+      dependencies (`image-size`, `serialize-javascript`, and `uuid`/`sockjs`).
+      The lockfile is current and `npm audit fix` has no non-breaking repair;
+      update when Docusaurus/webpack publish a compatible fixed chain.
+
 ## Chat reliability and CLI usage backlog — 2026-07-17
 
-- [ ] Keep the chat view pinned to the bottom while a new user input is typed
+- [x] Keep the chat view pinned to the bottom while a new user input is typed
       and while new content is appended, so the most recent chat item remains
       visible instead of the scroll position jumping to the middle of the window.
+      `ScrollArea` tracks following state, pauses after upward user scrolling,
+      and resumes at the bottom; its focused regression covers the behavior.
 - [x] Make chat persistence incremental and crash-resilient: store each user
       message as soon as Enter is submitted, and store assistant output as it is
       written to the chat window, so an abrupt Gosling exit does not erase the last
@@ -728,7 +748,9 @@ mutation was performed.
 - [x] Desktop browser-global lint debt and unstable workspace-filter hook dependencies are repaired.
 - [x] Provider inventory startup reads are cached and concurrent reads are coalesced; mutations invalidate the cache.
 - [x] The ACP schema check resolves repository paths from the Justfile location.
-- [ ] CLI usage reporting remains a feature backlog item, not an open defect.
+- [x] CLI usage reporting is implemented by `/status`; the command reports
+      provider/model/mode plus current-turn and accumulated token usage when the
+      provider supplies it, and states when usage is unavailable.
 - [ ] Session Handoff and expanded Tagteam remain feature backlog items, not open defects.
 - [ ] Giles's internal uniqueness-constraint failure remains external tool debt.
 - [ ] Release execution remains maintainer-owned.

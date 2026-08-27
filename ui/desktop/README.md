@@ -7,7 +7,7 @@ Native desktop app for gosling built with [Electron](https://www.electronjs.org/
 gosling uses [Hermit](https://github.com/cashapp/hermit) to manage dependencies, so you will need to have it installed and activated.
 
 ```
-git clone git@github.com:repo-makeover/gosling.git
+git clone git@github.com:cephalopod-ai/gosling.git
 cd gosling
 source ./bin/activate-hermit
 cd ui/desktop

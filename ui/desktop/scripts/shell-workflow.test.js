@@ -5,14 +5,18 @@ const test = require('node:test');
 const YAML = require('yaml');
 
 const repositoryRoot = path.resolve(__dirname, '..', '..', '..');
-const reusable = fs.readFileSync(
-  path.join(repositoryRoot, '.github', 'workflows', 'shell-package-reusable.yml'),
-  'utf8'
-);
-const caller = fs.readFileSync(
-  path.join(repositoryRoot, '.github', 'workflows', 'shell-package-smoke.yml'),
-  'utf8'
-);
+const reusable = fs
+  .readFileSync(
+    path.join(repositoryRoot, '.github', 'workflows', 'shell-package-reusable.yml'),
+    'utf8'
+  )
+  .replaceAll('\r\n', '\n');
+const caller = fs
+  .readFileSync(
+    path.join(repositoryRoot, '.github', 'workflows', 'shell-package-smoke.yml'),
+    'utf8'
+  )
+  .replaceAll('\r\n', '\n');
 const reusableDocument = YAML.parse(reusable);
 const callerDocument = YAML.parse(caller);
 

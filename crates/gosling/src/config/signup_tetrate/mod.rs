@@ -87,7 +87,7 @@ impl PkceAuthFlow {
         let response = client
             .post(TETRATE_TOKEN_URL)
             .header("X-Title", "gosling")
-            .header("Referer", "https://github.com/repo-makeover/gosling")
+            .header("Referer", "https://github.com/cephalopod-ai/gosling")
             .json(&request_body)
             .send()
             .await?;

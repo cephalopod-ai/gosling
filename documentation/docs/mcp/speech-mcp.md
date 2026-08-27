@@ -4,7 +4,7 @@ description: Add Speech MCP Server as a gosling Extension
 unlisted: true
 ---
 
-Unlist per https://github.com/repo-makeover/gosling/issues/5431
+Unlist per https://github.com/cephalopod-ai/gosling/issues/5431
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';

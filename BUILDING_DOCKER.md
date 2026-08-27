@@ -10,17 +10,17 @@ The easiest way to use gosling with Docker is to pull the pre-built image from G
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/repo-makeover/gosling:latest
+docker pull ghcr.io/cephalopod-ai/gosling:latest
 
 # Run gosling CLI
-docker run --rm ghcr.io/repo-makeover/gosling:latest --version
+docker run --rm ghcr.io/cephalopod-ai/gosling:latest --version
 
 # Run with LLM configuration
 docker run --rm \
   -e GOSLING_PROVIDER=openai \
   -e GOSLING_MODEL=gpt-4o \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  ghcr.io/repo-makeover/gosling:latest run -t "Hello, world!"
+  ghcr.io/cephalopod-ai/gosling:latest run -t "Hello, world!"
 ```
 
 ## Building from Source
@@ -35,7 +35,7 @@ docker run --rm \
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/repo-makeover/gosling.git
+git clone https://github.com/cephalopod-ai/gosling.git
 cd gosling
 ```
 
@@ -110,7 +110,7 @@ version: '3.8'
 
 services:
   gosling:
-    image: ghcr.io/repo-makeover/gosling:latest
+    image: ghcr.io/cephalopod-ai/gosling:latest
     environment:
       - GOSLING_PROVIDER=${GOSLING_PROVIDER:-openai}
       - GOSLING_MODEL=${GOSLING_MODEL:-gpt-4o}
@@ -163,7 +163,7 @@ docker run --rm \
   -c "apt-get update && apt-get install -y vim && gosling --version"
 
 # Or create a custom Dockerfile
-FROM ghcr.io/repo-makeover/gosling:latest
+FROM ghcr.io/cephalopod-ai/gosling:latest
 USER root
 RUN apt-get update && apt-get install -y \
     vim \
@@ -181,7 +181,7 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/repo-makeover/gosling:latest
+      image: ghcr.io/cephalopod-ai/gosling:latest
       env:
         GOSLING_PROVIDER: openai
         GOSLING_MODEL: gpt-4o
@@ -197,7 +197,7 @@ jobs:
 
 ```yaml
 analyze:
-  image: ghcr.io/repo-makeover/gosling:latest
+  image: ghcr.io/cephalopod-ai/gosling:latest
   variables:
     GOSLING_PROVIDER: openai
     GOSLING_MODEL: gpt-4o
@@ -298,7 +298,7 @@ For production deployments:
 
 Example production Dockerfile:
 ```dockerfile
-FROM ghcr.io/repo-makeover/gosling:v1.6.0
+FROM ghcr.io/cephalopod-ai/gosling:v1.6.0
 # Add any additional tools needed for your use case
 USER root
 RUN apt-get update && apt-get install -y your-tools && rm -rf /var/lib/apt/lists/*

@@ -7,7 +7,7 @@ interface Props {
 
 const SHOW_BANNER = false;
 
-export default function Root({ children }: Props): JSX.Element {
+export default function Root({ children }: Props): React.ReactElement {
   // Initialize gtag as no-op if not present (prevents errors in development)
   useEffect(() => {
     if (typeof window !== 'undefined' && !window.gtag) {

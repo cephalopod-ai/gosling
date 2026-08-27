@@ -525,7 +525,7 @@ export default function BaseChat({
               )}
             >
               <a
-                href="https://github.com/repo-makeover/gosling"
+                href="https://github.com/cephalopod-ai/gosling"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="no-drag flex flex-row items-center gap-1 hover:opacity-80 transition-opacity"

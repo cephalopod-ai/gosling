@@ -18,6 +18,9 @@ export type Prompt = {
   id: string;
   title: string;
   description: string;
+  category: string;
+  job: string;
   example_prompt: string;
+  example_result: string;
   extensions: Extension[];
 };

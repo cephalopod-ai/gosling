@@ -23,7 +23,7 @@ concurrency:
 jobs:
   pages-disabled:
     runs-on: ubuntu-latest
-    if: github.repository == 'repo-makeover/gosling' && vars.ENABLE_GITHUB_PAGES != 'true'
+    if: github.repository == 'cephalopod-ai/gosling' && vars.ENABLE_GITHUB_PAGES != 'true'
     steps:
       - name: Report disabled deployment
         run: |
@@ -31,7 +31,7 @@ jobs:
 
   rebuild-docs:
     runs-on: ubuntu-latest
-    if: github.repository == 'repo-makeover/gosling' && vars.ENABLE_GITHUB_PAGES == 'true'
+    if: github.repository == 'cephalopod-ai/gosling' && vars.ENABLE_GITHUB_PAGES == 'true'
     permissions:
       contents: read
       pages: write

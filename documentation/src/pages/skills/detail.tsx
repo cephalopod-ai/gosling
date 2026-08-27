@@ -2,6 +2,7 @@ import Layout from "@theme/Layout";
 import { ArrowLeft, Download, Copy, ExternalLink, FileText, Check } from "lucide-react";
 import { useLocation } from "@docusaurus/router";
 import { useEffect, useState } from "react";
+import type { ReactElement } from "react";
 import Link from "@docusaurus/Link";
 import CodeBlock from "@theme/CodeBlock";
 import { Button } from "@site/src/components/ui/button";
@@ -33,7 +34,7 @@ function generateInstallCommand(skill: Skill, packageManager: PackageManager): s
   return `${prefix} skills add ${skill.repoUrl} --skill ${skill.id}`;
 }
 
-export default function SkillDetailPage(): JSX.Element {
+export default function SkillDetailPage(): ReactElement {
   const location = useLocation();
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(true);
@@ -302,9 +303,9 @@ export default function SkillDetailPage(): JSX.Element {
               <div className="prose prose-zinc dark:prose-invert max-w-none">
                 <ReactMarkdown
                   components={{
-                    code({ node, inline, className, children, ...props }) {
+                    code({ node, className, children, ...props }) {
                       const match = /language-(\w+)/.exec(className || '');
-                      if (!inline && match) {
+                      if (match) {
                         return (
                           <CodeBlock language={match[1]}>
                             {String(children).replace(/\n$/, '')}

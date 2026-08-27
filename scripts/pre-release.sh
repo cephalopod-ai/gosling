@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-REPO="${GOSLING_GITHUB_REPO:-repo-makeover/gosling}"
+REPO="${GOSLING_GITHUB_REPO:-cephalopod-ai/gosling}"
 DEST="$HOME/Downloads"
 TMPDIR=$(mktemp -d)
 PLIST=$(mktemp /tmp/entitlements.XXXXXX)

@@ -34,7 +34,7 @@ gosling runs locally on your machine and connects to tools and services through 
 ### macOS/Linux/Windows (CLI)
 
 ```sh
-curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | bash
+curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | bash
 ```
 
 Desktop applications are available for macOS, Linux, and Windows at /docs/getting-started/installation.
@@ -68,8 +68,8 @@ Project-specific hints can be added via `.goslinghints` and/or `AGENTS.md` files
 ## Links
 
 - Website: https://gosling-docs.ai/
-- GitHub: https://github.com/repo-makeover/gosling
-- GitHub Discussions: https://github.com/repo-makeover/gosling/discussions
+- GitHub: https://github.com/cephalopod-ai/gosling
+- GitHub Discussions: https://github.com/cephalopod-ai/gosling/discussions
 - Extensions Registry: https://gosling-docs.ai/extensions/
 - Blog: https://gosling-docs.ai/blog/
 

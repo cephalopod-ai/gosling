@@ -68,7 +68,7 @@ jobs:
          - name: Install gosling CLI
            run: |
               mkdir -p /home/runner/.local/bin
-              curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh \
+              curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh \
                 | GOSLING_VERSION=REPLACE_WITH_VERSION CONFIGURE=false GOSLING_BIN_DIR=/home/runner/.local/bin bash
               echo "/home/runner/.local/bin" >> $GITHUB_PATH
 
@@ -158,7 +158,7 @@ steps:
     - name: Install gosling CLI
       run: |
           mkdir -p /home/runner/.local/bin
-          curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh \
+          curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh \
             | GOSLING_VERSION=REPLACE_WITH_VERSION CONFIGURE=false GOSLING_BIN_DIR=/home/runner/.local/bin bash
           echo "/home/runner/.local/bin" >> $GITHUB_PATH
 

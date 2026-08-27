@@ -90,13 +90,13 @@ The following default templates can be customized.
 
 | Template | Description | Applies To |
 |----------|-------------|------------|
-| [system.md](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/prompts/system.md) | General system prompt defining gosling's role, capabilities, and response format | Desktop and CLI |
-| [compaction.md](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/prompts/compaction.md) | Prompt for summarizing conversation history when context limits are reached | Desktop and CLI |
-| [permission_judge.md](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/prompts/permission_judge.md) | Prompt for analyzing tool operations for read-only detection | Desktop and CLI |
-| [plan.md](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/prompts/plan.md) | Instructions for creating detailed, actionable plans with clarifying questions | CLI only |
-| [subagent_system.md](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/prompts/subagent_system.md) | System prompt for subagents spawned to handle specific tasks | Desktop and CLI |
+| [system.md](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/prompts/system.md) | General system prompt defining gosling's role, capabilities, and response format | Desktop and CLI |
+| [compaction.md](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/prompts/compaction.md) | Prompt for summarizing conversation history when context limits are reached | Desktop and CLI |
+| [permission_judge.md](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/prompts/permission_judge.md) | Prompt for analyzing tool operations for read-only detection | Desktop and CLI |
+| [plan.md](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/prompts/plan.md) | Instructions for creating detailed, actionable plans with clarifying questions | CLI only |
+| [subagent_system.md](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/prompts/subagent_system.md) | System prompt for subagents spawned to handle specific tasks | Desktop and CLI |
 
-Customizable templates are enumerated in the `TEMPLATE_REGISTRY` array in [`prompt_template.rs`](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/prompt_template.rs).
+Customizable templates are enumerated in the `TEMPLATE_REGISTRY` array in [`prompt_template.rs`](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/prompt_template.rs).
 
 ### Template Variable Syntax
 

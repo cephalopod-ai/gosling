@@ -40,19 +40,23 @@ This file is the durable map for the repository's documentation surface.
 - [release process](../RELEASE.md)
 - [v1.0.0 release checklist](../RELEASE_CHECKLIST.md)
 - [current engineering TODO](../docs/TODO.md)
+- [documentation TODO](./TODO.md)
+- [test ledger](../docs/polish/test-ledger.md)
 - [110-card live playtest and repair closure](../docs/cloud/2026-07-20-live-all-scenarios-playtest.md)
 - [test scenario cards](../docs/test_scenarios/)
 
 ## stewardship notes
 
-- The canonical documentation root is `documentation/`. This repo does not use a parallel top-level `docs/` governance tree.
+- User-facing site content is canonical under `documentation/`; engineering,
+  architecture, audit, governance, and session evidence is canonical under
+  `docs/`.
 - Root `README.md` is the product entry point; `documentation/README.md` is the docs-site build and publishing guide.
 - Session-share deep links are documented with the `gosling://` scheme only. Legacy `goose://` share-link compatibility is not part of the current docs contract.
 - Durable documentation governance artifacts currently live in this directory as point-in-time records rather than a full log/archive program.
 - The next release candidate is `v1.1.0`. Source alignment, validation, tagging, signing, publication, and updater promotion remain maintainer-owned release gates; see [the release process](../RELEASE.md).
 
-## open follow-ups
+## follow-up disposition
 
-- Consolidate existing scenario-card and campaign evidence into a durable test ledger without replacing the source reports.
-- Add a scoped documentation TODO ledger after separating documentation work from code TODO noise.
-- Decide whether `.dory/` remains local-only operational state or should feed durable monthly summaries under a future log policy.
+- The durable test ledger and scoped documentation TODO now exist and are linked
+  above without replacing their source reports.
+- The `.dory/` policy decision remains open in the documentation TODO.

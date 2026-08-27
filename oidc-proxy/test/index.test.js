@@ -61,9 +61,9 @@ function validPayload(overrides = {}) {
     iat: now - 10,
     exp: now + 300,
     jti: `test-jti-${++jtiCounter}`,
-    repository: "repo-makeover/gosling",
+    repository: "cephalopod-ai/gosling",
     ref: "refs/heads/main",
-    sub: "repo:repo-makeover/gosling:ref:refs/heads/main",
+    sub: "repo:cephalopod-ai/gosling:ref:refs/heads/main",
     ...overrides,
   };
 }
@@ -141,7 +141,7 @@ function testEnv(overrides = {}) {
     UPSTREAM_URL: "https://api.anthropic.com",
     UPSTREAM_AUTH_HEADER: "x-api-key",
     UPSTREAM_API_KEY: "sk-ant-real-key",
-    ALLOWED_REPOS: "repo-makeover/gosling",
+    ALLOWED_REPOS: "cephalopod-ai/gosling",
     MAX_TOKEN_AGE_SECONDS: "1200",
     MAX_REQUESTS_PER_TOKEN: "200",
     RATE_LIMIT_PER_SECOND: "2",

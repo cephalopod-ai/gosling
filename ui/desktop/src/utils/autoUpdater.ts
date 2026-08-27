@@ -373,7 +373,7 @@ export function setupAutoUpdater(tray?: Tray) {
   // Set the feed URL for GitHub releases
   const feedConfig = {
     provider: 'github' as const,
-    owner: 'repo-makeover',
+    owner: 'cephalopod-ai',
     repo: 'gosling',
     releaseType: 'release' as const,
   };

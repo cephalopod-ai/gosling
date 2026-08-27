@@ -16,7 +16,7 @@ permissions: {}
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'repo-makeover/gosling'
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'cephalopod-ai/gosling'
     permissions:
       contents: write
       pull-requests: write

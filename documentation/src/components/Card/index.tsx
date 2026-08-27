@@ -9,7 +9,7 @@ interface CardProps {
   icon?: string;
 }
 
-export default function Card({ title, description, link, icon }: CardProps): JSX.Element {
+export default function Card({ title, description, link, icon }: CardProps): React.ReactElement {
   const isInternalLink = link.startsWith('/');
   const CardWrapper = isInternalLink ? Link : 'a';
   const wrapperProps = isInternalLink ? { to: link } : { href: link };

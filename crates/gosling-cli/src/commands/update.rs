@@ -111,7 +111,7 @@ fn should_retry_attestations_without_token(status: StatusCode, token: Option<&st
 
 async fn fetch_attestations(digest: &str, token: Option<&str>) -> Result<Vec<serde_json::Value>> {
     let url = format!(
-        "https://api.github.com/repos/repo-makeover/gosling/attestations/sha256:{digest}\
+        "https://api.github.com/repos/cephalopod-ai/gosling/attestations/sha256:{digest}\
          ?per_page=30&predicate_type=https://slsa.dev/provenance/v1"
     );
 
@@ -255,7 +255,7 @@ pub async fn update(canary: bool, reconfigure: bool) -> Result<()> {
         let tag = if canary { "canary" } else { "stable" };
         let asset = asset_name();
         let url =
-            format!("https://github.com/repo-makeover/gosling/releases/download/{tag}/{asset}");
+            format!("https://github.com/cephalopod-ai/gosling/releases/download/{tag}/{asset}");
 
         println!("Downloading {asset} from {tag} release...");
 

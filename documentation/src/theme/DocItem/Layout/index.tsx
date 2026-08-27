@@ -393,7 +393,7 @@ function PageActionsMenu(): ReactNode {
   
   const handleViewMarkdown = () => {
     const source = metadata?.source?.replace('@site/', '') || '';
-    window.open(`https://raw.githubusercontent.com/repo-makeover/gosling/refs/heads/main/documentation/${source}`, '_blank');
+    window.open(`https://raw.githubusercontent.com/cephalopod-ai/gosling/refs/heads/main/documentation/${source}`, '_blank');
     setDropdownOpen(false);
   };
   

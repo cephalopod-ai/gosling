@@ -1,4 +1,4 @@
 provider: github
-owner: repo-makeover
+owner: cephalopod-ai
 repo: gosling
 updaterCacheDirName: gosling-updater

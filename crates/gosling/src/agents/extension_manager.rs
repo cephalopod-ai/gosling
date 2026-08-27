@@ -1,5 +1,7 @@
 use anyhow::Result;
-use axum::http::{HeaderMap, HeaderName, HeaderValue};
+#[cfg(unix)]
+use axum::http::HeaderValue;
+use axum::http::{HeaderMap, HeaderName};
 use chrono::{DateTime, Utc};
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::Stream;
@@ -466,7 +468,6 @@ fn write_docker_env_file(
     path: &std::path::Path,
     envs: &HashMap<String, String>,
 ) -> std::io::Result<()> {
-    use std::io::Write;
     let mut contents = String::new();
     let mut entries = envs.iter().collect::<Vec<_>>();
     entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
@@ -489,6 +490,7 @@ fn write_docker_env_file(
 
     #[cfg(unix)]
     {
+        use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
         let mut file = std::fs::OpenOptions::new()
             .write(true)

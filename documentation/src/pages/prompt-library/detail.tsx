@@ -6,6 +6,7 @@ import { Button } from "@site/src/components/ui/button";
 import { Badge } from "@site/src/components/ui/badge";
 import { useLocation } from "@docusaurus/router";
 import { useEffect, useState } from "react";
+import type { ReactElement } from "react";
 import Link from "@docusaurus/Link";
 import { motion, AnimatePresence } from "framer-motion";
 import type { MCPServer } from "@site/src/types/server";
@@ -262,7 +263,7 @@ function PromptDetail({ prompt }: { prompt: Prompt }) {
   );
 }
 
-export default function DetailPage(): JSX.Element {
+export default function DetailPage(): ReactElement {
   const location = useLocation();
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [loading, setLoading] = useState(true);

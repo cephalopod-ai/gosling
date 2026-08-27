@@ -32,7 +32,7 @@ download_release_binary() {
     echo "Downloading gosling $version from GitHub releases..." >&2
     
     # Use the official download script with custom bin dir and specific version
-    curl -fsSL "https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh" | \
+    curl -fsSL "https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh" | \
         CONFIGURE=false GOSLING_BIN_DIR="$bin_dir" GOSLING_VERSION="$version" bash >&2 2>&1 || {
         echo "Error: Failed to download gosling $version" >&2
         return 1

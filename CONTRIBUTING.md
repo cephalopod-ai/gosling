@@ -210,7 +210,7 @@ and stepping through the backend code while interacting with the UI.
 
 To fork the repository:
 
-1. Go to https://github.com/repo-makeover/gosling and click “Fork” (top-right corner).
+1. Go to https://github.com/cephalopod-ai/gosling and click “Fork” (top-right corner).
 2. This creates https://github.com/<your-username>/gosling under your GitHub account.
 3. Clone your fork (not the main repo):
 
@@ -222,7 +222,7 @@ cd gosling
 4. Add the main repository as upstream:
 
 ```
-git remote add upstream https://github.com/repo-makeover/gosling.git
+git remote add upstream https://github.com/cephalopod-ai/gosling.git
 ```
 
 5. Create a branch in your fork for your changes:
@@ -247,7 +247,7 @@ git merge upstream/main
 git push origin my-feature-branch
 ```
 
-8. Open a Pull Request from your branch on your fork to repo-makeover/gosling’s main branch.
+8. Open a Pull Request from your branch on your fork to cephalopod-ai/gosling’s main branch.
 
 ## Keeping Your Fork Up-to-Date
 
@@ -259,7 +259,7 @@ repository. This helps avoid conflicts and allows us to merge your pull requests
 1. **Add the Main Repository as a Remote** (Skip if you have already set this up):
 
    ```bash
-   git remote add upstream https://github.com/repo-makeover/gosling.git
+   git remote add upstream https://github.com/cephalopod-ai/gosling.git
    ```
 
 2. **Fetch the Latest Changes from the Main Repository**:
@@ -343,20 +343,20 @@ Then you can view your traces at http://localhost:3000
 
 This project follows the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification for PR titles. Conventional Commits make it easier to understand the history of a project and facilitate automation around versioning and changelog generation.
 
-[issues]: https://github.com/repo-makeover/gosling/issues
+[issues]: https://github.com/cephalopod-ai/gosling/issues
 [hermit]: https://cashapp.github.io/hermit/
 [just]: https://github.com/casey/just?tab=readme-ov-file#installation
 
 ## Other Ways to Contribute
 
-There are numerous ways to be an open source contributor and contribute to gosling. Here are some suggestions to get started. If you have questions or need help, start a [GitHub Discussion](https://github.com/repo-makeover/gosling/discussions).
+There are numerous ways to be an open source contributor and contribute to gosling. Here are some suggestions to get started. If you have questions or need help, start a [GitHub Discussion](https://github.com/cephalopod-ai/gosling/discussions).
 
 - **Stars on GitHub:** If you resonate with our project and find it valuable, consider starring our gosling on GitHub! 🌟
-- **Ask Questions:** Your questions not only help us improve but also benefit the community. Ask them in [GitHub Discussions](https://github.com/repo-makeover/gosling/discussions).
-- **Give Feedback:** Have a feature you want to see or encounter an issue with gosling? [Open an issue](https://github.com/repo-makeover/gosling/issues/new/choose) or [start a discussion](https://github.com/repo-makeover/gosling/discussions).
+- **Ask Questions:** Your questions not only help us improve but also benefit the community. Ask them in [GitHub Discussions](https://github.com/cephalopod-ai/gosling/discussions).
+- **Give Feedback:** Have a feature you want to see or encounter an issue with gosling? [Open an issue](https://github.com/cephalopod-ai/gosling/issues/new/choose) or [start a discussion](https://github.com/cephalopod-ai/gosling/discussions).
 - **Participate in Community Events:** Subscribe to the [events calendar](https://calget.com/c/t7jszrie) or follow the project's [social media](https://linktr.ee/gosling_oss) for announced events.
 - **Improve Documentation:** Good documentation is key to the success of any project. You can help improve the quality of our existing docs or add new pages.
 - **Help Other Members:** See another community member stuck? Or a contributor blocked by a question you know the answer to? Reply to community threads or do a code review for others to help.
-- **Showcase Your Work:** Working on a project or written a blog post recently? Share it in [GitHub Discussions](https://github.com/repo-makeover/gosling/discussions).
-- **Give Shoutouts:** Is there a project or contributor you appreciate? Recognize it in [GitHub Discussions](https://github.com/repo-makeover/gosling/discussions).
+- **Showcase Your Work:** Working on a project or written a blog post recently? Share it in [GitHub Discussions](https://github.com/cephalopod-ai/gosling/discussions).
+- **Give Shoutouts:** Is there a project or contributor you appreciate? Recognize it in [GitHub Discussions](https://github.com/cephalopod-ai/gosling/discussions).
 - **Spread the Word:** Help us reach more people by sharing gosling's project, website, YouTube, and/or Twitter/X.

@@ -150,7 +150,7 @@ module.exports = {
         bin: product.executableName,
         ...(!product.shell
           ? {
-              maintainer: 'repo-makeover',
+              maintainer: 'cephalopod-ai',
               homepage: 'https://gosling-docs.ai/',
               categories: ['Development'],
               desktopTemplate: './forge.deb.desktop',
@@ -170,7 +170,7 @@ module.exports = {
         bin: product.executableName,
         ...(!product.shell
           ? {
-              maintainer: 'repo-makeover',
+              maintainer: 'cephalopod-ai',
               homepage: 'https://gosling-docs.ai/',
               categories: ['Development'],
               desktopTemplate: './forge.rpm.desktop',

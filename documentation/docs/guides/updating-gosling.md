@@ -54,7 +54,7 @@ gosling uses its own config, data, session database, keyring service, deep-link 
         Or you can run the [installation](/docs/getting-started/installation) script again:
 
         ```sh
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
         ```
 
         To check your current gosling version, use the following command:
@@ -101,7 +101,7 @@ gosling uses its own config, data, session database, keyring service, deep-link 
         Or you can run the [installation](/docs/getting-started/installation) script again:
 
         ```sh
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
         ```
 
         To check your current gosling version, use the following command:
@@ -145,7 +145,7 @@ gosling uses its own config, data, session database, keyring service, deep-link 
         Or you can run the [installation](/docs/getting-started/installation) script again in **Git Bash**, **MSYS2**, or **PowerShell** to update the gosling CLI natively on Windows:
 
         ```bash
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
         ```
         
         To check your current gosling version, use the following command:
@@ -160,7 +160,7 @@ gosling uses its own config, data, session database, keyring service, deep-link 
         To update your WSL installation, use `gosling update` or run the installation script again via WSL:
 
         ```sh
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
         ```
 
        </details>

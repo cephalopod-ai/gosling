@@ -1,6 +1,17 @@
 import type { Prompt } from '@site/src/types/prompt';
 
-const promptContext = require.context(
+type PromptModule = Prompt | { default: Prompt };
+
+type RequireContext = {
+  (key: string): PromptModule;
+  keys(): string[];
+};
+
+const webpackRequire = require as typeof require & {
+  context(directory: string, useSubdirectories: boolean, pattern: RegExp): RequireContext;
+};
+
+const promptContext = webpackRequire.context(
   '../pages/prompt-library/data/prompts',
   false, 
   /\.json$/
@@ -9,7 +20,7 @@ const promptContext = require.context(
 // Convert the modules into an array of prompts
 const prompts: Prompt[] = promptContext.keys().map((key) => {
   const prompt = promptContext(key);
-  return prompt.default || prompt; // handle both ESM and CommonJS modules
+  return 'default' in prompt ? prompt.default : prompt;
 });
 
 export async function searchPrompts(query: string): Promise<Prompt[]> {

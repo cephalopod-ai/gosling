@@ -3,7 +3,7 @@
   "description": "Amazing blog posts, videos, and tutorials created by our community for gosling!",
   "lastUpdated": "2025-10-15",
   "hacktoberfestYear": 2025,
-  "submissionUrl": "https://github.com/repo-makeover/gosling/issues/4705",
+  "submissionUrl": "https://github.com/cephalopod-ai/gosling/issues/4705",
   "submissions": [
     {
       "title": "Running gosling in Containers (Without Losing Your Mind)",

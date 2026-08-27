@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useLocation } from '@docusaurus/router';
 
-export default function ExtensionRedirect(): JSX.Element {
+export default function ExtensionRedirect(): React.ReactElement {
   const location = useLocation();
 
   useEffect(() => {

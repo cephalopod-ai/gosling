@@ -42,7 +42,7 @@ test('no profile preserves the existing Gosling Forge identity and resources', (
     iconFlatpak512: 'src/images/icon-512.png',
     iconSvg: 'src/images/icon.svg',
     extraResource: ['src/bin', 'src/images', 'src/app-update.yml'],
-    update: { enabled: true, owner: 'repo-makeover', repository: 'gosling' },
+    update: { enabled: true, owner: 'cephalopod-ai', repository: 'gosling' },
     shellResources: undefined,
     resolved: undefined,
   });
@@ -67,7 +67,7 @@ test('a selected profile projects all Forge identities from one resolved source'
   assert.equal(projection.linuxPackageName, 'gosling-shell-fixture-a');
   assert.equal(projection.flatpakId, 'io.github.repo_makeover.Gosling.FixtureA');
   assert.equal(projection.update.enabled, false);
-  assert.match(projection.iconBase, /fixture-a\/assets\/icon$/);
+  assert.match(projection.iconBase.split(path.sep).join('/'), /fixture-a\/assets\/icon$/);
   assert.equal(projection.iconIco, undefined);
   assert.equal(projection.extraResource.length, 5);
   assert.ok(projection.extraResource.every((entry) => !path.isAbsolute(entry)));
@@ -128,7 +128,7 @@ test('ELECTRON_ARCH selects cross-architecture profile assets', () => {
     },
     'darwin'
   );
-  assert.match(projection.iconBase, /fixture-a\/assets\/icon$/);
+  assert.match(projection.iconBase.split(path.sep).join('/'), /fixture-a\/assets\/icon$/);
   assert.ok(projection.resolved.profile.assets.requiredTargets.includes('macos-x64'));
 });
 

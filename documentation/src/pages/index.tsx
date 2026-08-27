@@ -229,7 +229,7 @@ function CommunitySection() {
         </p>
         <div className={styles.communityGrid}>
           <a
-            href="https://github.com/repo-makeover/gosling/discussions"
+            href="https://github.com/cephalopod-ai/gosling/discussions"
             target="_blank"
             rel="noopener"
             className={styles.communityCard}
@@ -241,7 +241,7 @@ function CommunitySection() {
             </p>
           </a>
           <a
-            href="https://github.com/repo-makeover/gosling"
+            href="https://github.com/cephalopod-ai/gosling"
             target="_blank"
             rel="noopener"
             className={styles.communityCard}
@@ -294,7 +294,7 @@ function InstallSection() {
             </div>
             <pre className={styles.terminalBody}>
               <code>
-{`curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | bash`}
+{`curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | bash`}
               </code>
             </pre>
           </div>

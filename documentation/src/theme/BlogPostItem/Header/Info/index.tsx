@@ -13,7 +13,7 @@ function buildPostUrl(siteUrl: string, permalink: string): string {
   return `${base}${permalink}`;
 }
 
-export default function InfoWrapper(props: Props): JSX.Element {
+export default function InfoWrapper(props: Props): React.ReactElement {
   const { metadata, isBlogPostPage } = useBlogPost();
   const { siteConfig } = useDocusaurusContext();
 

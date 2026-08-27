@@ -62,7 +62,7 @@ gosling is compatible with a wide range of LLM providers, allowing you to choose
 | [xAI](https://x.ai/)                                                        | Access to xAI's Grok models including grok-3, grok-3-mini, and grok-3-fast with 131,072 token context window.                                                                                                            | `XAI_API_KEY`, `XAI_HOST` (optional)                                                                                                                                                |
 
 :::tip Prompt Caching for Claude Models
-gosling automatically enables Anthropic's [prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) when using Claude models via Anthropic, Amazon Bedrock, Databricks, OpenRouter, and LiteLLM providers. This adds `cache_control` markers to requests, which can reduce costs for longer conversations by caching frequently-used context. See the [provider implementations](https://github.com/repo-makeover/gosling/tree/main/crates/gosling/src/providers) for technical details.
+gosling automatically enables Anthropic's [prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) when using Claude models via Anthropic, Amazon Bedrock, Databricks, OpenRouter, and LiteLLM providers. This adds `cache_control` markers to requests, which can reduce costs for longer conversations by caching frequently-used context. See the [provider implementations](https://github.com/cephalopod-ai/gosling/tree/main/crates/gosling/src/providers) for technical details.
 :::
 
 ### CLI Providers
@@ -676,7 +676,7 @@ Groq offers several open source models that support tool calling, including:
 - **llama-3.3-70b-versatile** - Meta's Llama 3.3 model for versatile applications
 - **llama-3.1-8b-instant** - Meta's Llama 3.1 model for fast inference
 
-For the complete list of supported Groq models, see [groq.json](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/providers/declarative/groq.json).
+For the complete list of supported Groq models, see [groq.json](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/providers/declarative/groq.json).
 
 To set up Groq with gosling, follow these steps:
 
@@ -717,7 +717,7 @@ EmpirioLabs offers models that support tool calling, including:
 - **kimi-k2-7-code** - Kimi K2.7 Code with a 256K context window
 - **minimax-m3** - MiniMax M3 with a 524K context window
 
-The full live catalog is available at `https://api.empiriolabs.ai/v1/models`. For the complete list of EmpirioLabs models configured in gosling, see [empiriolabs.json](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/providers/declarative/empiriolabs.json). For more details, see the [EmpirioLabs documentation](https://docs.empiriolabs.ai).
+The full live catalog is available at `https://api.empiriolabs.ai/v1/models`. For the complete list of EmpirioLabs models configured in gosling, see [empiriolabs.json](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/providers/declarative/empiriolabs.json). For more details, see the [EmpirioLabs documentation](https://docs.empiriolabs.ai).
 
 To set up EmpirioLabs with gosling, follow these steps:
 
@@ -756,7 +756,7 @@ FuturMix offers models that support tool calling, including:
 - **deepseek-chat** - DeepSeek V3 with 131K context
 - **claude-haiku-4-20250514** - Anthropic Claude Haiku 4 with 200K context
 
-For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/providers/declarative/futurmix.json).
+For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/providers/declarative/futurmix.json).
 
 To set up FuturMix with gosling, follow these steps:
 
@@ -795,7 +795,7 @@ Novita AI offers many models that support tool calling, including:
 - **deepseek/deepseek-v3.2** - DeepSeek V3.2 with 164K context
 - **google/gemma-4-31b-it** - Google Gemma 4 31B with 262K context
 
-For the complete list of supported Novita AI models, see [novita.json](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/providers/declarative/novita.json).
+For the complete list of supported Novita AI models, see [novita.json](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/providers/declarative/novita.json).
 
 To set up Novita AI with gosling, follow these steps:
 
@@ -832,7 +832,7 @@ Routstr aggregates models from many upstream providers, including:
 - **deepseek-v4-pro** — DeepSeek V4 Pro
 - **gemini-3.1-pro-preview** — gemini-3.1 Pro Preview
 
-`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with gosling, see [routstr.json](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/providers/declarative/routstr.json).
+`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with gosling, see [routstr.json](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/providers/declarative/routstr.json).
 
 To set up Routstr with gosling, follow these steps:
 
@@ -1527,7 +1527,7 @@ Reasoning output can be useful for understanding how the model arrived at its an
 
 ---
 
-If you have questions or need help with a specific provider, start a [GitHub Discussion](https://github.com/repo-makeover/gosling/discussions) or open a reproducible issue in the [gosling repository](https://github.com/repo-makeover/gosling/issues).
+If you have questions or need help with a specific provider, start a [GitHub Discussion](https://github.com/cephalopod-ai/gosling/discussions) or open a reproducible issue in the [gosling repository](https://github.com/cephalopod-ai/gosling/issues).
 
 
 [providers]: /docs/getting-started/providers

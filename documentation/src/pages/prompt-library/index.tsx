@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Layout from "@theme/Layout";
 import Admonition from '@theme/Admonition';
-import type { Prompt, Category } from "@site/src/types/prompt";
+import type { Prompt } from "@site/src/types/prompt";
 import { searchPrompts } from "@site/src/utils/prompts";
 import { Button } from "@site/src/components/ui/button";
 import { PillFilter, type PillFilterOption } from "@site/src/components/ui/pill-filter";

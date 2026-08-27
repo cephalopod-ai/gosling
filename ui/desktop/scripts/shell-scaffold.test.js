@@ -266,6 +266,8 @@ test('the committed neutral Default Shell sample stays conformant', () => {
     'session.artifacts.read',
     'session.create',
     'session.detach',
+    'session.extensions.read',
+    'session.extensions.write',
     'session.library.read',
     'session.library.write',
     'session.list',

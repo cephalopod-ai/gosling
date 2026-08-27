@@ -386,12 +386,17 @@ where
     Ok(())
 }
 
+#[cfg(unix)]
 fn set_private_file_permissions(path: &Path) -> Result<()> {
-    #[cfg(unix)]
     fs::set_permissions(
         path,
         <fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o600),
     )?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 

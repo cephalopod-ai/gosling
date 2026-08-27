@@ -2,8 +2,8 @@
 
 Early stage and part of gosling's broader move to ACP
 
-https://github.com/repo-makeover/gosling/issues/6642
-https://github.com/repo-makeover/gosling/discussions/7309
+https://github.com/cephalopod-ai/gosling/issues/6642
+https://github.com/cephalopod-ai/gosling/discussions/7309
 
 ## Running
 

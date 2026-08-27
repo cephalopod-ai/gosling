@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/repo-makeover/gosling.git"
+    "url": "git+https://github.com/cephalopod-ai/gosling.git"
   },
   "keywords": [
     "gosling",

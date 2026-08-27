@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: gosling GitHub Discussions
-    url: https://github.com/repo-makeover/gosling/discussions
+    url: https://github.com/cephalopod-ai/gosling/discussions
     about: Please ask and answer questions here.
   - name: Report a security vulnerability
-    url: https://github.com/repo-makeover/gosling/security/policy
+    url: https://github.com/cephalopod-ai/gosling/security/policy
     about: Please report security vulnerabilities here.

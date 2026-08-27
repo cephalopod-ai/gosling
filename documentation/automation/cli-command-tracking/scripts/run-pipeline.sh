@@ -15,7 +15,7 @@ GOSLING_REPO=${GOSLING_REPO:-"$HOME/Development/gosling"}
 # Function to get release tags using gh CLI
 get_latest_release() {
     if command -v gh &> /dev/null; then
-        gh release list --repo repo-makeover/gosling --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null
+        gh release list --repo cephalopod-ai/gosling --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null
     else
         # Fallback: get latest version tag from git
         cd "$GOSLING_REPO" && git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1
@@ -24,7 +24,7 @@ get_latest_release() {
 
 get_previous_release() {
     if command -v gh &> /dev/null; then
-        gh release list --repo repo-makeover/gosling --limit 2 --json tagName --jq '.[].tagName' 2>/dev/null | sed -n '2p'
+        gh release list --repo cephalopod-ai/gosling --limit 2 --json tagName --jq '.[].tagName' 2>/dev/null | sed -n '2p'
     else
         # Fallback: get second-latest version tag from git
         cd "$GOSLING_REPO" && git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n '2p'

@@ -240,8 +240,8 @@ pub fn init_gosling_request_log() -> Result<()> {
 /// potentially including secrets a tool call echoed back. Restricting the
 /// directory is sufficient to keep every file created in it unreachable by
 /// other local users, without having to chase each file individually.
+#[cfg(unix)]
 fn restrict_to_owner(dir: &std::path::Path) {
-    #[cfg(unix)]
     if let Err(e) = fs_err::set_permissions(
         dir,
         <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
@@ -249,6 +249,9 @@ fn restrict_to_owner(dir: &std::path::Path) {
         tracing::error!("Failed to restrict LLM request log directory {dir:?} to owner-only: {e}");
     }
 }
+
+#[cfg(not(unix))]
+fn restrict_to_owner(_dir: &std::path::Path) {}
 
 pub struct RequestLog {
     logs_to_keep: usize,

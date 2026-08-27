@@ -7,7 +7,7 @@ description: Comprehensive troubleshooting guide for common gosling problems wit
 gosling, like any system, may run into occasional issues. This guide provides solutions for common problems.
 
 :::tip Need help with an issue not listed here?
-Start a [GitHub Discussion](https://github.com/repo-makeover/gosling/discussions) for help. Consider generating a [diagnostic report](/docs/troubleshooting/diagnostics-and-reporting) first so maintainers can understand your setup.
+Start a [GitHub Discussion](https://github.com/cephalopod-ai/gosling/discussions) for help. Consider generating a [diagnostic report](/docs/troubleshooting/diagnostics-and-reporting) first so maintainers can understand your setup.
 :::
 
 ### gosling Edits Files
@@ -347,7 +347,7 @@ Blocked malicious package: package-name@1.0.0 (npm). OSV MAL advisories: MAL-202
 Steps to resolve:
 1. **Find an alternative**: Look for similar extensions in the [extensions directory][extensions-directory] or [PulseMCP](https://www.pulsemcp.com/servers)
 2. **Optional verification**: Verify the source of the blocked extension or the package name/publisher
-3. **Report false positives**: If you believe this is an error, please [open an issue](https://github.com/repo-makeover/gosling/issues)
+3. **Report false positives**: If you believe this is an error, please [open an issue](https://github.com/cephalopod-ai/gosling/issues)
 
 This security check only applies to locally-executed external extensions that use PyPI (`uvx`) or NPM (`npx`). The check uses real-time data from the OSV database; if the security service is unavailable, extensions will still install normally.
 
@@ -519,7 +519,7 @@ If you can share a [diagnostic report](/docs/troubleshooting/diagnostics-and-rep
 
 [handling-rate-limits]: /docs/guides/handling-llm-rate-limits-with-gosling
 [installation]: /docs/getting-started/installation
-[discussions]: https://github.com/repo-makeover/gosling/discussions
+[discussions]: https://github.com/cephalopod-ai/gosling/discussions
 [goslinghints]: /docs/guides/context-engineering/using-goslinghints
 [configure-llm-provider]: /docs/getting-started/providers
 [extensions-directory]: /extensions

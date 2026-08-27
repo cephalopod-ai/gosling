@@ -16,7 +16,7 @@ In this guide, we build an MCP server using the [Python SDK for MCP][mcp-python]
 You can check out other example servers in the [MCP servers repository][mcp-servers]. MCP SDKs are also available for other common languages, such as [TypeScript][mcp-typescript] and [Kotlin][mcp-kotlin].
 
 :::info
-gosling supports Tools, Resources, and Prompts from the [Model Context Protocol](https://modelcontextprotocol.io/). See [`mcp_client.rs`](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/agents/mcp_client.rs) for the supported protocol version and client capabilities.
+gosling supports Tools, Resources, and Prompts from the [Model Context Protocol](https://modelcontextprotocol.io/). See [`mcp_client.rs`](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/agents/mcp_client.rs) for the supported protocol version and client capabilities.
 :::
 
 ---
@@ -352,7 +352,7 @@ gosling supports advanced MCP features that can enhance your extensions.
 **Getting Started:**
 
 - Use the `sampling/createMessage` method in your MCP server to request AI assistance
-- [gosling's implementation](https://github.com/repo-makeover/gosling/blob/main/crates/gosling/src/agents/mcp_client.rs) currently supports text and image content types
+- [gosling's implementation](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/agents/mcp_client.rs) currently supports text and image content types
 - gosling automatically advertises sampling capability to all MCP servers
 
 **Use Cases:** Document summarization, smart search filtering, code analysis, data insights

@@ -21,7 +21,7 @@ if (!fs.existsSync(updateConfigPath)) {
 const updateConfig = fs.readFileSync(updateConfigPath, 'utf8');
 const requiredLines = [
   'provider: github',
-  'owner: repo-makeover',
+  'owner: cephalopod-ai',
   'repo: gosling',
   'updaterCacheDirName: gosling-updater',
 ];

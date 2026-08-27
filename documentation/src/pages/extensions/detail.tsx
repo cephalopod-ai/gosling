@@ -5,6 +5,7 @@ import { Badge } from "@site/src/components/ui/badge";
 import { getGoslingInstallLink } from "@site/src/utils/install-links";
 import { useLocation } from "@docusaurus/router";
 import { useEffect, useState } from "react";
+import type { ReactElement } from "react";
 import type { MCPServer } from "@site/src/types/server";
 import { fetchMCPServers } from "@site/src/utils/mcp-servers";
 import { fetchGitHubStars, formatStarCount } from "@site/src/utils/github-stars";
@@ -237,7 +238,7 @@ const getDocumentationPath = (serverId: string): string => {
   );
 }
 
-export default function DetailPage(): JSX.Element {
+export default function DetailPage(): ReactElement {
   const location = useLocation();
   const [server, setServer] = useState<MCPServer | null>(null);
   const [loading, setLoading] = useState(true);

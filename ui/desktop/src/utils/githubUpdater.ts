@@ -27,7 +27,7 @@ interface UpdateCheckResult {
 }
 
 export class GitHubUpdater {
-  private readonly owner = process.env.GITHUB_OWNER || 'repo-makeover';
+  private readonly owner = process.env.GITHUB_OWNER || 'cephalopod-ai';
   private readonly repo = process.env.GITHUB_REPO || 'gosling';
   private readonly bundleName = process.env.GOSLING_BUNDLE_NAME || 'Gosling';
   private readonly apiUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/releases/latest`;

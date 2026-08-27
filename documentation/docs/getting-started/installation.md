@@ -65,14 +65,14 @@ For Desktop, verify **Help > About** and the downloaded artifact's operating-sys
         Run the following command to install the latest version of gosling on macOS:
 
         ```sh
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | bash
         ```
         This script will fetch the latest version of gosling and set it up on your system.
 
         If you'd like to install without interactive configuration, disable `CONFIGURE`:
 
         ```sh
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
         ```
 
         :::tip Updating gosling
@@ -115,14 +115,14 @@ For Desktop, verify **Help > About** and the downloaded artifact's operating-sys
         Run the following command to install the gosling CLI on Linux:
 
         ```sh
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | bash
         ```
         This script will fetch the latest version of gosling and set it up on your system.
 
         If you'd like to install without interactive configuration, disable `CONFIGURE`:
 
         ```sh
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
         ```
 
         :::tip Updating gosling
@@ -163,20 +163,20 @@ For Desktop, verify **Help > About** and the downloaded artifact's operating-sys
         **Git Bash / MSYS2: Standard**
 
         ```bash
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | bash
         ```
 
         To install without interactive configuration, disable `CONFIGURE`:
 
         ```bash
-        curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+        curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
         ```
 
         **PowerShell Installation: Standard**
         Download the PowerShell installation script to your current directory.
 
         ```powershell
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/repo-makeover/gosling/main/download_cli.ps1" -OutFile "download_cli.ps1";
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/cephalopod-ai/gosling/main/download_cli.ps1" -OutFile "download_cli.ps1";
         ```
         Then run the script to install gosling:
         ```powershell
@@ -228,7 +228,7 @@ For Desktop, verify **Help > About** and the downloaded artifact's operating-sys
 
           3. Run the gosling installation script:
           ```bash
-          curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | bash
+          curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | bash
           ```
           :::tip
             If you encounter any issues on download, you might need to install `bzip2` to extract the downloaded file:
@@ -241,7 +241,7 @@ For Desktop, verify **Help > About** and the downloaded artifact's operating-sys
           If you'd like to install without interactive configuration, disable `CONFIGURE`:
 
           ```sh
-          curl -fsSL https://github.com/repo-makeover/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+          curl -fsSL https://github.com/cephalopod-ai/gosling/releases/download/stable/download_cli.sh | CONFIGURE=false bash
           ```
 
           If needed, add gosling to your path:
@@ -425,7 +425,7 @@ just generate-manpages
 
 This creates ROFF-formatted manpages in `target/man/` (e.g., `gosling.1`, `gosling-session.1`) that can be installed to `/usr/share/man/man1/` to provide offline documentation via the `man` command.
 
-Manpage generation requires the gosling source repository and is intended for distribution packagers preparing packages for Fedora, Debian, and other Linux distributions. See the [generate_manpages.rs source](https://github.com/repo-makeover/gosling/blob/main/crates/gosling-cli/src/bin/generate_manpages.rs) for implementation details.
+Manpage generation requires the gosling source repository and is intended for distribution packagers preparing packages for Fedora, Debian, and other Linux distributions. See the [generate_manpages.rs source](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling-cli/src/bin/generate_manpages.rs) for implementation details.
 
 ## Additional Resources
 

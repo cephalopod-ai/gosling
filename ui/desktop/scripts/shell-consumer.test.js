@@ -26,8 +26,8 @@ test('two neutral consumers resolve distinct renderers without changing their pr
   const bravo = resolveConsumerManifest(consumerB);
   assert.equal(alpha.consumer.consumerId, 'shell-consumer-a');
   assert.equal(bravo.consumer.consumerId, 'shell-consumer-b');
-  assert.match(alpha.rendererEntry, /consumer-a\/renderer\.ts$/);
-  assert.match(bravo.rendererEntry, /consumer-b\/renderer\.ts$/);
+  assert.match(alpha.rendererEntry.split(path.sep).join('/'), /consumer-a\/renderer\.ts$/);
+  assert.match(bravo.rendererEntry.split(path.sep).join('/'), /consumer-b\/renderer\.ts$/);
   assert.equal(alpha.profile.profile.product.id, 'gosling-shell-fixture-a');
   assert.equal(bravo.profile.profile.product.id, 'gosling-shell-fixture-b');
   assert.deepEqual(alpha.requiredAgentCapabilities, ['loadSession']);
@@ -71,6 +71,21 @@ test('consumer manifests reject host authority, undeclared operations, and trave
     assert.throws(
       () => resolveConsumerManifest(manifest),
       /session\.detach requires session\.create/
+    );
+    fs.writeFileSync(
+      manifest,
+      JSON.stringify({
+        ...base,
+        declaredCapabilities: [
+          'directory.select',
+          'session.create',
+          'session.extensions.write',
+        ],
+      })
+    );
+    assert.throws(
+      () => resolveConsumerManifest(manifest),
+      /session\.extensions\.write requires session\.extensions\.read/
     );
     fs.writeFileSync(
       manifest,

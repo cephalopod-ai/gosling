@@ -190,7 +190,7 @@ async fn load_url_bytes(url: url::Url) -> Result<Vec<u8>, String> {
         .user_agent(concat!(
             "gosling/",
             env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/repo-makeover/gosling)"
+            " (+https://github.com/cephalopod-ai/gosling)"
         ))
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {

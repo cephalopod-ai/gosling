@@ -72,5 +72,5 @@ CMD ["--help"]
 # Labels for metadata
 LABEL org.opencontainers.image.title="gosling"
 LABEL org.opencontainers.image.description="gosling CLI"
-LABEL org.opencontainers.image.vendor="repo-makeover"
-LABEL org.opencontainers.image.source="https://github.com/repo-makeover/gosling"
+LABEL org.opencontainers.image.vendor="cephalopod-ai"
+LABEL org.opencontainers.image.source="https://github.com/cephalopod-ai/gosling"

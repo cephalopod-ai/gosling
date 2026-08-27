@@ -116,7 +116,7 @@ If you encounter issues:
 
 1. Check the **[Container Use GitHub repository](https://github.com/dagger/container-use)** for documentation
 2. Verify all prerequisites are installed and working
-3. Ask for support in [GitHub Discussions](https://github.com/repo-makeover/gosling/discussions)
+3. Ask for support in [GitHub Discussions](https://github.com/cephalopod-ai/gosling/discussions)
 
 ## Next Steps
 

@@ -216,7 +216,7 @@ function verifyAsar(appAsar) {
   let entries;
   try {
     asar.uncache(appAsar);
-    entries = new Set(asar.listPackage(appAsar));
+    entries = new Set(asar.listPackage(appAsar).map((entry) => entry.replaceAll('\\', '/')));
   } catch {
     fail('app.asar is missing or unreadable');
   }

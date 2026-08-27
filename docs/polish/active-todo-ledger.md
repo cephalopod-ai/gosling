@@ -6,11 +6,14 @@ as repair evidence; older completed or struck-through entries are not copied.
 
 | ID | Status | Priority | Area | Item | Source | Exit criteria |
 |---|---|---|---|---|---|---|
-| TODO-20260817-001 | open | P0 | Release | Align all source, lockfile, generated, Desktop, About, and runtime versions for the intended release. | docs/TODO.md | Reviewed release change reports one consistent version. |
+| TODO-20260817-001 | closed | P0 | Release | Align all source, lockfile, generated, Desktop, About, and runtime versions for the intended release. | docs/TODO.md | Workspace, lockfile, Desktop, generated API, packaged app, and CLI evidence report 1.1.0. |
 | TODO-20260817-002 | open | P0 | Release | Complete the release checklist source, Desktop, signing, checksum, scenario, and clean-install gates. | RELEASE_CHECKLIST.md | Every required checkbox has observed evidence. |
-| TODO-20260817-003 | needs-decision | P1 | Repository identity | Resolve the committed upstream identity versus the cephalopod-ai/gosling remote. | posture audit | Owner designates canonical repository and updates dependent policy deliberately. |
-| TODO-20260817-004 | open | P1 | Documentation | Repair the documentation TypeScript/Docusaurus failures. | documentation typecheck | pnpm run typecheck passes. |
-| TODO-20260817-005 | needs-verification | P1 | Release hygiene | Run approved secret/history and dependency-audit tooling. | security redaction ledger | Tool output is reviewed and recorded. |
+| TODO-20260817-003 | closed | P1 | Repository identity | Resolve the committed upstream identity versus the cephalopod-ai/gosling remote. | posture audit | Origin, UPSTREAM.md, README, release stewardship record, current links, and repository-gated workflows designate cephalopod-ai/gosling; historical evidence and the separately governed npm scope are preserved. |
+| TODO-20260817-004 | closed | P1 | Documentation | Repair the documentation TypeScript/Docusaurus failures. | documentation typecheck | Typecheck, 16 tests, and the production site build pass. |
+| TODO-20260817-005 | partial | P1 | Release hygiene | Run approved secret/history and dependency-audit tooling. | security redaction ledger | Documentation npm audit is recorded; dedicated secret/history and Rust dependency scanners remain unavailable. |
+| TODO-20260827-001 | partial | P0 | CI / shell | Restore shell consumer conformance and cross-platform assertion portability. | CI run 33120050894; shell profile tests | 67 shell-profile tests and profile checks pass locally; the next remote revision must confirm Windows/macOS/Linux runners. |
+| TODO-20260827-002 | partial | P0 | Windows Rust | Remove cfg-specific warnings rejected by the Windows `-D warnings` build. | shell package run 33120050956 | Imports, arguments, and helpers are scoped to the platforms that use them; host fmt/check pass, with remote Windows confirmation pending. |
+| TODO-20260827-003 | blocked-upstream | P1 | Documentation dependencies | Clear the remaining Docusaurus build-chain advisories. | RSP-GSL-004 | A compatible Docusaurus/webpack dependency chain clears the current 25 transitive advisories. |
 | TODO-20260826-008 | closed | P0 | Desktop FS | Artifact routing IPC must not grant dirs/files outside renderer grants. | SEC-GSL-001 | Renderer routing is root-constrained; focused artifact-access tests pass. |
 | TODO-20260826-009 | closed | P0 | Extensions | Enforce `GOSLING_ALLOWLIST` in Rust on every add-extension sink. | SEC-GSL-002 | Exact command/argv enforcement covers runtime, ACP/HTTP, and CLI sinks; focused Rust/UI tests pass. |
 | TODO-20260826-010 | closed | P0 | Shell | Protocol-filter shell `openExternal`. | SECN-GSL-001 | Shared URL guard blocks `file:`, `javascript:`, and `data:`; focused tests pass. |

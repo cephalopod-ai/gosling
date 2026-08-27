@@ -43,12 +43,12 @@ The list of experimental features may change as gosling development progresses. 
     <Card 
       title="GitHub Issues"
       description="Report bugs, request features, or contribute to the development of experimental features."
-      link="https://github.com/repo-makeover/gosling/issues"
+      link="https://github.com/cephalopod-ai/gosling/issues"
     />
     <Card 
       title="GitHub Discussions"
       description="Discuss experimental features, share feedback, and connect with other users."
-      link="https://github.com/repo-makeover/gosling/discussions"
+      link="https://github.com/cephalopod-ai/gosling/discussions"
     />
   </div>
 </div>

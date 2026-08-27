@@ -24,7 +24,7 @@ const config: Config = {
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: "repo-makeover", // Usually your GitHub org/user name.
+  organizationName: "cephalopod-ai",
   projectName: "gosling", // Usually your repo name.
 
   onBrokenLinks: "throw",
@@ -64,8 +64,12 @@ const config: Config = {
         },
         blog: {
           showReadingTime: true,
-          readingTime: ({ content, frontMatter, defaultReadingTime }) =>
-            frontMatter.reading_time ?? defaultReadingTime({ content }),
+          readingTime: ({ content, locale, frontMatter, defaultReadingTime }) => {
+            const configuredReadingTime = frontMatter.reading_time;
+            return typeof configuredReadingTime === "number"
+              ? configuredReadingTime
+              : defaultReadingTime({ content, locale, frontMatter });
+          },
           feedOptions: {
             type: ["rss", "atom"],
             xslt: true,
@@ -84,9 +88,6 @@ const config: Config = {
             "./src/css/tailwind.css",
           ],
         },
-        // Analytics disabled pending a GA4 property owned by this project — the
-        // previous trackingID was never rotated off the pre-fork property.
-        gtag: false,
       } satisfies Preset.Options,
     ],
   ],
@@ -409,7 +410,7 @@ const config: Config = {
         },
 
         {
-          href: "https://github.com/repo-makeover/gosling",
+          href: "https://github.com/cephalopod-ai/gosling",
           label: "GitHub",
           position: "right",
         },
@@ -439,7 +440,7 @@ const config: Config = {
             },
             {
               label: "GitHub Discussions",
-              href: "https://github.com/repo-makeover/gosling/discussions",
+              href: "https://github.com/cephalopod-ai/gosling/discussions",
             },
             {
               label: "YouTube",
@@ -464,7 +465,7 @@ const config: Config = {
             },
             {
               label: "GitHub",
-              href: "https://github.com/repo-makeover/gosling",
+              href: "https://github.com/cephalopod-ai/gosling",
             },
           ],
         },
@@ -488,7 +489,7 @@ const config: Config = {
         getHelpCallToActions: [
           {
             name: "GitHub",
-            url: "https://github.com/repo-makeover/gosling",
+            url: "https://github.com/cephalopod-ai/gosling",
             icon: {
               builtIn: "FaGithub",
             },
