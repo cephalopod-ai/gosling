@@ -1,5 +1,8 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
+const ts = require("typescript");
 const {
   normalizeMcpServer,
   normalizeServersCatalog,
@@ -8,6 +11,30 @@ const {
   convertGooseText,
   convertGooseCommand,
 } = require("./goose-compat");
+
+function loadBrowserConverter() {
+  const source = fs.readFileSync(
+    path.join(__dirname, "../src/utils/goose-compat.ts"),
+    "utf8",
+  );
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const module = { exports: {} };
+  new Function("module", "exports", "require", compiled)(
+    module,
+    module.exports,
+    require,
+  );
+  return module.exports;
+}
+
+function jsonValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
 
 describe("goose compatibility conversion", () => {
   test("converts Goose extension metadata to Gosling install metadata", () => {
@@ -108,5 +135,47 @@ describe("goose compatibility conversion", () => {
     } finally {
       console.warn = originalWarn;
     }
+  });
+
+  test("build-time and live catalog converters stay byte-equivalent", () => {
+    const browser = loadBrowserConverter();
+    const server = {
+      id: "demo",
+      name: "Goose Demo",
+      description: "Use goose mcp for this Goose server",
+      command: "goose mcp start",
+      url: "https://example.com/mcp",
+      type: "streamable_http",
+      installation_notes: "Open goose://settings",
+      environmentVariables: [{ name: "TOKEN", description: "Goose token", required: true }],
+      headers: [{ name: "X-Tenant", required: false }],
+      endorsed: true,
+    };
+    const skill = {
+      id: "demo-skill",
+      name: "Goose Skill",
+      description: "Run goose session",
+      author: "goose",
+      version: "1.2.3",
+      status: "experimental",
+      tags: ["workflow"],
+      sourceUrl: "https://example.com/source",
+      repoUrl: "https://example.com/repo",
+      content: "instructions",
+      hasSupporting: true,
+      supportingFiles: ["reference.md"],
+      supportingFilesType: "directory",
+      installMethod: "npx-multi",
+      installCommand: "goose mcp install demo",
+    };
+
+    assert.deepStrictEqual(
+      jsonValue(normalizeMcpServer(server)),
+      jsonValue(browser.normalizeGooseServer(server)),
+    );
+    assert.deepStrictEqual(
+      jsonValue(require("./goose-compat").normalizeSkill(skill)),
+      jsonValue(browser.normalizeGooseSkill(skill)),
+    );
   });
 });

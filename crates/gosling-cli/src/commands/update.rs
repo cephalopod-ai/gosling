@@ -339,7 +339,11 @@ async fn read_update_archive(mut response: reqwest::Response) -> Result<Vec<u8>>
         .await
         .context("Failed to read response body")?
     {
-        if bytes.len() + chunk.len() > MAX_UPDATE_ARCHIVE_BYTES {
+        if bytes
+            .len()
+            .checked_add(chunk.len())
+            .is_none_or(|length| length > MAX_UPDATE_ARCHIVE_BYTES)
+        {
             bail!(
                 "Release archive exceeds the {} byte download limit",
                 MAX_UPDATE_ARCHIVE_BYTES
@@ -919,6 +923,29 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("entry limit"));
+    }
+
+    #[tokio::test]
+    async fn test_update_download_rejects_oversized_content_length() {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                MAX_UPDATE_ARCHIVE_BYTES + 1
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+        let response = reqwest::get(format!("http://{address}")).await.unwrap();
+
+        let result = read_update_archive(response).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("download limit"));
+        server.await.unwrap();
     }
 
     #[cfg(not(target_os = "windows"))]
