@@ -2,6 +2,7 @@
 // Extracted from `summon.rs` in a behavior-preserving modularization.
 // The `summon` compatibility facade keeps delegation behind `SummonClient` and MCP dispatch.
 
+use super::delegate_config::{delegate_mode, delegate_mode_notice};
 use super::*;
 
 impl SummonClient {
@@ -17,7 +18,7 @@ impl SummonClient {
                 "source": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Name of an existing agent to run. For an ad-hoc task, omit this argument entirely; never send an empty or null source."
+                    "description": "Name of an existing agent to run. For an ad-hoc task, omit this argument entirely; never send an empty, null, or dummy source. A compatibility placeholder of source: \"dummy\" is ignored only when instructions, provider, and model explicitly identify an ad-hoc task."
                 },
                 "extensions": {
                     "type": "array",
@@ -122,14 +123,16 @@ impl SummonClient {
             .build_task_config(&params, &spec, &session)
             .await
             .map_err(|e| format!("Failed to build task config: {}", e))?;
+        let subagent_mode = delegate_mode(task_config.provider.executes_tools_outside_gosling());
 
-        // Subagents must use Auto until get_agent_messages forwards
-        // ActionRequired messages to the parent. Until then, any mode
-        // that requires approval will hang on the subagent's confirmation_rx.
+        // Hosted-tool subagents use Auto because no UI is attached to answer
+        // approval prompts. External-tool providers cannot safely use Auto;
+        // Chat mode keeps those providers available for bounded text work while
+        // rejecting their delegated tool calls at the ACP boundary.
         let agent_config = AgentConfig::new(
             self.context.session_manager.clone(),
             crate::config::permission::PermissionManager::instance(),
-            GoslingMode::Auto,
+            subagent_mode,
             true, // disable session naming for subagents
             crate::agents::GoslingPlatform::GoslingCli,
         )
@@ -143,7 +146,7 @@ impl SummonClient {
                 task_config.parent_working_dir.clone(),
                 "Delegated task".to_string(),
                 SessionType::SubAgent,
-                GoslingMode::Auto,
+                subagent_mode,
             )
             .await
             .map_err(|e| format!("Failed to create subagent session: {}", e))?;
@@ -179,9 +182,12 @@ impl SummonClient {
         );
 
         match result {
-            Ok(text) => {
-                Ok(CallToolResult::success(vec![Content::text(text)]).with_meta(Some(meta)))
-            }
+            Ok(text) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "{}{}",
+                text,
+                delegate_mode_notice(subagent_mode)
+            ))])
+            .with_meta(Some(meta))),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
                 "Delegation failed: {}",
                 e

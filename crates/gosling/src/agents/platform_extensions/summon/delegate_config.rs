@@ -4,6 +4,22 @@
 
 use super::*;
 
+pub(super) fn delegate_mode(executes_tools_outside_gosling: bool) -> GoslingMode {
+    if executes_tools_outside_gosling {
+        GoslingMode::Chat
+    } else {
+        GoslingMode::Auto
+    }
+}
+
+pub(super) fn delegate_mode_notice(mode: GoslingMode) -> &'static str {
+    if mode == GoslingMode::Chat {
+        " Delegate mode: Chat; this provider executes tools outside Gosling's inspection pipeline, so delegated tool calls are disabled."
+    } else {
+        ""
+    }
+}
+
 impl SummonClient {
     pub(super) async fn build_task_config(
         &self,

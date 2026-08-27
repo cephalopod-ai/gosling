@@ -30,7 +30,9 @@ describe('research model team prompt', () => {
     expect(prompt).toContain('label the result degraded');
     expect(prompt).toContain('extensions: ["search","math_mcp"]');
     expect(prompt).toContain('relevant Initial Input contents or stable locators');
-    expect(prompt).toContain('omit the `source` argument entirely');
+    expect(prompt).toContain('omit the `source` key entirely');
+    expect(prompt).toContain('"async":true');
+    expect(prompt).toContain('`dummy`');
     expect(prompt).toContain('Do not retry a rejected launch');
   });
 

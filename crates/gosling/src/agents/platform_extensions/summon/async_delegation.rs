@@ -2,6 +2,7 @@
 // Extracted from `summon.rs` in a behavior-preserving modularization.
 // The `summon` compatibility facade exposes this behavior through MCP delegation only.
 
+use super::delegate_config::{delegate_mode, delegate_mode_notice};
 use super::*;
 
 impl SummonClient {
@@ -27,16 +28,18 @@ impl SummonClient {
             .await
             .map_err(|e| format!("Failed to build task config: {}", e))?;
         let authority_summary = delegate_authority_summary(&task_config.extensions);
+        let subagent_mode = delegate_mode(task_config.provider.executes_tools_outside_gosling());
 
         let description = safe_truncate(&Self::get_task_description(&params), TASK_LABEL_BUDGET);
 
-        // Subagents must use Auto until get_agent_messages forwards
-        // ActionRequired messages to the parent. Until then, any mode
-        // that requires approval will hang on the subagent's confirmation_rx.
+        // Hosted-tool subagents use Auto because no UI is attached to answer
+        // approval prompts. External-tool providers cannot safely use Auto;
+        // Chat mode keeps those providers available for bounded text work while
+        // rejecting their delegated tool calls at the ACP boundary.
         let agent_config = AgentConfig::new(
             self.context.session_manager.clone(),
             crate::config::permission::PermissionManager::instance(),
-            GoslingMode::Auto,
+            subagent_mode,
             true, // disable session naming for subagents
             crate::agents::GoslingPlatform::GoslingCli,
         )
@@ -50,7 +53,7 @@ impl SummonClient {
                 task_config.parent_working_dir.clone(),
                 description.clone(),
                 SessionType::SubAgent,
-                GoslingMode::Auto,
+                subagent_mode,
             )
             .await
             .map_err(|e| format!("Failed to create subagent session: {}", e))?;
@@ -114,9 +117,13 @@ impl SummonClient {
 
         let content = vec![Content::text(format!(
             "Task {} started in background: \"{}\"\n\
-             Resolved delegate authority: extensions = {}.\n\
+             Resolved delegate authority: extensions = {}.{}\n\
              Continue with other work. When you need the result, use load(source: \"{}\").",
-            task_id, description, authority_summary, task_id
+            task_id,
+            description,
+            authority_summary,
+            delegate_mode_notice(subagent_mode),
+            task_id
         ))];
         Ok((content, task_id))
     }

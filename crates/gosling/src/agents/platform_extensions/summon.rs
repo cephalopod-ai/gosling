@@ -41,7 +41,7 @@ mod source_discovery;
 mod task_tracking;
 
 #[cfg(test)]
-use delegate_config::resolve_working_dir;
+use delegate_config::{delegate_mode, delegate_mode_notice, resolve_working_dir};
 pub use source_discovery::discover_filesystem_sources;
 use source_discovery::{
     build_instructions_with_context, build_subagent_instructions, delegate_authority_summary,
@@ -82,6 +82,13 @@ impl DelegateParams {
         self.instructions = non_blank(self.instructions);
         self.source = non_blank(self.source);
         self.context = non_blank(self.context);
+        if self.instructions.is_some()
+            && self.provider.is_some()
+            && self.model.is_some()
+            && self.source.as_deref() == Some("dummy")
+        {
+            self.source = None;
+        }
         self
     }
 }
@@ -655,6 +662,40 @@ You review code."#;
         assert_eq!(params.context.as_deref(), Some("supporting context"));
     }
 
+    #[test]
+    fn test_delegate_params_normalize_dummy_source_for_explicit_adhoc_model() {
+        let params = DelegateParams {
+            instructions: Some("research independently".to_string()),
+            source: Some("dummy".to_string()),
+            provider: Some("claude-code".to_string()),
+            model: Some("claude-opus-5".to_string()),
+            ..Default::default()
+        }
+        .normalize();
+
+        assert_eq!(params.source, None);
+    }
+
+    #[test]
+    fn test_delegate_params_preserve_dummy_named_source_without_explicit_adhoc_model() {
+        let params = DelegateParams {
+            instructions: Some("run the named agent".to_string()),
+            source: Some("dummy".to_string()),
+            ..Default::default()
+        }
+        .normalize();
+
+        assert_eq!(params.source.as_deref(), Some("dummy"));
+    }
+
+    #[test]
+    fn test_delegate_mode_disables_tools_for_external_tool_providers() {
+        assert_eq!(delegate_mode(false), GoslingMode::Auto);
+        assert_eq!(delegate_mode(true), GoslingMode::Chat);
+        assert!(delegate_mode_notice(GoslingMode::Auto).is_empty());
+        assert!(delegate_mode_notice(GoslingMode::Chat).contains("tool calls are disabled"));
+    }
+
     #[tokio::test]
     async fn test_delegate_schema_constrains_source_and_documents_adhoc_shape() {
         let client = SummonClient::new(create_test_context()).unwrap();
@@ -667,6 +708,10 @@ You review code."#;
             .as_str()
             .unwrap()
             .contains("omit this argument entirely"));
+        assert!(schema["properties"]["source"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("dummy"));
     }
 
     #[test]

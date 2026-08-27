@@ -37,7 +37,7 @@ sessions, while explicit Auto remains denied.
 
 - `just package-ui` completed and produced an ad-hoc signed arm64 application.
 - Packaged and installed backend SHA-256:
-  `5c1c9599014655b71940f8623d2f47d8763d340fa9581aa091e95bee3df25579`.
+  `0f8e91202ad0d48872d8a391a032007bb20438e6f545b9f1d710c3b04fc865bc`.
 - `/Applications/Gosling.app` was replaced and signature-verified. The staged
   old bundle was permanently deleted after verification, as authorized.
 - No other Gosling backup/archive app, ZIP, or DMG was found in Applications,
@@ -79,14 +79,17 @@ seat works.
 - Documentation tests: 16/16 passed, including Goose converter parity.
 - Release package, code signature, embedded-binary hash, reinstall, launch, and
   installed Solo/Dual ACP boundary probes passed.
-- Rust format, compile, Clippy, diff whitespace, and governance-marker results
-  are recorded in the session log. Documentation typecheck remains partially
-  validated because unrelated pre-existing Docusaurus/JSX errors persist in
-  untouched files.
+- `cargo fmt --all -- --check`, `cargo check` for `gosling` and `gosling-cli`,
+  and warning-denying Clippy for both packages/all targets passed.
+- `git diff --check` and the required `AGENTS.md` governance-marker check
+  passed. `GEMINI.md` is absent, so its optional marker check does not apply.
+- Documentation typecheck remains partially validated because unrelated
+  pre-existing Docusaurus/JSX errors persist in untouched files.
 
 ## Repository-state note
 
 The campaign did not invoke Git commit, push, fetch, merge, or rebase. A separate
-repository process advanced `main`/`origin/main` through the implementation
-commits while the campaign was running. Final review is against that observed
-tree plus the report/formatting changes listed by `git status` at handoff.
+repository process advanced `main`/`origin/main` through the implementation and
+record commits while the campaign was running, ending at observed
+`3fbd0a7bd`. Final review is against that tree plus the remaining report update
+listed by `git status` at handoff.

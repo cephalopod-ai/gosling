@@ -210,14 +210,16 @@ export function ResearchInitialInputsDialog({
         )}
       </Button>
 
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="min-w-0 max-h-[85vh] overflow-x-hidden overflow-y-auto sm:max-w-2xl">
+        <DialogHeader className="min-w-0">
           <DialogTitle>{intl.formatMessage(i18n.title)}</DialogTitle>
-          <DialogDescription>{intl.formatMessage(i18n.description)}</DialogDescription>
+          <DialogDescription className="break-words">
+            {intl.formatMessage(i18n.description)}
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
+        <div className="min-w-0 space-y-4">
+          <div className="min-w-0 space-y-2">
             <label htmlFor="research-initial-input-text" className="text-sm font-medium">
               {intl.formatMessage(i18n.pasteLabel)}
             </label>
@@ -226,9 +228,10 @@ export function ResearchInitialInputsDialog({
               id="research-initial-input-text"
               value={draftText}
               rows={7}
+              wrap="soft"
               maxLength={256 * 1024}
               placeholder={intl.formatMessage(i18n.pastePlaceholder)}
-              className="w-full resize-y rounded-lg border border-border-primary bg-background-secondary px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="block min-w-0 max-w-full w-full resize-y whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-lg border border-border-primary bg-background-secondary px-3 py-2 text-sm text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onChange={(event) => setDraftText(event.target.value)}
             />
             <div className="flex justify-end">
@@ -246,13 +249,16 @@ export function ResearchInitialInputsDialog({
             </div>
 
             {draftTexts.length > 0 && (
-              <div className="space-y-2">
+              <div className="min-w-0 space-y-2">
                 <h3 className="text-sm font-medium">{intl.formatMessage(i18n.pastedHeading)}</h3>
-                <ul className="max-h-40 space-y-2 overflow-y-auto" aria-label="Pasted inputs">
+                <ul
+                  className="min-w-0 max-w-full max-h-40 space-y-2 overflow-x-hidden overflow-y-auto"
+                  aria-label="Pasted inputs"
+                >
                   {draftTexts.map((text, index) => (
                     <li
                       key={`${index}:${text.slice(0, 32)}`}
-                      className="flex items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2"
+                      className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2"
                     >
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background-tertiary text-xs text-text-secondary">
                         {index + 1}
@@ -261,13 +267,16 @@ export function ResearchInitialInputsDialog({
                         <p className="text-xs font-medium text-text-secondary">
                           {intl.formatMessage(i18n.pastedInput, { number: index + 1 })}
                         </p>
-                        <p className="truncate text-sm text-text-primary">{text}</p>
+                        <p className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm text-text-primary">
+                          {text}
+                        </p>
                       </div>
                       <Button
                         type="button"
                         variant="ghost"
                         size="xs"
                         shape="round"
+                        className="shrink-0"
                         aria-label={intl.formatMessage(i18n.removePastedInput, {
                           number: index + 1,
                         })}
@@ -286,16 +295,19 @@ export function ResearchInitialInputsDialog({
             )}
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <div>
+          <div className="min-w-0 space-y-2">
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="min-w-0">
                 <h3 className="text-sm font-medium">{intl.formatMessage(i18n.filesHeading)}</h3>
-                <p className="text-xs text-text-secondary">{intl.formatMessage(i18n.fileHelp)}</p>
+                <p className="break-words text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.fileHelp)}
+                </p>
               </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="shrink-0"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {intl.formatMessage(i18n.browse)}
@@ -316,11 +328,14 @@ export function ResearchInitialInputsDialog({
                 {intl.formatMessage(i18n.noFiles)}
               </p>
             ) : (
-              <ul className="max-h-52 space-y-2 overflow-y-auto" aria-label="Selected files">
+              <ul
+                className="min-w-0 max-w-full max-h-52 space-y-2 overflow-x-hidden overflow-y-auto"
+                aria-label="Selected files"
+              >
                 {draftFiles.map((file) => (
                   <li
                     key={file.id}
-                    className="flex items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2"
+                    className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-border-primary bg-background-secondary px-3 py-2"
                   >
                     <FileText className="h-4 w-4 shrink-0 text-text-secondary" />
                     <div className="min-w-0 flex-1">
@@ -334,6 +349,7 @@ export function ResearchInitialInputsDialog({
                       variant="ghost"
                       size="xs"
                       shape="round"
+                      className="shrink-0"
                       aria-label={intl.formatMessage(i18n.removeFile, { name: file.name })}
                       onClick={() =>
                         setDraftFiles((files) =>
