@@ -52,7 +52,10 @@ export const ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = (
       aria-label={intl.formatMessage(i18n.toolStatus, { status })}
       data-status={status}
     >
-      <StatusIcon className={cn('h-2 w-2 stroke-[3]', status === 'loading' && 'animate-spin')} aria-hidden />
+      <StatusIcon
+        className={cn('h-2 w-2 stroke-[3]', status === 'loading' && 'animate-spin')}
+        aria-hidden
+      />
     </div>
   );
 };

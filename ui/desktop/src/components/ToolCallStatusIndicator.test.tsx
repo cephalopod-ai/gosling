@@ -9,11 +9,14 @@ describe('ToolCallStatusIndicator', () => {
     ['loading', 'loader-circle'],
     ['success', 'check'],
     ['error', 'x'],
-  ] satisfies Array<[ToolCallStatus, string]>)('renders a distinct non-color cue for %s', (status, icon) => {
-    render(<ToolCallStatusIndicator status={status} />, { wrapper: IntlTestWrapper });
+  ] satisfies Array<[ToolCallStatus, string]>)(
+    'renders a distinct non-color cue for %s',
+    (status, icon) => {
+      render(<ToolCallStatusIndicator status={status} />, { wrapper: IntlTestWrapper });
 
-    const indicator = screen.getByLabelText(`Tool status: ${status}`);
-    expect(indicator).toHaveAttribute('data-status', status);
-    expect(indicator.querySelector(`.lucide-${icon}`)).toBeInTheDocument();
-  });
+      const indicator = screen.getByLabelText(`Tool status: ${status}`);
+      expect(indicator).toHaveAttribute('data-status', status);
+      expect(indicator.querySelector(`.lucide-${icon}`)).toBeInTheDocument();
+    }
+  );
 });
