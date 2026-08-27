@@ -20,4 +20,4 @@ as repair evidence; older completed or struck-through entries are not copied.
 | TODO-20260826-004 | closed | P0 | CLI | Headless Auto must Deny/abort inspector-failure confirmations. | WFG-GSL-004 | Focused CLI regression verifies cancellation without dispatch. |
 | TODO-20260826-005 | closed | P0 | Artifacts | Assistant absolute document paths must not become preview grants. | IOP-GSL-001 | Focused Rust/UI tests reject assistant paths outside authorized roots. |
 | TODO-20260826-006 | closed | P0 | Workspaces | Same-schema workspace validation failure must not wipe to Default. | DAT-GSL-001 | Focused store regressions preserve invalid same-schema bytes and return an error. |
-| TODO-20260826-007 | open | P1 | Reliability | Pin ACP in-flight turns in AgentManager LRU so a 6th session cannot evict a running agent. | REL-GSL-001 | ACP prompt in flight + 6th session keeps the original agent. |
+| TODO-20260826-007 | closed | P1 | Reliability | Pin ACP in-flight turns in AgentManager LRU so a 6th session cannot evict a running agent. | REL-GSL-001 | Focused ACP/LRU regression keeps the active agent and evicts the idle entry. |

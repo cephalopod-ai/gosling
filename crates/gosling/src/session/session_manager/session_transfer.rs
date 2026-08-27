@@ -36,7 +36,7 @@ impl SessionStorage {
         session_type_override: Option<SessionType>,
         working_dir: PathBuf,
         transport: crate::session::import_formats::SessionImportTransport,
-        source_file: Option<(&Path, String)>,
+        source: Option<(Option<&Path>, String)>,
     ) -> Result<Session> {
         let source_format = crate::session::import_formats::detect_format(json);
         let normalized = crate::session::import_formats::convert_to_gosling_session_json(json)?;
@@ -58,10 +58,10 @@ impl SessionStorage {
             effective_working_dir: effective_working_dir.to_string_lossy().to_string(),
             imported_at: Utc::now(),
             history_trusted: false,
-            source_path: source_file
+            source_path: source
                 .as_ref()
-                .map(|(path, _)| path.to_string_lossy().to_string()),
-            source_sha256: source_file.map(|(_, sha256)| sha256),
+                .and_then(|(path, _)| path.map(|path| path.to_string_lossy().to_string())),
+            source_sha256: source.map(|(_, sha256)| sha256),
         }
         .to_extension_data(&mut extension_data)?;
 

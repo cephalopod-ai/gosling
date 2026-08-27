@@ -54,6 +54,29 @@ source/documentation consistency evidence in the second batch of
 CON-GSL-002 was already closed in `37804170e`; this pass only reconciled the
 stale duplicate checkbox with the existing closed record below.
 
+### Third criticality batch
+
+- [x] **REL-GSL-001** — ACP prompt runs now register their cancellation token
+      with `AgentManager`, so its LRU busy check cannot evict an in-flight ACP
+      agent.
+- [x] **CON-GSL-003** — shared atomic file writers use a UUID staging path per
+      publication instead of a shared `<stem>.tmp`.
+- [x] **IOP-GSL-002** — ACP/JSON and Nostr imports record and reuse the same
+      source-payload fingerprint as CLI file imports.
+- [x] **DAT-GSL-003** — deleting a session removes its session-private library
+      rows in the same SQLite transaction while preserving project items.
+- [x] **WFG-GSL-006** — the Ink permission prompt exposes the complete raw
+      payload through a bounded, pageable region instead of ellipsizing it.
+
+These five findings were closed on 2026-08-27 with focused Rust and TUI
+regressions, Rust compile/Clippy/formatting, TUI typecheck, and scoped diff
+evidence in the third batch of
+[`docs/logs/session/2026-08-27-medium-defect-campaign.md`](logs/session/2026-08-27-medium-defect-campaign.md).
+`DAT-GSL-002` was investigated but not counted: deleting workspace-keyed
+library state conflicts with the accepted pinned-session preservation contract
+in ADR-0015 and the existing workspace deletion regression, so it remains a
+design/architecture decision rather than a mechanical repair.
+
 ### Needs a design decision
 
 - [ ] **NEG-GSL-005** — Official remote `goslingd` (`0.0.0.0` + shared secret)
@@ -65,7 +88,8 @@ stale duplicate checkbox with the existing closed record below.
 
 - [ ] **SEC-GSL-003** — goslingd unauth MCP proxy/guest need loopback peer checks.
 - [x] **SECN-GSL-002** — main BrowserWindow needs `will-navigate` like the shell.
-- [ ] **REL-GSL-001** — pin ACP in-flight turns in AgentManager LRU.
+- [x] **REL-GSL-001** — ACP in-flight turns pin their AgentManager LRU entry;
+      closed in the third 2026-08-27 criticality batch above.
 - [x] **FSR-GSL-002** — do not persist-drop a failed MCP from the enabled set.
 - [x] **REC-GSL-001** — publish the Desktop backend PID registry atomically.
 - [x] **REL-GSL-002 / RES-GSL-001** — host default timeouts for shell and

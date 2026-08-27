@@ -43,3 +43,32 @@ export function truncateTerminalText(value: string, maxCells: number): string {
   }
   return result + "…";
 }
+
+export function wrapTerminalText(value: string, maxCells: number): string[] {
+  const budget = Math.max(1, Math.floor(maxCells));
+  const lines: string[] = [];
+  let current = "";
+  let used = 0;
+
+  for (const char of Array.from(value)) {
+    if (char === "\n") {
+      lines.push(current);
+      current = "";
+      used = 0;
+      continue;
+    }
+
+    const width =
+      char.codePointAt(0)! >= 0x20 && char.codePointAt(0)! <= 0x7e ? 1 : 2;
+    if (current && used + width > budget) {
+      lines.push(current);
+      current = "";
+      used = 0;
+    }
+    current += char;
+    used += width;
+  }
+
+  lines.push(current);
+  return lines;
+}

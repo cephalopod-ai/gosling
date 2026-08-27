@@ -199,6 +199,58 @@ struct ActivePromptRun {
     cancel_token: CancellationToken,
 }
 
+async fn register_active_prompt_run(
+    active_prompt_runs: &Mutex<HashMap<String, ActivePromptRun>>,
+    agent_manager: &AgentManager,
+    session_id: &str,
+    run_id: String,
+    cancel_token: CancellationToken,
+) -> Result<(), agent_client_protocol::Error> {
+    {
+        let active_prompt_runs = active_prompt_runs.lock().await;
+        if let Some(active_run) = active_prompt_runs.get(session_id) {
+            return Err(agent_client_protocol::Error::invalid_params().data(format!(
+                "session already has active run `{}`; use _gosling/unstable/session/steer",
+                active_run.run_id.as_str()
+            )));
+        }
+    }
+
+    agent_manager
+        .try_register_cancel_token(session_id, cancel_token.clone())
+        .await
+        .map_err(|error| agent_client_protocol::Error::invalid_params().data(error.to_string()))?;
+
+    active_prompt_runs.lock().await.insert(
+        session_id.to_string(),
+        ActivePromptRun {
+            run_id,
+            cancel_token,
+        },
+    );
+    Ok(())
+}
+
+async fn unregister_active_prompt_run(
+    active_prompt_runs: &Mutex<HashMap<String, ActivePromptRun>>,
+    agent_manager: &AgentManager,
+    session_id: &str,
+    run_id: &str,
+) -> bool {
+    {
+        let mut active_prompt_runs = active_prompt_runs.lock().await;
+        let Some(active_run) = active_prompt_runs.get(session_id) else {
+            return false;
+        };
+        if active_run.run_id != run_id {
+            return false;
+        }
+        active_prompt_runs.remove(session_id);
+    }
+    agent_manager.unregister_cancel_token(session_id).await;
+    true
+}
+
 /// A run of consecutive ToolRequest blocks within one assistant message,
 /// tracked by [`GoslingAcpSession::chain_membership`]. Used to drive a single
 /// LLM summary for the whole run once every step has a recorded ToolResponse.
@@ -2757,36 +2809,26 @@ impl GoslingAcpAgent {
             .data(format!("Session not found: {}", session_id)));
         }
 
-        let mut active_prompt_runs = self.active_prompt_runs.lock().await;
-        if let Some(active_run) = active_prompt_runs.get(session_id) {
-            return Err(agent_client_protocol::Error::invalid_params().data(format!(
-                "session already has active run `{}`; use _gosling/unstable/session/steer",
-                active_run.run_id.as_str()
-            )));
-        }
-
-        active_prompt_runs.insert(
-            session_id.to_string(),
-            ActivePromptRun {
-                run_id,
-                cancel_token,
-            },
-        );
-        Ok(())
+        register_active_prompt_run(
+            &self.active_prompt_runs,
+            &self.agent_manager,
+            session_id,
+            run_id,
+            cancel_token,
+        )
+        .await
     }
 
     async fn clear_active_run(&self, session_id: &str, run_id: &str) {
+        if !unregister_active_prompt_run(
+            &self.active_prompt_runs,
+            &self.agent_manager,
+            session_id,
+            run_id,
+        )
+        .await
         {
-            let mut active_prompt_runs = self.active_prompt_runs.lock().await;
-            let Some(active_run) = active_prompt_runs.get(session_id) else {
-                return;
-            };
-
-            if active_run.run_id != run_id {
-                return;
-            }
-
-            active_prompt_runs.remove(session_id);
+            return;
         }
 
         let agent = {
@@ -3753,6 +3795,42 @@ mod tests {
 
     fn has_developer(extensions: &[ExtensionConfig]) -> bool {
         extensions.iter().any(|ext| ext.name() == "developer")
+    }
+
+    #[tokio::test]
+    async fn acp_active_run_pins_the_agent_manager_lru_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp.path().join("data")));
+        let agent_config = AgentConfig::new(
+            session_manager,
+            Arc::new(PermissionManager::new(temp.path().join("config"))),
+            GoslingMode::default(),
+            false,
+            GoslingPlatform::GoslingDesktop,
+        );
+        let manager = AgentManager::new(agent_config, Some(2)).await.unwrap();
+        manager.get_or_create_agent("active".into()).await.unwrap();
+        manager.get_or_create_agent("idle".into()).await.unwrap();
+        let active_prompt_runs = Mutex::new(HashMap::new());
+
+        register_active_prompt_run(
+            &active_prompt_runs,
+            &manager,
+            "active",
+            "run-1".into(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        manager.get_or_create_agent("new".into()).await.unwrap();
+
+        assert!(manager.has_session("active").await);
+        assert!(!manager.has_session("idle").await);
+        assert!(manager.is_session_busy("active").await);
+        assert!(
+            unregister_active_prompt_run(&active_prompt_runs, &manager, "active", "run-1").await
+        );
+        assert!(!manager.is_session_busy("active").await);
     }
 
     #[test]

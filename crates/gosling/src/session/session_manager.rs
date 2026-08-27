@@ -941,6 +941,23 @@ impl SessionManager {
         working_dir: PathBuf,
         transport: super::import_formats::SessionImportTransport,
     ) -> Result<Session> {
+        let source_sha256 = Sha256::digest(json.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        for session in self.list_all_sessions().await? {
+            let Some(provenance) =
+                super::import_formats::SessionImportProvenance::from_extension_data(
+                    &session.extension_data,
+                )
+            else {
+                continue;
+            };
+            if provenance.source_sha256.as_deref() == Some(&source_sha256) {
+                return Ok(session);
+            }
+        }
+
         self.storage
             .import_session(
                 self,
@@ -948,15 +965,15 @@ impl SessionManager {
                 session_type_override,
                 working_dir,
                 transport,
-                None,
+                Some((None, source_sha256)),
             )
             .await
     }
 
     /// Import a transcript file once, retaining an untrusted source label and
-    /// content fingerprint in the session provenance. This is deliberately a
-    /// file-only convenience API: JSON and Nostr imports preserve their
-    /// existing behavior and do not acquire a misleading local source path.
+    /// content fingerprint in the session provenance. JSON and Nostr imports
+    /// share the same content-fingerprint replay guard but do not acquire a
+    /// misleading local source path.
     pub async fn import_session_file(
         &self,
         path: &Path,
@@ -997,7 +1014,7 @@ impl SessionManager {
                 session_type_override,
                 working_dir,
                 super::import_formats::SessionImportTransport::CliFile,
-                Some((&source_path, source_sha256)),
+                Some((Some(&source_path), source_sha256)),
             )
             .await?;
         Ok(SessionFileImportResult::Imported(session))
@@ -3795,9 +3812,7 @@ mod tests {
     async fn file_import_is_idempotent_and_records_untrusted_source_provenance() {
         let temp_dir = TempDir::new().unwrap();
         let source = temp_dir.path().join("history.json");
-        fs::write(
-            &source,
-            r#"{
+        let original = r#"{
                 "id": "20240101_1",
                 "name": "Imported history",
                 "working_dir": "/tmp/test",
@@ -3805,9 +3820,8 @@ mod tests {
                 "updated_at": "2024-01-01T00:00:00Z",
                 "extension_data": {},
                 "message_count": 0
-            }"#,
-        )
-        .unwrap();
+            }"#;
+        fs::write(&source, original).unwrap();
 
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
         let imported = sm
@@ -3838,6 +3852,18 @@ mod tests {
             panic!("replaying the same file must not duplicate the session");
         };
         assert_eq!(repeated.id, imported.id);
+
+        let repeated_over_json = sm
+            .import_session(
+                original,
+                None,
+                temp_dir.path().to_path_buf(),
+                crate::session::import_formats::SessionImportTransport::Json,
+            )
+            .await
+            .unwrap();
+        assert_eq!(repeated_over_json.id, imported.id);
+        assert_eq!(sm.list_all_sessions().await.unwrap().len(), 1);
 
         fs::write(
             &source,
@@ -5064,5 +5090,65 @@ mod tests {
             .remove_session_library_item(&second.id, &shared.id)
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn deleting_session_removes_private_library_items_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let working_dir = temp_dir.path().join("workspace");
+        let deleted = manager
+            .create_session(
+                working_dir.clone(),
+                "Deleted session".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let survivor = manager
+            .create_session(
+                working_dir,
+                "Surviving session".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let private = manager
+            .add_session_library_item(
+                &deleted.id,
+                SessionLibraryScope::Session,
+                "Private".to_string(),
+                NewSessionLibraryContent::Text("remove me".to_string()),
+            )
+            .await
+            .unwrap();
+        let shared = manager
+            .add_session_library_item(
+                &deleted.id,
+                SessionLibraryScope::Project,
+                "Shared".to_string(),
+                NewSessionLibraryContent::Text("keep me".to_string()),
+            )
+            .await
+            .unwrap();
+
+        manager.delete_session(&deleted.id).await.unwrap();
+
+        let private_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM session_library_items WHERE id = ?")
+                .bind(&private.id)
+                .fetch_one(manager.storage().pool().await.unwrap())
+                .await
+                .unwrap();
+        assert_eq!(private_count, 0);
+        assert_eq!(
+            manager
+                .list_session_library_items(&survivor.id)
+                .await
+                .unwrap(),
+            vec![shared]
+        );
     }
 }

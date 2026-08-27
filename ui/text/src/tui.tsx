@@ -565,7 +565,8 @@ function App({
     if (!bannerVisible && !loading) return;
     const t = setInterval(() => {
       if (loading) setSpinIdx((i) => (i + 1) % SPINNER_FRAMES.length);
-      if (bannerVisible) setGoslingFrame((f) => (f + 1) % GOSLING_FRAMES.length);
+      if (bannerVisible)
+        setGoslingFrame((f) => (f + 1) % GOSLING_FRAMES.length);
     }, 300);
     return () => clearInterval(t);
   }, [bannerVisible, loading]);
@@ -1182,6 +1183,7 @@ function App({
         <PermissionPrompt
           request={pending.request}
           width={Math.min(safeTermWidth - 4, 72)}
+          height={safeTermHeight}
           onRespond={(response) => {
             setPendingPermission(null);
             pending.resolve(response);
@@ -1506,7 +1508,11 @@ function cleanup() {
 /// holding its port and session lock. The child is now given a bounded grace
 /// period and escalated to SIGKILL if it does not exit. (RES-GSL-002)
 function shutdown(code: number): void {
-  if (!serverProcess || serverProcess.killed || serverProcess.exitCode !== null) {
+  if (
+    !serverProcess ||
+    serverProcess.killed ||
+    serverProcess.exitCode !== null
+  ) {
     process.exit(code);
   }
 

@@ -936,3 +936,29 @@ boundary; Chat's provider contract matches its no-tools prompt; the README's
 owner-only session-storage claim matches fail-closed initialization; and public
 documentation matches the active runtime defaults. Drift delta: no new drift;
 the recorded pre-existing drift on these five surfaces is repaired.
+
+## Third criticality repair batch — 2026-08-27
+
+Five additional actionable findings were repaired in a bounded campaign slice.
+`DAT-GSL-002` was inspected but excluded from the five: its proposed cleanup
+conflicts with the accepted contract that workspace deletion preserves pinned
+session snapshots and their workspace-keyed project library.
+
+| Finding | Closure evidence |
+|---|---|
+| REL-GSL-001 | ACP active-run registration now uses the same AgentManager cancellation-token registry consulted by LRU eviction. A focused regression proves a new session evicts the idle entry rather than the active ACP entry. |
+| CON-GSL-003 | Config, secret, and shared atomic file writers now publish through UUID-named same-directory staging files. Focused tests prove distinct paths and successful concurrent publication without leftover staging files. |
+| IOP-GSL-002 | Every import transport records a server-computed source SHA-256; raw ACP/JSON replay of a CLI-imported payload returns the existing session instead of creating a duplicate. |
+| DAT-GSL-003 | Session deletion removes `session:<id>` private library rows inside the existing `BEGIN IMMEDIATE` transaction and leaves directory/project-shared rows available to surviving sessions. |
+| WFG-GSL-006 | Ink serializes the complete raw tool input, wraps it to the available cell width, and exposes all lines through Page Up/Page Down within an exact height budget. The long-payload regression reconstructs the original input without ellipsis or loss. |
+
+Validation passed: five focused Rust regressions; the TUI payload-preservation
+test; `cargo check -p gosling`; `cargo clippy -p gosling --all-targets -- -D
+warnings`; `cargo fmt --all`; TUI TypeScript; and diff whitespace checks. Full
+Rust/Desktop suites and live terminal playtesting were not run.
+
+Architecture comparison: ACP run state and the AgentManager eviction guard now
+share one busy token; imported-history provenance is transport-consistent;
+ADR-0015's session/project library ownership is preserved; and the Ink prompt
+obeys the repository's fixed-height content budget. No persisted schema or
+public request type changed. Drift delta: no new drift.

@@ -410,6 +410,11 @@ impl SessionStorage {
             .execute(&mut *tx)
             .await?;
 
+        sqlx::query("DELETE FROM session_library_items WHERE scope = 'session' AND scope_key = ?")
+            .bind(format!("session:{session_id}"))
+            .execute(&mut *tx)
+            .await?;
+
         sqlx::query("DELETE FROM sessions WHERE id = ?")
             .bind(session_id)
             .execute(&mut *tx)

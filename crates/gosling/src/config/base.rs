@@ -38,6 +38,10 @@ fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+fn unique_write_temp_path(path: &Path) -> PathBuf {
+    path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()))
+}
+
 /// Write `content` to `path` with owner-only (0600) permissions on Unix.
 /// Used for any file that may hold secrets (API keys, bearer tokens in
 /// custom HTTP headers, etc.) so it isn't left group/world-readable under
@@ -50,7 +54,7 @@ pub(crate) fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let temp_path = path.with_extension("tmp");
+    let temp_path = unique_write_temp_path(path);
 
     {
         let mut open_options = OpenOptions::new();
@@ -75,7 +79,7 @@ pub(crate) fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<
 /// memory store, edited source files). For files that may hold secrets use
 /// `write_secrets_file`, which additionally applies 0600 permissions.
 pub(crate) fn write_file_atomic(path: &Path, content: &str) -> std::io::Result<()> {
-    let temp_path = path.with_extension("tmp");
+    let temp_path = unique_write_temp_path(path);
 
     {
         let mut file = OpenOptions::new()
@@ -848,7 +852,7 @@ impl Config {
 
         // Write to a process-unique temporary file so concurrent writers never
         // truncate or overwrite each other's in-flight temp file.
-        let temp_path = target_path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+        let temp_path = unique_write_temp_path(&target_path);
 
         {
             let mut open_options = OpenOptions::new();
@@ -2149,6 +2153,54 @@ mod tests {
         assert!(!temp_path.exists(), "Temporary file should be cleaned up");
 
         Ok(())
+    }
+
+    #[test]
+    fn atomic_writes_use_process_unique_staging_paths() {
+        let path = Path::new("settings.yaml");
+        let first = unique_write_temp_path(path);
+        let second = unique_write_temp_path(path);
+
+        assert_ne!(first, second);
+        assert_eq!(first.parent(), path.parent());
+        assert!(first.to_string_lossy().ends_with(".tmp"));
+        assert!(second.to_string_lossy().ends_with(".tmp"));
+    }
+
+    #[test]
+    fn shared_atomic_writer_survives_concurrent_publication() {
+        use std::sync::{Arc, Barrier};
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state.json");
+        let barrier = Arc::new(Barrier::new(8));
+        let payloads = (0..8)
+            .map(|index| format!("{index}:{}", "x".repeat(256 * 1024)))
+            .collect::<Vec<_>>();
+
+        std::thread::scope(|scope| {
+            let mut writers = Vec::new();
+            for payload in &payloads {
+                let barrier = Arc::clone(&barrier);
+                let path = &path;
+                writers.push(scope.spawn(move || {
+                    barrier.wait();
+                    write_file_atomic(path, payload)
+                }));
+            }
+            for writer in writers {
+                writer.join().unwrap().unwrap();
+            }
+        });
+
+        let published = std::fs::read_to_string(&path).unwrap();
+        assert!(payloads.contains(&published));
+        let leftovers = std::fs::read_dir(temp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(leftovers, 0);
     }
 
     // Two independent `Config` handles over the same file stand in for the CLI
