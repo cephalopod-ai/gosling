@@ -5,7 +5,7 @@ import type { Socket } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import packageJson from '../../package.json';
 import {
   createShellRuntimeController,
@@ -101,6 +101,10 @@ function buildGoslingBinary(): string {
   }
   throw new Error('cargo did not report a gosling executable');
 }
+
+beforeAll(() => {
+  buildGoslingBinary();
+}, 300_000);
 
 function manifest(version = goslingVersion): ShellBuildManifest {
   return {
