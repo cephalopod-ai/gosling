@@ -1,5 +1,6 @@
 use crate::session::{
-    DeepResearchState, ExtensionState, SessionArtifact, SessionArtifactRelation, SessionManager,
+    DeepResearchState, ExtensionState, SessionArtifact, SessionArtifactProvenance,
+    SessionArtifactRelation, SessionManager,
 };
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
@@ -68,10 +69,8 @@ fn verify_artifact_pairs(
     let mut output_files = Vec::new();
     let mut library_files = Vec::new();
     for artifact in artifacts {
-        if !matches!(
-            artifact.relation,
-            SessionArtifactRelation::Created | SessionArtifactRelation::Modified
-        ) || !is_deliverable(Path::new(&artifact.resolved_path))
+        if !artifact_can_complete_research(artifact)
+            || !is_deliverable(Path::new(&artifact.resolved_path))
             || !artifact_is_reported(artifact, assistant_text)
         {
             continue;
@@ -129,6 +128,19 @@ fn verify_artifact_pairs(
     Ok(())
 }
 
+fn artifact_can_complete_research(artifact: &SessionArtifact) -> bool {
+    matches!(
+        artifact.relation,
+        SessionArtifactRelation::Created | SessionArtifactRelation::Modified
+    ) || matches!(
+        (&artifact.relation, &artifact.provenance),
+        (
+            SessionArtifactRelation::Referenced,
+            SessionArtifactProvenance::AssistantMessage
+        )
+    )
+}
+
 fn artifact_is_reported(artifact: &SessionArtifact, assistant_text: &str) -> bool {
     assistant_text.contains(&artifact.resolved_path)
         || assistant_text.contains(&artifact.display_path)
@@ -177,7 +189,6 @@ fn sha256_file(path: &PathBuf) -> Result<[u8; 32]> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::SessionArtifactProvenance;
     use chrono::Utc;
     use std::fs;
 
@@ -217,6 +228,37 @@ mod tests {
         verify_artifact_pairs(
             &state,
             &[artifact(&output), artifact(&copy)],
+            &assistant_text,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn verifies_external_provider_reports_referenced_in_the_final_response() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("report.md");
+        let copy = library.join("report.md");
+        fs::write(&output, "verified report").unwrap();
+        fs::write(&copy, "verified report").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+        let assistant_text = format!("Reports: {} and {}", output.display(), copy.display());
+        let mut output_artifact = artifact(&output);
+        output_artifact.relation = SessionArtifactRelation::Referenced;
+        output_artifact.provenance = SessionArtifactProvenance::AssistantMessage;
+        let mut library_artifact = artifact(&copy);
+        library_artifact.relation = SessionArtifactRelation::Referenced;
+        library_artifact.provenance = SessionArtifactProvenance::AssistantMessage;
+
+        verify_artifact_pairs(
+            &state,
+            &[output_artifact, library_artifact],
             &assistant_text,
         )
         .unwrap();

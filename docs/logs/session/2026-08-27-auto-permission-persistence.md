@@ -39,6 +39,13 @@ WebSearch/WebFetch approvals.
   rejection before final packaging. The final installed build reopened the
   same thread and began streaming its resumed turn in Autonomous mode without
   that rejection.
+- The recovered external-provider run then exposed a completion-verifier gap:
+  its finished report was safely contained and reported, but external-provider
+  file operations appear as final-response artifact references rather than
+  Gosling-hosted `created` operations. The verifier now accepts that provenance
+  only while retaining configured-root containment, deliverable-type, explicit
+  final-response reference, matching-filename, size bound, and byte-identical
+  Output/Research Library hash checks.
 
 ## Validation
 
@@ -53,6 +60,8 @@ WebSearch/WebFetch approvals.
 - Installed Desktop smoke: session `20260828_51` displayed `Autonomous` and its
   recovery turn entered the streaming state without an ordinary-tool prompt or
   the former pre-stream Auto rejection.
+- Research completion verifier tests: passed, 5/5, including an external
+  provider reference pair and the existing mismatch/out-of-root failures.
 - `git diff --check`: passed before documentation updates and is rerun at
   completion.
 
@@ -60,6 +69,8 @@ WebSearch/WebFetch approvals.
 
 - Session database backup:
   `/Users/eric/.local/share/gosling/session-backups/sessions-20260828_51-before-auto-20260827.db`
+- Pre-artifact-ledger-repair database backup:
+  `/Users/eric/.local/share/gosling/session-backups/sessions-20260828_51-before-artifact-ledger-repair-20260827.db`
 - Previous application backup:
   `/Users/eric/.local/share/gosling/install-backups/Gosling-before-auto-permission-fix-20260827-2148.app`
 - Previous CLI backup:
