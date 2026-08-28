@@ -3,7 +3,9 @@ use crate::session::{
     SessionArtifactRelation, SessionManager,
 };
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -17,6 +19,8 @@ pub(super) async fn verify_deep_research_completion(
     session_manager: &SessionManager,
     session_id: &str,
     assistant_text: &str,
+    run_started_at: DateTime<Utc>,
+    current_assistant_message_ids: &HashSet<String>,
 ) -> Result<()> {
     let session = session_manager.get_session(session_id, false).await?;
     let Some(state) = DeepResearchState::from_extension_data(&session.extension_data) else {
@@ -40,9 +44,18 @@ pub(super) async fn verify_deep_research_completion(
     }
 
     let assistant_text = assistant_text.to_string();
-    tokio::task::spawn_blocking(move || verify_artifact_pairs(&state, &artifacts, &assistant_text))
-        .await
-        .context("completion verifier stopped unexpectedly")??;
+    let current_assistant_message_ids = current_assistant_message_ids.clone();
+    tokio::task::spawn_blocking(move || {
+        verify_artifact_pairs(
+            &state,
+            &artifacts,
+            &assistant_text,
+            run_started_at,
+            &current_assistant_message_ids,
+        )
+    })
+    .await
+    .context("completion verifier stopped unexpectedly")??;
     Ok(())
 }
 
@@ -50,6 +63,8 @@ fn verify_artifact_pairs(
     state: &DeepResearchState,
     artifacts: &[SessionArtifact],
     assistant_text: &str,
+    run_started_at: DateTime<Utc>,
+    current_assistant_message_ids: &HashSet<String>,
 ) -> Result<()> {
     let library_root = std::fs::canonicalize(&state.library_path)
         .context("the Research Library is unavailable")?;
@@ -66,33 +81,37 @@ fn verify_artifact_pairs(
         bail!("a workspace output folder is unavailable");
     }
 
-    let mut output_files = Vec::new();
-    let mut library_files = Vec::new();
-    for artifact in artifacts {
-        if !artifact_can_complete_research(artifact)
-            || !is_deliverable(Path::new(&artifact.resolved_path))
-            || !artifact_is_reported(artifact, assistant_text)
-        {
-            continue;
+    let current_deliverables = artifacts.iter().filter(|artifact| {
+        artifact_can_complete_research(artifact)
+            && is_deliverable(Path::new(&artifact.resolved_path))
+            && artifact_belongs_to_current_run(
+                artifact,
+                assistant_text,
+                run_started_at,
+                current_assistant_message_ids,
+            )
+    });
+    let (output_files, library_files) =
+        collect_report_files(current_deliverables, &library_root, &output_roots);
+
+    if output_files.is_empty() && library_files.is_empty() {
+        let prior_deliverables = artifacts.iter().filter(|artifact| {
+            artifact_can_complete_research(artifact)
+                && is_deliverable(Path::new(&artifact.resolved_path))
+        });
+        let (prior_outputs, prior_library) =
+            collect_report_files(prior_deliverables, &library_root, &output_roots);
+        if has_identical_report_pair(&prior_outputs, &prior_library)? {
+            return Ok(());
         }
-        let Ok(canonical) = std::fs::canonicalize(&artifact.resolved_path) else {
-            continue;
-        };
-        if !canonical.is_file() {
-            continue;
-        }
-        if canonical.starts_with(&library_root) {
-            library_files.push(canonical);
-        } else if output_roots.iter().any(|root| canonical.starts_with(root)) {
-            output_files.push(canonical);
-        }
+        bail!("Deep Research has no verified report and the current turn did not produce one");
     }
 
     if output_files.is_empty() {
-        bail!("the final response did not reference a created report in Session Outputs");
+        bail!("the current Deep Research turn did not produce a report in Session Outputs");
     }
     if library_files.is_empty() {
-        bail!("the final response did not reference a created Research Library copy");
+        bail!("the current Deep Research turn did not produce a Research Library copy");
     }
 
     for output in &output_files {
@@ -128,6 +147,49 @@ fn verify_artifact_pairs(
     Ok(())
 }
 
+fn collect_report_files<'a>(
+    artifacts: impl IntoIterator<Item = &'a SessionArtifact>,
+    library_root: &Path,
+    output_roots: &[PathBuf],
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut output_files = Vec::new();
+    let mut library_files = Vec::new();
+    for artifact in artifacts {
+        let Ok(canonical) = std::fs::canonicalize(&artifact.resolved_path) else {
+            continue;
+        };
+        if !canonical.is_file() {
+            continue;
+        }
+        if canonical.starts_with(library_root) {
+            library_files.push(canonical);
+        } else if output_roots.iter().any(|root| canonical.starts_with(root)) {
+            output_files.push(canonical);
+        }
+    }
+    (output_files, library_files)
+}
+
+fn has_identical_report_pair(output_files: &[PathBuf], library_files: &[PathBuf]) -> Result<bool> {
+    for output in output_files {
+        let Some(name) = output.file_name() else {
+            continue;
+        };
+        let output_hash = sha256_file(output)?;
+        for candidate in library_files
+            .iter()
+            .filter(|candidate| candidate.file_name() == Some(name))
+        {
+            if candidate.metadata()?.len() == output.metadata()?.len()
+                && sha256_file(candidate)? == output_hash
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn artifact_can_complete_research(artifact: &SessionArtifact) -> bool {
     matches!(
         artifact.relation,
@@ -141,14 +203,18 @@ fn artifact_can_complete_research(artifact: &SessionArtifact) -> bool {
     )
 }
 
-fn artifact_is_reported(artifact: &SessionArtifact, assistant_text: &str) -> bool {
-    matches!(
-        (&artifact.relation, &artifact.provenance),
-        (
-            SessionArtifactRelation::Referenced,
-            SessionArtifactProvenance::AssistantMessage
-        )
-    ) || assistant_text.contains(&artifact.resolved_path)
+fn artifact_belongs_to_current_run(
+    artifact: &SessionArtifact,
+    assistant_text: &str,
+    run_started_at: DateTime<Utc>,
+    current_assistant_message_ids: &HashSet<String>,
+) -> bool {
+    artifact.last_seen_at >= run_started_at
+        || artifact
+            .source_id
+            .as_ref()
+            .is_some_and(|source_id| current_assistant_message_ids.contains(source_id))
+        || assistant_text.contains(&artifact.resolved_path)
         || assistant_text.contains(&artifact.display_path)
 }
 
@@ -214,6 +280,10 @@ mod tests {
         }
     }
 
+    fn run_started_at() -> DateTime<Utc> {
+        Utc::now() - chrono::Duration::seconds(1)
+    }
+
     #[test]
     fn verifies_reported_identical_output_and_library_copy() {
         let root = tempfile::tempdir().unwrap();
@@ -235,6 +305,8 @@ mod tests {
             &state,
             &[artifact(&output), artifact(&copy)],
             &assistant_text,
+            run_started_at(),
+            &HashSet::new(),
         )
         .unwrap();
     }
@@ -257,11 +329,23 @@ mod tests {
         let mut output_artifact = artifact(&output);
         output_artifact.relation = SessionArtifactRelation::Referenced;
         output_artifact.provenance = SessionArtifactProvenance::AssistantMessage;
+        output_artifact.source_id = Some("current-assistant".into());
+        output_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
         let mut library_artifact = artifact(&copy);
         library_artifact.relation = SessionArtifactRelation::Referenced;
         library_artifact.provenance = SessionArtifactProvenance::AssistantMessage;
+        library_artifact.source_id = Some("current-assistant".into());
+        library_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
+        let current_assistant_message_ids = HashSet::from(["current-assistant".into()]);
 
-        verify_artifact_pairs(&state, &[output_artifact, library_artifact], "").unwrap();
+        verify_artifact_pairs(
+            &state,
+            &[output_artifact, library_artifact],
+            "",
+            run_started_at(),
+            &current_assistant_message_ids,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -285,6 +369,8 @@ mod tests {
             &state,
             &[artifact(&output), artifact(&copy)],
             &assistant_text,
+            run_started_at(),
+            &HashSet::new(),
         )
         .unwrap_err();
 
@@ -307,16 +393,22 @@ mod tests {
             output_paths: vec![outputs.to_string_lossy().into_owned()],
         };
 
+        let mut output_artifact = artifact(&output);
+        output_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
+        let mut library_artifact = artifact(&copy);
+        library_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
         let error = verify_artifact_pairs(
             &state,
-            &[artifact(&output), artifact(&copy)],
+            &[output_artifact, library_artifact],
             &output.to_string_lossy(),
+            run_started_at(),
+            &HashSet::new(),
         )
         .unwrap_err();
 
         assert!(error
             .to_string()
-            .contains("did not reference a created Research Library copy"));
+            .contains("did not produce a Research Library copy"));
     }
 
     #[test]
@@ -342,9 +434,71 @@ mod tests {
             &state,
             &[artifact(&misplaced), artifact(&copy)],
             &assistant_text,
+            run_started_at(),
+            &HashSet::new(),
         )
         .unwrap_err();
 
         assert!(error.to_string().contains("Session Outputs"));
+    }
+
+    #[test]
+    fn allows_a_follow_up_without_a_current_deliverable() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("prior-report.md");
+        let copy = library.join("prior-report.md");
+        fs::write(&output, "prior report").unwrap();
+        fs::write(&copy, "prior report").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+        let mut output_artifact = artifact(&output);
+        output_artifact.source_id = Some("prior-assistant".into());
+        output_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
+        let mut library_artifact = artifact(&copy);
+        library_artifact.source_id = Some("prior-assistant".into());
+        library_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
+        let mut numeric_reference = artifact(Path::new("0.50, 0.75, 0.88, 0.81…"));
+        numeric_reference.relation = SessionArtifactRelation::Referenced;
+        numeric_reference.provenance = SessionArtifactProvenance::AssistantMessage;
+        numeric_reference.source_id = Some("current-assistant".into());
+
+        verify_artifact_pairs(
+            &state,
+            &[output_artifact, library_artifact, numeric_reference],
+            "Here is a direct answer to the follow-up question.",
+            run_started_at(),
+            &HashSet::from(["current-assistant".into()]),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn rejects_an_initial_turn_without_a_deliverable() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+
+        let error = verify_artifact_pairs(
+            &state,
+            &[],
+            "Here is an answer without a report.",
+            run_started_at(),
+            &HashSet::from(["current-assistant".into()]),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("no verified report"));
     }
 }

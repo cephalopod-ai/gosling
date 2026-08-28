@@ -37,7 +37,7 @@ jobs:
       - name: 'Update Dashboard'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
-          github-token: ${{ secrets.HEALTH_DASHBOARD_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;

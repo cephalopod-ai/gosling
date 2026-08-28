@@ -13,7 +13,11 @@ describe('ResearchInitialInputsDialog', () => {
 
     await user.click(screen.getByRole('button', { name: /Initial Inputs/ }));
     const picker = screen.getByLabelText('Choose initial research files');
-    expect(picker).toHaveAttribute('accept', '*/*');
+    expect(picker).toHaveAttribute('accept', expect.stringContaining('.docx'));
+    expect(picker).toHaveAttribute('accept', expect.stringContaining('.pdf'));
+    expect(picker).toHaveAttribute('accept', expect.stringContaining('.tiff'));
+    expect(picker).toHaveAttribute('accept', expect.stringContaining('.json'));
+    expect(picker).toHaveAttribute('accept', expect.stringContaining('.pptx'));
     expect(screen.getByText(/accepts office documents, pdf\/postscript/i)).toBeInTheDocument();
   });
 

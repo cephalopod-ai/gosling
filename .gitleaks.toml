@@ -1,0 +1,53 @@
+title = "gosling secret scanning"
+minVersion = "8.25.0"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated hashes and explicit auth/documentation fixtures"
+targetRules = ["generic-api-key"]
+paths = [
+  '''(^|/|!)\.giles/audit_report\.yaml$''',
+  '''(^|/|!)ui/desktop/scripts/i18n-source-hashes\.json$''',
+  '''(^|/|!)crates/gosling/tests/acp_transport_auth_test\.rs$''',
+  '''(^|/|!)crates/goose/tests/acp_transport_auth_test\.rs$''',
+  '''(^|/|!)CUSTOM_DISTROS\.md$''',
+  '''(^|/|!)\.github/workflows/bundle-goose2\.yml$''',
+  '''(^|/|!)docs/build/audits/gate-6-security-concurrency-llm-audit\.md$''',
+  '''(^|/|!)documentation/src/pages/prompt-library/data/prompts/multi-project-security-audit\.json$''',
+  '''(^|/|!)documentation/docs/tutorials/figma-mcp\.md$''',
+  '''(^|/|!)documentation/docs/tutorials/filesystem-mcp\.md$''',
+  '''(^|/|!)docs/build/shell-productization/execution-plan\.md$''',
+]
+
+[[allowlists]]
+description = "Generated private keys used only by credential parsing tests"
+targetRules = ["private-key"]
+paths = [
+  '''(^|/|!)crates/gosling-providers/src/api_client\.rs$''',
+  '''(^|/|!)crates/gosling/src/providers/gcpauth\.rs$''',
+  '''(^|/|!)crates/goose-providers/src/api_client\.rs$''',
+  '''(^|/|!)crates/goose/src/providers/api_client\.rs$''',
+  '''(^|/|!)crates/goose/src/providers/gcpauth\.rs$''',
+]
+
+[[allowlists]]
+description = "Redaction test and documented placeholder auth commands"
+targetRules = ["curl-auth-header"]
+paths = [
+  '''(^|/|!)crates/gosling/src/security/mod\.rs$''',
+  '''(^|/|!)documentation/docs/guides/remote-gosling-server\.md$''',
+  '''(^|/|!)documentation/docs/guides/remote-goose-server\.md$''',
+  '''(^|/|!)documentation/docs/tutorials/filesystem-mcp\.md$''',
+]
+
+[[allowlists]]
+description = "LinkedIn profile slug in documentation author metadata"
+targetRules = ["linkedin-client-secret"]
+paths = ['''(^|/|!)documentation/blog/authors\.yml$''']
+
+[[allowlists]]
+description = "Historical documentation example using an explicit Stripe test key"
+targetRules = ["stripe-access-token"]
+paths = ['''(^|/|!)documentation/docs/tutorials/filesystem-mcp\.md$''']

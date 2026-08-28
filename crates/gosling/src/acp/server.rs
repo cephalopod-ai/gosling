@@ -2973,6 +2973,7 @@ impl GoslingAcpAgent {
         let session_id = args.session_id.0.to_string();
         let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
+        let research_run_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
 
         let run_id = format!("run_{}", Uuid::new_v4());
         let cancel_token = CancellationToken::new();
@@ -3056,6 +3057,7 @@ impl GoslingAcpAgent {
         let mut chain_buffer: Vec<(String, String)> = Vec::new();
         let mut stream_error = None;
         let mut terminal_assistant_text = String::new();
+        let mut current_assistant_message_ids = HashSet::new();
 
         loop {
             let event = tokio::select! {
@@ -3086,6 +3088,9 @@ impl GoslingAcpAgent {
                     let stored_message_id = message.id.clone();
 
                     if message.role == Role::Assistant {
+                        if let Some(message_id) = stored_message_id.as_ref() {
+                            current_assistant_message_ids.insert(message_id.clone());
+                        }
                         let mut message_text = String::new();
                         for content_item in &message.content {
                             if let MessageContent::Text(text) = content_item {
@@ -3202,6 +3207,8 @@ impl GoslingAcpAgent {
                 &self.session_manager,
                 &session_id,
                 &terminal_assistant_text,
+                research_run_started_at,
+                &current_assistant_message_ids,
             )
             .await
             {

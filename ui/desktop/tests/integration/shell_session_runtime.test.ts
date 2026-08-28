@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
+import packageJson from '../../package.json';
 import {
   createShellRuntimeController,
   type ShellRuntimeController,
@@ -16,7 +17,8 @@ import { createShellDirectoryController } from '../../src/shell/directoryControl
 import { createShellCredentialController } from '../../src/shell/credentialController';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '../../../..');
-const binaryPath = path.join(repositoryRoot, 'target', 'debug', 'gosling');
+const goslingVersion = packageJson.version;
+let binaryPath: string | null = null;
 const namespace = 'shell-session-integration';
 const methods = [
   '_gosling/unstable/session/info',
@@ -47,7 +49,7 @@ const profile: ResolvedShellProductProfile = {
   product,
   provisioningPath: 'provisioning.json',
   compatibility: {
-    goslingVersion: '0.1.0',
+    goslingVersion,
     goslingRevision: 'current',
     provisioningSchemaVersion: 1,
     handoffSchemaVersion: 1,
@@ -69,7 +71,38 @@ const profile: ResolvedShellProductProfile = {
 const roots: string[] = [];
 const controllers: ShellRuntimeController[] = [];
 
-function manifest(version = '0.1.0'): ShellBuildManifest {
+function buildGoslingBinary(): string {
+  if (binaryPath) return binaryPath;
+
+  const output = execFileSync(
+    'cargo',
+    ['build', '--bin', 'gosling', '--message-format=json-render-diagnostics'],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'inherit'],
+    }
+  );
+  for (const line of output.trim().split('\n').reverse()) {
+    const message = JSON.parse(line) as {
+      reason?: string;
+      executable?: string;
+      target?: { kind?: string[]; name?: string };
+    };
+    if (
+      message.reason === 'compiler-artifact' &&
+      message.target?.kind?.includes('bin') &&
+      message.target.name === 'gosling' &&
+      message.executable
+    ) {
+      binaryPath = message.executable;
+      return binaryPath;
+    }
+  }
+  throw new Error('cargo did not report a gosling executable');
+}
+
+function manifest(version = goslingVersion): ShellBuildManifest {
   return {
     schemaVersion: 1,
     profileSchemaVersion: 1,
@@ -349,11 +382,7 @@ function createController(
   fixture: ReturnType<typeof writeFixtureRoot>,
   build = manifest()
 ): ShellRuntimeController {
-  execFileSync('cargo', ['build', '--bin', 'gosling'], {
-    cwd: repositoryRoot,
-    stdio: 'inherit',
-  });
-  process.env.GOSLING_BINARY = binaryPath;
+  process.env.GOSLING_BINARY = buildGoslingBinary();
   process.env.GOSLING_PATH_ROOT = fixture.root;
   process.env.GOSLING_DISABLE_KEYRING = '1';
   const settings = createShellSettingsStore(path.join(fixture.root, 'shell-settings.json'));

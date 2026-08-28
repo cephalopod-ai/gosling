@@ -131,7 +131,9 @@ export const RESEARCH_INITIAL_SUPPORTED_EXTENSIONS = [
   'sql',
 ] as const;
 
-export const RESEARCH_INITIAL_FILE_ACCEPT = '*/*';
+export const RESEARCH_INITIAL_FILE_ACCEPT = RESEARCH_INITIAL_SUPPORTED_EXTENSIONS.map(
+  (extension) => `.${extension}`
+).join(',');
 
 const RESEARCH_INITIAL_IMAGE_EXTENSIONS = new Set([
   'bmp',
