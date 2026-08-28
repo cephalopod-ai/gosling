@@ -75,7 +75,10 @@ import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifac
 import { installArtifactDownloadRouter } from './utils/artifactDownloads';
 import { ArtifactRoutingRegistry } from './utils/artifactRoutingRegistry';
 import { saveArtifactWithDialog } from './utils/artifactSave';
-import { assertArtifactFileAccess } from './utils/artifactFileAccess';
+import {
+  assertArtifactFileAccess,
+  resolveArtifactFileCapability,
+} from './utils/artifactFileAccess';
 import {
   dispatchFullGoslingProtocolUrl,
   findGoslingProtocolUrl,
@@ -395,11 +398,8 @@ async function validateArtifactRoutingConfig(
       continue;
     }
     try {
-      const artifactPath = await assertPathWithinRoots(
-        resolveRendererPath(artifactFile),
-        rendererFileRoots(webContentsId)
-      );
-      if ((await fs.stat(artifactPath)).isFile()) artifactFiles.push(artifactPath);
+      const artifactPath = await resolveArtifactFileCapability(resolveRendererPath(artifactFile));
+      if (artifactPath) artifactFiles.push(artifactPath);
     } catch {
       continue;
     }

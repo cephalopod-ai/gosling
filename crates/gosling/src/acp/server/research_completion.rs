@@ -62,7 +62,7 @@ pub(super) async fn verify_deep_research_completion(
 fn verify_artifact_pairs(
     state: &DeepResearchState,
     artifacts: &[SessionArtifact],
-    assistant_text: &str,
+    _assistant_text: &str,
     run_started_at: DateTime<Utc>,
     current_assistant_message_ids: &HashSet<String>,
 ) -> Result<()> {
@@ -86,7 +86,6 @@ fn verify_artifact_pairs(
             && is_deliverable(Path::new(&artifact.resolved_path))
             && artifact_belongs_to_current_run(
                 artifact,
-                assistant_text,
                 run_started_at,
                 current_assistant_message_ids,
             )
@@ -205,17 +204,18 @@ fn artifact_can_complete_research(artifact: &SessionArtifact) -> bool {
 
 fn artifact_belongs_to_current_run(
     artifact: &SessionArtifact,
-    assistant_text: &str,
     run_started_at: DateTime<Utc>,
     current_assistant_message_ids: &HashSet<String>,
 ) -> bool {
-    artifact.last_seen_at >= run_started_at
-        || artifact
-            .source_id
-            .as_ref()
-            .is_some_and(|source_id| current_assistant_message_ids.contains(source_id))
-        || assistant_text.contains(&artifact.resolved_path)
-        || assistant_text.contains(&artifact.display_path)
+    if artifact.provenance == SessionArtifactProvenance::AssistantMessage {
+        artifact.first_seen_at >= run_started_at
+    } else {
+        artifact.last_seen_at >= run_started_at
+            || artifact
+                .source_id
+                .as_ref()
+                .is_some_and(|source_id| current_assistant_message_ids.contains(source_id))
+    }
 }
 
 fn is_deliverable(path: &Path) -> bool {
@@ -393,8 +393,7 @@ mod tests {
             output_paths: vec![outputs.to_string_lossy().into_owned()],
         };
 
-        let mut output_artifact = artifact(&output);
-        output_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
+        let output_artifact = artifact(&output);
         let mut library_artifact = artifact(&copy);
         library_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
         let error = verify_artifact_pairs(
@@ -451,8 +450,14 @@ mod tests {
         fs::create_dir_all(&library).unwrap();
         let output = outputs.join("prior-report.md");
         let copy = library.join("prior-report.md");
+        let rementioned_output = outputs.join("unpaired-report.md");
         fs::write(&output, "prior report").unwrap();
         fs::write(&copy, "prior report").unwrap();
+        fs::write(
+            &rementioned_output,
+            "previously reported without a library copy",
+        )
+        .unwrap();
         let state = DeepResearchState {
             library_path: library.to_string_lossy().into_owned(),
             output_paths: vec![outputs.to_string_lossy().into_owned()],
@@ -463,6 +468,11 @@ mod tests {
         let mut library_artifact = artifact(&copy);
         library_artifact.source_id = Some("prior-assistant".into());
         library_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
+        let mut rementioned_artifact = artifact(&rementioned_output);
+        rementioned_artifact.relation = SessionArtifactRelation::Referenced;
+        rementioned_artifact.provenance = SessionArtifactProvenance::AssistantMessage;
+        rementioned_artifact.source_id = Some("current-assistant".into());
+        rementioned_artifact.first_seen_at = Utc::now() - chrono::Duration::hours(1);
         let mut numeric_reference = artifact(Path::new("0.50, 0.75, 0.88, 0.81…"));
         numeric_reference.relation = SessionArtifactRelation::Referenced;
         numeric_reference.provenance = SessionArtifactProvenance::AssistantMessage;
@@ -470,8 +480,13 @@ mod tests {
 
         verify_artifact_pairs(
             &state,
-            &[output_artifact, library_artifact, numeric_reference],
-            "Here is a direct answer to the follow-up question.",
+            &[
+                output_artifact,
+                library_artifact,
+                rementioned_artifact,
+                numeric_reference,
+            ],
+            &format!("The report is at {}.", rementioned_output.display()),
             run_started_at(),
             &HashSet::from(["current-assistant".into()]),
         )

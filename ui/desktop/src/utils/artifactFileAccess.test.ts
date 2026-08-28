@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { assertArtifactFileAccess } from './artifactFileAccess';
+import { assertArtifactFileAccess, resolveArtifactFileCapability } from './artifactFileAccess';
 
 const temporaryDirectories: string[] = [];
 
@@ -21,6 +21,23 @@ afterEach(async () => {
 });
 
 describe('assertArtifactFileAccess', () => {
+  it('creates an exact-file capability for a session deliverable outside launch roots', async () => {
+    const artifactRoot = await temporaryDirectory();
+    const filePath = path.join(artifactRoot, 'report.md');
+    await fs.writeFile(filePath, '# report');
+
+    await expect(resolveArtifactFileCapability(filePath)).resolves.toBe(await fs.realpath(filePath));
+  });
+
+  it('does not create artifact capabilities for source files or directories', async () => {
+    const artifactRoot = await temporaryDirectory();
+    const sourcePath = path.join(artifactRoot, 'main.ts');
+    await fs.writeFile(sourcePath, 'export {};');
+
+    await expect(resolveArtifactFileCapability(sourcePath)).resolves.toBeNull();
+    await expect(resolveArtifactFileCapability(artifactRoot)).resolves.toBeNull();
+  });
+
   it('allows a file inside a validated workspace output root', async () => {
     const approvedRoot = await temporaryDirectory();
     const outputRoot = await temporaryDirectory();
