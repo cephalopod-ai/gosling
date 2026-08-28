@@ -92,6 +92,7 @@ jobs:
 
       - name: Validate shell contracts and failure paths
         run: |
+          cargo build --bin gosling
           pnpm run shell:test-profile
           pnpm exec vitest run --config vitest.integration.config.ts tests/integration/shell_session_runtime.test.ts
         working-directory: ui/desktop
