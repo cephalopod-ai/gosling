@@ -735,6 +735,31 @@ impl SessionStorage {
             }
             28 => Self::create_session_library_schema(tx).await?,
             29 => Self::create_session_turn_lease_schema(tx).await?,
+            30 => {
+                sqlx::query("DROP TABLE IF EXISTS tagteam_launch_identities")
+                    .execute(&mut **tx)
+                    .await?;
+                sqlx::query("DROP TABLE IF EXISTS tagteam_producer_run_ids")
+                    .execute(&mut **tx)
+                    .await?;
+                sqlx::query("DROP TABLE IF EXISTS tagteam_run_bindings")
+                    .execute(&mut **tx)
+                    .await?;
+                sqlx::query("DROP TABLE IF EXISTS tagteam_launch_counters")
+                    .execute(&mut **tx)
+                    .await?;
+                let has_workflow_kind = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'workflow_kind'",
+                )
+                .fetch_one(&mut **tx)
+                .await?
+                    > 0;
+                if has_workflow_kind {
+                    sqlx::query("ALTER TABLE sessions DROP COLUMN workflow_kind")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }

@@ -51,7 +51,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 29;
+pub const CURRENT_SCHEMA_VERSION: i32 = 30;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -114,29 +114,6 @@ pub enum SessionType {
     Acp,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    ToSchema,
-    PartialEq,
-    Eq,
-    Default,
-    strum::Display,
-    strum::EnumString,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum SessionWorkflow {
-    /// Used for newly created sessions and legacy serialized sessions that omit this field.
-    /// Persisted database values are parsed strictly.
-    #[default]
-    Standard,
-    Tagteam,
-}
-
 static SESSION_STORAGE: LazyLock<Arc<SessionStorage>> =
     LazyLock::new(|| Arc::new(SessionStorage::new(Paths::data_dir())));
 
@@ -188,8 +165,6 @@ pub struct Session {
     pub workspace_context: Option<WorkspaceSessionContext>,
     #[serde(default)]
     pub gosling_mode: GoslingMode,
-    #[serde(default)]
-    pub workflow_kind: SessionWorkflow,
     #[serde(default)]
     pub archived_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -342,7 +317,6 @@ pub struct SessionUpdateBuilder<'a> {
     credential_binding_id: Option<Option<String>>,
     workspace_context: Option<Option<WorkspaceSessionContext>>,
     gosling_mode: Option<GoslingMode>,
-    workflow_kind: Option<SessionWorkflow>,
     archived_at: Option<Option<DateTime<Utc>>>,
 
     project_id: Option<Option<String>>,
@@ -380,7 +354,6 @@ impl<'a> SessionUpdateBuilder<'a> {
             credential_binding_id: None,
             workspace_context: None,
             gosling_mode: None,
-            workflow_kind: None,
             archived_at: None,
             project_id: None,
         }
@@ -474,12 +447,6 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn gosling_mode(mut self, mode: GoslingMode) -> Self {
         self.gosling_mode = Some(mode);
-        self
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn workflow_kind(mut self, workflow: SessionWorkflow) -> Self {
-        self.workflow_kind = Some(workflow);
         self
     }
 
@@ -1253,7 +1220,6 @@ impl Default for Session {
             credential_binding_id: None,
             workspace_context: None,
             gosling_mode: GoslingMode::default(),
-            workflow_kind: SessionWorkflow::default(),
             archived_at: None,
             project_id: None,
             last_message_snippet: None,
@@ -1306,10 +1272,6 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
         let restrict_tools_to_working_dirs = row
             .try_get("restrict_tools_to_working_dirs")
             .unwrap_or(false);
-        let workflow_kind = row
-            .try_get::<String, _>("workflow_kind")?
-            .parse::<SessionWorkflow>()
-            .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
         let mut workspace_context: Option<WorkspaceSessionContext> = row
             .try_get::<Option<String>, _>("workspace_context_json")
             .ok()
@@ -1384,7 +1346,6 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_default(),
-            workflow_kind,
             archived_at: row.try_get("archived_at").ok(),
             project_id: row.try_get("project_id").ok().flatten(),
             last_message_snippet: None,
@@ -3412,7 +3373,6 @@ mod tests {
                     folder_policy: Default::default(),
                 },
             )
-            .workflow_kind(SessionWorkflow::Tagteam)
             .apply()
             .await
             .unwrap();
@@ -3462,7 +3422,6 @@ mod tests {
         );
         assert_eq!(imported.usage, usage);
         assert_eq!(imported.accumulated_usage, accumulated_usage);
-        assert_eq!(imported.workflow_kind, SessionWorkflow::Standard);
         assert!(imported.provider_name.is_none());
         assert!(imported.model_config.is_none());
         assert!(imported.workspace_id.is_none());
@@ -3506,64 +3465,6 @@ mod tests {
         assert_eq!(conversation.messages().len(), 2);
         assert_eq!(conversation.messages()[0].role, Role::User);
         assert_eq!(conversation.messages()[1].role, Role::Assistant);
-    }
-
-    #[tokio::test]
-    async fn test_copy_resets_tagteam_workflow_and_run_ownership() {
-        let temp_dir = TempDir::new().unwrap();
-        let sm = SessionManager::new(temp_dir.path().to_path_buf());
-        let original = sm
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "tagteam".into(),
-                SessionType::User,
-                GoslingMode::default(),
-            )
-            .await
-            .unwrap();
-        sm.update(&original.id)
-            .workflow_kind(SessionWorkflow::Tagteam)
-            .apply()
-            .await
-            .unwrap();
-        let pool = sm.storage().pool().await.unwrap();
-        sqlx::query(
-            "INSERT INTO tagteam_launch_counters(session_id, last_generation) VALUES (?, 1)",
-        )
-        .bind(&original.id)
-        .execute(pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            r#"
-            INSERT INTO tagteam_run_bindings(
-                session_id, launch_generation, schema_version, launch_spec_json,
-                action_digest, launch_nonce, producer_run_id, last_sequence, snapshot_json
-            ) VALUES (?, 1, 1, '{}', 'digest', '00000000000000000000000000000001', 'run-original', 0, '{}')
-            "#,
-        )
-        .bind(&original.id)
-        .execute(pool)
-        .await
-        .unwrap();
-
-        let copied = sm.copy_session(&original.id, "copy".into()).await.unwrap();
-
-        assert_eq!(copied.workflow_kind, SessionWorkflow::Standard);
-        let binding_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM tagteam_run_bindings WHERE session_id = ?")
-                .bind(&copied.id)
-                .fetch_one(pool)
-                .await
-                .unwrap();
-        assert_eq!(binding_count, 0);
-        let counter_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM tagteam_launch_counters WHERE session_id = ?")
-                .bind(&copied.id)
-                .fetch_one(pool)
-                .await
-                .unwrap();
-        assert_eq!(counter_count, 0);
     }
 
     #[tokio::test]
@@ -4198,31 +4099,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_session_workflow_defaults_and_updates() {
-        let temp_dir = TempDir::new().unwrap();
-        let sm = SessionManager::new(temp_dir.path().to_path_buf());
-
-        let session = sm
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "test".into(),
-                SessionType::User,
-                GoslingMode::default(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(session.workflow_kind, SessionWorkflow::Standard);
-
-        sm.update(&session.id)
-            .workflow_kind(SessionWorkflow::Tagteam)
-            .apply()
-            .await
-            .unwrap();
-        let reloaded = sm.get_session(&session.id, false).await.unwrap();
-        assert_eq!(reloaded.workflow_kind, SessionWorkflow::Tagteam);
-    }
-
-    #[tokio::test]
     async fn workspace_snapshot_round_trips_and_is_copied() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -4493,7 +4369,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tagteam_workflow_schema_migration() {
+    async fn test_removed_tagteam_schema_is_cleaned_up() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
         std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
@@ -4507,182 +4383,70 @@ mod tests {
             .await
             .unwrap();
         SessionStorage::create_schema(&pool).await.unwrap();
-        sqlx::query("DROP TABLE tagteam_launch_counters")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("DROP TABLE tagteam_launch_identities")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("DROP TABLE tagteam_producer_run_ids")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("DROP TABLE tagteam_run_bindings")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("ALTER TABLE sessions DROP COLUMN workflow_kind")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE schema_version SET version = 18")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query(
-            "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode) VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind("legacy-workflow")
-        .bind("Legacy")
-        .bind("/tmp")
-        .bind("{}")
-        .bind("auto")
-        .execute(&pool)
-        .await
-        .unwrap();
-        pool.close().await;
-
-        let sm = SessionManager::new(temp_dir.path().to_path_buf());
-        sm.storage().pool().await.unwrap();
-        let migrated = sm.get_session("legacy-workflow", false).await.unwrap();
-        assert_eq!(migrated.workflow_kind, SessionWorkflow::Standard);
-        let table_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tagteam_run_bindings')",
-        )
-        .fetch_one(sm.storage().pool().await.unwrap())
-        .await
-        .unwrap();
-        assert!(table_exists);
-        let counter_table_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tagteam_launch_counters')",
-        )
-        .fetch_one(sm.storage().pool().await.unwrap())
-        .await
-        .unwrap();
-        assert!(counter_table_exists);
-        let producer_index_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_tagteam_bindings_producer_run_id')",
-        )
-        .fetch_one(sm.storage().pool().await.unwrap())
-        .await
-        .unwrap();
-        assert!(producer_index_exists);
-    }
-
-    #[tokio::test]
-    async fn test_tagteam_v20_migration_seeds_counter_and_global_run_ownership() {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
-        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
-        let pool = SqlitePoolOptions::new()
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(&db_path)
-                    .create_if_missing(true)
-                    .foreign_keys(true),
-            )
-            .await
-            .unwrap();
-        SessionStorage::create_schema(&pool).await.unwrap();
-        sqlx::query("DROP TABLE tagteam_launch_counters")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("DROP TABLE tagteam_launch_identities")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("DROP TABLE tagteam_producer_run_ids")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("DROP TABLE tagteam_run_bindings")
-            .execute(&pool)
-            .await
-            .unwrap();
         let mut migration = pool.begin().await.unwrap();
         SessionStorage::apply_migration(&mut migration, 19)
             .await
             .unwrap();
         migration.commit().await.unwrap();
-        sqlx::query("UPDATE schema_version SET version = 19")
-            .execute(&pool)
-            .await
-            .unwrap();
         sqlx::query(
-            "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode) VALUES ('legacy-tagteam', 'Legacy', '/tmp', '{}', 'auto')",
+            "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode, workflow_kind) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind("legacy-tagteam")
+        .bind("Legacy")
+        .bind("/tmp")
+        .bind("{}")
+        .bind("auto")
+        .bind("tagteam")
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            INSERT INTO tagteam_run_bindings(
+                session_id, launch_generation, schema_version, launch_spec_json,
+                action_digest, producer_run_id, last_sequence, snapshot_json
+            ) VALUES ('legacy-tagteam', 1, 1, '{}', 'digest', 'run-1', 0, '{}')
+            "#,
         )
         .execute(&pool)
         .await
         .unwrap();
-        for (generation, run_id) in [(2_i64, "run-2"), (7_i64, "run-7")] {
-            sqlx::query(
-                r#"
-                INSERT INTO tagteam_run_bindings(
-                    session_id, launch_generation, schema_version, launch_spec_json,
-                    action_digest, producer_run_id, last_sequence, snapshot_json
-                ) VALUES ('legacy-tagteam', ?, 1, '{}', 'digest', ?, 0, '{}')
-                "#,
-            )
-            .bind(generation)
-            .bind(run_id)
+        sqlx::query("UPDATE schema_version SET version = 29")
             .execute(&pool)
             .await
             .unwrap();
-        }
         pool.close().await;
 
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
         let pool = sm.storage().pool().await.unwrap();
-        let last_generation: i64 = sqlx::query_scalar(
-            "SELECT last_generation FROM tagteam_launch_counters WHERE session_id = 'legacy-tagteam'",
+        let migrated = sm.get_session("legacy-tagteam", false).await.unwrap();
+        assert_eq!(migrated.name, "Legacy");
+        let workflow_column_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'workflow_kind')",
         )
         .fetch_one(pool)
         .await
         .unwrap();
-        assert_eq!(last_generation, 7);
+        assert!(!workflow_column_exists);
+        let table_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tagteam_run_bindings')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert!(!table_exists);
+        let counter_table_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tagteam_launch_counters')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert!(!counter_table_exists);
         let schema_version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
             .fetch_one(pool)
             .await
             .unwrap();
         assert_eq!(schema_version, CURRENT_SCHEMA_VERSION);
-
-        let second = sm
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "second".into(),
-                SessionType::User,
-                GoslingMode::default(),
-            )
-            .await
-            .unwrap();
-        let duplicate = sqlx::query(
-            r#"
-            INSERT INTO tagteam_run_bindings(
-                session_id, launch_generation, schema_version, launch_spec_json,
-                action_digest, launch_nonce, producer_run_id, last_sequence, snapshot_json
-            ) VALUES (?, 1, 1, '{}', 'digest', '00000000000000000000000000000009', 'run-7', 0, '{}')
-            "#,
-        )
-        .bind(&second.id)
-        .execute(pool)
-        .await;
-        assert!(duplicate.is_err());
-
-        let invalid_generation = sqlx::query(
-            r#"
-            INSERT INTO tagteam_run_bindings(
-                session_id, launch_generation, schema_version, launch_spec_json,
-                action_digest, launch_nonce, last_sequence, snapshot_json
-            ) VALUES (?, 0, 1, '{}', 'digest', '0000000000000000000000000000000a', 0, '{}')
-            "#,
-        )
-        .bind(&second.id)
-        .execute(pool)
-        .await;
-        assert!(invalid_generation.is_err());
     }
 
     #[tokio::test]
@@ -4731,30 +4495,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(row.0.trim_matches('\''), GoslingMode::default().to_string());
-    }
-
-    #[tokio::test]
-    async fn test_malformed_workflow_kind_fails_closed() {
-        let temp_dir = TempDir::new().unwrap();
-        let sm = SessionManager::new(temp_dir.path().to_path_buf());
-        let session = sm
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "test".into(),
-                SessionType::User,
-                GoslingMode::default(),
-            )
-            .await
-            .unwrap();
-
-        sqlx::query("UPDATE sessions SET workflow_kind = 'unknown' WHERE id = ?")
-            .bind(&session.id)
-            .execute(&sm.storage().pool)
-            .await
-            .unwrap();
-
-        assert!(sm.get_session(&session.id, false).await.is_err());
-        assert!(sm.list_sessions().await.is_err());
     }
 
     #[tokio::test]

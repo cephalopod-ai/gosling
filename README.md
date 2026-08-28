@@ -83,20 +83,6 @@ claim of exact behavioral parity. See the [detailed compatibility guide](documen
   - single-instance behavior is preserved per app: one running Goose and one running Gosling, each guarded by its own instance lock
 - **Provenance in the app** - Help > About identifies gosling and its goose v1.38 lineage.
 
-## Tagteam provider
-
-gosling includes a built-in `tagteam` provider for profile-backed multi-model workflows.
-
-- `coding-adversarial`: `tagteam` adversarial mode with `codex:gpt-5.4-high` as coder and `claude:sonnet-5-high` as adversary.
-- `relay`: `tagteam` relay mode with `claude:opus-4.8` supervisor, `codex:gpt-5.4-mini` worker, and `agy:gemini-3.5-flash-medium` scout.
-- `supervisor-worker`: `tagteam` supervisor mode with `codex:gpt-5.5-high` supervisor and `codex:codex-5.3-codex/spark-high` worker.
-
-```bash
-gosling run --provider tagteam --model <profile> --text "..."
-```
-
-`tagteam` and the underlying vendor CLIs must be installed and authenticated separately; gosling does not handle that setup.
-
 ## Architecture
 
 ```mermaid
@@ -122,7 +108,6 @@ The next release candidate is `v1.1.0`. The source manifests must be aligned to 
 
 - Local model runtimes are not bundled; use a supported provider or a separately managed local provider such as Ollama.
 - Workspace management and credential profiles are currently Desktop features; the CLI uses its working directory and global provider configuration.
-- `tagteam` and vendor subscription CLIs require separate installation and authentication.
 - Official Homebrew formula and cask distribution are not currently documented as available.
 - Historical audit and playtest records describe the exact revision and environment they tested; they are evidence, not evergreen claims about every later build.
 

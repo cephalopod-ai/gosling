@@ -99,7 +99,6 @@ impl SessionStorage {
                 provider_name TEXT,
                 model_config_json TEXT,
                 gosling_mode TEXT NOT NULL DEFAULT 'smart_approve',
-                workflow_kind TEXT NOT NULL DEFAULT 'standard',
                 archived_at TIMESTAMP,
                 project_id TEXT
                 ,workspace_id TEXT
@@ -165,74 +164,6 @@ impl SessionStorage {
         Self::create_session_library_schema(&mut tx).await?;
 
         Self::create_session_turn_lease_schema(&mut tx).await?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS tagteam_run_bindings (
-                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-                launch_generation INTEGER NOT NULL CHECK(launch_generation >= 1),
-                schema_version INTEGER NOT NULL,
-                launch_spec_json TEXT NOT NULL,
-                action_digest TEXT NOT NULL,
-                launch_nonce TEXT NOT NULL UNIQUE,
-                producer_run_id TEXT,
-                run_dir TEXT,
-                state_root TEXT,
-                last_sequence INTEGER NOT NULL DEFAULT 0,
-                snapshot_json TEXT NOT NULL,
-                terminal_class TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (session_id, launch_generation)
-            )
-            "#,
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tagteam_bindings_producer_run_id ON tagteam_run_bindings(producer_run_id) WHERE producer_run_id IS NOT NULL",
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS tagteam_launch_identities (
-                launch_nonce TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                launch_generation INTEGER NOT NULL CHECK(launch_generation >= 1),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            "#,
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS tagteam_producer_run_ids (
-                producer_run_id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                launch_nonce TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            "#,
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS tagteam_launch_counters (
-                session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
-                last_generation INTEGER NOT NULL CHECK(last_generation >= 1)
-            )
-            "#,
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_tagteam_bindings_session_updated ON tagteam_run_bindings(session_id, updated_at DESC)",
-        )
-        .execute(&mut *tx)
-        .await?;
 
         sqlx::query(
             r#"

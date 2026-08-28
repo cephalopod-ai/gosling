@@ -36,7 +36,7 @@ pub(crate) use session_manager::ToolOperationStart;
 pub use session_manager::{
     Session, SessionArtifactPage, SessionInsights, SessionManager, SessionNameUpdate,
     SessionSummary, SessionSummaryFact, SessionSummaryStatus, SessionType, SessionUpdateBuilder,
-    SessionWorkflow, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
+    DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 
 #[cfg(test)]

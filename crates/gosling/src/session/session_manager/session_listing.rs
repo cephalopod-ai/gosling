@@ -124,7 +124,7 @@ impl SessionStorage {
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
                    s.accumulated_cache_read_tokens, s.accumulated_cache_write_tokens,
                    s.accumulated_cost,
-                   s.provider_name, s.model_config_json, s.gosling_mode, s.workflow_kind,
+                   s.provider_name, s.model_config_json, s.gosling_mode,
                    s.archived_at, s.project_id, s.workspace_id, s.workspace_name,
                    s.credential_profile_id, s.credential_profile_name,
                    s.credential_binding_id, s.workspace_context_json,

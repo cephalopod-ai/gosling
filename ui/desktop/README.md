@@ -49,7 +49,7 @@ Run `pnpm i18n:extract` after changing desktop messages. Existing message change
 
 Synchronization retains replaced files under `.i18n-sync-recovery/`. After reviewing a successful synchronization, run `pnpm i18n:recovery:clean` to remove only successful recovery transactions. Rolled-back, conflicted, malformed, and incomplete transactions are never removed by that command.
 
-Gosling Desktop uses an embedded backend binary at `/Applications/Gosling.app/Contents/Resources/bin/gosling` in installed apps, and `ui/desktop/src/bin/gosling` in source or bundled builds. If a new Rust provider such as `tagteam` does not show up in the GUI provider picker, rebuild or copy the updated `gosling` backend binary into the desktop bundle and restart the app. The `tagteam` provider exposes the `coding-adversarial`, `relay`, and `supervisor-worker` profile models.
+Gosling Desktop uses an embedded backend binary at `/Applications/Gosling.app/Contents/Resources/bin/gosling` in installed apps, and `ui/desktop/src/bin/gosling` in source or bundled builds. If a new Rust provider does not show up in the GUI provider picker, rebuild or copy the updated `gosling` backend binary into the desktop bundle and restart the app.
 
 ## Building for different platforms
 

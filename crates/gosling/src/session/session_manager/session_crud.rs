@@ -93,7 +93,7 @@ impl SessionStorage {
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
                accumulated_cache_read_tokens, accumulated_cache_write_tokens,
                accumulated_cost,
-               provider_name, model_config_json, gosling_mode, workflow_kind,
+               provider_name, model_config_json, gosling_mode,
                archived_at, project_id, workspace_id, workspace_name,
                credential_profile_id, credential_profile_name, credential_binding_id,
                workspace_context_json
@@ -200,7 +200,6 @@ impl SessionStorage {
         add_update!(builder.credential_binding_id, "credential_binding_id");
         add_update!(builder.workspace_context, "workspace_context_json");
         add_update!(builder.gosling_mode, "gosling_mode");
-        add_update!(builder.workflow_kind, "workflow_kind");
         add_update!(builder.archived_at, "archived_at");
 
         add_update!(builder.project_id, "project_id");
@@ -291,9 +290,6 @@ impl SessionStorage {
         }
         if let Some(gosling_mode) = builder.gosling_mode {
             q = q.bind(gosling_mode.to_string());
-        }
-        if let Some(workflow_kind) = builder.workflow_kind {
-            q = q.bind(workflow_kind.to_string());
         }
         if let Some(ref archived_at) = builder.archived_at {
             q = q.bind(archived_at.as_ref());

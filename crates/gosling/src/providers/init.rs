@@ -28,7 +28,6 @@ use super::{
     pi_acp::PiAcpProvider,
     provider_registry::ProviderRegistry,
     snowflake::SnowflakeProvider,
-    tagteam::TagteamProvider,
     tetrate::TetrateProvider,
     vibe_acp::VibeAcpProvider,
     xai::XaiProvider,
@@ -118,7 +117,6 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         #[cfg(feature = "aws-providers")]
         registry.register::<SageMakerTgiProvider>(false);
         registry.register::<SnowflakeProvider>(false);
-        registry.register::<TagteamProvider>(false);
         registry.register_with_inventory::<VibeAcpProvider>(
             false,
             Some(registrations::vibe_acp_inventory()),
