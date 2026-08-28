@@ -522,7 +522,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
       window.removeEventListener('keydown', handleKeyDown);
       window.electron.off('find-command', focusSearch);
     };
-  }, [focusSearch]);
+  }, [focusSearch, isActive]);
 
   useEffect(() => {
     const handleSessionUpdate = () => {
