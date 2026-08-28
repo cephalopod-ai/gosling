@@ -105,6 +105,30 @@ Solo/Dual smoke evidence. See the completion section of
 [`docs/logs/session/2026-08-27-medium-defect-campaign.md`](logs/session/2026-08-27-medium-defect-campaign.md)
 and [`reports/2026-08-27-medium-defect-campaign.md`](../reports/2026-08-27-medium-defect-campaign.md).
 
+`AOC-GSL-001` and `ACP-GSL-002` record the conservative policy implemented
+from the audit evidence available at that time. They were superseded on
+2026-08-27 by the operator-authorized autonomous permission policy below; the
+historical records remain intact rather than being rewritten as if they had
+never shipped.
+
+### Operator-authorized autonomous permission policy
+
+- [x] **AUT-GSL-001** — Auto is the product default and remains selectable for
+      providers that execute tools outside Gosling. Provider-native tool calls
+      proceed autonomously in Auto instead of failing or opening a prompt.
+- [x] **AUT-GSL-002** — ordinary ACP provider permission requests proceed in
+      Auto and Smart Approve. Requests carrying an explicit security warning
+      still require an operator decision; Chat denies and Approve prompts.
+- [x] **AUT-GSL-003** — ACP “Always Allow” decisions persist in
+      `permission.yaml`, scoped to provider and tool, and are reused across
+      sessions, threads, and restarts. Domain-specific and explicit-security
+      decisions are never promoted into reusable tool-wide grants.
+
+These records close the repeated installed-app WebSearch/WebFetch approval
+regression observed in session `20260828_51`. Implementation and installed-app
+evidence are recorded in
+[`docs/logs/session/2026-08-27-auto-permission-persistence.md`](logs/session/2026-08-27-auto-permission-persistence.md).
+
 ### Remaining Medium decisions and external prerequisites
 
 - [x] **DAT-GSL-002** — workspace deletion preserves workspace-keyed project

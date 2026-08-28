@@ -338,7 +338,7 @@ scenario (or an explicit not-applicable/blocked note):
 | DR-01 | 19 | Prompt-only research does not discover workspace files |
 | DR-02 | 19 | Invalid delegate source fails once without retry churn |
 | DR-03 | 20 | ACP prompt persistence survives queued writers |
-| DR-04 | 20 | Solo external ACP provider selects an approval-capable mode |
+| DR-04 | 20 | Solo external ACP provider retains Autonomous mode |
 | DR-05 | 20 | Legacy `source: "dummy"` becomes an ad-hoc delegate only |
 | DR-06 | 20 | External-provider delegate runs bounded and tool-disabled |
 | DR-07 | 20 | Initial Inputs contain long and multiline content |

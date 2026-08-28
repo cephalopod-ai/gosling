@@ -20,18 +20,18 @@ check. Preserve the exact payloads and visible status text as evidence.
 - Observe: connection-pool occupancy, write ordering, duplicate messages, missing prompt state, spinner without a terminal state, and WAL/SHM residue after shutdown.
 - Variations: cancel the prompt before releasing the writer; repeat with forty queued writes while retaining the same bounded deadline.
 
-### DR-04 — Solo external ACP provider selects an approval-capable mode
-- Goal: run Solo research with an ACP provider whose tools execute outside Gosling inspection without submitting the session in Auto mode.
+### DR-04 — Solo external ACP provider retains Autonomous mode
+- Goal: run Solo research with an ACP provider whose tools execute outside Gosling inspection without a silent mode downgrade or repetitive ordinary-tool prompts.
 - Category: happy path / permissions / recovery
 - Preconditions: disposable root; scripted ACP provider marked as externally executing tools; provider returns the exact token `ACP_SOLO_OK`; protocol capture for advertised and selected modes.
 - Steps:
   1. Open New Research, select Solo, and choose the external-tool ACP provider.
   2. Submit `Reply with exactly ACP_SOLO_OK and do not call tools.`
-  3. Record the mode shown in the composer and the mode sent through ACP.
+  3. Record the Autonomous mode shown in the composer and the mode sent through ACP.
   4. Wait for the terminal response.
-- Expected: Auto is not offered or selected for the provider; Gosling uses an approval-capable mode; the provider returns `ACP_SOLO_OK`; no error says the provider cannot run in Auto mode.
-- Observe: a stale Autonomous label, UI/protocol disagreement, silent mode substitution after submission, or repeated retries.
-- Variations: switch from a hosted provider in Auto to the external provider before sending; attempt an explicit Auto mode request and verify it fails closed.
+- Expected: Auto remains selected for the provider; the provider returns `ACP_SOLO_OK`; ordinary provider-native tool calls proceed without a permission prompt; an explicit security-warning request still pauses for operator review.
+- Observe: UI/protocol mode disagreement, silent mode substitution after submission, repetitive prompts for ordinary tools, or a pre-stream error rejecting Auto.
+- Variations: switch from a hosted provider in Auto to the external provider before sending; relaunch the app and verify Auto remains selected.
 
 ### DR-05 — Legacy `source: "dummy"` becomes an ad-hoc delegate only
 - Goal: tolerate the exact legacy Deep Research payload emitted by a lead model without weakening named-source validation.
