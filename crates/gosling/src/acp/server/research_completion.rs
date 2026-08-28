@@ -142,7 +142,13 @@ fn artifact_can_complete_research(artifact: &SessionArtifact) -> bool {
 }
 
 fn artifact_is_reported(artifact: &SessionArtifact, assistant_text: &str) -> bool {
-    assistant_text.contains(&artifact.resolved_path)
+    matches!(
+        (&artifact.relation, &artifact.provenance),
+        (
+            SessionArtifactRelation::Referenced,
+            SessionArtifactProvenance::AssistantMessage
+        )
+    ) || assistant_text.contains(&artifact.resolved_path)
         || assistant_text.contains(&artifact.display_path)
 }
 
@@ -234,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn verifies_external_provider_reports_referenced_in_the_final_response() {
+    fn verifies_external_provider_reports_discovered_from_persisted_assistant_text() {
         let root = tempfile::tempdir().unwrap();
         let outputs = root.path().join("outputs");
         let library = root.path().join("library");
@@ -248,7 +254,6 @@ mod tests {
             library_path: library.to_string_lossy().into_owned(),
             output_paths: vec![outputs.to_string_lossy().into_owned()],
         };
-        let assistant_text = format!("Reports: {} and {}", output.display(), copy.display());
         let mut output_artifact = artifact(&output);
         output_artifact.relation = SessionArtifactRelation::Referenced;
         output_artifact.provenance = SessionArtifactProvenance::AssistantMessage;
@@ -256,12 +261,7 @@ mod tests {
         library_artifact.relation = SessionArtifactRelation::Referenced;
         library_artifact.provenance = SessionArtifactProvenance::AssistantMessage;
 
-        verify_artifact_pairs(
-            &state,
-            &[output_artifact, library_artifact],
-            &assistant_text,
-        )
-        .unwrap();
+        verify_artifact_pairs(&state, &[output_artifact, library_artifact], "").unwrap();
     }
 
     #[test]

@@ -43,9 +43,9 @@ WebSearch/WebFetch approvals.
   its finished report was safely contained and reported, but external-provider
   file operations appear as final-response artifact references rather than
   Gosling-hosted `created` operations. The verifier now accepts that provenance
-  only while retaining configured-root containment, deliverable-type, explicit
-  final-response reference, matching-filename, size bound, and byte-identical
-  Output/Research Library hash checks.
+  only while retaining configured-root containment, deliverable-type, a
+  persisted assistant-message reference, matching-filename, size bound, and
+  byte-identical Output/Research Library hash checks.
 
 ## Validation
 
