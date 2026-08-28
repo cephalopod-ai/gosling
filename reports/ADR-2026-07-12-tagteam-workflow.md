@@ -1,8 +1,11 @@
 # ADR: Tagteam is a workflow with a deterministic authority boundary
 
-**Status:** Accepted and implemented for the Phase 1 foundation; live
-integration remains gated.
-**Date:** 2026-07-12.
+**Status:** Superseded — Tagteam support was removed from Gosling in
+`602ae43c` (2026-08-27). The decision below is retained as the historical
+record of why the workflow was built and what authority boundary it enforced;
+it no longer describes current behavior. Invariants `ARC-005`, `ARC-006`, and
+`ARC-007` were retired with it.
+**Date:** 2026-07-12. **Superseded:** 2026-08-27.
 
 ## Decision
 

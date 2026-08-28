@@ -736,6 +736,19 @@ impl SessionStorage {
             28 => Self::create_session_library_schema(tx).await?,
             29 => Self::create_session_turn_lease_schema(tx).await?,
             30 => {
+                // Tagteam support was removed in 602ae43c (2026-08-27). This
+                // migration is destructive and irreversible by design: it
+                // discards persisted Tagteam launch identities, producer run
+                // ids, run bindings, and counters. That data was accepted as
+                // unrecoverable when the feature was removed; there is no
+                // archive and no down migration. Sessions themselves are
+                // preserved and become ordinary sessions.
+                //
+                // Migrations 19 and 20 must stay in the ladder even though
+                // fresh databases no longer create Tagteam state, because an
+                // older database still upgrades through them to reach this
+                // point. See the regression guard
+                // `test_removed_tagteam_schema_is_cleaned_up`.
                 sqlx::query("DROP TABLE IF EXISTS tagteam_launch_identities")
                     .execute(&mut **tx)
                     .await?;

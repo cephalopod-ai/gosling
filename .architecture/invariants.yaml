@@ -39,7 +39,11 @@ invariants:
 
   - id: ARC-005
     title: Tagteam is a workflow, not a provider
-    status: active
+    status: retired
+    retired_in: 602ae43c
+    retired_note: Tagteam support was removed from Gosling; this invariant is
+      retained for id stability and historical review context. Its scope paths
+      intentionally name code that no longer exists.
     scope:
       - crates/gosling/src/tagteam
       - crates/gosling/src/providers/tagteam.rs
@@ -47,14 +51,22 @@ invariants:
 
   - id: ARC-006
     title: Tagteam workflow has one lifecycle owner
-    status: active
+    status: retired
+    retired_in: 602ae43c
+    retired_note: Tagteam support was removed from Gosling; this invariant is
+      retained for id stability and historical review context. Its scope paths
+      intentionally name code that no longer exists.
     scope:
       - crates/gosling/src/tagteam
     rule: launch validation, state reduction, recovery eligibility, and terminal precedence have one workflow owner independent of UI and transport
 
   - id: ARC-007
     title: Run Steward cannot inherit mutation authority
-    status: active
+    status: retired
+    retired_in: 602ae43c
+    retired_note: Tagteam support was removed from Gosling; this invariant is
+      retained for id stability and historical review context. Its scope paths
+      intentionally name code that no longer exists.
     scope:
       - crates/gosling/src/tagteam/policy.rs
     rule: the Run Steward capability profile is an allowlist and cannot include arbitrary shell, file mutation, extension management, subagent delegation, scope widening, finding disposition, transfer, or recursive Tagteam invocation

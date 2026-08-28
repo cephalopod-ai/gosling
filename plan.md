@@ -1912,7 +1912,8 @@ Status: source repair complete; execution verification deferred because this cam
 - `check-acp-schema` resolves from `justfile_directory()` instead of the caller's working directory.
 - Previously deferred records ORCH-002, REC-001, REC-002, RES-002, and RES-003 are reconciled as already satisfied by current source.
 - The bounded ACP response policy remains intentional fail-closed behavior; streaming/pagination is future API work.
-- Session Handoff, CLI usage reporting, release execution, and broad modularization are feature/maintenance backlog rather than defects.
+- Session Handoff, Tagteam expansion, CLI usage reporting, release execution, and broad modularization are feature/maintenance backlog rather than defects.
+  (Tagteam was subsequently removed from Gosling in `602ae43c`, 2026-08-27; this line records the classification as it stood at the time.)
 - Giles's uniqueness-constraint crash and macOS Keychain authorization are external/manual validation constraints.
 
 
