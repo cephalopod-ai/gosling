@@ -362,7 +362,7 @@ fn create_otlp_tracing_layer() -> OtlpResult<OtlpTracingLayer> {
     Ok(tracing_opentelemetry::layer().with_tracer(tracer))
 }
 
-// TODO: remove once https://github.com/open-telemetry/opentelemetry-rust/pull/3351 is released.
+// TODO[POLISH-20260827-009]: Remove once https://github.com/open-telemetry/opentelemetry-rust/pull/3351 is released.
 fn temporality_preference() -> Temporality {
     match env::var("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
         .unwrap_or_default()

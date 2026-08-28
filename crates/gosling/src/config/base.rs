@@ -1680,7 +1680,7 @@ mod tests {
     }
 
     #[test]
-    fn test_basic_config() -> Result<(), ConfigError> {
+    fn config_values_support_environment_overrides() -> Result<(), ConfigError> {
         let config = new_test_config();
 
         // Set a simple string value

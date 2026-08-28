@@ -50,25 +50,25 @@ fn test_fs_write_text_file_true() {
 }
 
 #[test]
-#[ignore = "TODO: implement load_session in ACP provider"]
+#[ignore = "TODO[POLISH-20260827-005]: implement load_session in ACP provider"]
 fn test_load_mode() {
     run_test(async { run_load_mode::<AcpProviderConnection>().await });
 }
 
 #[test]
-#[ignore = "TODO: implement load_session in ACP provider"]
+#[ignore = "TODO[POLISH-20260827-005]: implement load_session in ACP provider"]
 fn test_load_model() {
     run_test(async { run_load_model::<AcpProviderConnection>().await });
 }
 
 #[test]
-#[ignore = "TODO: implement load_session in ACP provider"]
+#[ignore = "TODO[POLISH-20260827-005]: implement load_session in ACP provider"]
 fn test_load_session_error_session_not_found() {
     run_test(async { run_load_session_error::<AcpProviderConnection>().await });
 }
 
 #[test]
-#[ignore = "TODO: implement load_session in ACP provider"]
+#[ignore = "TODO[POLISH-20260827-005]: implement load_session in ACP provider"]
 fn test_load_session_mcp() {
     run_test(async { run_load_session_mcp::<AcpProviderConnection>().await });
 }

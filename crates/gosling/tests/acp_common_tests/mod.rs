@@ -527,7 +527,7 @@ pub async fn run_load_mode<C: Connection>() {
 
 pub async fn run_load_model<C: Connection>() {
     // Use a Chat Completions model so the canned SSE fixtures parse correctly.
-    // TODO: add a Responses API mock to OpenAiFixture for responses-routed models.
+    // TODO[POLISH-20260827-002]: Add a Responses API mock to OpenAiFixture for responses-routed models.
     let expected_session_id = C::expected_session_id();
     let openai = OpenAiFixture::new(
         vec![(
@@ -965,7 +965,7 @@ pub async fn run_model_set<C: Connection>() {
 
 async fn run_model_set_impl<C: Connection>() {
     // Use a Chat Completions model so the canned SSE fixtures parse correctly.
-    // TODO: add a Responses API mock to OpenAiFixture for responses-routed models.
+    // TODO[POLISH-20260827-002]: Add a Responses API mock to OpenAiFixture for responses-routed models.
     let expected_session_id = C::expected_session_id();
     let openai = OpenAiFixture::new(
         vec![
@@ -1347,7 +1347,7 @@ pub async fn run_prompt_mcp<C: Connection>() {
 pub async fn run_prompt_model_mismatch<C: Connection>() {
     // Start the connection where the current model differs from TEST_MODEL.
     // Use a Chat Completions model so the canned SSE fixtures parse correctly.
-    // TODO: add a Responses API mock to OpenAiFixture so we can test with
+    // TODO[POLISH-20260827-002]: Add a Responses API mock to OpenAiFixture so we can test with
     // responses-routed models like o4-mini here.
     let config = TestConnectionConfig {
         current_model: "gpt-4o".to_string(),

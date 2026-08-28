@@ -147,9 +147,6 @@ pub async fn from_env(
         .preserve_thinking_context(!is_openai)
         .build();
 
-    // TODO(jack): replace this
-    // provider.probe_context_limit_if_unset(&mut model).await;
-
     Ok(provider)
 }
 

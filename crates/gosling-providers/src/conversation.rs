@@ -663,10 +663,6 @@ mod tests {
     fn run_verify(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
         let (fixed, issues) = fix_conversation(Conversation::new_unvalidated(messages.clone()));
 
-        // Uncomment the following line to print the debug report
-        // let report = debug_conversation_fix(&messages, &fixed, &issues);
-        // print!("\n{}", report);
-
         let (_fixed, issues_with_fixed) = fix_conversation(fixed.clone());
         assert_eq!(
             issues_with_fixed.len(),

@@ -1,6 +1,6 @@
 # Code polish convention baseline
 
-Date: 2026-08-17
+Date: 2026-08-27
 
 ## Scope
 
@@ -22,8 +22,11 @@ rewritten.
 
 ## Baseline checks
 
-- `source bin/activate-hermit && cargo fmt --check` passed.
-- `cd ui && node_modules/.bin/tsc --noEmit --project desktop/tsconfig.json`
-  passed.
-- The initial workspace-root Vitest invocation did not load the Desktop JSDOM
-  configuration; final validation uses `ui/desktop` as the working directory.
+- Rust: `cargo fmt --all -- --check`, `cargo build`, `cargo test -p gosling`,
+  and all-target Clippy with warnings denied passed.
+- Desktop: `pnpm run typecheck` and `pnpm run test:run` passed from
+  `ui/desktop` (134 files and 1,071 tests).
+- Documentation: typecheck, 16 tests, and the production build passed from
+  `documentation`; the build generated 165 Markdown pages.
+- `cargo machete` was not installed, so unused-dependency analysis was not
+  represented as passing evidence.

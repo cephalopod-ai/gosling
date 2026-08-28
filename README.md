@@ -129,12 +129,27 @@ just run-ui                    # desktop app
 
 See [BUILDING_LINUX.md](BUILDING_LINUX.md), [BUILDING_DOCKER.md](BUILDING_DOCKER.md), and [ui/desktop/README.md](ui/desktop/README.md) for platform-specific instructions.
 
+### Add an MCP extension
+
+The CLI can install a command-based MCP server and verify the resulting
+configuration:
+
+```bash
+gosling mcp install memory --cmd "npx -y @modelcontextprotocol/server-memory"
+gosling mcp list
+```
+
+This example downloads the server package when it first runs. Review extension
+commands before installing them, and see [Using Extensions](documentation/docs/getting-started/using-extensions.md)
+for configuration, trust, and removal guidance.
+
 ## Quick links
 
 - [Documentation index](documentation/INDEX.md) - user manuals, architecture, publishing, and stewardship
 - [v1.0.0 release notes](documentation/docs/release-notes/v1.0.0.md)
 - [Release process](RELEASE.md) and [release checklist](RELEASE_CHECKLIST.md)
 - [Known issues](documentation/docs/troubleshooting/known-issues.md)
+- [Current validation ledger](docs/polish/test-ledger.md)
 - [Custom Distributions](CUSTOM_DISTROS.md) - build your own distro with preconfigured providers, extensions, and branding
 - [Contributing](CONTRIBUTING.md)
 - [Contributors and upstream attribution](CONTRIBUTORS.md)

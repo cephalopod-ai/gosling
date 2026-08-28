@@ -131,7 +131,7 @@ pub async fn run() -> Result<()> {
 
     let cors = desktop_cors_layer();
 
-    // TODO(acp-migration): When ui/desktop launches `gosling serve` directly,
+    // TODO[POLISH-20260827-001]: When ui/desktop launches `gosling serve` directly,
     // move any goslingd-only ACP setup into the gosling serve path before deleting
     // this bridge. In particular, verify everything ACP currently gets from
     // goslingd startup/AppState initialization, including builtin extension

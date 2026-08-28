@@ -32,7 +32,7 @@ impl ModelMapping {
 /// filtering to text-input + tool-calling models, and sorting by release date.
 /// The returned names are the canonical short names (e.g. "claude-3.5-sonnet").
 ///
-/// TODO: This trades speed for correctness — the canonical registry may not perfectly
+/// TODO[POLISH-20260827-003]: This trades speed for correctness — the canonical registry may not perfectly
 /// match what the provider API returns (new models not yet in the registry, deprecated
 /// models still listed, or locally-installed models for providers like Ollama). Consider
 /// whether to reconcile with a live API call in the background.

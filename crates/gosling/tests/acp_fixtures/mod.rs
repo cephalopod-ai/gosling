@@ -192,7 +192,7 @@ pub async fn spawn_acp_server_in_process(
     settings: AcpTestServerSettings<'_>,
 ) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
     fs::create_dir_all(data_root).unwrap();
-    // TODO: Paths::in_state_dir is global, ignoring per-test data_root
+    // TODO[POLISH-20260827-004]: Paths::in_state_dir is global, ignoring per-test data_root
     fs::create_dir_all(Paths::in_state_dir("logs")).unwrap();
     let config_path = data_root.join(gosling::config::base::CONFIG_YAML_NAME);
     if !config_path.exists() {

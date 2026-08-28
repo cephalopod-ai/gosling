@@ -378,7 +378,7 @@ impl ProviderFixture {
         Ok(response2)
     }
 
-    async fn test_basic_response(&self) -> Result<()> {
+    async fn assert_basic_text_response(&self) -> Result<()> {
         let message = Message::user().with_text("Just say hello!");
         let model_config = self.model_config.clone();
 
@@ -669,7 +669,7 @@ async fn test_provider(config: ProviderTestConfig) -> Result<()> {
             .await?;
         run_test(GoslingMode::Auto)
             .await?
-            .test_basic_response()
+            .assert_basic_text_response()
             .await?;
         if config.test_mcp_tools {
             run_test(GoslingMode::Auto).await?.test_tool_usage().await?;

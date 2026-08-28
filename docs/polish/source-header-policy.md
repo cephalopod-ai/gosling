@@ -1,6 +1,6 @@
 # Source header policy
 
-Date: 2026-08-17
+Date: 2026-08-27
 
 No repository-wide per-file copyright or license header convention was found.
 This run adds no source headers. Existing license and provenance material remains

@@ -1186,7 +1186,7 @@ impl GoslingAcpAgent {
             .unwrap_or(false)
     }
 
-    // TODO: gosling reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
+    // TODO[POLISH-20260827-006]: gosling reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
     pub async fn new(options: GoslingAcpAgentOptions) -> Result<Self> {
         let runtime_paths = RuntimePaths::new(
             options.config_dir.clone(),

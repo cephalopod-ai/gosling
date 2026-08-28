@@ -290,7 +290,7 @@ pub fn create_request(
             create_google_request(model_config, system, messages, tools)?
         }
         GcpVertexAIModel::MaaS(_, _) => {
-            // TODO: Branch on publisher for format selection once we know which
+            // TODO[POLISH-20260827-008]: Branch on publisher for format selection once we know which
             // MaaS providers use which formats (e.g., OpenAI vs Google format)
             // For now, default to Google format since most use generateContent endpoint
             create_google_request(model_config, system, messages, tools)?

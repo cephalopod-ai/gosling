@@ -4,7 +4,7 @@ pub const TEST_SESSION_ID: &str = "test-session-id";
 // Use a Chat Completions model so the canned SSE fixtures (which return
 // Chat Completions format) are parsed correctly. gpt-5-nano now routes to
 // the Responses API which needs a different mock format.
-// TODO: add a Responses API mock to OpenAiFixture so tests can cover
+// TODO[POLISH-20260827-002]: Add a Responses API mock to OpenAiFixture so tests can cover
 // responses-routed models like gpt-5-nano end-to-end.
 pub const TEST_MODEL: &str = "gpt-4.1";
 

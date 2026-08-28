@@ -131,7 +131,7 @@ impl ExtensionState for DeepResearchState {
     const VERSION: &'static str = "v1";
 }
 
-/// TODO extension state implementation
+/// State persisted by the built-in todo extension.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoState {
     pub content: String,
@@ -143,7 +143,6 @@ impl ExtensionState for TodoState {
 }
 
 impl TodoState {
-    /// Create a new TODO state
     pub fn new(content: String) -> Self {
         Self { content }
     }
@@ -313,11 +312,9 @@ mod tests {
     fn test_todo_state_trait() {
         let mut extension_data = ExtensionData::new();
 
-        // Create and save TODO state
         let todo = TodoState::new("- Task 1\n- Task 2".to_string());
         todo.to_extension_data(&mut extension_data).unwrap();
 
-        // Retrieve TODO state
         let retrieved = TodoState::from_extension_data(&extension_data);
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().content, "- Task 1\n- Task 2");

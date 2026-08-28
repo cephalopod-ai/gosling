@@ -84,7 +84,7 @@ struct StartAgentParams {
     working_dir: String,
     /// Human-readable name for the session
     name: Option<String>,
-    // TODO: add a "model_tier" parameter (e.g. "fast" vs "normal") to let the orchestrator
+    // TODO[POLISH-20260827-007]: Add a "model_tier" parameter (e.g. "fast" vs "normal") to let the orchestrator
     // choose between a fast/cheap model and the default one. For now we inherit the
     // orchestrator's own provider and model.
 }

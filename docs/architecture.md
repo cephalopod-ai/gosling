@@ -29,7 +29,7 @@ flowchart LR
     Store --> JSON[(workspaces.json)]
     Credentials --> Config[Config secure storage]
     Config --> Keyring[(OS keyring / protected fallback)]
-    Handlers --> Sessions[SessionManager v29 snapshot and turn lease]
+    Handlers --> Sessions[SessionManager v30 snapshot and turn lease]
     Sessions --> DB[(sessions.db)]
     Agent[Agent / provider construction] --> Service
     Agent --> Credentials
