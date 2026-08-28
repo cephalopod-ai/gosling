@@ -16,8 +16,6 @@ permissions:
   # Required to read issues and PRs
   issues: read
   pull-requests: read
-  # Required to update discussions
-  discussions: write
 
 jobs:
   update-dashboard:
@@ -41,8 +39,6 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const discussionNumber = 5285;
-
             console.log(`Fetching health metrics for ${owner}/${repo}`);
 
             // Fetch ALL open issues with pagination
@@ -181,50 +177,15 @@ jobs:
               '*Last updated: ' + timestamp + '*\n' +
               '*This dashboard is automatically updated daily by [GitHub Actions](https://github.com/' + owner + '/' + repo + '/actions/workflows/update-health-dashboard.yml)*';
 
-            console.log('Dashboard generated, updating discussion...');
-
-            // Get the discussion node ID using GraphQL
-            const discussionQuery = `
-              query GetDiscussion($owner: String!, $repo: String!, $number: Int!) {
-                repository(owner: $owner, name: $repo) {
-                  discussion(number: $number) {
-                    id
-                  }
-                }
-              }
-            `;
-
-            const discussionResult = await github.graphql(discussionQuery, {
-              owner,
-              repo,
-              number: discussionNumber
-            });
-
-            const discussionId = discussionResult.repository.discussion.id;
-            console.log(`Found discussion ID: ${discussionId}`);
-
-            // Update the discussion using GraphQL mutation
-            const updateMutation = `
-              mutation UpdateDiscussion($discussionId: ID!, $body: String!) {
-                updateDiscussion(input: {discussionId: $discussionId, body: $body}) {
-                  discussion {
-                    id
-                    number
-                  }
-                }
-              }
-            `;
-
-            await github.graphql(updateMutation, {
-              discussionId,
-              body: dashboardBody
-            });
-
-            console.log(`Successfully updated discussion #${discussionNumber}`);
+            fs.writeFileSync('health-dashboard.md', dashboardBody);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, dashboardBody);
+            console.log('Published dashboard to the workflow summary and artifact');
       
       - name: 'Upload metrics artifact'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: health-metrics
-          path: health-metrics.json
+          path: |
+            health-dashboard.md
+            health-metrics.json
           retention-days: 90
