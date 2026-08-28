@@ -142,6 +142,10 @@ impl Connection for AcpProviderConnection {
         Arc::new(IgnoreSessionId)
     }
 
+    fn wraps_acp_provider() -> bool {
+        true
+    }
+
     async fn new(config: TestConnectionConfig, openai: OpenAiFixture) -> Self {
         let (data_root, temp_dir) = match config.data_root.as_os_str().is_empty() {
             true => {
@@ -198,6 +202,7 @@ impl Connection for AcpProviderConnection {
             notification_callback: Some(Arc::new(move |n| {
                 sink_clone.lock().unwrap().push(n.update.clone());
             })),
+            permission_manager: Arc::clone(&permission_manager),
         };
 
         let transport: DynConnectTo<Client> = DynConnectTo::new(transport);

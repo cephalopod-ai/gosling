@@ -23,9 +23,9 @@ use utoipa::ToSchema;
 #[strum(serialize_all = "snake_case")]
 pub enum GoslingMode {
     #[strum(message = "Automatically approve tool calls")]
+    #[default]
     Auto,
     #[strum(message = "Ask only for sensitive tool calls")]
-    #[default]
     SmartApprove,
     #[strum(message = "Ask before every tool call")]
     Approve,
@@ -38,7 +38,7 @@ mod tests {
     use super::GoslingMode;
 
     #[test]
-    fn default_mode_is_smart_approve() {
-        assert_eq!(GoslingMode::default(), GoslingMode::SmartApprove);
+    fn default_mode_is_auto() {
+        assert_eq!(GoslingMode::default(), GoslingMode::Auto);
     }
 }

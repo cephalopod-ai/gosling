@@ -564,7 +564,7 @@ impl Default for TestConnectionConfig {
         Self {
             mcp_servers: Vec::new(),
             builtins: Vec::new(),
-            gosling_mode: GoslingMode::default(),
+            gosling_mode: GoslingMode::SmartApprove,
             cwd: None,
             data_root: PathBuf::new(),
             provider_factory: None,
@@ -583,6 +583,9 @@ pub trait Connection: Sized {
     type Session: Session;
 
     fn expected_session_id() -> Arc<dyn ExpectedSessionId>;
+    fn wraps_acp_provider() -> bool {
+        false
+    }
     async fn new(config: TestConnectionConfig, openai: OpenAiFixture) -> Self;
     async fn new_session(&mut self) -> anyhow::Result<SessionData<Self::Session>>;
     async fn load_session(

@@ -1209,7 +1209,7 @@ impl GoslingAcpAgent {
 
             session_manager.storage().pool().await?;
 
-            let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
+            let permission_manager = PermissionManager::for_config_dir(options.config_dir.clone());
             let provider_inventory =
                 ProviderInventoryService::new(session_manager.storage().clone());
             let config = Config::global();
@@ -3460,17 +3460,6 @@ impl GoslingAcpAgent {
         })?;
 
         let agent = self.get_session_agent(session_id).await?;
-        if mode == GoslingMode::Auto {
-            let provider = agent
-                .provider()
-                .await
-                .internal_err_ctx("Failed to get provider")?;
-            if provider.executes_tools_outside_gosling() {
-                return Err(agent_client_protocol::Error::invalid_params().data(
-                    "Auto mode is unavailable because this provider executes tools outside Gosling's inspection pipeline. Select an approval-capable mode.",
-                ));
-            }
-        }
         agent
             .update_gosling_mode(mode, session_id)
             .await

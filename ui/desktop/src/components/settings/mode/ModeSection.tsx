@@ -6,9 +6,9 @@ import { CodeExecutionRuntimeSection } from './CodeExecutionRuntimeSection';
 
 /// Must match `#[default]` on `GoslingMode` in
 /// `crates/gosling-providers/src/gosling_mode.rs`. Showing `auto` here while
-/// the backend defaulted to SmartApprove told the operator that every tool
+/// the backend defaulted to another mode told the operator that every tool
 /// call was auto-approved when it was not. (WFG-GOS-001)
-const DEFAULT_GOSLING_MODE = 'smart_approve';
+const DEFAULT_GOSLING_MODE = 'auto';
 
 export const ModeSection = () => {
   const [currentMode, setCurrentMode] = useState(DEFAULT_GOSLING_MODE);

@@ -4,14 +4,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{
+    Arc, LazyLock, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak,
+};
 use tracing;
 use utoipa::ToSchema;
 
 const PERMISSION_FILE: &str = "permission.yaml";
 
-static PERMISSION_MANAGER: LazyLock<Arc<PermissionManager>> =
-    LazyLock::new(|| Arc::new(PermissionManager::new(Paths::config_dir())));
+static PERMISSION_MANAGERS: LazyLock<Mutex<HashMap<PathBuf, Weak<PermissionManager>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Enum representing the possible permission levels for a tool.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, ToSchema)]
@@ -42,6 +44,7 @@ pub struct PermissionManager {
 const USER_PERMISSION: &str = "user";
 const SMART_APPROVE_PERMISSION: &str = "smart_approve";
 const EGRESS_DOMAIN_PERMISSION: &str = "egress_domain";
+const ACP_PROVIDER_PERMISSION: &str = "acp_provider";
 
 impl PermissionManager {
     pub fn new(config_dir: PathBuf) -> Self {
@@ -77,7 +80,20 @@ impl PermissionManager {
     }
 
     pub fn instance() -> Arc<PermissionManager> {
-        Arc::clone(&PERMISSION_MANAGER)
+        Self::for_config_dir(Paths::config_dir())
+    }
+
+    pub fn for_config_dir(config_dir: PathBuf) -> Arc<PermissionManager> {
+        let mut managers = PERMISSION_MANAGERS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(manager) = managers.get(&config_dir).and_then(Weak::upgrade) {
+            return manager;
+        }
+
+        let manager = Arc::new(Self::new(config_dir.clone()));
+        managers.insert(config_dir, Arc::downgrade(&manager));
+        manager
     }
 
     /// The permission map stays structurally valid even if a thread panicked
@@ -163,6 +179,17 @@ impl PermissionManager {
     /// Retrieves the always-allow/never-allow status for a specific egress domain.
     pub fn get_egress_domain_permission(&self, domain: &str) -> Option<PermissionLevel> {
         self.get_permission(EGRESS_DOMAIN_PERMISSION, domain)
+    }
+
+    pub fn get_acp_provider_permission(
+        &self,
+        provider_name: &str,
+        tool_name: &str,
+    ) -> Option<PermissionLevel> {
+        self.get_permission(
+            ACP_PROVIDER_PERMISSION,
+            &acp_provider_principal(provider_name, tool_name),
+        )
     }
 
     /// Retrieves the config file path.
@@ -267,6 +294,19 @@ impl PermissionManager {
         self.update_permission(EGRESS_DOMAIN_PERMISSION, domain, level)
     }
 
+    pub fn update_acp_provider_permission(
+        &self,
+        provider_name: &str,
+        tool_name: &str,
+        level: PermissionLevel,
+    ) -> Result<(), String> {
+        self.update_permission(
+            ACP_PROVIDER_PERMISSION,
+            &acp_provider_principal(provider_name, tool_name),
+            level,
+        )
+    }
+
     /// Helper function to update a permission level for a specific tool in a given permission category.
     fn update_permission(
         &self,
@@ -315,6 +355,11 @@ impl PermissionManager {
     }
 }
 
+fn acp_provider_principal(provider_name: &str, tool_name: &str) -> String {
+    serde_json::to_string(&(provider_name, tool_name))
+        .expect("ACP provider permission principal must serialize")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,6 +372,38 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let manager = PermissionManager::new(temp_dir.path().to_path_buf());
         (manager, temp_dir)
+    }
+
+    #[test]
+    fn config_directory_reuses_one_permission_manager() {
+        let temp_dir = TempDir::new().unwrap();
+        let first = PermissionManager::for_config_dir(temp_dir.path().to_path_buf());
+        let second = PermissionManager::for_config_dir(temp_dir.path().to_path_buf());
+
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn acp_provider_permissions_are_scoped_and_durable() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = PermissionManager::new(temp_dir.path().to_path_buf());
+        manager
+            .update_acp_provider_permission("provider-a", "Bash", PermissionLevel::AlwaysAllow)
+            .unwrap();
+
+        let reloaded = PermissionManager::new(temp_dir.path().to_path_buf());
+        assert_eq!(
+            reloaded.get_acp_provider_permission("provider-a", "Bash"),
+            Some(PermissionLevel::AlwaysAllow)
+        );
+        assert_eq!(
+            reloaded.get_acp_provider_permission("provider-b", "Bash"),
+            None
+        );
+        assert_eq!(
+            reloaded.get_acp_provider_permission("provider-a", "Read"),
+            None
+        );
     }
 
     // A `NeverAllow` that fails to write used to be swallowed by `persist`,

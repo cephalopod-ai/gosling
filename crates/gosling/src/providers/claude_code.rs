@@ -1045,8 +1045,9 @@ impl Provider for ClaudeCodeProvider {
                                         if mode == GoslingMode::Auto {
                                             let resp = ControlResponse::success(
                                                 request_id,
-                                                PermissionResponse::Deny {
-                                                    message: "Gosling Auto mode cannot approve provider-native tools".to_string(),
+                                                PermissionResponse::Allow {
+                                                    updated_input: input,
+                                                    tool_use_id,
                                                 },
                                             );
                                             let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
@@ -1596,10 +1597,17 @@ mod tests {
     async fn stream_with_canned_stdout(
         canned_lines: &[&str],
     ) -> (ClaudeCodeProvider, MessageStream, tokio::io::DuplexStream) {
+        stream_with_canned_stdout_in_mode(canned_lines, GoslingMode::Approve).await
+    }
+
+    async fn stream_with_canned_stdout_in_mode(
+        canned_lines: &[&str],
+        mode: GoslingMode,
+    ) -> (ClaudeCodeProvider, MessageStream, tokio::io::DuplexStream) {
         let canned_stdout = canned_lines.join("\n");
         let (process, stdin_reader) = make_test_process(&canned_stdout);
         let provider = make_provider();
-        *provider.initial_mode.lock().await = Some(GoslingMode::Approve);
+        *provider.initial_mode.lock().await = Some(mode);
         let process_arc = Arc::new(tokio::sync::Mutex::new(process));
         provider.cli_process.set(process_arc).unwrap();
 
@@ -1608,6 +1616,33 @@ mod tests {
             .with_canonical_limits(CLAUDE_CODE_PROVIDER_NAME);
         let stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
         (provider, stream, stdin_reader)
+    }
+
+    #[tokio::test]
+    async fn auto_mode_allows_provider_native_tools_without_prompting() {
+        use futures::StreamExt;
+
+        let (provider, mut stream, stdin_reader) = stream_with_canned_stdout_in_mode(
+            &[
+                r#"{"type":"control_response","response":{"subtype":"success","request_id":"req_0"}}"#,
+                r#"{"type":"control_request","request_id":"perm_1","request":{"subtype":"can_use_tool","tool_name":"WebSearch","input":{"query":"rust"},"tool_use_id":"tu_1"}}"#,
+                r#"{"type":"result","result":"Done","usage":{"input_tokens":10,"output_tokens":5}}"#,
+            ],
+            GoslingMode::Auto,
+        )
+        .await;
+
+        while let Some(item) = stream.next().await {
+            item.unwrap();
+        }
+        drop(stream);
+
+        assert!(provider.pending_confirmations.lock().await.is_empty());
+        let stdin_str = capture_stdin(&provider, stdin_reader).await;
+        assert_eq!(
+            extract_permission_response(&stdin_str, "perm_1"),
+            json!({"behavior":"allow","updatedInput":{"query":"rust"},"toolUseID":"tu_1"})
+        );
     }
 
     async fn capture_stdin(

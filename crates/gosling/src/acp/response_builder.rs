@@ -276,9 +276,6 @@ pub(super) fn build_mode_state(
             agent_client_protocol::Error::internal_error() // impossible but satisfy linters
                 .data(format!("Failed to parse GoslingMode variant: {}", name))
         })?;
-        if executes_tools_outside_gosling && gosling_mode == GoslingMode::Auto {
-            continue;
-        }
         let mut mode = SessionMode::new(SessionModeId::new(name), name);
         mode.description = gosling_mode.get_message().map(Into::into);
         available.push(mode);
@@ -291,13 +288,9 @@ pub(super) fn build_mode_state(
 
 pub(super) fn compatible_mode(
     mode: GoslingMode,
-    executes_tools_outside_gosling: bool,
+    _executes_tools_outside_gosling: bool,
 ) -> GoslingMode {
-    if executes_tools_outside_gosling && mode == GoslingMode::Auto {
-        GoslingMode::Approve
-    } else {
-        mode
-    }
+    mode
 }
 
 pub(super) async fn build_session_setup_config(
@@ -584,17 +577,17 @@ mod tests {
     }
 
     #[test]
-    fn test_build_mode_state_normalizes_external_tool_provider_out_of_auto() {
+    fn test_build_mode_state_keeps_auto_for_external_tool_provider() {
         let mode_state = build_mode_state(GoslingMode::Auto, true).unwrap();
 
-        assert_eq!(mode_state.current_mode_id.0.as_ref(), "approve");
+        assert_eq!(mode_state.current_mode_id.0.as_ref(), "auto");
         assert_eq!(
             mode_state
                 .available_modes
                 .iter()
                 .map(|mode| mode.id.0.as_ref())
                 .collect::<Vec<_>>(),
-            vec!["smart_approve", "approve", "chat"]
+            vec!["auto", "smart_approve", "approve", "chat"]
         );
     }
 

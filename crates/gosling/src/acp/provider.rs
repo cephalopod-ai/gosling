@@ -1,8 +1,8 @@
 use agent_client_protocol::schema::v1::{
     ClientCapabilities, CloseSessionRequest, ContentBlock, ContentChunk, EnvVariable, HttpHeader,
     ImageContent, InitializeRequest, InitializeResponse, McpCapabilities, McpServer, McpServerHttp,
-    McpServerStdio, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionKind, PromptRequest,
+    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions, SessionId, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModeResponse, StopReason,
@@ -33,7 +33,8 @@ use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 
 use crate::acp::{map_permission_response, PermissionDecision};
-use crate::config::{ExtensionConfig, GoslingMode};
+use crate::config::permission::PermissionLevel;
+use crate::config::{ExtensionConfig, GoslingMode, PermissionManager};
 use crate::context_mgmt::format_message_for_compacting;
 use crate::conversation::message::{Message, MessageContent, TOOL_META_EXTERNAL_DISPATCH_KEY};
 use crate::permission::permission_confirmation::PrincipalType;
@@ -80,6 +81,7 @@ pub struct AcpProviderConfig {
     pub model_config_option_id: Option<String>,
     pub mode_mapping: HashMap<GoslingMode, String>,
     pub notification_callback: Option<Arc<dyn Fn(SessionNotification) + Send + Sync>>,
+    pub permission_manager: Arc<PermissionManager>,
 }
 
 enum ClientRequest {
@@ -159,6 +161,29 @@ struct HandoffContextClaim {
     include_context: bool,
 }
 
+fn reusable_permission_tool_name(request: &RequestPermissionRequest) -> Option<String> {
+    let offers_tool_wide_grant = request.options.iter().any(|option| {
+        option.kind == PermissionOptionKind::AllowAlways
+            && option.option_id.0.as_ref() != "allow_always_domain"
+    });
+    if !offers_tool_wide_grant {
+        return None;
+    }
+
+    request
+        .tool_call
+        .fields
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map(str::to_owned)
+}
+
+fn is_security_permission_request(request: &RequestPermissionRequest) -> bool {
+    request.tool_call.fields.content.is_some()
+}
+
 pub struct AcpProvider {
     name: String,
     gosling_mode: Arc<Mutex<GoslingMode>>,
@@ -168,6 +193,7 @@ pub struct AcpProvider {
 
     pending_confirmations:
         Arc<TokioMutex<HashMap<String, oneshot::Sender<PermissionConfirmation>>>>,
+    permission_manager: Arc<PermissionManager>,
     pending_tool_updates: Arc<Mutex<HashMap<String, AccumulatedToolCall>>>,
     handoff_context_sent: AtomicBool,
     /// Latest `size` reported by the ACP server in a `session/update` →
@@ -250,6 +276,7 @@ impl AcpProvider {
         let (tx, rx) = mpsc::channel(32);
         let (init_tx, init_rx) = oneshot::channel();
         let mode_mapping = config.mode_mapping.clone();
+        let permission_manager = Arc::clone(&config.permission_manager);
         let model_config_option_id = config.model_config_option_id.clone();
         let applied_model = config.model_config_option_id.as_ref().and_then(|id| {
             config
@@ -296,6 +323,7 @@ impl AcpProvider {
             mode_mapping,
             session,
             pending_confirmations: Arc::new(TokioMutex::new(HashMap::new())),
+            permission_manager,
             pending_tool_updates,
             handoff_context_sent: AtomicBool::new(false),
             context_size,
@@ -523,6 +551,8 @@ impl Provider for AcpProvider {
         };
 
         let pending_confirmations = self.pending_confirmations.clone();
+        let permission_manager = Arc::clone(&self.permission_manager);
+        let provider_name = self.name.clone();
         let gosling_mode = *self
             .gosling_mode
             .lock()
@@ -628,12 +658,37 @@ impl Provider for AcpProvider {
                     AcpUpdate::PermissionRequest { request, response_tx } => {
                         text_run = None;
                         thought_run = None;
-                        if let Some(decision) = permission_decision_from_mode(gosling_mode) {
+                        if let Some(decision) = permission_decision_from_mode(gosling_mode, &request) {
                             if decision.should_record_rejection() {
                                 rejected_tool_calls.insert(request.tool_call.tool_call_id.0.to_string());
                             }
                             let _ = response_tx.send(map_permission_response(&request, decision));
                             continue;
+                        }
+
+                        if let Some(tool_name) = reusable_permission_tool_name(&request) {
+                            match permission_manager
+                                .get_acp_provider_permission(&provider_name, &tool_name)
+                            {
+                                Some(PermissionLevel::AlwaysAllow) => {
+                                    let _ = response_tx.send(map_permission_response(
+                                        &request,
+                                        PermissionDecision::AllowAlways,
+                                    ));
+                                    continue;
+                                }
+                                Some(PermissionLevel::NeverAllow) => {
+                                    rejected_tool_calls.insert(
+                                        request.tool_call.tool_call_id.0.to_string(),
+                                    );
+                                    let _ = response_tx.send(map_permission_response(
+                                        &request,
+                                        PermissionDecision::RejectAlways,
+                                    ));
+                                    continue;
+                                }
+                                Some(PermissionLevel::AskBefore) | None => {}
+                            }
                         }
 
                         let request_id = request.tool_call.tool_call_id.0.to_string();
@@ -656,6 +711,28 @@ impl Provider for AcpProvider {
                         pending_confirmations.lock().await.remove(&request_id);
 
                         let decision = PermissionDecision::from(confirmation.permission);
+                        if let Some(tool_name) = reusable_permission_tool_name(&request) {
+                            let permission = match decision {
+                                PermissionDecision::AllowAlways => {
+                                    Some(PermissionLevel::AlwaysAllow)
+                                }
+                                PermissionDecision::RejectAlways => {
+                                    Some(PermissionLevel::NeverAllow)
+                                }
+                                _ => None,
+                            };
+                            if let Some(permission) = permission {
+                                permission_manager
+                                    .update_acp_provider_permission(
+                                        &provider_name,
+                                        &tool_name,
+                                        permission,
+                                    )
+                                    .map_err(|error| ProviderError::RequestFailed(format!(
+                                        "Failed to persist ACP tool permission: {error}"
+                                    )))?;
+                            }
+                        }
                         if decision.should_record_rejection() {
                             rejected_tool_calls.insert(request.tool_call.tool_call_id.0.to_string());
                         }
@@ -1615,11 +1692,16 @@ fn resolve_mode(
     }
 }
 
-fn permission_decision_from_mode(gosling_mode: GoslingMode) -> Option<PermissionDecision> {
+fn permission_decision_from_mode(
+    gosling_mode: GoslingMode,
+    request: &RequestPermissionRequest,
+) -> Option<PermissionDecision> {
     match gosling_mode {
-        GoslingMode::Auto => Some(PermissionDecision::RejectOnce),
         GoslingMode::Chat => Some(PermissionDecision::RejectOnce),
-        GoslingMode::Approve | GoslingMode::SmartApprove => None,
+        GoslingMode::Approve => None,
+        GoslingMode::Auto | GoslingMode::SmartApprove => {
+            (!is_security_permission_request(request)).then_some(PermissionDecision::AllowOnce)
+        }
     }
 }
 
@@ -1627,7 +1709,10 @@ fn permission_decision_from_mode(gosling_mode: GoslingMode) -> Option<Permission
 mod tests {
     use super::*;
     use crate::agents::extension::Envs;
-    use agent_client_protocol::schema::v1::SessionConfigSelectOption;
+    use agent_client_protocol::schema::v1::{
+        PermissionOption, SessionConfigSelectOption, ToolCallId, ToolCallUpdate,
+        ToolCallUpdateFields,
+    };
     use test_case::test_case;
 
     fn prompt_text(block: &ContentBlock) -> &str {
@@ -1635,6 +1720,95 @@ mod tests {
             ContentBlock::Text(text) => &text.text,
             _ => panic!("expected text block"),
         }
+    }
+
+    fn permission_request(title: &str, options: Vec<PermissionOption>) -> RequestPermissionRequest {
+        RequestPermissionRequest::new(
+            "test-session",
+            ToolCallUpdate::new(
+                ToolCallId::new("tool-call"),
+                ToolCallUpdateFields::new().title(title),
+            ),
+            options,
+        )
+    }
+
+    fn permission_option(id: &str, kind: PermissionOptionKind) -> PermissionOption {
+        PermissionOption::new(id.to_string(), id.to_string(), kind)
+    }
+
+    fn security_permission_request() -> RequestPermissionRequest {
+        RequestPermissionRequest::new(
+            "test-session",
+            ToolCallUpdate::new(
+                ToolCallId::new("tool-call"),
+                ToolCallUpdateFields::new()
+                    .title("Bash")
+                    .content(vec![ToolCallContent::Content(
+                        agent_client_protocol::schema::v1::Content::new(ContentBlock::Text(
+                            TextContent::new("Security inspector warning"),
+                        )),
+                    )]),
+            ),
+            vec![permission_option(
+                "allow_once",
+                PermissionOptionKind::AllowOnce,
+            )],
+        )
+    }
+
+    #[test]
+    fn always_allow_grant_survives_permission_manager_recreation() {
+        let temp = tempfile::tempdir().unwrap();
+        let bash = permission_request(
+            "Bash",
+            vec![permission_option(
+                "allow_always",
+                PermissionOptionKind::AllowAlways,
+            )],
+        );
+        let tool_name = reusable_permission_tool_name(&bash).unwrap();
+        let manager = PermissionManager::new(temp.path().to_path_buf());
+        manager
+            .update_acp_provider_permission("mac-control", &tool_name, PermissionLevel::AlwaysAllow)
+            .unwrap();
+
+        let reloaded = PermissionManager::new(temp.path().to_path_buf());
+        assert_eq!(
+            reloaded.get_acp_provider_permission("mac-control", "Bash"),
+            Some(PermissionLevel::AlwaysAllow)
+        );
+        assert_eq!(
+            reloaded.get_acp_provider_permission("mac-control", "Read"),
+            None
+        );
+        assert_eq!(
+            reloaded.get_acp_provider_permission("other-provider", "Bash"),
+            None
+        );
+    }
+
+    #[test]
+    fn one_shot_and_domain_decisions_do_not_create_reusable_tool_grants() {
+        let bash = permission_request(
+            "Bash",
+            vec![permission_option(
+                "allow_always",
+                PermissionOptionKind::AllowAlways,
+            )],
+        );
+        let domain_prompt = permission_request(
+            "Bash",
+            vec![permission_option(
+                "allow_always_domain",
+                PermissionOptionKind::AllowAlways,
+            )],
+        );
+        assert_eq!(
+            reusable_permission_tool_name(&bash),
+            Some("Bash".to_string())
+        );
+        assert_eq!(reusable_permission_tool_name(&domain_prompt), None);
     }
 
     fn test_provider() -> (AcpProvider, ModelConfig) {
@@ -1654,6 +1828,9 @@ mod tests {
                     response: NewSessionResponse::new("test-session"),
                 },
                 pending_confirmations: Arc::new(TokioMutex::new(HashMap::new())),
+                permission_manager: Arc::new(PermissionManager::new(
+                    tempfile::tempdir().unwrap().keep(),
+                )),
                 pending_tool_updates: Arc::new(Mutex::new(HashMap::new())),
                 handoff_context_sent: AtomicBool::new(false),
                 context_size: Arc::new(AtomicU64::new(0)),
@@ -1990,12 +2167,28 @@ mod tests {
         assert!(filtered.is_empty());
     }
 
-    #[test_case(GoslingMode::Auto => Some(PermissionDecision::RejectOnce) ; "auto rejects")]
+    #[test_case(GoslingMode::Auto => Some(PermissionDecision::AllowOnce) ; "auto allows ordinary request")]
     #[test_case(GoslingMode::Chat => Some(PermissionDecision::RejectOnce) ; "chat rejects")]
     #[test_case(GoslingMode::Approve => None ; "approve defers")]
-    #[test_case(GoslingMode::SmartApprove => None ; "smart_approve defers")]
+    #[test_case(GoslingMode::SmartApprove => Some(PermissionDecision::AllowOnce) ; "smart approve allows ordinary request")]
     fn test_permission_decision_from_mode(mode: GoslingMode) -> Option<PermissionDecision> {
-        permission_decision_from_mode(mode)
+        let request = permission_request(
+            "Bash",
+            vec![permission_option(
+                "allow_once",
+                PermissionOptionKind::AllowOnce,
+            )],
+        );
+        permission_decision_from_mode(mode, &request)
+    }
+
+    #[test_case(GoslingMode::Auto ; "auto")]
+    #[test_case(GoslingMode::SmartApprove ; "smart approve")]
+    fn security_permission_requests_still_require_operator(mode: GoslingMode) {
+        assert_eq!(
+            permission_decision_from_mode(mode, &security_permission_request()),
+            None
+        );
     }
 
     #[test_case(

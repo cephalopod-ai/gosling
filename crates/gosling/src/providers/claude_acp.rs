@@ -94,6 +94,7 @@ impl ProviderDef for ClaudeAcpProvider {
                 model_config_option_id: Some("model".to_string()),
                 mode_mapping,
                 notification_callback: None,
+                permission_manager: crate::config::PermissionManager::instance(),
             };
 
             let metadata = Self::metadata();

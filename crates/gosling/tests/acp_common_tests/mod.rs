@@ -15,7 +15,8 @@ use fixtures::{
 use fs_err as fs;
 use gosling::acp::server::AcpProviderFactory;
 use gosling::config::base::CONFIG_YAML_NAME;
-use gosling::config::{CodeExecutionRuntime, GoslingMode};
+use gosling::config::permission::PermissionLevel;
+use gosling::config::{CodeExecutionRuntime, GoslingMode, PermissionManager};
 use gosling_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
@@ -1089,61 +1090,73 @@ pub async fn run_permission_persistence<C: Connection>() {
         (
             PermissionDecision::AllowAlways,
             ToolCallStatus::Completed,
-            "user:\n  always_allow:\n  - mcp-fixture__get_code\n  ask_before: []\n  never_allow: []\n",
+            Some(PermissionLevel::AlwaysAllow),
         ),
-        (PermissionDecision::AllowOnce, ToolCallStatus::Completed, ""),
+        (
+            PermissionDecision::AllowOnce,
+            ToolCallStatus::Completed,
+            None,
+        ),
         (
             PermissionDecision::RejectAlways,
             ToolCallStatus::Failed,
-            "user:\n  always_allow: []\n  ask_before: []\n  never_allow:\n  - mcp-fixture__get_code\n",
+            Some(PermissionLevel::NeverAllow),
         ),
-        (PermissionDecision::RejectOnce, ToolCallStatus::Failed, ""),
-        (PermissionDecision::Cancel, ToolCallStatus::Failed, ""),
+        (PermissionDecision::RejectOnce, ToolCallStatus::Failed, None),
+        (PermissionDecision::Cancel, ToolCallStatus::Failed, None),
     ];
 
-    let temp_dir = tempfile::tempdir().unwrap();
     let prompt = "Use the get_code tool and output only its result.";
     let expected_session_id = C::expected_session_id();
     let mcp = McpFixture::new(expected_session_id.clone()).await;
-    let openai = OpenAiFixture::new(
-        vec![
-            (
-                prompt.to_string(),
-                include_str!("../acp_test_data/openai_tool_call.txt"),
-            ),
-            (
-                format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../acp_test_data/openai_tool_result.txt"),
-            ),
-        ],
-        expected_session_id.clone(),
-    )
-    .await;
 
-    let config = TestConnectionConfig {
-        mcp_servers: vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url))],
-        gosling_mode: GoslingMode::Approve,
-        data_root: temp_dir.path().to_path_buf(),
-        ..Default::default()
-    };
-
-    let mut conn = C::new(config, openai).await;
-    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
-    expected_session_id.set(&session.session_id().0);
-
-    for (decision, expected_status, expected_yaml) in cases {
-        conn.reset_openai();
-        conn.reset_permissions();
-        let _ = fs::remove_file(temp_dir.path().join("permission.yaml"));
+    for (decision, expected_status, expected_permission) in cases {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let openai = OpenAiFixture::new(
+            vec![
+                (
+                    prompt.to_string(),
+                    include_str!("../acp_test_data/openai_tool_call.txt"),
+                ),
+                (
+                    format!(r#""content":"{FAKE_CODE}""#),
+                    include_str!("../acp_test_data/openai_tool_result.txt"),
+                ),
+            ],
+            expected_session_id.clone(),
+        )
+        .await;
+        let config = TestConnectionConfig {
+            mcp_servers: vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url))],
+            gosling_mode: GoslingMode::Approve,
+            data_root: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let mut conn = C::new(config, openai).await;
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
         let output = session.prompt(prompt, decision).await.unwrap();
 
-        assert_eq!(output.tool_status.unwrap(), expected_status);
         assert_eq!(
-            fs::read_to_string(temp_dir.path().join("permission.yaml")).unwrap_or_default(),
-            expected_yaml,
+            output.tool_status.unwrap(),
+            expected_status,
+            "permission decision {decision:?}"
         );
+        let reloaded_permissions = PermissionManager::new(temp_dir.path().to_path_buf());
+        assert_eq!(
+            reloaded_permissions.get_user_permission("mcp-fixture__get_code"),
+            expected_permission,
+            "native permission decision {decision:?}",
+        );
+        assert_eq!(
+            reloaded_permissions.get_acp_provider_permission("acp-test", "mcp-fixture: get code"),
+            C::wraps_acp_provider()
+                .then_some(expected_permission)
+                .flatten(),
+            "ACP provider permission decision {decision:?}",
+        );
+        expected_session_id.assert_matches(&session.session_id().0);
     }
-    expected_session_id.assert_matches(&session.session_id().0);
 }
 
 pub async fn run_prompt_basic<C: Connection>() {

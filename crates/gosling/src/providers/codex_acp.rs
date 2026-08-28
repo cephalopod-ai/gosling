@@ -106,6 +106,7 @@ impl ProviderDef for CodexAcpProvider {
                 model_config_option_id: None,
                 mode_mapping,
                 notification_callback: None,
+                permission_manager: crate::config::PermissionManager::instance(),
             };
 
             let metadata = Self::metadata();
