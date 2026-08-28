@@ -6,7 +6,7 @@ Status: implemented and locally validated; exact-revision CI and packaged lifecy
 ## Context
 
 The generic shell needs reusable reference material that is not necessarily inside its selected
-working directory: an operator-selected PDF, pasted text, or a pasted image. Giving the renderer a
+working directory: an operator-selected document, text/data file, or image. Giving the renderer a
 path or a generic filesystem bridge would violate ADR-0011 and ADR-0014. Treating these inputs as
 Outputs would also violate ADR-0013 because Outputs are descriptive metadata and grant no read
 authority.
@@ -25,14 +25,19 @@ selected path directly to the authenticated Rust method. Pasted text and images 
 bounded typed operations. Safe list responses never contain a source path or stored payload.
 
 Prompt submission carries at most 16 opaque library IDs. Main asks Rust to resolve only those IDs
-for the active session. Stored or linked images become standard ACP image blocks. Text files and
-pasted text become labeled ACP text blocks. Linked-file suffixes select an expected supported type,
-but Rust verifies image/PDF signatures, parses JSON, and requires valid non-binary UTF-8 text both
-when linking and when resolving. A replaced file whose content no longer matches its recorded type
-cannot be attached.
+for the active session. Stored or linked images become standard ACP image blocks. Text files,
+office documents, and pasted text become labeled ACP text blocks. Linked-file suffixes select an
+expected supported type, but Rust verifies image/PDF/PostScript signatures, parses JSON and
+newline-delimited JSON, validates Office containers, and requires valid non-binary UTF-8 or
+BOM-marked UTF-16 text both when linking and when resolving. A replaced file whose content no
+longer matches its recorded type cannot be attached.
 
-PDF text extraction occurs in Rust through `lopdf`. Input bytes are bounded before parsing; object
-and page counts are checked before text extraction; pages are extracted incrementally and stop at
+PDF text extraction occurs in Rust through `lopdf`. Microsoft Word, Excel, and PowerPoint files in
+legacy and Open XML forms are parsed through `office_oxide`; Open XML archives also have entry-count
+and expanded-byte ceilings. BMP, TIFF, ICO, TGA, and portable anymap inputs are decoded with
+dimension/allocation bounds and normalized to PNG for provider compatibility. Files with uncommon
+suffixes are accepted only when their bytes safely decode as text. Input bytes are bounded before
+parsing; PDF object and page counts are checked before text extraction; all extracted text stops at
 the resolved-text budget. Linked files remain in place and resolve on demand; a missing file is
 visible as `missing` and cannot be attached.
 
@@ -66,4 +71,7 @@ listing and resolution;
 ## Dependency record
 
 `lopdf` 0.42 is added to the `gosling` crate with default features disabled for bounded local PDF
-text extraction. The dependency already existed elsewhere in the workspace.
+text extraction. `office_oxide` 0.1.8 supplies pure-Rust DOC/DOCX, XLS/XLSX, and PPT/PPTX parsing.
+The existing `image` dependency enables BMP, TIFF, ICO, TGA, and portable anymap decoding in
+addition to PNG, JPEG, GIF, and WebP. `lopdf` and `image` already existed elsewhere in the
+workspace.

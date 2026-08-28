@@ -187,10 +187,12 @@ pctx_code_mode = { version = "0.3", default-features = false, optional = true }
 # They are just here to pin the version, and can be removed if PCTX updates temporal_rs
 icu_calendar = { version = "=2.1.1", default-features = false }
 icu_locale = { version = "=2.1.1", default-features = false }
-image = { version = "0.24.9", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+image = { version = "0.24.9", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "pnm", "tga"] }
 subtle = { version = "2.5", default-features = false, features = ["std"] }
 gethostname = "1.1.0"
 lopdf = { version = "0.42", default-features = false }
+office_oxide = "0.1.8"
+zip.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

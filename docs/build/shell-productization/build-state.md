@@ -23,7 +23,7 @@ startup/recovery/stop/relaunch/coexistence now passes locally; SHP-DEF-053 remai
 validated only for the unauthorized remote step. Named shells remain blocked until M5.**
 
 Latest local extension: ADR-0015 adds a Rust-owned, project/session-scoped input Library for linked
-PDF/text/image files and pasted text/images. Native selection remains main-owned, renderer list
+Office/PDF/PostScript/text/data/image files and pasted text/images. Native selection remains main-owned, renderer list
 responses contain only opaque safe metadata, and prompt resolution is active-session and
 declaration gated. Local Rust, generated-schema, Desktop, and consumer validation is recorded in
 `docs/logs/session/2026-08-18-default-shell-library.md`; this does not close the exact-revision gate.

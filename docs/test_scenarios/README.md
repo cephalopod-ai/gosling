@@ -155,7 +155,7 @@ technical help) · **Medium** (secondary workflow fails, unclear errors,
 stuck UI, non-persisting settings) · **Low** (confusing label, glitch,
 awkward navigation) · **Note** (observation or product question).
 
-## Files (118 scenarios)
+## Files (119 scenarios)
 
 | File | Surface | Cards | Core question |
 |---|---|---|---|
@@ -178,7 +178,7 @@ awkward navigation) · **Note** (observation or product question).
 | [`17-acp-server-and-protocol.md`](17-acp-server-and-protocol.md) | auth, origins, TLS, framing, cancellation | AP-01–10 | Are ACP transports secure, bounded, and interoperable? |
 | [`18-state-extension-and-permission-depth.md`](18-state-extension-and-permission-depth.md) | state integrity, migrations, MCP, plugins, approvals | SI-01–10 | Do cross-cutting state and safety boundaries hold under change? |
 | [`19-deep-research.md`](19-deep-research.md) | zero-input research, reports, delegate fail-fast | DR-01–02 | Does Deep Research respect an empty Initial Inputs boundary and stop invalid delegation churn? |
-| [`20-deep-research-regressions.md`](20-deep-research-regressions.md) | ACP persistence, mode compatibility, delegation, long inputs, extension failures | DR-03–08 | Do the known Deep Research failure modes remain repaired under exact replay? |
+| [`20-deep-research-regressions.md`](20-deep-research-regressions.md) | ACP persistence, mode compatibility, delegation, long inputs, extension failures, file compatibility | DR-03–09 | Do the known Deep Research failure modes remain repaired under exact replay? |
 
 ### Suggested pass shapes
 
@@ -189,7 +189,7 @@ awkward navigation) · **Note** (observation or product question).
 | Resilience | 04, 07, 11 | Model honesty, session portability, headless/serve |
 | Deep Research | 19 → 20 | Prompt-only scope, report routing, and known-failure regression replay |
 | Stress | 12 (after green smoke) | Concurrency, bloat, restart-under-load, env seams |
-| Full library | 01 → 20 numeric order | Release or major-regression playtest (**118 cards**) |
+| Full library | 01 → 20 numeric order | Release or major-regression playtest (**119 cards**) |
 
 ## Required coverage checklist
 
@@ -343,3 +343,4 @@ scenario (or an explicit not-applicable/blocked note):
 | DR-06 | 20 | External-provider delegate runs bounded and tool-disabled |
 | DR-07 | 20 | Initial Inputs contain long and multiline content |
 | DR-08 | 20 | Invalid extension parameters fail once with diagnosable feedback |
+| DR-09 | 20 | Initial Inputs accept traditional document and image formats |

@@ -32,7 +32,8 @@ load developer tools by default and cannot edit global Gosling settings.
 The implemented shell also has a declaration-gated input Library. Operators can link a supported
 file through a main-owned native chooser or paste bounded text/image content, choose project or
 session scope, and attach up to 16 opaque references to a prompt. Rust owns storage, scope checks,
-PDF extraction, and content resolution. The renderer never receives a linked path.
+bounded PDF and Office extraction, image normalization, and content resolution. The renderer never
+receives a linked path.
 
 This document is the implementation plan for everything that must be true before its GUI is built.
 DAWES, math, Physics/CST, and all other named shells remain outside the milestone.
@@ -72,7 +73,8 @@ Required capabilities:
 
 Optional, declaration-gated capabilities:
 
-- project/session reference library for linked PDF/text/image files and pasted text/images,
+- project/session reference library for linked Office/PDF/PostScript/text/data/image files and
+  pasted text/images,
   resolved only into selected prompt content;
 - selected Gosling extensions and skills;
 - one or more supervised domain/backend adapters through versioned descriptors;

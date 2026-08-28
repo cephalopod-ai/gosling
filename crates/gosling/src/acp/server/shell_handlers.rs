@@ -1,6 +1,9 @@
+use super::shell_library_formats::{
+    bytes_match_mime, is_raster_image_mime, linked_file_mime_type, resolve_linked_file,
+    LinkedFileContent,
+};
 use super::*;
 use base64::Engine as _;
-use std::io::Read as _;
 
 const SHELL_CREDENTIAL_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const SHELL_ARTIFACT_LIMIT: usize = 100;
@@ -371,9 +374,9 @@ impl GoslingAcpAgent {
         if !metadata.is_file() || metadata.len() == 0 || metadata.len() > SHELL_LIBRARY_FILE_LIMIT {
             return Err(shell_library_invalid("SHELL_LIBRARY_FILE_INVALID"));
         }
-        let mime_type = shell_library_file_mime_type(&path)
+        let mime_type = linked_file_mime_type(&path)
             .ok_or_else(|| shell_library_invalid("SHELL_LIBRARY_FILE_TYPE_INVALID"))?;
-        if mime_type.starts_with("image/") && metadata.len() > SHELL_LIBRARY_IMAGE_LIMIT as u64 {
+        if is_raster_image_mime(mime_type) && metadata.len() > SHELL_LIBRARY_IMAGE_LIMIT as u64 {
             return Err(shell_library_invalid("SHELL_LIBRARY_FILE_INVALID"));
         }
         let name = path
@@ -580,46 +583,6 @@ fn shell_library_summary(item: SessionLibraryItem) -> ShellLibraryItemSummary {
     }
 }
 
-fn shell_library_file_mime_type(path: &std::path::Path) -> Option<&'static str> {
-    let extension_mime = match path
-        .extension()
-        .and_then(|value| value.to_str())?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "pdf" => Some("application/pdf"),
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "webp" => Some("image/webp"),
-        "gif" => Some("image/gif"),
-        "json" => Some("application/json"),
-        "csv" => Some("text/csv"),
-        "tsv" => Some("text/tab-separated-values"),
-        "md" => Some("text/markdown"),
-        "txt" | "rs" | "js" | "jsx" | "ts" | "tsx" | "py" | "go" | "java" | "c" | "h" | "cpp"
-        | "hpp" | "swift" | "kt" | "rb" | "sh" | "css" | "html" | "sql" | "toml" | "yaml"
-        | "yml" | "xml" => Some("text/plain"),
-        _ => None,
-    }?;
-    let bytes = fs::read(path).ok()?;
-    bytes_match_mime(&bytes, extension_mime).then_some(extension_mime)
-}
-
-fn bytes_match_mime(bytes: &[u8], mime_type: &str) -> bool {
-    match mime_type {
-        "application/pdf" => bytes.starts_with(b"%PDF-"),
-        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
-        "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
-        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
-        "image/webp" => bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP",
-        "application/json" => serde_json::from_slice::<serde_json::Value>(bytes).is_ok(),
-        mime if mime.starts_with("text/") => {
-            !bytes.contains(&0) && std::str::from_utf8(bytes).is_ok()
-        }
-        _ => false,
-    }
-}
-
 struct ResolvedShellLibraryContent {
     content: ShellLibraryResolvedContent,
     text_bytes: usize,
@@ -674,79 +637,43 @@ fn resolve_shell_library_file(item: &SessionLibraryItem) -> Result<ResolvedShell
         metadata.is_file() && metadata.len() > 0 && metadata.len() <= SHELL_LIBRARY_FILE_LIMIT,
         "linked file is unavailable"
     );
-    let detected_mime = shell_library_file_mime_type(std::path::Path::new(path))
+    let detected_mime = linked_file_mime_type(std::path::Path::new(path))
         .ok_or_else(|| anyhow::anyhow!("linked file type is invalid"))?;
     anyhow::ensure!(detected_mime == item.mime_type, "linked file type changed");
-    if item.mime_type.starts_with("image/") {
-        let bytes = fs::read(path)?;
-        anyhow::ensure!(
-            bytes.len() <= SHELL_LIBRARY_IMAGE_LIMIT,
-            "image is too large"
-        );
-        let image_bytes = bytes.len();
-        return Ok(ResolvedShellLibraryContent {
-            content: ShellLibraryResolvedContent::Image {
-                data: base64::engine::general_purpose::STANDARD.encode(bytes),
-                mime_type: item.mime_type.clone(),
-            },
-            text_bytes: 0,
-            image_bytes,
-        });
-    }
-    let text = if item.mime_type == "application/pdf" {
-        extract_bounded_pdf_text(std::path::Path::new(path))?
-    } else {
-        let mut file = fs::File::open(path)?;
-        let mut bytes = Vec::new();
-        file.by_ref()
-            .take((SHELL_LIBRARY_PROMPT_TEXT_LIMIT + 1) as u64)
-            .read_to_end(&mut bytes)?;
-        String::from_utf8(bytes)?
-    };
-    let text = truncate_library_text(text);
-    let text_bytes = text.len().min(SHELL_LIBRARY_PROMPT_TEXT_LIMIT);
-    Ok(ResolvedShellLibraryContent {
-        content: ShellLibraryResolvedContent::Text {
-            text: wrap_library_text(&item.name, &text),
-        },
-        text_bytes,
-        image_bytes: 0,
-    })
-}
-
-fn extract_bounded_pdf_text(path: &std::path::Path) -> Result<String> {
-    let document = lopdf::Document::load(path)?;
-    let pages = document.get_pages();
-    ensure_pdf_complexity(document.objects.len(), pages.len())?;
-
-    let mut text = String::new();
-    for page in pages.keys().copied() {
-        let page_text = document.extract_text(&[page])?;
-        if text.len().saturating_add(page_text.len()) > SHELL_LIBRARY_PROMPT_TEXT_LIMIT {
-            let remaining = SHELL_LIBRARY_PROMPT_TEXT_LIMIT.saturating_sub(text.len());
-            let mut boundary = remaining.min(page_text.len());
-            while !page_text.is_char_boundary(boundary) {
-                boundary -= 1;
-            }
-            text.push_str(page_text.get(..boundary).unwrap_or_default());
-            text.push_str("\n[Content truncated]");
-            break;
+    match resolve_linked_file(
+        std::path::Path::new(path),
+        &item.mime_type,
+        SHELL_LIBRARY_PROMPT_TEXT_LIMIT,
+        SHELL_LIBRARY_PDF_PAGE_LIMIT,
+        SHELL_LIBRARY_PDF_OBJECT_LIMIT,
+    )? {
+        LinkedFileContent::Text(text) => {
+            let text = truncate_library_text(text);
+            let text_bytes = text.len().min(SHELL_LIBRARY_PROMPT_TEXT_LIMIT);
+            Ok(ResolvedShellLibraryContent {
+                content: ShellLibraryResolvedContent::Text {
+                    text: wrap_library_text(&item.name, &text),
+                },
+                text_bytes,
+                image_bytes: 0,
+            })
         }
-        text.push_str(&page_text);
+        LinkedFileContent::Image { bytes, mime_type } => {
+            anyhow::ensure!(
+                bytes.len() <= SHELL_LIBRARY_PROMPT_IMAGE_LIMIT,
+                "resolved image is too large"
+            );
+            let image_bytes = bytes.len();
+            Ok(ResolvedShellLibraryContent {
+                content: ShellLibraryResolvedContent::Image {
+                    data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                    mime_type: mime_type.to_string(),
+                },
+                text_bytes: 0,
+                image_bytes,
+            })
+        }
     }
-    Ok(text)
-}
-
-fn ensure_pdf_complexity(object_count: usize, page_count: usize) -> Result<()> {
-    anyhow::ensure!(
-        object_count <= SHELL_LIBRARY_PDF_OBJECT_LIMIT,
-        "PDF has too many objects"
-    );
-    anyhow::ensure!(
-        page_count <= SHELL_LIBRARY_PDF_PAGE_LIMIT,
-        "PDF has too many pages"
-    );
-    Ok(())
 }
 
 fn truncate_library_text(mut text: String) -> String {
@@ -937,29 +864,12 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let disguised_pdf = root.path().join("report.pdf");
         fs::write(&disguised_pdf, "not a PDF").unwrap();
-        assert_eq!(shell_library_file_mime_type(&disguised_pdf), None);
+        assert_eq!(linked_file_mime_type(&disguised_pdf), None);
 
         let json = root.path().join("evidence.json");
         fs::write(&json, br#"{"verified":true}"#).unwrap();
-        assert_eq!(
-            shell_library_file_mime_type(&json),
-            Some("application/json")
-        );
+        assert_eq!(linked_file_mime_type(&json), Some("application/json"));
         fs::write(&json, "{not valid json}").unwrap();
-        assert_eq!(shell_library_file_mime_type(&json), None);
-    }
-
-    #[test]
-    fn rejects_pdf_complexity_before_extraction() {
-        ensure_pdf_complexity(SHELL_LIBRARY_PDF_OBJECT_LIMIT, SHELL_LIBRARY_PDF_PAGE_LIMIT)
-            .unwrap();
-        assert!(ensure_pdf_complexity(SHELL_LIBRARY_PDF_OBJECT_LIMIT + 1, 1)
-            .unwrap_err()
-            .to_string()
-            .contains("too many objects"));
-        assert!(ensure_pdf_complexity(1, SHELL_LIBRARY_PDF_PAGE_LIMIT + 1)
-            .unwrap_err()
-            .to_string()
-            .contains("too many pages"));
+        assert_eq!(linked_file_mime_type(&json), None);
     }
 }

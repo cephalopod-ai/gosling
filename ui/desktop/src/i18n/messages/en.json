@@ -2148,7 +2148,7 @@
     "defaultMessage": "Done"
   },
   "researchInitialInputs.fileHelp": {
-    "defaultMessage": "Files up to 20 MB each; images up to 5 MB each and 10 MB total. Pasted text is limited to 256 KB each and 512 KB total."
+    "defaultMessage": "Accepts Office documents, PDF/PostScript, text and data files, and common images. Files up to 20 MB each; images up to 5 MB each and 10 MB total."
   },
   "researchInitialInputs.filePicker": {
     "defaultMessage": "Choose initial research files"

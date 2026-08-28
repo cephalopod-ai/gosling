@@ -9,6 +9,7 @@ import {
   MAX_RESEARCH_INITIAL_TEXT_BYTES,
   MAX_RESEARCH_INITIAL_TOTAL_IMAGE_BYTES,
   MAX_RESEARCH_INITIAL_TOTAL_TEXT_BYTES,
+  RESEARCH_INITIAL_FILE_ACCEPT,
   researchInitialInputCount,
   researchInitialTextBytes,
   type ResearchInitialInputFile,
@@ -24,23 +25,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-
-const supportedFileTypes = [
-  '.pdf',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.webp',
-  '.gif',
-  '.txt',
-  '.md',
-  '.csv',
-  '.tsv',
-  '.json',
-  '.yaml',
-  '.yml',
-  '.xml',
-].join(',');
 
 const i18n = defineMessages({
   button: { id: 'researchInitialInputs.button', defaultMessage: 'Initial Inputs' },
@@ -84,7 +68,7 @@ const i18n = defineMessages({
   fileHelp: {
     id: 'researchInitialInputs.fileHelp',
     defaultMessage:
-      'Files up to 20 MB each; images up to 5 MB each and 10 MB total. Pasted text is limited to 256 KB each and 512 KB total.',
+      'Accepts Office documents, PDF/PostScript, text and data files, and common images. Files up to 20 MB each; images up to 5 MB each and 10 MB total.',
   },
   removeFile: {
     id: 'researchInitialInputs.removeFile',
@@ -362,7 +346,7 @@ export function ResearchInitialInputsDialog({
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept={supportedFileTypes}
+                accept={RESEARCH_INITIAL_FILE_ACCEPT}
                 aria-label={intl.formatMessage(i18n.filePicker)}
                 className="hidden"
                 onChange={handleFilesSelected}

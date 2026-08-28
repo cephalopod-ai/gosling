@@ -1,6 +1,7 @@
 import type { BrowserWindowConstructorOptions } from 'electron';
 import path from 'node:path';
 import { createMinimalShellWindowOptions } from '../shellHost';
+import { RESEARCH_INITIAL_SUPPORTED_EXTENSIONS } from '../types/sessionExperience';
 import { applyShellAppIdentity, type ShellAppIdentityAdapter } from './appIdentity';
 import {
   buildShellDiagnostics,
@@ -341,25 +342,9 @@ export async function bootstrapShell(adapter: ShellBootstrapAdapter): Promise<Sh
           filters: [
             {
               name: 'Supported files',
-              extensions: [
-                'pdf',
-                'png',
-                'jpg',
-                'jpeg',
-                'webp',
-                'gif',
-                'txt',
-                'md',
-                'csv',
-                'tsv',
-                'json',
-                'rs',
-                'js',
-                'ts',
-                'tsx',
-                'py',
-              ],
+              extensions: [...RESEARCH_INITIAL_SUPPORTED_EXTENSIONS],
             },
+            { name: 'All files', extensions: ['*'] },
           ],
         });
         assertActiveLibrarySession(request.generation, request.sessionId);

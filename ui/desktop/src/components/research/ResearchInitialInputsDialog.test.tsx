@@ -5,6 +5,18 @@ import { IntlTestWrapper } from '../../i18n/test-utils';
 import { ResearchInitialInputsDialog } from './ResearchInitialInputsDialog';
 
 describe('ResearchInitialInputsDialog', () => {
+  it('offers traditional office, text, data, PostScript, and image files', async () => {
+    const user = userEvent.setup();
+    render(<ResearchInitialInputsDialog value={{ texts: [], files: [] }} onApply={vi.fn()} />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    await user.click(screen.getByRole('button', { name: /Initial Inputs/ }));
+    const picker = screen.getByLabelText('Choose initial research files');
+    expect(picker).toHaveAttribute('accept', '*/*');
+    expect(screen.getByText(/accepts office documents, pdf\/postscript/i)).toBeInTheDocument();
+  });
+
   it('keeps multiline and unbroken pasted text inside the dialog', async () => {
     const user = userEvent.setup();
     const longInput = `# Research report\n\n- First finding\n\nhttps://${'evidence'.repeat(80)}`;

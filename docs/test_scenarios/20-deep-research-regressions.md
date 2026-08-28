@@ -81,3 +81,16 @@ check. Preserve the exact payloads and visible status text as evidence.
 - Expected: the invalid call produces one actionable error that identifies the parameter contract; the lead does not repeat the identical rejected payload; Activity distinguishes the failed call from successful calls; the run terminates or recovers within the normal deadline.
 - Observe: six or more identical failed cards, generic labels that expose only parameter names, hidden failures under a success summary, or unbounded retry/token growth.
 - Variations: omit one required field; include one unknown field; make a corrected second call and verify it succeeds exactly once.
+
+### DR-09 — Initial Inputs accept traditional document and image formats
+- Goal: begin Deep Research from common office documents, PDFs/PostScript, structured text, and raster images without silently dropping or misclassifying them.
+- Category: files / compatibility / security boundary
+- Preconditions: disposable root; deterministic provider that echoes labeled input names and distinctive extracted text; Initial Inputs dialog; valid DOC/DOCX, XLS/XLSX, PPT/PPTX, PDF, PS, JSON, JSONL, JPG, GIF, BMP, and TIFF fixtures plus mismatched-suffix fixtures.
+- Steps:
+  1. Open New Research and confirm each fixture family is selectable in Initial Inputs.
+  2. Attach one valid fixture from each family within the documented item and aggregate limits.
+  3. Start research and record the resolved labeled text blocks and image blocks received by the deterministic provider.
+  4. Repeat with a malformed office archive, a TIFF renamed to DOCX, invalid JSONL, and an oversized/decompression-heavy image.
+- Expected: office, PDF/PostScript, and text/data content arrives as bounded labeled text; BMP/TIFF arrive as bounded PNG image blocks; already provider-compatible raster formats retain a valid image MIME; malformed, mismatched, oversized, or over-complex files fail once with a visible unavailable/type/size error; linked paths are never exposed to the renderer or provider.
+- Observe: picker omissions, suffix-only trust, binary office bytes passed as text, TIFF provider rejection, unbounded archive/image expansion, partial session creation, or repeated retries.
+- Variations: BOM-marked UTF-16 text; mixed-case suffixes; replace a linked file after selection; exactly 16 items at each aggregate byte boundary.

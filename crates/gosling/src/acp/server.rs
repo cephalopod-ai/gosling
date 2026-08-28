@@ -114,6 +114,7 @@ mod providers;
 mod research_completion;
 mod resources;
 mod shell_handlers;
+mod shell_library_formats;
 mod slash_commands;
 mod sources;
 mod tool_notifications;
