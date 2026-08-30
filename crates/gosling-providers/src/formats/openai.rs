@@ -648,42 +648,56 @@ pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
 /// OpenAI-compatible `function.parameters` field requires.
 ///
 /// MCP lets a tool declare any JSON Schema at the root, including an
-/// `anyOf`/`oneOf` union. Several OpenAI-compatible backends reject that
-/// outright -- xAI answers `400 ... tool parameter root must be an object type
-/// (root schema is an anyOf/oneOf union with a non-object branch)` -- and the
-/// failure surfaces to the operator as an unusable tool rather than a
-/// provider-compatibility problem. The schema was previously forwarded
+/// `anyOf`/`oneOf` union -- and a discriminated union keeps `"type": "object"`
+/// at the root alongside that union. Several OpenAI-compatible backends reject
+/// either shape outright -- xAI answers `400 ... tool parameter root must be an
+/// object type (root schema is an anyOf/oneOf union with a non-object branch)`
+/// -- and the failure surfaces to the operator as an unusable tool rather than
+/// a provider-compatibility problem. The schema was previously forwarded
 /// verbatim, so a single such tool broke every request for the whole session.
 ///
-/// Object branches are preserved by merging their `properties`; a union with
-/// no object branch degrades to a permissive object so the tool stays
-/// callable. Validation strictness is lost in that last case, but the backend
-/// still validates the call and the model still sees the parameter names.
+/// Union branches are flattened into the root: `$ref` branches are resolved
+/// against `$defs`/`definitions`, object branches contribute their
+/// `properties`, and a discriminator property's per-branch `const` values are
+/// widened into a required `enum` so every operation stays visible to the
+/// model and a call still names the one it wants. A
+/// union with no object branch degrades to a permissive object so the tool
+/// stays callable. Validation strictness is lost in that last case, but the
+/// backend still validates the call and the model still sees the parameter
+/// names.
 pub(crate) fn object_rooted_parameters(input_schema: &JsonObject) -> Value {
     if input_schema.is_empty() {
         return json!({ "type": "object", "properties": {} });
     }
 
-    let is_object_root = input_schema.get("type").and_then(Value::as_str) == Some("object")
-        || input_schema.contains_key("properties");
-    if is_object_root {
-        return Value::Object(input_schema.clone());
-    }
+    let union = ["anyOf", "oneOf", "allOf"].into_iter().find_map(|key| {
+        input_schema
+            .get(key)
+            .and_then(Value::as_array)
+            .map(|branches| (key, branches))
+    });
 
-    let union_branches = ["anyOf", "oneOf", "allOf"]
-        .iter()
-        .find_map(|key| input_schema.get(*key).and_then(Value::as_array));
-
-    let Some(branches) = union_branches else {
+    let Some((union_key, branches)) = union else {
+        let is_object_root = input_schema.get("type").and_then(Value::as_str) == Some("object")
+            || input_schema.contains_key("properties");
         // Some other non-object root (a bare "type": "string", say). Nothing
         // to preserve; keep the tool callable.
-        return json!({ "type": "object", "properties": {} });
+        return if is_object_root {
+            Value::Object(input_schema.clone())
+        } else {
+            json!({ "type": "object", "properties": {} })
+        };
     };
 
-    let mut merged_properties = serde_json::Map::new();
-    let mut required: Vec<Value> = Vec::new();
+    let mut merged_properties = input_schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut branch_required: Vec<Vec<Value>> = Vec::new();
+
     for branch in branches {
-        let Some(branch): Option<&serde_json::Map<String, Value>> = branch.as_object() else {
+        let Some(branch) = resolve_local_ref(input_schema, branch) else {
             continue;
         };
         if branch.get("type").and_then(Value::as_str) != Some("object")
@@ -693,43 +707,122 @@ pub(crate) fn object_rooted_parameters(input_schema: &JsonObject) -> Value {
         }
         if let Some(properties) = branch.get("properties").and_then(Value::as_object) {
             for (name, schema) in properties {
-                merged_properties
-                    .entry(name.clone())
-                    .or_insert_with(|| schema.clone());
+                match merged_properties.get_mut(name) {
+                    Some(existing) => widen_const_into_enum(existing, schema),
+                    None => {
+                        merged_properties.insert(name.clone(), schema.clone());
+                    }
+                }
             }
         }
-        // A field is only required if every object branch requires it;
-        // collected here and intersected below.
-        required.push(branch.get("required").cloned().unwrap_or(json!([])));
+        branch_required.push(
+            branch
+                .get("required")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+        );
     }
 
-    let common_required: Vec<Value> = match required.split_first() {
-        Some((first, rest)) => first
-            .as_array()
-            .map(|first| {
-                first
-                    .iter()
-                    .filter(|name| {
-                        rest.iter()
-                            .all(|other| other.as_array().is_some_and(|other| other.contains(name)))
-                    })
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default(),
-        None => Vec::new(),
+    let from_branches: Vec<Value> = if union_key == "allOf" {
+        // Every `allOf` branch has to be satisfied, so their requirements add up.
+        branch_required.into_iter().flatten().collect()
+    } else {
+        // Only one `anyOf`/`oneOf` branch has to match, so a field is required
+        // for the merged schema only when every branch requires it.
+        match branch_required.split_first() {
+            Some((first, rest)) => first
+                .iter()
+                .filter(|name| rest.iter().all(|other| other.contains(*name)))
+                .cloned()
+                .collect(),
+            None => Vec::new(),
+        }
     };
 
-    let mut normalized = serde_json::Map::new();
+    let mut required: Vec<Value> = input_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for name in from_branches {
+        if !required.contains(&name) {
+            required.push(name);
+        }
+    }
+
+    // Dropping the discriminator leaves nothing telling the model it has to
+    // pick a branch, and the tool can't dispatch a call that omits the tag.
+    if let Some(tag) = input_schema
+        .get("discriminator")
+        .and_then(|discriminator| discriminator.get("propertyName"))
+        .and_then(Value::as_str)
+    {
+        if merged_properties.contains_key(tag) && !required.contains(&json!(tag)) {
+            required.push(json!(tag));
+        }
+    }
+
+    let mut normalized = input_schema.clone();
+    for key in ["anyOf", "oneOf", "allOf", "discriminator"] {
+        normalized.remove(key);
+    }
     normalized.insert("type".to_string(), json!("object"));
     normalized.insert("properties".to_string(), Value::Object(merged_properties));
-    if !common_required.is_empty() {
-        normalized.insert("required".to_string(), Value::Array(common_required));
-    }
-    if let Some(description) = input_schema.get("description") {
-        normalized.insert("description".to_string(), description.clone());
+    if required.is_empty() {
+        normalized.remove("required");
+    } else {
+        normalized.insert("required".to_string(), Value::Array(required));
     }
     Value::Object(normalized)
+}
+
+/// Resolves a `{"$ref": "#/$defs/Name"}` union branch against the root schema's
+/// own definitions, which is how generators emit discriminated unions. Inline
+/// branches are returned as-is; a `$ref` pointing anywhere else resolves to
+/// nothing, so the branch is skipped rather than merged blind.
+fn resolve_local_ref<'a>(
+    root: &'a JsonObject,
+    branch: &'a Value,
+) -> Option<&'a serde_json::Map<String, Value>> {
+    let branch = branch.as_object()?;
+    let Some(reference) = branch.get("$ref").and_then(Value::as_str) else {
+        return Some(branch);
+    };
+    for (prefix, container) in [("#/$defs/", "$defs"), ("#/definitions/", "definitions")] {
+        if let Some(name) = reference.strip_prefix(prefix) {
+            return root
+                .get(container)
+                .and_then(Value::as_object)
+                .and_then(|definitions| definitions.get(name))
+                .and_then(Value::as_object);
+        }
+    }
+    None
+}
+
+/// Merges a branch's schema for a property another branch already contributed.
+/// A discriminated union gives its discriminator a different `const` per branch;
+/// collapsing those into one `enum` keeps every operation callable. Any other
+/// conflict keeps the first branch's schema.
+fn widen_const_into_enum(existing: &mut Value, incoming: &Value) {
+    let Some(incoming_const) = incoming.get("const") else {
+        return;
+    };
+    let Some(existing_obj) = existing.as_object_mut() else {
+        return;
+    };
+    let mut variants = match existing_obj.remove("const") {
+        Some(first) => vec![first],
+        None => match existing_obj.get("enum").and_then(Value::as_array) {
+            Some(widened) => widened.clone(),
+            None => return,
+        },
+    };
+    if !variants.contains(incoming_const) {
+        variants.push(incoming_const.clone());
+    }
+    existing_obj.insert("enum".to_string(), Value::Array(variants));
 }
 
 /// Convert OpenAI's API response to internal Message format
@@ -1863,6 +1956,107 @@ mod tests {
             object_rooted_parameters(&schema),
             serde_json::Value::Object(schema.clone())
         );
+    }
+
+    // A discriminated union root keeps `"type": "object"` next to the union and
+    // points every branch at `$defs`, so it used to pass the object-root check
+    // untouched and still earn xAI's "root schema is an anyOf/oneOf union with a
+    // non-object branch" 400 (math-mcp's `math_analyze` is one such tool).
+    #[test]
+    fn discriminated_union_root_is_flattened_into_its_branches() {
+        let schema = object!({
+            "$defs": {
+                "FingerprintArguments": {
+                    "type": "object",
+                    "properties": {
+                        "operation": { "const": "fingerprint" },
+                        "input": { "type": "object" }
+                    },
+                    "required": ["input"]
+                },
+                "CheckDimensionsArguments": {
+                    "type": "object",
+                    "properties": {
+                        "operation": { "const": "check_dimensions" },
+                        "input": { "type": "object" },
+                        "dimension_policy": { "type": "object" }
+                    },
+                    "required": ["input"]
+                }
+            },
+            "discriminator": {
+                "propertyName": "operation",
+                "mapping": {
+                    "fingerprint": "#/$defs/FingerprintArguments",
+                    "check_dimensions": "#/$defs/CheckDimensionsArguments"
+                }
+            },
+            "oneOf": [
+                { "$ref": "#/$defs/FingerprintArguments" },
+                { "$ref": "#/$defs/CheckDimensionsArguments" }
+            ],
+            "type": "object"
+        });
+
+        let normalized = object_rooted_parameters(&schema);
+
+        assert_eq!(normalized["type"], "object");
+        assert!(normalized.get("oneOf").is_none());
+        assert!(normalized.get("discriminator").is_none());
+        let properties = normalized["properties"].as_object().unwrap();
+        assert!(properties.contains_key("input"));
+        assert!(properties.contains_key("dimension_policy"));
+        // Every branch's discriminator value stays visible to the model.
+        assert_eq!(
+            properties["operation"]["enum"],
+            json!(["fingerprint", "check_dimensions"])
+        );
+        // The discriminator is required even though no branch listed it: with
+        // the union gone, it's the only thing that selects an operation.
+        assert_eq!(normalized["required"], json!(["input", "operation"]));
+        // Nested `$ref`s in the merged properties still resolve.
+        assert!(normalized.get("$defs").is_some());
+    }
+
+    #[test]
+    fn union_branches_merge_onto_the_roots_own_properties() {
+        let schema = object!({
+            "type": "object",
+            "properties": { "trace_id": { "type": "string" } },
+            "required": ["trace_id"],
+            "anyOf": [
+                { "type": "object", "properties": { "query": { "type": "string" } },
+                  "required": ["query"] },
+                { "type": "object", "properties": { "id": { "type": "string" } },
+                  "required": ["id"] }
+            ]
+        });
+
+        let normalized = object_rooted_parameters(&schema);
+
+        let properties = normalized["properties"].as_object().unwrap();
+        assert!(properties.contains_key("trace_id"));
+        assert!(properties.contains_key("query"));
+        assert!(properties.contains_key("id"));
+        assert!(normalized.get("anyOf").is_none());
+        // The root's own requirement survives; neither branch's does.
+        assert_eq!(normalized["required"], json!(["trace_id"]));
+    }
+
+    #[test]
+    fn all_of_branches_combine_their_requirements() {
+        let schema = object!({
+            "allOf": [
+                { "type": "object", "properties": { "a": { "type": "string" } },
+                  "required": ["a"] },
+                { "type": "object", "properties": { "b": { "type": "string" } },
+                  "required": ["b"] }
+            ]
+        });
+
+        let normalized = object_rooted_parameters(&schema);
+
+        assert_eq!(normalized["required"], json!(["a", "b"]));
     }
 
     #[test]
