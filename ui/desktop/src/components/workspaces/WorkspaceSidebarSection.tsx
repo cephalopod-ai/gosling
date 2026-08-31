@@ -118,7 +118,7 @@ export function WorkspaceSidebarSection({ onNewChat }: WorkspaceSidebarSectionPr
   );
 
   return (
-    <section aria-labelledby="workspaces-heading" className="border-b border-border-secondary pb-2">
+    <section aria-labelledby="workspaces-heading" className="pb-2">
       <div className="flex items-center px-3">
         <button
           type="button"

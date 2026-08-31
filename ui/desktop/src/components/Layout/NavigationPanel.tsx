@@ -44,10 +44,21 @@ interface SessionStatus {
   hasUnreadActivity: boolean;
 }
 
+const WORKSPACES_HEIGHT_KEY = 'workspaces_sidebar_height';
+// Enough of each pane to stay usable and to keep its own header visible, so the
+// divider can never be dragged far enough to hide a section entirely.
+const MIN_WORKSPACES_HEIGHT = 72;
+const MIN_CHATS_HEIGHT = 120;
+const WORKSPACES_RESIZE_STEP = 24;
+
 const i18n = defineMessages({
   chats: {
     id: 'navigationPanel.chats',
     defaultMessage: 'Chats',
+  },
+  resizeWorkspaces: {
+    id: 'navigationPanel.resizeWorkspaces',
+    defaultMessage: 'Resize workspaces list — drag, or use the arrow keys',
   },
   noChats: {
     id: 'navigationPanel.noChats',
@@ -319,6 +330,91 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
 
   const [isChatsExpanded, setIsChatsExpanded] = useState(true);
 
+  const workspacesPaneRef = useRef<HTMLDivElement>(null);
+  // `null` keeps the original behaviour — grow with the content up to 45% of the
+  // panel. A stored number means the user has dragged the divider, and their
+  // split is honoured even when the list is shorter than it.
+  const [workspacesHeight, setWorkspacesHeight] = useState<number | null>(() => {
+    const stored = Number(window.localStorage.getItem(WORKSPACES_HEIGHT_KEY));
+    return Number.isFinite(stored) && stored > 0 ? stored : null;
+  });
+
+  const clampWorkspacesHeight = useCallback((height: number) => {
+    const paneTop = workspacesPaneRef.current?.getBoundingClientRect().top;
+    const panelBottom = navFocusRef.current?.getBoundingClientRect().bottom;
+    if (paneTop === undefined || panelBottom === undefined) {
+      return Math.max(height, MIN_WORKSPACES_HEIGHT);
+    }
+    const maxHeight = Math.max(MIN_WORKSPACES_HEIGHT, panelBottom - paneTop - MIN_CHATS_HEIGHT);
+    return Math.min(Math.max(height, MIN_WORKSPACES_HEIGHT), maxHeight);
+  }, []);
+
+  const commitWorkspacesHeight = useCallback((height: number) => {
+    window.localStorage.setItem(WORKSPACES_HEIGHT_KEY, String(height));
+  }, []);
+
+  // A window that shrinks can leave a stored split taller than the panel, which
+  // would squeeze the chats list out of view.
+  useEffect(() => {
+    const reclamp = () =>
+      setWorkspacesHeight((current) => (current === null ? null : clampWorkspacesHeight(current)));
+    window.addEventListener('resize', reclamp);
+    return () => window.removeEventListener('resize', reclamp);
+  }, [clampWorkspacesHeight]);
+
+  const resizeWorkspacesFrom = useCallback(
+    (event: React.PointerEvent) => {
+      event.preventDefault();
+      const startY = event.clientY;
+      // Measured rather than read from state, so the first drag out of the
+      // auto-sized default starts exactly where the divider is drawn.
+      const startHeight =
+        workspacesPaneRef.current?.getBoundingClientRect().height ?? MIN_WORKSPACES_HEIGHT;
+      let latest = startHeight;
+      const move = (moveEvent: globalThis.PointerEvent) => {
+        latest = clampWorkspacesHeight(startHeight + moveEvent.clientY - startY);
+        setWorkspacesHeight(latest);
+      };
+      const stop = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', stop);
+        commitWorkspacesHeight(latest);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', stop);
+    },
+    [clampWorkspacesHeight, commitWorkspacesHeight]
+  );
+
+  const nudgeWorkspacesHeight = useCallback(
+    (delta: number) => {
+      const current =
+        workspacesPaneRef.current?.getBoundingClientRect().height ?? MIN_WORKSPACES_HEIGHT;
+      const next = clampWorkspacesHeight(current + delta);
+      setWorkspacesHeight(next);
+      commitWorkspacesHeight(next);
+    },
+    [clampWorkspacesHeight, commitWorkspacesHeight]
+  );
+
+  const handleDividerKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        nudgeWorkspacesHeight(-WORKSPACES_RESIZE_STEP);
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        nudgeWorkspacesHeight(WORKSPACES_RESIZE_STEP);
+      }
+    },
+    [nudgeWorkspacesHeight]
+  );
+
+  const resetWorkspacesHeight = useCallback(() => {
+    window.localStorage.removeItem(WORKSPACES_HEIGHT_KEY);
+    setWorkspacesHeight(null);
+  }, []);
+
   const navigateAwayFromCurrentSession = useCallback(
     (sessionId: string, tab: 'active' | 'archived') => {
       if (location.pathname === '/pair' && activeSessionId === sessionId) {
@@ -445,14 +541,33 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
         ))}
       </div>
 
-      <div className="mt-3 max-h-[45%] overflow-y-auto">
+      <div
+        ref={workspacesPaneRef}
+        className={cn('mt-3 shrink-0 overflow-y-auto', workspacesHeight === null && 'max-h-[45%]')}
+        style={workspacesHeight === null ? undefined : { height: workspacesHeight }}
+      >
         <WorkspaceSidebarSection
           onNewChat={(workspaceId) => navigate('/', { state: { initialWorkspaceId: workspaceId } })}
         />
       </div>
 
+      {/* Divider — drag to re-split workspaces against chats, double-click to
+          go back to sizing with the content */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={intl.formatMessage(i18n.resizeWorkspaces)}
+        tabIndex={0}
+        onPointerDown={resizeWorkspacesFrom}
+        onDoubleClick={resetWorkspacesHeight}
+        onKeyDown={handleDividerKeyDown}
+        className="group relative h-2 shrink-0 cursor-row-resize focus-visible:outline-none"
+      >
+        <span className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border-secondary transition-colors group-hover:bg-border-active group-focus-visible:bg-border-active" />
+      </div>
+
       {/* Chats section — takes remaining vertical space */}
-      <div className="flex-1 min-h-0 flex flex-col mt-3">
+      <div className="flex-1 min-h-0 flex flex-col mt-2">
         <button
           onClick={() => setIsChatsExpanded((v) => !v)}
           className="flex items-center gap-1 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors self-start"
