@@ -2481,6 +2481,7 @@ mod tests {
             texts: Vec<String>,
             prompts: Vec<String>,
             persisted: Vec<String>,
+            terminal_errors: Vec<String>,
         }
 
         async fn run_reply(call_tool_first: bool, name: &str) -> Result<ReplyOutcome> {
@@ -2519,6 +2520,7 @@ mod tests {
             tokio::pin!(reply_stream);
 
             let mut texts = Vec::new();
+            let mut terminal_errors = Vec::new();
             while let Some(event) = reply_stream.next().await {
                 match event? {
                     AgentEvent::Message(message) => {
@@ -2534,6 +2536,9 @@ mod tests {
                                     },
                                 ).await;
                             }
+                        }
+                        if let Some(error) = message.metadata.terminal_error.clone() {
+                            terminal_errors.push(error);
                         }
                         texts.push(message.as_concat_text());
                     }
@@ -2563,6 +2568,7 @@ mod tests {
                 texts,
                 prompts,
                 persisted,
+                terminal_errors,
             })
         }
 
@@ -2624,13 +2630,29 @@ mod tests {
                 "replaying the identical request would re-run the tool: {:?}",
                 outcome.prompts
             );
+            // The turn is not over, so the notice must not tell the user to act,
+            // and must not mark the message terminal — that would fail a
+            // non-interactive run that went on to finish its work.
             assert!(
                 outcome
                     .texts
                     .iter()
-                    .any(|text| text.contains("Please resend your message")),
-                "expected the turn to stop and hand back to the user, got {:?}",
+                    .any(|text| text.contains("Continuing with the tool results already collected")),
+                "expected a notice that the agent is carrying on, got {:?}",
                 outcome.texts
+            );
+            assert!(
+                !outcome
+                    .texts
+                    .iter()
+                    .any(|text| text.contains("Please resend your message")),
+                "the user has nothing to resend while the agent keeps working: {:?}",
+                outcome.texts
+            );
+            assert!(
+                outcome.terminal_errors.is_empty(),
+                "a recovered turn must not be reported as terminal, got {:?}",
+                outcome.terminal_errors
             );
 
             Ok(())

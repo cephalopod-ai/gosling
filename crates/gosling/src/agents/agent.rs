@@ -208,6 +208,30 @@ fn stop_hook_block_cap_warning(plugin: &str, cap: u32) -> Message {
     )
 }
 
+/// Builds the message for a provider failure the mid-stream retry could not
+/// absorb.
+///
+/// Whether the turn is actually over decides both halves. Once a tool has run
+/// there is a result to carry forward, so the agent goes on by itself: telling
+/// the user to resend describes something that isn't happening, and marking the
+/// message `terminal_error` fails a non-interactive run that then went on to
+/// finish its work.
+fn provider_failure_message(
+    provider_err: &ProviderError,
+    ending_text: &str,
+    turn_ends: bool,
+) -> Message {
+    if turn_ends {
+        Message::assistant()
+            .with_text(ending_text)
+            .with_terminal_error(provider_err.to_string())
+    } else {
+        Message::assistant().with_text(format!(
+            "{provider_err}\n\nContinuing with the tool results already collected."
+        ))
+    }
+}
+
 /// Context needed for the reply function
 pub struct ReplyContext {
     pub conversation: Conversation,
@@ -3099,22 +3123,22 @@ impl Agent {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
-                            yield AgentEvent::Message(
-                                Message::assistant().with_text(
-                                    format!("{provider_err}\n\nPlease resend your message to try again.")
-                                ).with_terminal_error(provider_err.to_string())
-                            );
+                            yield AgentEvent::Message(provider_failure_message(
+                                provider_err,
+                                &format!("{provider_err}\n\nPlease resend your message to try again."),
+                                no_tools_called,
+                            ));
                             break;
                         }
                         Err(ref provider_err) => {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
-                            yield AgentEvent::Message(
-                                Message::assistant().with_text(
-                                    format!("Ran into this error: {provider_err}.\n\nPlease retry if you think this is a transient or recoverable error.")
-                                ).with_terminal_error(provider_err.to_string())
-                            );
+                            yield AgentEvent::Message(provider_failure_message(
+                                provider_err,
+                                &format!("Ran into this error: {provider_err}.\n\nPlease retry if you think this is a transient or recoverable error."),
+                                no_tools_called,
+                            ));
                             break;
                         }
                     }
