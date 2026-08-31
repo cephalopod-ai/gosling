@@ -63,6 +63,7 @@ use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
 use crate::workspace::WorkspaceService;
 use gosling_providers::errors::ProviderError;
+use gosling_providers::retry::{should_retry, RetryConfig};
 use gosling_providers::thinking::ThinkingEffort;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, Content, ElicitationAction, ErrorCode, ErrorData,
@@ -84,6 +85,12 @@ const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I ca
 const MAX_GRIND_NUDGES_MESSAGE: &str = "I've kept working on the grind goal without completing it after many attempts. Stopping to avoid an unbounded loop — let me know if you'd like me to continue.";
 const DEFAULT_FRONTEND_INSTRUCTIONS: &str = "The following tools are provided directly by the frontend and will be executed by the frontend when called.";
 const STREAM_CHECKPOINT_INTERVAL: Duration = Duration::from_millis(250);
+// A provider stream that dies partway through is only retryable while no tool
+// from it has run: re-issuing the request replays the whole assistant message,
+// which is fine for text nobody has acted on and wrong once a tool has taken
+// effect in the world. `ProviderRetry` only covers establishing the stream, so
+// without this a connection dropped mid-response ended the turn.
+const MAX_MID_STREAM_RETRIES: usize = 3;
 
 pub(super) struct ToolOperationGuard {
     session_manager: Arc<SessionManager>,
@@ -2305,6 +2312,8 @@ impl Agent {
             let mut tool_pair_summarization_done = false;
             let mut stop_hook_handled_for_exit = false;
             let mut retrying_after_stop_hook_denial = false;
+            let mut mid_stream_retries = 0usize;
+            let mut retrying_stream = false;
             let mut consecutive_stop_hook_blocks = 0u32;
             let stop_hook_block_cap = self.stop_hook_block_cap();
             let mut can_drain_pending_steers = false;
@@ -2336,8 +2345,13 @@ impl Agent {
                     }
                 }
 
+                // Neither a stop-hook retry nor a re-issued stream is a new turn:
+                // counting them would spend the user's `max_turns` budget on
+                // recovery rather than on work.
                 if retrying_after_stop_hook_denial {
                     retrying_after_stop_hook_denial = false;
+                } else if retrying_stream {
+                    retrying_stream = false;
                 } else {
                     turns_taken += 1;
                 }
@@ -2464,6 +2478,9 @@ impl Agent {
                 let stream_message_id = format!("msg_{}", Uuid::new_v4());
                 let mut last_stream_checkpoint_at: Option<Instant> = None;
                 let mut last_stream_checkpoint_id: Option<String> = None;
+                // First message this stream persisted, so a mid-stream failure can
+                // truncate the session back to where the stream began.
+                let mut stream_rollback_anchor: Option<String> = None;
 
                 // Track whether this provider turn has already emitted visible
                 // thinking so a later tool-call chunk can suppress replayed
@@ -2570,6 +2587,9 @@ impl Agent {
                                                 .await?;
                                             last_stream_checkpoint_at = Some(Instant::now());
                                             last_stream_checkpoint_id = message.id.clone();
+                                            if stream_rollback_anchor.is_none() {
+                                                stream_rollback_anchor = message.id.clone();
+                                            }
                                         }
                                     }
 
@@ -3023,6 +3043,58 @@ impl Agent {
                             exit_chat = true;
                             break;
                         }
+                        // A stream that dies before any of its tools have run can be
+                        // re-issued: the partial assistant message is rolled back out
+                        // of the session and the UI, and the outer loop asks the
+                        // provider again from the same conversation. Once a tool has
+                        // run this arm is skipped — replaying it could repeat a side
+                        // effect — and the error falls through to the arms below.
+                        Err(ref provider_err) if no_tools_called
+                            && mid_stream_retries < MAX_MID_STREAM_RETRIES
+                            && should_retry(provider_err, &RetryConfig::default()) => {
+                            #[cfg(feature = "telemetry")]
+                            crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
+
+                            mid_stream_retries += 1;
+                            warn!(
+                                "Provider stream failed mid-response, retrying ({}/{}): {}",
+                                mid_stream_retries, MAX_MID_STREAM_RETRIES, provider_err
+                            );
+
+                            if let Some(anchor) = stream_rollback_anchor.take() {
+                                session_manager
+                                    .truncate_conversation_from_message(&session_config.id, &anchor)
+                                    .await?;
+                            }
+                            // Dropping this keeps the partial answer out of the
+                            // conversation the retry is built from — the tail of
+                            // this iteration would otherwise extend it in.
+                            messages_to_add = Conversation::default();
+                            yield AgentEvent::HistoryReplaced(conversation.clone());
+
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    format!(
+                                        "The model's response was interrupted. Retrying ({mid_stream_retries}/{MAX_MID_STREAM_RETRIES})..."
+                                    ),
+                                )
+                            );
+
+                            let backoff = RetryConfig::default().delay_for_attempt(mid_stream_retries);
+                            match cancel_token.as_ref() {
+                                Some(token) => {
+                                    tokio::select! {
+                                        _ = tokio::time::sleep(backoff) => {}
+                                        _ = token.cancelled() => {}
+                                    }
+                                }
+                                None => tokio::time::sleep(backoff).await,
+                            }
+
+                            retrying_stream = true;
+                            break;
+                        }
                         Err(ref provider_err @ ProviderError::NetworkError(_)) => {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
@@ -3049,6 +3121,13 @@ impl Agent {
                 }
                 can_drain_pending_steers = true;
 
+                // The budget is for consecutive failures. A stream that ran to
+                // completion means the connection recovered, so the next blip
+                // starts from a full allowance rather than an exhausted one.
+                if !retrying_stream {
+                    mid_stream_retries = 0;
+                }
+
                 if tools_updated {
                     (tools, toolshim_tools, system_prompt, _) = self
                         .prepare_tools_and_prompt_with_additional_dirs(
@@ -3072,8 +3151,10 @@ impl Agent {
                 }
 
                 if no_tools_called && !exit_chat {
-                    if did_recovery_compact_this_iteration {
-                        // continue from last user message after recovery compact
+                    if did_recovery_compact_this_iteration || retrying_stream {
+                        // continue from last user message after recovery compact,
+                        // or re-issue the request the failed stream was serving —
+                        // in neither case has the assistant actually answered yet
                     } else if self.has_pending_steers(&session_config.id).await {
                     } else {
                         // Clone out of the mutexes before branching: an `if let`

@@ -2312,4 +2312,328 @@ mod tests {
             }
         }
     }
+
+    // A provider stream that dies partway through used to end the turn with
+    // "Please resend your message to try again", discarding the work. It is now
+    // re-issued — but only while none of its tool calls have run, since
+    // replaying those could repeat a side effect.
+    #[cfg(test)]
+    mod mid_stream_retry_tests {
+        use super::*;
+        use async_trait::async_trait;
+        use gosling::agents::SessionConfig;
+        use gosling::config::GoslingMode;
+        use gosling::conversation::message::{Message, MessageContent};
+        use gosling::providers::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
+        use gosling::session::session_manager::SessionType;
+        use gosling_providers::conversation::token_usage::{ProviderUsage, Usage};
+        use gosling_providers::errors::ProviderError;
+        use gosling_providers::model::ModelConfig;
+        use rmcp::model::{CallToolRequestParams, Tool};
+        use rmcp::object;
+        use std::path::PathBuf;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Mutex;
+
+        const USER_TEXT: &str = "Hello";
+        const PARTIAL_TEXT: &str = "half an answer that never arriv";
+        const FINAL_TEXT: &str = "the whole answer";
+
+        /// First call streams `PARTIAL_TEXT` (optionally preceded by a tool call)
+        /// and then fails; later calls answer normally.
+        struct InterruptedStreamProvider {
+            calls: AtomicUsize,
+            /// What each agent turn was asked to answer, so a test can tell a
+            /// replay of the same request from a continuation past a tool.
+            prompts: Mutex<Vec<String>>,
+            call_tool_first: bool,
+        }
+
+        impl InterruptedStreamProvider {
+            fn new(call_tool_first: bool) -> Self {
+                Self {
+                    calls: AtomicUsize::new(0),
+                    prompts: Mutex::new(Vec::new()),
+                    call_tool_first,
+                }
+            }
+        }
+
+        fn mock_usage() -> ProviderUsage {
+            ProviderUsage::new(
+                "mock-model".to_string(),
+                Usage::new(Some(10), Some(5), Some(15)),
+            )
+        }
+
+        impl gosling::providers::base::ProviderDescriptor for InterruptedStreamProvider {
+            fn metadata() -> ProviderMetadata {
+                ProviderMetadata {
+                    name: "mock-interrupted".to_string(),
+                    display_name: "Mock Interrupted Provider".to_string(),
+                    description: "Mock provider whose first stream dies mid-response".to_string(),
+                    default_model: "mock-model".to_string(),
+                    known_models: vec![],
+                    model_doc_link: "".to_string(),
+                    config_keys: vec![],
+                    setup_steps: vec![],
+                    model_selection_hint: None,
+                    fast_model: None,
+                }
+            }
+        }
+
+        impl ProviderDef for InterruptedStreamProvider {
+            type Provider = Self;
+
+            fn from_env(
+                _extensions: Vec<gosling::config::ExtensionConfig>,
+                _tls_config: Option<gosling::providers::api_client::TlsConfig>,
+            ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
+                Box::pin(async { Ok(Self::new(false)) })
+            }
+        }
+
+        #[async_trait]
+        impl Provider for InterruptedStreamProvider {
+            async fn stream(
+                &self,
+                _model_config: &ModelConfig,
+                _system_prompt: &str,
+                messages: &[Message],
+                _tools: &[Tool],
+            ) -> Result<MessageStream, ProviderError> {
+                // The agent turn is the only call ending on the user's message;
+                // session naming and summarization wrap it in a larger prompt
+                // and must not consume an attempt.
+                let is_agent_turn = messages
+                    .iter()
+                    .any(|message| message.as_concat_text().trim_end().ends_with(USER_TEXT));
+                if !is_agent_turn {
+                    return Ok(Box::pin(futures::stream::once(async {
+                        Ok((
+                            Some(Message::assistant().with_text("aside")),
+                            Some(mock_usage()),
+                        ))
+                    })));
+                }
+
+                self.prompts.lock().unwrap().push(
+                    messages
+                        .iter()
+                        .map(|message| {
+                            let parts: Vec<String> = message
+                                .content
+                                .iter()
+                                .map(|content| match content {
+                                    MessageContent::ToolRequest(request) => {
+                                        format!("tool_request:{}", request.id)
+                                    }
+                                    MessageContent::ToolResponse(response) => {
+                                        format!("tool_response:{}", response.id)
+                                    }
+                                    _ => message.as_concat_text(),
+                                })
+                                .collect();
+                            format!("{:?}[{}]", message.role, parts.join(","))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                );
+
+                if self.calls.fetch_add(1, Ordering::SeqCst) > 0 {
+                    return Ok(Box::pin(futures::stream::once(async {
+                        Ok((
+                            Some(Message::assistant().with_text(FINAL_TEXT)),
+                            Some(mock_usage()),
+                        ))
+                    })));
+                }
+
+                let mut items: Vec<
+                    Result<(Option<Message>, Option<ProviderUsage>), ProviderError>,
+                > = Vec::new();
+                if self.call_tool_first {
+                    let tool_call = CallToolRequestParams::new("test_tool")
+                        .with_arguments(object!({"param": "value"}));
+                    items.push(Ok((
+                        Some(Message::assistant().with_tool_request("call_123", Ok(tool_call))),
+                        Some(mock_usage()),
+                    )));
+                }
+                items.push(Ok((
+                    Some(Message::assistant().with_text(PARTIAL_TEXT)),
+                    Some(mock_usage()),
+                )));
+                items.push(Err(ProviderError::NetworkError(
+                    "Stream decode error: error decoding response body".to_string(),
+                )));
+
+                Ok(Box::pin(futures::stream::iter(items)))
+            }
+
+            fn get_name(&self) -> &str {
+                "mock-interrupted"
+            }
+        }
+
+        struct ReplyOutcome {
+            texts: Vec<String>,
+            prompts: Vec<String>,
+            persisted: Vec<String>,
+        }
+
+        async fn run_reply(call_tool_first: bool, name: &str) -> Result<ReplyOutcome> {
+            let agent = Agent::new();
+            let provider = Arc::new(InterruptedStreamProvider::new(call_tool_first));
+
+            let session = agent
+                .config
+                .session_manager
+                .create_session(
+                    PathBuf::default(),
+                    name.to_string(),
+                    SessionType::Hidden,
+                    GoslingMode::default(),
+                )
+                .await?;
+
+            agent
+                .update_provider(
+                    provider.clone(),
+                    ModelConfig::new("mock-model"),
+                    &session.id,
+                )
+                .await?;
+
+            let session_config = SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(4),
+                compacted_context: false,
+                tail_limit: None,
+            };
+
+            let reply_stream = agent
+                .reply(Message::user().with_text(USER_TEXT), session_config, None)
+                .await?;
+            tokio::pin!(reply_stream);
+
+            let mut texts = Vec::new();
+            while let Some(event) = reply_stream.next().await {
+                match event? {
+                    AgentEvent::Message(message) => {
+                        if let Some(MessageContent::ActionRequired(action)) =
+                            message.content.first()
+                        {
+                            if let gosling::conversation::message::ActionRequiredData::ToolConfirmation { id, .. } = &action.data {
+                                agent.handle_confirmation(
+                                    id.clone(),
+                                    gosling::permission::PermissionConfirmation {
+                                        principal_type: gosling::permission::permission_confirmation::PrincipalType::Tool,
+                                        permission: gosling::permission::Permission::AllowOnce,
+                                    },
+                                ).await;
+                            }
+                        }
+                        texts.push(message.as_concat_text());
+                    }
+                    AgentEvent::Usage(_)
+                    | AgentEvent::McpNotification(_)
+                    | AgentEvent::HistoryReplaced(_) => {}
+                }
+            }
+
+            let persisted = agent
+                .config
+                .session_manager
+                .get_session(&session.id, true)
+                .await?
+                .conversation
+                .map(|conversation| {
+                    conversation
+                        .messages()
+                        .iter()
+                        .map(|message| message.as_concat_text())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let prompts = provider.prompts.lock().unwrap().clone();
+            Ok(ReplyOutcome {
+                texts,
+                prompts,
+                persisted,
+            })
+        }
+
+        #[tokio::test]
+        async fn a_stream_that_dies_before_any_tool_ran_is_re_issued() -> Result<()> {
+            let outcome = run_reply(false, "mid-stream-retry").await?;
+
+            assert_eq!(
+                outcome.prompts.len(),
+                2,
+                "the interrupted stream should have been re-issued once"
+            );
+            assert!(
+                !outcome.prompts[1].contains(PARTIAL_TEXT),
+                "the retry must ask the same question again, not one carrying the                  half-written answer: {}",
+                outcome.prompts[1]
+            );
+            assert!(
+                outcome.texts.iter().any(|text| text.contains(FINAL_TEXT)),
+                "expected the retry's answer, got {:?}",
+                outcome.texts
+            );
+            assert!(
+                !outcome
+                    .texts
+                    .iter()
+                    .any(|text| text.contains("Please resend your message")),
+                "the turn should not have ended on the user, got {:?}",
+                outcome.texts
+            );
+            assert!(
+                !outcome
+                    .persisted
+                    .iter()
+                    .any(|text| text.contains(PARTIAL_TEXT)),
+                "the rolled-back partial answer should not survive in the session, got {:?}",
+                outcome.persisted
+            );
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn a_stream_that_dies_after_a_tool_ran_is_not_replayed() -> Result<()> {
+            let outcome = run_reply(true, "mid-stream-no-retry").await?;
+
+            // The turn still moves on — there is a tool result to report — but it
+            // moves *forward*: the second call carries the tool's response instead
+            // of replaying the request that produced the tool call.
+            assert!(
+                outcome.prompts[1].contains("tool_response:call_123"),
+                "expected a continuation carrying the tool's result, got {:?}",
+                outcome.prompts
+            );
+            assert!(
+                outcome.prompts[1..]
+                    .iter()
+                    .all(|prompt| prompt != &outcome.prompts[0]),
+                "replaying the identical request would re-run the tool: {:?}",
+                outcome.prompts
+            );
+            assert!(
+                outcome
+                    .texts
+                    .iter()
+                    .any(|text| text.contains("Please resend your message")),
+                "expected the turn to stop and hand back to the user, got {:?}",
+                outcome.texts
+            );
+
+            Ok(())
+        }
+    }
 }
