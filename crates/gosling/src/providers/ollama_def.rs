@@ -65,7 +65,7 @@ pub async fn from_env(
             .map_err(|_| anyhow::anyhow!("Failed to set default port"))?;
     }
 
-    let api_client = ApiClient::with_timeout_and_tls(
+    let api_client = ApiClient::with_read_timeout_and_tls(
         base_url.to_string(),
         AuthMethod::NoAuth,
         timeout,

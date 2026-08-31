@@ -70,7 +70,7 @@ pub async fn summarize(text: &str, config: &SummarizerConfig) -> Option<WorkerRe
 pub(crate) fn build_provider(endpoint: &str) -> anyhow::Result<OpenAiCompatibleProvider> {
     // The outer `tokio::time::timeout` in `summarize` is the real deadline;
     // this is just a generous upper bound so a hung connection doesn't leak.
-    let api_client = ApiClient::with_timeout_and_tls(
+    let api_client = ApiClient::with_read_timeout_and_tls(
         endpoint.to_string(),
         AuthMethod::NoAuth,
         Duration::from_secs(60),

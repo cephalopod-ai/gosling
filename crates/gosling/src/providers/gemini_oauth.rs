@@ -1,10 +1,7 @@
 use crate::config::paths::Paths;
 use crate::conversation::message::Message;
-use crate::providers::api_client::RequestBuilderDecorator;
-use crate::providers::base::{
-    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
-    DEFAULT_PROVIDER_TIMEOUT_SECS,
-};
+use crate::providers::api_client::{default_inference_client_builder, RequestBuilderDecorator};
+use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use crate::providers::formats::google::{create_request, response_to_streaming_message};
 use crate::providers::google::GOOGLE_DOC_URL;
 use gosling_providers::errors::ProviderError;
@@ -38,8 +35,7 @@ use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::io::StreamReader;
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+    default_inference_client_builder()
         .build()
         .expect("failed to build HTTP client")
 });

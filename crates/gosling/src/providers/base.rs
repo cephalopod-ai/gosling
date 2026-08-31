@@ -6,6 +6,10 @@ pub use gosling_providers::conversation::token_usage::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Default provider HTTP budget. For inference calls this is a stall budget —
+/// see `api_client::inference_client_builder`, which applies it as a read
+/// timeout so a turn's tool execution can't run it out. One-shot auth and
+/// token calls apply it as a total deadline, which is what they want.
 pub const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
 
 use crate::config::ExtensionConfig;

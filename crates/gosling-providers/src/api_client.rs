@@ -14,7 +14,36 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// How long a provider connection may go without delivering a byte before it
+/// is treated as dead. This is a stall budget, not a budget for the turn.
 const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
+
+/// A connection that hasn't been established in this long is not coming up.
+/// The read timeout below only starts once bytes are flowing, so the connect
+/// phase needs its own bound.
+const PROVIDER_CONNECT_TIMEOUT_SECS: u64 = 30;
+
+/// Builds the HTTP client shape every provider inference call uses.
+///
+/// The budget is a **read** timeout, deliberately not reqwest's `timeout`.
+/// `timeout` is a total deadline that runs "from when the request starts
+/// connecting until the response body has finished" -- and the agent executes
+/// tool calls inside the loop that consumes the assistant's SSE stream, so the
+/// response body stays open for as long as the tools run. Under a total
+/// deadline any turn whose streaming plus tool execution outlived it died
+/// mid-stream as `Stream decode error: error decoding response body`, throwing
+/// away the turn. A read timeout resets on every chunk, so it still kills a
+/// genuinely stalled connection without capping how long a turn may take.
+pub fn inference_client_builder(read_timeout: Duration) -> reqwest::ClientBuilder {
+    Client::builder()
+        .read_timeout(read_timeout)
+        .connect_timeout(Duration::from_secs(PROVIDER_CONNECT_TIMEOUT_SECS))
+}
+
+/// The default stall budget for provider inference calls.
+pub fn default_inference_client_builder() -> reqwest::ClientBuilder {
+    inference_client_builder(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+}
 
 pub type RequestBuilderDecorator =
     Arc<dyn Fn(reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder> + Send + Sync>;
@@ -25,7 +54,7 @@ pub struct ApiClient {
     auth: AuthMethod,
     default_headers: HeaderMap,
     default_query: Vec<(String, String)>,
-    timeout: Duration,
+    read_timeout: Duration,
     tls_config: Option<TlsConfig>,
     request_builder: Option<RequestBuilderDecorator>,
 }
@@ -245,7 +274,7 @@ impl ApiClient {
         auth: AuthMethod,
         tls_config: Option<TlsConfig>,
     ) -> Result<Self> {
-        Self::with_timeout_and_tls(
+        Self::with_read_timeout_and_tls(
             host,
             auth,
             Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
@@ -253,13 +282,13 @@ impl ApiClient {
         )
     }
 
-    pub fn with_timeout_and_tls(
+    pub fn with_read_timeout_and_tls(
         host: String,
         auth: AuthMethod,
-        timeout: Duration,
+        read_timeout: Duration,
         tls_config: Option<TlsConfig>,
     ) -> Result<Self> {
-        let mut client_builder = Client::builder().timeout(timeout);
+        let mut client_builder = inference_client_builder(read_timeout);
 
         if let Some(ref config) = tls_config {
             client_builder = Self::configure_tls(client_builder, config)?;
@@ -273,7 +302,7 @@ impl ApiClient {
             auth,
             default_headers: HeaderMap::new(),
             default_query: Vec::new(),
-            timeout,
+            read_timeout,
             tls_config,
             request_builder: None,
         })
@@ -284,8 +313,7 @@ impl ApiClient {
     }
 
     fn rebuild_client(&mut self) -> Result<()> {
-        let mut client_builder = Client::builder()
-            .timeout(self.timeout)
+        let mut client_builder = inference_client_builder(self.read_timeout)
             .default_headers(self.default_headers.clone());
 
         // Configure TLS if needed
@@ -475,7 +503,7 @@ impl fmt::Debug for ApiClient {
         f.debug_struct("ApiClient")
             .field("host", &self.host)
             .field("auth", &"[auth method]")
-            .field("timeout", &self.timeout)
+            .field("read_timeout", &self.read_timeout)
             .field("default_headers", &self.default_headers)
             .finish_non_exhaustive()
     }

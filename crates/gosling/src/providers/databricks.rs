@@ -132,7 +132,7 @@ impl DatabricksProvider {
             token_cache: token_cache.clone(),
         }));
 
-        let api_client = ApiClient::with_timeout_and_tls(
+        let api_client = ApiClient::with_read_timeout_and_tls(
             host.clone(),
             auth_method,
             Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),

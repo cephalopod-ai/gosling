@@ -319,7 +319,7 @@ pub fn from_declarative_config(
     };
 
     let mut api_client =
-        ApiClient::with_timeout_and_tls(base_url.to_string(), auth, timeout, tls_config)?;
+        ApiClient::with_read_timeout_and_tls(base_url.to_string(), auth, timeout, tls_config)?;
 
     if let Some(headers) = &config.headers {
         let mut header_map = reqwest::header::HeaderMap::new();

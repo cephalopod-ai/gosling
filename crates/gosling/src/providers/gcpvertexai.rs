@@ -1,5 +1,4 @@
 use std::io;
-use std::time::Duration;
 
 use anyhow::Result;
 use async_stream::try_stream;
@@ -15,11 +14,8 @@ use tokio_util::io::StreamReader;
 use url::Url;
 
 use crate::conversation::message::Message;
-use crate::providers::api_client::RequestBuilderDecorator;
-use crate::providers::base::{
-    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
-    DEFAULT_PROVIDER_TIMEOUT_SECS,
-};
+use crate::providers::api_client::{default_inference_client_builder, RequestBuilderDecorator};
+use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use gosling_providers::model::ModelConfig;
 
 use crate::providers::formats::gcpvertexai::{
@@ -173,9 +169,7 @@ impl GcpVertexAIProvider {
         let location = Self::determine_location(config)?;
         let host = Self::build_host_url(&location);
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
-            .build()?;
+        let client = default_inference_client_builder().build()?;
 
         let auth = GcpAuth::new().await?;
 

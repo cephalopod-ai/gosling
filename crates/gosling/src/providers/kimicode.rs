@@ -11,16 +11,12 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io;
-use std::time::Duration as StdDuration;
 use tokio::pin;
 use tokio_util::io::StreamReader;
 use uuid::Uuid;
 
-use super::api_client::RequestBuilderDecorator;
-use super::base::{
-    ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
-    DEFAULT_PROVIDER_TIMEOUT_SECS,
-};
+use super::api_client::{default_inference_client_builder, RequestBuilderDecorator};
+use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::formats::anthropic::{create_request, response_to_streaming_message};
 use super::oauth_device_flow::{
     refresh_device_flow_token, run_device_flow, DeviceFlowConfig, DeviceFlowTokens, RequestEncoding,
@@ -159,9 +155,7 @@ impl KimiCodeProvider {
     pub async fn from_env(
         _tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(StdDuration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
-            .build()?;
+        let client = default_inference_client_builder().build()?;
         let device_id = Self::get_or_create_device_id().await?;
         Ok(Self {
             client,

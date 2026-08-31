@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::api_client::default_inference_client_builder;
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::openai_compatible::{handle_status, stream_responses_compat};
 use super::retry::{ProviderRetry, RetryConfig};
@@ -175,8 +176,7 @@ impl BedrockProvider {
             name: BEDROCK_PROVIDER_NAME.to_string(),
             region: resolved_region,
             bearer_token,
-            http_client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(600))
+            http_client: default_inference_client_builder()
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             mantle_base_url: None,
@@ -930,8 +930,7 @@ mod tests {
                 name: "aws_bedrock".to_string(),
                 region: None,
                 bearer_token: None,
-                http_client: reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(600))
+                http_client: default_inference_client_builder()
                     .build()
                     .unwrap_or_else(|_| reqwest::Client::new()),
                 mantle_base_url: None,
@@ -1105,8 +1104,7 @@ mod tests {
             name: "aws_bedrock".to_string(),
             region: Some("us-east-1".to_string()),
             bearer_token: Some("test-token".to_string()),
-            http_client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(600))
+            http_client: default_inference_client_builder()
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             mantle_base_url: Some(format!("{}/openai/v1/responses", server.uri())),

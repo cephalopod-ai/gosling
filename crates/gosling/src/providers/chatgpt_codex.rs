@@ -1,6 +1,8 @@
 use crate::config::paths::Paths;
 use crate::conversation::message::{Message, MessageContent};
-use crate::providers::api_client::{AuthProvider, RequestBuilderDecorator};
+use crate::providers::api_client::{
+    default_inference_client_builder, AuthProvider, RequestBuilderDecorator,
+};
 use crate::providers::base::{
     await_stream_start, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
     ProviderMetadata, DEFAULT_PROVIDER_TIMEOUT_SECS,
@@ -1051,11 +1053,7 @@ impl ChatGptCodexProvider {
         let auth_provider = Arc::new(ChatGptCodexAuthProvider::new(
             ChatGptCodexAuthState::instance(),
         ));
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(
-                DEFAULT_PROVIDER_TIMEOUT_SECS,
-            ))
-            .build()?;
+        let client = default_inference_client_builder().build()?;
 
         Ok(Self {
             auth_provider,

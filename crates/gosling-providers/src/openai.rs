@@ -852,7 +852,7 @@ pub fn from_declarative_config(
         Some(key) if !key.is_empty() => AuthMethod::BearerToken(key),
         _ => AuthMethod::NoAuth,
     };
-    let mut api_client = ApiClient::with_timeout_and_tls(
+    let mut api_client = ApiClient::with_read_timeout_and_tls(
         host,
         auth,
         std::time::Duration::from_secs(timeout_secs),

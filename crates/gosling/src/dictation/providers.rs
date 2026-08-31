@@ -148,7 +148,7 @@ fn build_api_client(provider: DictationProvider) -> Result<(ApiClient, String)> 
     };
 
     let tls = provider_tls_config_from_config(config)?;
-    let mut client = ApiClient::with_timeout_and_tls(base_url, auth, REQUEST_TIMEOUT, tls)
+    let mut client = ApiClient::with_read_timeout_and_tls(base_url, auth, REQUEST_TIMEOUT, tls)
         .map_err(|e| {
             tracing::error!("Failed to create API client: {}", e);
             e
