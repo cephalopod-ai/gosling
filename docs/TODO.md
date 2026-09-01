@@ -606,12 +606,16 @@ local until a separate push is authorized.
       Forge compatibility facade at 1,861 lines. Behavior-preserving; BUG-001
       was recorded and routed without repair. Full run log:
       [`docs/logs/session/2026-09-01-modularize-desktop-main.md`](logs/session/2026-09-01-modularize-desktop-main.md).
-- [ ] Modularize the remaining routed >=2000-line files in dedicated
-      changes, preserving behavior and avoiding mixed repair/refactor
+- [x] `crates/gosling/src/acp/server.rs` (5136 lines) modularized 2026-09-01
+      into responsibility modules for tests, extension selection, activation,
+      initialization, message/tool projection, prompt runs, configuration, and
+      transport. The original module remains a 655-line compatibility facade.
+      Behavior-preserving; no MOD-B suspects surfaced. Full run log:
+      [`docs/logs/session/2026-09-01-modularize-acp-server.md`](logs/session/2026-09-01-modularize-acp-server.md).
+- [ ] Modularize the final routed >=2000-line file in a dedicated
+      change, preserving behavior and avoiding mixed repair/refactor
       commits:
-      `crates/gosling/src/acp/server.rs`,
-      `crates/gosling/src/agents/agent.rs`,
-      `crates/gosling/src/agents/extension_manager.rs`.
+      `crates/gosling/src/agents/agent.rs`.
 - [x] Run the added Rust regression suite, workspace build, and Clippy before
       merge when explicitly authorized. The 2026-07-18 twelve-lens follow-up ran
       the workspace build, serialized `gosling` library suite, related crate suites,
