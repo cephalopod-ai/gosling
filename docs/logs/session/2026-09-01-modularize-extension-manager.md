@@ -87,7 +87,8 @@ lines 1–4,531. Direct callers were inventoried through `crates/gosling/src` an
 
 `extension_manager.rs` remains the literal **compatibility facade** and preserves
 all existing public module paths with re-exports. The manager type, its fields,
-constructor, `add_extension`, and inline behavioral tests remain anchored there.
+constructor, `add_extension`, and the `tests` module path remain anchored there.
+The unchanged test body may move to a test-only sibling after production seams.
 
 1. `extension_manager/pagination.rs` — pagination guard and typed MCP collectors.
 2. `extension_manager/action_required_stream.rs` — action-required receiver and
@@ -119,3 +120,71 @@ Final closure reruns the full baseline and MOD-V01–10. Public Rust paths, serd
 field names, MCP metadata keys, cancellation/drop behavior, transport timeouts,
 environment hardening, and process supervision are explicit preservation risks.
 
+## Gates 3–5 — Seam checkpoints and intermediary audit
+
+Every production module carries a three-line dual-audience header and remains
+below 400 lines. The facade re-exports public or crate-visible names only where
+the original module path requires it. Rust `pub(super)` is used solely for
+cross-responsibility internals.
+
+| Seam | New owner | Lines | Commit | Verification |
+|---|---|---:|---|---|
+| pagination | `pagination.rs` | 120 | `cc3abd4b1` | pagination collection/limit tests pass |
+| action stream | `action_required_stream.rs` | 48 | `62586bd54` | focused 37-test oracle passes |
+| tool metadata | `tool_metadata.rs` | 160 | `785ccd7a1` | metadata trust/owner tests pass |
+| child process | `child_process.rs` | 217 | `71490fdbe` | environment/Docker cleanup tests pass |
+| operator stdio | `operator_stdio.rs` | 295 | `b383aa1ac` | bounded-reader tests pass; public paths re-exported |
+| environment | `environment.rs` | 140 | `bbe3890ef` | substitution/static-client tests pass |
+| OAuth transport | `oauth.rs` | 346 | `d2abbf7e5` | OAuth/header/timeout tests pass |
+| tool catalog | `tool_catalog.rs` | 232 | `1c69158e6` | filtering/cache tests pass |
+| resources | `resources.rs` | 200 | `664633263` | focused 37-test oracle passes |
+| tool dispatch | `tool_dispatch.rs` | 206 | `a550b4f4c` | dispatch/resolve tests pass |
+| prompts | `prompts.rs` | 108 | `6fee0bd47` | focused 37-test oracle passes |
+| discovery | `discovery.rs` | 115 | `c017d2426` | focused 37-test oracle passes |
+| lifecycle | `lifecycle.rs` | 145 | `4221443b5` | lifecycle/cache/Docker tests pass |
+| test body | `tests.rs` | 1,632 test-only | `b5b12f867` | same 37 test names and results |
+
+The environment/OAuth plan item was split into two seams to keep each production
+owner below the skill's approximate 400-line ceiling. The test module body moved
+only after all production seams passed, reducing the original production facade
+without changing its `extension_manager::tests::*` module path.
+
+Intermediary audits found no duplicate implementation owner, stale import, public
+contract change, weakened assertion, or new MOD-B suspect. Two compile-time
+privacy/path adjustments were structural only: the private tool metadata key
+became `pub(super)`, and dispatch now names the already imported
+`ToolCallContext`. Delimiter and orphan-comment mistakes caught during seam
+verification were corrected before their commits; no failed intermediate state
+was checkpointed.
+
+## Gate 6 — Final MOD-V closure
+
+The original `extension_manager.rs` is 687 lines after final formatting, down
+from 4,531 (84.8%). Its retained responsibility is explicit: type/field anchors,
+stable re-exports, constructor/capability setup, and the ordering-sensitive
+multi-transport `add_extension` path. Thirteen production responsibility modules
+range from 48 to 346 lines; the test-only sibling is 1,632 lines.
+
+| MOD-V check | Evidence | Result |
+|---|---|---|
+| V01 compile/type | `cargo build -p gosling`; strict Clippy | pass |
+| V02 focused tests | `cargo test -p gosling --lib agents::extension_manager` | pass: 37/37 |
+| V03 broad tests | `cargo test -p gosling --lib` | pass: 1,762/1,762 |
+| V04 direct integration | `cargo test -p gosling --test mcp_integration_test` | pass: 0 failed; 4 harness-ignored |
+| V05 format/diff | `cargo fmt --check -p gosling`; `git diff --check` | pass |
+| V06 single ownership | symbol searches over facade and responsibility modules | pass |
+| V07 public compatibility | caller searches plus facade `pub use`/`pub(crate) use` | pass |
+| V08 wire/metadata stability | serde fields and both MCP metadata-key literals unchanged | pass |
+| V09 lifecycle semantics | cancellation, Drop, timeout, environment, process code moved unchanged | pass |
+| V10 documentation/closure | facade/module headers, bug ledger, this run log | pass |
+
+Second-level caller checks cover ACP server presentation/tools/resources, the ACP
+domain adapter required by ADR-0012, agent/reply/MOIM flows, platform code mode,
+extension config resolution, and `mcp_integration_test`. The public paths
+`ExtensionManager`, `ExtensionManagerCapabilities`, operator stdio names, metadata
+helpers/key, visibility helpers, and environment helpers are unchanged.
+
+BUG-001 remains open and was moved unchanged to `tool_catalog.rs`; it is not
+silently fixed by this modularization. No additional source-evidenced defect was
+found. The pre-existing Node listener on 8888 and installed Gosling listeners on
+53273/53275 remained alive and untouched through closure.
