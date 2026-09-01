@@ -83,9 +83,11 @@ use child_process::{
 mod oauth;
 mod operator_stdio;
 
+use oauth::create_streamable_http_client;
+#[cfg(test)]
 use oauth::{
     build_streamable_http_client, clear_credentials_on_post_refresh_auth_failure,
-    connect_with_auth, create_streamable_http_client, should_attempt_oauth_fallback,
+    connect_with_auth, should_attempt_oauth_fallback,
 };
 mod pagination;
 mod prompts;
@@ -248,8 +250,6 @@ impl ResourceItem {
         }
     }
 }
-
-/// Retry with OAuth for typed auth challenges and wrapped bare HTTP 401 responses.
 
 impl ExtensionManager {
     fn mcp_client_capabilities(&self) -> GoslingMcpClientCapabilities {
