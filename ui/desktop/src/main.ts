@@ -29,7 +29,7 @@ import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
 import path from 'node:path';
 import os from 'node:os';
-import { execFileSync, spawn, execFile } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import 'dotenv/config';
 import { checkBackendStatus } from './backendStatus';
 import { acpTokenSubprotocol, startGoslingServe } from './goslingServe';
@@ -92,6 +92,7 @@ import {
   translateMenuLabel,
   translateMenuLabels as translateNativeMenuLabels,
 } from './main/menuLocalization';
+import { registerGitIpcHandlers } from './main/gitIpc';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -412,76 +413,6 @@ function getConfiguredGoslingLocale(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function listGitWorktreeDirs(dir: string): Promise<string[]> {
-  return new Promise((resolve) => {
-    if (!dir?.trim()) {
-      resolve([]);
-      return;
-    }
-
-    execFile(
-      'git',
-      ['-C', dir, 'worktree', 'list', '--porcelain'],
-      { timeout: 3000 },
-      (error, stdout) => {
-        if (error) {
-          resolve([]);
-          return;
-        }
-
-        const dirs = stdout
-          .split('\n')
-          .filter((line) => line.startsWith('worktree '))
-          .map((line) => line.slice('worktree '.length).trim())
-          .filter(Boolean)
-          .filter((worktreeDir, index, allDirs) => allDirs.indexOf(worktreeDir) === index);
-
-        resolve(dirs);
-      }
-    );
-  });
-}
-
-function gitArgs(dir: string, args: string[]): string[] {
-  return ['-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false', '-C', dir, ...args];
-}
-
-function runGit(dir: string, args: string[], timeout = 3000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile('git', gitArgs(dir, args), { timeout }, (error, stdout) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(stdout.trim());
-    });
-  });
-}
-
-async function getGitBranchInfo(dir: string): Promise<{ branch: string } | null> {
-  try {
-    const branch = await runGit(dir, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-    return branch ? { branch } : null;
-  } catch {
-    try {
-      const branch = await runGit(dir, ['rev-parse', '--short', 'HEAD']);
-      return branch ? { branch } : null;
-    } catch {
-      return null;
-    }
-  }
-}
-
-function isValidGitBranch(branch: unknown): branch is string {
-  return (
-    typeof branch === 'string' &&
-    branch.length > 0 &&
-    branch.length <= 255 &&
-    !branch.startsWith('-') &&
-    !branch.includes('\0')
-  );
 }
 
 async function configureProxy() {
@@ -2038,43 +1969,7 @@ ipcMain.handle('list-recent-dirs', () => {
   return loadRecentDirs();
 });
 
-ipcMain.handle('list-git-worktree-dirs', async (event, dir: string) => {
-  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
-  return await listGitWorktreeDirs(authorizedDir);
-});
-
-ipcMain.handle('get-git-branch-info', async (event, dir: string) => {
-  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
-  return await getGitBranchInfo(authorizedDir);
-});
-
-ipcMain.handle('list-git-branches', async (event, dir: string) => {
-  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
-  try {
-    const output = await runGit(authorizedDir, [
-      'for-each-ref',
-      'refs/heads/',
-      '--format=%(refname:lstrip=2)',
-    ]);
-    return output ? output.split('\n').filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-});
-
-ipcMain.handle('switch-git-branch', async (event, dir: string, branch: unknown) => {
-  const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
-  if (!isValidGitBranch(branch)) return { success: false };
-
-  try {
-    await runGit(authorizedDir, ['check-ref-format', '--branch', branch]);
-    await runGit(authorizedDir, ['switch', '--', branch], 30000);
-    return { success: true };
-  } catch {
-    const currentBranch = await getGitBranchInfo(authorizedDir);
-    return { success: currentBranch?.branch === branch };
-  }
-});
+registerGitIpcHandlers(ipcMain, assertRendererFileAccess);
 
 function rendererSettingValue(settings: Settings, key: SettingKey): Settings[SettingKey] {
   if (key === 'externalGoslingd') {

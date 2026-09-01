@@ -255,3 +255,21 @@ must not change.
 - Intermediary audit: no behavior drift, duplicate dictionary, stale import, public
   contract change, or MOD-B suspect. The facade marker is present. Test assertions
   were added, not weakened.
+
+Checkpoint: `1fac8bd33` (source/tests), with the initial gated log tracked in
+`735b65355` because the repo ignores newly created session logs by default.
+
+### Seam 2 — Authorized Git IPC
+
+- New owner: `ui/desktop/src/main/gitIpc.ts`.
+- Facade surface: one `registerGitIpcHandlers(ipcMain,
+  assertRendererFileAccess)` call remains at the original registration altitude.
+- Direct check: `gitIpc.test.ts` passes 3/3 for hardening-option order, branch
+  validation, and the exact four renderer channel names.
+- Connection check: the facade supplies the same renderer path authorization;
+  preload/renderer channel strings remain unchanged; subprocess calls remain
+  option-separated and repository-scoped.
+- Validation: touched-file Prettier clean; TypeScript check clean; focused module
+  suites 6/6; one owner for each Git helper and channel registration.
+- Intermediary audit: no command argument, timeout, error mapping, or branch-switch
+  behavior changed; no duplicate handlers, new process leak, or MOD-B suspect.
