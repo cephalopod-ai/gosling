@@ -2,7 +2,7 @@
 // ./main; these imports and registration calls preserve the executable entrypoint and must not
 // be pruned as unused compatibility wiring.
 
-import type { Certificate, OpenDialogReturnValue } from 'electron';
+import type { Certificate } from 'electron';
 import {
   app,
   App,
@@ -15,10 +15,8 @@ import {
   net,
   Notification,
   powerSaveBlocker,
-  screen,
   session,
   shell,
-  Tray,
   webContents,
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
@@ -48,12 +46,9 @@ import { getKeyboardShortcuts, resolveStoredSettings } from './utils/settings';
 import * as crypto from 'crypto';
 import windowStateKeeper from 'electron-window-state';
 import {
-  getUpdateAvailable,
   registerUpdateIpcHandlers,
   setAutoDownloadDisabled,
-  setTrayRef,
   setupAutoUpdater,
-  updateTrayMenu,
 } from './utils/autoUpdater';
 import { UPDATES_ENABLED } from './updates';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
@@ -93,6 +88,7 @@ import { registerFileIpcHandlers } from './main/fileIpc';
 import { registerSystemIpcHandlers } from './main/systemIpc';
 import { registerRendererIpcHandlers } from './main/rendererIpc';
 import { registerSettingsIpcHandlers } from './main/settingsIpc';
+import { createWindowChrome } from './main/windowChrome';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -1472,262 +1468,25 @@ const createChat = async (
   return mainWindow;
 };
 
-let activeLauncherWindow: BrowserWindow | null = null;
-
-const createLauncher = () => {
-  if (activeLauncherWindow && !activeLauncherWindow.isDestroyed()) {
-    activeLauncherWindow.focus();
-    return activeLauncherWindow;
-  }
-
-  const launcherWindow = new BrowserWindow({
-    width: 600,
-    height: 80,
-    frame: false,
-    transparent: process.platform === 'darwin',
-    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#ffffff',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      // See the main window above. (SECN-GSL-003)
-      sandbox: true,
-      additionalArguments: [
-        JSON.stringify({
-          ...appConfig,
-          GOSLING_LOCALE: getConfiguredGoslingLocale(),
-        }),
-      ],
-      partition: 'persist:gosling',
-    },
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    resizable: false,
-    movable: true,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    hasShadow: true,
-    vibrancy: process.platform === 'darwin' ? 'window' : undefined,
-  });
-
-  // Center on screen
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
-  const windowBounds = launcherWindow.getBounds();
-
-  launcherWindow.setPosition(
-    Math.round(width / 2 - windowBounds.width / 2),
-    Math.round(height / 3 - windowBounds.height / 2)
-  );
-
-  // Load launcher window content
-  const url = getAppUrl();
-
-  url.hash = '/launcher';
-  launcherWindow.loadURL(formatUrl(url));
-  activeLauncherWindow = launcherWindow;
-
-  launcherWindow.on('closed', () => {
-    reactReadyWindows.delete(launcherWindow.id);
-    activeLauncherWindow = null;
-  });
-
-  // Destroy window when it loses focus
-  launcherWindow.on('blur', () => {
-    launcherWindow.destroy();
-  });
-
-  // Also destroy on escape key
-  launcherWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.key === 'Escape') {
-      launcherWindow.destroy();
-      event.preventDefault();
-    }
-  });
-
-  return launcherWindow;
-};
-
-// Track tray instance
-let tray: Tray | null = null;
-
-const destroyTray = () => {
-  if (tray) {
-    tray.destroy();
-    tray = null;
-  }
-};
-
-const disableTray = () => {
-  updateSettings((s) => {
-    s.showMenuBarIcon = false;
-  });
-};
-
-const createTray = () => {
-  destroyTray();
-
-  const possiblePaths = [
-    path.join(process.resourcesPath, 'images', 'iconTemplate.png'),
-    path.join(process.cwd(), 'src', 'images', 'iconTemplate.png'),
-    path.join(__dirname, '..', 'images', 'iconTemplate.png'),
-    path.join(__dirname, 'images', 'iconTemplate.png'),
-    path.join(process.cwd(), 'images', 'iconTemplate.png'),
-  ];
-
-  const iconPath = possiblePaths.find((p) => fsSync.existsSync(p));
-
-  if (!iconPath) {
-    console.warn('[Main] Tray icon not found. App will continue without system tray.');
-    disableTray();
-    return;
-  }
-
-  try {
-    tray = new Tray(iconPath);
-    setTrayRef(tray);
-    updateTrayMenu(getUpdateAvailable());
-
-    if (process.platform === 'win32') {
-      tray.on('click', showWindow);
-    }
-  } catch (error) {
-    console.error('[Main] Tray creation failed. App will continue without system tray.', error);
-    disableTray();
-    tray = null;
-  }
-};
-
-const showWindow = async () => {
-  const windows = BrowserWindow.getAllWindows();
-
-  if (windows.length === 0) {
-    log.info('No windows are open, creating a new one...');
-    await createChat(app, { dir: firstGrantedRecentDirectory() });
-    return;
-  }
-
-  const initialOffsetX = 30;
-  const initialOffsetY = 30;
-
-  // Iterate over all windows
-  windows.forEach((win, index) => {
-    const currentBounds = win.getBounds();
-    const newX = currentBounds.x + initialOffsetX * index;
-    const newY = currentBounds.y + initialOffsetY * index;
-
-    win.setBounds({
-      x: newX,
-      y: newY,
-      width: currentBounds.width,
-      height: currentBounds.height,
-    });
-
-    if (!win.isVisible()) {
-      win.show();
-    }
-
-    win.focus();
-  });
-};
-
-const buildRecentFilesMenu = () => {
-  const recentDirs = loadRecentDirs().filter((dir) =>
-    rendererDirectoryGrants.isGrantedDirectory(0, dir)
-  );
-  return recentDirs.map((dir) => ({
-    label: dir,
-    click: async () => {
-      await createChat(app, { dir });
-    },
-  }));
-};
-
-const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
-  // Get the current working directory from the focused window
-  let defaultPath: string | undefined;
-  const currentWindow = BrowserWindow.getFocusedWindow();
-
-  if (currentWindow) {
-    try {
-      const currentWorkingDir = await currentWindow.webContents.executeJavaScript(
-        `window.appConfig ? window.appConfig.get('GOSLING_WORKING_DIR') : null`
-      );
-
-      if (currentWorkingDir && typeof currentWorkingDir === 'string') {
-        // Verify the directory exists before using it as default
-        try {
-          const stats = fsSync.lstatSync(currentWorkingDir);
-          if (stats.isDirectory()) {
-            defaultPath = currentWorkingDir;
-          }
-        } catch (error) {
-          if (error && typeof error === 'object' && 'code' in error) {
-            const fsError = error as { code?: string; message?: string };
-            if (
-              fsError.code === 'ENOENT' ||
-              fsError.code === 'EACCES' ||
-              fsError.code === 'EPERM'
-            ) {
-              console.warn(
-                `Current working directory not accessible (${fsError.code}): ${currentWorkingDir}, falling back to home directory`
-              );
-              defaultPath = os.homedir();
-            } else {
-              console.warn(
-                `Unexpected filesystem error (${fsError.code}) for directory ${currentWorkingDir}:`,
-                fsError.message
-              );
-              defaultPath = os.homedir();
-            }
-          } else {
-            console.warn(`Unexpected error checking directory ${currentWorkingDir}:`, error);
-            defaultPath = os.homedir();
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to get current working directory from window:', error);
-    }
-  }
-
-  if (!defaultPath) {
-    defaultPath = os.homedir();
-  }
-
-  const result = (await dialog.showOpenDialog({
-    properties: ['openFile', 'openDirectory', 'createDirectory'],
-    defaultPath: defaultPath,
-  })) as unknown as OpenDialogReturnValue;
-
-  if (!result.canceled && result.filePaths.length > 0) {
-    const selectedPath = result.filePaths[0];
-
-    // If a file was selected, use its parent directory
-    let dirToAdd = selectedPath;
-    try {
-      const stats = fsSync.lstatSync(selectedPath);
-
-      // Reject symlinks for security
-      if (stats.isSymbolicLink()) {
-        console.warn(`Selected path is a symlink, using parent directory for security`);
-        dirToAdd = path.dirname(selectedPath);
-      } else if (stats.isFile()) {
-        dirToAdd = path.dirname(selectedPath);
-      }
-    } catch {
-      console.warn(`Could not stat selected path, using parent directory`);
-      dirToAdd = path.dirname(selectedPath); // Fallback to parent directory
-    }
-
-    addRecentDir(dirToAdd);
-    rendererDirectoryGrants.grantSelectedPath(currentWindow?.webContents.id ?? 0, dirToAdd);
-
-    await createChat(app, { dir: dirToAdd });
-  }
-  return result;
-};
+const {
+  createLauncher,
+  destroyTray,
+  createTray,
+  buildRecentFilesMenu,
+  openDirectoryDialog,
+  hasTray,
+} = createWindowChrome({
+  app,
+  appConfig,
+  getConfiguredGoslingLocale,
+  getAppUrl,
+  reactReadyWindows,
+  updateSettings,
+  createChat,
+  firstGrantedRecentDirectory,
+  rendererDirectoryGrants,
+  log,
+});
 
 // Global error handler. Must never throw itself: it runs from
 // uncaughtException/unhandledRejection, and a window mid-teardown would turn
@@ -2560,7 +2319,7 @@ app.on('will-quit', scheduleShutdownCleanup);
 
 app.on('window-all-closed', () => {
   // Only quit if we're not on macOS or don't have a tray icon
-  if (process.platform !== 'darwin' || !tray) {
+  if (process.platform !== 'darwin' || !hasTray()) {
     app.quit();
   }
 });

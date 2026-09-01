@@ -386,3 +386,24 @@ Checkpoint: `b13a338b1`.
 - Intermediary audit: no setting validation, secret handling, native dialog option,
   directory resolution, registration order, channel, or return value changed; no
   new MOD-B suspect surfaced.
+
+Checkpoint: `2c0438295`.
+
+### Seam 9 — Window chrome
+
+- New owner: `ui/desktop/src/main/windowChrome.ts` (under 400 lines).
+- Facade surface: `createWindowChrome` returns launcher, tray, recent-directory,
+  native chooser, and tray-presence callbacks while keeping app/window creation and
+  renderer authorization dependencies explicit.
+- Direct check: `windowChrome.test.ts` pins the complete facade callback surface and
+  the initial no-tray lifecycle state.
+- Connection check: app startup, settings IPC, application menus, global shortcuts,
+  and `window-all-closed` still reach the same launcher/tray/dialog behavior. The
+  Win32 tray click callback remains private to the extracted owner.
+- Validation: touched-file Prettier clean; TypeScript check clean; focused module
+  suites 18/18. An initially exposed but facade-unused `showWindow` callback was
+  kept module-private after TypeScript identified the unnecessary facade binding.
+- Intermediary audit: no BrowserWindow option, tray path, menu shape, filesystem
+  check, directory grant, recent-directory write, window placement, or quit rule
+  changed; all original explanatory/security comments moved with their code and no
+  new MOD-B suspect surfaced.
