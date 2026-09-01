@@ -612,10 +612,16 @@ local until a separate push is authorized.
       transport. The original module remains a 655-line compatibility facade.
       Behavior-preserving; no MOD-B suspects surfaced. Full run log:
       [`docs/logs/session/2026-09-01-modularize-acp-server.md`](logs/session/2026-09-01-modularize-acp-server.md).
-- [ ] Modularize the final routed >=2000-line file in a dedicated
-      change, preserving behavior and avoiding mixed repair/refactor
-      commits:
-      `crates/gosling/src/agents/agent.rs`.
+- [x] `crates/gosling/src/agents/agent.rs` (5521 lines) modularized 2026-09-01
+      into responsibility modules for tests, hooks/steering, frontend and
+      extension state, durable tool dispatch, reply preparation/streaming,
+      provider transitions, and prompt APIs. The original module remains a
+      532-line compatibility facade. The existing 1,124-line streaming
+      turn-loop stays intact as one documented state-machine cohesion exception.
+      Behavior-preserving; no MOD-B suspects surfaced. Full run log:
+      [`docs/logs/session/2026-09-01-modularize-agent.md`](logs/session/2026-09-01-modularize-agent.md).
+- [x] Modularize all routed >=2000-line files in dedicated changes, preserving
+      behavior and avoiding mixed repair/refactor commits.
 - [x] Run the added Rust regression suite, workspace build, and Clippy before
       merge when explicitly authorized. The 2026-07-18 twelve-lens follow-up ran
       the workspace build, serialized `gosling` library suite, related crate suites,
