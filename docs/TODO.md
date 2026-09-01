@@ -598,13 +598,20 @@ local until a separate push is authorized.
       module remains a compatibility facade and preserves every public path.
       Behavior-preserving; no MOD-B suspects surfaced. Full run log:
       [`docs/logs/session/2026-08-23-modularize-summon.md`](logs/session/2026-08-23-modularize-summon.md).
+- [x] `ui/desktop/src/main.ts` (3614 lines) modularized 2026-09-01 into
+      eleven `main/*.ts` responsibility modules for menu localization,
+      authorized Git IPC, backend certificate trust, allowlist retrieval,
+      file/system/renderer/settings/application IPC, window chrome, and
+      application-menu installation. The original executable remains the
+      Forge compatibility facade at 1,861 lines. Behavior-preserving; BUG-001
+      was recorded and routed without repair. Full run log:
+      [`docs/logs/session/2026-09-01-modularize-desktop-main.md`](logs/session/2026-09-01-modularize-desktop-main.md).
 - [ ] Modularize the remaining routed >=2000-line files in dedicated
       changes, preserving behavior and avoiding mixed repair/refactor
       commits:
       `crates/gosling/src/acp/server.rs`,
       `crates/gosling/src/agents/agent.rs`,
-      `crates/gosling/src/agents/extension_manager.rs`,
-      `ui/desktop/src/main.ts`.
+      `crates/gosling/src/agents/extension_manager.rs`.
 - [x] Run the added Rust regression suite, workspace build, and Clippy before
       merge when explicitly authorized. The 2026-07-18 twelve-lens follow-up ran
       the workspace build, serialized `gosling` library suite, related crate suites,

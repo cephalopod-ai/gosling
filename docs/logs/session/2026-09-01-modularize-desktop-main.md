@@ -148,7 +148,8 @@ commands. No source module imports `main.ts`; it is an executable entrypoint.
 #### BUG-001 — Allowlist size guard appears not to enforce its claimed byte bound
 
 - Code: MOD-B14 (contract mismatch), with a security/resource consequence.
-- Location: `ui/desktop/src/main.ts:3510-3561`.
+- Location after extraction: `ui/desktop/src/main/allowlist.ts:7-52` (originally
+  `ui/desktop/src/main.ts:3510-3561`).
 - Observed while: reading the locked target.
 - Evidence: the limit is named `ALLOWLIST_MAX_BYTES`, but the response is first
   consumed through `response.text()` and then checked with `rawYaml.length`.
@@ -164,8 +165,8 @@ commands. No source module imports `main.ts`; it is an executable entrypoint.
 - Estimated fix complexity: small.
 - Routed to: `audit-security-code` because the helper gates executable extensions
   and the consequence is security/resource shaped.
-- Extraction impact: none; behavior will be retained unchanged, or the helper will
-  remain in the facade if its seam is not selected.
+- Extraction impact: none; the helper moved unchanged in seam 4 and remains routed
+  for a separate security-shaped repair.
 
 ## Gate 2 — Baseline and extraction plan
 
@@ -204,21 +205,22 @@ dependencies and are registered from the same top-level/app-ready phase as today
    Facade keeps Electron's application-level `certificate-error` listener.
 4. `src/main/allowlist.ts` — HTTPS allowlist fetch/parsing behavior. BUG-001 moves
    unchanged. The facade's existing IPC handler delegates to the module.
-5. `src/main/rendererIpc.ts` — React-ready delivery, external URL, directory/recent
-   directory, settings/research-library, ACP URL, and MCP proxy registrations;
-   Git registration is delegated to seam 2. One responsibility: renderer-to-main
-   application/session adapter registration.
+5. `src/main/fileIpc.ts` — native pickers, bounded file/artifact operations,
+   clipboard, message box, artifact routing, Ollama probe, and allowlist IPC.
 6. `src/main/systemIpc.ts` — menu-bar, dock, notifications settings, wakelock,
    spellcheck, focus, and fullscreen registrations.
-7. `src/main/fileIpc.ts` — native pickers, bounded file/artifact operations,
-   clipboard, message box, artifact routing, Ollama probe, and allowlist IPC.
-8. `src/main/windowChrome.ts` — quick launcher, tray, show-window, recent-directory
+7. `src/main/rendererIpc.ts` — React-ready delivery, external URL,
+   directory/recent-directory, ACP URL, and MCP proxy registrations; Git
+   registration is delegated to seam 2.
+8. `src/main/settingsIpc.ts` — typed settings, secret redaction, shortcut/locale
+   updates, research-library selection, and library listing registrations.
+9. `src/main/windowChrome.ts` — quick launcher, tray, show-window, recent-directory
    menu, and native directory chooser. It receives the facade's window/settings
    callbacks so backend/window ownership does not move.
-9. `src/main/applicationMenu.ts` — menu augmentation and translation after the
+10. `src/main/applicationMenu.ts` — menu augmentation and translation after the
    facade has created the first window. It receives callbacks for window creation,
    directory selection, launcher, and focus.
-10. `src/main/appIpc.ts` — post-ready app/window IPC listeners (create/close window,
+11. `src/main/appIpc.ts` — post-ready app/window IPC listeners (create/close window,
     notifications, renderer logging, theme/workspace broadcasts, reload/restart,
     version/locale, and explorer opening).
 
@@ -447,3 +449,89 @@ Checkpoint: `fe454f420`.
   filesystem authorization, return value, renderer event, or launcher-window reuse
   behavior changed; all original validation/security comments moved with the code
   and no new MOD-B suspect surfaced.
+
+Checkpoint: `b4f615da6`.
+
+## Gate 6 — Final verification and audit
+
+### MOD-V01 — Symbol parity and line reconciliation
+
+The original TypeScript AST inventory was rerun against both `40579cb8d` and the
+final facade. Every original declaration is accounted for:
+
+| Final owner | Original declarations / executable blocks |
+|---|---|
+| `main.ts` compatibility facade | updater decision; locale wrappers; settings/path/artifact state; protocol/open-file lifecycle; backend/window creation; wakelock state; application startup/shutdown |
+| `menuLocalization.ts` | native menu dictionary and pure recursive translation |
+| `gitIpc.ts` | Git argument construction, subprocess execution, branch/worktree helpers, four handlers |
+| `backendCertificateTrust.ts` | trust types/state, fingerprint/hostname normalization, TOFU verification, session verifier |
+| `allowlist.ts` | allowlist timeout/size constants and fetch/YAML helper |
+| `fileIpc.ts` | bounded read/Ollama constants and 18 file/artifact/native-operation handlers |
+| `systemIpc.ts` | 12 menu/dock/notification/wakelock/spellcheck/focus handlers |
+| `rendererIpc.ts` | loopback ACP conversion, MCP proxy parameter assembly, readiness/directory/recent/Git/ACP/proxy handlers |
+| `settingsIpc.ts` | setting rendering, research-library resolution/grants, six handlers |
+| `windowChrome.ts` | launcher/tray state and helpers, show-window, recent-directory menu, native chooser |
+| `applicationMenu.ts` | complete application-menu augmentation/localization/install block |
+| `appIpc.ts` | app activation, 11 event channels, one handled channel |
+
+The private `registerGlobalShortcuts` declaration changed only from a const arrow to
+an equivalent hoisted function so unchanged registration altitude could be retained.
+All original module-level executable statements remain in the facade or the listed
+registrar at the same lifecycle phase. Unaccounted original symbols/blocks: **0**.
+
+Line reconciliation: the original file was 3,614 lines. The final compatibility
+facade is 1,861 lines and the eleven production modules total 2,146 lines, for
+4,007 production lines. The net +393 lines are dependency interfaces, explicit
+registrars/factory return surfaces, imports, and dual-audience module headers. The
+twelve focused test files add 412 lines; no production behavior was dropped to
+achieve the facade reduction.
+
+### MOD-V02–V10 — Adversarial verification
+
+| Check | Evidence and result |
+|---|---|
+| MOD-V02 connection/import sweep | Direct facade imports and registrar calls have one owner. Preload/renderer searches trace every moved IPC family two levels deep; registration tests pin 60 handled/event channels plus app activation. Pass. |
+| MOD-V03 stale references | Canonical TODO and active ledger now route three remaining files; structure review carries a dated follow-up. Historical audits and line-number evidence remain unchanged as historical records. Pass. |
+| MOD-V04 import/runtime integrity | TypeScript and ESLint pass. Focused module imports pass under Vitest; no new unresolved or cyclic import failure surfaced. Pass. |
+| MOD-V05 process/resource sweep | No repo Cargo, pnpm, Vitest, Vite, or test process remains. The pre-existing installed Gosling service on 53273/53275 and Node service on 8888 are unchanged. Generated renderer output was moved recoverably to `/tmp/gosling-desktop-dist-final.C0TWeL/dist`; the targeted main bundle is isolated at `/tmp/gosling-main-bundle.TPkGRW`. Pass. |
+| MOD-V06 duplicate-owner sweep | Distinctive body/constant/handler searches find each moved responsibility only in its new owner; the facade contains only registration/dependency wiring. Pass. |
+| MOD-V07 module identity/logging | No public serialized module name changed. Existing logger messages/namespaces are unchanged. `windowChrome.ts` retains `__dirname`-relative preload/icon lookup; the targeted bundle emits it into the same single `main.mjs` entry module. Pass. |
+| MOD-V08 documentation/header audit | `main.ts` carries the literal compatibility-facade marker; every production module states responsibility, extraction provenance, and facade import/re-export behavior. Canonical backlog and living polish mirrors updated. Pass. |
+| MOD-V09 framework/build integration | Exact baseline Vite build passes with the same existing warnings. A targeted `vite build --ssr src/main.ts` transforms 45 modules and emits `main.mjs`, proving the actual Electron entry/import graph bundles. Pass. |
+| MOD-V10 tests and facade compatibility | Focused suites pass 22/22 across 12 files, including facade-to-module and Forge-entrypoint wiring. Full Desktop suite passes 1,101/1,101 across 147 files. Pass. |
+
+### Exact baseline rerun
+
+| Check | Final result | Comparison |
+|---|---|---|
+| `pnpm run format:check` | exit 1: the same 59 unrelated files require Prettier; all touched Desktop TypeScript files pass targeted Prettier | unchanged pre-existing failure |
+| `pnpm run lint:check` | exit 1 only at the pre-existing stale `src/i18n/messages/en.json`; TypeScript and ESLint pass | unchanged pre-existing failure |
+| `pnpm run test:run` | exit 0: 147 files, 1,101 tests passed | improved by 12 files / 22 tests |
+| `pnpm exec vite build --config vite.main.config.mts` | exit 0 with the same existing client-directive, sourcemap, and chunk-size warnings | unchanged pass |
+| targeted Electron entry bundle | exit 0: 45 modules, `main.mjs` | additional pass |
+| `git diff --check` | exit 0 | pass |
+
+The bare `vite.main.config.mts` command does not declare an input and therefore
+uses Vite's default renderer input despite its name; it was rerun exactly for
+baseline parity, then supplemented with the targeted SSR entry build above.
+
+## Gate 7 — Architecture drift and record closure
+
+- Accepted ADR-0008 remains satisfied: focused shells still use separate main,
+  preload, and renderer entries; no shell lifecycle/domain rule entered the full
+  Desktop facade or its modules.
+- ADR-0011 and the shell application-runtime boundary are untouched. Electron
+  remains the adapter over existing backend contracts; no public renderer, ACP,
+  settings, filesystem, protocol, or package contract changed.
+- No architecture contract drift, public API relocation, or module-path compatibility
+  shim is required. Forge still points to `src/main.ts`.
+- The Desktop `main.ts` slice of MOD-GSL-001 is closed with this log and canonical
+  TODO evidence. MOD-GSL-001 remains open for the three explicitly listed Rust
+  files; it is not rounded up to campaign completion.
+- BUG-001 remains open and routed to `audit-security-code`; it was not mixed into
+  the behavior-preserving extraction.
+
+Outcome: behavior-preserving modularization complete for the one locked original
+source file. Eleven production responsibility modules, twelve focused test files,
+and the 1,861-line executable compatibility facade are fully validated within the
+recorded pre-existing repository-wide format/i18n limitations.
