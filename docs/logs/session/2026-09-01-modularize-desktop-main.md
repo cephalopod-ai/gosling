@@ -427,3 +427,23 @@ Checkpoint: `2b8538acf`.
   visibility, always-on-top behavior, label lookup, version fallback, or final menu
   installation order changed; all original menu comments moved with the code and no
   new MOD-B suspect surfaced.
+
+Checkpoint: `fe454f420`.
+
+### Seam 11 — Post-ready app/window IPC
+
+- New owner: `ui/desktop/src/main/appIpc.ts` (under 400 lines).
+- Facade surface: one `registerAppIpcHandlers` call supplies window/chat creation,
+  authorized path resolution, locale lookup, recent-directory fallback, and logging.
+- Direct check: `appIpc.test.ts` pins the `activate` lifecycle listener, all 11
+  original `ipcMain.on` channels, and the one original handled channel in order.
+- Connection check: preload/renderer commands still reach launcher handoff, window
+  close, notifications, renderer logging, theme/workspace broadcast, reload/restart,
+  version/locale, safe external URL opening, and authorized explorer opening.
+- Validation: touched-file Prettier clean; TypeScript check clean; focused module
+  suites 20/20. TypeScript identified two now-unused facade imports after ownership
+  moved; only those imports were removed before the clean rerun.
+- Intermediary audit: no event/handler order, input bound, sanitization, URL policy,
+  filesystem authorization, return value, renderer event, or launcher-window reuse
+  behavior changed; all original validation/security comments moved with the code
+  and no new MOD-B suspect surfaced.

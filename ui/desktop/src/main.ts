@@ -52,13 +52,9 @@ import {
 } from './utils/autoUpdater';
 import { UPDATES_ENABLED } from './updates';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
-import {
-  blockTopLevelNavigation,
-  openExternalUrlIfSafe,
-  normalizeWebUrl,
-} from './utils/urlSecurity';
+import { blockTopLevelNavigation, openExternalUrlIfSafe } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
-import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
+import { rendererEventChannels } from './ipc/channels';
 import type { ArtifactRoutingConfig } from './types/artifactRouter';
 import { installArtifactDownloadRouter } from './utils/artifactDownloads';
 import { ArtifactRoutingRegistry } from './utils/artifactRoutingRegistry';
@@ -90,6 +86,7 @@ import { registerRendererIpcHandlers } from './main/rendererIpc';
 import { registerSettingsIpcHandlers } from './main/settingsIpc';
 import { createWindowChrome } from './main/windowChrome';
 import { installApplicationMenu } from './main/applicationMenu';
+import { registerAppIpcHandlers } from './main/appIpc';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -1764,203 +1761,14 @@ async function appMain() {
     createLauncher,
   });
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createNewWindow(app);
-    }
-  });
-
-  ipcMain.on(desktopCommandChannels.createChatWindow, (event, options = {}) => {
-    void (async () => {
-      const { query, dir, resumeSessionId, viewType } = options;
-      const resolvedDir =
-        typeof dir === 'string' && dir.trim()
-          ? await assertRendererFileAccess(event.sender.id, dir)
-          : firstGrantedRecentDirectory(event.sender.id);
-
-      const isFromLauncher = query && !resumeSessionId && !viewType;
-
-      if (isFromLauncher) {
-        const senderWindow = BrowserWindow.fromWebContents(event.sender);
-        const launcherWindowId = senderWindow?.id;
-        const allWindows = BrowserWindow.getAllWindows();
-
-        const existingWindows = allWindows.filter(
-          (win) => !win.isDestroyed() && win.id !== launcherWindowId
-        );
-
-        if (existingWindows.length > 0) {
-          const targetWindow = existingWindows[0];
-          targetWindow.show();
-          targetWindow.focus();
-          targetWindow.webContents.send(rendererEventChannels.setInitialMessage, query);
-          return;
-        }
-      }
-
-      await createChat(app, {
-        initialMessage: query,
-        dir: resolvedDir,
-        resumeSessionId,
-        viewType,
-      });
-    })().catch((error) => {
-      log.warn('[Main] Rejected create-chat request:', errorMessage(error));
-      const senderWindow = BrowserWindow.fromWebContents(event.sender);
-      if (senderWindow && !senderWindow.isDestroyed()) {
-        senderWindow.webContents.send(
-          rendererEventChannels.fatalError,
-          'The selected working directory must be chosen or relinked before starting a chat.'
-        );
-      }
-    });
-  });
-
-  ipcMain.on(desktopCommandChannels.closeWindow, (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (window && !window.isDestroyed()) {
-      window.close();
-    }
-  });
-
-  ipcMain.on('notify', (event, data) => {
-    try {
-      // Validate notification data
-      if (!data || typeof data !== 'object') {
-        console.error('Invalid notification data');
-        return;
-      }
-
-      // Validate title and body
-      if (typeof data.title !== 'string' || typeof data.body !== 'string') {
-        console.error('Invalid notification title or body');
-        return;
-      }
-
-      // Limit the length of title and body
-      const MAX_LENGTH = 1000;
-      if (data.title.length > MAX_LENGTH || data.body.length > MAX_LENGTH) {
-        console.error('Notification title or body too long');
-        return;
-      }
-
-      // Remove any HTML tags for security
-      const sanitizeText = (text: string) => text.replace(/<[^>]*>/g, '');
-
-      const notification = new Notification({
-        title: sanitizeText(data.title),
-        body: sanitizeText(data.body),
-      });
-
-      // Add click handler to focus the window
-      notification.on('click', () => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
-          if (window.isMinimized()) {
-            window.restore();
-          }
-          window.show();
-          window.focus();
-        }
-      });
-
-      notification.show();
-    } catch (error) {
-      console.error('Error showing notification:', error);
-    }
-  });
-
-  ipcMain.on('logInfo', (_event, info) => {
-    try {
-      // Validate log info
-      if (info === undefined || info === null) {
-        console.error('Invalid log info: undefined or null');
-        return;
-      }
-
-      // Convert to string if not already
-      const logMessage = String(info);
-
-      // Limit log message length
-      const MAX_LENGTH = 10000; // 10KB limit
-      if (logMessage.length > MAX_LENGTH) {
-        console.error('Log message too long');
-        return;
-      }
-
-      // Log the sanitized message
-      log.info('from renderer:', logMessage);
-    } catch (error) {
-      console.error('Error logging info:', error);
-    }
-  });
-
-  ipcMain.on(desktopCommandChannels.broadcastThemeChange, (event, themeData) => {
-    const senderWindow = BrowserWindow.fromWebContents(event.sender);
-    const allWindows = BrowserWindow.getAllWindows();
-
-    allWindows.forEach((window) => {
-      if (window.id !== senderWindow?.id) {
-        window.webContents.send(rendererEventChannels.themeChanged, themeData);
-      }
-    });
-  });
-
-  ipcMain.on(desktopCommandChannels.broadcastWorkspaceChange, (event) => {
-    const senderWindow = BrowserWindow.fromWebContents(event.sender);
-    BrowserWindow.getAllWindows().forEach((window) => {
-      if (window.id !== senderWindow?.id) {
-        window.webContents.send(rendererEventChannels.workspacesChanged);
-      }
-    });
-  });
-
-  ipcMain.on('reload-app', (event) => {
-    // Get the window that sent the event
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (window) {
-      window.reload();
-    }
-  });
-
-  ipcMain.on('open-in-chrome', async (_event, url: unknown) => {
-    try {
-      const webUrl = normalizeWebUrl(url);
-      if (!webUrl) {
-        console.error('Invalid URL protocol. Only HTTP and HTTPS are allowed.');
-        return;
-      }
-
-      await shell.openExternal(webUrl);
-    } catch (error) {
-      console.error('Error opening URL in browser:', error);
-    }
-  });
-
-  // Handle app restart
-  ipcMain.on('restart-app', () => {
-    app.relaunch();
-    app.quit();
-  });
-
-  // Handler for getting app version
-  ipcMain.on(desktopCommandChannels.getAppVersion, (event) => {
-    event.returnValue = app.getVersion();
-  });
-
-  ipcMain.on(desktopCommandChannels.getAppLocale, (event) => {
-    event.returnValue = getConfiguredGoslingLocale();
-  });
-
-  ipcMain.handle('open-directory-in-explorer', async (event, directoryPath: string) => {
-    try {
-      const resolvedPath = await assertRendererFileAccess(event.sender.id, directoryPath);
-      const errorMessage = await shell.openPath(resolvedPath);
-      return errorMessage === '';
-    } catch (error) {
-      console.error('Error opening directory in explorer:', error);
-      return false;
-    }
+  registerAppIpcHandlers(ipcMain, {
+    app,
+    createNewWindow: () => createNewWindow(app),
+    createChat: (options) => createChat(app, options),
+    assertRendererFileAccess,
+    firstGrantedRecentDirectory,
+    getConfiguredGoslingLocale,
+    log,
   });
 }
 
