@@ -407,3 +407,23 @@ Checkpoint: `2c0438295`.
   check, directory grant, recent-directory write, window placement, or quit rule
   changed; all original explanatory/security comments moved with their code and no
   new MOD-B suspect surfaced.
+
+Checkpoint: `2b8538acf`.
+
+### Seam 10 — Application menu
+
+- New owner: `ui/desktop/src/main/applicationMenu.ts` (under 400 lines).
+- Facade surface: one `installApplicationMenu` call supplies settings, bundled
+  version, localization, and the facade/window-chrome callbacks used by menu items.
+- Direct check: `applicationMenu.test.ts` exercises the existing no-menu startup
+  path and proves the application-menu lookup remains the entry operation.
+- Connection check: renderer commands, native shortcut resolution, new-window and
+  directory actions, recent directories, focus/launcher actions, localization, and
+  About metadata remain connected through the same Electron menu items.
+- Validation: touched-file Prettier clean; TypeScript check clean; focused module
+  suites 19/19. The first test run exposed Vitest mock-hoisting in the new harness;
+  `vi.hoisted` corrected the test only, and the rerun passed.
+- Intermediary audit: no insertion index, accelerator, renderer event, platform
+  visibility, always-on-top behavior, label lookup, version fallback, or final menu
+  installation order changed; all original menu comments moved with the code and no
+  new MOD-B suspect surfaced.
