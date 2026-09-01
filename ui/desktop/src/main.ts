@@ -2,7 +2,7 @@
 // ./main; these imports and registration calls preserve the executable entrypoint and must not
 // be pruned as unused compatibility wiring.
 
-import type { Certificate, OpenDialogOptions, OpenDialogReturnValue, Session } from 'electron';
+import type { Certificate, OpenDialogOptions, OpenDialogReturnValue } from 'electron';
 import {
   app,
   App,
@@ -93,6 +93,14 @@ import {
   translateMenuLabels as translateNativeMenuLabels,
 } from './main/menuLocalization';
 import { registerGitIpcHandlers } from './main/gitIpc';
+import {
+  installBackendCertificateVerifier,
+  isTrustedHost,
+  normalizeFingerprint,
+  trustBackendCertificate,
+  verifyBackendCertificate,
+  type BackendCertificateTrustRegistration,
+} from './main/backendCertificateTrust';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -437,103 +445,7 @@ if (started) app.quit();
 // Certificate trust for active backend leases. Renderer requests pin to the
 // exact cert fingerprint. Each backend lease owns a trust record so old windows
 // keep working after settings change.
-interface BackendCertificateTrust {
-  hostname: string;
-  fingerprint: string | null;
-}
-
-interface BackendCertificateTrustRegistration {
-  trust: BackendCertificateTrust;
-  release: () => void;
-}
-
-const trustedBackendCertificates = new Set<BackendCertificateTrust>();
-const backendCertificateVerifierSessions = new WeakSet<Session>();
 const MAIN_WINDOW_SESSION_PARTITION = 'persist:gosling';
-
-function normalizeHostname(hostname: string): string {
-  return hostname.toLowerCase();
-}
-
-function normalizeFingerprint(fp: string): string {
-  if (fp.startsWith('sha256/')) {
-    const b64 = fp.slice('sha256/'.length);
-    const buf = Buffer.from(b64, 'base64');
-    return Array.from(buf)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join(':')
-      .toUpperCase();
-  }
-  return fp.toUpperCase();
-}
-
-function trustBackendCertificate(
-  hostname: string,
-  fingerprint: string | null
-): BackendCertificateTrustRegistration {
-  const trust: BackendCertificateTrust = {
-    hostname: normalizeHostname(hostname),
-    fingerprint: fingerprint ? normalizeFingerprint(fingerprint) : null,
-  };
-  trustedBackendCertificates.add(trust);
-  return {
-    trust,
-    release: () => {
-      trustedBackendCertificates.delete(trust);
-    },
-  };
-}
-
-function getBackendCertificateTrusts(hostname: string): BackendCertificateTrust[] {
-  const normalizedHostname = normalizeHostname(hostname);
-  return [...trustedBackendCertificates].filter((trust) => trust.hostname === normalizedHostname);
-}
-
-function verifyBackendCertificate(hostname: string, fingerprint: string): boolean {
-  const normalizedFingerprint = normalizeFingerprint(fingerprint);
-  const trusts = getBackendCertificateTrusts(hostname);
-  if (trusts.length === 0) {
-    return false;
-  }
-
-  if (trusts.some((trust) => trust.fingerprint === normalizedFingerprint)) {
-    return true;
-  }
-
-  const tofuTrust = trusts.find((trust) => trust.fingerprint === null);
-  if (tofuTrust) {
-    // TOFU: pin the certificate from the first successful handshake.
-    tofuTrust.fingerprint = normalizedFingerprint;
-    return true;
-  }
-
-  return false;
-}
-
-function isTrustedHost(hostname: string): boolean {
-  return getBackendCertificateTrusts(hostname).length > 0;
-}
-
-function installBackendCertificateVerifier(targetSession: Session) {
-  if (backendCertificateVerifierSessions.has(targetSession)) {
-    return;
-  }
-
-  targetSession.setCertificateVerifyProc((request, callback) => {
-    if (!isTrustedHost(request.hostname)) {
-      callback(-3);
-      return;
-    }
-
-    const certificate = request.certificate as Certificate & {
-      fingerprint256?: string;
-    };
-    const fingerprint = certificate.fingerprint256 ?? certificate.fingerprint;
-    const match = verifyBackendCertificate(request.hostname, fingerprint);
-    callback(match ? 0 : -2);
-  });
-  backendCertificateVerifierSessions.add(targetSession);
-}
 
 // Renderer requests: pin to the exact cert once known.
 app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {

@@ -273,3 +273,21 @@ Checkpoint: `1fac8bd33` (source/tests), with the initial gated log tracked in
   suites 6/6; one owner for each Git helper and channel registration.
 - Intermediary audit: no command argument, timeout, error mapping, or branch-switch
   behavior changed; no duplicate handlers, new process leak, or MOD-B suspect.
+
+Checkpoint: `011e45a90`.
+
+### Seam 3 — Backend certificate trust
+
+- New owner: `ui/desktop/src/main/backendCertificateTrust.ts`.
+- Facade surface: the application-level `certificate-error` listener remains in
+  `main.ts`; it imports the same trust/verification functions. Window/backend
+  startup still installs the per-session verifier through the facade.
+- Direct check: `backendCertificateTrust.test.ts` passes 3/3 for hexadecimal and
+  sha256 normalization, case-insensitive host matching, exact pin rejection,
+  release, and first-use pinning.
+- Connection check: certificate-error, external backend setup, local TLS startup,
+  and partition verifier installation retain the same calls and result codes.
+- Validation: touched-file Prettier clean; TypeScript check clean; focused module
+  suites 9/9; trust state has one owner.
+- Intermediary audit: no event registration order, certificate result code, TOFU
+  semantics, or cleanup behavior changed; no module-identity hazard or MOD-B suspect.
