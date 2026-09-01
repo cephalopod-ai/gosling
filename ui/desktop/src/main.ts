@@ -27,7 +27,7 @@ import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
 import path from 'node:path';
 import os from 'node:os';
-import { execFileSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import 'dotenv/config';
 import { checkBackendStatus } from './backendStatus';
 import { acpTokenSubprotocol, startGoslingServe } from './goslingServe';
@@ -98,6 +98,7 @@ import {
 } from './main/backendCertificateTrust';
 import { getAllowList } from './main/allowlist';
 import { registerFileIpcHandlers } from './main/fileIpc';
+import { registerSystemIpcHandlers } from './main/systemIpc';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -2027,184 +2028,15 @@ ipcMain.handle('get-mcp-app-proxy-url', async (event, csp?: McpAppProxyCsp | nul
   return proxyUrl.toString();
 });
 
-// Handle menu bar icon visibility
-ipcMain.handle('set-menu-bar-icon', async (_event, show: boolean) => {
-  updateSettings((s) => {
-    s.showMenuBarIcon = show;
-  });
-
-  if (show) {
-    createTray();
-  } else {
-    destroyTray();
-  }
-  return true;
-});
-
-ipcMain.handle('get-menu-bar-icon-state', () => {
-  try {
-    const settings = getSettings();
-    return settings.showMenuBarIcon ?? true;
-  } catch (error) {
-    console.error('Error getting menu bar icon state:', error);
-    return true;
-  }
-});
-
-// Handle dock icon visibility (macOS only)
-ipcMain.handle('set-dock-icon', async (_event, show: boolean) => {
-  if (process.platform !== 'darwin') return false;
-
-  const settings = getSettings();
-  updateSettings((s) => {
-    s.showDockIcon = show;
-  });
-
-  if (show) {
-    app.dock?.show();
-  } else {
-    // Only hide the dock if we have a menu bar icon to maintain accessibility
-    if (settings.showMenuBarIcon) {
-      app.dock?.hide();
-      setTimeout(() => {
-        focusWindow();
-      }, 50);
-    }
-  }
-  return true;
-});
-
-ipcMain.handle('get-dock-icon-state', () => {
-  try {
-    if (process.platform !== 'darwin') return true;
-    const settings = getSettings();
-    return settings.showDockIcon ?? true;
-  } catch (error) {
-    console.error('Error getting dock icon state:', error);
-    return true;
-  }
-});
-
-// Handle opening system notifications preferences
-ipcMain.handle('open-notifications-settings', async () => {
-  try {
-    if (process.platform === 'darwin') {
-      spawn('open', ['x-apple.systempreferences:com.apple.preference.notifications']);
-      return true;
-    } else if (process.platform === 'win32') {
-      // Windows: Open notification settings in Settings app
-      spawn('ms-settings:notifications', { shell: true });
-      return true;
-    } else if (process.platform === 'linux') {
-      // Linux: Try different desktop environments
-      function canSpawn(cmd: string): boolean {
-        try {
-          execFileSync('which', [cmd], { stdio: 'ignore' });
-          return true;
-        } catch {
-          return false;
-        }
-      }
-
-      // GNOME
-      if (canSpawn('gnome-control-center')) {
-        spawn('gnome-control-center', ['notifications']);
-        return true;
-      }
-
-      // KDE Plasma
-      if (canSpawn('systemsettings5')) {
-        spawn('systemsettings5', ['kcm_notifications']);
-        return true;
-      }
-
-      // XFCE
-      if (canSpawn('xfce4-settings-manager')) {
-        spawn('xfce4-settings-manager', ['--socket-id=notifications']);
-        return true;
-      }
-
-      console.warn('Could not find a suitable settings application for Linux');
-      return false;
-    } else {
-      console.warn(
-        `Opening notification settings is not supported on platform: ${process.platform}`
-      );
-      return false;
-    }
-  } catch (error) {
-    console.error('Error opening notification settings:', error);
-    return false;
-  }
-});
-
-// Handle wakelock setting
-ipcMain.handle('set-wakelock', async (_event, enable: boolean) => {
-  updateSettings((s) => {
-    s.enableWakelock = enable;
-  });
-
-  for (const windowId of activeWakelockSessionsByWindow.keys()) {
-    syncWindowPowerSaveBlocker(windowId);
-  }
-
-  return true;
-});
-
-ipcMain.handle('get-wakelock-state', () => {
-  try {
-    const settings = getSettings();
-    return settings.enableWakelock ?? false;
-  } catch (error) {
-    console.error('Error getting wakelock state:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('set-wakelock-active', (event, sessionId: string, active: boolean): boolean => {
-  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
-  if (!windowId || !sessionId.trim()) {
-    return false;
-  }
-
-  const activeSessions = activeWakelockSessionsByWindow.get(windowId) ?? new Set<string>();
-  if (active) {
-    activeSessions.add(sessionId);
-    activeWakelockSessionsByWindow.set(windowId, activeSessions);
-  } else {
-    activeSessions.delete(sessionId);
-    if (activeSessions.size === 0) {
-      activeWakelockSessionsByWindow.delete(windowId);
-    }
-  }
-  syncWindowPowerSaveBlocker(windowId);
-  return true;
-});
-
-ipcMain.handle('set-spellcheck', async (_event, enable: boolean) => {
-  updateSettings((s) => {
-    s.spellcheckEnabled = enable;
-  });
-  return true;
-});
-
-ipcMain.handle('get-spellcheck-state', () => {
-  try {
-    const settings = getSettings();
-    return settings.spellcheckEnabled ?? true;
-  } catch (error) {
-    console.error('Error getting spellcheck state:', error);
-    return true;
-  }
-});
-
-ipcMain.handle('is-any-window-focused', () => {
-  return BrowserWindow.getFocusedWindow() !== null;
-});
-
-ipcMain.handle('get-is-fullscreen', (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  return win?.isFullScreen() ?? false;
+registerSystemIpcHandlers(ipcMain, {
+  app,
+  getSettings,
+  updateSettings,
+  createTray,
+  destroyTray,
+  focusWindow,
+  activeWakelockSessionsByWindow,
+  syncWindowPowerSaveBlocker,
 });
 
 registerFileIpcHandlers(ipcMain, {
@@ -2231,7 +2063,7 @@ const createNewWindow = async (app: App, dir?: string | null) => {
   return await createChat(app, { dir: openDir });
 };
 
-const focusWindow = () => {
+function focusWindow(): void {
   const windows = BrowserWindow.getAllWindows();
   if (windows.length > 0) {
     windows.forEach((win) => {
@@ -2241,7 +2073,7 @@ const focusWindow = () => {
   } else {
     createNewWindow(app);
   }
-};
+}
 
 const registerGlobalShortcuts = () => {
   globalShortcut.unregisterAll();

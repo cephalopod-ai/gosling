@@ -326,3 +326,23 @@ Checkpoint: `0bbf3f2df`.
 - Intermediary audit: no path guard, byte limit, timeout, process cleanup, return
   shape, channel, or error mapping changed. One registration owner remains; no new
   MOD-B suspect surfaced.
+
+Checkpoint: `dfa9595ae`.
+
+### Seam 6 — System IPC
+
+- New owner: `ui/desktop/src/main/systemIpc.ts`.
+- Facade surface: one `registerSystemIpcHandlers` call supplies settings, tray,
+  focus, and wakelock ownership without moving those lifecycle states.
+- Direct check: `systemIpc.test.ts` proves all 12 original channel names register
+  once and in the same order.
+- Connection check: renderer controls still reach native menu/dock visibility,
+  platform notification settings, wakelock tracking, spellcheck, and window state
+  through the same channels and facade-owned state.
+- Validation: the first type check caught dependency evaluation of the private
+  `focusWindow` const before initialization. Converting that equivalent private
+  helper to a hoisted function preserved registration order; the rerun is clean.
+  Touched-file Prettier clean; focused module suites 14/14.
+- Intermediary audit: no settings default, platform command, delay, wakelock map,
+  return value, or channel changed. Existing platform comments moved with the code;
+  no MOD-B suspect surfaced.
