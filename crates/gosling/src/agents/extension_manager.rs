@@ -63,54 +63,14 @@ use serde_json::Value;
 
 type McpClientBox = Arc<dyn McpClientTrait>;
 
+mod action_required_stream;
 mod pagination;
+
+use action_required_stream::ActionRequiredStream;
 
 use pagination::{collect_paginated_prompts, collect_paginated_resources, collect_paginated_tools};
 #[cfg(test)]
 use pagination::{PaginationGuard, MAX_MCP_LIST_ITEMS, MAX_MCP_LIST_PAGES};
-
-struct ActionRequiredStream {
-    inner: ReceiverStream<crate::conversation::message::Message>,
-    session_id: String,
-    tool_call_request_id: String,
-}
-
-impl ActionRequiredStream {
-    fn new(
-        receiver: tokio::sync::mpsc::Receiver<crate::conversation::message::Message>,
-        session_id: String,
-        tool_call_request_id: String,
-    ) -> Self {
-        Self {
-            inner: ReceiverStream::new(receiver),
-            session_id,
-            tool_call_request_id,
-        }
-    }
-}
-
-impl Stream for ActionRequiredStream {
-    type Item = crate::conversation::message::Message;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.inner).poll_next(cx)
-    }
-}
-
-impl Drop for ActionRequiredStream {
-    fn drop(&mut self) {
-        let session_id = self.session_id.clone();
-        let tool_call_request_id = self.tool_call_request_id.clone();
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
-        handle.spawn(async move {
-            ActionRequiredManager::global()
-                .unregister_action_required_stream(&session_id, &tool_call_request_id)
-                .await;
-        });
-    }
-}
 
 static RE_ENV_BRACES: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}").expect("valid regex"));
