@@ -30,7 +30,7 @@ import os from 'node:os';
 import { spawn } from 'child_process';
 import 'dotenv/config';
 import { checkBackendStatus } from './backendStatus';
-import { acpTokenSubprotocol, startGoslingServe } from './goslingServe';
+import { startGoslingServe } from './goslingServe';
 import { GoslingServeLeaseRegistry, type GoslingServeLease } from './goslingServeLeaseRegistry';
 import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
 import { getOverrideOriginForRequest } from './requestOrigin';
@@ -87,7 +87,6 @@ import {
   translateMenuLabel,
   translateMenuLabels as translateNativeMenuLabels,
 } from './main/menuLocalization';
-import { registerGitIpcHandlers } from './main/gitIpc';
 import {
   installBackendCertificateVerifier,
   isTrustedHost,
@@ -99,6 +98,7 @@ import {
 import { getAllowList } from './main/allowlist';
 import { registerFileIpcHandlers } from './main/fileIpc';
 import { registerSystemIpcHandlers } from './main/systemIpc';
+import { registerRendererIpcHandlers } from './main/rendererIpc';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -349,48 +349,6 @@ async function validateArtifactRoutingConfig(
 async function openExternalIfSafe(url: string): Promise<void> {
   if (!(await openExternalUrlIfSafe(url, (safeUrl) => shell.openExternal(safeUrl)))) {
     console.warn(`[Main] Blocked unsafe external URL: ${url}`);
-  }
-}
-
-function loopbackHttpBaseFromAcpUrl(acpUrl: string): string | null {
-  try {
-    const parsed = new URL(acpUrl);
-    if (!['ws:', 'wss:'].includes(parsed.protocol)) {
-      return null;
-    }
-    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(parsed.hostname)) {
-      return null;
-    }
-
-    parsed.protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:';
-    parsed.pathname = '';
-    parsed.search = '';
-    parsed.hash = '';
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return null;
-  }
-}
-
-type McpAppProxyCsp = {
-  connectDomains?: string[];
-  resourceDomains?: string[];
-  frameDomains?: string[];
-  baseUriDomains?: string[];
-};
-
-function appendDomainParams(proxyUrl: URL, csp?: McpAppProxyCsp | null): void {
-  if (csp?.connectDomains?.length) {
-    proxyUrl.searchParams.set('connect_domains', csp.connectDomains.join(','));
-  }
-  if (csp?.resourceDomains?.length) {
-    proxyUrl.searchParams.set('resource_domains', csp.resourceDomains.join(','));
-  }
-  if (csp?.frameDomains?.length) {
-    proxyUrl.searchParams.set('frame_domains', csp.frameDomains.join(','));
-  }
-  if (csp?.baseUriDomains?.length) {
-    proxyUrl.searchParams.set('base_uri_domains', csp.baseUriDomains.join(','));
   }
 }
 
@@ -1806,80 +1764,18 @@ process.on('unhandledRejection', (error) => {
   handleFatalError(error instanceof Error ? error : new Error(String(error)));
 });
 
-ipcMain.on(desktopCommandChannels.reactReady, (event) => {
-  log.info('React ready event received');
-
-  // Get the window that sent the react-ready event
-  const window = BrowserWindow.fromWebContents(event.sender);
-  const windowId = window?.id;
-
-  if (windowId !== undefined) {
-    reactReadyWindows.add(windowId);
-  }
-
-  // Send any pending initial message for this window
-  if (windowId && pendingInitialMessages.has(windowId)) {
-    const initialMessage = pendingInitialMessages.get(windowId)!;
-    const noAutoSubmit = pendingInitialMessageNoAutoSubmit.has(windowId);
-    log.info('Sending pending initial message to window');
-    window.webContents.send(rendererEventChannels.setInitialMessage, initialMessage, {
-      noAutoSubmit,
-    });
-    pendingInitialMessages.delete(windowId);
-    pendingInitialMessageNoAutoSubmit.delete(windowId);
-  }
-
-  if (windowId && pendingDeepLinks.has(windowId) && window) {
-    const deepLinkUrl = pendingDeepLinks.get(windowId)!;
-    pendingDeepLinks.delete(windowId);
-    log.info('Processing pending deep link for window:', windowId);
-    try {
-      const parsedUrl = new URL(deepLinkUrl);
-      if (parsedUrl.hostname === 'extension') {
-        window.webContents.send(rendererEventChannels.addExtension, deepLinkUrl);
-      } else if (parsedUrl.hostname === 'sessions') {
-        sendOpenSharedSession(window, deepLinkUrl);
-      }
-    } catch (error) {
-      log.error('Error processing pending deep link:', error);
-    }
-  }
+registerRendererIpcHandlers(ipcMain, {
+  log,
+  pendingInitialMessages,
+  pendingInitialMessageNoAutoSubmit,
+  pendingDeepLinks,
+  reactReadyWindows,
+  sendOpenSharedSession,
+  openExternalIfSafe,
+  rendererDirectoryGrants,
+  assertRendererFileAccess,
+  goslingServeLeases,
 });
-
-ipcMain.handle(desktopCommandChannels.openExternal, async (_event, url: string) => {
-  await openExternalIfSafe(url);
-});
-
-ipcMain.handle('directory-chooser', async (event) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: os.homedir(),
-  });
-  if (!result.canceled && result.filePaths[0]) {
-    rendererDirectoryGrants.grantSelectedPath(event.sender.id, result.filePaths[0]);
-  }
-  return result;
-});
-
-ipcMain.handle('session-directory-chooser', () =>
-  dialog.showOpenDialog({
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: os.homedir(),
-    title: 'Add directory to this session',
-  })
-);
-
-ipcMain.handle('add-recent-dir', (_event, dir: string) => {
-  if (dir) {
-    addRecentDir(dir);
-  }
-});
-
-ipcMain.handle('list-recent-dirs', () => {
-  return loadRecentDirs();
-});
-
-registerGitIpcHandlers(ipcMain, assertRendererFileAccess);
 
 function rendererSettingValue(settings: Settings, key: SettingKey): Settings[SettingKey] {
   if (key === 'externalGoslingd') {
@@ -1989,43 +1885,6 @@ ipcMain.handle('choose-research-library-path', async (event) => {
 ipcMain.handle('list-research-library-files', async (event) => {
   const libraryPath = await ensureResearchLibrary(event.sender.id);
   return listResearchLibraryFiles(libraryPath, getSettings().outputFileExtensions);
-});
-
-ipcMain.handle('get-acp-url', async (event) => {
-  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
-  if (!windowId) {
-    return null;
-  }
-  const url = goslingServeLeases.getAcpUrl(windowId);
-  const secretKey = goslingServeLeases.getSecretKey(windowId);
-  if (!url || !secretKey) {
-    return null;
-  }
-  // The secret travels in the WebSocket subprotocol, not the URL (SEC-GOS-001).
-  return { url, subprotocol: acpTokenSubprotocol(secretKey) };
-});
-
-ipcMain.handle('get-mcp-app-proxy-url', async (event, csp?: McpAppProxyCsp | null) => {
-  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
-  if (!windowId) {
-    return null;
-  }
-
-  const acpUrl = goslingServeLeases.getAcpUrl(windowId);
-  const secretKey = goslingServeLeases.getSecretKey(windowId);
-  if (!acpUrl || !secretKey) {
-    return null;
-  }
-
-  const httpBase = loopbackHttpBaseFromAcpUrl(acpUrl);
-  if (!httpBase) {
-    return null;
-  }
-
-  const proxyUrl = new URL(`${httpBase}/mcp-app-proxy`);
-  appendDomainParams(proxyUrl, csp);
-  proxyUrl.hash = new URLSearchParams({ secret: secretKey }).toString();
-  return proxyUrl.toString();
 });
 
 registerSystemIpcHandlers(ipcMain, {

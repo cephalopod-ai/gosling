@@ -346,3 +346,23 @@ Checkpoint: `dfa9595ae`.
 - Intermediary audit: no settings default, platform command, delay, wakelock map,
   return value, or channel changed. Existing platform comments moved with the code;
   no MOD-B suspect surfaced.
+
+Checkpoint: `19c23e4a2`.
+
+### Seam 7 — Renderer/session IPC
+
+- New owner: `ui/desktop/src/main/rendererIpc.ts`.
+- Facade surface: one registration call supplies pending renderer/deep-link state,
+  directory grants, path authorization, backend leases, and the facade's external
+  URL/session dispatch callbacks. Git IPC registration is delegated inside this
+  module at the same relative point.
+- Direct check: `rendererIpc.test.ts` pins loopback-only ACP URL conversion and the
+  readiness listener plus 11 original handler names (including the four Git names).
+- Connection check: renderer readiness → pending message/deep link, directory/recent
+  paths, Git, ACP token subprotocol, and MCP proxy CSP parameters were traced through
+  preload/renderer callers and backend leases.
+- Validation: TypeScript clean. The first focused test run exposed an incomplete
+  Electron mock (`recentDirs` reads `app.getPath` at import); the test harness was
+  corrected without source change. Focused module suites then passed 16/16.
+- Intermediary audit: no listener/handler order, channel, token location, loopback
+  restriction, pending-state deletion, or proxy parameter changed; no MOD-B suspect.
