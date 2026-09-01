@@ -291,3 +291,20 @@ Checkpoint: `011e45a90`.
   suites 9/9; trust state has one owner.
 - Intermediary audit: no event registration order, certificate result code, TOFU
   semantics, or cleanup behavior changed; no module-identity hazard or MOD-B suspect.
+
+Checkpoint: `d3c4a5676`.
+
+### Seam 4 — Extension allowlist retrieval
+
+- New owner: `ui/desktop/src/main/allowlist.ts`.
+- Facade surface: the existing `get-allowed-extensions` handler imports
+  `getAllowList`; registration order and channel are unchanged.
+- Direct check: `allowlist.test.ts` passes 3/3 for absent configuration, HTTPS
+  YAML command extraction, and rejection before fetch for non-HTTPS sources.
+- Connection check: renderer IPC still reaches the same helper and environment
+  variable; YAML parsing and error/empty-list behavior moved verbatim.
+- Validation: touched-file Prettier clean; TypeScript check clean; focused module
+  suites 12/12; one allowlist helper owner.
+- Intermediary audit: BUG-001 remains intentionally unchanged and routed; existing
+  comments moved with the code. No accidental security fix, timeout drift, or stale
+  YAML import was introduced.
