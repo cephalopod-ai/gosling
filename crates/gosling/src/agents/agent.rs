@@ -1,3 +1,8 @@
+//! Agent compatibility facade over hooks, extensions, tools, replies, and providers.
+//!
+//! Maintainers: keep public paths and shared state here while delegating cohesive behavior.
+//! Clients: agent construction, events, streams, and public methods remain stable.
+
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::future::Future;
