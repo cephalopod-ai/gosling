@@ -2,12 +2,11 @@
 // ./main; these imports and registration calls preserve the executable entrypoint and must not
 // be pruned as unused compatibility wiring.
 
-import type { Certificate, OpenDialogOptions, OpenDialogReturnValue } from 'electron';
+import type { Certificate, OpenDialogReturnValue } from 'electron';
 import {
   app,
   App,
   BrowserWindow,
-  clipboard,
   dialog,
   globalShortcut,
   ipcMain,
@@ -23,7 +22,6 @@ import {
   webContents,
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
-import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
@@ -38,14 +36,13 @@ import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
 import { getOverrideOriginForRequest } from './requestOrigin';
 import { acpWebSocketUrlFromHttpBase, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde } from './utils/pathUtils';
-import { assertPathWithinRoots, canonicalizePotentialPath } from './utils/rendererFileAccess';
+import { assertPathWithinRoots } from './utils/rendererFileAccess';
 import { writeJsonFileAtomicSync, readJsonFileWithRecoverySync } from './utils/atomicJsonStore';
 import { RendererDirectoryGrantRegistry } from './utils/rendererDirectoryGrants';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
 import { errorMessage, formatErrorForLogging } from './utils/conversionUtils';
-import { readBoundedSessionImportFile } from './utils/sessionImport';
 import { defaultResearchLibraryPath, listResearchLibraryFiles } from './utils/researchLibrary';
 import type { LegacySettings, Settings, SettingKey } from './utils/settings';
 import {
@@ -74,10 +71,9 @@ import {
 } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
 import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
-import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifactRouter';
+import type { ArtifactRoutingConfig } from './types/artifactRouter';
 import { installArtifactDownloadRouter } from './utils/artifactDownloads';
 import { ArtifactRoutingRegistry } from './utils/artifactRoutingRegistry';
-import { saveArtifactWithDialog } from './utils/artifactSave';
 import {
   assertArtifactFileAccess,
   resolveArtifactFileCapability,
@@ -101,6 +97,7 @@ import {
   type BackendCertificateTrustRegistration,
 } from './main/backendCertificateTrust';
 import { getAllowList } from './main/allowlist';
+import { registerFileIpcHandlers } from './main/fileIpc';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -2210,334 +2207,23 @@ ipcMain.handle('get-is-fullscreen', (event) => {
   return win?.isFullScreen() ?? false;
 });
 
-// Add file/directory selection handler
-ipcMain.handle('select-file-or-directory', async (event, defaultPath?: string) => {
-  const dialogOptions: OpenDialogOptions = {
-    properties: process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'],
-  };
-
-  // Set default path if provided
-  if (defaultPath) {
-    // Expand tilde to home directory
-    const expandedPath = expandTilde(defaultPath);
-
-    // Check if the path exists
-    try {
-      const stats = await fs.stat(expandedPath);
-      if (stats.isDirectory()) {
-        dialogOptions.defaultPath = expandedPath;
-      } else {
-        dialogOptions.defaultPath = path.dirname(expandedPath);
-      }
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (error) {
-      // If path doesn't exist, fall back to home directory and log error
-      console.error(`Default path does not exist: ${expandedPath}, falling back to home directory`);
-      dialogOptions.defaultPath = os.homedir();
-    }
-  }
-
-  const result = (await dialog.showOpenDialog(dialogOptions)) as unknown as OpenDialogReturnValue;
-
-  if (!result.canceled && result.filePaths.length > 0) {
-    const selectedPath = result.filePaths[0];
-    rendererDirectoryGrants.grantSelectedPath(event.sender.id, selectedPath);
-    return selectedPath;
-  }
-  return null;
-});
-
-ipcMain.handle('select-artifact-file', async (event, defaultPath?: string) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    defaultPath: defaultPath ? expandTilde(defaultPath) : undefined,
-  });
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-  const selectedPath = await canonicalizePotentialPath(resolveRendererPath(result.filePaths[0]));
-  const grants = rendererArtifactFileGrants.get(event.sender.id) ?? new Set<string>();
-  grants.add(selectedPath);
-  rendererArtifactFileGrants.set(event.sender.id, grants);
-  return selectedPath;
-});
-
-// Native picker tailored for session imports: shows hidden files (so users can
-// reach `~/.claude/projects/...` or `~/.pi/agent/sessions/...`), filters for
-// .json/.jsonl, and returns the file's contents inline so the renderer doesn't
-// need a separate read step.
-ipcMain.handle('select-import-session-file', async () => {
-  const result = (await dialog.showOpenDialog({
-    title: 'Import session',
-    defaultPath: os.homedir(),
-    properties: ['openFile', 'showHiddenFiles'],
-    filters: [
-      { name: 'Session files', extensions: ['json', 'jsonl'] },
-      { name: 'All files', extensions: ['*'] },
-    ],
-  })) as unknown as OpenDialogReturnValue;
-
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-  const filePath = result.filePaths[0];
-  try {
-    const contents = await readBoundedSessionImportFile(filePath);
-    return { filePath, contents };
-  } catch (err) {
-    return { filePath, contents: '', error: errorMessage(err) };
-  }
-});
-
-/// Bounds the `ps`/`grep` probe below. (RES-GSL-001)
-const CHECK_OLLAMA_TIMEOUT_MS = 5000;
-
-ipcMain.handle('check-ollama', async () => {
-  try {
-    return new Promise((resolve) => {
-      // Run `ps` and filter for "ollama"
-      const ps = spawn('ps', ['aux']);
-      const grep = spawn('grep', ['-iw', '[o]llama']);
-
-      let output = '';
-      let errorOutput = '';
-
-      // Pipe ps output to grep
-      ps.stdout.pipe(grep.stdin);
-
-      grep.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-
-      grep.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      grep.on('close', (code) => {
-        if (code !== null && code !== 0 && code !== 1) {
-          // grep returns 1 when no matches found
-          console.error('Error executing grep command:', errorOutput);
-          return resolve(false);
-        }
-
-        const trimmedOutput = output.trim();
-
-        const isRunning = trimmedOutput.length > 0;
-        resolve(isRunning);
-      });
-
-      ps.on('error', (error) => {
-        console.error('Error executing ps command:', error);
-        grep.kill();
-        resolve(false);
-      });
-
-      grep.on('error', (error) => {
-        console.error('Error executing grep command:', error);
-        ps.kill();
-        resolve(false);
-      });
-
-      // Close ps stdin when done
-      ps.stdout.on('end', () => {
-        grep.stdin.end();
-      });
-
-      // Neither child was bounded: if `ps` hung (a wedged filesystem is
-      // enough), both processes and this promise stayed alive for the life of
-      // the app, and each check leaked another pair (RES-GSL-001).
-      const timeout = setTimeout(() => {
-        ps.kill('SIGKILL');
-        grep.kill('SIGKILL');
-        console.warn('check-ollama timed out; assuming Ollama is not running');
-        resolve(false);
-      }, CHECK_OLLAMA_TIMEOUT_MS);
-      timeout.unref?.();
-      grep.on('close', () => clearTimeout(timeout));
-    });
-  } catch (err) {
-    console.error('Error checking for Ollama:', err);
-    return false;
-  }
-});
-
-/// Upper bound on a single `read-file` IPC response. Matches the text
-/// preview limit used by `read-artifact-file`. (MEM-GSL-008)
-const READ_FILE_MAX_BYTES = 2 * 1024 * 1024;
-
-ipcMain.handle('read-file', async (event, filePath) => {
-  try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
-    // Read a bounded prefix rather than the whole file. The renderer chooses
-    // the path, so an accidental multi-GB target used to be pulled entirely
-    // into the main process (MEM-GSL-008). `read-artifact-file` beside this
-    // handler already caps its read the same way.
-    const stats = await fs.stat(expandedPath);
-    const bytesToRead = Math.min(stats.size, READ_FILE_MAX_BYTES);
-    const handle = await fs.open(expandedPath, 'r');
-    let buffer: Buffer;
-    try {
-      buffer = Buffer.alloc(bytesToRead);
-      await handle.read(buffer, 0, bytesToRead, 0);
-    } finally {
-      await handle.close();
-    }
-    return { file: buffer.toString('utf8'), filePath: expandedPath, error: null, found: true };
-  } catch (error) {
-    console.error('Error reading file:', error);
-    return {
-      file: '',
-      filePath: resolveRendererPath(filePath),
-      error: errorMessage(error),
-      found: false,
-    };
-  }
-});
-
-ipcMain.handle('read-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
-  try {
-    const resolvedPath = await assertRendererArtifactFileAccess(
-      event.sender.id,
-      filePath,
-      baseDirectory
-    );
-    const stats = await fs.stat(resolvedPath);
-    if (!stats.isFile()) {
-      throw new Error('The selected output is not a file');
-    }
-
-    const extension = path.extname(resolvedPath).toLowerCase();
-    const binaryExtensions = new Set(['.gif', '.jpeg', '.jpg', '.pdf', '.png', '.svg', '.webp']);
-    const previewLimit = binaryExtensions.has(extension) ? 20 * 1024 * 1024 : 2 * 1024 * 1024;
-    const bytesToRead = Math.min(stats.size, previewLimit);
-    const handle = await fs.open(resolvedPath, 'r');
-    const buffer = Buffer.alloc(bytesToRead);
-    try {
-      await handle.read(buffer, 0, bytesToRead, 0);
-    } finally {
-      await handle.close();
-    }
-
-    const encoding = binaryExtensions.has(extension) ? 'base64' : 'utf8';
-    return {
-      content: buffer.toString(encoding),
-      encoding,
-      error: null,
-      filePath: resolvedPath,
-      found: true,
-      sizeBytes: stats.size,
-      truncated: stats.size > previewLimit,
-    };
-  } catch (error) {
-    return {
-      content: '',
-      encoding: 'utf8',
-      error: errorMessage(error),
-      filePath: resolveRendererPath(filePath),
-      found: false,
-      sizeBytes: 0,
-      truncated: false,
-    };
-  }
-});
-
-ipcMain.handle('open-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
-  const resolvedPath = await assertRendererArtifactFileAccess(
-    event.sender.id,
-    filePath,
-    baseDirectory
-  );
-  return (await shell.openPath(resolvedPath)) === '';
-});
-
-ipcMain.handle('reveal-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
-  const resolvedPath = await assertRendererArtifactFileAccess(
-    event.sender.id,
-    filePath,
-    baseDirectory
-  );
-  shell.showItemInFolder(resolvedPath);
-});
-
-ipcMain.handle('write-file', async (event, filePath, content) => {
-  try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
-    await fs.writeFile(expandedPath, content, { encoding: 'utf8' });
-    return true;
-  } catch (error) {
-    console.error('Error writing to file:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('delete-file', async (event, filePath) => {
-  try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
-    await fs.unlink(expandedPath);
-    return true;
-  } catch (error) {
-    console.error('Error deleting file:', error);
-    return false;
-  }
-});
-
-// Enhanced file operations
-ipcMain.handle('ensure-directory', async (event, dirPath) => {
-  try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, dirPath);
-    await fs.mkdir(expandedPath, { recursive: true });
-    return true;
-  } catch (error) {
-    console.error('Error creating directory:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('list-files', async (event, dirPath, extension) => {
-  try {
-    const expandedPath = await assertRendererFileAccess(event.sender.id, dirPath);
-    const files = await fs.readdir(expandedPath);
-    if (extension) {
-      return files.filter((file) => file.endsWith(extension));
-    }
-    return files;
-  } catch (error) {
-    console.error('Error listing files:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('show-message-box', async (_event, options) => {
-  return dialog.showMessageBox(options);
-});
-
-ipcMain.handle('save-artifact', async (event, request: ArtifactSaveRequest) => {
-  return saveArtifactWithDialog(request, {
-    resolveSource: (filePath, baseDirectory) =>
-      assertRendererArtifactFileAccess(event.sender.id, filePath, baseDirectory),
-    showSaveDialog: (options) => dialog.showSaveDialog(options),
-  });
-});
-
-ipcMain.handle(
-  'set-artifact-routing-config',
-  async (event, config: ArtifactRoutingConfig | null): Promise<boolean> => {
-    return artifactRoutingRegistry.update(event.sender.id, config, (candidate) =>
-      validateArtifactRoutingConfig(event.sender.id, candidate)
-    );
-  }
-);
-
-ipcMain.handle('write-clipboard-text', async (_event, text: string) => {
-  clipboard.writeText(text);
-});
-
-ipcMain.handle('write-clipboard-html', async (_event, html: string, text: string) => {
-  clipboard.write({ html, text });
-});
-
-ipcMain.handle('get-allowed-extensions', async () => {
-  return await getAllowList();
+registerFileIpcHandlers(ipcMain, {
+  assertRendererFileAccess,
+  assertRendererArtifactFileAccess,
+  resolveRendererPath,
+  grantRendererDirectory: (webContentsId, filePath) => {
+    rendererDirectoryGrants.grantSelectedPath(webContentsId, filePath);
+  },
+  grantRendererArtifactFile: (webContentsId, filePath) => {
+    const grants = rendererArtifactFileGrants.get(webContentsId) ?? new Set<string>();
+    grants.add(filePath);
+    rendererArtifactFileGrants.set(webContentsId, grants);
+  },
+  updateArtifactRoutingConfig: (webContentsId, config) =>
+    artifactRoutingRegistry.update(webContentsId, config, (candidate) =>
+      validateArtifactRoutingConfig(webContentsId, candidate)
+    ),
+  getAllowList,
 });
 
 const createNewWindow = async (app: App, dir?: string | null) => {

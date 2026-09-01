@@ -308,3 +308,21 @@ Checkpoint: `d3c4a5676`.
 - Intermediary audit: BUG-001 remains intentionally unchanged and routed; existing
   comments moved with the code. No accidental security fix, timeout drift, or stale
   YAML import was introduced.
+
+Checkpoint: `0bbf3f2df`.
+
+### Seam 5 — File and artifact IPC
+
+- New owner: `ui/desktop/src/main/fileIpc.ts` (under 400 lines).
+- Facade surface: one `registerFileIpcHandlers` call supplies the existing path
+  guards, grant registries, artifact-routing validator, and allowlist helper.
+- Direct check: `fileIpc.test.ts` proves the exact 18 original channel names are
+  registered once and in the same order. Existing comments moved with their code.
+- Connection check: direct renderer/preload strings, filesystem authorization,
+  native dialogs, bounded reads, artifact routing, shell open/reveal, clipboard,
+  Ollama child processes, and allowlist delegation were traced two levels deep.
+- Validation: touched-file Prettier clean; TypeScript check clean; focused module
+  suites 13/13; facade reduced from 3,289 to 2,979 lines.
+- Intermediary audit: no path guard, byte limit, timeout, process cleanup, return
+  shape, channel, or error mapping changed. One registration owner remains; no new
+  MOD-B suspect surfaced.
