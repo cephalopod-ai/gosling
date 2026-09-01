@@ -366,3 +366,23 @@ Checkpoint: `19c23e4a2`.
   corrected without source change. Focused module suites then passed 16/16.
 - Intermediary audit: no listener/handler order, channel, token location, loopback
   restriction, pending-state deletion, or proxy parameter changed; no MOD-B suspect.
+
+Checkpoint: `b13a338b1`.
+
+### Seam 8 — Settings and research-library IPC
+
+- New owner: `ui/desktop/src/main/settingsIpc.ts`.
+- Facade surface: one `registerSettingsIpcHandlers` call supplies settings state,
+  locale/shortcut/update callbacks, the external backend secret bridge, and the
+  renderer directory-grant registry.
+- Direct check: `settingsIpc.test.ts` pins the exact six original settings and
+  research-library handler names in registration order.
+- Connection check: renderer/preload calls still reach the same typed settings
+  validation, secret redaction/persistence, native folder chooser, directory grant,
+  and research-library listing behavior.
+- Validation: touched-file Prettier clean; TypeScript check clean; focused module
+  suites 17/17. The private shortcut-registration const became an equivalent
+  hoisted function so the facade can pass it at the unchanged registration point.
+- Intermediary audit: no setting validation, secret handling, native dialog option,
+  directory resolution, registration order, channel, or return value changed; no
+  new MOD-B suspect surfaced.

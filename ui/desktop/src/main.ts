@@ -43,15 +43,8 @@ import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
 import { errorMessage, formatErrorForLogging } from './utils/conversionUtils';
-import { defaultResearchLibraryPath, listResearchLibraryFiles } from './utils/researchLibrary';
-import type { LegacySettings, Settings, SettingKey } from './utils/settings';
-import {
-  getKeyboardShortcuts,
-  isSettingKey,
-  isSettingValue,
-  resolveStoredSettings,
-  setSettingValue,
-} from './utils/settings';
+import type { LegacySettings, Settings } from './utils/settings';
+import { getKeyboardShortcuts, resolveStoredSettings } from './utils/settings';
 import * as crypto from 'crypto';
 import windowStateKeeper from 'electron-window-state';
 import {
@@ -99,6 +92,7 @@ import { getAllowList } from './main/allowlist';
 import { registerFileIpcHandlers } from './main/fileIpc';
 import { registerSystemIpcHandlers } from './main/systemIpc';
 import { registerRendererIpcHandlers } from './main/rendererIpc';
+import { registerSettingsIpcHandlers } from './main/settingsIpc';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -1777,114 +1771,20 @@ registerRendererIpcHandlers(ipcMain, {
   goslingServeLeases,
 });
 
-function rendererSettingValue(settings: Settings, key: SettingKey): Settings[SettingKey] {
-  if (key === 'externalGoslingd') {
-    return {
-      ...settings.externalGoslingd,
-      secret: '',
-      secretConfigured: externalBackendSecret.length > 0,
-    };
-  }
-  return settings[key];
-}
-
-function configuredResearchLibraryPath(): string {
-  return path.resolve(
-    getSettings().researchLibraryPath ?? defaultResearchLibraryPath(app.getPath('documents'))
-  );
-}
-
-async function ensureResearchLibrary(rendererId: number): Promise<string> {
-  const libraryPath = configuredResearchLibraryPath();
-  await fs.mkdir(libraryPath, { recursive: true });
-  rendererDirectoryGrants.grantSelectedPath(rendererId, libraryPath);
-  return libraryPath;
-}
-
-ipcMain.handle('get-setting', (_event, key: unknown) => {
-  if (!isSettingKey(key)) throw new Error('Invalid setting key');
-  const settings = getSettings();
-  return rendererSettingValue(settings, key);
-});
-
-ipcMain.handle('get-settings', (_event, keys: unknown) => {
-  if (!Array.isArray(keys) || keys.length > 64 || !keys.every(isSettingKey)) {
-    throw new Error('Invalid settings key list');
-  }
-  const settings = getSettings();
-  const values: Record<string, unknown> = {};
-
-  for (const key of keys) {
-    values[key] = rendererSettingValue(settings, key);
-  }
-
-  return values;
-});
-
-ipcMain.handle('set-setting', (_event, key: unknown, value: unknown) => {
-  if (!isSettingKey(key)) throw new Error('Invalid setting key');
-  if (key === 'researchLibraryPath') {
-    throw new Error('Research Library location must be changed with the native folder chooser');
-  }
-
-  if (key === 'externalGoslingd') {
-    if (!isSettingValue('externalGoslingd', value)) throw new Error('Invalid setting value');
-    if (value.secret) externalBackendSecret = value.secret;
-    const persistedValue: Settings['externalGoslingd'] = {
-      ...value,
-      secret: '',
-      secretConfigured: externalBackendSecret.length > 0,
-    };
-    updateSettings((settings) => {
-      setSettingValue(settings, 'externalGoslingd', persistedValue);
-    });
-  } else {
-    if (!isSettingValue(key, value)) throw new Error('Invalid setting value');
-    updateSettings((settings) => {
-      setSettingValue(settings, key, value as Settings[typeof key]);
-    });
-  }
-
-  if (key === 'language') {
+registerSettingsIpcHandlers(ipcMain, {
+  app,
+  getSettings,
+  updateSettings,
+  getExternalBackendSecret: () => externalBackendSecret,
+  setExternalBackendSecret: (secret) => {
+    externalBackendSecret = secret;
+  },
+  updateConfiguredLocale: () => {
     appConfig.GOSLING_LOCALE = getConfiguredGoslingLocale();
-  }
-
-  // Re-register shortcuts if keyboard shortcuts changed
-  if (key === 'keyboardShortcuts') {
-    registerGlobalShortcuts();
-  }
-
-  if (key === 'disableAutoDownload') {
-    setAutoDownloadDisabled(value === true);
-  }
-});
-
-ipcMain.handle('get-research-library-path', async (event) => {
-  return ensureResearchLibrary(event.sender.id);
-});
-
-ipcMain.handle('choose-research-library-path', async (event) => {
-  const currentPath = await ensureResearchLibrary(event.sender.id);
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: currentPath,
-    title: 'Choose Research Library',
-  });
-  const selectedPath = result.canceled ? undefined : result.filePaths[0];
-  if (!selectedPath) return null;
-
-  const resolvedPath = path.resolve(selectedPath);
-  updateSettings((settings) => {
-    setSettingValue(settings, 'researchLibraryPath', resolvedPath);
-  });
-  await fs.mkdir(resolvedPath, { recursive: true });
-  rendererDirectoryGrants.grantSelectedPath(event.sender.id, resolvedPath);
-  return resolvedPath;
-});
-
-ipcMain.handle('list-research-library-files', async (event) => {
-  const libraryPath = await ensureResearchLibrary(event.sender.id);
-  return listResearchLibraryFiles(libraryPath, getSettings().outputFileExtensions);
+  },
+  registerGlobalShortcuts,
+  setAutoDownloadDisabled,
+  rendererDirectoryGrants,
 });
 
 registerSystemIpcHandlers(ipcMain, {
@@ -1934,7 +1834,7 @@ function focusWindow(): void {
   }
 }
 
-const registerGlobalShortcuts = () => {
+function registerGlobalShortcuts(): void {
   globalShortcut.unregisterAll();
 
   const settings = getSettings();
@@ -1959,7 +1859,7 @@ const registerGlobalShortcuts = () => {
       console.error('Error registering launcher hotkey:', e);
     }
   }
-};
+}
 
 async function appMain() {
   if (shouldQuitForSingleInstance) {
