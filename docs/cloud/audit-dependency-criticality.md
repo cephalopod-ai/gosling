@@ -31,7 +31,7 @@ the playbook vocabulary (`refuse-clear` / `degrade-honest` / `degrade-silent` / 
 | OS keyring (Linux Secret Service / macOS Keychain) | DEP-003/004 | secret storage (API keys, tokens) | `degrade-honest` → file `secrets.yaml` (0600) | yes (error-string match) | first-use | no | file storage fallback | fail_degraded | non-finding (visibility note) |
 | ML prompt-injection classifier endpoint | DEP-008/009 | `SecurityManager` scanner (opt-in ML) | **`degrade-silent`** (command→patterns; conversation→0.0) | log-only (`warn!`) | never | **partial (ML portion)** | pattern fallback (command path only) | fail_degraded | **DEP-GSL-001** |
 | Tool inspectors (security + permission) as a set | DEP-004 | agent tool-call gating | **fail-open** on inspector `Err` (results dropped, tool proceeds) | log-only (`error!`) | mid-operation | **yes** | none for the failing inspector | fail_closed | **DEP-GSL-002** |
-| Selected LLM provider (runtime reachability) | DEP-008 | every generation turn | request error propagates (no outage failover) | yes (exception) | mid-operation | **yes (intentional)** | none for outage; config-mismatch fallback only | fail_visible | RR-001 |
+| Selected LLM provider (runtime reachability) | DEP-008 | every generation turn | bounded retries, then optional turn-local fallback or visible error | yes (exception) | mid-operation | conditional | explicit `GOSLING_FAILOVER_PROVIDER` + model for host-managed API turns | fail_degraded / fail_visible | RR-001 |
 | MCP stdio command (`uvx`/`npx`/`docker`/custom) | DEP-010 | extension start | refuse (spawn error + captured stderr) | yes | first-use | no | user picks another extension | fail_visible | non-finding |
 | Provider CLI (`claude`/`codex`/`gemini`/`cursor-agent`) | DEP-010 | ACP subprocess providers | refuse (spawn error naming command) | yes | first-use | no | user picks API provider | fail_visible | non-finding |
 | `git` | DEP-010 | plugin install / `/review` | refuse (`bail!` with stderr) | yes | first-use | no | none (feature unavailable) | fail_visible | non-finding |
@@ -336,11 +336,10 @@ These are `is_spf: no` (or handled) with the alternate/refusal cited.
 
 | ID | Finding | Retained risk | Required control | Control present | Safe state | Owner | Review by |
 |----|---------|---------------|------------------|-----------------|-----------|-------|-----------|
-| RR-001 | DEP-008 (register) | Single LLM provider per session; runtime outage (5xx / network / 429) has **no failover** — the `restore_provider_from_session` "fallback" (`agents/agent.rs:2907-2943`) only covers a *removed/renamed* provider in config, not an outage | bounded_wait + operator-visible failed-turn status + rerun hint (recovery-idempotency scope) | partial (per-provider 429/retry exists in `providers/*`; no cross-provider failover) | fail_visible | human-owner | when a provider-failover seam is designed |
+| RR-001 | DEP-008 (register) | Runtime failover is opt-in and limited to one host-managed, text-safe turn; credential-pinned sessions, self-managed providers, post-tool failures, and fallback outages still stop visibly | bounded wait + checkpoint rollback + explicit egress configuration + operator-visible failure | partial (single turn-local fallback implemented; unsupported boundaries fail closed) | fail_degraded / fail_visible | human-owner | when multi-route policy or pinned-credential support is designed |
 
-Note: the register entry is a *decision to retain with a control*, not a severity
-downgrade. The single-provider design is intentional; it is recorded so the outage SPF is
-not lost.
+Note: the register retains the unsupported boundaries rather than treating the first failover MVP
+as universal redundancy.
 
 ---
 

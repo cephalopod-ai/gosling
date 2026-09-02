@@ -315,6 +315,120 @@ impl Agent {
         Ok(provider_changed)
     }
 
+    pub(super) fn provider_failover_target(&self) -> Option<ProviderFailoverTarget> {
+        if let Some(failover) = self.config.provider_failover.clone() {
+            return Some(ProviderFailoverTarget::Ready(failover));
+        }
+
+        let config = Config::global();
+        let provider_name = config
+            .get_param::<String>("GOSLING_FAILOVER_PROVIDER")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let model_name = config
+            .get_param::<String>("GOSLING_FAILOVER_MODEL")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+
+        match (provider_name, model_name) {
+            (None, None) => None,
+            (Some(provider_name), Some(model_name)) => Some(ProviderFailoverTarget::Configured {
+                provider_name,
+                model_name,
+            }),
+            _ => Some(ProviderFailoverTarget::Invalid(
+                "GOSLING_FAILOVER_PROVIDER and GOSLING_FAILOVER_MODEL must be configured together"
+                    .to_string(),
+            )),
+        }
+    }
+
+    pub(super) async fn resolve_provider_failover(
+        &self,
+        target: ProviderFailoverTarget,
+        session: &Session,
+        primary_provider: &dyn Provider,
+        primary_model_config: &ModelConfig,
+    ) -> Result<ProviderFailoverConfig> {
+        if session.credential_profile_id.is_some() {
+            bail!("automatic failover is disabled for credential-pinned sessions");
+        }
+        if primary_provider.manages_own_context()
+            || primary_provider.executes_tools_outside_gosling()
+            || primary_provider.permission_routing() != PermissionRouting::Noop
+        {
+            bail!(
+                "provider '{}' does not use Gosling's host-managed API turn loop",
+                primary_provider.get_name()
+            );
+        }
+
+        let mut failover = match target {
+            ProviderFailoverTarget::Ready(failover) => failover,
+            ProviderFailoverTarget::Configured {
+                provider_name,
+                model_name,
+            } => {
+                let entry = crate::providers::get_from_registry(&provider_name).await?;
+                if entry.manages_own_context() || entry.executes_tools_outside_gosling() {
+                    bail!(
+                        "fallback provider '{provider_name}' does not use Gosling's host-managed API turn loop"
+                    );
+                }
+
+                let model_config =
+                    crate::model_config::model_config_from_user_config(&provider_name, &model_name)
+                        .and_then(|model_config| entry.normalize_model_config(model_config))?;
+                let extensions = EnabledExtensionsState::extensions_or_default(
+                    Some(&session.extension_data),
+                    Config::global(),
+                );
+                let provider = crate::providers::create_with_working_dir(
+                    &provider_name,
+                    extensions,
+                    session.working_dir.clone(),
+                )
+                .await?;
+
+                ProviderFailoverConfig::new(provider, model_config)
+            }
+            ProviderFailoverTarget::Invalid(message) => bail!(message),
+        };
+
+        if failover.provider.manages_own_context()
+            || failover.provider.executes_tools_outside_gosling()
+            || failover.provider.permission_routing() != PermissionRouting::Noop
+        {
+            bail!(
+                "fallback provider '{}' does not use Gosling's host-managed API turn loop",
+                failover.provider.get_name()
+            );
+        }
+
+        if let Ok(entry) = crate::providers::get_from_registry(failover.provider.get_name()).await {
+            failover.model_config = entry.normalize_model_config(failover.model_config)?;
+        }
+
+        if failover.provider.get_name() == primary_provider.get_name()
+            && failover.model_config.model_name == primary_model_config.model_name
+        {
+            bail!("fallback provider and model are identical to the primary route");
+        }
+        if failover.model_config.toolshim != primary_model_config.toolshim {
+            bail!("fallback and primary models must use the same toolshim setting");
+        }
+
+        failover
+            .provider
+            .update_mode(&session.id, session.gosling_mode)
+            .await
+            .map_err(|error| anyhow!("Fallback provider rejected mode update: {error}"))?;
+
+        Ok(failover)
+    }
+
     async fn create_provider_with_session_scope(
         &self,
         session: &Session,

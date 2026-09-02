@@ -34,6 +34,8 @@ The following settings can be configured at the root level of your config.yaml f
 |---------|---------|---------|---------|-----------|
 | `GOSLING_PROVIDER` | Primary [LLM provider](/docs/getting-started/providers) | "anthropic", "openai", etc. | None | Yes |
 | `GOSLING_MODEL` | Default model to use | Model name (e.g., "claude-3.5-sonnet", "gpt-4") | None | Yes |
+| `GOSLING_FAILOVER_PROVIDER` | Optional fallback for transient outages on Gosling-managed API turns | "ollama", "openrouter", etc. | Disabled | No |
+| `GOSLING_FAILOVER_MODEL` | Model paired with `GOSLING_FAILOVER_PROVIDER` | Provider model name | Disabled | No |
 | `GOSLING_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
 | `GOSLING_MAX_TOKENS` | Maximum number of tokens for each model response (truncates longer responses) | Positive integer | Model-specific | No |
 | `GOSLING_MODE` | [Tool execution behavior](/docs/guides/managing-tools/gosling-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
@@ -68,6 +70,8 @@ Here's a basic example of a config.yaml file:
 # Model Configuration
 GOSLING_PROVIDER: "anthropic"
 GOSLING_MODEL: "claude-4.5-sonnet"
+GOSLING_FAILOVER_PROVIDER: "ollama"
+GOSLING_FAILOVER_MODEL: "qwen3-coder:latest"
 GOSLING_TEMPERATURE: 0.7
 
 # Planning Configuration

@@ -68,6 +68,7 @@ use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
 use crate::workspace::WorkspaceService;
 use gosling_providers::errors::ProviderError;
+use gosling_providers::model::ModelConfig;
 use gosling_providers::retry::{should_retry, RetryConfig};
 use gosling_providers::thinking::ThinkingEffort;
 use rmcp::model::{
@@ -299,6 +300,31 @@ pub struct AgentConfig {
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
     pub use_login_shell_path: Option<bool>,
     pub workspace_service: Option<Arc<WorkspaceService>>,
+    pub provider_failover: Option<ProviderFailoverConfig>,
+}
+
+#[derive(Clone)]
+pub struct ProviderFailoverConfig {
+    provider: Arc<dyn Provider>,
+    model_config: ModelConfig,
+}
+
+impl ProviderFailoverConfig {
+    pub fn new(provider: Arc<dyn Provider>, model_config: ModelConfig) -> Self {
+        Self {
+            provider,
+            model_config,
+        }
+    }
+}
+
+pub(super) enum ProviderFailoverTarget {
+    Ready(ProviderFailoverConfig),
+    Configured {
+        provider_name: String,
+        model_name: String,
+    },
+    Invalid(String),
 }
 
 impl AgentConfig {
@@ -320,6 +346,7 @@ impl AgentConfig {
             session_name_update_tx: None,
             use_login_shell_path: None,
             workspace_service: None,
+            provider_failover: None,
         }
     }
 
@@ -348,6 +375,11 @@ impl AgentConfig {
 
     pub fn with_workspace_service(mut self, service: Arc<WorkspaceService>) -> Self {
         self.workspace_service = Some(service);
+        self
+    }
+
+    pub fn with_provider_failover(mut self, failover: ProviderFailoverConfig) -> Self {
+        self.provider_failover = Some(failover);
         self
     }
 

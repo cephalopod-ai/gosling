@@ -2321,11 +2321,14 @@ mod tests {
     mod mid_stream_retry_tests {
         use super::*;
         use async_trait::async_trait;
-        use gosling::agents::SessionConfig;
+        use gosling::agents::{
+            AgentConfig, GoslingPlatform, ProviderFailoverConfig, SessionConfig,
+        };
+        use gosling::config::permission::PermissionManager;
         use gosling::config::GoslingMode;
         use gosling::conversation::message::{Message, MessageContent};
         use gosling::providers::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
-        use gosling::session::session_manager::SessionType;
+        use gosling::session::session_manager::{SessionManager, SessionType};
         use gosling_providers::conversation::token_usage::{ProviderUsage, Usage};
         use gosling_providers::errors::ProviderError;
         use gosling_providers::model::ModelConfig;
@@ -2338,6 +2341,7 @@ mod tests {
         const USER_TEXT: &str = "Hello";
         const PARTIAL_TEXT: &str = "half an answer that never arriv";
         const FINAL_TEXT: &str = "the whole answer";
+        const FALLBACK_TEXT: &str = "the fallback answer";
 
         /// First call streams `PARTIAL_TEXT` (optionally preceded by a tool call)
         /// and then fails; later calls answer normally.
@@ -2347,6 +2351,7 @@ mod tests {
             /// replay of the same request from a continuation past a tool.
             prompts: Mutex<Vec<String>>,
             call_tool_first: bool,
+            failures_before_success: usize,
         }
 
         impl InterruptedStreamProvider {
@@ -2355,6 +2360,16 @@ mod tests {
                     calls: AtomicUsize::new(0),
                     prompts: Mutex::new(Vec::new()),
                     call_tool_first,
+                    failures_before_success: 1,
+                }
+            }
+
+            fn with_failures(call_tool_first: bool, failures_before_success: usize) -> Self {
+                Self {
+                    calls: AtomicUsize::new(0),
+                    prompts: Mutex::new(Vec::new()),
+                    call_tool_first,
+                    failures_before_success,
                 }
             }
         }
@@ -2441,7 +2456,7 @@ mod tests {
                         .join("\n"),
                 );
 
-                if self.calls.fetch_add(1, Ordering::SeqCst) > 0 {
+                if self.calls.fetch_add(1, Ordering::SeqCst) >= self.failures_before_success {
                     return Ok(Box::pin(futures::stream::once(async {
                         Ok((
                             Some(Message::assistant().with_text(FINAL_TEXT)),
@@ -2477,16 +2492,94 @@ mod tests {
             }
         }
 
+        struct FallbackProvider {
+            calls: AtomicUsize,
+            prompts: Mutex<Vec<String>>,
+        }
+
+        impl FallbackProvider {
+            fn new() -> Self {
+                Self {
+                    calls: AtomicUsize::new(0),
+                    prompts: Mutex::new(Vec::new()),
+                }
+            }
+        }
+
+        #[async_trait]
+        impl Provider for FallbackProvider {
+            async fn stream(
+                &self,
+                _model_config: &ModelConfig,
+                _system_prompt: &str,
+                messages: &[Message],
+                _tools: &[Tool],
+            ) -> Result<MessageStream, ProviderError> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                self.prompts.lock().unwrap().push(
+                    messages
+                        .iter()
+                        .map(Message::as_concat_text)
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                );
+                Ok(Box::pin(futures::stream::once(async {
+                    Ok((
+                        Some(Message::assistant().with_text(FALLBACK_TEXT)),
+                        Some(mock_usage()),
+                    ))
+                })))
+            }
+
+            fn get_name(&self) -> &str {
+                "mock-fallback"
+            }
+        }
+
         struct ReplyOutcome {
             texts: Vec<String>,
+            notifications: Vec<String>,
             prompts: Vec<String>,
             persisted: Vec<String>,
             terminal_errors: Vec<String>,
+            primary_calls: usize,
+            fallback_calls: usize,
+            fallback_prompts: Vec<String>,
+            persisted_provider: Option<String>,
+            persisted_model: Option<String>,
         }
 
         async fn run_reply(call_tool_first: bool, name: &str) -> Result<ReplyOutcome> {
-            let agent = Agent::new();
-            let provider = Arc::new(InterruptedStreamProvider::new(call_tool_first));
+            run_reply_with_failures(call_tool_first, name, 1).await
+        }
+
+        async fn run_reply_with_failures(
+            call_tool_first: bool,
+            name: &str,
+            failures_before_success: usize,
+        ) -> Result<ReplyOutcome> {
+            let temp_dir = tempfile::tempdir()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+            let permission_manager =
+                Arc::new(PermissionManager::new(temp_dir.path().join("config")));
+            let fallback = Arc::new(FallbackProvider::new());
+            let agent = Agent::with_config(
+                AgentConfig::new(
+                    session_manager,
+                    permission_manager,
+                    GoslingMode::default(),
+                    true,
+                    GoslingPlatform::GoslingCli,
+                )
+                .with_provider_failover(ProviderFailoverConfig::new(
+                    fallback.clone(),
+                    ModelConfig::new("fallback-model"),
+                )),
+            );
+            let provider = Arc::new(InterruptedStreamProvider::with_failures(
+                call_tool_first,
+                failures_before_success,
+            ));
 
             let session = agent
                 .config
@@ -2520,6 +2613,7 @@ mod tests {
             tokio::pin!(reply_stream);
 
             let mut texts = Vec::new();
+            let mut notifications = Vec::new();
             let mut terminal_errors = Vec::new();
             while let Some(event) = reply_stream.next().await {
                 match event? {
@@ -2540,6 +2634,11 @@ mod tests {
                         if let Some(error) = message.metadata.terminal_error.clone() {
                             terminal_errors.push(error);
                         }
+                        notifications.extend(message.content.iter().filter_map(|content| {
+                            content
+                                .as_system_notification()
+                                .map(|notification| notification.msg.clone())
+                        }));
                         texts.push(message.as_concat_text());
                     }
                     AgentEvent::Usage(_)
@@ -2548,11 +2647,17 @@ mod tests {
                 }
             }
 
-            let persisted = agent
+            let persisted_session = agent
                 .config
                 .session_manager
                 .get_session(&session.id, true)
-                .await?
+                .await?;
+            let persisted_provider = persisted_session.provider_name.clone();
+            let persisted_model = persisted_session
+                .model_config
+                .as_ref()
+                .map(|model| model.model_name.clone());
+            let persisted = persisted_session
                 .conversation
                 .map(|conversation| {
                     conversation
@@ -2564,11 +2669,20 @@ mod tests {
                 .unwrap_or_default();
 
             let prompts = provider.prompts.lock().unwrap().clone();
+            let primary_calls = provider.calls.load(Ordering::SeqCst);
+            let fallback_calls = fallback.calls.load(Ordering::SeqCst);
+            let fallback_prompts = fallback.prompts.lock().unwrap().clone();
             Ok(ReplyOutcome {
                 texts,
+                notifications,
                 prompts,
                 persisted,
                 terminal_errors,
+                primary_calls,
+                fallback_calls,
+                fallback_prompts,
+                persisted_provider,
+                persisted_model,
             })
         }
 
@@ -2607,6 +2721,7 @@ mod tests {
                 "the rolled-back partial answer should not survive in the session, got {:?}",
                 outcome.persisted
             );
+            assert_eq!(outcome.fallback_calls, 0);
 
             Ok(())
         }
@@ -2654,6 +2769,36 @@ mod tests {
                 "a recovered turn must not be reported as terminal, got {:?}",
                 outcome.terminal_errors
             );
+            assert_eq!(outcome.fallback_calls, 0);
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn exhausted_transient_retries_switch_to_the_turn_local_fallback() -> Result<()> {
+            let outcome = run_reply_with_failures(false, "provider-failover", usize::MAX).await?;
+
+            assert_eq!(outcome.primary_calls, 4);
+            assert_eq!(outcome.fallback_calls, 1);
+            assert!(outcome
+                .fallback_prompts
+                .iter()
+                .all(|prompt| !prompt.contains(PARTIAL_TEXT)));
+            assert!(outcome.texts.iter().any(|text| text == FALLBACK_TEXT));
+            assert!(outcome.notifications.iter().any(|text| {
+                text.contains("Continuing this turn from the last checkpoint")
+                    && text.contains("mock-fallback / fallback-model")
+            }));
+            assert!(!outcome
+                .persisted
+                .iter()
+                .any(|text| text.contains(PARTIAL_TEXT)));
+            assert!(outcome.terminal_errors.is_empty());
+            assert_eq!(
+                outcome.persisted_provider.as_deref(),
+                Some("mock-interrupted")
+            );
+            assert_eq!(outcome.persisted_model.as_deref(), Some("mock-model"));
 
             Ok(())
         }

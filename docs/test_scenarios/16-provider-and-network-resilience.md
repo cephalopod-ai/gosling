@@ -85,3 +85,11 @@ must use capped test credentials and record external request IDs.
 - Steps: run with `--stats`, text, JSON, and stream-json; inspect Desktop usage/cost; resume session and export; include a retried request.
 - Expected: all surfaces agree within documented rounding; failed/retried requests are counted according to stated policy without double counting; units/currency are labeled; missing metadata shows unknown rather than zero.
 - Observe: planner/subagent usage attribution.
+
+### PN-11 — Turn-local provider failover
+- Goal: a transient primary outage can use an explicitly configured secondary route without replaying side effects or permanently changing the session.
+- Category: interruption / recovery / persistence
+- Preconditions: primary fixture streams a checkpointed partial response and fails transiently through its retry budget; fallback fixture succeeds; distinct provider/model IDs; a second variant emits and executes a tool before failing.
+- Steps: enable both failover settings; send a marker turn; inspect retry and fallback requests, streamed history replacements, persisted session route, and export; repeat with only one failover setting, a credential-pinned session, a self-managed provider, and the tool-first variant.
+- Expected: text-only failure rolls back partial output and invokes the fallback once from the last durable conversation; successful fallback has no terminal error; persisted provider/model remain primary; incomplete or unsupported failover configuration is named only if failover is needed; credential-pinned, self-managed, and post-tool failures do not cross routes; no tool call is dispatched twice.
+- Observe: primary and fallback request IDs, attempt counts, provider/model inference metadata, outbound destination, and whether any partial response survives.

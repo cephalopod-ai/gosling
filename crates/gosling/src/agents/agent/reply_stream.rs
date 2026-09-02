@@ -7,6 +7,23 @@
 use super::*;
 
 impl Agent {
+    async fn inference_metadata_for(
+        provider: &Arc<dyn Provider>,
+        model_config: &ModelConfig,
+    ) -> Option<InferenceMetadata> {
+        let requested_model = model_config.model_name.clone();
+        provider
+            .fetch_model_info(&requested_model)
+            .await
+            .ok()
+            .and_then(|model_info| model_info.resolved_model)
+            .map(|resolved_model| InferenceMetadata {
+                provider: provider.get_name().to_string(),
+                requested_model,
+                resolved_model: Some(resolved_model),
+            })
+    }
+
     pub(super) async fn reply_internal(
         &self,
         conversation: Conversation,
@@ -41,23 +58,13 @@ impl Agent {
             system_prompt = format!("{system_prompt}\n\n{addendum}");
         }
 
-        let provider = self.provider().await?;
-        let provider_name = provider.get_name().to_string();
-        let requested_model = model_config.model_name.clone();
-        let inference = provider
-            .fetch_model_info(&requested_model)
-            .await
-            .ok()
-            .and_then(|model_info| model_info.resolved_model)
-            .map(|resolved_model| InferenceMetadata {
-                provider: provider_name,
-                requested_model,
-                resolved_model: Some(resolved_model),
-            });
+        let primary_provider = self.provider().await?;
+        let inference = Self::inference_metadata_for(&primary_provider, &model_config).await;
+        let failover_target = self.provider_failover_target();
         let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
-            let provider = provider.clone();
+            let provider = primary_provider.clone();
             let manager_for_spawn = session_manager.clone();
             let session_name_update_tx = self.config.session_name_update_tx.clone();
             tokio::spawn(async move {
@@ -113,6 +120,11 @@ impl Agent {
             let mut retrying_after_stop_hook_denial = false;
             let mut mid_stream_retries = 0usize;
             let mut retrying_stream = false;
+            let mut active_provider = primary_provider.clone();
+            let mut active_model_config = model_config.clone();
+            let mut inference = inference;
+            let mut failover_target = failover_target;
+            let mut failover_attempted = false;
             let mut consecutive_stop_hook_blocks = 0u32;
             let stop_hook_block_cap = self.stop_hook_block_cap();
             let mut can_drain_pending_steers = false;
@@ -167,7 +179,7 @@ impl Agent {
                 // passed into reply_internal won't reflect updates from update_session_metrics.
                 let current_session_for_compact = session_manager.get_session(&session_config.id, false).await?;
                 if check_if_compaction_needed(
-                    self.provider().await?.as_ref(),
+                    active_provider.as_ref(),
                     &conversation,
                     None,
                     &current_session_for_compact,
@@ -196,7 +208,12 @@ impl Agent {
                         )
                     );
 
-                    match self.perform_compact(&model_config, &session_config, &conversation).await {
+                    match self.perform_compact_with_provider(
+                        active_provider.clone(),
+                        &active_model_config,
+                        &session_config,
+                        &conversation,
+                    ).await {
                         Ok(compacted_conversation) => {
                             conversation = compacted_conversation;
                             yield AgentEvent::HistoryReplaced(conversation.clone());
@@ -229,19 +246,20 @@ impl Agent {
 
                 let (provider_system_prompt, provider_messages) = self
                     .apply_context_manager(
+                        active_provider.as_ref(),
                         &session_config.id,
                         &base_system_prompt,
                         project_addendum.as_deref(),
                         &system_prompt,
                         conversation_for_context,
-                        &model_config,
+                        &active_model_config,
                         &working_dir,
                     )
                     .await;
 
                 let mut stream = Self::stream_response_from_provider(
-                    self.provider().await?,
-                    model_config.clone(),
+                    active_provider.clone(),
+                    active_model_config.clone(),
                     &session_config.id,
                     &provider_system_prompt,
                     &provider_messages,
@@ -260,8 +278,8 @@ impl Agent {
                     None
                 } else {
                     crate::context_mgmt::maybe_summarize_tool_pairs(
-                        self.provider().await?,
-                        model_config.clone(),
+                        active_provider.clone(),
+                        active_model_config.clone(),
                         session_config.id.clone(),
                         &conversation,
                         tool_call_cut_off,
@@ -780,7 +798,12 @@ impl Agent {
                             );
 
                             match self
-                                .perform_compact(&model_config, &session_config, &conversation)
+                                .perform_compact_with_provider(
+                                    active_provider.clone(),
+                                    &active_model_config,
+                                    &session_config,
+                                    &conversation,
+                                )
                                 .await
                             {
                                 Ok(compacted_conversation) => {
@@ -892,6 +915,74 @@ impl Agent {
                             }
 
                             retrying_stream = true;
+                            break;
+                        }
+                        Err(ref provider_err) if no_tools_called
+                            && !failover_attempted
+                            && failover_target.is_some()
+                            && should_retry(provider_err, &RetryConfig::default()) => {
+                            #[cfg(feature = "telemetry")]
+                            crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
+
+                            failover_attempted = true;
+                            let target = failover_target
+                                .take()
+                                .expect("failover target checked above");
+                            match self
+                                .resolve_provider_failover(
+                                    target,
+                                    &session,
+                                    primary_provider.as_ref(),
+                                    &model_config,
+                                )
+                                .await
+                            {
+                                Ok(failover) => {
+                                    let fallback_provider_name = failover.provider.get_name().to_string();
+                                    let fallback_model_name = failover.model_config.model_name.clone();
+                                    warn!(
+                                        "Primary provider remained unavailable; switching this turn to fallback provider '{}' model '{}'",
+                                        fallback_provider_name,
+                                        fallback_model_name
+                                    );
+
+                                    if let Some(anchor) = stream_rollback_anchor.take() {
+                                        session_manager
+                                            .truncate_conversation_from_message(&session_config.id, &anchor)
+                                            .await?;
+                                    }
+                                    messages_to_add = Conversation::default();
+                                    yield AgentEvent::HistoryReplaced(conversation.clone());
+
+                                    active_provider = failover.provider;
+                                    active_model_config = failover.model_config;
+                                    inference = Self::inference_metadata_for(
+                                        &active_provider,
+                                        &active_model_config,
+                                    ).await;
+                                    mid_stream_retries = 0;
+                                    retrying_stream = true;
+
+                                    yield AgentEvent::Message(
+                                        Message::assistant().with_system_notification(
+                                            SystemNotificationType::InlineMessage,
+                                            format!(
+                                                "The primary model remained unavailable. Continuing this turn from the last checkpoint with fallback {fallback_provider_name} / {fallback_model_name}."
+                                            ),
+                                        )
+                                    );
+                                }
+                                Err(failover_error) => {
+                                    error!("Configured provider failover is unavailable: {failover_error}");
+                                    yield AgentEvent::Message(provider_failure_message(
+                                        provider_err,
+                                        &format!(
+                                            "Ran into this error: {provider_err}.\n\nThe configured failover could not start: {failover_error}"
+                                        ),
+                                        true,
+                                    ));
+                                }
+                            }
                             break;
                         }
                         Err(ref provider_err @ ProviderError::NetworkError(_)) => {

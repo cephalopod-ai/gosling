@@ -393,8 +393,24 @@ impl Agent {
         session_config: &SessionConfig,
         conversation: &Conversation,
     ) -> Result<Conversation> {
+        self.perform_compact_with_provider(
+            self.provider().await?,
+            model_config,
+            session_config,
+            conversation,
+        )
+        .await
+    }
+
+    pub(super) async fn perform_compact_with_provider(
+        &self,
+        provider: Arc<dyn Provider>,
+        model_config: &gosling_providers::model::ModelConfig,
+        session_config: &SessionConfig,
+        conversation: &Conversation,
+    ) -> Result<Conversation> {
         let (compacted_conversation, usage) = compact_messages(
-            self.provider().await?.as_ref(),
+            provider.as_ref(),
             model_config,
             &session_config.id,
             conversation,
@@ -420,6 +436,7 @@ impl Agent {
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn apply_context_manager(
         &self,
+        provider: &dyn Provider,
         session_id: &str,
         base_system_prompt: &str,
         project_addendum: Option<&str>,
@@ -446,13 +463,8 @@ impl Agent {
         // shadow — still build and log the packet, but hand the backend its
         // own prompt/messages — and route the summarizer's extracted facts to
         // the backend's durable file instead of the (unused) packet.
-        let (self_managing, summarizer_target) = match self.provider().await {
-            Ok(provider) => (
-                provider.manages_own_context(),
-                summarizer::target_for_provider(provider.as_ref(), working_dir),
-            ),
-            Err(_) => (false, summarizer::SummarizerTarget::ContextPacket),
-        };
+        let self_managing = provider.manages_own_context();
+        let summarizer_target = summarizer::target_for_provider(provider, working_dir);
         let effective_mode = if self_managing && mode == ContextManagerMode::On {
             debug!(
                 "Context Manager capped to shadow: provider manages its own context; skipping packet takeover"
@@ -462,13 +474,10 @@ impl Agent {
             mode
         };
 
-        let context_limit = match self.provider().await {
-            Ok(provider) => provider
-                .get_context_limit(model_config)
-                .await
-                .unwrap_or_else(|_| model_config.context_limit()),
-            Err(_) => model_config.context_limit(),
-        };
+        let context_limit = provider
+            .get_context_limit(model_config)
+            .await
+            .unwrap_or_else(|_| model_config.context_limit());
         let reserved_response_tokens = model_config
             .max_tokens
             .filter(|tokens| *tokens > 0)

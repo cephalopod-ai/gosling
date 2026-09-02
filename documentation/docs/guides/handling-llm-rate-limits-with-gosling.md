@@ -26,3 +26,24 @@ gosling supports automatic setup for both providers that takes you through OAuth
   Manage your account at [openrouter.ai](https://openrouter.ai).
 
 When gosling sends your requests through one of these providers, the provider will automatically switch models when necessary to avoid interruptions due to rate limiting.
+
+## Configure Gosling's turn-level fallback
+
+Gosling can also switch one interrupted turn to a second provider after the primary provider's
+transient retry budget is exhausted:
+
+```bash
+export GOSLING_FAILOVER_PROVIDER="ollama"
+export GOSLING_FAILOVER_MODEL="qwen3-coder:latest"
+```
+
+Both settings are required. `openrouter` can be used instead of `ollama` when its normal provider
+credentials are configured. The fallback receives the provider-neutral conversation, system and
+project instructions, and available tool definitions. Configuring a cloud fallback explicitly
+authorizes that request context to be sent to the second provider.
+
+The fallback is deliberately limited to Gosling-managed API providers. It does not run for CLI or
+ACP providers that manage their own context, sessions pinned to an isolated credential profile, or
+after a tool from the interrupted response has executed. Partial assistant output is removed before
+the fallback request, the fallback is attempted only once per turn, and the session's saved primary
+provider and model are not changed.
