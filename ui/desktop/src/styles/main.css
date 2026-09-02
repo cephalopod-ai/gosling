@@ -534,9 +534,9 @@ body {
 }
 
 .word-break {
-  overflow-wrap: break-word;
-  word-wrap: break-word;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  min-width: 0;
 }
 
 .titlebar-drag-region {
@@ -806,6 +806,7 @@ pre:has(> code.bg-inline-code) {
 }
 
 .katex-display {
+  max-width: 100%;
   margin: 0.75em 0;
   padding: 1em;
   background-color: var(--color-background-secondary);
