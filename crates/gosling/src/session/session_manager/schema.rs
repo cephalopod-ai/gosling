@@ -145,6 +145,11 @@ impl SessionStorage {
         )
         .execute(&mut *tx)
         .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_time_asc ON messages(session_id, created_timestamp, id)",
+        )
+        .execute(&mut *tx)
+        .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC)")
             .execute(&mut *tx)
             .await?;

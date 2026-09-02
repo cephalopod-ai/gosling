@@ -773,6 +773,13 @@ impl SessionStorage {
                         .await?;
                 }
             }
+            31 => {
+                sqlx::query(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_session_time_asc ON messages(session_id, created_timestamp, id)",
+                )
+                .execute(&mut **tx)
+                .await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }

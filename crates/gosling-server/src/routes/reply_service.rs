@@ -12,6 +12,7 @@ use gosling::session::SessionManager;
 use rmcp::model::ServerNotification;
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     fmt::Display,
     sync::Arc,
     time::{Duration, Instant},
@@ -116,10 +117,37 @@ pub fn is_elicitation_response(message: &Message) -> bool {
     })
 }
 
-pub fn track_tool_telemetry(content: &MessageContent, all_messages: &[Message]) {
+fn collect_tool_names_by_request_id(messages: &[Message]) -> HashMap<String, String> {
+    messages
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .filter_map(|content| match content {
+            MessageContent::ToolRequest(request) => request
+                .tool_call
+                .as_ref()
+                .ok()
+                .map(|tool_call| (request.id.clone(), tool_call.name.to_string())),
+            _ => None,
+        })
+        .collect()
+}
+
+struct ReplyStreamState {
+    all_messages: Conversation,
+    rollback: Option<ConversationOverrideRollback>,
+    progressed: bool,
+    tool_names_by_request_id: HashMap<String, String>,
+}
+
+pub fn track_tool_telemetry(
+    content: &MessageContent,
+    tool_names_by_request_id: &mut HashMap<String, String>,
+) {
     match content {
         MessageContent::ToolRequest(tool_request) => {
             if let Ok(tool_call) = &tool_request.tool_call {
+                tool_names_by_request_id
+                    .insert(tool_request.id.clone(), tool_call.name.to_string());
                 tracing::info!(
                     monotonic_counter.gosling.tool_calls = 1,
                     tool_name = %tool_call.name,
@@ -128,27 +156,9 @@ pub fn track_tool_telemetry(content: &MessageContent, all_messages: &[Message]) 
             }
         }
         MessageContent::ToolResponse(tool_response) => {
-            let tool_name = all_messages
-                .iter()
-                .rev()
-                .find_map(|message| {
-                    message.content.iter().find_map(|content| {
-                        if let MessageContent::ToolRequest(request) = content {
-                            if request.id == tool_response.id {
-                                request
-                                    .tool_call
-                                    .as_ref()
-                                    .ok()
-                                    .map(|tool_call| tool_call.name.clone())
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .unwrap_or_else(|| "unknown".to_string().into());
+            let tool_name = tool_names_by_request_id
+                .get(&tool_response.id)
+                .map_or("unknown", String::as_str);
 
             tracing::info!(
                 monotonic_counter.gosling.tool_completions = 1,
@@ -223,7 +233,7 @@ where
         tail_limit: None,
     };
 
-    let mut rollback_state = None;
+    let mut pending_rollback = None;
     let mut all_messages = session.conversation.clone().unwrap_or_default();
     if let Some(history) = override_conversation {
         if let Some((override_conversation, rollback)) =
@@ -231,10 +241,17 @@ where
                 .await
         {
             all_messages = override_conversation;
-            rollback_state = Some(rollback);
+            pending_rollback = Some(rollback);
         }
     }
     all_messages.push(user_message.clone());
+    let tool_names_by_request_id = collect_tool_names_by_request_id(all_messages.messages());
+    let mut reply_state = ReplyStreamState {
+        all_messages,
+        rollback: pending_rollback,
+        progressed: false,
+        tool_names_by_request_id,
+    };
 
     let mut stream = match agent
         .reply(
@@ -246,7 +263,12 @@ where
     {
         Ok(stream) => stream,
         Err(error) => {
-            rollback_if_pending(state.session_manager(), &session_id, &mut rollback_state).await;
+            rollback_if_pending(
+                state.session_manager(),
+                &session_id,
+                &mut reply_state.rollback,
+            )
+            .await;
             tracing::error!("Failed to start reply stream: {:?}", error);
             let _ = sink
                 .publish(MessageEvent::Error {
@@ -257,7 +279,6 @@ where
         }
     };
 
-    let mut reply_progressed = false;
     let mut heartbeat = heartbeat_interval.map(tokio::time::interval);
     // Every path out of the loop below is a `break` that assigns this first,
     // so an initial value here would itself be an unused-assignments warning
@@ -268,8 +289,8 @@ where
         if let Some(heartbeat_interval) = heartbeat.as_mut() {
             tokio::select! {
                 _ = cancel_token.cancelled() => {
-                    if !reply_progressed {
-                        rollback_if_pending(state.session_manager(), &session_id, &mut rollback_state).await;
+                    if !reply_state.progressed {
+                        rollback_if_pending(state.session_manager(), &session_id, &mut reply_state.rollback).await;
                     }
                     tracing::info!("Agent task cancelled for session {}", session_id);
                     exit_reason = ReplyExitReason::Cancelled;
@@ -286,9 +307,7 @@ where
                         response,
                         &state,
                         &session_id,
-                        &mut all_messages,
-                        &mut rollback_state,
-                        &mut reply_progressed,
+                        &mut reply_state,
                         sink,
                     )
                     .await
@@ -301,8 +320,8 @@ where
         } else {
             tokio::select! {
                 _ = cancel_token.cancelled() => {
-                    if !reply_progressed {
-                        rollback_if_pending(state.session_manager(), &session_id, &mut rollback_state).await;
+                    if !reply_state.progressed {
+                        rollback_if_pending(state.session_manager(), &session_id, &mut reply_state.rollback).await;
                     }
                     tracing::info!("Agent task cancelled for session {}", session_id);
                     exit_reason = ReplyExitReason::Cancelled;
@@ -313,9 +332,7 @@ where
                         response,
                         &state,
                         &session_id,
-                        &mut all_messages,
-                        &mut rollback_state,
-                        &mut reply_progressed,
+                        &mut reply_state,
                         sink,
                     )
                     .await
@@ -332,7 +349,7 @@ where
         state.session_manager(),
         &session_id,
         session_start,
-        all_messages.len(),
+        reply_state.all_messages.len(),
         exit_reason,
     )
     .await;
@@ -350,9 +367,7 @@ async fn handle_stream_result<S, E>(
     response: Result<Option<Result<AgentEvent, E>>, tokio::time::error::Elapsed>,
     state: &Arc<AppState>,
     session_id: &str,
-    all_messages: &mut Conversation,
-    rollback_state: &mut Option<ConversationOverrideRollback>,
-    reply_progressed: &mut bool,
+    reply_state: &mut ReplyStreamState,
     sink: &mut S,
 ) -> Option<ReplyExitReason>
 where
@@ -361,20 +376,25 @@ where
 {
     match response {
         Ok(Some(Ok(AgentEvent::Message(message)))) => {
-            let rollback_for_message = !*reply_progressed
-                && rollback_state.is_some()
+            let rollback_for_message = !reply_state.progressed
+                && reply_state.rollback.is_some()
                 && is_early_provider_failure_message(&message);
             if rollback_for_message {
-                rollback_if_pending(state.session_manager(), session_id, rollback_state).await;
+                rollback_if_pending(
+                    state.session_manager(),
+                    session_id,
+                    &mut reply_state.rollback,
+                )
+                .await;
             } else {
-                *reply_progressed = true;
+                reply_state.progressed = true;
             }
 
             for content in &message.content {
-                track_tool_telemetry(content, all_messages.messages());
+                track_tool_telemetry(content, &mut reply_state.tool_names_by_request_id);
             }
 
-            all_messages.push(message.clone());
+            reply_state.all_messages.push(message.clone());
             let token_state = get_token_state(state.session_manager(), session_id).await;
 
             let published = sink
@@ -387,8 +407,10 @@ where
         }
         Ok(Some(Ok(AgentEvent::Usage(_)))) => None,
         Ok(Some(Ok(AgentEvent::HistoryReplaced(new_messages)))) => {
-            *reply_progressed = true;
-            *all_messages = new_messages.clone();
+            reply_state.progressed = true;
+            reply_state.tool_names_by_request_id =
+                collect_tool_names_by_request_id(new_messages.messages());
+            reply_state.all_messages = new_messages.clone();
             let published = sink
                 .publish(MessageEvent::UpdateConversation {
                     conversation: new_messages,
@@ -397,7 +419,7 @@ where
             (!published).then_some(ReplyExitReason::Disconnected)
         }
         Ok(Some(Ok(AgentEvent::McpNotification((request_id, notification))))) => {
-            *reply_progressed = true;
+            reply_state.progressed = true;
             let published = sink
                 .publish(MessageEvent::Notification {
                     request_id,
@@ -407,8 +429,13 @@ where
             (!published).then_some(ReplyExitReason::Disconnected)
         }
         Ok(Some(Err(error))) => {
-            if !*reply_progressed {
-                rollback_if_pending(state.session_manager(), session_id, rollback_state).await;
+            if !reply_state.progressed {
+                rollback_if_pending(
+                    state.session_manager(),
+                    session_id,
+                    &mut reply_state.rollback,
+                )
+                .await;
             }
             tracing::error!("Error processing message: {}", error);
             let _ = sink
@@ -419,8 +446,13 @@ where
             Some(ReplyExitReason::Error)
         }
         Ok(None) => {
-            if !*reply_progressed {
-                rollback_if_pending(state.session_manager(), session_id, rollback_state).await;
+            if !reply_state.progressed {
+                rollback_if_pending(
+                    state.session_manager(),
+                    session_id,
+                    &mut reply_state.rollback,
+                )
+                .await;
             }
             Some(ReplyExitReason::Normal)
         }
@@ -499,7 +531,9 @@ async fn log_session_completion(
 
 #[cfg(test)]
 mod tests {
-    use super::ReplyExitReason;
+    use super::{collect_tool_names_by_request_id, ReplyExitReason};
+    use gosling::conversation::message::Message;
+    use rmcp::model::CallToolRequestParams;
 
     #[test]
     fn reply_exit_reason_maps_finish_and_telemetry_values() {
@@ -514,5 +548,22 @@ mod tests {
         assert_eq!(ReplyExitReason::Disconnected.exit_type(), "disconnected");
         assert_eq!(ReplyExitReason::Cancelled.finish_reason(), "cancelled");
         assert_eq!(ReplyExitReason::Cancelled.exit_type(), "cancelled");
+    }
+
+    #[test]
+    fn tool_name_index_keeps_latest_request_name() {
+        let messages = [
+            Message::assistant()
+                .with_tool_request("request-1", Ok(CallToolRequestParams::new("older-tool"))),
+            Message::assistant()
+                .with_tool_request("request-1", Ok(CallToolRequestParams::new("newer-tool"))),
+        ];
+
+        let names = collect_tool_names_by_request_id(&messages);
+
+        assert_eq!(
+            names.get("request-1").map(String::as_str),
+            Some("newer-tool")
+        );
     }
 }

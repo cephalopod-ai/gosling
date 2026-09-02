@@ -12,6 +12,28 @@ const REPLAY_BUFFER_CAPACITY: usize = 512;
 // always keeping at least the newest event so reconnects still work.
 const REPLAY_BUFFER_MAX_BYTES: usize = 8 * 1024 * 1024;
 
+#[derive(Default)]
+struct ByteCounter {
+    bytes_written: usize,
+}
+
+impl std::io::Write for ByteCounter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.bytes_written += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn serialized_event_len(event: &MessageEvent) -> Result<usize, serde_json::Error> {
+    let mut counter = ByteCounter::default();
+    serde_json::to_writer(&mut counter, event)?;
+    Ok(counter.bytes_written)
+}
+
 /// Error returned by [`SessionEventBus::subscribe`].
 #[derive(Debug)]
 pub enum SubscribeError {
@@ -61,7 +83,7 @@ impl SessionEventBus {
     /// The sequence ID is assigned under the buffer lock so that concurrent
     /// callers cannot reorder events (i.e. seq=2 published before seq=1).
     pub async fn publish(&self, request_id: Option<String>, event: MessageEvent) -> u64 {
-        let approx_bytes = serde_json::to_vec(&event).map(|v| v.len()).unwrap_or(1024);
+        let approx_bytes = serialized_event_len(&event).unwrap_or(1024);
         let session_event = {
             let mut buf = self.buffer.lock().await;
             let seq = self.next_seq.fetch_add(1, Ordering::Relaxed);
@@ -223,6 +245,21 @@ impl Drop for RequestGuard {
 mod tests {
     use super::*;
     use gosling::conversation::message::TokenState;
+
+    #[test]
+    fn serialized_event_len_matches_json_encoding() {
+        for event in [
+            MessageEvent::Ping,
+            MessageEvent::Error {
+                error: "quoted \"text\", newline\n, and unicode 🐥".to_string(),
+            },
+        ] {
+            assert_eq!(
+                serialized_event_len(&event).unwrap(),
+                serde_json::to_vec(&event).unwrap().len()
+            );
+        }
+    }
 
     #[tokio::test]
     async fn test_publish_and_subscribe() {

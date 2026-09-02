@@ -392,6 +392,31 @@ re-assessment and a new finding are in
       measurement limits are recorded in
       [`docs/logs/session/2026-08-17-performance-review.md`](logs/session/2026-08-17-performance-review.md).
 
+#### Performance repair follow-up — 2026-09-02
+
+Source findings: PERF-GSL-006 through PERF-GSL-010 from the 2026-09-02
+performance audit. Confirmation evidence, validation, and residual trade-offs are recorded in
+[`docs/logs/session/2026-09-02-performance-repair.md`](logs/session/2026-09-02-performance-repair.md).
+
+- [x] **PERF-GSL-006** — resolved 2026-09-02: FTS recall now materializes the
+      bounded match set first and counts messages once for each matched session.
+      A 10,000-message/50-hit SQLite scanstats harness reduced indexed count-row
+      visits from 500,000 across 50 correlated executions to 10,000 in one
+      execution while preserving the exact result.
+- [x] **PERF-GSL-007** — resolved 2026-09-02: schema migration 31 and the fresh
+      schema add `(session_id, created_timestamp, id)`. `EXPLAIN QUERY PLAN` now
+      selects that index for `get_conversation` and no longer reports a temporary
+      B-tree sort.
+- [x] **PERF-GSL-008** — resolved 2026-09-02: replay-buffer accounting serializes
+      into an exact counting writer, eliminating the discarded output `Vec` while
+      retaining the existing failure fallback and byte-bound behavior.
+- [x] **PERF-GSL-009** — resolved 2026-09-02: reply telemetry builds the latest
+      tool-request-name index once, updates it as requests arrive, rebuilds it on
+      history replacement, and resolves responses with a hash lookup.
+- [x] **PERF-GSL-010** — resolved 2026-09-02: the Desktop render index precomputes
+      prior-model and intervening-switch state in one pass; disclosures now use
+      constant-time array reads and preserve recorded-switch suppression.
+
 ### Lower priority, mechanical but needs a judgement call
 
 ARCN-GSL-002 (49 scattered `process.env` reads), ARC-GSL-005 (duplicated

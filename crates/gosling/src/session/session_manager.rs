@@ -51,7 +51,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 30;
+pub const CURRENT_SCHEMA_VERSION: i32 = 31;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -2579,10 +2579,13 @@ mod tests {
             "Older target",
             SessionType::User,
             "2026-05-01T00:00:00Z",
-            &[(
-                "does Acme have an email address for John Doe",
-                "2026-05-01T00:00:00Z",
-            )],
+            &[
+                (
+                    "does Acme have an email address for John Doe",
+                    "2026-05-01T00:00:00Z",
+                ),
+                ("follow-up without search terms", "2026-05-01T00:01:00Z"),
+            ],
         )
         .await;
 
@@ -2616,6 +2619,7 @@ mod tests {
         assert_eq!(results.results.len(), 1);
         assert_eq!(results.results[0].session_id, _older_target);
         assert_eq!(results.results[0].messages.len(), 1);
+        assert_eq!(results.results[0].total_messages_in_session, 2);
         assert_eq!(results.results[0].messages[0].role, "user");
         assert!(results.results[0].messages[0].message_id.is_some());
         assert!(results.results[0].messages[0].content.contains("Acme"));
@@ -4447,6 +4451,64 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(schema_version, CURRENT_SCHEMA_VERSION);
+    }
+
+    #[tokio::test]
+    async fn migration_31_adds_conversation_order_index() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        sm.create_session(
+            temp_dir.path().to_path_buf(),
+            "Index migration".to_string(),
+            SessionType::User,
+            GoslingMode::default(),
+        )
+        .await
+        .unwrap();
+        drop(sm);
+
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let pool = SqlitePoolOptions::new()
+            .connect_with(SqliteConnectOptions::new().filename(&db_path))
+            .await
+            .unwrap();
+        sqlx::query("DROP INDEX idx_messages_session_time_asc")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 30")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let upgraded = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = upgraded.storage().pool().await.unwrap();
+        let index_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_index_list('messages') WHERE name = 'idx_messages_session_time_asc'",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(index_count, 1);
+
+        let plan = sqlx::query_as::<_, (i64, i64, i64, String)>(
+            "EXPLAIN QUERY PLAN SELECT role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
+        )
+        .bind("session")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        let plan_details = plan
+            .into_iter()
+            .map(|(_, _, _, detail)| detail)
+            .collect::<Vec<_>>();
+        assert!(plan_details
+            .iter()
+            .any(|detail| detail.contains("idx_messages_session_time_asc")));
+        assert!(!plan_details
+            .iter()
+            .any(|detail| detail.contains("USE TEMP B-TREE FOR ORDER BY")));
     }
 
     #[tokio::test]

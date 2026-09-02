@@ -102,20 +102,21 @@ impl<'a> ChatHistorySearch<'a> {
     async fn fetch_rows(&self, fts_query: &str) -> Result<Vec<SqlQueryRow>> {
         let mut sql = String::from(
             r#"
-            SELECT
+            WITH matched_messages AS MATERIALIZED (
+              SELECT
                 s.id AS session_id,
                 COALESCE(NULLIF(s.description, ''), s.name) AS session_description,
                 s.working_dir AS session_working_dir,
-                (SELECT COUNT(*) FROM messages session_messages WHERE session_messages.session_id = s.id) AS total_messages_in_session,
                 m.id AS row_id,
                 m.message_id,
                 m.role,
                 snippet(message_search, 0, '[', ']', '…', 32) AS snippet,
-                m.timestamp
-            FROM message_search
-            INNER JOIN messages m ON m.id = message_search.rowid
-            INNER JOIN sessions s ON m.session_id = s.id
-            WHERE message_search MATCH ?
+                m.timestamp,
+                bm25(message_search) AS relevance
+              FROM message_search
+              INNER JOIN messages m ON m.id = message_search.rowid
+              INNER JOIN sessions s ON m.session_id = s.id
+              WHERE message_search MATCH ?
         "#,
         );
 
@@ -134,7 +135,33 @@ impl<'a> ChatHistorySearch<'a> {
         if self.before_date.is_some() {
             sql.push_str(" AND m.timestamp <= ?");
         }
-        sql.push_str(" ORDER BY bm25(message_search), m.timestamp DESC LIMIT ?");
+        sql.push_str(
+            r#"
+              ORDER BY relevance, m.timestamp DESC
+              LIMIT ?
+            ),
+            session_counts AS (
+              SELECT session_id, COUNT(*) AS total_messages_in_session
+              FROM messages
+              WHERE session_id IN (SELECT DISTINCT session_id FROM matched_messages)
+              GROUP BY session_id
+            )
+            SELECT
+              matched_messages.session_id,
+              matched_messages.session_description,
+              matched_messages.session_working_dir,
+              session_counts.total_messages_in_session,
+              matched_messages.row_id,
+              matched_messages.message_id,
+              matched_messages.role,
+              matched_messages.snippet,
+              matched_messages.timestamp
+            FROM matched_messages
+            INNER JOIN session_counts
+              ON session_counts.session_id = matched_messages.session_id
+            ORDER BY matched_messages.relevance, matched_messages.timestamp DESC
+            "#,
+        );
 
         let mut query = sqlx::query_as::<_, SqlQueryRow>(&sql).bind(fts_query);
         if let Some(exclude_id) = &self.exclude_session_id {

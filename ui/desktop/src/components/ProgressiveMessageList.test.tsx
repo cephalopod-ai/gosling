@@ -46,6 +46,16 @@ function toolRequest(id: string): MessageContent {
   };
 }
 
+function resolvedModelMessage(id: string, modelName: string): Message {
+  const result = message('assistant', [{ type: 'text', text: id }], id);
+  result.metadata.inference = {
+    provider: 'test-provider',
+    requestedModel: modelName,
+    resolvedModel: modelName,
+  };
+  return result;
+}
+
 describe('ProgressiveMessageList tool activity', () => {
   it('marks user messages as thread navigation landmarks', () => {
     const { container } = render(
@@ -145,5 +155,37 @@ describe('ProgressiveMessageList tool activity', () => {
       'true'
     );
     expect(screen.getByText('tool-two')).toBeInTheDocument();
+  });
+
+  it('renders model disclosures without duplicating recorded switches', () => {
+    render(
+      <ProgressiveMessageList
+        messages={[
+          resolvedModelMessage('answer-a', 'model-a'),
+          message('assistant', [{ type: 'text', text: 'No model metadata' }], 'interlude'),
+          resolvedModelMessage('answer-b', 'model-b'),
+          message(
+            'assistant',
+            [
+              {
+                type: 'systemNotification',
+                msg: 'Model changed: model-b → model-c',
+                notificationType: 'inlineMessage',
+              },
+            ],
+            'model-switch'
+          ),
+          resolvedModelMessage('answer-c', 'model-c'),
+          resolvedModelMessage('answer-d', 'model-d'),
+        ]}
+        chat={{ sessionId: 'session-one' }}
+        isUserMessage={(candidate) => candidate.role === 'user'}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(screen.getByText('Model changed: model-a → model-b')).toBeInTheDocument();
+    expect(screen.getAllByText('Model changed: model-b → model-c')).toHaveLength(1);
+    expect(screen.getByText('Model changed: model-c → model-d')).toBeInTheDocument();
   });
 });

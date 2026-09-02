@@ -93,6 +93,8 @@ interface MessageRenderIndex {
   confirmationByToolRequestId: Map<string, ToolConfirmationData>;
   hiddenTimestampIndexes: Set<number>;
   pendingConfirmationIds: Set<string>;
+  previousResolvedModelByIndex: Array<string | null>;
+  hasModelSwitchSincePreviousResolvedModelByIndex: boolean[];
   toolRequestIds: Set<string>;
   toolResponseByRequestId: Map<string, ToolResponseMessageContent>;
   toolCallChainIndexes: Set<number>;
@@ -154,28 +156,6 @@ export default function ProgressiveMessageList({
     if (message.role !== 'assistant' || !message.metadata.userVisible) return null;
     return message.metadata.inference?.resolvedModel ?? null;
   }, []);
-
-  const getPreviousResolvedModel = useCallback(
-    (index: number): string | null => {
-      for (let i = index - 1; i >= 0; i--) {
-        const model = getResolvedModel(messages[i]);
-        if (model) return model;
-      }
-      return null;
-    },
-    [getResolvedModel, messages]
-  );
-
-  const hasModelSwitchRecordSincePreviousResolvedModel = useCallback(
-    (index: number): boolean => {
-      for (let i = index - 1; i >= 0; i--) {
-        if (isModelSwitchNotification(messages[i])) return true;
-        if (getResolvedModel(messages[i])) return false;
-      }
-      return false;
-    },
-    [getResolvedModel, messages]
-  );
 
   const renderModelChangeDisclosure = useCallback(
     (previousModel: string, currentModel: string) => (
@@ -312,8 +292,29 @@ export default function ProgressiveMessageList({
     const toolResponseByRequestId = new Map<string, ToolResponseMessageContent>();
     const confirmationByToolRequestId = new Map<string, ToolConfirmationData>();
     const toolRequestIds = new Set<string>();
+    const previousResolvedModelByIndex = new Array<string | null>(messages.length).fill(null);
+    const hasModelSwitchSincePreviousResolvedModelByIndex = new Array<boolean>(
+      messages.length
+    ).fill(false);
+    let previousResolvedModel: string | null = null;
+    let hasModelSwitchSincePreviousResolvedModel = false;
 
-    for (const message of messages) {
+    for (const [index, message] of messages.entries()) {
+      previousResolvedModelByIndex[index] = previousResolvedModel;
+      hasModelSwitchSincePreviousResolvedModelByIndex[index] =
+        hasModelSwitchSincePreviousResolvedModel;
+
+      const resolvedModel = getResolvedModel(message);
+      const isModelSwitch = isModelSwitchNotification(message);
+      if (resolvedModel) {
+        previousResolvedModel = resolvedModel;
+      }
+      if (isModelSwitch) {
+        hasModelSwitchSincePreviousResolvedModel = true;
+      } else if (resolvedModel) {
+        hasModelSwitchSincePreviousResolvedModel = false;
+      }
+
       for (const request of getToolRequests(message)) {
         toolRequestIds.add(request.id);
       }
@@ -359,24 +360,28 @@ export default function ProgressiveMessageList({
       collapsibleToolCallGroupsByStart,
       confirmationByToolRequestId,
       hiddenTimestampIndexes,
+      hasModelSwitchSincePreviousResolvedModelByIndex,
       pendingConfirmationIds: getPendingToolConfirmationIds(messages),
+      previousResolvedModelByIndex,
       toolRequestIds,
       toolResponseByRequestId,
       toolCallChainIndexes,
     };
-  }, [messages]);
+  }, [getResolvedModel, messages]);
 
   // Render messages up to the current rendered count
   const renderMessages = useCallback(() => {
     const messagesToRender = messages.slice(0, renderedCount);
     const renderModelDisclosure = (message: Message, index: number) => {
       const currentResolvedModel = getResolvedModel(message);
-      const previousResolvedModel = currentResolvedModel ? getPreviousResolvedModel(index) : null;
+      const previousResolvedModel = currentResolvedModel
+        ? messageRenderIndex.previousResolvedModelByIndex[index]
+        : null;
       const showModelChangeDisclosure = Boolean(
         currentResolvedModel &&
         previousResolvedModel &&
         currentResolvedModel !== previousResolvedModel &&
-        !hasModelSwitchRecordSincePreviousResolvedModel(index)
+        !messageRenderIndex.hasModelSwitchSincePreviousResolvedModelByIndex[index]
       );
 
       return showModelChangeDisclosure && currentResolvedModel && previousResolvedModel
@@ -558,9 +563,7 @@ export default function ProgressiveMessageList({
     workingDirectory,
     workspaceId,
     threadTurnAttribute,
-    getPreviousResolvedModel,
     getResolvedModel,
-    hasModelSwitchRecordSincePreviousResolvedModel,
     renderModelChangeDisclosure,
   ]);
 
