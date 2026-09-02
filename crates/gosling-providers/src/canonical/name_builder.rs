@@ -457,12 +457,12 @@ mod tests {
 
         // === DeepSeek ===
         assert_eq!(
-            map_to_canonical_model("databricks", "databricks-deepseek-chat", r),
-            Some("deepseek/deepseek-chat".to_string())
+            map_to_canonical_model("databricks", "databricks-deepseek-v4-flash", r),
+            Some("deepseek/deepseek-v4-flash".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("databricks", "deepseek-reasoner", r),
-            Some("deepseek/deepseek-reasoner".to_string())
+            map_to_canonical_model("databricks", "deepseek-v4-pro", r),
+            Some("deepseek/deepseek-v4-pro".to_string())
         );
 
         // === Grok (X.AI) ===
@@ -508,8 +508,8 @@ mod tests {
             Some("mistralai/codestral".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("databricks", "deepseek-deepseek-chat", r),
-            Some("deepseek/deepseek-chat".to_string())
+            map_to_canonical_model("databricks", "deepseek-deepseek-v4-pro", r),
+            Some("deepseek/deepseek-v4-pro".to_string())
         );
         assert_eq!(
             map_to_canonical_model("databricks", "x-ai-grok-4.3", r),
@@ -540,8 +540,8 @@ mod tests {
             Some("google-vertex/claude-sonnet-4".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("gcp_vertex_ai", "claude-3-5-haiku@20241022", r),
-            Some("google-vertex/claude-3.5-haiku".to_string())
+            map_to_canonical_model("gcp_vertex_ai", "claude-opus-4-1@20250805", r),
+            Some("google-vertex/claude-opus-4.1".to_string())
         );
         assert_eq!(
             map_to_canonical_model("gcp_vertex_ai", "claude-sonnet-4-5@20250929", r),

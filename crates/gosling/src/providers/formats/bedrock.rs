@@ -1396,7 +1396,7 @@ mod tests {
 
     #[test]
     fn test_bedrock_inference_config_omits_temperature_for_bedrock_registry_unsupported_model() {
-        let mut config = ModelConfig::new("openai.gpt-5.4");
+        let mut config = ModelConfig::new("openai.gpt-5.4-pro");
         config.temperature = Some(0.5);
 
         let inference_config = bedrock_inference_config(&config);
