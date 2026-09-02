@@ -1,10 +1,7 @@
-/**
- * Loads and validates the remote extension-command allowlist.
- *
- * Extracted from ui/desktop/src/main.ts during behavior-preserving modularization.
- * The Electron entrypoint remains the compatibility facade and calls the exported
- * function from its original IPC registration path.
- */
+// Owns remote extension allowlist retrieval and YAML command extraction.
+// Extracted from ui/desktop/src/main.ts in a behavior-preserving modularization.
+// The compatibility facade imports getAllowList; it re-exports none.
+
 import * as yaml from 'yaml';
 
 /// Bounds on the extension allowlist fetch. It gates what may execute, so it

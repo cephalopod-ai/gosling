@@ -1,22 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { BackendCertificateTrustRegistry } from './backendCertificateTrust';
+import {
+  isTrustedHost,
+  normalizeFingerprint,
+  trustBackendCertificate,
+  verifyBackendCertificate,
+} from './backendCertificateTrust';
 
-describe('BackendCertificateTrustRegistry', () => {
-  it('normalizes sha256 fingerprints', () => {
-    const registry = new BackendCertificateTrustRegistry();
-
-    expect(registry.normalizeFingerprint('sha256/AQID')).toBe('01:02:03');
+describe('backend certificate trust', () => {
+  it('normalizes hexadecimal and sha256 fingerprints', () => {
+    expect(normalizeFingerprint('aa:bb')).toBe('AA:BB');
+    expect(normalizeFingerprint(`sha256/${Buffer.from([0xaa, 0xbb]).toString('base64')}`)).toBe(
+      'AA:BB'
+    );
   });
 
-  it('pins the first fingerprint for a TOFU registration', () => {
-    const registry = new BackendCertificateTrustRegistry();
-    const registration = registry.trust('LOCALHOST', null);
-
-    expect(registry.verify('localhost', 'AA:BB')).toBe(true);
-    expect(registry.verify('localhost', 'AA:BB')).toBe(true);
-    expect(registry.verify('localhost', 'CC:DD')).toBe(false);
-
+  it('matches hostnames case-insensitively and releases exact pins', () => {
+    const registration = trustBackendCertificate('LOCALHOST', 'aa:bb');
+    expect(isTrustedHost('localhost')).toBe(true);
+    expect(verifyBackendCertificate('localhost', 'AA:BB')).toBe(true);
+    expect(verifyBackendCertificate('localhost', 'CC:DD')).toBe(false);
     registration.release();
-    expect(registry.isTrustedHost('localhost')).toBe(false);
+    expect(isTrustedHost('localhost')).toBe(false);
+  });
+
+  it('pins the first TOFU fingerprint', () => {
+    const registration = trustBackendCertificate('example.test', null);
+    expect(verifyBackendCertificate('example.test', 'AA:BB')).toBe(true);
+    expect(verifyBackendCertificate('example.test', 'CC:DD')).toBe(false);
+    registration.release();
   });
 });

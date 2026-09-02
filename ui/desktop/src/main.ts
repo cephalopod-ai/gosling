@@ -1,15 +1,12 @@
-/**
- * Electron main-process compatibility facade.
- *
- * Keeps startup and registration order stable while delegating cohesive adapter
- * responsibilities to `src/main/*` modules.
- */
-import type { OpenDialogOptions, OpenDialogReturnValue } from 'electron';
+// Full Desktop compatibility facade. Extracted main-process responsibilities live under
+// ./main; these imports and registration calls preserve the executable entrypoint and must not
+// be pruned as unused compatibility wiring.
+
+import type { Certificate } from 'electron';
 import {
   app,
   App,
   BrowserWindow,
-  clipboard,
   dialog,
   globalShortcut,
   ipcMain,
@@ -18,81 +15,109 @@ import {
   net,
   Notification,
   powerSaveBlocker,
-  screen,
   session,
   shell,
-  Tray,
   webContents,
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
-import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
 import path from 'node:path';
 import os from 'node:os';
-import { execFileSync, spawn, execFile } from 'child_process';
+import { spawn } from 'child_process';
 import 'dotenv/config';
 import { checkBackendStatus } from './backendStatus';
-import { acpTokenSubprotocol, startGoslingServe } from './goslingServe';
+import { startGoslingServe } from './goslingServe';
 import { GoslingServeLeaseRegistry, type GoslingServeLease } from './goslingServeLeaseRegistry';
 import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
 import { getOverrideOriginForRequest } from './requestOrigin';
 import { acpWebSocketUrlFromHttpBase, normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde } from './utils/pathUtils';
+import { assertPathWithinRoots } from './utils/rendererFileAccess';
 import { writeJsonFileAtomicSync, readJsonFileWithRecoverySync } from './utils/atomicJsonStore';
+import { RendererDirectoryGrantRegistry } from './utils/rendererDirectoryGrants';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
 import { errorMessage, formatErrorForLogging } from './utils/conversionUtils';
-import { readBoundedSessionImportFile } from './utils/sessionImport';
-import { defaultResearchLibraryPath, listResearchLibraryFiles } from './utils/researchLibrary';
-import type { LegacySettings, Settings, SettingKey } from './utils/settings';
-import {
-  getKeyboardShortcuts,
-  isSettingKey,
-  isSettingValue,
-  resolveStoredSettings,
-  setSettingValue,
-} from './utils/settings';
+import type { LegacySettings, Settings } from './utils/settings';
+import { getKeyboardShortcuts, resolveStoredSettings } from './utils/settings';
 import * as crypto from 'crypto';
 import windowStateKeeper from 'electron-window-state';
 import {
-  getUpdateAvailable,
   registerUpdateIpcHandlers,
   setAutoDownloadDisabled,
-  setTrayRef,
   setupAutoUpdater,
-  updateTrayMenu,
 } from './utils/autoUpdater';
 import { UPDATES_ENABLED } from './updates';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
-import {
-  blockTopLevelNavigation,
-  openExternalUrlIfSafe,
-  normalizeWebUrl,
-} from './utils/urlSecurity';
+import { blockTopLevelNavigation, openExternalUrlIfSafe } from './utils/urlSecurity';
 import { buildCSP } from './utils/csp';
-import { desktopCommandChannels, rendererEventChannels } from './ipc/channels';
-import type { ArtifactRoutingConfig, ArtifactSaveRequest } from './types/artifactRouter';
+import { rendererEventChannels } from './ipc/channels';
+import type { ArtifactRoutingConfig } from './types/artifactRouter';
 import { installArtifactDownloadRouter } from './utils/artifactDownloads';
-import { saveArtifactWithDialog } from './utils/artifactSave';
+import { ArtifactRoutingRegistry } from './utils/artifactRoutingRegistry';
+import {
+  assertArtifactFileAccess,
+  resolveArtifactFileCapability,
+} from './utils/artifactFileAccess';
 import {
   dispatchFullGoslingProtocolUrl,
   findGoslingProtocolUrl,
   parseGoslingProtocolRoute,
 } from './handoffProtocol';
-import { getAllowList } from './main/allowList';
 import {
-  BackendCertificateTrustRegistry,
+  translateMenuLabel,
+  translateMenuLabels as translateNativeMenuLabels,
+} from './main/menuLocalization';
+import {
+  installBackendCertificateVerifier,
+  isTrustedHost,
+  normalizeFingerprint,
+  trustBackendCertificate,
+  verifyBackendCertificate,
   type BackendCertificateTrustRegistration,
 } from './main/backendCertificateTrust';
-import { RendererAccessController, resolveRendererPath } from './main/rendererAccess';
-import { configureApplicationMenu, createMenuTranslator } from './main/nativeMenu';
+import { getAllowList } from './main/allowlist';
+import { registerFileIpcHandlers } from './main/fileIpc';
+import { registerSystemIpcHandlers } from './main/systemIpc';
+import { registerRendererIpcHandlers } from './main/rendererIpc';
+import { registerSettingsIpcHandlers } from './main/settingsIpc';
+import { createWindowChrome } from './main/windowChrome';
+import { installApplicationMenu } from './main/applicationMenu';
+import { registerAppIpcHandlers } from './main/appIpc';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
   return UPDATES_ENABLED || process.env.ENABLE_DEV_UPDATES === 'true';
+}
+
+// =======================================================================
+// Native menu localization
+// -----------------------------------------------------------------------
+// Electron's main process can't use react-intl (which runs in the renderer),
+// so the native menu bar is translated here with a small hand-maintained
+// dictionary. Only Simplified Chinese is filled in right now; other locales
+// fall through to the original English labels. Keep the keys in sync with
+// the raw label strings used below.
+// =======================================================================
+
+function detectMenuLocale(): string {
+  return getConfiguredGoslingLocale() ?? 'en';
+}
+
+function menuT(label: string): string {
+  return translateMenuLabel(detectMenuLocale(), label);
+}
+
+/**
+ * Recursively translate `label` on every item in the given menu, including nested submenus.
+ * Electron's default application menu comes with English labels that are not otherwise
+ * configurable, so we post-process them here before calling `Menu.setApplicationMenu`.
+ */
+function translateMenuLabels(items: MenuItem[]): void {
+  translateNativeMenuLabels(items, menuT);
 }
 
 // Settings management
@@ -185,53 +210,133 @@ function getSettings(): Settings {
   return settingsCache;
 }
 
-const rendererAccess = new RendererAccessController(RENDERER_DIRECTORY_GRANTS_FILE);
+function resolveRendererPath(filePath: string): string {
+  return path.resolve(expandTilde(filePath));
+}
+
+const rendererDirectoryGrants = new RendererDirectoryGrantRegistry(RENDERER_DIRECTORY_GRANTS_FILE);
+try {
+  rendererDirectoryGrants.load();
+} catch (error) {
+  console.error('Failed to load renderer directory grants; starting with no grants:', error);
+}
+
+function rendererFileRoots(webContentsId: number): string[] {
+  return rendererDirectoryGrants.rootsFor(webContentsId);
+}
+
+function firstGrantedRecentDirectory(webContentsId = 0): string | undefined {
+  return loadRecentDirs().find((dir) =>
+    rendererDirectoryGrants.isGrantedDirectory(webContentsId, dir)
+  );
+}
+
+async function assertRendererFileAccess(webContentsId: number, filePath: string): Promise<string> {
+  const resolvedPath = resolveRendererPath(filePath);
+  return assertPathWithinRoots(resolvedPath, rendererFileRoots(webContentsId));
+}
+
+const rendererArtifactFileGrants = new Map<number, Set<string>>();
+const artifactRoutingRegistry = new ArtifactRoutingRegistry();
+const ARTIFACT_PRODUCT_TYPES = new Set([
+  'code',
+  'data',
+  'document',
+  'export',
+  'image',
+  'other',
+  'presentation',
+  'spreadsheet',
+  'video',
+]);
+
+async function assertRendererArtifactFileAccess(
+  webContentsId: number,
+  filePath: string,
+  baseDirectory?: string
+): Promise<string> {
+  const routingConfig = artifactRoutingRegistry.get(webContentsId);
+  const routedOutputRoots = routingConfig?.outputs.map((output) => output.path) ?? [];
+  const expandedPath = expandTilde(filePath);
+  const candidatePath = path.isAbsolute(expandedPath) ? resolveRendererPath(filePath) : filePath;
+  return assertArtifactFileAccess(
+    candidatePath,
+    baseDirectory ? resolveRendererPath(baseDirectory) : undefined,
+    rendererFileRoots(webContentsId),
+    routedOutputRoots,
+    rendererArtifactFileGrants.get(webContentsId) ?? new Set()
+  );
+}
+
+async function assertArtifactOutputRootAccess(
+  webContentsId: number,
+  outputPath: string
+): Promise<string> {
+  return assertRendererFileAccess(webContentsId, outputPath);
+}
+
+async function validateArtifactRoutingConfig(
+  webContentsId: number,
+  config: ArtifactRoutingConfig
+): Promise<ArtifactRoutingConfig | null> {
+  if (
+    (config.workspaceId !== undefined && typeof config.workspaceId !== 'string') ||
+    (config.workspaceName !== undefined && typeof config.workspaceName !== 'string') ||
+    (config.workspaceId === undefined) !== (config.workspaceName === undefined) ||
+    !Array.isArray(config.outputs) ||
+    config.outputs.length > 64 ||
+    (config.artifactFiles !== undefined &&
+      (!Array.isArray(config.artifactFiles) || config.artifactFiles.length > 256))
+  ) {
+    return null;
+  }
+
+  const outputs = [];
+  for (const output of config.outputs) {
+    if (
+      typeof output.id !== 'string' ||
+      typeof output.path !== 'string' ||
+      typeof output.isDefault !== 'boolean' ||
+      !Array.isArray(output.productTypes) ||
+      output.productTypes.length === 0 ||
+      !output.productTypes.every((productType) => ARTIFACT_PRODUCT_TYPES.has(productType))
+    ) {
+      continue;
+    }
+    try {
+      const outputPath = await assertArtifactOutputRootAccess(webContentsId, output.path);
+      const stats = await fs.stat(outputPath);
+      if (stats.isDirectory()) outputs.push({ ...output, path: outputPath });
+    } catch {
+      continue;
+    }
+  }
+
+  const artifactFiles = [];
+  for (const artifactFile of config.artifactFiles ?? []) {
+    if (
+      typeof artifactFile !== 'string' ||
+      artifactFile.length === 0 ||
+      artifactFile.length > 4096
+    ) {
+      continue;
+    }
+    try {
+      const artifactPath = await resolveArtifactFileCapability(resolveRendererPath(artifactFile));
+      if (artifactPath) artifactFiles.push(artifactPath);
+    } catch {
+      continue;
+    }
+  }
+
+  return outputs.length > 0 || artifactFiles.length > 0
+    ? { ...config, artifactFiles: [...new Set(artifactFiles)], outputs }
+    : null;
+}
 
 async function openExternalIfSafe(url: string): Promise<void> {
   if (!(await openExternalUrlIfSafe(url, (safeUrl) => shell.openExternal(safeUrl)))) {
     console.warn(`[Main] Blocked unsafe external URL: ${url}`);
-  }
-}
-
-function loopbackHttpBaseFromAcpUrl(acpUrl: string): string | null {
-  try {
-    const parsed = new URL(acpUrl);
-    if (!['ws:', 'wss:'].includes(parsed.protocol)) {
-      return null;
-    }
-    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(parsed.hostname)) {
-      return null;
-    }
-
-    parsed.protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:';
-    parsed.pathname = '';
-    parsed.search = '';
-    parsed.hash = '';
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return null;
-  }
-}
-
-type McpAppProxyCsp = {
-  connectDomains?: string[];
-  resourceDomains?: string[];
-  frameDomains?: string[];
-  baseUriDomains?: string[];
-};
-
-function appendDomainParams(proxyUrl: URL, csp?: McpAppProxyCsp | null): void {
-  if (csp?.connectDomains?.length) {
-    proxyUrl.searchParams.set('connect_domains', csp.connectDomains.join(','));
-  }
-  if (csp?.resourceDomains?.length) {
-    proxyUrl.searchParams.set('resource_domains', csp.resourceDomains.join(','));
-  }
-  if (csp?.frameDomains?.length) {
-    proxyUrl.searchParams.set('frame_domains', csp.frameDomains.join(','));
-  }
-  if (csp?.baseUriDomains?.length) {
-    proxyUrl.searchParams.set('base_uri_domains', csp.baseUriDomains.join(','));
   }
 }
 
@@ -262,80 +367,6 @@ function getConfiguredGoslingLocale(): string | undefined {
   }
 }
 
-const { menuT, translateMenuLabels } = createMenuTranslator(
-  () => getConfiguredGoslingLocale() ?? 'en'
-);
-
-function listGitWorktreeDirs(dir: string): Promise<string[]> {
-  return new Promise((resolve) => {
-    if (!dir?.trim()) {
-      resolve([]);
-      return;
-    }
-
-    execFile(
-      'git',
-      ['-C', dir, 'worktree', 'list', '--porcelain'],
-      { timeout: 3000 },
-      (error, stdout) => {
-        if (error) {
-          resolve([]);
-          return;
-        }
-
-        const dirs = stdout
-          .split('\n')
-          .filter((line) => line.startsWith('worktree '))
-          .map((line) => line.slice('worktree '.length).trim())
-          .filter(Boolean)
-          .filter((worktreeDir, index, allDirs) => allDirs.indexOf(worktreeDir) === index);
-
-        resolve(dirs);
-      }
-    );
-  });
-}
-
-function gitArgs(dir: string, args: string[]): string[] {
-  return ['-c', 'safe.bareRepository=explicit', '-c', 'core.fsmonitor=false', '-C', dir, ...args];
-}
-
-function runGit(dir: string, args: string[], timeout = 3000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile('git', gitArgs(dir, args), { timeout }, (error, stdout) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(stdout.trim());
-    });
-  });
-}
-
-async function getGitBranchInfo(dir: string): Promise<{ branch: string } | null> {
-  try {
-    const branch = await runGit(dir, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-    return branch ? { branch } : null;
-  } catch {
-    try {
-      const branch = await runGit(dir, ['rev-parse', '--short', 'HEAD']);
-      return branch ? { branch } : null;
-    } catch {
-      return null;
-    }
-  }
-}
-
-function isValidGitBranch(branch: unknown): branch is string {
-  return (
-    typeof branch === 'string' &&
-    branch.length > 0 &&
-    branch.length <= 255 &&
-    !branch.startsWith('-') &&
-    !branch.includes('\0')
-  );
-}
-
 async function configureProxy() {
   const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
   const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
@@ -355,8 +386,10 @@ async function configureProxy() {
 
 if (started) app.quit();
 
+// Certificate trust for active backend leases. Renderer requests pin to the
+// exact cert fingerprint. Each backend lease owns a trust record so old windows
+// keep working after settings change.
 const MAIN_WINDOW_SESSION_PARTITION = 'persist:gosling';
-const backendCertificateTrust = new BackendCertificateTrustRegistry();
 
 // Renderer requests: pin to the exact cert once known.
 app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
@@ -367,18 +400,16 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
     callback(false);
     return;
   }
-  if (!backendCertificateTrust.isTrustedHost(parsed.hostname)) {
+  if (!isTrustedHost(parsed.hostname)) {
     callback(false);
     return;
   }
 
   event.preventDefault();
-  const cert = certificate as typeof certificate & {
+  const cert = certificate as Certificate & {
     fingerprint256?: string;
   };
-  callback(
-    backendCertificateTrust.verify(parsed.hostname, cert.fingerprint256 ?? cert.fingerprint)
-  );
+  callback(verifyBackendCertificate(parsed.hostname, cert.fingerprint256 ?? cert.fingerprint));
 });
 
 app.whenReady().then(() => {
@@ -582,7 +613,7 @@ async function deliverRendererProtocolUrl(
 
 async function handleProtocolUrl(url: string, parsedUrl: URL): Promise<boolean> {
   if (!url) return false;
-  const openDir = rendererAccess.firstGrantedRecentDirectory();
+  const openDir = firstGrantedRecentDirectory();
   return dispatchFullGoslingProtocolUrl(url, {
     openChat: async (options) => {
       await createChat(app, { dir: openDir, ...options });
@@ -683,7 +714,7 @@ async function handleFileOpen(filePath: string) {
 
     // Add to recent directories
     addRecentDir(targetDir);
-    rendererAccess.grantSelectedPath(0, targetDir);
+    rendererDirectoryGrants.grantSelectedPath(0, targetDir);
 
     // Create new window for the directory
     const newWindow = await createChat(app, { dir: targetDir });
@@ -979,7 +1010,7 @@ const createChat = async (
       const externalBaseUrl = normalizeAcpHttpBaseUrl(externalBackend.url);
       const externalBase = new URL(externalBaseUrl);
       if (externalBase.protocol === 'https:') {
-        externalCertificateTrust = backendCertificateTrust.trust(
+        externalCertificateTrust = trustBackendCertificate(
           externalBase.hostname,
           externalBackend.certFingerprint ?? null
         );
@@ -1057,7 +1088,7 @@ const createChat = async (
   } else {
     const useLocalBackendTls = !app.isPackaged;
     const localCertificateTrust = useLocalBackendTls
-      ? backendCertificateTrust.trust('127.0.0.1', null)
+      ? trustBackendCertificate('127.0.0.1', null)
       : null;
 
     let goslingServeResult: Awaited<ReturnType<typeof startGoslingServe>>;
@@ -1085,9 +1116,7 @@ const createChat = async (
       }
 
       if (useLocalBackendTls && goslingServeResult.certFingerprint && localCertificateTrust) {
-        const localCertFingerprint = backendCertificateTrust.normalizeFingerprint(
-          goslingServeResult.certFingerprint
-        );
+        const localCertFingerprint = normalizeFingerprint(goslingServeResult.certFingerprint);
         if (
           localCertificateTrust.trust.fingerprint &&
           localCertificateTrust.trust.fingerprint !== localCertFingerprint
@@ -1098,9 +1127,7 @@ const createChat = async (
           );
         }
         localCertificateTrust.trust.fingerprint = localCertFingerprint;
-        backendCertificateTrust.installVerifier(
-          session.fromPartition(MAIN_WINDOW_SESSION_PARTITION)
-        );
+        installBackendCertificateVerifier(session.fromPartition(MAIN_WINDOW_SESSION_PARTITION));
       }
     } catch (error) {
       localCertificateTrust?.release();
@@ -1197,20 +1224,24 @@ const createChat = async (
         partition: MAIN_WINDOW_SESSION_PARTITION,
       },
     });
-    rendererAccess.grantSelectedPath(mainWindow.webContents.id, workingDir, false);
+    rendererDirectoryGrants.grantSelectedPath(mainWindow.webContents.id, workingDir, false);
     if (settings.archiveFolder) {
       try {
-        rendererAccess.grantSelectedPath(mainWindow.webContents.id, settings.archiveFolder, false);
+        rendererDirectoryGrants.grantSelectedPath(
+          mainWindow.webContents.id,
+          settings.archiveFolder,
+          false
+        );
       } catch (error) {
         // The configured folder may have been moved or deleted since it was picked; the user is
         // re-prompted to choose an archive folder rather than the window failing to open.
         console.error('Failed to re-grant the configured archive folder:', error);
       }
     }
-    backendCertificateTrust.installVerifier(mainWindow.webContents.session);
+    installBackendCertificateVerifier(mainWindow.webContents.session);
     installArtifactDownloadRouter(
       mainWindow.webContents.session,
-      (webContentsId) => rendererAccess.getArtifactRouting(webContentsId),
+      (webContentsId) => artifactRoutingRegistry.get(webContentsId),
       (webContentsId, fileName) => {
         const target = BrowserWindow.getAllWindows().find(
           (window) => window.webContents.id === webContentsId
@@ -1326,7 +1357,9 @@ const createChat = async (
   const windowId = mainWindow.id;
   const webContentsId = mainWindow.webContents.id;
   mainWindow.webContents.once('destroyed', () => {
-    rendererAccess.clearWebContents(webContentsId);
+    artifactRoutingRegistry.clear(webContentsId);
+    rendererArtifactFileGrants.delete(webContentsId);
+    rendererDirectoryGrants.clearTransient(webContentsId);
   });
   const url = getAppUrl();
 
@@ -1433,260 +1466,25 @@ const createChat = async (
   return mainWindow;
 };
 
-let activeLauncherWindow: BrowserWindow | null = null;
-
-const createLauncher = () => {
-  if (activeLauncherWindow && !activeLauncherWindow.isDestroyed()) {
-    activeLauncherWindow.focus();
-    return activeLauncherWindow;
-  }
-
-  const launcherWindow = new BrowserWindow({
-    width: 600,
-    height: 80,
-    frame: false,
-    transparent: process.platform === 'darwin',
-    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#ffffff',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      // See the main window above. (SECN-GSL-003)
-      sandbox: true,
-      additionalArguments: [
-        JSON.stringify({
-          ...appConfig,
-          GOSLING_LOCALE: getConfiguredGoslingLocale(),
-        }),
-      ],
-      partition: 'persist:gosling',
-    },
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    resizable: false,
-    movable: true,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    hasShadow: true,
-    vibrancy: process.platform === 'darwin' ? 'window' : undefined,
-  });
-
-  // Center on screen
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
-  const windowBounds = launcherWindow.getBounds();
-
-  launcherWindow.setPosition(
-    Math.round(width / 2 - windowBounds.width / 2),
-    Math.round(height / 3 - windowBounds.height / 2)
-  );
-
-  // Load launcher window content
-  const url = getAppUrl();
-
-  url.hash = '/launcher';
-  launcherWindow.loadURL(formatUrl(url));
-  activeLauncherWindow = launcherWindow;
-
-  launcherWindow.on('closed', () => {
-    reactReadyWindows.delete(launcherWindow.id);
-    activeLauncherWindow = null;
-  });
-
-  // Destroy window when it loses focus
-  launcherWindow.on('blur', () => {
-    launcherWindow.destroy();
-  });
-
-  // Also destroy on escape key
-  launcherWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.key === 'Escape') {
-      launcherWindow.destroy();
-      event.preventDefault();
-    }
-  });
-
-  return launcherWindow;
-};
-
-// Track tray instance
-let tray: Tray | null = null;
-
-const destroyTray = () => {
-  if (tray) {
-    tray.destroy();
-    tray = null;
-  }
-};
-
-const disableTray = () => {
-  updateSettings((s) => {
-    s.showMenuBarIcon = false;
-  });
-};
-
-const createTray = () => {
-  destroyTray();
-
-  const possiblePaths = [
-    path.join(process.resourcesPath, 'images', 'iconTemplate.png'),
-    path.join(process.cwd(), 'src', 'images', 'iconTemplate.png'),
-    path.join(__dirname, '..', 'images', 'iconTemplate.png'),
-    path.join(__dirname, 'images', 'iconTemplate.png'),
-    path.join(process.cwd(), 'images', 'iconTemplate.png'),
-  ];
-
-  const iconPath = possiblePaths.find((p) => fsSync.existsSync(p));
-
-  if (!iconPath) {
-    console.warn('[Main] Tray icon not found. App will continue without system tray.');
-    disableTray();
-    return;
-  }
-
-  try {
-    tray = new Tray(iconPath);
-    setTrayRef(tray);
-    updateTrayMenu(getUpdateAvailable());
-
-    if (process.platform === 'win32') {
-      tray.on('click', showWindow);
-    }
-  } catch (error) {
-    console.error('[Main] Tray creation failed. App will continue without system tray.', error);
-    disableTray();
-    tray = null;
-  }
-};
-
-const showWindow = async () => {
-  const windows = BrowserWindow.getAllWindows();
-
-  if (windows.length === 0) {
-    log.info('No windows are open, creating a new one...');
-    await createChat(app, { dir: rendererAccess.firstGrantedRecentDirectory() });
-    return;
-  }
-
-  const initialOffsetX = 30;
-  const initialOffsetY = 30;
-
-  // Iterate over all windows
-  windows.forEach((win, index) => {
-    const currentBounds = win.getBounds();
-    const newX = currentBounds.x + initialOffsetX * index;
-    const newY = currentBounds.y + initialOffsetY * index;
-
-    win.setBounds({
-      x: newX,
-      y: newY,
-      width: currentBounds.width,
-      height: currentBounds.height,
-    });
-
-    if (!win.isVisible()) {
-      win.show();
-    }
-
-    win.focus();
-  });
-};
-
-const buildRecentFilesMenu = () => {
-  const recentDirs = loadRecentDirs().filter((dir) => rendererAccess.isGrantedDirectory(0, dir));
-  return recentDirs.map((dir) => ({
-    label: dir,
-    click: async () => {
-      await createChat(app, { dir });
-    },
-  }));
-};
-
-const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
-  // Get the current working directory from the focused window
-  let defaultPath: string | undefined;
-  const currentWindow = BrowserWindow.getFocusedWindow();
-
-  if (currentWindow) {
-    try {
-      const currentWorkingDir = await currentWindow.webContents.executeJavaScript(
-        `window.appConfig ? window.appConfig.get('GOSLING_WORKING_DIR') : null`
-      );
-
-      if (currentWorkingDir && typeof currentWorkingDir === 'string') {
-        // Verify the directory exists before using it as default
-        try {
-          const stats = fsSync.lstatSync(currentWorkingDir);
-          if (stats.isDirectory()) {
-            defaultPath = currentWorkingDir;
-          }
-        } catch (error) {
-          if (error && typeof error === 'object' && 'code' in error) {
-            const fsError = error as { code?: string; message?: string };
-            if (
-              fsError.code === 'ENOENT' ||
-              fsError.code === 'EACCES' ||
-              fsError.code === 'EPERM'
-            ) {
-              console.warn(
-                `Current working directory not accessible (${fsError.code}): ${currentWorkingDir}, falling back to home directory`
-              );
-              defaultPath = os.homedir();
-            } else {
-              console.warn(
-                `Unexpected filesystem error (${fsError.code}) for directory ${currentWorkingDir}:`,
-                fsError.message
-              );
-              defaultPath = os.homedir();
-            }
-          } else {
-            console.warn(`Unexpected error checking directory ${currentWorkingDir}:`, error);
-            defaultPath = os.homedir();
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to get current working directory from window:', error);
-    }
-  }
-
-  if (!defaultPath) {
-    defaultPath = os.homedir();
-  }
-
-  const result = (await dialog.showOpenDialog({
-    properties: ['openFile', 'openDirectory', 'createDirectory'],
-    defaultPath: defaultPath,
-  })) as unknown as OpenDialogReturnValue;
-
-  if (!result.canceled && result.filePaths.length > 0) {
-    const selectedPath = result.filePaths[0];
-
-    // If a file was selected, use its parent directory
-    let dirToAdd = selectedPath;
-    try {
-      const stats = fsSync.lstatSync(selectedPath);
-
-      // Reject symlinks for security
-      if (stats.isSymbolicLink()) {
-        console.warn(`Selected path is a symlink, using parent directory for security`);
-        dirToAdd = path.dirname(selectedPath);
-      } else if (stats.isFile()) {
-        dirToAdd = path.dirname(selectedPath);
-      }
-    } catch {
-      console.warn(`Could not stat selected path, using parent directory`);
-      dirToAdd = path.dirname(selectedPath); // Fallback to parent directory
-    }
-
-    addRecentDir(dirToAdd);
-    rendererAccess.grantSelectedPath(currentWindow?.webContents.id ?? 0, dirToAdd);
-
-    await createChat(app, { dir: dirToAdd });
-  }
-  return result;
-};
+const {
+  createLauncher,
+  destroyTray,
+  createTray,
+  buildRecentFilesMenu,
+  openDirectoryDialog,
+  hasTray,
+} = createWindowChrome({
+  app,
+  appConfig,
+  getConfiguredGoslingLocale,
+  getAppUrl,
+  reactReadyWindows,
+  updateSettings,
+  createChat,
+  firstGrantedRecentDirectory,
+  rendererDirectoryGrants,
+  log,
+});
 
 // Global error handler. Must never throw itself: it runs from
 // uncaughtException/unhandledRejection, and a window mid-teardown would turn
@@ -1717,774 +1515,71 @@ process.on('unhandledRejection', (error) => {
   handleFatalError(error instanceof Error ? error : new Error(String(error)));
 });
 
-ipcMain.on(desktopCommandChannels.reactReady, (event) => {
-  log.info('React ready event received');
-
-  // Get the window that sent the react-ready event
-  const window = BrowserWindow.fromWebContents(event.sender);
-  const windowId = window?.id;
-
-  if (windowId !== undefined) {
-    reactReadyWindows.add(windowId);
-  }
-
-  // Send any pending initial message for this window
-  if (windowId && pendingInitialMessages.has(windowId)) {
-    const initialMessage = pendingInitialMessages.get(windowId)!;
-    const noAutoSubmit = pendingInitialMessageNoAutoSubmit.has(windowId);
-    log.info('Sending pending initial message to window');
-    window.webContents.send(rendererEventChannels.setInitialMessage, initialMessage, {
-      noAutoSubmit,
-    });
-    pendingInitialMessages.delete(windowId);
-    pendingInitialMessageNoAutoSubmit.delete(windowId);
-  }
-
-  if (windowId && pendingDeepLinks.has(windowId) && window) {
-    const deepLinkUrl = pendingDeepLinks.get(windowId)!;
-    pendingDeepLinks.delete(windowId);
-    log.info('Processing pending deep link for window:', windowId);
-    try {
-      const parsedUrl = new URL(deepLinkUrl);
-      if (parsedUrl.hostname === 'extension') {
-        window.webContents.send(rendererEventChannels.addExtension, deepLinkUrl);
-      } else if (parsedUrl.hostname === 'sessions') {
-        sendOpenSharedSession(window, deepLinkUrl);
-      }
-    } catch (error) {
-      log.error('Error processing pending deep link:', error);
-    }
-  }
+registerRendererIpcHandlers(ipcMain, {
+  log,
+  pendingInitialMessages,
+  pendingInitialMessageNoAutoSubmit,
+  pendingDeepLinks,
+  reactReadyWindows,
+  sendOpenSharedSession,
+  openExternalIfSafe,
+  rendererDirectoryGrants,
+  assertRendererFileAccess,
+  goslingServeLeases,
 });
 
-ipcMain.handle(desktopCommandChannels.openExternal, async (_event, url: string) => {
-  await openExternalIfSafe(url);
-});
-
-ipcMain.handle('directory-chooser', async (event) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: os.homedir(),
-  });
-  if (!result.canceled && result.filePaths[0]) {
-    rendererAccess.grantSelectedPath(event.sender.id, result.filePaths[0]);
-  }
-  return result;
-});
-
-ipcMain.handle('session-directory-chooser', () =>
-  dialog.showOpenDialog({
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: os.homedir(),
-    title: 'Add directory to this session',
-  })
-);
-
-ipcMain.handle('add-recent-dir', (_event, dir: string) => {
-  if (dir) {
-    addRecentDir(dir);
-  }
-});
-
-ipcMain.handle('list-recent-dirs', () => {
-  return loadRecentDirs();
-});
-
-ipcMain.handle('list-git-worktree-dirs', async (event, dir: string) => {
-  const authorizedDir = await rendererAccess.assertFileAccess(event.sender.id, dir);
-  return await listGitWorktreeDirs(authorizedDir);
-});
-
-ipcMain.handle('get-git-branch-info', async (event, dir: string) => {
-  const authorizedDir = await rendererAccess.assertFileAccess(event.sender.id, dir);
-  return await getGitBranchInfo(authorizedDir);
-});
-
-ipcMain.handle('list-git-branches', async (event, dir: string) => {
-  const authorizedDir = await rendererAccess.assertFileAccess(event.sender.id, dir);
-  try {
-    const output = await runGit(authorizedDir, [
-      'for-each-ref',
-      'refs/heads/',
-      '--format=%(refname:lstrip=2)',
-    ]);
-    return output ? output.split('\n').filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-});
-
-ipcMain.handle('switch-git-branch', async (event, dir: string, branch: unknown) => {
-  const authorizedDir = await rendererAccess.assertFileAccess(event.sender.id, dir);
-  if (!isValidGitBranch(branch)) return { success: false };
-
-  try {
-    await runGit(authorizedDir, ['check-ref-format', '--branch', branch]);
-    await runGit(authorizedDir, ['switch', '--', branch], 30000);
-    return { success: true };
-  } catch {
-    const currentBranch = await getGitBranchInfo(authorizedDir);
-    return { success: currentBranch?.branch === branch };
-  }
-});
-
-function rendererSettingValue(settings: Settings, key: SettingKey): Settings[SettingKey] {
-  if (key === 'externalGoslingd') {
-    return {
-      ...settings.externalGoslingd,
-      secret: '',
-      secretConfigured: externalBackendSecret.length > 0,
-    };
-  }
-  return settings[key];
-}
-
-function configuredResearchLibraryPath(): string {
-  return path.resolve(
-    getSettings().researchLibraryPath ?? defaultResearchLibraryPath(app.getPath('documents'))
-  );
-}
-
-async function ensureResearchLibrary(rendererId: number): Promise<string> {
-  const libraryPath = configuredResearchLibraryPath();
-  await fs.mkdir(libraryPath, { recursive: true });
-  rendererAccess.grantSelectedPath(rendererId, libraryPath);
-  return libraryPath;
-}
-
-ipcMain.handle('get-setting', (_event, key: unknown) => {
-  if (!isSettingKey(key)) throw new Error('Invalid setting key');
-  const settings = getSettings();
-  return rendererSettingValue(settings, key);
-});
-
-ipcMain.handle('get-settings', (_event, keys: unknown) => {
-  if (!Array.isArray(keys) || keys.length > 64 || !keys.every(isSettingKey)) {
-    throw new Error('Invalid settings key list');
-  }
-  const settings = getSettings();
-  const values: Record<string, unknown> = {};
-
-  for (const key of keys) {
-    values[key] = rendererSettingValue(settings, key);
-  }
-
-  return values;
-});
-
-ipcMain.handle('set-setting', (_event, key: unknown, value: unknown) => {
-  if (!isSettingKey(key)) throw new Error('Invalid setting key');
-  if (key === 'researchLibraryPath') {
-    throw new Error('Research Library location must be changed with the native folder chooser');
-  }
-
-  if (key === 'externalGoslingd') {
-    if (!isSettingValue('externalGoslingd', value)) throw new Error('Invalid setting value');
-    if (value.secret) externalBackendSecret = value.secret;
-    const persistedValue: Settings['externalGoslingd'] = {
-      ...value,
-      secret: '',
-      secretConfigured: externalBackendSecret.length > 0,
-    };
-    updateSettings((settings) => {
-      setSettingValue(settings, 'externalGoslingd', persistedValue);
-    });
-  } else {
-    if (!isSettingValue(key, value)) throw new Error('Invalid setting value');
-    updateSettings((settings) => {
-      setSettingValue(settings, key, value as Settings[typeof key]);
-    });
-  }
-
-  if (key === 'language') {
+registerSettingsIpcHandlers(ipcMain, {
+  app,
+  getSettings,
+  updateSettings,
+  getExternalBackendSecret: () => externalBackendSecret,
+  setExternalBackendSecret: (secret) => {
+    externalBackendSecret = secret;
+  },
+  updateConfiguredLocale: () => {
     appConfig.GOSLING_LOCALE = getConfiguredGoslingLocale();
-  }
-
-  // Re-register shortcuts if keyboard shortcuts changed
-  if (key === 'keyboardShortcuts') {
-    registerGlobalShortcuts();
-  }
-
-  if (key === 'disableAutoDownload') {
-    setAutoDownloadDisabled(value === true);
-  }
+  },
+  registerGlobalShortcuts,
+  setAutoDownloadDisabled,
+  rendererDirectoryGrants,
 });
 
-ipcMain.handle('get-research-library-path', async (event) => {
-  return ensureResearchLibrary(event.sender.id);
+registerSystemIpcHandlers(ipcMain, {
+  app,
+  getSettings,
+  updateSettings,
+  createTray,
+  destroyTray,
+  focusWindow,
+  activeWakelockSessionsByWindow,
+  syncWindowPowerSaveBlocker,
 });
 
-ipcMain.handle('choose-research-library-path', async (event) => {
-  const currentPath = await ensureResearchLibrary(event.sender.id);
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: currentPath,
-    title: 'Choose Research Library',
-  });
-  const selectedPath = result.canceled ? undefined : result.filePaths[0];
-  if (!selectedPath) return null;
-
-  const resolvedPath = path.resolve(selectedPath);
-  updateSettings((settings) => {
-    setSettingValue(settings, 'researchLibraryPath', resolvedPath);
-  });
-  await fs.mkdir(resolvedPath, { recursive: true });
-  rendererAccess.grantSelectedPath(event.sender.id, resolvedPath);
-  return resolvedPath;
-});
-
-ipcMain.handle('list-research-library-files', async (event) => {
-  const libraryPath = await ensureResearchLibrary(event.sender.id);
-  return listResearchLibraryFiles(libraryPath, getSettings().outputFileExtensions);
-});
-
-ipcMain.handle('get-acp-url', async (event) => {
-  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
-  if (!windowId) {
-    return null;
-  }
-  const url = goslingServeLeases.getAcpUrl(windowId);
-  const secretKey = goslingServeLeases.getSecretKey(windowId);
-  if (!url || !secretKey) {
-    return null;
-  }
-  // The secret travels in the WebSocket subprotocol, not the URL (SEC-GOS-001).
-  return { url, subprotocol: acpTokenSubprotocol(secretKey) };
-});
-
-ipcMain.handle('get-mcp-app-proxy-url', async (event, csp?: McpAppProxyCsp | null) => {
-  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
-  if (!windowId) {
-    return null;
-  }
-
-  const acpUrl = goslingServeLeases.getAcpUrl(windowId);
-  const secretKey = goslingServeLeases.getSecretKey(windowId);
-  if (!acpUrl || !secretKey) {
-    return null;
-  }
-
-  const httpBase = loopbackHttpBaseFromAcpUrl(acpUrl);
-  if (!httpBase) {
-    return null;
-  }
-
-  const proxyUrl = new URL(`${httpBase}/mcp-app-proxy`);
-  appendDomainParams(proxyUrl, csp);
-  proxyUrl.hash = new URLSearchParams({ secret: secretKey }).toString();
-  return proxyUrl.toString();
-});
-
-// Handle menu bar icon visibility
-ipcMain.handle('set-menu-bar-icon', async (_event, show: boolean) => {
-  updateSettings((s) => {
-    s.showMenuBarIcon = show;
-  });
-
-  if (show) {
-    createTray();
-  } else {
-    destroyTray();
-  }
-  return true;
-});
-
-ipcMain.handle('get-menu-bar-icon-state', () => {
-  try {
-    const settings = getSettings();
-    return settings.showMenuBarIcon ?? true;
-  } catch (error) {
-    console.error('Error getting menu bar icon state:', error);
-    return true;
-  }
-});
-
-// Handle dock icon visibility (macOS only)
-ipcMain.handle('set-dock-icon', async (_event, show: boolean) => {
-  if (process.platform !== 'darwin') return false;
-
-  const settings = getSettings();
-  updateSettings((s) => {
-    s.showDockIcon = show;
-  });
-
-  if (show) {
-    app.dock?.show();
-  } else {
-    // Only hide the dock if we have a menu bar icon to maintain accessibility
-    if (settings.showMenuBarIcon) {
-      app.dock?.hide();
-      setTimeout(() => {
-        focusWindow();
-      }, 50);
-    }
-  }
-  return true;
-});
-
-ipcMain.handle('get-dock-icon-state', () => {
-  try {
-    if (process.platform !== 'darwin') return true;
-    const settings = getSettings();
-    return settings.showDockIcon ?? true;
-  } catch (error) {
-    console.error('Error getting dock icon state:', error);
-    return true;
-  }
-});
-
-// Handle opening system notifications preferences
-ipcMain.handle('open-notifications-settings', async () => {
-  try {
-    if (process.platform === 'darwin') {
-      spawn('open', ['x-apple.systempreferences:com.apple.preference.notifications']);
-      return true;
-    } else if (process.platform === 'win32') {
-      // Windows: Open notification settings in Settings app
-      spawn('ms-settings:notifications', { shell: true });
-      return true;
-    } else if (process.platform === 'linux') {
-      // Linux: Try different desktop environments
-      function canSpawn(cmd: string): boolean {
-        try {
-          execFileSync('which', [cmd], { stdio: 'ignore' });
-          return true;
-        } catch {
-          return false;
-        }
-      }
-
-      // GNOME
-      if (canSpawn('gnome-control-center')) {
-        spawn('gnome-control-center', ['notifications']);
-        return true;
-      }
-
-      // KDE Plasma
-      if (canSpawn('systemsettings5')) {
-        spawn('systemsettings5', ['kcm_notifications']);
-        return true;
-      }
-
-      // XFCE
-      if (canSpawn('xfce4-settings-manager')) {
-        spawn('xfce4-settings-manager', ['--socket-id=notifications']);
-        return true;
-      }
-
-      console.warn('Could not find a suitable settings application for Linux');
-      return false;
-    } else {
-      console.warn(
-        `Opening notification settings is not supported on platform: ${process.platform}`
-      );
-      return false;
-    }
-  } catch (error) {
-    console.error('Error opening notification settings:', error);
-    return false;
-  }
-});
-
-// Handle wakelock setting
-ipcMain.handle('set-wakelock', async (_event, enable: boolean) => {
-  updateSettings((s) => {
-    s.enableWakelock = enable;
-  });
-
-  for (const windowId of activeWakelockSessionsByWindow.keys()) {
-    syncWindowPowerSaveBlocker(windowId);
-  }
-
-  return true;
-});
-
-ipcMain.handle('get-wakelock-state', () => {
-  try {
-    const settings = getSettings();
-    return settings.enableWakelock ?? false;
-  } catch (error) {
-    console.error('Error getting wakelock state:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('set-wakelock-active', (event, sessionId: string, active: boolean): boolean => {
-  const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
-  if (!windowId || !sessionId.trim()) {
-    return false;
-  }
-
-  const activeSessions = activeWakelockSessionsByWindow.get(windowId) ?? new Set<string>();
-  if (active) {
-    activeSessions.add(sessionId);
-    activeWakelockSessionsByWindow.set(windowId, activeSessions);
-  } else {
-    activeSessions.delete(sessionId);
-    if (activeSessions.size === 0) {
-      activeWakelockSessionsByWindow.delete(windowId);
-    }
-  }
-  syncWindowPowerSaveBlocker(windowId);
-  return true;
-});
-
-ipcMain.handle('set-spellcheck', async (_event, enable: boolean) => {
-  updateSettings((s) => {
-    s.spellcheckEnabled = enable;
-  });
-  return true;
-});
-
-ipcMain.handle('get-spellcheck-state', () => {
-  try {
-    const settings = getSettings();
-    return settings.spellcheckEnabled ?? true;
-  } catch (error) {
-    console.error('Error getting spellcheck state:', error);
-    return true;
-  }
-});
-
-ipcMain.handle('is-any-window-focused', () => {
-  return BrowserWindow.getFocusedWindow() !== null;
-});
-
-ipcMain.handle('get-is-fullscreen', (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  return win?.isFullScreen() ?? false;
-});
-
-// Add file/directory selection handler
-ipcMain.handle('select-file-or-directory', async (event, defaultPath?: string) => {
-  const dialogOptions: OpenDialogOptions = {
-    properties: process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'],
-  };
-
-  // Set default path if provided
-  if (defaultPath) {
-    // Expand tilde to home directory
-    const expandedPath = expandTilde(defaultPath);
-
-    // Check if the path exists
-    try {
-      const stats = await fs.stat(expandedPath);
-      if (stats.isDirectory()) {
-        dialogOptions.defaultPath = expandedPath;
-      } else {
-        dialogOptions.defaultPath = path.dirname(expandedPath);
-      }
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (error) {
-      // If path doesn't exist, fall back to home directory and log error
-      console.error(`Default path does not exist: ${expandedPath}, falling back to home directory`);
-      dialogOptions.defaultPath = os.homedir();
-    }
-  }
-
-  const result = (await dialog.showOpenDialog(dialogOptions)) as unknown as OpenDialogReturnValue;
-
-  if (!result.canceled && result.filePaths.length > 0) {
-    const selectedPath = result.filePaths[0];
-    rendererAccess.grantSelectedPath(event.sender.id, selectedPath);
-    return selectedPath;
-  }
-  return null;
-});
-
-ipcMain.handle('select-artifact-file', async (event, defaultPath?: string) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    defaultPath: defaultPath ? expandTilde(defaultPath) : undefined,
-  });
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-  return rendererAccess.grantArtifactFile(event.sender.id, result.filePaths[0]);
-});
-
-// Native picker tailored for session imports: shows hidden files (so users can
-// reach `~/.claude/projects/...` or `~/.pi/agent/sessions/...`), filters for
-// .json/.jsonl, and returns the file's contents inline so the renderer doesn't
-// need a separate read step.
-ipcMain.handle('select-import-session-file', async () => {
-  const result = (await dialog.showOpenDialog({
-    title: 'Import session',
-    defaultPath: os.homedir(),
-    properties: ['openFile', 'showHiddenFiles'],
-    filters: [
-      { name: 'Session files', extensions: ['json', 'jsonl'] },
-      { name: 'All files', extensions: ['*'] },
-    ],
-  })) as unknown as OpenDialogReturnValue;
-
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-  const filePath = result.filePaths[0];
-  try {
-    const contents = await readBoundedSessionImportFile(filePath);
-    return { filePath, contents };
-  } catch (err) {
-    return { filePath, contents: '', error: errorMessage(err) };
-  }
-});
-
-/// Bounds the `ps`/`grep` probe below. (RES-GSL-001)
-const CHECK_OLLAMA_TIMEOUT_MS = 5000;
-
-ipcMain.handle('check-ollama', async () => {
-  try {
-    return new Promise((resolve) => {
-      // Run `ps` and filter for "ollama"
-      const ps = spawn('ps', ['aux']);
-      const grep = spawn('grep', ['-iw', '[o]llama']);
-
-      let output = '';
-      let errorOutput = '';
-
-      // Pipe ps output to grep
-      ps.stdout.pipe(grep.stdin);
-
-      grep.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-
-      grep.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      grep.on('close', (code) => {
-        if (code !== null && code !== 0 && code !== 1) {
-          // grep returns 1 when no matches found
-          console.error('Error executing grep command:', errorOutput);
-          return resolve(false);
-        }
-
-        const trimmedOutput = output.trim();
-
-        const isRunning = trimmedOutput.length > 0;
-        resolve(isRunning);
-      });
-
-      ps.on('error', (error) => {
-        console.error('Error executing ps command:', error);
-        grep.kill();
-        resolve(false);
-      });
-
-      grep.on('error', (error) => {
-        console.error('Error executing grep command:', error);
-        ps.kill();
-        resolve(false);
-      });
-
-      // Close ps stdin when done
-      ps.stdout.on('end', () => {
-        grep.stdin.end();
-      });
-
-      // Neither child was bounded: if `ps` hung (a wedged filesystem is
-      // enough), both processes and this promise stayed alive for the life of
-      // the app, and each check leaked another pair (RES-GSL-001).
-      const timeout = setTimeout(() => {
-        ps.kill('SIGKILL');
-        grep.kill('SIGKILL');
-        console.warn('check-ollama timed out; assuming Ollama is not running');
-        resolve(false);
-      }, CHECK_OLLAMA_TIMEOUT_MS);
-      timeout.unref?.();
-      grep.on('close', () => clearTimeout(timeout));
-    });
-  } catch (err) {
-    console.error('Error checking for Ollama:', err);
-    return false;
-  }
-});
-
-/// Upper bound on a single `read-file` IPC response. Matches the text
-/// preview limit used by `read-artifact-file`. (MEM-GSL-008)
-const READ_FILE_MAX_BYTES = 2 * 1024 * 1024;
-
-ipcMain.handle('read-file', async (event, filePath) => {
-  try {
-    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, filePath);
-    // Read a bounded prefix rather than the whole file. The renderer chooses
-    // the path, so an accidental multi-GB target used to be pulled entirely
-    // into the main process (MEM-GSL-008). `read-artifact-file` beside this
-    // handler already caps its read the same way.
-    const stats = await fs.stat(expandedPath);
-    const bytesToRead = Math.min(stats.size, READ_FILE_MAX_BYTES);
-    const handle = await fs.open(expandedPath, 'r');
-    let buffer: Buffer;
-    try {
-      buffer = Buffer.alloc(bytesToRead);
-      await handle.read(buffer, 0, bytesToRead, 0);
-    } finally {
-      await handle.close();
-    }
-    return { file: buffer.toString('utf8'), filePath: expandedPath, error: null, found: true };
-  } catch (error) {
-    console.error('Error reading file:', error);
-    return {
-      file: '',
-      filePath: resolveRendererPath(filePath),
-      error: errorMessage(error),
-      found: false,
-    };
-  }
-});
-
-ipcMain.handle('read-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
-  try {
-    const resolvedPath = await rendererAccess.assertArtifactFileAccess(
-      event.sender.id,
-      filePath,
-      baseDirectory
-    );
-    const stats = await fs.stat(resolvedPath);
-    if (!stats.isFile()) {
-      throw new Error('The selected output is not a file');
-    }
-
-    const extension = path.extname(resolvedPath).toLowerCase();
-    const binaryExtensions = new Set(['.gif', '.jpeg', '.jpg', '.pdf', '.png', '.svg', '.webp']);
-    const previewLimit = binaryExtensions.has(extension) ? 20 * 1024 * 1024 : 2 * 1024 * 1024;
-    const bytesToRead = Math.min(stats.size, previewLimit);
-    const handle = await fs.open(resolvedPath, 'r');
-    const buffer = Buffer.alloc(bytesToRead);
-    try {
-      await handle.read(buffer, 0, bytesToRead, 0);
-    } finally {
-      await handle.close();
-    }
-
-    const encoding = binaryExtensions.has(extension) ? 'base64' : 'utf8';
-    return {
-      content: buffer.toString(encoding),
-      encoding,
-      error: null,
-      filePath: resolvedPath,
-      found: true,
-      sizeBytes: stats.size,
-      truncated: stats.size > previewLimit,
-    };
-  } catch (error) {
-    return {
-      content: '',
-      encoding: 'utf8',
-      error: errorMessage(error),
-      filePath: resolveRendererPath(filePath),
-      found: false,
-      sizeBytes: 0,
-      truncated: false,
-    };
-  }
-});
-
-ipcMain.handle('open-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
-  const resolvedPath = await rendererAccess.assertArtifactFileAccess(
-    event.sender.id,
-    filePath,
-    baseDirectory
-  );
-  return (await shell.openPath(resolvedPath)) === '';
-});
-
-ipcMain.handle('reveal-artifact-file', async (event, filePath: string, baseDirectory?: string) => {
-  const resolvedPath = await rendererAccess.assertArtifactFileAccess(
-    event.sender.id,
-    filePath,
-    baseDirectory
-  );
-  shell.showItemInFolder(resolvedPath);
-});
-
-ipcMain.handle('write-file', async (event, filePath, content) => {
-  try {
-    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, filePath);
-    await fs.writeFile(expandedPath, content, { encoding: 'utf8' });
-    return true;
-  } catch (error) {
-    console.error('Error writing to file:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('delete-file', async (event, filePath) => {
-  try {
-    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, filePath);
-    await fs.unlink(expandedPath);
-    return true;
-  } catch (error) {
-    console.error('Error deleting file:', error);
-    return false;
-  }
-});
-
-// Enhanced file operations
-ipcMain.handle('ensure-directory', async (event, dirPath) => {
-  try {
-    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, dirPath);
-    await fs.mkdir(expandedPath, { recursive: true });
-    return true;
-  } catch (error) {
-    console.error('Error creating directory:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('list-files', async (event, dirPath, extension) => {
-  try {
-    const expandedPath = await rendererAccess.assertFileAccess(event.sender.id, dirPath);
-    const files = await fs.readdir(expandedPath);
-    if (extension) {
-      return files.filter((file) => file.endsWith(extension));
-    }
-    return files;
-  } catch (error) {
-    console.error('Error listing files:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('show-message-box', async (_event, options) => {
-  return dialog.showMessageBox(options);
-});
-
-ipcMain.handle('save-artifact', async (event, request: ArtifactSaveRequest) => {
-  return saveArtifactWithDialog(request, {
-    resolveSource: (filePath, baseDirectory) =>
-      rendererAccess.assertArtifactFileAccess(event.sender.id, filePath, baseDirectory),
-    showSaveDialog: (options) => dialog.showSaveDialog(options),
-  });
-});
-
-ipcMain.handle(
-  'set-artifact-routing-config',
-  async (event, config: ArtifactRoutingConfig | null): Promise<boolean> => {
-    return rendererAccess.updateArtifactRouting(event.sender.id, config);
-  }
-);
-
-ipcMain.handle('write-clipboard-text', async (_event, text: string) => {
-  clipboard.writeText(text);
-});
-
-ipcMain.handle('write-clipboard-html', async (_event, html: string, text: string) => {
-  clipboard.write({ html, text });
-});
-
-ipcMain.handle('get-allowed-extensions', async () => {
-  return await getAllowList();
+registerFileIpcHandlers(ipcMain, {
+  assertRendererFileAccess,
+  assertRendererArtifactFileAccess,
+  resolveRendererPath,
+  grantRendererDirectory: (webContentsId, filePath) => {
+    rendererDirectoryGrants.grantSelectedPath(webContentsId, filePath);
+  },
+  grantRendererArtifactFile: (webContentsId, filePath) => {
+    const grants = rendererArtifactFileGrants.get(webContentsId) ?? new Set<string>();
+    grants.add(filePath);
+    rendererArtifactFileGrants.set(webContentsId, grants);
+  },
+  updateArtifactRoutingConfig: (webContentsId, config) =>
+    artifactRoutingRegistry.update(webContentsId, config, (candidate) =>
+      validateArtifactRoutingConfig(webContentsId, candidate)
+    ),
+  getAllowList,
 });
 
 const createNewWindow = async (app: App, dir?: string | null) => {
-  const openDir = dir || rendererAccess.firstGrantedRecentDirectory();
+  const openDir = dir || firstGrantedRecentDirectory();
   return await createChat(app, { dir: openDir });
 };
 
-const focusWindow = () => {
+function focusWindow(): void {
   const windows = BrowserWindow.getAllWindows();
   if (windows.length > 0) {
     windows.forEach((win) => {
@@ -2494,9 +1589,9 @@ const focusWindow = () => {
   } else {
     createNewWindow(app);
   }
-};
+}
 
-const registerGlobalShortcuts = () => {
+function registerGlobalShortcuts(): void {
   globalShortcut.unregisterAll();
 
   const settings = getSettings();
@@ -2521,7 +1616,7 @@ const registerGlobalShortcuts = () => {
       console.error('Error registering launcher hotkey:', e);
     }
   }
-};
+}
 
 async function appMain() {
   if (shouldQuitForSingleInstance) {
@@ -2641,215 +1736,39 @@ async function appMain() {
     }
   }, 2000);
 
-  configureApplicationMenu({
+  if (process.platform === 'darwin') {
+    const dockMenu = Menu.buildFromTemplate([
+      {
+        label: menuT('New Window'),
+        click: () => {
+          createNewWindow(app);
+        },
+      },
+    ]);
+    app.dock?.setMenu(dockMenu);
+  }
+
+  installApplicationMenu({
+    app,
     settings,
-    version,
+    bundledVersion: version,
     menuT,
     translateMenuLabels,
-    buildRecentFilesMenu,
-    createLauncher,
     createNewWindow: () => createNewWindow(app),
-    focusWindow,
     openDirectoryDialog,
+    buildRecentFilesMenu,
+    focusWindow,
+    createLauncher,
   });
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createNewWindow(app);
-    }
-  });
-
-  ipcMain.on(desktopCommandChannels.createChatWindow, (event, options = {}) => {
-    void (async () => {
-      const { query, dir, resumeSessionId, viewType } = options;
-      const resolvedDir =
-        typeof dir === 'string' && dir.trim()
-          ? await rendererAccess.assertFileAccess(event.sender.id, dir)
-          : rendererAccess.firstGrantedRecentDirectory(event.sender.id);
-
-      const isFromLauncher = query && !resumeSessionId && !viewType;
-
-      if (isFromLauncher) {
-        const senderWindow = BrowserWindow.fromWebContents(event.sender);
-        const launcherWindowId = senderWindow?.id;
-        const allWindows = BrowserWindow.getAllWindows();
-
-        const existingWindows = allWindows.filter(
-          (win) => !win.isDestroyed() && win.id !== launcherWindowId
-        );
-
-        if (existingWindows.length > 0) {
-          const targetWindow = existingWindows[0];
-          targetWindow.show();
-          targetWindow.focus();
-          targetWindow.webContents.send(rendererEventChannels.setInitialMessage, query);
-          return;
-        }
-      }
-
-      await createChat(app, {
-        initialMessage: query,
-        dir: resolvedDir,
-        resumeSessionId,
-        viewType,
-      });
-    })().catch((error) => {
-      log.warn('[Main] Rejected create-chat request:', errorMessage(error));
-      const senderWindow = BrowserWindow.fromWebContents(event.sender);
-      if (senderWindow && !senderWindow.isDestroyed()) {
-        senderWindow.webContents.send(
-          rendererEventChannels.fatalError,
-          'The selected working directory must be chosen or relinked before starting a chat.'
-        );
-      }
-    });
-  });
-
-  ipcMain.on(desktopCommandChannels.closeWindow, (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (window && !window.isDestroyed()) {
-      window.close();
-    }
-  });
-
-  ipcMain.on('notify', (event, data) => {
-    try {
-      // Validate notification data
-      if (!data || typeof data !== 'object') {
-        console.error('Invalid notification data');
-        return;
-      }
-
-      // Validate title and body
-      if (typeof data.title !== 'string' || typeof data.body !== 'string') {
-        console.error('Invalid notification title or body');
-        return;
-      }
-
-      // Limit the length of title and body
-      const MAX_LENGTH = 1000;
-      if (data.title.length > MAX_LENGTH || data.body.length > MAX_LENGTH) {
-        console.error('Notification title or body too long');
-        return;
-      }
-
-      // Remove any HTML tags for security
-      const sanitizeText = (text: string) => text.replace(/<[^>]*>/g, '');
-
-      const notification = new Notification({
-        title: sanitizeText(data.title),
-        body: sanitizeText(data.body),
-      });
-
-      // Add click handler to focus the window
-      notification.on('click', () => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
-          if (window.isMinimized()) {
-            window.restore();
-          }
-          window.show();
-          window.focus();
-        }
-      });
-
-      notification.show();
-    } catch (error) {
-      console.error('Error showing notification:', error);
-    }
-  });
-
-  ipcMain.on('logInfo', (_event, info) => {
-    try {
-      // Validate log info
-      if (info === undefined || info === null) {
-        console.error('Invalid log info: undefined or null');
-        return;
-      }
-
-      // Convert to string if not already
-      const logMessage = String(info);
-
-      // Limit log message length
-      const MAX_LENGTH = 10000; // 10KB limit
-      if (logMessage.length > MAX_LENGTH) {
-        console.error('Log message too long');
-        return;
-      }
-
-      // Log the sanitized message
-      log.info('from renderer:', logMessage);
-    } catch (error) {
-      console.error('Error logging info:', error);
-    }
-  });
-
-  ipcMain.on(desktopCommandChannels.broadcastThemeChange, (event, themeData) => {
-    const senderWindow = BrowserWindow.fromWebContents(event.sender);
-    const allWindows = BrowserWindow.getAllWindows();
-
-    allWindows.forEach((window) => {
-      if (window.id !== senderWindow?.id) {
-        window.webContents.send(rendererEventChannels.themeChanged, themeData);
-      }
-    });
-  });
-
-  ipcMain.on(desktopCommandChannels.broadcastWorkspaceChange, (event) => {
-    const senderWindow = BrowserWindow.fromWebContents(event.sender);
-    BrowserWindow.getAllWindows().forEach((window) => {
-      if (window.id !== senderWindow?.id) {
-        window.webContents.send(rendererEventChannels.workspacesChanged);
-      }
-    });
-  });
-
-  ipcMain.on('reload-app', (event) => {
-    // Get the window that sent the event
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (window) {
-      window.reload();
-    }
-  });
-
-  ipcMain.on('open-in-chrome', async (_event, url: unknown) => {
-    try {
-      const webUrl = normalizeWebUrl(url);
-      if (!webUrl) {
-        console.error('Invalid URL protocol. Only HTTP and HTTPS are allowed.');
-        return;
-      }
-
-      await shell.openExternal(webUrl);
-    } catch (error) {
-      console.error('Error opening URL in browser:', error);
-    }
-  });
-
-  // Handle app restart
-  ipcMain.on('restart-app', () => {
-    app.relaunch();
-    app.quit();
-  });
-
-  // Handler for getting app version
-  ipcMain.on(desktopCommandChannels.getAppVersion, (event) => {
-    event.returnValue = app.getVersion();
-  });
-
-  ipcMain.on(desktopCommandChannels.getAppLocale, (event) => {
-    event.returnValue = getConfiguredGoslingLocale();
-  });
-
-  ipcMain.handle('open-directory-in-explorer', async (event, directoryPath: string) => {
-    try {
-      const resolvedPath = await rendererAccess.assertFileAccess(event.sender.id, directoryPath);
-      const errorMessage = await shell.openPath(resolvedPath);
-      return errorMessage === '';
-    } catch (error) {
-      console.error('Error opening directory in explorer:', error);
-      return false;
-    }
+  registerAppIpcHandlers(ipcMain, {
+    app,
+    createNewWindow: () => createNewWindow(app),
+    createChat: (options) => createChat(app, options),
+    assertRendererFileAccess,
+    firstGrantedRecentDirectory,
+    getConfiguredGoslingLocale,
+    log,
   });
 }
 
@@ -2936,7 +1855,7 @@ app.on('will-quit', scheduleShutdownCleanup);
 
 app.on('window-all-closed', () => {
   // Only quit if we're not on macOS or don't have a tray icon
-  if (process.platform !== 'darwin' || !tray) {
+  if (process.platform !== 'darwin' || !hasTray()) {
     app.quit();
   }
 });
