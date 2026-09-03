@@ -74,7 +74,7 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     },
     ChatGptCodexModelAttrs {
         name: "gpt-5.6-luna",
-        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+        reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
     ChatGptCodexModelAttrs {
         name: "gpt-5.5",
@@ -86,14 +86,6 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     },
     ChatGptCodexModelAttrs {
         name: "gpt-5.4-mini",
-        reasoning_levels: &["low", "medium", "high", "xhigh"],
-    },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.2",
-        reasoning_levels: &["low", "medium", "high", "xhigh"],
-    },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.3-codex",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
 ];
@@ -133,8 +125,8 @@ fn uses_responses_lite(model_name: &str) -> bool {
 pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
     match model_name {
         "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4"
-        | "gpt-5.4-mini" | "gpt-5.2" => Some(258_400),
-        "gpt-5.3-codex" => Some(380_000),
+        | "gpt-5.4-mini" => Some(258_400),
+        "gpt-5.3-codex-spark" => Some(121_600),
         _ => None,
     }
 }
@@ -1500,7 +1492,7 @@ mod tests {
     fn test_create_codex_request_reasoning_effort_from_unified_thinking() {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), json!("max"));
-        let mut config = ModelConfig::new("gpt-5.3-codex");
+        let mut config = ModelConfig::new("gpt-5.5");
         config.request_params = Some(params);
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
@@ -1719,18 +1711,13 @@ mod tests {
     )]
     #[test_case(
         "gpt-5.6-luna",
-        &["low", "medium", "high", "xhigh", "max"];
-        "gpt-5.6-luna keeps max as its ceiling"
+        &["low", "medium", "high", "xhigh"];
+        "gpt-5.6-luna stops at xhigh, unlike its sol and terra siblings"
     )]
     #[test_case(
         "gpt-5.5",
         &["low", "medium", "high", "xhigh"];
         "gpt-5.5 keeps xhigh as its ceiling"
-    )]
-    #[test_case(
-        "gpt-5.3-codex",
-        &["low", "medium", "high", "xhigh"];
-        "gpt-5.3-codex supports documented xhigh reasoning"
     )]
     #[test_case("unknown-model", &["medium", "high"]; "unknown model gets default reasoning levels")]
     fn test_reasoning_levels_for_model(model: &str, expected: &[&str]) {
@@ -1739,7 +1726,7 @@ mod tests {
 
     #[test_case("gpt-5.6-luna", true, Some(258_400); "gpt 5.6 luna")]
     #[test_case("gpt-5.4-mini", false, Some(258_400); "gpt 5.4 mini")]
-    #[test_case("gpt-5.3-codex", false, Some(380_000); "gpt 5.3 codex")]
+    #[test_case("gpt-5.3-codex-spark", false, Some(121_600); "gpt 5.3 codex spark")]
     #[test_case("unknown-model", false, None; "unknown model")]
     fn test_model_transport_and_context_limits(
         model: &str,
@@ -1790,7 +1777,7 @@ mod tests {
     }
 
     #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("max"); "sol falls back to max (backend rejects ultra over HTTP)")]
-    #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("max"); "luna falls back to max")]
+    #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("xhigh"); "luna falls back to xhigh")]
     #[test_case("gpt-5.5", ThinkingEffort::Ultra, Some("xhigh"); "older models fall back to xhigh")]
     fn test_reasoning_effort_for_config_uses_supported_ceiling(
         model: &str,

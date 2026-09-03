@@ -40,6 +40,7 @@ pub const CLAUDE_CODE_DOC_URL: &str = "https://code.claude.com/docs/en/setup";
 const CLAUDE_CODE_KNOWN_MODELS: &[&str] = &[
     "claude-opus-5",
     "claude-sonnet-5",
+    "claude-fable-5-1",
     "claude-fable-5",
     "claude-haiku-4-5",
 ];
@@ -51,11 +52,18 @@ const CLAUDE_CODE_KNOWN_MODELS: &[&str] = &[
 /// compacted session reload, so the backfill matches what's visibly on screen.
 const CLI_RESTART_BACKFILL_MESSAGES: usize = 50;
 
+/// Maps a model value the CLI advertises onto the name Gosling passes back to it
+/// as `--model`. Fable 5 and Fable 5.1 are separate models the CLI serves side by
+/// side under separate names, and only a CLI new enough to advertise
+/// `claude-fable-5-1` accepts it — an older one errors the turn out with an empty
+/// synthetic response — so each generation maps to itself rather than the newer
+/// name standing in for both.
 fn current_claude_model(model: &str) -> Option<&'static str> {
     match model.strip_suffix("[1m]").unwrap_or(model) {
         "best" | "opus" | "claude-opus-5" => Some("claude-opus-5"),
         "sonnet" | "claude-sonnet-5" => Some("claude-sonnet-5"),
         "fable" | "claude-fable-5" => Some("claude-fable-5"),
+        "claude-fable-5-1" => Some("claude-fable-5-1"),
         "haiku" | "claude-haiku-4-5" | "claude-haiku-4-5-20251001" => Some("claude-haiku-4-5"),
         _ => None,
     }
@@ -1367,15 +1375,40 @@ mod tests {
         assert_eq!(extract_model_aliases(response.as_ref()), expected);
     }
 
+    /// Values captured from a live `claude` 2.1.259 initialize response.
     #[test]
     fn test_normalize_model_names_uses_current_claude_models() {
         let models = normalize_model_names(vec![
             "default".to_string(),
             "opus[1m]".to_string(),
-            "claude-fable-5[1m]".to_string(),
+            "claude-fable-5-1[1m]".to_string(),
             "sonnet".to_string(),
             "claude-haiku-4-5-20251001".to_string(),
             "claude-opus-4-8".to_string(),
+        ]);
+
+        assert_eq!(
+            models,
+            vec![
+                "claude-opus-5",
+                "claude-sonnet-5",
+                "claude-fable-5-1",
+                "claude-haiku-4-5",
+            ]
+        );
+    }
+
+    /// A CLI too old to serve Fable 5.1 advertises the 5 generation instead, and
+    /// must be offered that name — passing it `claude-fable-5-1` errors the turn
+    /// out with an empty synthetic response. Values captured from `claude` 2.1.228.
+    #[test]
+    fn test_normalize_model_names_keeps_older_fable_on_older_cli() {
+        let models = normalize_model_names(vec![
+            "default".to_string(),
+            "opus[1m]".to_string(),
+            "claude-fable-5[1m]".to_string(),
+            "sonnet".to_string(),
+            "haiku".to_string(),
         ]);
 
         assert_eq!(

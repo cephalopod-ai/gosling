@@ -85,13 +85,7 @@ impl ProviderDef for CodexAcpProvider {
                 ]);
             }
 
-            // Chat and Approve both map to "read-only".
-            let mode_mapping = HashMap::from([
-                (GoslingMode::Auto, "full-access".to_string()),
-                (GoslingMode::Approve, "read-only".to_string()),
-                (GoslingMode::SmartApprove, "auto".to_string()),
-                (GoslingMode::Chat, "read-only".to_string()),
-            ]);
+            let mode_mapping = codex_mode_mapping();
 
             let provider_config = AcpProviderConfig {
                 command: resolved_command,
@@ -113,6 +107,29 @@ impl ProviderDef for CodexAcpProvider {
             AcpProvider::connect(metadata.name, gosling_mode, provider_config).await
         })
     }
+}
+
+/// Maps Gosling's approval modes onto the session modes `codex-acp` advertises.
+///
+/// The ids and their meanings are Codex's own, read from a live `codex-acp`
+/// `session/new` response rather than inferred:
+///
+/// | id | Codex's description |
+/// |---|---|
+/// | `read-only` | Requires approval to edit files and run commands |
+/// | `agent` | Read and edit files, and run commands (Codex's own default) |
+/// | `agent-full-access` | Edit files outside the workspace and run commands with network access |
+///
+/// `Chat` maps to `read-only` because that is the most restrictive mode Codex
+/// offers; it is an approximation, since read-only still runs tools that only
+/// need approval, where Chat would run none at all.
+fn codex_mode_mapping() -> HashMap<GoslingMode, String> {
+    HashMap::from([
+        (GoslingMode::Auto, "agent-full-access".to_string()),
+        (GoslingMode::SmartApprove, "agent".to_string()),
+        (GoslingMode::Approve, "read-only".to_string()),
+        (GoslingMode::Chat, "read-only".to_string()),
+    ])
 }
 
 // Codex sandbox scope determines what needs approval: operations within the
@@ -140,5 +157,35 @@ mod tests {
         let (approval, sandbox) = map_gosling_mode(mode);
         assert_eq!(approval, expected_approval);
         assert_eq!(sandbox, expected_sandbox);
+    }
+
+    #[test]
+    fn every_gosling_mode_maps_to_a_mode_codex_advertises() {
+        // Verified against a live `codex-acp` session/new response.
+        let advertised = ["read-only", "agent", "agent-full-access"];
+        let mapping = codex_mode_mapping();
+        for mode in [
+            GoslingMode::Auto,
+            GoslingMode::Approve,
+            GoslingMode::SmartApprove,
+            GoslingMode::Chat,
+        ] {
+            let mapped = mapping
+                .get(&mode)
+                .unwrap_or_else(|| panic!("{mode:?} has no Codex mode"));
+            assert!(
+                advertised.contains(&mapped.as_str()),
+                "{mode:?} maps to {mapped}, which codex-acp does not advertise"
+            );
+        }
+    }
+
+    #[test]
+    fn autonomous_and_restrictive_modes_are_not_confused() {
+        let mapping = codex_mode_mapping();
+        assert_eq!(mapping[&GoslingMode::Auto], "agent-full-access");
+        assert_eq!(mapping[&GoslingMode::Chat], "read-only");
+        assert_ne!(mapping[&GoslingMode::Approve], "agent-full-access");
+        assert_ne!(mapping[&GoslingMode::SmartApprove], "agent-full-access");
     }
 }

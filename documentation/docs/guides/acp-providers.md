@@ -242,23 +242,23 @@ See [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) 
 | Environment Variable | Description        | Default         |
 |----------------------|--------------------|-----------------|
 | `GOSLING_PROVIDER`     | Set to `codex-acp` | None            |
-| `GOSLING_MODEL`        | Model to use       | `gpt-5.2-codex` |
+| `GOSLING_MODEL`        | Model to use       | `current`       |
 | `GOSLING_MODE`         | Permission mode    | `auto`          |
 
 **Known Models:**
-- `gpt-5.2-codex`
-- `gpt-5.2`
-- `gpt-5.1-codex-max`
-- `gpt-5.1-codex-mini`
+
+Model selection belongs to the Codex CLI, so gosling passes `current` and the adapter uses whatever `~/.codex/config.toml` selects. Run `codex` to change it. The catalog a ChatGPT account currently serves is `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, and `gpt-5.3-codex-spark`.
 
 **Permission Modes (`GOSLING_MODE`):**
 
-| Mode            | Approval / Sandbox          | Behavior                                                       |
-|-----------------|-----------------------------|----------------------------------------------------------------|
-| `auto`          | No approvals, full access   | Bypasses all approvals and sandbox restrictions                |
-| `smart-approve` | On-request, workspace-write | Workspace write access, prompts for operations outside sandbox |
-| `approve`       | On-request, read-only       | Read-only sandbox, prompts for all write operations            |
-| `chat`          | No approvals, read-only     | Read-only sandbox, no tool execution                           |
+| Mode            | Codex session mode  | Approval / Sandbox          | Behavior                                                       |
+|-----------------|---------------------|-----------------------------|----------------------------------------------------------------|
+| `auto`          | `agent-full-access` | No approvals, full access   | Bypasses all approvals and sandbox restrictions                |
+| `smart-approve` | `agent`             | On-request, workspace-write | Workspace write access, prompts for operations outside sandbox |
+| `approve`       | `read-only`         | On-request, read-only       | Read-only sandbox, prompts for all write operations            |
+| `chat`          | `read-only`         | No approvals, read-only     | Read-only sandbox, no tool execution                           |
+
+The session-mode ids are Codex's own; `codex-acp` rejects a mode it does not advertise, so this table tracks what a current adapter offers.
 
 See [codex-acp](https://github.com/zed-industries/codex-acp) for approval policy and sandbox details.
 

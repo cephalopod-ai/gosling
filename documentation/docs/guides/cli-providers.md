@@ -67,8 +67,8 @@ The Claude Code provider integrates with Anthropic's [Claude CLI tool](https://c
 The Codex provider integrates with OpenAI's [Codex CLI tool](https://developers.openai.com/codex/cli), allowing you to use OpenAI models through your existing ChatGPT Plus/Pro subscription or API credits.
 
 **Features:**
-- Uses OpenAI's GPT-5 series models (gpt-5.2-codex, gpt-5.2, gpt-5.1-codex-max, gpt-5.1-codex-mini)
-- Configurable reasoning effort levels (`low`, `medium`, `high`, `xhigh`; `none` is only supported on non-codex models like `gpt-5.2`)
+- Uses OpenAI's GPT-5 series models (gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex-spark)
+- Configurable reasoning effort levels (`none`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`; the ceiling varies per model)
 - Optional skills support for enhanced capabilities
 - JSON output parsing for structured responses
 - Automatic filtering of gosling extensions from system prompts
@@ -197,7 +197,7 @@ gosling therefore accepts this provider only in `auto` mode and refuses `approve
    ◇  Model fetch complete
    │
    ◇  Enter a model from that provider:
-   │  gpt-5.2-codex
+   │  gpt-5.6-sol
    ```
 
 ### Cursor Agent
@@ -338,7 +338,7 @@ gosling session
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
 | `GOSLING_PROVIDER` | Set to `claude-code` to use this provider | None |
-| `GOSLING_MODEL` | Model to use (only `sonnet` or `opus` are passed to CLI) | `claude-sonnet-4-20250514` |
+| `GOSLING_MODEL` | Model to use. gosling offers the models the installed `claude` CLI advertises: `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5-1` or `claude-fable-5` (whichever your CLI serves), and `claude-haiku-4-5` | `default` |
 | `CLAUDE_CODE_COMMAND` | Path to the Claude CLI command | `claude` |
 
 **Known Models:**
@@ -385,9 +385,9 @@ GOSLING_PROVIDER=claude-code GOSLING_MODE=approve gosling session
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
 | `GOSLING_PROVIDER` | Set to `codex` to use this provider | None |
-| `GOSLING_MODEL` | Model to use (only known models are passed to CLI) | `gpt-5.2-codex` |
+| `GOSLING_MODEL` | Model to use (only known models are passed to CLI) | `gpt-5.6-sol` |
 | `CODEX_COMMAND` | Path to the Codex CLI command | `codex` |
-| `CODEX_REASONING_EFFORT` | Reasoning effort level: `low`, `medium`, `high`, or `xhigh` (`none` is only supported on non-codex models like `gpt-5.2`) | `high` |
+| `CODEX_REASONING_EFFORT` | Reasoning effort level: `none`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. gosling lowers a level the selected model does not support to its ceiling | `high` |
 | `CODEX_ENABLE_SKILLS` | Enable Codex skills: `true` or `false` | `true` |
 | `CODEX_SKIP_GIT_CHECK` | Skip git repository requirement: `true` or `false` | `false` |
 
@@ -395,13 +395,16 @@ GOSLING_PROVIDER=claude-code GOSLING_MODE=approve gosling session
 
 The following models are recognized and passed to the Codex CLI via the `-m` flag. If `GOSLING_MODEL` is set to a value not in this list, no model flag is passed and Codex uses its default:
 
-- `gpt-5.2-codex` (400K context, auto-compacting)
-- `gpt-5.2` (400K context, auto-compacting)
-- `gpt-5.1-codex-max` (256K context)
-- `gpt-5.1-codex-mini` (256K context)
+- `gpt-5.6-sol` (258K effective context)
+- `gpt-5.6-terra` (258K effective context)
+- `gpt-5.6-luna` (258K effective context)
+- `gpt-5.5` (258K effective context)
+- `gpt-5.4` (258K effective context)
+- `gpt-5.4-mini` (258K effective context)
+- `gpt-5.3-codex-spark` (121K effective context)
 
-:::note Legacy Models
-These are the default models supported by Codex CLI v0.77.0. To access older or legacy models, you can run `codex -m <model_name>` directly or configure them in Codex's `config.toml`. See the [Codex CLI documentation](https://developers.openai.com/codex/cli) for details.
+:::note Model availability follows your Codex account
+This list mirrors the catalog the Codex CLI fetches for a ChatGPT account. Models retired from that catalog are rejected by the backend with an HTTP 400 even though the CLI still accepts the flag, so gosling only offers what the catalog currently serves. To use a model outside this list, run `codex -m <model_name>` directly or configure it in Codex's `config.toml`. See the [Codex CLI documentation](https://developers.openai.com/codex/cli) for details.
 :::
 
 **Permission Modes (`GOSLING_MODE`):**

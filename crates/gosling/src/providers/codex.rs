@@ -37,7 +37,7 @@ pub const CODEX_KNOWN_MODELS: &[&str] = &[
     "gpt-5.5",
     "gpt-5.4",
     "gpt-5.4-mini",
-    "gpt-5.2",
+    "gpt-5.3-codex-spark",
 ];
 pub const CODEX_DOC_URL: &str = "https://developers.openai.com/codex/cli";
 
@@ -1098,7 +1098,7 @@ mod tests {
                 "gpt-5.5",
                 "gpt-5.4",
                 "gpt-5.4-mini",
-                "gpt-5.2",
+                "gpt-5.3-codex-spark",
             ]
         );
     }
@@ -1121,7 +1121,7 @@ mod tests {
                 ("gpt-5.5", 258_400),
                 ("gpt-5.4", 258_400),
                 ("gpt-5.4-mini", 258_400),
-                ("gpt-5.2", 258_400),
+                ("gpt-5.3-codex-spark", 121_600),
             ]
         );
     }
