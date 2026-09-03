@@ -589,25 +589,13 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                         fallback_model_config,
                     ),
                     Err(e2) => {
-                        output::render_error(&format!(
-                        "Error {}.\n\
-                        Please check your system keychain and run 'gosling configure' again.\n\
-                        If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                        For more info, see: https://gosling-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                        e2
-                    ));
+                        output::render_error(&format_provider_creation_error(&e2));
                         process::exit(1);
                     }
                 }
             }
             Err(e) => {
-                output::render_error(&format!(
-                "Error {}.\n\
-                Please check your system keychain and run 'gosling configure' again.\n\
-                If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                For more info, see: https://gosling-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                e
-            ));
+                output::render_error(&format_provider_creation_error(&e));
                 process::exit(1);
             }
         };
@@ -670,6 +658,34 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     session
 }
 
+/// Whether a provider failed because Gosling could not read a stored secret, as
+/// opposed to any of the other ways provider creation fails — a CLI that is not
+/// installed, a session mode the agent does not offer, an unreachable endpoint.
+/// Only the former is helped by the keychain guidance.
+fn is_secret_storage_error(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| {
+        let msg = cause.to_string();
+        msg.contains("keyring")
+            || msg.contains("keychain")
+            || msg.contains("secure storage")
+            || msg.contains("Failed to fetch secret")
+            || msg.contains("Configuration value not found")
+    })
+}
+
+fn format_provider_creation_error(e: &anyhow::Error) -> String {
+    if is_secret_storage_error(e) {
+        format!(
+            "Error {e}.\n\
+             Please check your system keychain and run 'gosling configure' again.\n\
+             If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
+             For more info, see: https://gosling-docs.ai/docs/troubleshooting/#keychainkeyring-errors"
+        )
+    } else {
+        format!("Error {e}.")
+    }
+}
+
 fn is_provider_unavailable_error(e: &anyhow::Error) -> bool {
     let msg = e.to_string();
     msg.contains("is not set")
@@ -680,6 +696,31 @@ fn is_provider_unavailable_error(e: &anyhow::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keychain_guidance_is_offered_only_for_secret_storage_failures() {
+        let secret = anyhow::anyhow!(
+            "invalid config: Failed to fetch secret 'MUNINN_MCP_BEARER_TOKEN' from config"
+        );
+        assert!(format_provider_creation_error(&secret).contains("system keychain"));
+
+        // The failure that first surfaced this: codex-acp rejecting a session
+        // mode has nothing to do with stored secrets.
+        let unrelated = anyhow::anyhow!(
+            "Requested mode 'full-access' not offered by agent. \
+             Available modes: read-only, agent, agent-full-access"
+        );
+        let rendered = format_provider_creation_error(&unrelated);
+        assert!(!rendered.contains("system keychain"));
+        assert!(rendered.contains("not offered by agent"));
+    }
+
+    #[test]
+    fn keychain_guidance_follows_a_wrapped_cause() {
+        let wrapped = anyhow::anyhow!("Failed to access keyring: entry not found")
+            .context("could not create provider");
+        assert!(format_provider_creation_error(&wrapped).contains("system keychain"));
+    }
 
     #[test]
     fn test_session_builder_config_creation() {

@@ -147,14 +147,6 @@ fn known_model_names() -> Vec<&'static str> {
     CHATGPT_CODEX_KNOWN_MODELS.iter().map(|m| m.name).collect()
 }
 
-const GPT_53_CODEX_TOOL_PREAMBLE: &str = "\
-You are a coding agent. You have access to tools to accomplish tasks. \
-Always use your tools to fulfill requests - do not just describe what you would do. \
-Keep going until the query is completely resolved before yielding back to the user. \
-Autonomously resolve the query using the tools available to you. \
-Do NOT guess or make up an answer. \
-Before making tool calls, send a brief message explaining what you're about to do.";
-
 #[derive(Debug)]
 struct ChatGptCodexAuthState {
     oauth_mutex: TokioMutex<()>,
@@ -340,10 +332,7 @@ fn create_codex_request(
         })
         .collect();
 
-    let instructions = match model_config.model_name.as_str() {
-        "gpt-5.3-codex" => format!("{GPT_53_CODEX_TOOL_PREAMBLE}\n\n{system}"),
-        _ => system.to_string(),
-    };
+    let instructions = system.to_string();
 
     if responses_lite {
         let mut prefix = vec![json!({
@@ -1805,16 +1794,7 @@ mod tests {
     }
 
     #[test]
-    fn test_gpt53_preamble_injected() {
-        let model = ModelConfig::new("gpt-5.3-codex");
-        let payload = create_codex_request(&model, "system prompt", &[], &[]).unwrap();
-        let instructions = payload["instructions"].as_str().unwrap();
-        assert!(instructions.contains(GPT_53_CODEX_TOOL_PREAMBLE));
-        assert!(instructions.contains("system prompt"));
-    }
-
-    #[test]
-    fn test_other_models_no_preamble() {
+    fn test_instructions_are_the_system_prompt_verbatim() {
         let model = ModelConfig::new("gpt-5.4");
         let payload = create_codex_request(&model, "system prompt", &[], &[]).unwrap();
         let instructions = payload["instructions"].as_str().unwrap();

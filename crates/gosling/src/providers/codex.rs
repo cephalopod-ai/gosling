@@ -576,12 +576,24 @@ fn toml_quote(s: &str) -> String {
 // up in process argv, visible via `ps`. Claude Code avoids this by writing to a
 // temp file with 0o600 permissions.
 // Tracking: https://github.com/openai/codex/issues/2628
+/// Codex merges each `-c mcp_servers.<name>.<field>` override into whatever
+/// `~/.codex/config.toml` already declares under that name rather than replacing
+/// it, so a Gosling extension sharing a name with one of the user's own Codex
+/// servers produces a hybrid entry Codex then refuses to load ("url is not
+/// supported for stdio"). Prefixing keeps Gosling's servers in their own
+/// namespace, which no user entry can collide with.
+const CODEX_MCP_KEY_PREFIX: &str = "gosling_";
+
+fn codex_mcp_server_key(extension: &ExtensionConfig) -> String {
+    format!("{CODEX_MCP_KEY_PREFIX}{}", extension.key())
+}
+
 fn codex_mcp_config_overrides(extensions: &[ExtensionConfig]) -> Vec<String> {
     let mut overrides = Vec::new();
     for extension in extensions {
         match extension {
             ExtensionConfig::StreamableHttp { uri, headers, .. } => {
-                let key = extension.key();
+                let key = codex_mcp_server_key(extension);
                 overrides.push(format!("mcp_servers.{}.url={}", key, toml_quote(uri)));
                 if !headers.is_empty() {
                     let mut hkeys: Vec<_> = headers.keys().collect();
@@ -600,7 +612,7 @@ fn codex_mcp_config_overrides(extensions: &[ExtensionConfig]) -> Vec<String> {
             ExtensionConfig::Stdio {
                 cmd, args, envs, ..
             } => {
-                let key = extension.key();
+                let key = codex_mcp_server_key(extension);
                 overrides.push(format!("mcp_servers.{}.command={}", key, toml_quote(cmd)));
                 if !args.is_empty() {
                     let items: Vec<_> = args.iter().map(|a| toml_quote(a)).collect();
@@ -833,9 +845,9 @@ mod tests {
             available_tools: vec![],
         },
         &[
-            r#"mcp_servers.lookup.command="node""#,
-            r#"mcp_servers.lookup.args=["server.js"]"#,
-            r#"mcp_servers.lookup.env={"API_KEY" = "secret"}"#,
+            r#"mcp_servers.gosling_lookup.command="node""#,
+            r#"mcp_servers.gosling_lookup.args=["server.js"]"#,
+            r#"mcp_servers.gosling_lookup.env={"API_KEY" = "secret"}"#,
         ]
         ; "stdio_converts_to_mcp_overrides"
     )]
@@ -856,8 +868,8 @@ mod tests {
             available_tools: vec![],
         },
         &[
-            r#"mcp_servers.lookup.url="http://localhost/mcp""#,
-            r#"mcp_servers.lookup.http_headers={"Authorization" = "Bearer token"}"#,
+            r#"mcp_servers.gosling_lookup.url="http://localhost/mcp""#,
+            r#"mcp_servers.gosling_lookup.http_headers={"Authorization" = "Bearer token"}"#,
         ]
         ; "streamable_http_converts_to_mcp_overrides"
     )]
@@ -878,7 +890,7 @@ mod tests {
             available_tools: vec![],
         },
         &[
-            r#"mcp_servers.mcp_kiwi_com.url="https://mcp.kiwi.com""#,
+            r#"mcp_servers.gosling_mcp_kiwi_com.url="https://mcp.kiwi.com""#,
         ]
         ; "resolved_name_used_as_key_http"
     )]
@@ -896,7 +908,7 @@ mod tests {
             available_tools: vec![],
         },
         &[
-            r#"mcp_servers.my-server.command="/usr/bin/my-server""#,
+            r#"mcp_servers.gosling_my-server.command="/usr/bin/my-server""#,
         ]
         ; "resolved_name_used_as_key_stdio"
     )]
