@@ -1487,6 +1487,7 @@ impl Config {
     }
 }
 
+config_value!(ANTIGRAVITY_COMMAND, String, "agy");
 config_value!(CLAUDE_CODE_COMMAND, String, "claude");
 config_value!(GEMINI_CLI_COMMAND, String, "gemini");
 config_value!(CURSOR_AGENT_COMMAND, String, "cursor-agent");

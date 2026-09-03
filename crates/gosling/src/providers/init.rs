@@ -6,6 +6,7 @@ use super::bedrock::BedrockProvider;
 #[cfg(feature = "aws-providers")]
 use super::sagemaker_tgi::SageMakerTgiProvider;
 use super::{
+    antigravity::AntigravityProvider,
     azure::AzureProvider,
     base::{Provider, ProviderMetadata},
     chatgpt_codex::ChatGptCodexProvider,
@@ -58,6 +59,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             true,
             Some(registrations::anthropic_inventory()),
         );
+        registry.register::<AntigravityProvider>(false);
         registry.register::<AzureProvider>(false);
         #[cfg(feature = "aws-providers")]
         registry.register::<BedrockProvider>(false);

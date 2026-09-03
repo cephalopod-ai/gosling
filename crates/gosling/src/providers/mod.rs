@@ -1,5 +1,6 @@
 mod acp_tooling;
 pub mod amp_acp;
+pub mod antigravity;
 pub mod anthropic {
     pub use gosling_providers::anthropic::*;
 }

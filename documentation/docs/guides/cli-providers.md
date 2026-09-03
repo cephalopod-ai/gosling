@@ -2,7 +2,7 @@
 sidebar_position: 8
 title: CLI Providers
 sidebar_label: CLI Providers
-description: Use Claude Code, Codex, Cursor Agent, or Gemini CLI subscriptions in gosling
+description: Use Claude Code, Codex, Cursor Agent, Gemini CLI, or Antigravity subscriptions in gosling
 ---
 
 # CLI Providers
@@ -103,6 +103,28 @@ The Gemini CLI provider integrates with Google's [Gemini CLI tool](https://ai.go
 **Requirements:**
 - Gemini CLI tool installed and configured
 - CLI tool authenticated with your Google account
+
+### Antigravity
+
+The Antigravity provider drives Google's agentic coding CLI (`agy`) headless over its
+`stream-json` protocol, reusing the Google sign-in the Antigravity CLI or IDE already holds.
+
+**Features:**
+- Gemini 3.x, Claude 4.6, and GPT-OSS models served through one Antigravity sign-in
+- 1,048,576 token context limit on the Gemini models
+- One persistent CLI process per session, so Antigravity keeps its own conversation state and prompt cache across turns
+
+**Requirements:**
+- `agy` installed and on your PATH
+- CLI signed in with your Google account
+- gosling mode set to `auto` (see the limitation below)
+
+:::warning Auto mode only
+Antigravity's headless mode has no channel for handing an approval back to the caller —
+a tool its own `toolPermission` setting will not clear is soft-denied rather than surfaced.
+gosling therefore accepts this provider only in `auto` mode and refuses `approve`,
+`smart-approve`, and `chat` with an explicit error rather than silently degrading them.
+:::
 
 ## Setup Instructions
 
@@ -247,6 +269,44 @@ The Gemini CLI provider integrates with Google's [Gemini CLI tool](https://ai.go
    │  default
    ```
 
+### Antigravity
+
+1. **Install the Antigravity CLI**
+
+   `agy` ships with the Antigravity IDE and the Antigravity VS Code extension. Run
+   `agy install` once to put it on your PATH and configure shell settings.
+
+2. **Sign in**
+
+   Run `agy` in a terminal, complete the Google sign-in, then exit. The credential is
+   cached under `~/.gemini/`, and gosling's headless spawns reuse it — gosling cannot
+   complete the sign-in itself, because Antigravity's interactive OAuth needs a
+   controlling terminal.
+
+   Confirm headless access works before configuring gosling:
+
+   ```bash
+   agy models
+   ```
+
+   It should list models without prompting. If it does not, gosling reports an
+   authentication error pointing back at this step.
+
+3. **Configure gosling**
+
+   ```bash
+   export GOSLING_PROVIDER=antigravity
+   export GOSLING_MODEL=gemini-3.1-pro-high
+   export GOSLING_MODE=auto
+   ```
+
+4. **Trust the workspace**
+
+   Antigravity gates access on its own `trustedWorkspaces` list. Open the directory once
+   in the Antigravity IDE or interactive CLI and accept the trust prompt, or set
+   `allowNonWorkspaceAccess` in `~/.gemini/antigravity-cli/settings.json`. gosling does not
+   modify that file.
+
 ## Usage Examples
 
 ### Basic Usage
@@ -360,6 +420,21 @@ These are the default models supported by Codex CLI v0.77.0. To access older or 
 | `GOSLING_PROVIDER` | Set to `gemini-cli` to use this provider | None |
 | `GEMINI_CLI_COMMAND` | Path to the Gemini CLI command | `gemini` |
 
+### Antigravity Configuration
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `GOSLING_PROVIDER` | Set to `antigravity` to use this provider | None |
+| `ANTIGRAVITY_COMMAND` | Path to the Antigravity CLI command | `agy` |
+
+Models come from `agy models` at runtime, so the list follows your account rather than a
+list baked into gosling.
+
+| gosling mode | Antigravity flag | Behavior |
+|-------------|------------------|----------|
+| `auto` | `--dangerously-skip-permissions` | Antigravity auto-approves its own tool calls |
+| `smart-approve`, `approve`, `chat` | (unsupported) | Rejected with an explicit error — Antigravity cannot route approvals headless |
+
 ## How It Works
 
 ### System Prompt Filtering
@@ -372,6 +447,7 @@ The CLI providers automatically filter out gosling's extension information from 
 - **Codex**: Converts messages to simple text prompts with role prefixes (Human:/Assistant:), similar to Gemini CLI
 - **Cursor Agent**: Converts gosling messages to Cursor's JSON message format, handling tool calls and responses appropriately
 - **Gemini CLI**: Converts messages to simple text prompts with role prefixes (Human:/Assistant:)
+- **Antigravity**: Sends one `{"event":"user",...}` NDJSON line per turn to a persistent `agy` process; the system prompt is folded into the first turn because the CLI has no system-prompt flag
 
 ### Response Processing
 
@@ -379,6 +455,7 @@ The CLI providers automatically filter out gosling's extension information from 
 - **Codex**: Parses newline-delimited JSON events to extract text content and usage information
 - **Cursor Agent**: Parses JSON responses to extract text content and usage information
 - **Gemini CLI**: Processes plain text responses from the CLI tool
+- **Antigravity**: Streams `agent_response` text deltas from its `step_update` events and reads usage from the closing `result` event
 
 ## Error Handling
 
