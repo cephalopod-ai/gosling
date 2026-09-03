@@ -1,8 +1,6 @@
 name: Create Minor Release PR
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 on:
   schedule:
@@ -16,6 +14,9 @@ jobs:
   check-version-bump-pr:
     if: github.repository == 'cephalopod-ai/gosling' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
@@ -62,6 +63,9 @@ jobs:
     needs: check-version-bump-pr
     if: always() && github.repository == 'cephalopod-ai/gosling' && (github.event_name != 'push' || needs.check-version-bump-pr.outputs.should_run == 'true')
     uses: ./.github/workflows/create-version-bump-pr.yaml
+    permissions:
+      contents: write
+      pull-requests: write
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

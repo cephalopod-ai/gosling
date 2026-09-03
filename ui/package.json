@@ -18,5 +18,39 @@
     "@changesets/cli": "^2.27.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "zod": "4.4.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "@babel/core@7.29.0": "7.29.6",
+      "@hono/node-server@1.19.11": "1.19.15",
+      "@humanfs/node@0.16.7": "0.16.8",
+      "@tootallnate/once@2.0.0": "2.0.1",
+      "@xmldom/xmldom@0.8.11": "0.8.15",
+      "body-parser@2.2.2": "2.3.0",
+      "brace-expansion@1.1.12": "1.1.18",
+      "brace-expansion@2.0.2": "2.1.4",
+      "brace-expansion@5.0.4": "5.0.9",
+      "browserslist@4.28.1": "4.28.7",
+      "builder-util-runtime@9.5.1": "9.7.0",
+      "esbuild@0.27.4": "0.28.1",
+      "fast-uri@3.1.0": "3.1.6",
+      "flatted@3.4.0": "3.4.2",
+      "hono@4.12.8": "4.12.34",
+      "ip-address@10.1.0": "10.3.1",
+      "js-yaml@3.14.2": "3.15.1",
+      "js-yaml@4.1.1": "4.3.1",
+      "path-to-regexp@8.3.0": "8.4.0",
+      "picomatch@2.3.1": "2.3.2",
+      "picomatch@4.0.3": "4.0.4",
+      "qs@6.15.0": "6.16.0",
+      "smol-toml@1.6.0": "1.6.1",
+      "tar@6.2.1": "7.5.21",
+      "tmp@0.0.33": "0.2.7",
+      "tmp@0.2.5": "0.2.7",
+      "tmp@0.2.6": "0.2.7",
+      "undici@7.24.4": "7.29.0",
+      "ws@8.19.0": "8.21.0",
+      "yaml@1.10.2": "1.10.3"
+    }
   }
 }

@@ -16,6 +16,8 @@ on:
         required: false
         default: 'Manual trigger'
 
+permissions: {}
+
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -75,7 +77,7 @@ jobs:
           INKEEP_INTEGRATION_ID: ${{ secrets.INKEEP_INTEGRATION_ID }}
           INKEEP_ORG_ID: ${{ secrets.INKEEP_ORG_ID }}
         run: |
-          npm install
+          npm ci
           npm test
           npm run build
 

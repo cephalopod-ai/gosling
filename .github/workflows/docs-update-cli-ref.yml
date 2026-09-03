@@ -29,14 +29,15 @@ on:
   release:
     types: [edited]
 
-permissions:
-  contents: write       # Create branches and commit files
-  pull-requests: write  # Create PRs
+permissions: {}
 
 jobs:
   update-docs:
     name: Update CLI Documentation
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # Create branches and commit files
+      pull-requests: write  # Create PRs
     
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

@@ -49,6 +49,11 @@
     "typescript": "~5.6.2",
     "yaml-loader": "^0.8.1"
   },
+  "overrides": {
+    "qs": "6.16.0",
+    "serialize-javascript": "7.0.5",
+    "uuid": "11.1.1"
+  },
   "browserslist": {
     "production": [
       ">0.5%",

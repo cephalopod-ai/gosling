@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use umya_spreadsheet::{Spreadsheet, Worksheet};
+use umya_spreadsheet::{Workbook, Worksheet};
 
 /// Upper bound on cells a single `get_range` call will materialize. Without
 /// this, a range like "A1:A4294967295" (row/column indices are only bounds-
@@ -34,7 +34,7 @@ pub struct RangeData {
 }
 
 pub struct XlsxTool {
-    workbook: Spreadsheet,
+    workbook: Workbook,
 }
 
 impl XlsxTool {
@@ -45,11 +45,11 @@ impl XlsxTool {
     }
 
     pub fn list_worksheets(&self) -> Result<Vec<WorksheetInfo>> {
-        let mut worksheets = Vec::with_capacity(self.workbook.get_sheet_collection().len());
-        for (index, worksheet) in self.workbook.get_sheet_collection().iter().enumerate() {
+        let mut worksheets = Vec::with_capacity(self.workbook.sheet_collection().len());
+        for (index, worksheet) in self.workbook.sheet_collection().iter().enumerate() {
             let (column_count, row_count) = self.get_worksheet_dimensions(worksheet)?;
             worksheets.push(WorksheetInfo {
-                name: worksheet.get_name().to_string(),
+                name: worksheet.name().to_string(),
                 index,
                 column_count,
                 row_count,
@@ -60,33 +60,32 @@ impl XlsxTool {
 
     pub fn get_worksheet_by_name(&self, name: &str) -> Result<&Worksheet> {
         self.workbook
-            .get_sheet_by_name(name)
+            .sheet_by_name(name)
             .context("Worksheet not found")
     }
 
     pub fn get_worksheet_by_index(&self, index: usize) -> Result<&Worksheet> {
         self.workbook
-            .get_sheet_collection()
-            .get(index)
+            .sheet(index)
             .context("Worksheet index out of bounds")
     }
 
     pub fn default_worksheet_name(&self) -> Result<String> {
-        Ok(self.get_worksheet_by_index(0)?.get_name().to_string())
+        Ok(self.get_worksheet_by_index(0)?.name().to_string())
     }
 
     fn get_worksheet_dimensions(&self, worksheet: &Worksheet) -> Result<(usize, usize)> {
         Ok((
-            worksheet.get_highest_column() as usize,
-            worksheet.get_highest_row() as usize,
+            worksheet.highest_column() as usize,
+            worksheet.highest_row() as usize,
         ))
     }
 
     pub fn get_column_names(&self, worksheet: &Worksheet) -> Result<Vec<String>> {
-        let mut names = Vec::with_capacity(worksheet.get_highest_column() as usize);
-        for col_num in 1..=worksheet.get_highest_column() {
-            if let Some(cell) = worksheet.get_cell((col_num, 1)) {
-                names.push(cell.get_value().into_owned());
+        let mut names = Vec::with_capacity(worksheet.highest_column() as usize);
+        for col_num in 1..=worksheet.highest_column() {
+            if let Some(cell) = worksheet.cell((col_num, 1)) {
+                names.push(cell.value().into_owned());
             } else {
                 names.push(String::new());
             }
@@ -118,13 +117,13 @@ impl XlsxTool {
         for row_idx in start_row..=end_row {
             let mut row_values = Vec::with_capacity(col_count as usize);
             for col_idx in start_col..=end_col {
-                let cell_value = if let Some(cell) = worksheet.get_cell((col_idx, row_idx)) {
+                let cell_value = if let Some(cell) = worksheet.cell((col_idx, row_idx)) {
                     CellValue {
-                        value: cell.get_value().into_owned(),
-                        formula: if cell.get_formula().is_empty() {
+                        value: cell.value().into_owned(),
+                        formula: if cell.formula().is_empty() {
                             None
                         } else {
-                            Some(cell.get_formula().to_string())
+                            Some(cell.formula().to_string())
                         },
                     }
                 } else {
@@ -156,12 +155,10 @@ impl XlsxTool {
     ) -> Result<()> {
         let worksheet = self
             .workbook
-            .get_sheet_by_name_mut(worksheet_name)
+            .sheet_by_name_mut(worksheet_name)
             .context("Worksheet not found")?;
 
-        worksheet
-            .get_cell_mut((col, row))
-            .set_value(value.to_string());
+        worksheet.cell_mut((col, row)).set_value(value.to_string());
         Ok(())
     }
 
@@ -181,20 +178,18 @@ impl XlsxTool {
         let mut matches = Vec::new();
         let normalized_search_text = (!case_sensitive).then(|| search_text.to_lowercase());
 
-        for row_num in 1..=worksheet.get_highest_row() {
-            for col_num in 1..=worksheet.get_highest_column() {
-                if let Some(cell) = worksheet.get_cell((col_num, row_num)) {
+        for row_num in 1..=worksheet.highest_row() {
+            for col_num in 1..=worksheet.highest_column() {
+                if let Some(cell) = worksheet.cell((col_num, row_num)) {
                     let is_match = if let Some(normalized_search_text) = &normalized_search_text {
-                        cell.get_value()
-                            .to_lowercase()
-                            .contains(normalized_search_text)
+                        cell.value().to_lowercase().contains(normalized_search_text)
                     } else {
-                        cell.get_value().contains(search_text)
+                        cell.value().contains(search_text)
                     };
 
                     if is_match {
-                        let coord = cell.get_coordinate();
-                        matches.push((*coord.get_row_num(), *coord.get_col_num()));
+                        let coord = cell.coordinate();
+                        matches.push((coord.row_num(), coord.col_num()));
                     }
                 }
             }
@@ -204,14 +199,14 @@ impl XlsxTool {
     }
 
     pub fn get_cell_value(&self, worksheet: &Worksheet, row: u32, col: u32) -> Result<CellValue> {
-        let cell = worksheet.get_cell((col, row)).context("Cell not found")?;
+        let cell = worksheet.cell((col, row)).context("Cell not found")?;
 
         Ok(CellValue {
-            value: cell.get_value().into_owned(),
-            formula: if cell.get_formula().is_empty() {
+            value: cell.value().into_owned(),
+            formula: if cell.formula().is_empty() {
                 None
             } else {
-                Some(cell.get_formula().to_string())
+                Some(cell.formula().to_string())
             },
         })
     }
@@ -305,7 +300,7 @@ mod tests {
         let xlsx = XlsxTool::new(get_test_file())?;
         assert_eq!(
             xlsx.default_worksheet_name()?,
-            xlsx.get_worksheet_by_index(0)?.get_name()
+            xlsx.get_worksheet_by_index(0)?.name()
         );
         Ok(())
     }

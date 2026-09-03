@@ -171,8 +171,8 @@ gosling-acp-macros = { path = "../gosling-acp-macros", default-features = false 
 tower-http = { workspace = true, features = ["cors"] }
 tracing-appender = { workspace = true }
 process-wrap = { version = "9", default-features = false, features = ["process-session", "std"] }
-nostr = { version = "0.44", default-features = false, features = ["nip44", "std"], optional = true }
-nostr-sdk = { version = "0.44", default-features = false, features = ["nip44"], optional = true }
+nostr = { version = "0.45", default-features = false, features = ["nip44", "os-rng", "std"], optional = true }
+nostr-sdk = { version = "0.45", default-features = false, optional = true }
 rustls = { workspace = true, optional = true }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem"], optional = true }
 axum-server = { version = "0.8", default-features = false, optional = true }

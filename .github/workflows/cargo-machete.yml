@@ -13,6 +13,8 @@ on:
       - '**/*.rs'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   machete:
     runs-on: ubuntu-latest

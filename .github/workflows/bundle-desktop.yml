@@ -35,6 +35,8 @@ on:
 
 name: Reusable workflow to bundle desktop app
 
+permissions: {}
+
 jobs:
   bundle-desktop:
     runs-on: macos-latest

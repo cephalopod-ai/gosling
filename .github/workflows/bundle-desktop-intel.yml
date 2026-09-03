@@ -33,6 +33,8 @@ on:
 
 name: Reusable workflow to bundle desktop app for Intel Mac
 
+permissions: {}
+
 jobs:
   bundle-desktop-intel:
     runs-on: macos-latest

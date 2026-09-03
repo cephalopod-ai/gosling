@@ -4,7 +4,7 @@ FROM rust:bullseye@sha256:9a11136145d74a2c7b2a74a36163fe9a58f392ef7eba15c2cb5b10
 SHELL ["/bin/bash", "-c"]
 
 # Install Node.js and any missing dependencies
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+RUN curl -fsSL https://raw.githubusercontent.com/nodesource/distributions/9b431d8ae0f10df272598585855c6eca6c0e1bd2/scripts/deb/setup_24.x | bash - && \
     apt-get update && apt-get install -y \
     nodejs \
     libdbus-1-dev \
@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
+RUN curl -fsSL https://raw.githubusercontent.com/nodesource/distributions/9b431d8ae0f10df272598585855c6eca6c0e1bd2/scripts/deb/setup_24.x | bash - && \
     apt-get update && apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
@@ -83,11 +83,12 @@ RUN apt-get update && apt-get install -y \
     tmux \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv using curl
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install uv from an immutable multi-architecture image.
+COPY --from=ghcr.io/astral-sh/uv:0.11.26@sha256:3d868e555f8f1dbc324afa005066cd11e1053fc4743b9808ca8025283e65efa5 /uv /uvx /usr/local/bin/
 
-# Install JBang using curl
-RUN curl -Ls https://sh.jbang.dev | bash -s - app setup
+# Install a fixed JBang release with the installer pinned to its source commit.
+RUN curl -fsSL https://raw.githubusercontent.com/jbangdev/jbang/ea1c3dda048b82716ee6c31c7705683bfd03347e/src/main/scripts/jbang | \
+    JBANG_DOWNLOAD_VERSION=0.141.0 bash -s - app setup
 
 # Copy the built binaries
 COPY --from=builder /usr/src/gosling/target/release/gosling /usr/local/bin/
