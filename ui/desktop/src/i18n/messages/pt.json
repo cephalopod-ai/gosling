@@ -3313,5 +3313,17 @@
   },
   "researchInitialInputs.textTotalTooLarge": {
     "defaultMessage": "Pasted inputs exceed the 512 KB total limit."
+  },
+  "navigationPanel.resizeWorkspaces": {
+    "defaultMessage": "Resize workspaces list — drag, or use the arrow keys"
+  },
+  "userMessage.retryButton": {
+    "defaultMessage": "Retry"
+  },
+  "userMessage.retryMessageAriaLabel": {
+    "defaultMessage": "Resend message: {preview}"
+  },
+  "userMessage.retryMessageTitle": {
+    "defaultMessage": "Resend this message and regenerate the response"
   }
 }

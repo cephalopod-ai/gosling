@@ -5,6 +5,7 @@ import { getTextAndImageContent, type Message } from '../types/message';
 import MessageCopyLink from './MessageCopyLink';
 import { formatMessageTimestamp } from '../utils/timeUtils';
 import Edit from './icons/Edit';
+import Refresh from './icons/Refresh';
 import { Button } from './ui/button';
 import { defineMessages, useIntl } from '../i18n';
 
@@ -23,7 +24,8 @@ const i18n = defineMessages({
   },
   editInPlaceDescription: {
     id: 'userMessage.editInPlaceDescription',
-    defaultMessage: '<b>Edit in Place</b> updates this session • <b>Fork Session</b> creates a new session',
+    defaultMessage:
+      '<b>Edit in Place</b> updates this session • <b>Fork Session</b> creates a new session',
   },
   cancel: {
     id: 'userMessage.cancel',
@@ -69,14 +71,27 @@ const i18n = defineMessages({
     id: 'userMessage.editMessageTitle',
     defaultMessage: 'Edit message',
   },
+  retryButton: {
+    id: 'userMessage.retryButton',
+    defaultMessage: 'Retry',
+  },
+  retryMessageAriaLabel: {
+    id: 'userMessage.retryMessageAriaLabel',
+    defaultMessage: 'Resend message: {preview}',
+  },
+  retryMessageTitle: {
+    id: 'userMessage.retryMessageTitle',
+    defaultMessage: 'Resend this message and regenerate the response',
+  },
 });
 
 interface UserMessageProps {
   message: Message;
+  canRetry: boolean;
   onMessageUpdate?: (messageId: string, newContent: string, editType?: 'fork' | 'edit') => void;
 }
 
-export default function UserMessage({ message, onMessageUpdate }: UserMessageProps) {
+export default function UserMessage({ message, canRetry, onMessageUpdate }: UserMessageProps) {
   const intl = useIntl();
   const contentRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -154,6 +169,12 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
     },
     [editContent, textContent, onMessageUpdate, message.id, intl]
   );
+
+  const handleRetry = useCallback(() => {
+    if (onMessageUpdate && message.id) {
+      onMessageUpdate(message.id, textContent, 'edit');
+    }
+  }, [onMessageUpdate, message.id, textContent]);
 
   // Handle cancel action
   const handleCancel = useCallback(() => {
@@ -233,7 +254,11 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
                 })}
               </div>
               <div className="flex gap-3">
-                <Button onClick={handleCancel} variant="ghost" aria-label={intl.formatMessage(i18n.cancelAriaLabel)}>
+                <Button
+                  onClick={handleCancel}
+                  variant="ghost"
+                  aria-label={intl.formatMessage(i18n.cancelAriaLabel)}
+                >
                   {intl.formatMessage(i18n.cancel)}
                 </Button>
                 <Button
@@ -292,13 +317,29 @@ export default function UserMessage({ message, onMessageUpdate }: UserMessagePro
                         }
                       }}
                       className="flex items-center gap-1 text-xs text-text-secondary hover:cursor-pointer hover:text-text-primary transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50 rounded"
-                      aria-label={intl.formatMessage(i18n.editMessageAriaLabel, { preview: `${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}` })}
+                      aria-label={intl.formatMessage(i18n.editMessageAriaLabel, {
+                        preview: `${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}`,
+                      })}
                       aria-expanded={isEditing}
                       title={intl.formatMessage(i18n.editMessageTitle)}
                     >
                       <Edit className="h-3 w-3" />
                       <span>{intl.formatMessage(i18n.editButton)}</span>
                     </button>
+                    {canRetry && onMessageUpdate && (
+                      <button
+                        type="button"
+                        onClick={handleRetry}
+                        className="flex items-center gap-1 text-xs text-text-secondary hover:cursor-pointer hover:text-text-primary transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50 rounded"
+                        aria-label={intl.formatMessage(i18n.retryMessageAriaLabel, {
+                          preview: `${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}`,
+                        })}
+                        title={intl.formatMessage(i18n.retryMessageTitle)}
+                      >
+                        <Refresh className="h-3 w-3" />
+                        <span>{intl.formatMessage(i18n.retryButton)}</span>
+                      </button>
+                    )}
                     <MessageCopyLink text={textContent} contentRef={contentRef} />
                   </div>
                 </div>

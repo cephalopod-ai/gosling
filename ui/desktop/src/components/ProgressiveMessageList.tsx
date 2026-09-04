@@ -100,6 +100,10 @@ interface MessageRenderIndex {
   toolCallChainIndexes: Set<number>;
 }
 
+function hasOnlyToolResponses(message: Message): boolean {
+  return message.content.every((content) => content.type === 'toolResponse');
+}
+
 function isModelSwitchNotification(message: Message): boolean {
   return message.content.some((content) => {
     if (content.type !== 'systemNotification' || content.notificationType !== 'inlineMessage') {
@@ -149,9 +153,6 @@ export default function ProgressiveMessageList({
   const mountedRef = useRef(true);
   const onThreadTurnsRenderedRef = useRef(onThreadTurnsRendered);
   onThreadTurnsRenderedRef.current = onThreadTurnsRendered;
-  const hasOnlyToolResponses = (message: Message) =>
-    message.content.every((c) => c.type === 'toolResponse');
-
   const getResolvedModel = useCallback((message: Message): string | null => {
     if (message.role !== 'assistant' || !message.metadata.userVisible) return null;
     return message.metadata.inference?.resolvedModel ?? null;
@@ -288,6 +289,16 @@ export default function ProgressiveMessageList({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLoading, messages.length]);
 
+  const lastUserPromptIndex = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (isUserMessage(message) && !hasOnlyToolResponses(message)) {
+        return index;
+      }
+    }
+    return -1;
+  }, [messages, isUserMessage]);
+
   const messageRenderIndex = useMemo<MessageRenderIndex>(() => {
     const toolResponseByRequestId = new Map<string, ToolResponseMessageContent>();
     const confirmationByToolRequestId = new Map<string, ToolConfirmationData>();
@@ -422,7 +433,11 @@ export default function ProgressiveMessageList({
           >
             {isUser ? (
               !hasOnlyToolResponses(message) && (
-                <UserMessage message={message} onMessageUpdate={onMessageUpdate} />
+                <UserMessage
+                  message={message}
+                  canRetry={!isStreamingMessage && index === lastUserPromptIndex}
+                  onMessageUpdate={onMessageUpdate}
+                />
               )
             ) : (
               <GoslingMessage
@@ -558,6 +573,7 @@ export default function ProgressiveMessageList({
     toolCallNotifications,
     isStreamingMessage,
     onMessageUpdate,
+    lastUserPromptIndex,
     messageRenderIndex,
     submitElicitationResponse,
     workingDirectory,

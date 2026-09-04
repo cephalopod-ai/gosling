@@ -23,8 +23,10 @@ vi.mock('./GoslingMessage', () => ({
 }));
 
 vi.mock('./UserMessage', () => ({
-  default: ({ message }: { message: Message }) => (
-    <div>{message.content.find((content) => content.type === 'text')?.text}</div>
+  default: ({ message, canRetry }: { message: Message; canRetry: boolean }) => (
+    <div data-can-retry={String(canRetry)}>
+      {message.content.find((content) => content.type === 'text')?.text}
+    </div>
   ),
 }));
 
@@ -36,6 +38,10 @@ function message(role: Message['role'], content: MessageContent[], id: string): 
     created: 1,
     metadata: { agentVisible: true, userVisible: true },
   };
+}
+
+function toolResponse(id: string): MessageContent {
+  return { type: 'toolResponse', id, toolResult: { status: 'success', value: { content: [] } } };
 }
 
 function toolRequest(id: string): MessageContent {
@@ -187,5 +193,43 @@ describe('ProgressiveMessageList tool activity', () => {
     expect(screen.getByText('Model changed: model-a → model-b')).toBeInTheDocument();
     expect(screen.getAllByText('Model changed: model-b → model-c')).toHaveLength(1);
     expect(screen.getByText('Model changed: model-c → model-d')).toBeInTheDocument();
+  });
+});
+
+describe('ProgressiveMessageList retry affordance', () => {
+  it('offers retry only on the latest user prompt', () => {
+    const { container } = render(
+      <ProgressiveMessageList
+        messages={[
+          message('user', [{ type: 'text', text: 'First prompt' }], 'user-one'),
+          message('assistant', [{ type: 'text', text: 'First answer' }], 'assistant-one'),
+          message('user', [{ type: 'text', text: 'Second prompt' }], 'user-two'),
+          message('user', [toolResponse('tool-one')], 'user-three'),
+        ]}
+        chat={{ sessionId: 'session-one' }}
+        isUserMessage={(candidate) => candidate.role === 'user'}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    const prompts = container.querySelectorAll('[data-can-retry]');
+    expect(Array.from(prompts).map((prompt) => prompt.getAttribute('data-can-retry'))).toEqual([
+      'false',
+      'true',
+    ]);
+  });
+
+  it('hides retry while a response is streaming', () => {
+    const { container } = render(
+      <ProgressiveMessageList
+        messages={[message('user', [{ type: 'text', text: 'First prompt' }], 'user-one')]}
+        chat={{ sessionId: 'session-one' }}
+        isUserMessage={(candidate) => candidate.role === 'user'}
+        isStreamingMessage
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(container.querySelector('[data-can-retry="true"]')).toBeNull();
   });
 });
