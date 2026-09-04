@@ -31,6 +31,7 @@ mod output;
 const CODEX_PROVIDER_NAME: &str = "codex";
 pub const CODEX_DEFAULT_MODEL: &str = "gpt-5.6-sol";
 pub const CODEX_KNOWN_MODELS: &[&str] = &[
+    "gpt-6-astra",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -85,7 +86,14 @@ impl CodexProvider {
             .or_else(Self::legacy_reasoning_effort)
             .unwrap_or(ThinkingEffort::High)
         {
-            ThinkingEffort::Off => Some("none".to_string()),
+            ThinkingEffort::Off => Some(
+                if Self::supports_reasoning_effort(model_name, "none") {
+                    "none"
+                } else {
+                    "low"
+                }
+                .to_string(),
+            ),
             ThinkingEffort::Low => Some("low".to_string()),
             ThinkingEffort::Medium => Some("medium".to_string()),
             ThinkingEffort::High => Some("high".to_string()),
@@ -117,7 +125,11 @@ impl CodexProvider {
 
         match reasoning_effort {
             "ultra" => matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra"),
-            "max" => matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"),
+            "max" => matches!(
+                model_name,
+                "gpt-6-astra" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna"
+            ),
+            "none" => model_name != "gpt-6-astra",
             _ => true,
         }
     }
@@ -1080,6 +1092,18 @@ mod tests {
     #[test]
     fn test_reasoning_effort_support_by_model() {
         assert!(CodexProvider::supports_reasoning_effort(
+            "gpt-6-astra",
+            "max"
+        ));
+        assert!(!CodexProvider::supports_reasoning_effort(
+            "gpt-6-astra",
+            "none"
+        ));
+        assert!(!CodexProvider::supports_reasoning_effort(
+            "gpt-6-astra",
+            "ultra"
+        ));
+        assert!(CodexProvider::supports_reasoning_effort(
             "gpt-5.6-sol",
             "none"
         ));
@@ -1104,6 +1128,7 @@ mod tests {
         assert_eq!(
             CODEX_KNOWN_MODELS,
             &[
+                "gpt-6-astra",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
@@ -1127,6 +1152,7 @@ mod tests {
         assert_eq!(
             contexts,
             vec![
+                ("gpt-6-astra", 997_500),
                 ("gpt-5.6-sol", 258_400),
                 ("gpt-5.6-terra", 258_400),
                 ("gpt-5.6-luna", 258_400),
@@ -1418,11 +1444,19 @@ mod tests {
             Some("none".to_string())
         );
         assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-6-astra", Some(ThinkingEffort::Off)),
+            Some("low".to_string())
+        );
+        assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.4-mini", Some(ThinkingEffort::Off)),
             Some("none".to_string())
         );
         assert_eq!(
             CodexProvider::map_thinking_effort("gpt-5.6-sol", Some(ThinkingEffort::Max)),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            CodexProvider::map_thinking_effort("gpt-6-astra", Some(ThinkingEffort::Max)),
             Some("max".to_string())
         );
         assert_eq!(

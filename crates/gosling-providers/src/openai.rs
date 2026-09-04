@@ -63,6 +63,7 @@ pub const OPEN_AI_KNOWN_MODELS: &[(&str, usize)] = &[
     ("gpt-5.4-pro", 1_050_000),
     ("gpt-5.5", 1_050_000),
     ("gpt-5.5-pro", 1_050_000),
+    ("gpt-6-astra", 1_050_000),
 ];
 
 pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
@@ -1105,6 +1106,7 @@ mod tests {
     #[test]
     fn responses_api_routing_uses_model_family_unless_path_forces_chat() {
         for (model_name, base_path, expected) in [
+            ("gpt-6-astra", "v1/chat/completions", true),
             ("gpt-5.4", "v1/chat/completions", true),
             ("gpt-5.4-xhigh", "v1/chat/completions", true),
             ("gpt-5.2-pro-2025-12-11", "v1/chat/completions", true),
@@ -1580,5 +1582,6 @@ mod tests {
         assert_eq!(limits.get("o4-mini"), Some(&200_000));
         assert_eq!(limits.get("gpt-5.5"), Some(&1_050_000));
         assert_eq!(limits.get("gpt-5.5-pro"), Some(&1_050_000));
+        assert_eq!(limits.get("gpt-6-astra"), Some(&1_050_000));
     }
 }

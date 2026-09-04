@@ -1015,6 +1015,7 @@ mod tests {
     use super::*;
     use crate::conversation::message::MessageContent;
     use crate::model::ModelConfig;
+    use crate::thinking::ThinkingEffort;
     use futures::StreamExt;
     use rmcp::model::CallToolRequestParams;
     use rmcp::object;
@@ -1604,6 +1605,24 @@ mod tests {
         assert_eq!(result["model"], "o3-mini");
         assert_eq!(result["reasoning"]["effort"], "high");
         assert_eq!(result["reasoning"]["summary"], "auto");
+    }
+
+    #[test]
+    fn test_gpt6_astra_request_uses_supported_responses_parameters() {
+        let model_config = ModelConfig::new("gpt-6-astra")
+            .with_temperature(Some(0.2))
+            .with_thinking_effort(ThinkingEffort::Ultra);
+
+        let result = create_responses_request(&model_config, "You are helpful.", &[], &[]).unwrap();
+
+        assert_eq!(result["model"], "gpt-6-astra");
+        assert_eq!(result["reasoning"]["effort"], "max");
+        assert!(result.get("temperature").is_none());
+
+        let low_config = ModelConfig::new("gpt-6-astra").with_thinking_effort(ThinkingEffort::Off);
+        let low_result =
+            create_responses_request(&low_config, "You are helpful.", &[], &[]).unwrap();
+        assert_eq!(low_result["reasoning"]["effort"], "low");
     }
 
     #[test]

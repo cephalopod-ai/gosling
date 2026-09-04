@@ -67,7 +67,7 @@ The Claude Code provider integrates with Anthropic's [Claude CLI tool](https://c
 The Codex provider integrates with OpenAI's [Codex CLI tool](https://developers.openai.com/codex/cli), allowing you to use OpenAI models through your existing ChatGPT Plus/Pro subscription or API credits.
 
 **Features:**
-- Uses OpenAI's GPT-5 series models (gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex-spark)
+- Uses GPT-6 Astra and OpenAI's GPT-5 series models (`gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex-spark`)
 - Configurable reasoning effort levels (`none`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`; the ceiling varies per model)
 - Optional skills support for enhanced capabilities
 - JSON output parsing for structured responses
@@ -395,6 +395,7 @@ GOSLING_PROVIDER=claude-code GOSLING_MODE=approve gosling session
 
 The following models are recognized and passed to the Codex CLI via the `-m` flag. If `GOSLING_MODEL` is set to a value not in this list, no model flag is passed and Codex uses its default:
 
+- `gpt-6-astra` (998K effective context)
 - `gpt-5.6-sol` (258K effective context)
 - `gpt-5.6-terra` (258K effective context)
 - `gpt-5.6-luna` (258K effective context)
@@ -404,7 +405,7 @@ The following models are recognized and passed to the Codex CLI via the `-m` fla
 - `gpt-5.3-codex-spark` (121K effective context)
 
 :::note Model availability follows your Codex account
-This list mirrors the catalog the Codex CLI fetches for a ChatGPT account. Models retired from that catalog are rejected by the backend with an HTTP 400 even though the CLI still accepts the flag, so gosling only offers what the catalog currently serves. To use a model outside this list, run `codex -m <model_name>` directly or configure it in Codex's `config.toml`. See the [Codex CLI documentation](https://developers.openai.com/codex/cli) for details.
+This list mirrors the catalog the Codex CLI fetches for a ChatGPT account. Astra access depends on the account's rollout status. Models retired from that catalog are rejected by the backend with an HTTP 400 even though the CLI still accepts the flag, so gosling only offers what the catalog currently serves. To use a model outside this list, run `codex -m <model_name>` directly or configure it in Codex's `config.toml`. See the [Codex CLI documentation](https://developers.openai.com/codex/cli) for details.
 :::
 
 **Permission Modes (`GOSLING_MODE`):**

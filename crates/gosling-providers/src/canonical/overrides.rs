@@ -78,6 +78,40 @@ const ANTHROPIC_CONTRACTS: &[AnthropicContract] = &[
     },
 ];
 
+fn pending_openai_models() -> Vec<(&'static str, CanonicalModel)> {
+    vec![(
+        "gpt-6-astra",
+        CanonicalModel {
+            id: "openai/gpt-6-astra".to_string(),
+            name: "GPT-6 Astra".to_string(),
+            family: Some("gpt".to_string()),
+            attachment: Some(true),
+            reasoning: Some(true),
+            thinking_mode: None,
+            tool_call: true,
+            temperature: Some(false),
+            knowledge: Some("2026-04-30".to_string()),
+            release_date: Some("2026-09-04".to_string()),
+            last_updated: Some("2026-09-04".to_string()),
+            modalities: Modalities {
+                input: vec![Modality::Text, Modality::Image],
+                output: vec![Modality::Text],
+            },
+            open_weights: Some(false),
+            cost: Pricing {
+                input: Some(10.0),
+                output: Some(50.0),
+                cache_read: Some(1.0),
+                cache_write: Some(12.5),
+            },
+            limit: Limit {
+                context: 1_050_000,
+                output: Some(128_000),
+            },
+        },
+    )]
+}
+
 /// Models Anthropic ships that the upstream catalog snapshot may not carry yet.
 /// Registered only when absent, so a refreshed snapshot always wins; the
 /// contract loop below then applies the curated limits and thinking mode.
@@ -125,6 +159,12 @@ fn frontier_opus(id: &str, name: &str, knowledge: &str, release_date: &str) -> C
 }
 
 pub fn apply_curated_model_contracts(registry: &mut CanonicalModelRegistry) {
+    for (model_name, model) in pending_openai_models() {
+        if registry.get("openai", model_name).is_none() {
+            registry.register("openai", model_name, model);
+        }
+    }
+
     for (model_name, model) in pending_anthropic_models() {
         if registry.get("anthropic", model_name).is_none() {
             registry.register("anthropic", model_name, model);
@@ -277,6 +317,13 @@ mod tests {
     fn registers_models_the_upstream_snapshot_has_not_published() {
         let mut registry = CanonicalModelRegistry::new();
         apply_curated_model_contracts(&mut registry);
+
+        let astra = registry.get_active("openai", "gpt-6-astra").unwrap();
+        assert_eq!(astra.limit.context, 1_050_000);
+        assert_eq!(astra.limit.output, Some(128_000));
+        assert_eq!(astra.cost.input, Some(10.0));
+        assert_eq!(astra.cost.output, Some(50.0));
+        assert_eq!(astra.reasoning, Some(true));
 
         let opus_5 = registry.get_active("anthropic", "claude-opus-5").unwrap();
         assert_eq!(opus_5.limit.context, 1_000_000);

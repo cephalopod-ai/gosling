@@ -1771,14 +1771,15 @@ pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
 /// True when the model should use the OpenAI Responses API.
 ///
 /// The Responses API is backwards-compatible with all OpenAI reasoning
-/// models, so every `o`-series (`o1`, `o3`, `o4`, …) and `gpt-5` variant
-/// routes here. The matcher intentionally scans the full model identifier so
-/// hosted aliases like `databricks-gpt-5.4`, `gosling-o3-mini`, or
+/// models, so every `o`-series (`o1`, `o3`, `o4`, …), `gpt-5` variant, and
+/// `gpt-6` variant routes here. The matcher intentionally scans the full model
+/// identifier so hosted aliases like `databricks-gpt-5.4`, `gosling-o3-mini`, or
 /// `headless-gosling-o3-mini` work without provider-specific normalization.
 pub fn is_openai_responses_model(model_name: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re =
-        RE.get_or_init(|| Regex::new(r"(?i)(?:^|[-/])(?:o\d+(?:$|-)|gpt-5(?:$|[-.]))").unwrap());
+    let re = RE.get_or_init(|| {
+        Regex::new(r"(?i)(?:^|[-/])(?:o\d+(?:$|-)|gpt-(?:5|6)(?:$|[-.]))").unwrap()
+    });
     re.is_match(model_name)
 }
 
@@ -1787,7 +1788,14 @@ pub fn openai_reasoning_effort_for_thinking(
     effort: ThinkingEffort,
 ) -> Option<String> {
     if effort == ThinkingEffort::Off {
-        return Some("none".to_string());
+        return Some(
+            if model_name.to_ascii_lowercase().contains("gpt-6") {
+                "low"
+            } else {
+                "none"
+            }
+            .to_string(),
+        );
     }
 
     let supported = openai_reasoning_efforts_for_model(model_name);
@@ -1809,7 +1817,9 @@ pub fn openai_reasoning_effort_for_thinking(
 fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [&'static str] {
     let normalized = model_name.to_ascii_lowercase();
 
-    if normalized.contains("gpt-5") {
+    if normalized.contains("gpt-6") {
+        &["low", "medium", "high", "xhigh", "max"]
+    } else if normalized.contains("gpt-5") {
         if normalized.contains("-pro") || normalized.contains("/pro") {
             &["high"]
         } else if normalized.contains("gpt-5.6") || normalized.contains("gpt-5-6") {
@@ -3121,7 +3131,9 @@ mod tests {
 
     #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("ultra"); "sol supports ultra")]
     #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("max"); "luna falls back to max")]
-    fn test_gpt56_ultra_uses_supported_level(
+    #[test_case("gpt-6-astra", ThinkingEffort::Off, Some("low"); "astra raises off to its minimum")]
+    #[test_case("gpt-6-astra", ThinkingEffort::Ultra, Some("max"); "astra lowers ultra to its maximum")]
+    fn test_reasoning_effort_uses_supported_level(
         model: &str,
         effort: ThinkingEffort,
         expected: Option<&str>,
@@ -4601,7 +4613,7 @@ data: [DONE]"#;
     }
 
     #[test]
-    fn test_is_openai_responses_model_matches_o_and_gpt5_families() {
+    fn test_is_openai_responses_model_matches_reasoning_families() {
         for model in [
             "o3",
             "o3-mini",
@@ -4612,6 +4624,9 @@ data: [DONE]"#;
             "gpt-5.4-mini",
             "gpt-5-4",
             "gpt-5-2-pro",
+            "gpt-6-astra",
+            "openai/gpt-6-astra",
+            "databricks-gpt-6-astra-high",
             "databricks-gpt-5.4",
             "gosling-gpt-5.4-high",
             "headless-gosling-o3-mini",
@@ -4641,6 +4656,7 @@ data: [DONE]"#;
             ("o3-none", "o3", Some("none")),
             ("o3-xhigh", "o3", Some("xhigh")),
             ("gpt-5.6-sol-ultra", "gpt-5.6-sol", Some("ultra")),
+            ("gpt-6-astra-max", "gpt-6-astra", Some("max")),
             ("gpt-5-low", "gpt-5", Some("low")),
             ("gpt-5.4", "gpt-5.4", None),
             (

@@ -247,7 +247,7 @@ See [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) 
 
 **Known Models:**
 
-Model selection belongs to the Codex CLI, so gosling passes `current` and the adapter uses whatever `~/.codex/config.toml` selects. Run `codex` to change it. The catalog a ChatGPT account currently serves is `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, and `gpt-5.3-codex-spark`.
+Model selection belongs to the Codex CLI, so gosling passes `current` and the adapter uses whatever `~/.codex/config.toml` selects. Run `codex` to change it. The current catalog includes `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, and `gpt-5.3-codex-spark`; Astra appears when the account has rollout access.
 
 **Permission Modes (`GOSLING_MODE`):**
 

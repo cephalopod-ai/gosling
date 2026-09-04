@@ -65,6 +65,10 @@ pub struct ChatGptCodexModelAttrs {
 // returns HTTP 400 invalid_value if sent "ultra" literally.
 pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     ChatGptCodexModelAttrs {
+        name: "gpt-6-astra",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
         name: "gpt-5.6-sol",
         reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
@@ -124,6 +128,7 @@ fn uses_responses_lite(model_name: &str) -> bool {
 
 pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
     match model_name {
+        "gpt-6-astra" => Some(997_500),
         "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4"
         | "gpt-5.4-mini" => Some(258_400),
         "gpt-5.3-codex-spark" => Some(121_600),
@@ -1172,7 +1177,7 @@ impl gosling_providers::base::ProviderDescriptor for ChatGptCodexProvider {
         ProviderMetadata::with_models(
             CHATGPT_CODEX_PROVIDER_NAME,
             "ChatGPT Codex",
-            "Use your ChatGPT Plus/Pro subscription for GPT-5 Codex models via OAuth",
+            "Use your ChatGPT Plus/Pro subscription for OpenAI models via OAuth",
             CHATGPT_CODEX_DEFAULT_MODEL,
             models,
             CHATGPT_CODEX_DOC_URL,
@@ -1694,6 +1699,11 @@ mod tests {
     }
 
     #[test_case(
+        "gpt-6-astra",
+        &["low", "medium", "high", "xhigh", "max"];
+        "gpt-6-astra keeps max as its ceiling"
+    )]
+    #[test_case(
         "gpt-5.6-sol",
         &["low", "medium", "high", "xhigh", "max"];
         "gpt-5.6-sol keeps max as its ceiling (backend rejects ultra over HTTP)"
@@ -1713,6 +1723,7 @@ mod tests {
         assert_eq!(reasoning_levels_for_model(model), expected);
     }
 
+    #[test_case("gpt-6-astra", false, Some(997_500); "gpt 6 astra")]
     #[test_case("gpt-5.6-luna", true, Some(258_400); "gpt 5.6 luna")]
     #[test_case("gpt-5.4-mini", false, Some(258_400); "gpt 5.4 mini")]
     #[test_case("gpt-5.3-codex-spark", false, Some(121_600); "gpt 5.3 codex spark")]
@@ -1765,6 +1776,7 @@ mod tests {
         }
     }
 
+    #[test_case("gpt-6-astra", ThinkingEffort::Ultra, Some("max"); "astra falls back to max")]
     #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("max"); "sol falls back to max (backend rejects ultra over HTTP)")]
     #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("xhigh"); "luna falls back to xhigh")]
     #[test_case("gpt-5.5", ThinkingEffort::Ultra, Some("xhigh"); "older models fall back to xhigh")]
