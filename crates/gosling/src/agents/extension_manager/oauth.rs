@@ -44,6 +44,29 @@ pub(super) fn should_attempt_oauth_fallback(
     res.as_ref().err().is_some_and(is_oauth_auth_failure)
 }
 
+/// An extension configured with its own `Authorization` header authenticates
+/// with a static credential rather than delegating to OAuth, so a 401 there is
+/// a credential problem no browser authorization flow can resolve.
+pub(super) fn has_static_authorization_header(headers: &HashMap<String, String>) -> bool {
+    headers
+        .keys()
+        .any(|key| key.eq_ignore_ascii_case("authorization"))
+}
+
+/// A server cannot distinguish an absent header from an empty or wrong one — all
+/// three come back as the same 401 — so the message names every cause rather
+/// than guessing at one.
+fn static_credential_rejected(name: &str) -> ExtensionError {
+    ExtensionError::ConfigError(format!(
+        "extension '{name}' was rejected by the server (HTTP 401) with the Authorization \
+         header it is configured to send. Check that the credential is set and current. \
+         An environment variable referenced by the header that is unset in this process \
+         expands to an empty value, which the server rejects exactly as it rejects a wrong \
+         one. Not starting a browser OAuth flow, because this extension authenticates with \
+         a static header."
+    ))
+}
+
 pub(super) async fn clear_credentials_on_post_refresh_auth_failure(
     credential_store: &dyn CredentialStore,
     name: &str,
@@ -241,6 +264,9 @@ pub(super) async fn create_streamable_http_client(
     .await;
 
     if should_attempt_oauth_fallback(&client_res) {
+        if has_static_authorization_header(headers) {
+            return Err(static_credential_rejected(name));
+        }
         match oauth_flow(
             &uri.to_string(),
             &name.to_string(),
@@ -343,4 +369,64 @@ async fn create_unix_socket_http_client(
         );
     }
     Ok(Box::new(client_res?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_configured_authorization_header_is_detected_whatever_its_casing() {
+        assert!(has_static_authorization_header(&headers(&[(
+            "Authorization",
+            "Bearer t"
+        )])));
+        assert!(has_static_authorization_header(&headers(&[(
+            "authorization",
+            "Bearer t"
+        )])));
+        assert!(has_static_authorization_header(&headers(&[(
+            "AUTHORIZATION",
+            "Bearer t"
+        )])));
+    }
+
+    #[test]
+    fn other_headers_still_leave_oauth_available() {
+        assert!(!has_static_authorization_header(&headers(&[])));
+        assert!(!has_static_authorization_header(&headers(&[(
+            "X-Api-Key",
+            "k"
+        )])));
+    }
+
+    /// An unexpanded `${VAR}` reaching the server is the failure this guard was
+    /// written for, and it is still a configured header.
+    #[test]
+    fn an_unexpanded_placeholder_still_counts_as_a_static_credential() {
+        assert!(has_static_authorization_header(&headers(&[(
+            "Authorization",
+            "Bearer ${MUNINN_MCP_BEARER_TOKEN}"
+        )])));
+        assert!(has_static_authorization_header(&headers(&[(
+            "Authorization",
+            "Bearer "
+        )])));
+    }
+
+    #[test]
+    fn the_rejection_message_names_the_extension_and_rules_out_oauth() {
+        let rendered = static_credential_rejected("muninn").to_string();
+        assert!(rendered.contains("muninn"));
+        assert!(rendered.contains("HTTP 401"));
+        assert!(rendered.contains("unset"));
+        assert!(rendered.contains("Not starting a browser OAuth flow"));
+    }
 }
