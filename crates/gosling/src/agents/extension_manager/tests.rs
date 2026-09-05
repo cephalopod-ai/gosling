@@ -797,6 +797,27 @@ async fn test_substitute_env_vars_no_recursive_expansion() {
     assert_eq!(result, "abc$KEY");
 }
 
+#[test]
+fn test_substitute_env_vars_mixed_references_preserve_literal_values() {
+    let env_map = HashMap::from([
+        ("TOKEN".to_string(), "abc$KEY/${KEY}".to_string()),
+        ("KEY".to_string(), "xyz".to_string()),
+        ("KEY_SUFFIX".to_string(), "long-key".to_string()),
+    ]);
+
+    for (input, expected) in [
+        ("${KEY}/$KEY", "xyz/xyz"),
+        ("$KEY/$KEY_SUFFIX", "xyz/long-key"),
+        ("${TOKEN}/$KEY", "abc$KEY/${KEY}/xyz"),
+        ("$TOKEN/${KEY}", "abc$KEY/${KEY}/xyz"),
+        ("${TOKEN}/${KEY}", "abc$KEY/${KEY}/xyz"),
+        ("$TOKEN/$KEY", "abc$KEY/${KEY}/xyz"),
+        ("$KEY/$UNKNOWN", "xyz/$UNKNOWN"),
+    ] {
+        assert_eq!(substitute_env_vars(input, &env_map), expected, "{input}");
+    }
+}
+
 #[tokio::test]
 async fn test_tools_cache_invalidated_on_add_extension() {
     let temp_dir = tempfile::tempdir().unwrap();

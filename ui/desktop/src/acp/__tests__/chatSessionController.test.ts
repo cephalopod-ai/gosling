@@ -232,6 +232,10 @@ describe('acpChatSessionController.stop', () => {
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(
       snapshotWithActivePrompt('attempt-1')
     );
+    vi.mocked(acpChatSessionActions.startPromptCancellation).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      pendingCancelPromptAttemptId: 'attempt-1',
+    });
 
     acpChatSessionController.stop(SESSION_ID);
 

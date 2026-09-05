@@ -92,6 +92,16 @@ function assertNoPendingPromptCancellation(sessionId: string): void {
   }
 }
 
+function finishPromptCancellation(sessionId: string, promptAttemptId: string): boolean {
+  if (
+    acpChatSessionStore.getSnapshot(sessionId)?.pendingCancelPromptAttemptId === promptAttemptId
+  ) {
+    cancelAcpPermissionRequestsForSession(sessionId);
+    cancelAcpElicitationRequestsForSession(sessionId);
+  }
+  return acpChatSessionActions.clearPromptCancellation(sessionId, promptAttemptId) !== undefined;
+}
+
 async function forkSessionWithEditedMessage(
   sessionId: string,
   message: Message,
@@ -137,14 +147,37 @@ async function createSession(
   return session;
 }
 
+const inFlightSessionLoads = new Map<string, Promise<boolean>>();
+const preparingPromptAttempts = new Set<string>();
+
 async function loadSession(
   sessionId: string,
   options: AcpLoadSessionOptions = {}
 ): Promise<boolean> {
+  let load = inFlightSessionLoads.get(sessionId);
+  if (!load) {
+    load = loadSessionSnapshot(sessionId, options.force ?? false);
+    inFlightSessionLoads.set(sessionId, load);
+  }
+
+  try {
+    const loaded = await load;
+    if (loaded) {
+      options.onSessionLoaded?.();
+    }
+    return loaded;
+  } finally {
+    if (inFlightSessionLoads.get(sessionId) === load) {
+      inFlightSessionLoads.delete(sessionId);
+    }
+  }
+}
+
+async function loadSessionSnapshot(sessionId: string, force: boolean): Promise<boolean> {
   const cached = acpChatSessionStore.getSnapshot(sessionId);
   const connectionGeneration = getAcpConnectionGeneration();
   if (
-    !options.force &&
+    !force &&
     cached?.session &&
     connectionGeneration !== null &&
     cached.connectionGeneration === connectionGeneration
@@ -152,7 +185,6 @@ async function loadSession(
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
-    options.onSessionLoaded?.();
     return true;
   }
 
@@ -198,7 +230,6 @@ async function loadSession(
         totalCount: meta.historyLoad.totalCount ?? null,
       });
     }
-    options.onSessionLoaded?.();
     return true;
   } catch (error) {
     console.error('Failed to load ACP session:', error);
@@ -260,19 +291,24 @@ async function submitMessage(
   }
 
   const promptAttemptId = uuidv7();
+  preparingPromptAttempts.add(promptAttemptId);
   acpChatSessionActions.startPromptAttempt(sessionId, promptAttemptId);
-  await window.electron.setWakelockActive(sessionId, true).catch(() => false);
 
   try {
+    await window.electron.setWakelockActive(sessionId, true).catch(() => false);
+    preparingPromptAttempts.delete(promptAttemptId);
+    if (finishPromptCancellation(sessionId, promptAttemptId)) {
+      return;
+    }
     await acpPromptSession(sessionId, userMessage);
-    if (acpChatSessionActions.clearPromptCancellation(sessionId, promptAttemptId)) {
+    if (finishPromptCancellation(sessionId, promptAttemptId)) {
       return;
     }
     if (acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId)) {
       void options.onFinish();
     }
   } catch (error) {
-    if (acpChatSessionActions.clearPromptCancellation(sessionId, promptAttemptId)) {
+    if (finishPromptCancellation(sessionId, promptAttemptId)) {
       return;
     }
 
@@ -304,7 +340,11 @@ async function submitMessage(
       void options.onFinish(submitError.message);
     }
   } finally {
-    await window.electron.setWakelockActive(sessionId, false).catch(() => false);
+    preparingPromptAttempts.delete(promptAttemptId);
+    const current = acpChatSessionStore.getSnapshot(sessionId);
+    if (!current?.activePromptAttemptId && !current?.pendingCancelPromptAttemptId) {
+      await window.electron.setWakelockActive(sessionId, false).catch(() => false);
+    }
   }
 }
 
@@ -313,12 +353,26 @@ function stop(sessionId: string): void {
   const hasStoredAcpPrompt = storedPromptAttemptId !== null && storedPromptAttemptId !== undefined;
 
   if (hasStoredAcpPrompt) {
-    acpChatSessionActions.startPromptCancellation(sessionId, storedPromptAttemptId);
-    cancelAcpPermissionRequestsForSession(sessionId);
-    cancelAcpElicitationRequestsForSession(sessionId);
-    acpCancelPrompt(sessionId).catch((error) => {
-      console.warn('Failed to cancel ACP prompt:', error);
-    });
+    if (!acpChatSessionActions.startPromptCancellation(sessionId, storedPromptAttemptId)) {
+      return;
+    }
+    if (preparingPromptAttempts.has(storedPromptAttemptId)) {
+      return;
+    }
+    acpCancelPrompt(sessionId)
+      .then(() => {
+        if (
+          acpChatSessionStore.getSnapshot(sessionId)?.pendingCancelPromptAttemptId ===
+          storedPromptAttemptId
+        ) {
+          cancelAcpPermissionRequestsForSession(sessionId);
+          cancelAcpElicitationRequestsForSession(sessionId);
+        }
+      })
+      .catch((error) => {
+        console.warn('Failed to cancel ACP prompt:', error);
+        acpChatSessionActions.restorePromptCancellation(sessionId, storedPromptAttemptId);
+      });
     return;
   }
 

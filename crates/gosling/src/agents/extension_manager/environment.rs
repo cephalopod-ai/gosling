@@ -4,11 +4,10 @@
 
 use super::*;
 
-static RE_ENV_BRACES: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}").expect("valid regex"));
-
-static RE_ENV_SIMPLE: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
+static RE_ENV_REFERENCE: Lazy<regex::Regex> = Lazy::new(|| {
+    regex::Regex::new(r"\$(?:\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}|([A-Za-z_][A-Za-z0-9_]*))")
+        .expect("valid regex")
+});
 
 /// An OS keychain item holding a secret that some other program owns.
 ///
@@ -221,29 +220,15 @@ pub(crate) async fn merge_environments(
 
 /// Substitute environment variables in a string. Supports both ${VAR} and $VAR syntax.
 pub(crate) fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>) -> String {
-    let mut result = value.to_string();
-
-    for cap in RE_ENV_BRACES.captures_iter(value) {
-        if let Some(var_name) = cap.get(1) {
-            if let Some(env_value) = env_map.get(var_name.as_str()) {
-                result = result.replace(&cap[0], env_value);
-            }
-        }
-    }
-
-    // Scan the original input for $VAR patterns (not the post-substitution result)
-    // to avoid recursive expansion when a substituted value contains $OTHER_VAR.
-    for cap in RE_ENV_SIMPLE.captures_iter(value) {
-        if let Some(var_name) = cap.get(1) {
-            if !value.contains(&format!("${{{}}}", var_name.as_str())) {
-                if let Some(env_value) = env_map.get(var_name.as_str()) {
-                    result = result.replace(&cap[0], env_value);
-                }
-            }
-        }
-    }
-
-    result
+    RE_ENV_REFERENCE
+        .replace_all(value, |cap: &regex::Captures<'_>| {
+            cap.get(1)
+                .or_else(|| cap.get(2))
+                .and_then(|name| env_map.get(name.as_str()))
+                .cloned()
+                .unwrap_or_else(|| cap[0].to_string())
+        })
+        .into_owned()
 }
 
 #[allow(clippy::result_large_err)]
