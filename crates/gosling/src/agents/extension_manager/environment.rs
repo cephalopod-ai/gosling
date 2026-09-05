@@ -74,11 +74,35 @@ fn read_keychain_secret(_source: &KeychainSecretSource) -> Result<String, String
 }
 
 fn declared_secret_source(config: &Config, key: &str) -> Option<KeychainSecretSource> {
-    // A malformed or absent `secret_sources` block must not break extensions
-    // that never asked for one, so a parse failure is "nothing declared".
-    let sources: HashMap<String, KeychainSecretSource> =
-        config.get_param(SECRET_SOURCES_KEY).ok()?;
-    sources.get(key).cloned()
+    // An absent block is the ordinary case and means nothing is declared, so it
+    // is not worth a warning. A block that exists but is not a mapping is a
+    // mistake worth naming.
+    let block: Value = config.get_param(SECRET_SOURCES_KEY).ok()?;
+    let Some(entries) = block.as_object() else {
+        warn!(
+            key = %SECRET_SOURCES_KEY,
+            "Config value is not a mapping of secret name to source; ignoring it."
+        );
+        return None;
+    };
+
+    let entry = entries.get(key)?;
+
+    // Deserialize one entry at a time. Parsing the whole block at once would let
+    // a typo in an unrelated entry silently disable every declared source --
+    // the same quiet loss of a credential that `secret_sources` exists to
+    // prevent, and equally invisible at the point of use.
+    match serde_json::from_value::<KeychainSecretSource>(entry.clone()) {
+        Ok(source) => Some(source),
+        Err(err) => {
+            warn!(
+                key = %key,
+                error = %err,
+                "Malformed secret_sources entry; ignoring it."
+            );
+            None
+        }
+    }
 }
 
 /// Resolve `key` from a declared external keychain item.
@@ -319,6 +343,40 @@ secret_sources:
         let source = declared_secret_source(&config, "SOME_TOKEN").expect("source declared");
         assert_eq!(source.keychain_account, None);
         assert_eq!(source.describe(), "'com.example.token'");
+    }
+
+    /// A typo in one entry must not take the others down with it. Parsing the
+    /// whole block at once did exactly that, and silently.
+    #[test]
+    fn a_malformed_entry_does_not_disable_its_siblings() {
+        let (_dir, config) = config_with(
+            "\
+secret_sources:
+  BROKEN_TOKEN:
+    keychain_servce: typo.in.the.field.name
+  MUNINN_MCP_BEARER_TOKEN:
+    keychain_service: ai.muninn.mcp
+    keychain_account: alice
+",
+        );
+        assert!(
+            declared_secret_source(&config, "BROKEN_TOKEN").is_none(),
+            "the malformed entry itself declares nothing"
+        );
+        let source = declared_secret_source(&config, "MUNINN_MCP_BEARER_TOKEN")
+            .expect("a well-formed sibling still resolves");
+        assert_eq!(source.keychain_service, "ai.muninn.mcp");
+    }
+
+    #[test]
+    fn an_entry_of_the_wrong_shape_declares_nothing() {
+        let (_dir, config) = config_with(
+            "\
+secret_sources:
+  MUNINN_MCP_BEARER_TOKEN: ai.muninn.mcp
+",
+        );
+        assert!(declared_secret_source(&config, "MUNINN_MCP_BEARER_TOKEN").is_none());
     }
 
     #[test]
