@@ -1,6 +1,7 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::get_tool_owner;
 use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -88,6 +89,10 @@ impl CodeExecutionClient {
 
         let mut cfgs = vec![];
         for tool in tools {
+            if !is_tool_visible_to_model(&tool) {
+                continue;
+            }
+
             let (name, namespace) = if let Some((prefix, tool_name)) = tool.name.split_once("__") {
                 (tool_name.to_string(), Some(prefix.to_string()))
             } else if let Some(owner) = get_tool_owner(&tool) {
@@ -101,7 +106,7 @@ impl CodeExecutionClient {
                 namespace,
                 description: tool.description.as_ref().map(|d| d.to_string()),
                 input_schema: Some(json!(tool.input_schema)),
-                output_schema: tool.output_schema.as_ref().map(|s| json!(s)),
+                output_schema: None,
             })
         }
         Some(cfgs)
@@ -355,36 +360,35 @@ fn create_tool_callback(
                 .await
             {
                 Ok(dispatch_result) => match dispatch_result.result.await {
-                    Ok(result) => {
-                        if let Some(sc) = &result.structured_content {
-                            Ok(serde_json::to_value(sc).unwrap_or(Value::Null))
-                        } else {
-                            // Filter to assistant-audience or no-audience content,
-                            // skipping user-only content to avoid duplicated output
-                            let text: String = result
-                                .content
-                                .iter()
-                                .filter(|c| {
-                                    c.audience().is_none_or(|audiences| {
-                                        audiences.is_empty() || audiences.contains(&Role::Assistant)
-                                    })
-                                })
-                                .filter_map(|c| match &c.raw {
-                                    RawContent::Text(t) => Some(t.text.clone()),
-                                    _ => None,
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            // Try to parse as JSON, otherwise return as string
-                            Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
-                        }
-                    }
+                    Ok(result) => Ok(callback_result_to_value(&result)),
                     Err(e) => Err(format!("Tool error: {}", e.message)),
                 },
                 Err(e) => Err(format!("Dispatch error: {e}")),
             }
         }) as Pin<Box<dyn Future<Output = Result<Value, String>> + Send>>
     })
+}
+
+// Code Mode hands this value straight back to generated code the model authored, so only
+// assistant-audience text is eligible. structured_content carries no audience annotations and
+// would bypass the filter, so it is deliberately not consulted here.
+fn callback_result_to_value(result: &CallToolResult) -> Value {
+    let text = result
+        .content
+        .iter()
+        .filter(|c| {
+            c.audience().is_none_or(|audiences| {
+                audiences.is_empty() || audiences.contains(&Role::Assistant)
+            })
+        })
+        .filter_map(|c| match &c.raw {
+            RawContent::Text(t) => Some(t.text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    serde_json::from_str(&text).unwrap_or(Value::String(text))
 }
 
 #[async_trait]

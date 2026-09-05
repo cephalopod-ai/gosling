@@ -480,6 +480,10 @@ pub fn is_otlp_initialized() -> bool {
 /// - Events from specific modules related to telemetry
 fn create_otlp_tracing_filter() -> FilterFn<impl Fn(&Metadata<'_>) -> bool> {
     FilterFn::new(|metadata: &Metadata<'_>| {
+        if is_otlp_suppressed_target(metadata.target()) {
+            return false;
+        }
+
         if metadata.level() <= &Level::INFO {
             return true;
         }
@@ -545,27 +549,35 @@ fn otel_logs_level() -> Level {
         .unwrap_or(Level::INFO)
 }
 
-/// Targets suppressed from OTLP log export.
+/// Targets suppressed from OTLP trace and log export.
 ///
 /// `rmcp::service` logs the full `InitializeResult` (including extension instructions
 /// and user memory content) as a `peer_info` attribute on every MCP handshake.
 /// This can be 400KB+ per session init and contains PII/sensitive data.
-/// These logs have no analytical value in OTLP — suppress them entirely.
-const OTLP_LOGS_SUPPRESSED_TARGETS: &[&str] = &["rmcp::service"];
+/// These events have no analytical value in OTLP — suppress them entirely.
+const OTLP_SUPPRESSED_TARGETS: &[&str] = &["rmcp::service"];
+
+/// Matches on module boundaries so `rmcp::services` and `rmcp::service_worker` are not
+/// swept up by a bare prefix comparison.
+fn is_otlp_suppressed_target(target: &str) -> bool {
+    OTLP_SUPPRESSED_TARGETS.iter().any(|suppressed| {
+        target == *suppressed
+            || target
+                .strip_prefix(suppressed)
+                .is_some_and(|suffix| suffix.starts_with("::"))
+    })
+}
 
 /// Creates a custom filter for OTLP logs.
 /// Level is resolved via RUST_LOG → OTEL_LOG_LEVEL → default INFO.
-/// Suppresses targets listed in `OTLP_LOGS_SUPPRESSED_TARGETS`.
+/// Suppresses targets listed in `OTLP_SUPPRESSED_TARGETS`.
 fn create_otlp_logs_filter() -> FilterFn<impl Fn(&Metadata<'_>) -> bool> {
     let min_level = otel_logs_level();
     FilterFn::new(move |metadata: &Metadata<'_>| {
         if metadata.level() > &min_level {
             return false;
         }
-        let target = metadata.target();
-        !OTLP_LOGS_SUPPRESSED_TARGETS
-            .iter()
-            .any(|suppressed| target.starts_with(suppressed))
+        !is_otlp_suppressed_target(metadata.target())
     })
 }
 
@@ -626,6 +638,14 @@ mod tests {
     use gosling_test_support::otel::clear_otel_env;
     use opentelemetry_sdk::metrics::Temporality;
     use test_case::test_case;
+
+    #[test_case("rmcp::service", true; "exact target")]
+    #[test_case("rmcp::service::client", true; "module descendant")]
+    #[test_case("rmcp::services", false; "plural neighbor")]
+    #[test_case("rmcp::service_worker", false; "underscore neighbor")]
+    fn otlp_suppressed_target_boundaries(target: &str, expected: bool) {
+        assert_eq!(is_otlp_suppressed_target(target), expected);
+    }
 
     #[test]
     fn exporter_type_from_env_value() {

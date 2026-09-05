@@ -13,6 +13,12 @@ import { useWorkspace } from '../contexts/WorkspaceContext';
 
 const MAX_RECENT_SESSIONS = 25;
 
+// Session ids reach us from the ACP server and can carry characters that are meaningful in a
+// query string, so they are encoded rather than interpolated.
+export function pairSessionPath(sessionId: string): string {
+  return `/pair?resumeSessionId=${encodeURIComponent(sessionId)}`;
+}
+
 export function createWorkspaceSessionFilter(workspaceId: string | null) {
   return workspaceId ? { workspaceId } : undefined;
 }
@@ -50,10 +56,10 @@ function mergeWithEmptyLocals(
       matchesWorkspaceSessionFilter(local, workspaceId) &&
       !listed.some((s) => s.id === local.id)
   );
-  return [
-    ...emptyLocals,
-    ...filterSessionsForWorkspace(listed, workspaceId),
-  ].slice(0, MAX_RECENT_SESSIONS);
+  return [...emptyLocals, ...filterSessionsForWorkspace(listed, workspaceId)].slice(
+    0,
+    MAX_RECENT_SESSIONS
+  );
 }
 
 export function activeSessionsOnly(sessions: SessionListItem[]): SessionListItem[] {
@@ -166,9 +172,7 @@ export function useNavigationSessions() {
           const listed = activeSessionsOnly(
             await acpListRecentSessions(MAX_RECENT_SESSIONS, 'active', sessionFilter)
           );
-          setRecentSessions((prev) =>
-            mergeWithEmptyLocals(prev, listed, sessionWorkspaceFilterId)
-          );
+          setRecentSessions((prev) => mergeWithEmptyLocals(prev, listed, sessionWorkspaceFilterId));
         } catch (error) {
           console.error('Failed to poll sessions:', error);
         }
@@ -269,7 +273,7 @@ export function useNavigationSessions() {
         const sessionId =
           currentSessionId || lastSessionIdRef.current || chatContext?.chat?.sessionId;
         if (sessionId && sessionId.length > 0) {
-          navigate(`/pair?resumeSessionId=${sessionId}`);
+          navigate(pairSessionPath(sessionId));
         } else {
           navigate('/');
         }
@@ -282,7 +286,7 @@ export function useNavigationSessions() {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
-      navigate(`/pair?resumeSessionId=${sessionId}`);
+      navigate(pairSessionPath(sessionId));
     },
     [navigate]
   );

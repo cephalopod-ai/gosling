@@ -176,17 +176,30 @@ impl AdcCredentials {
         env_ops: &impl EnvOps,
         metadata_base_url: &str,
     ) -> Result<Self, AuthError> {
-        // Try GOOGLE_APPLICATION_CREDENTIALS first
-        if let Ok(cred_path) = Self::get_env_credentials_path(env_ops) {
-            if let Ok(creds) = Self::load_from_file(fs_ops, &cred_path).await {
-                return Ok(creds);
+        // An explicitly configured credential file is authoritative: if it is unreadable or
+        // malformed, fail rather than silently falling through to the metadata server.
+        match env_ops.get_var("GOOGLE_APPLICATION_CREDENTIALS") {
+            Ok(cred_path) => return Self::load_from_file(fs_ops, &cred_path).await,
+            Err(env::VarError::NotPresent) => {}
+            Err(error) => {
+                return Err(AuthError::Credentials(format!(
+                    "Failed to read GOOGLE_APPLICATION_CREDENTIALS: {}",
+                    error
+                )));
             }
         }
 
-        // Try default gcloud credentials path
+        // The default gcloud path is only skipped when it is genuinely absent.
         if let Ok(cred_path) = Self::get_default_credentials_path(env_ops) {
-            if let Ok(creds) = Self::load_from_file(fs_ops, &cred_path).await {
-                return Ok(creds);
+            match fs_ops.read_to_string(cred_path.clone()).await {
+                Ok(content) => return Self::parse_file_contents(&content),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(AuthError::Credentials(format!(
+                        "Failed to read credentials from {}: {}",
+                        cred_path, error
+                    )));
+                }
             }
         }
 
@@ -205,16 +218,12 @@ impl AdcCredentials {
             AuthError::Credentials(format!("Failed to read credentials from {}: {}", path, e))
         })?;
 
-        serde_json::from_str(&content)
-            .map_err(|e| AuthError::Credentials(format!("Invalid credentials format: {}", e)))
+        Self::parse_file_contents(&content)
     }
 
-    fn get_env_credentials_path(env_ops: &impl EnvOps) -> Result<String, AuthError> {
-        env_ops
-            .get_var("GOOGLE_APPLICATION_CREDENTIALS")
-            .map_err(|_| {
-                AuthError::Credentials("GOOGLE_APPLICATION_CREDENTIALS not set".to_string())
-            })
+    fn parse_file_contents(content: &str) -> Result<Self, AuthError> {
+        serde_json::from_str(content)
+            .map_err(|e| AuthError::Credentials(format!("Invalid credentials format: {}", e)))
     }
 
     fn get_default_credentials_path(env_ops: &impl EnvOps) -> Result<String, AuthError> {
@@ -1068,11 +1077,20 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         }
     }
 
+    fn default_credentials_path(home: &str) -> String {
+        if cfg!(windows) {
+            format!("{home}/gcloud/application_default_credentials.json")
+        } else {
+            format!("{home}/.config/gcloud/application_default_credentials.json")
+        }
+    }
+
     #[tokio::test]
     async fn test_invalid_credentials_file() {
         let mut context = TestContext::new();
 
-        // Mock GOOGLE_APPLICATION_CREDENTIALS environment variable
+        // An explicitly configured credential file that parses as garbage is a hard failure:
+        // resolution must not continue on to the default path or the metadata server.
         context
             .env_mock
             .expect_get_var()
@@ -1080,7 +1098,6 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             .times(1)
             .return_once(|_| Ok("/path/to/credentials.json".to_string()));
 
-        // Mock filesystem read for the invalid credentials file
         context
             .fs_mock
             .expect_read_to_string()
@@ -1088,7 +1105,60 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             .times(1)
             .return_once(|_| Ok("invalid json".to_string()));
 
-        // Mock HOME/APPDATA environment variable
+        let result = AdcCredentials::load_impl(
+            &context.fs_mock,
+            &context.env_mock,
+            "http://metadata.example.com",
+        )
+        .await;
+
+        assert!(matches!(result, Err(AuthError::Credentials(_))));
+    }
+
+    #[tokio::test]
+    async fn test_unreadable_env_credentials_file_does_not_fall_through() {
+        let mut context = TestContext::new();
+
+        context
+            .env_mock
+            .expect_get_var()
+            .with(eq("GOOGLE_APPLICATION_CREDENTIALS"))
+            .times(1)
+            .return_once(|_| Ok("/path/to/credentials.json".to_string()));
+
+        context
+            .fs_mock
+            .expect_read_to_string()
+            .with(eq("/path/to/credentials.json".to_string()))
+            .times(1)
+            .return_once(|_| {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "permission denied",
+                ))
+            });
+
+        let result = AdcCredentials::load_impl(
+            &context.fs_mock,
+            &context.env_mock,
+            "http://metadata.example.com",
+        )
+        .await;
+
+        assert!(matches!(result, Err(AuthError::Credentials(_))));
+    }
+
+    #[tokio::test]
+    async fn test_unreadable_default_credentials_file_does_not_fall_through() {
+        let mut context = TestContext::new();
+
+        context
+            .env_mock
+            .expect_get_var()
+            .with(eq("GOOGLE_APPLICATION_CREDENTIALS"))
+            .times(1)
+            .return_once(|_| Err(env::VarError::NotPresent));
+
         let home_var = if cfg!(windows) { "APPDATA" } else { "HOME" };
         context
             .env_mock
@@ -1097,21 +1167,15 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
             .times(1)
             .return_once(|_| Ok("/home/user".to_string()));
 
-        // Mock filesystem read for the default credentials path
-        let default_creds_path = if cfg!(windows) {
-            "/home/user/gcloud/application_default_credentials.json"
-        } else {
-            "/home/user/.config/gcloud/application_default_credentials.json"
-        };
         context
             .fs_mock
             .expect_read_to_string()
-            .with(eq(default_creds_path.to_string()))
+            .with(eq(default_credentials_path("/home/user")))
             .times(1)
             .return_once(|_| {
                 Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "File not found",
+                    std::io::ErrorKind::PermissionDenied,
+                    "permission denied",
                 ))
             });
 

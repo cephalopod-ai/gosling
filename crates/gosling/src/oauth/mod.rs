@@ -6,7 +6,7 @@ use axum::extract::{Query, State};
 use axum::response::Html;
 use axum::routing::get;
 use axum::Router;
-use minijinja::render;
+use minijinja::{context, Environment};
 use oauth2::TokenResponse;
 use rmcp::transport::auth::{CredentialStore, OAuthClientConfig, OAuthState, StoredCredentials};
 use rmcp::transport::AuthorizationManager;
@@ -51,6 +51,18 @@ fn resolve_oauth_callback_timeout(value: Option<&str>) -> Duration {
 fn oauth_callback_timeout() -> Duration {
     let timeout = std::env::var(OAUTH_CALLBACK_TIMEOUT_ENV).ok();
     resolve_oauth_callback_timeout(timeout.as_deref())
+}
+
+fn render_oauth_callback(name: &str) -> String {
+    // The ".html" name is what turns on minijinja's autoescaping; rendering the template as an
+    // anonymous string interpolates the extension name into the page verbatim.
+    Environment::new()
+        .render_named_str(
+            "oauth_callback.html",
+            CALLBACK_TEMPLATE,
+            context! { name => name },
+        )
+        .expect("failed to render OAuth callback")
 }
 
 fn announce_authorization_url(name: &str, authorization_url: &str) {
@@ -126,7 +138,7 @@ pub async fn oauth_flow(
         code_receiver: Arc::new(Mutex::new(Some(code_sender))),
     };
 
-    let rendered = render!(CALLBACK_TEMPLATE, name => name);
+    let rendered = render_oauth_callback(name);
     let handler = move |Query(params): Query<CallbackParams>, State(state): State<AppState>| {
         let rendered = rendered.clone();
         async move {
@@ -264,7 +276,7 @@ async fn oauth_flow_with_static_client(
     let app_state = AppState {
         code_receiver: Arc::new(Mutex::new(Some(code_sender))),
     };
-    let rendered = render!(CALLBACK_TEMPLATE, name => name);
+    let rendered = render_oauth_callback(name);
     let handler = move |Query(params): Query<CallbackParams>, State(state): State<AppState>| {
         let rendered = rendered.clone();
         async move {
@@ -335,6 +347,24 @@ async fn oauth_flow_with_static_client(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oauth_callback_escapes_extension_name() {
+        let payload = r#"<script>alert("xss")</script>&"#;
+        let rendered = render_oauth_callback(payload);
+
+        assert!(!rendered.contains(payload));
+        assert!(rendered.contains("&lt;script&gt;"));
+        assert!(rendered.contains("&amp;"));
+    }
+
+    #[test]
+    fn oauth_callback_preserves_plain_extension_name() {
+        let rendered = render_oauth_callback("Example MCP");
+
+        assert!(rendered.contains("Example MCP OAuth Success"));
+        assert!(rendered.contains(">Example MCP</span>"));
+    }
 
     #[test]
     fn resolve_oauth_callback_timeout_uses_default_for_missing_or_invalid_values() {

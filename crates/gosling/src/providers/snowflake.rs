@@ -57,6 +57,31 @@ pub struct SnowflakeProvider {
     name: String,
 }
 
+/// Normalizes a configured Snowflake host into a base URL.
+///
+/// The account token is sent as a bearer credential, so a plaintext scheme is rejected rather
+/// than upgraded: an operator who typed `http://` should find out, not have it silently fixed.
+fn snowflake_base_url(host: &str) -> Result<String> {
+    let mut host = host.to_lowercase();
+
+    if !host.ends_with("snowflakecomputing.com") {
+        host = format!("{}.snowflakecomputing.com", host);
+    }
+
+    let base_url = if host.contains("://") {
+        host
+    } else {
+        format!("https://{}", host)
+    };
+
+    let parsed_url = url::Url::parse(&base_url)?;
+    if parsed_url.scheme() != "https" {
+        anyhow::bail!("Snowflake host must use HTTPS");
+    }
+
+    Ok(base_url)
+}
+
 impl SnowflakeProvider {
     pub async fn from_env(
         tls_config: Option<crate::providers::api_client::TlsConfig>,
@@ -73,15 +98,7 @@ impl SnowflakeProvider {
             .into());
         }
 
-        let mut host = host?;
-
-        // Convert host to lowercase
-        host = host.to_lowercase();
-
-        // Ensure host ends with snowflakecomputing.com
-        if !host.ends_with("snowflakecomputing.com") {
-            host = format!("{}.snowflakecomputing.com", host);
-        }
+        let host = host?;
 
         let mut token: Result<String, ConfigError> = config.get_param("SNOWFLAKE_TOKEN");
 
@@ -96,12 +113,7 @@ impl SnowflakeProvider {
             .into());
         }
 
-        // Ensure host has https:// prefix
-        let base_url = if !host.starts_with("https://") && !host.starts_with("http://") {
-            format!("https://{}", host)
-        } else {
-            host
-        };
+        let base_url = snowflake_base_url(&host)?;
 
         let auth = AuthMethod::BearerToken(token?);
         let api_client = ApiClient::new_with_tls(base_url, auth, tls_config)?
@@ -367,5 +379,33 @@ impl Provider for SnowflakeProvider {
             message,
             provider_usage,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::snowflake_base_url;
+
+    #[test]
+    fn rejects_http_host() {
+        let error = snowflake_base_url("http://account.snowflakecomputing.com").unwrap_err();
+
+        assert!(error.to_string().contains("HTTPS"));
+    }
+
+    #[test]
+    fn accepts_https_host() {
+        assert_eq!(
+            snowflake_base_url("https://account.snowflakecomputing.com").unwrap(),
+            "https://account.snowflakecomputing.com"
+        );
+    }
+
+    #[test]
+    fn normalizes_schemeless_host_to_https() {
+        assert_eq!(
+            snowflake_base_url("account").unwrap(),
+            "https://account.snowflakecomputing.com"
+        );
     }
 }

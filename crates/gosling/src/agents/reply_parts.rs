@@ -624,7 +624,8 @@ impl Agent {
 ///
 /// Per the MCP Apps spec (2026-01-26), if `_meta.ui.visibility` is present and does not
 /// include `"app"`, the tool is model-only and must not be callable by app UIs.
-/// If the field is absent, the tool defaults to visible to both model and app.
+/// If the field is absent, the tool defaults to visible to both model and app. A present but
+/// malformed field is treated as hidden so a server cannot widen visibility with a bad value.
 pub fn is_tool_visible_to_app(tool: &Tool) -> bool {
     let Some(meta) = &tool.meta else {
         return true;
@@ -636,7 +637,7 @@ pub fn is_tool_visible_to_app(tool: &Tool) -> bool {
         return true;
     };
     let Some(arr) = visibility.as_array() else {
-        return true;
+        return false;
     };
     arr.iter().any(|v| v.as_str() == Some("app"))
 }
@@ -646,6 +647,8 @@ pub fn is_tool_visible_to_app(tool: &Tool) -> bool {
 /// Per the MCP Apps spec (2026-01-26), tools may declare `_meta.ui.visibility` as an array
 /// of `"model"` and/or `"app"`. If the field is absent, the tool defaults to visible to both.
 /// If present and does not include `"model"`, the tool is app-only and must not be sent to the LLM.
+/// A present but malformed field is treated as hidden so a server cannot widen visibility with a
+/// bad value.
 pub fn is_tool_visible_to_model(tool: &Tool) -> bool {
     let Some(meta) = &tool.meta else {
         return true;
@@ -657,7 +660,7 @@ pub fn is_tool_visible_to_model(tool: &Tool) -> bool {
         return true;
     };
     let Some(arr) = visibility.as_array() else {
-        return true;
+        return false;
     };
     arr.iter().any(|v| v.as_str() == Some("model"))
 }
@@ -1086,9 +1089,17 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_visible_when_visibility_is_not_array() {
-        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": "model"}})));
-        assert!(is_tool_visible_to_model(&tool));
+    fn test_tool_hidden_when_visibility_is_not_array() {
+        for visibility in [
+            serde_json::json!("app"),
+            serde_json::json!("model"),
+            serde_json::json!({"model": true}),
+            serde_json::Value::Null,
+        ] {
+            let tool =
+                make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": visibility}})));
+            assert!(!is_tool_visible_to_model(&tool));
+        }
     }
 
     #[test]
@@ -1120,6 +1131,12 @@ mod tests {
     #[test]
     fn test_app_hidden_when_visibility_is_empty() {
         let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": []}})));
+        assert!(!is_tool_visible_to_app(&tool));
+    }
+
+    #[test]
+    fn test_app_hidden_when_visibility_is_not_array() {
+        let tool = make_tool_with_meta(Some(serde_json::json!({"ui": {"visibility": "app"}})));
         assert!(!is_tool_visible_to_app(&tool));
     }
 }

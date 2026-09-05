@@ -51,8 +51,10 @@ async fn handle_callback(
             .contents_utf8()
             .expect("error.html is not valid UTF-8");
 
-        env.add_template("error", template_content).unwrap();
-        let tmpl = env.get_template("error").unwrap();
+        // The ".html" name is what turns on minijinja's autoescaping; without it the
+        // provider-supplied error string is rendered into the page verbatim.
+        env.add_template("error.html", template_content).unwrap();
+        let tmpl = env.get_template("error.html").unwrap();
         let rendered = tmpl.render(context! { error => error }).unwrap();
 
         return (StatusCode::BAD_REQUEST, Html(rendered));

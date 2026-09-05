@@ -27,6 +27,7 @@ pub struct ScanResult {
 
 struct DetailedScanResult {
     confidence: f32,
+    pattern_confidence: f32,
     pattern_matches: Vec<PatternMatch>,
     ml_confidence: Option<f32>,
     used_pattern_detection: bool,
@@ -215,8 +216,9 @@ impl PromptInjectionScanner {
             threshold
         );
 
-        let final_confidence =
-            self.combine_confidences(tool_result.confidence, context_result.ml_confidence);
+        let final_confidence = self
+            .combine_confidences(tool_result.confidence, context_result.ml_confidence)
+            .max(tool_result.pattern_confidence);
 
         tracing::info!(
             security.event_type = "prompt_injection_scan",
@@ -234,6 +236,7 @@ impl PromptInjectionScanner {
 
         let final_result = DetailedScanResult {
             confidence: final_confidence,
+            pattern_confidence: tool_result.pattern_confidence,
             pattern_matches: tool_result.pattern_matches,
             ml_confidence: tool_result.ml_confidence,
             used_pattern_detection: tool_result.used_pattern_detection,
@@ -281,21 +284,15 @@ impl PromptInjectionScanner {
 
     async fn analyze_text(&self, text: &str) -> Result<DetailedScanResult> {
         let mut degraded_reasons = Vec::new();
+        let (pattern_confidence, pattern_matches) = self.pattern_based_scanning(text);
 
+        let mut ml_confidence = None;
         if let Some(classifier) = self.command_classifier.as_ref() {
             match self
                 .scan_with_classifier(text, classifier, ClassifierType::Command)
                 .await
             {
-                Ok(ml_confidence) => {
-                    return Ok(DetailedScanResult {
-                        confidence: ml_confidence,
-                        pattern_matches: Vec::new(),
-                        ml_confidence: Some(ml_confidence),
-                        used_pattern_detection: false,
-                        degraded_reasons,
-                    });
-                }
+                Ok(confidence) => ml_confidence = Some(confidence),
                 Err(error) => degraded_reasons.push(error),
             }
         } else if self.command_classifier_enabled {
@@ -305,11 +302,11 @@ impl PromptInjectionScanner {
             );
         }
 
-        let (pattern_confidence, pattern_matches) = self.pattern_based_scanning(text);
         Ok(DetailedScanResult {
-            confidence: pattern_confidence,
+            confidence: ml_confidence.map_or(pattern_confidence, |ml| ml.max(pattern_confidence)),
+            pattern_confidence,
             pattern_matches,
-            ml_confidence: None,
+            ml_confidence,
             used_pattern_detection: true,
             degraded_reasons,
         })
@@ -328,6 +325,7 @@ impl PromptInjectionScanner {
             }
             return Ok(DetailedScanResult {
                 confidence: 0.0,
+                pattern_confidence: 0.0,
                 pattern_matches: Vec::new(),
                 ml_confidence: None,
                 used_pattern_detection: false,
@@ -338,6 +336,7 @@ impl PromptInjectionScanner {
         if user_messages.is_empty() {
             return Ok(DetailedScanResult {
                 confidence: 0.0,
+                pattern_confidence: 0.0,
                 pattern_matches: Vec::new(),
                 ml_confidence: None,
                 used_pattern_detection: false,
@@ -368,6 +367,7 @@ impl PromptInjectionScanner {
 
         Ok(DetailedScanResult {
             confidence: max_confidence,
+            pattern_confidence: 0.0,
             pattern_matches: Vec::new(),
             ml_confidence: Some(max_confidence),
             used_pattern_detection: false,

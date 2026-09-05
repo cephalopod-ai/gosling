@@ -651,7 +651,9 @@ impl From<PromptMessage> for Message {
 
         // Convert and add the content
         let content = match prompt_message.content {
-            PromptMessageContent::Text { text } => MessageContent::text(text),
+            PromptMessageContent::Text { text } => {
+                MessageContent::text(sanitize_unicode_tags(&text))
+            }
             PromptMessageContent::Image { image } => {
                 MessageContent::image(image.data.clone(), image.mime_type.clone())
             }
@@ -1376,6 +1378,34 @@ mod tests {
         } else {
             panic!("Expected MessageContent::Text");
         }
+    }
+
+    #[test]
+    fn test_from_prompt_message_text_preserves_visible_unicode() {
+        let prompt_message = PromptMessage::new(
+            PromptMessageRole::User,
+            PromptMessageContent::Text {
+                text: "Grüße 你好 🪿".to_string(),
+            },
+        );
+
+        let message = Message::from(prompt_message);
+
+        assert_eq!(message.as_concat_text(), "Grüße 你好 🪿");
+    }
+
+    #[test]
+    fn test_from_prompt_message_text_removes_unicode_tags() {
+        let prompt_message = PromptMessage::new(
+            PromptMessageRole::User,
+            PromptMessageContent::Text {
+                text: "visible\u{E0000}\u{E0041}\u{E007F} text".to_string(),
+            },
+        );
+
+        let message = Message::from(prompt_message);
+
+        assert_eq!(message.as_concat_text(), "visible text");
     }
 
     #[test]
