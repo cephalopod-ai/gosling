@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from './acpConnection';
 import {
   addResearchInitialInputs,
+  addSessionLibraryText,
+  linkSessionLibraryFile,
   listSessionLibraryInputs,
   resolveSessionLibraryInputs,
 } from './sessionLibraryInputs';
@@ -143,6 +145,46 @@ describe('session library research inputs', () => {
         ],
       })
     ).rejects.toThrow('files exceed the ACP input limits');
+    expect(getAcpClient).not.toHaveBeenCalled();
+  });
+
+  it('adds standalone text in session scope preserving the original content', async () => {
+    await addSessionLibraryText('chat', 'Source notes', '  notes\n');
+    expect(addText).toHaveBeenCalledWith({
+      sessionId: 'chat',
+      scope: 'session',
+      name: 'Source notes',
+      text: '  notes\n',
+    });
+  });
+
+  it('links only the file selected through the existing Electron bridge', async () => {
+    Object.assign(window.electron, {
+      getPathForFile: vi.fn().mockReturnValue('/selected/notes.txt'),
+    });
+    const file = new File(['notes'], 'notes.txt');
+    await linkSessionLibraryFile('chat', file);
+    expect(window.electron.getPathForFile).toHaveBeenCalledWith(file);
+    expect(linkFile).toHaveBeenCalledWith({
+      sessionId: 'chat',
+      scope: 'session',
+      path: '/selected/notes.txt',
+    });
+  });
+
+  it('rejects empty or oversized individual inputs before calling ACP', async () => {
+    await expect(addSessionLibraryText('chat', 'Notes', '  ')).rejects.toThrow(
+      'must contain content'
+    );
+    await expect(addSessionLibraryText('chat', 'Notes', '😀'.repeat(70_000))).rejects.toThrow(
+      '256 KB'
+    );
+    await expect(linkSessionLibraryFile('chat', new File([], 'empty.txt'))).rejects.toThrow(
+      'non-empty'
+    );
+    const image = new File(['image'], 'image.png');
+    Object.defineProperty(image, 'size', { value: 5 * 1024 * 1024 + 1 });
+    await expect(linkSessionLibraryFile('chat', image)).rejects.toThrow('image up to 5 MB');
     expect(getAcpClient).not.toHaveBeenCalled();
   });
 });

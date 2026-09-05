@@ -5,6 +5,16 @@ import { IntlTestWrapper } from '../i18n/test-utils';
 import type { Message } from '../types/message';
 import type { Session } from '../types/session';
 import { useChatSession } from './useChatSession';
+import { acpSteerSession } from '../acp/prompt';
+import { resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
+import {
+  clearSelectedSessionInputs,
+  getSelectedSessionInputs,
+  setSessionInputSelected,
+} from '../acp/sessionInputSelection';
+
+vi.mock('../acp/prompt', () => ({ acpSteerSession: vi.fn() }));
+vi.mock('../acp/sessionLibraryInputs', () => ({ resolveSessionLibraryInputs: vi.fn() }));
 
 const mocks = vi.hoisted(() => ({
   acpListSessionMessages: vi.fn(),
@@ -68,7 +78,80 @@ describe('useChatSession history navigation', () => {
   });
 
   afterEach(() => {
+    clearSelectedSessionInputs(SESSION_ID, getSelectedSessionInputs(SESSION_ID));
     acpChatSessionActions.deleteSnapshot(SESSION_ID);
+  });
+
+  function setActiveRun(activeRunId: string | null) {
+    acpChatSessionActions.applyAcpSessionNotification({
+      sessionId: SESSION_ID,
+      update: { sessionUpdate: 'session_info_update', _meta: { gosling: { activeRunId } } },
+    });
+  }
+
+  function renderActiveChat() {
+    setActiveRun('run-1');
+    setSessionInputSelected(SESSION_ID, 'notes', true);
+    vi.mocked(acpSteerSession)
+      .mockReset()
+      .mockResolvedValue({ messageId: 'steer-1' } as never);
+    vi.mocked(resolveSessionLibraryInputs)
+      .mockReset()
+      .mockResolvedValue({ assistantContext: 'Source notes', images: [] });
+    return renderHook(() => useChatSession({ sessionId: SESSION_ID, onStreamFinish: vi.fn() }), {
+      wrapper: IntlTestWrapper,
+    });
+  }
+
+  it('includes selected inputs when Send now steers a running reply', async () => {
+    const { result } = renderActiveChat();
+    await act(async () => {
+      expect(
+        await result.current.onSteerQueuedMessage?.({ msg: 'Use the notes', images: [] })
+      ).toBe(true);
+    });
+    expect(resolveSessionLibraryInputs).toHaveBeenCalledWith(SESSION_ID, ['notes']);
+    expect(acpSteerSession).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.objectContaining({
+        content: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'text',
+            text: 'Source notes',
+            annotations: { audience: ['assistant'] },
+          }),
+          expect.objectContaining({ type: 'text', text: 'Use the notes' }),
+        ]),
+      }),
+      'run-1'
+    );
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual([]);
+  });
+
+  it('preserves selected inputs when steering fails', async () => {
+    const { result } = renderActiveChat();
+    vi.mocked(acpSteerSession).mockRejectedValue(new Error('Run ended'));
+    await act(async () => {
+      expect(
+        await result.current.onSteerQueuedMessage?.({ msg: 'Use the notes', images: [] })
+      ).toBe(false);
+    });
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['notes']);
+  });
+
+  it('does not steer a different run when input preparation finishes late', async () => {
+    const { result } = renderActiveChat();
+    vi.mocked(resolveSessionLibraryInputs).mockImplementation(async () => {
+      setActiveRun('run-2');
+      return { assistantContext: 'Notes', images: [] };
+    });
+    await act(async () => {
+      expect(
+        await result.current.onSteerQueuedMessage?.({ msg: 'Use the notes', images: [] })
+      ).toBe(false);
+    });
+    expect(acpSteerSession).not.toHaveBeenCalled();
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['notes']);
   });
 
   it('reports success only after reaching the oldest history page', async () => {

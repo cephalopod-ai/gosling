@@ -36,6 +36,11 @@ import {
   OUTPUT_FILE_EXTENSIONS_CHANGED_EVENT,
 } from '../../utils/settings';
 import { listSessionLibraryInputs } from '../../acp/sessionLibraryInputs';
+import { acpChatSessionController } from '../../acp/chatSessionController';
+import { describeAcpError } from '../../acp/errors';
+import { setSessionInputSelected, useSelectedSessionInputs } from '../../acp/sessionInputSelection';
+import { MAX_RESEARCH_INITIAL_INPUTS } from '../../types/sessionExperience';
+import { SessionInputControls } from './SessionInputControls';
 import type { ResearchLibraryFile } from '../../utils/researchLibrary';
 
 const i18n = defineMessages({
@@ -86,6 +91,11 @@ const i18n = defineMessages({
   inputLoadFailed: {
     id: 'artifactPane.inputLoadFailed',
     defaultMessage: 'Unable to load session inputs.',
+  },
+  retryInputs: { id: 'artifactPane.retryInputs', defaultMessage: 'Retry' },
+  selectInput: {
+    id: 'artifactPane.selectInput',
+    defaultMessage: 'Include {name} with the next message',
   },
   libraryEmptyTitle: {
     id: 'artifactPane.libraryEmptyTitle',
@@ -326,7 +336,11 @@ export function ArtifactPane() {
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>('outputs');
   const [inputs, setInputs] = useState<ShellLibraryItemSummary[]>([]);
   const [inputsLoading, setInputsLoading] = useState(false);
-  const [inputsError, setInputsError] = useState(false);
+  const [inputsError, setInputsError] = useState<string | null>(null);
+  const [inputsRevision, setInputsRevision] = useState(0);
+  const selectedInputs = useSelectedSessionInputs(visibleSessionId);
+  const visibleSessionIdRef = useRef(visibleSessionId);
+  visibleSessionIdRef.current = visibleSessionId;
   const [researchLibraryFiles, setResearchLibraryFiles] = useState<ResearchLibraryFile[]>([]);
   const [researchLibraryTruncated, setResearchLibraryTruncated] = useState(false);
   const [researchLibraryPath, setResearchLibraryPath] = useState<string | null>(null);
@@ -366,22 +380,29 @@ export function ArtifactPane() {
   useEffect(() => {
     if (!visibleSessionId) {
       setInputs([]);
-      setInputsError(false);
+      setInputsError(null);
       setInputsLoading(false);
       return;
     }
 
     let cancelled = false;
+    setInputs([]);
     setInputsLoading(true);
-    setInputsError(false);
-    void listSessionLibraryInputs(visibleSessionId)
+    setInputsError(null);
+    void acpChatSessionController
+      .loadSession(visibleSessionId)
+      .then((loaded) => {
+        if (!loaded) throw new Error('The session could not be loaded. Retry after reconnecting.');
+        if (cancelled) return [];
+        return listSessionLibraryInputs(visibleSessionId);
+      })
       .then((items) => {
         if (!cancelled) setInputs(items);
       })
-      .catch(() => {
+      .catch((cause) => {
         if (!cancelled) {
           setInputs([]);
-          setInputsError(true);
+          setInputsError(describeAcpError(cause));
         }
       })
       .finally(() => {
@@ -390,7 +411,7 @@ export function ArtifactPane() {
     return () => {
       cancelled = true;
     };
-  }, [visibleSessionId]);
+  }, [visibleSessionId, inputsRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -491,6 +512,7 @@ export function ArtifactPane() {
 
   const selectInventoryTab = (tab: InventoryTab) => {
     setInventoryTab(tab);
+    if (tab === 'inputs') setInputsRevision((revision) => revision + 1);
     if (tab === 'library') void refreshResearchLibrary();
   };
 
@@ -642,19 +664,37 @@ export function ArtifactPane() {
 
       {inventoryTab === 'inputs' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
+          <SessionInputControls
+            key={visibleSessionId}
+            sessionId={visibleSessionId}
+            onAdded={() => {
+              if (visibleSessionIdRef.current === visibleSessionId) {
+                setInputsRevision((revision) => revision + 1);
+              }
+            }}
+          />
           {inputsLoading ? (
             <div className="flex h-full items-center justify-center text-sm text-text-secondary">
               {intl.formatMessage(i18n.loading)}
             </div>
           ) : inputsError ? (
-            <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+            <div className="flex flex-col items-center justify-center p-8 text-center" role="alert">
               <AlertTriangle className="h-8 w-8 text-text-secondary" />
               <p className="mt-3 text-sm text-text-secondary">
                 {intl.formatMessage(i18n.inputLoadFailed)}
               </p>
+              <p className="mt-2 break-words text-xs text-text-secondary">{inputsError}</p>
+              <Button
+                className="mt-3"
+                variant="outline"
+                size="sm"
+                onClick={() => setInputsRevision((revision) => revision + 1)}
+              >
+                {intl.formatMessage(i18n.retryInputs)}
+              </Button>
             </div>
           ) : inputs.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+            <div className="flex flex-col items-center justify-center p-8 text-center">
               <FileInput className="h-8 w-8 text-text-secondary" />
               <h2 className="mt-3 text-sm font-medium">
                 {intl.formatMessage(i18n.inputEmptyTitle)}
@@ -670,6 +710,20 @@ export function ArtifactPane() {
                   key={input.id}
                   className="flex items-center gap-2 border-b border-border-primary px-3 py-2.5 last:border-b-0"
                 >
+                  <input
+                    type="checkbox"
+                    checked={selectedInputs.includes(input.id)}
+                    disabled={
+                      !selectedInputs.includes(input.id) &&
+                      (input.status === 'missing' ||
+                        selectedInputs.length >= MAX_RESEARCH_INITIAL_INPUTS)
+                    }
+                    aria-label={intl.formatMessage(i18n.selectInput, { name: input.name })}
+                    onChange={(event) => {
+                      if (visibleSessionId)
+                        setSessionInputSelected(visibleSessionId, input.id, event.target.checked);
+                    }}
+                  />
                   <InputIcon kind={input.kind} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs text-text-primary">{input.name}</span>

@@ -22,6 +22,45 @@ export async function listSessionLibraryInputs(
   return response.items ?? [];
 }
 
+export async function addSessionLibraryText(
+  sessionId: string,
+  name: string,
+  text: string
+): Promise<ShellLibraryItemSummary> {
+  if (!text.trim() || researchInitialTextBytes(text) > MAX_RESEARCH_INITIAL_TEXT_BYTES) {
+    throw new Error('Pasted text must contain content and be no larger than 256 KB.');
+  }
+  const client = await getAcpClient();
+  const response = await client.gosling.shellSessionLibraryAddText_unstable({
+    sessionId,
+    scope: 'session',
+    name,
+    text,
+  });
+  return response.item;
+}
+
+export async function linkSessionLibraryFile(
+  sessionId: string,
+  file: File
+): Promise<ShellLibraryItemSummary> {
+  if (
+    file.size === 0 ||
+    file.size > MAX_RESEARCH_INITIAL_FILE_BYTES ||
+    (isResearchInitialImageFile(file.name) && file.size > MAX_RESEARCH_INITIAL_IMAGE_BYTES)
+  ) {
+    throw new Error('Choose a non-empty file up to 20 MB, or an image up to 5 MB.');
+  }
+  const path = window.electron.getPathForFile(file);
+  const client = await getAcpClient();
+  const response = await client.gosling.shellSessionLibraryLinkFile_unstable({
+    sessionId,
+    scope: 'session',
+    path,
+  });
+  return response.item;
+}
+
 export async function addResearchInitialInputs(
   sessionId: string,
   inputs: ResearchInitialInputs

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -7,11 +7,27 @@ import {
 } from '../../contexts/ArtifactWorkbenchContext';
 import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
 import { IntlTestWrapper } from '../../i18n/test-utils';
-import { listSessionLibraryInputs } from '../../acp/sessionLibraryInputs';
+import {
+  addSessionLibraryText,
+  linkSessionLibraryFile,
+  listSessionLibraryInputs,
+} from '../../acp/sessionLibraryInputs';
+import { acpChatSessionController } from '../../acp/chatSessionController';
+import {
+  clearSelectedSessionInputs,
+  getSelectedSessionInputs,
+} from '../../acp/sessionInputSelection';
 import { ArtifactPane } from './ArtifactPane';
 
 vi.mock('../../contexts/ArtifactRouterContext', () => ({ useArtifactRouter: vi.fn() }));
-vi.mock('../../acp/sessionLibraryInputs', () => ({ listSessionLibraryInputs: vi.fn() }));
+vi.mock('../../acp/sessionLibraryInputs', () => ({
+  listSessionLibraryInputs: vi.fn(),
+  addSessionLibraryText: vi.fn(),
+  linkSessionLibraryFile: vi.fn(),
+}));
+vi.mock('../../acp/chatSessionController', () => ({
+  acpChatSessionController: { loadSession: vi.fn() },
+}));
 
 describe('ArtifactPane', () => {
   const saveArtifact = vi.fn();
@@ -109,6 +125,8 @@ describe('ArtifactPane', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(acpChatSessionController.loadSession).mockReset().mockResolvedValue(true);
+    clearSelectedSessionInputs('session-inputs', getSelectedSessionInputs('session-inputs'));
     localStorage.clear();
     saveArtifact.mockResolvedValue({ canceled: false, filePath: '/outputs/images/hero.png' });
     readArtifactFile.mockReset();
@@ -353,11 +371,127 @@ describe('ArtifactPane', () => {
 
     expect(inputsTab).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('inputs-count')).toHaveClass('rounded-md', 'border');
-    expect(screen.getByText('Initial research notes')).toBeInTheDocument();
+    expect(await screen.findByText('Initial research notes')).toBeInTheDocument();
     expect(screen.getByText('market-report.pdf')).toBeInTheDocument();
     expect(screen.getByText(/text\/plain · Session · 182 B/)).toBeInTheDocument();
     expect(screen.getByText(/application\/pdf · Session · 3 KB/)).toBeInTheDocument();
     expect(listSessionLibraryInputs).toHaveBeenCalledWith('session-inputs');
+  });
+
+  function renderInputs() {
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Load inputs' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Inputs/ }));
+  }
+
+  const addedInput = {
+    id: 'new-input',
+    name: 'Notes',
+    kind: 'text' as const,
+    scope: 'session' as const,
+    status: 'available' as const,
+    mimeType: 'text/plain',
+    sizeBytes: 12,
+  };
+
+  it('waits for the session to load before listing inputs and offers retry on failure', async () => {
+    let finishLoad!: (loaded: boolean) => void;
+    vi.mocked(acpChatSessionController.loadSession).mockReturnValue(
+      new Promise((resolve) => {
+        finishLoad = resolve;
+      })
+    );
+    renderInputs();
+    expect(listSessionLibraryInputs).not.toHaveBeenCalled();
+    await act(async () => finishLoad(false));
+    expect(await screen.findByText('Unable to load session inputs.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add file' })).toBeEnabled();
+    vi.mocked(acpChatSessionController.loadSession).mockResolvedValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('No inputs for this session')).toBeInTheDocument();
+    expect(listSessionLibraryInputs).toHaveBeenCalledWith('session-inputs');
+  });
+
+  it('stores named pasted text without losing whitespace and selects it for the next message', async () => {
+    vi.mocked(addSessionLibraryText).mockImplementation(async () => {
+      vi.mocked(listSessionLibraryInputs).mockResolvedValue([addedInput]);
+      return addedInput;
+    });
+    renderInputs();
+    fireEvent.click(screen.getByRole('button', { name: 'Paste text' }));
+    fireEvent.change(screen.getByLabelText('Name (optional)'), { target: { value: 'Notes' } });
+    fireEvent.change(screen.getByLabelText('Text content'), { target: { value: '  source\n\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add text' }));
+    const selected = await screen.findByRole('checkbox', {
+      name: 'Include Notes with the next message',
+    });
+    expect(addSessionLibraryText).toHaveBeenCalledWith('session-inputs', 'Notes', '  source\n\n');
+    expect(selected).toBeChecked();
+    expect(screen.getByRole('tab', { name: 'Inputs 1' })).toBeInTheDocument();
+    fireEvent.click(selected);
+    expect(getSelectedSessionInputs('session-inputs')).toEqual([]);
+  });
+
+  it('retains pasted text after a failed save and rejects blank or oversized content', async () => {
+    vi.mocked(addSessionLibraryText).mockRejectedValue(new Error('Storage unavailable'));
+    renderInputs();
+    fireEvent.click(screen.getByRole('button', { name: 'Paste text' }));
+    const content = screen.getByLabelText('Text content');
+    fireEvent.change(content, { target: { value: '  ' } });
+    expect(screen.getByRole('button', { name: 'Add text' })).toBeDisabled();
+    fireEvent.change(content, { target: { value: '😀'.repeat(70_000) } });
+    expect(screen.getByRole('button', { name: 'Add text' })).toBeDisabled();
+    fireEvent.change(content, { target: { value: 'Keep these notes' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add text' }));
+    expect(await screen.findByText('Unable to add input: Storage unavailable')).toBeInTheDocument();
+    expect(content).toHaveValue('Keep these notes');
+    expect(getSelectedSessionInputs('session-inputs')).toEqual([]);
+  });
+
+  it('adds an individual file and clears the chooser so it can be used again', async () => {
+    const fileItem = {
+      ...addedInput,
+      name: 'report.pdf',
+      kind: 'file' as const,
+      mimeType: 'application/pdf',
+    };
+    vi.mocked(linkSessionLibraryFile).mockImplementation(async () => {
+      vi.mocked(listSessionLibraryInputs).mockResolvedValue([fileItem]);
+      return fileItem;
+    });
+    renderInputs();
+    const file = new File(['pdf'], 'report.pdf', { type: 'application/pdf' });
+    const chooser = screen.getByLabelText('Add file');
+    fireEvent.change(chooser, { target: { files: [file] } });
+    expect(await screen.findByText('report.pdf')).toBeInTheDocument();
+    expect(linkSessionLibraryFile).toHaveBeenCalledWith('session-inputs', file);
+    expect(chooser).toHaveValue('');
+    expect(getSelectedSessionInputs('session-inputs')).toEqual(['new-input']);
+  });
+
+  it('keeps a delayed file addition scoped to its original chat after switching sessions', async () => {
+    let finishAdd!: (item: typeof addedInput) => void;
+    vi.mocked(linkSessionLibraryFile).mockReturnValue(
+      new Promise((resolve) => {
+        finishAdd = resolve;
+      })
+    );
+    renderInputs();
+    fireEvent.change(screen.getByLabelText('Add file'), {
+      target: { files: [new File(['text'], 'notes.txt')] },
+    });
+    await waitFor(() => expect(linkSessionLibraryFile).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Load MIME PDF' }));
+    await act(async () => finishAdd(addedInput));
+    expect(screen.queryByText('Notes')).not.toBeInTheDocument();
+    expect(getSelectedSessionInputs('session-inputs')).toEqual(['new-input']);
+    expect(getSelectedSessionInputs('session-pdf')).toEqual([]);
   });
 
   it('browses durable research documents from the Library tab', async () => {

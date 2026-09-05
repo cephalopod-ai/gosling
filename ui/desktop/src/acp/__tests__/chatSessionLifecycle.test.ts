@@ -11,6 +11,14 @@ import {
 } from '../permissionRequests';
 import { acpCancelPrompt, acpPromptSession } from '../prompt';
 import { acpListSessionArtifacts, acpLoadSession } from '../sessions';
+import { resolveSessionLibraryInputs } from '../sessionLibraryInputs';
+import {
+  clearSelectedSessionInputs,
+  getSelectedSessionInputs,
+  setSessionInputSelected,
+} from '../sessionInputSelection';
+
+vi.mock('../sessionLibraryInputs', () => ({ resolveSessionLibraryInputs: vi.fn() }));
 
 vi.mock('../../utils/extensionErrorUtils', () => ({ showExtensionLoadResults: vi.fn() }));
 vi.mock('../acpConnection', () => ({ getAcpConnectionGeneration: () => 1 }));
@@ -57,6 +65,8 @@ describe('ACP chat session lifecycle', () => {
   });
 
   afterEach(() => {
+    clearSelectedSessionInputs(SESSION_ID, getSelectedSessionInputs(SESSION_ID));
+    clearSelectedSessionInputs('other-session', getSelectedSessionInputs('other-session'));
     cancelAcpPermissionRequestsForSession(SESSION_ID);
     acpChatSessionActions.deleteSnapshot(SESSION_ID);
   });
@@ -80,6 +90,80 @@ describe('ACP chat session lifecycle', () => {
       chatState: ChatState.Idle,
     });
     expect(window.electron.setWakelockActive).toHaveBeenLastCalledWith(SESSION_ID, false);
+  });
+
+  it('sends selected text and images only to their chat and retains resolved content for retry', async () => {
+    setSessionInputSelected(SESSION_ID, 'notes', true);
+    setSessionInputSelected('other-session', 'private-notes', true);
+    vi.mocked(resolveSessionLibraryInputs).mockResolvedValue({
+      assistantContext: 'Source notes',
+      images: [{ data: 'aW1hZ2U=', mimeType: 'image/png' }],
+    });
+    const message = createUserMessage('Use these inputs');
+    acpChatSessionActions.setMessages(SESSION_ID, [message]);
+    await acpChatSessionController.submitMessage(SESSION_ID, message, {
+      getCurrentSnapshot: () => acpChatSessionStore.getSnapshot(SESSION_ID),
+      onFinish: vi.fn(),
+    });
+    expect(resolveSessionLibraryInputs).toHaveBeenCalledWith(SESSION_ID, ['notes']);
+    const sentMessage = vi.mocked(acpPromptSession).mock.calls[0][1];
+    expect(sentMessage.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: 'Source notes',
+          annotations: { audience: ['assistant'] },
+        }),
+        expect.objectContaining({ type: 'image', data: 'aW1hZ2U=' }),
+        expect.objectContaining({ type: 'text', text: 'Use these inputs' }),
+      ])
+    );
+    expect(acpChatSessionStore.getSnapshot(SESSION_ID)?.messages).toEqual([sentMessage]);
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual([]);
+    expect(getSelectedSessionInputs('other-session')).toEqual(['private-notes']);
+  });
+
+  it('retains selection and blocks sending when an input cannot be resolved', async () => {
+    setSessionInputSelected(SESSION_ID, 'missing-file', true);
+    vi.mocked(resolveSessionLibraryInputs).mockRejectedValue(
+      new Error('Input file is unavailable')
+    );
+    await submit();
+    expect(acpPromptSession).not.toHaveBeenCalled();
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['missing-file']);
+    expect(acpChatSessionStore.getSnapshot(SESSION_ID)?.promptError?.message).toContain(
+      'Input file is unavailable'
+    );
+  });
+
+  it('keeps selected inputs pending for commands and assistant continuations', async () => {
+    setSessionInputSelected(SESSION_ID, 'notes', true);
+    for (const message of [
+      createUserMessage('/clear'),
+      { ...createUserMessage('Continue'), role: 'assistant' as const },
+    ]) {
+      await acpChatSessionController.submitMessage(SESSION_ID, message, {
+        getCurrentSnapshot: () => acpChatSessionStore.getSnapshot(SESSION_ID),
+        onFinish: vi.fn(),
+      });
+    }
+    expect(resolveSessionLibraryInputs).not.toHaveBeenCalled();
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['notes']);
+  });
+
+  it('does not consume selection or send a prompt stopped while resolving inputs', async () => {
+    setSessionInputSelected(SESSION_ID, 'notes', true);
+    const resolution = deferred<Awaited<ReturnType<typeof resolveSessionLibraryInputs>>>();
+    vi.mocked(resolveSessionLibraryInputs).mockReturnValue(resolution.promise);
+    const submission = submit();
+    await vi.waitFor(() => expect(resolveSessionLibraryInputs).toHaveBeenCalledOnce());
+    acpChatSessionController.stop(SESSION_ID);
+    resolution.resolve({ assistantContext: 'Notes', images: [] });
+    await submission;
+    expect(acpPromptSession).not.toHaveBeenCalled();
+    expect(acpCancelPrompt).not.toHaveBeenCalled();
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['notes']);
+    expect(acpChatSessionStore.getSnapshot(SESSION_ID)?.chatState).toBe(ChatState.Idle);
   });
 
   it('restores a running prompt and its unanswered permission when cancellation fails', async () => {

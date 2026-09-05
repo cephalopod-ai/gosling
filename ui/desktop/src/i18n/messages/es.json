@@ -3325,5 +3325,50 @@
   },
   "userMessage.retryMessageTitle": {
     "defaultMessage": "Resend this message and regenerate the response"
+  },
+  "artifactPane.retryInputs": {
+    "defaultMessage": "Retry"
+  },
+  "artifactPane.selectInput": {
+    "defaultMessage": "Include {name} with the next message"
+  },
+  "sessionInputs.addFile": {
+    "defaultMessage": "Add file"
+  },
+  "sessionInputs.cancel": {
+    "defaultMessage": "Cancel"
+  },
+  "sessionInputs.content": {
+    "defaultMessage": "Text content"
+  },
+  "sessionInputs.defaultName": {
+    "defaultMessage": "Pasted text"
+  },
+  "sessionInputs.failed": {
+    "defaultMessage": "Unable to add input: {error}"
+  },
+  "sessionInputs.help": {
+    "defaultMessage": "Files stay in their original location. Selected inputs are included with your next message. Select up to 16 at a time."
+  },
+  "sessionInputs.name": {
+    "defaultMessage": "Name (optional)"
+  },
+  "sessionInputs.noSession": {
+    "defaultMessage": "Open a chat to add inputs."
+  },
+  "sessionInputs.pasteText": {
+    "defaultMessage": "Paste text"
+  },
+  "sessionInputs.placeholder": {
+    "defaultMessage": "Paste notes, links, excerpts, or other source material…"
+  },
+  "sessionInputs.save": {
+    "defaultMessage": "Add text"
+  },
+  "sessionInputs.saving": {
+    "defaultMessage": "Adding…"
+  },
+  "sessionInputs.textLimit": {
+    "defaultMessage": "Each pasted input must be no larger than 256 KB."
   }
 }

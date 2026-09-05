@@ -4,7 +4,12 @@ import { AppEvents } from '../constants/events';
 import { ChatState } from '../types/chatState';
 import type { Session } from '../types/session';
 import { showExtensionLoadResults } from '../utils/extensionErrorUtils';
-import { createUserMessage, getPendingToolConfirmationIds, type Message } from '../types/message';
+import {
+  createUserMessage,
+  getPendingToolConfirmationIds,
+  getTextAndImageContent,
+  type Message,
+} from '../types/message';
 import {
   acpChatSessionActions,
   acpChatSessionStore,
@@ -20,6 +25,8 @@ import {
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
 import { acpCancelPrompt, acpPromptSession } from './prompt';
 import { getAcpConnectionGeneration } from './acpConnection';
+import { resolveSessionLibraryInputs } from './sessionLibraryInputs';
+import { clearSelectedSessionInputs, getSelectedSessionInputs } from './sessionInputSelection';
 import { viewableFilePathsFromMarkdown } from '../components/artifacts/artifactUtils';
 import {
   acpForkSession,
@@ -291,11 +298,29 @@ async function submitMessage(
   }
 
   const promptAttemptId = uuidv7();
+  const selectedInputIds =
+    userMessage.role === 'user' &&
+    !getTextAndImageContent(userMessage).textContent.trim().startsWith('/')
+      ? getSelectedSessionInputs(sessionId)
+      : [];
   preparingPromptAttempts.add(promptAttemptId);
   acpChatSessionActions.startPromptAttempt(sessionId, promptAttemptId);
 
   try {
     await window.electron.setWakelockActive(sessionId, true).catch(() => false);
+    if (finishPromptCancellation(sessionId, promptAttemptId)) return;
+    if (selectedInputIds.length > 0) {
+      const inputs = await resolveSessionLibraryInputs(sessionId, selectedInputIds);
+      if (finishPromptCancellation(sessionId, promptAttemptId)) return;
+      const inputContent = createUserMessage('', inputs.images, inputs.assistantContext).content;
+      userMessage = { ...userMessage, content: [...inputContent, ...userMessage.content] };
+      const messages = acpChatSessionStore.getSnapshot(sessionId)?.messages ?? [];
+      acpChatSessionActions.setMessages(
+        sessionId,
+        messages.map((message) => (message.id === userMessage.id ? userMessage : message))
+      );
+      clearSelectedSessionInputs(sessionId, selectedInputIds);
+    }
     preparingPromptAttempts.delete(promptAttemptId);
     if (finishPromptCancellation(sessionId, promptAttemptId)) {
       return;

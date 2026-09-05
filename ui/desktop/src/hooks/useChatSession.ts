@@ -23,6 +23,8 @@ import {
 } from '../acp/chatSessionStore';
 import { acpSteerSession } from '../acp/prompt';
 import { acpListSessionMessages } from '../acp/sessions';
+import { resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
+import { clearSelectedSessionInputs, getSelectedSessionInputs } from '../acp/sessionInputSelection';
 
 const initialTokenState: TokenState = {
   inputTokens: 0,
@@ -296,8 +298,20 @@ export function useChatSession({
         return false;
       }
 
+      const selectedInputIds = getSelectedSessionInputs(sessionId);
       try {
-        const steeredMessage = createUserMessage(userMessage, images, input.assistantContext);
+        const libraryInputs = await resolveSessionLibraryInputs(sessionId, selectedInputIds);
+        if (acpChatSessionStore.getSnapshot(sessionId)?.activeRunId !== activeRunId) {
+          return false;
+        }
+        const assistantContext = [input.assistantContext, libraryInputs.assistantContext]
+          .filter(Boolean)
+          .join('\n\n');
+        const steeredMessage = createUserMessage(
+          userMessage,
+          [...images, ...libraryInputs.images],
+          assistantContext
+        );
         const response = await acpSteerSession(sessionId, steeredMessage, activeRunId);
         const localSteerMessage: Message = {
           ...steeredMessage,
@@ -315,6 +329,7 @@ export function useChatSession({
           acpChatSessionActions.addPendingLocalSteerMessage(sessionId, localSteerMessage);
         }
 
+        clearSelectedSessionInputs(sessionId, selectedInputIds);
         return true;
       } catch (error) {
         console.warn('Failed to steer ACP session:', error);
