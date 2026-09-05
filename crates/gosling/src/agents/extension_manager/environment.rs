@@ -10,6 +10,125 @@ static RE_ENV_BRACES: Lazy<regex::Regex> =
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
 
+/// An OS keychain item holding a secret that some other program owns.
+///
+/// Declared at the top level of `config.yaml`, keyed by the same name an
+/// extension lists in `env_keys`:
+///
+/// ```yaml
+/// secret_sources:
+///   MUNINN_MCP_BEARER_TOKEN:
+///     keychain_service: ai.muninn.mcp
+///     keychain_account: alice      # optional, defaults to $USER
+/// ```
+///
+/// This exists so a credential gosling did not mint stays in exactly one place.
+/// The two alternatives are worse: copying the value into gosling's own secret
+/// store turns every rotation into a two-step operation that silently half-fails,
+/// and reading it from the process environment makes the value depend on where
+/// gosling happens to sit in the login sequence, which is not something a config
+/// file can express or a user can predict.
+#[derive(Debug, Clone, serde::Deserialize, PartialEq)]
+pub(crate) struct KeychainSecretSource {
+    keychain_service: String,
+    #[serde(default)]
+    keychain_account: Option<String>,
+}
+
+/// Top-level `config.yaml` key mapping a secret name to where it really lives.
+pub(crate) const SECRET_SOURCES_KEY: &str = "secret_sources";
+
+impl KeychainSecretSource {
+    // Only the keyring-backed reader needs to resolve an account.
+    #[cfg(feature = "system-keyring")]
+    fn account(&self) -> Option<String> {
+        self.keychain_account
+            .clone()
+            .or_else(|| std::env::var("USER").ok())
+            .filter(|account| !account.is_empty())
+    }
+
+    fn describe(&self) -> String {
+        match &self.keychain_account {
+            Some(account) => format!("'{}' (account '{}')", self.keychain_service, account),
+            None => format!("'{}'", self.keychain_service),
+        }
+    }
+}
+
+/// Read one declared keychain item. Separate from the resolution policy above it
+/// so tests can exercise the wiring without touching the real keychain.
+#[cfg(feature = "system-keyring")]
+fn read_keychain_secret(source: &KeychainSecretSource) -> Result<String, String> {
+    let Some(account) = source.account() else {
+        return Err("no keychain_account given and USER is unset".to_string());
+    };
+    let entry =
+        keyring::Entry::new(&source.keychain_service, &account).map_err(|err| err.to_string())?;
+    entry.get_password().map_err(|err| err.to_string())
+}
+
+#[cfg(not(feature = "system-keyring"))]
+fn read_keychain_secret(_source: &KeychainSecretSource) -> Result<String, String> {
+    Err("this build was compiled without the system-keyring feature".to_string())
+}
+
+fn declared_secret_source(config: &Config, key: &str) -> Option<KeychainSecretSource> {
+    // A malformed or absent `secret_sources` block must not break extensions
+    // that never asked for one, so a parse failure is "nothing declared".
+    let sources: HashMap<String, KeychainSecretSource> =
+        config.get_param(SECRET_SOURCES_KEY).ok()?;
+    sources.get(key).cloned()
+}
+
+/// Resolve `key` from a declared external keychain item.
+///
+/// `Ok(None)` means nothing was declared for this key and the caller should keep
+/// its existing behaviour. `Err` means a source was declared and could not be
+/// read, which is more actionable than the generic not-found error it replaces.
+fn resolve_declared_secret_with(
+    reader: impl Fn(&KeychainSecretSource) -> Result<String, String>,
+    config: &Config,
+    key: &str,
+    ext_name: &str,
+) -> Result<Option<String>, ExtensionError> {
+    let Some(source) = declared_secret_source(config, key) else {
+        return Ok(None);
+    };
+
+    match reader(&source) {
+        Ok(secret) if secret.is_empty() => Err(ExtensionError::ConfigError(format!(
+            "Secret '{}' for extension '{}' resolved to an empty value from keychain item {}",
+            key,
+            ext_name,
+            source.describe()
+        ))),
+        Ok(secret) => {
+            tracing::debug!(
+                key = %key,
+                ext_name = %ext_name,
+                "Resolved secret from declared keychain source."
+            );
+            Ok(Some(secret))
+        }
+        Err(err) => Err(ExtensionError::ConfigError(format!(
+            "Failed to read secret '{}' for extension '{}' from keychain item {}: {}",
+            key,
+            ext_name,
+            source.describe(),
+            err
+        ))),
+    }
+}
+
+fn resolve_declared_secret(
+    config: &Config,
+    key: &str,
+    ext_name: &str,
+) -> Result<Option<String>, ExtensionError> {
+    resolve_declared_secret_with(read_keychain_secret, config, key, ext_name)
+}
+
 pub(crate) async fn merge_environments(
     envs: &Envs,
     env_keys: &[String],
@@ -26,6 +145,10 @@ pub(crate) async fn merge_environments(
         match config.get(key, true) {
             Ok(value) => {
                 if value.is_null() {
+                    if let Some(secret) = resolve_declared_secret(config, key, ext_name)? {
+                        all_envs.insert(key.clone(), secret);
+                        continue;
+                    }
                     warn!(
                         key = %key,
                         ext_name = %ext_name,
@@ -46,6 +169,13 @@ pub(crate) async fn merge_environments(
                 }
             }
             Err(e) => {
+                // A key absent from gosling's own store is exactly the case a
+                // declared external source exists to answer, so consult it
+                // before reporting the credential missing.
+                if let Some(secret) = resolve_declared_secret(config, key, ext_name)? {
+                    all_envs.insert(key.clone(), secret);
+                    continue;
+                }
                 error!(
                     key = %key,
                     ext_name = %ext_name,
@@ -137,4 +267,181 @@ pub(super) fn resolve_static_oauth_client(
         client_secret,
         scopes: scopes.to_vec(),
     }))
+}
+
+#[cfg(test)]
+mod secret_source_tests {
+    use super::*;
+    use crate::config::Config;
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    fn config_with(body: &str) -> (TempDir, Config) {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("config.yaml");
+        std::fs::write(&path, body).expect("write config");
+        let config = Config::new(&path, "gosling-secret-source-test").expect("config");
+        (dir, config)
+    }
+
+    const DECLARED: &str = "\
+secret_sources:
+  MUNINN_MCP_BEARER_TOKEN:
+    keychain_service: ai.muninn.mcp
+    keychain_account: alice
+";
+
+    #[test]
+    fn parses_a_declared_source() {
+        let (_dir, config) = config_with(DECLARED);
+        let source =
+            declared_secret_source(&config, "MUNINN_MCP_BEARER_TOKEN").expect("source declared");
+        assert_eq!(
+            source,
+            KeychainSecretSource {
+                keychain_service: "ai.muninn.mcp".to_string(),
+                keychain_account: Some("alice".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn account_is_optional() {
+        let (_dir, config) = config_with(
+            "\
+secret_sources:
+  SOME_TOKEN:
+    keychain_service: com.example.token
+",
+        );
+        let source = declared_secret_source(&config, "SOME_TOKEN").expect("source declared");
+        assert_eq!(source.keychain_account, None);
+        assert_eq!(source.describe(), "'com.example.token'");
+    }
+
+    #[test]
+    fn undeclared_keys_have_no_source() {
+        let (_dir, config) = config_with(DECLARED);
+        assert!(declared_secret_source(&config, "SOMETHING_ELSE").is_none());
+    }
+
+    /// A `secret_sources` block written wrong must not take down extensions that
+    /// never asked for one, so it degrades to "nothing declared".
+    #[test]
+    fn a_malformed_block_declares_nothing() {
+        let (_dir, config) = config_with("secret_sources: \"not-a-mapping\"\n");
+        assert!(declared_secret_source(&config, "MUNINN_MCP_BEARER_TOKEN").is_none());
+    }
+
+    #[test]
+    fn resolves_through_the_reader() {
+        let (_dir, config) = config_with(DECLARED);
+        let resolved = resolve_declared_secret_with(
+            |source| {
+                assert_eq!(source.keychain_service, "ai.muninn.mcp");
+                Ok("a-real-token".to_string())
+            },
+            &config,
+            "MUNINN_MCP_BEARER_TOKEN",
+            "muninn",
+        )
+        .expect("resolution succeeds");
+        assert_eq!(resolved, Some("a-real-token".to_string()));
+    }
+
+    #[test]
+    fn an_undeclared_key_resolves_to_none_without_reading() {
+        let (_dir, config) = config_with(DECLARED);
+        let resolved = resolve_declared_secret_with(
+            |_| panic!("reader must not run for an undeclared key"),
+            &config,
+            "SOMETHING_ELSE",
+            "muninn",
+        )
+        .expect("resolution succeeds");
+        assert!(resolved.is_none());
+    }
+
+    /// A declared-but-unreadable item is a different failure from "no credential
+    /// configured", and the message has to say which item it could not read.
+    #[test]
+    fn a_failed_read_names_the_keychain_item() {
+        let (_dir, config) = config_with(DECLARED);
+        let err = resolve_declared_secret_with(
+            |_| Err("No matching entry found in secure storage".to_string()),
+            &config,
+            "MUNINN_MCP_BEARER_TOKEN",
+            "muninn",
+        )
+        .expect_err("resolution fails");
+        let ExtensionError::ConfigError(message) = err else {
+            panic!("expected a ConfigError");
+        };
+        assert!(message.contains("ai.muninn.mcp"), "message: {message}");
+        assert!(message.contains("account 'alice'"), "message: {message}");
+        assert!(
+            message.contains("MUNINN_MCP_BEARER_TOKEN"),
+            "message: {message}"
+        );
+    }
+
+    #[test]
+    fn an_empty_secret_is_rejected() {
+        let (_dir, config) = config_with(DECLARED);
+        let err = resolve_declared_secret_with(
+            |_| Ok(String::new()),
+            &config,
+            "MUNINN_MCP_BEARER_TOKEN",
+            "muninn",
+        )
+        .expect_err("an empty credential is not a credential");
+        let ExtensionError::ConfigError(message) = err else {
+            panic!("expected a ConfigError");
+        };
+        assert!(message.contains("empty value"), "message: {message}");
+    }
+
+    /// Regression guard: with nothing declared, the original not-found error is
+    /// preserved verbatim rather than replaced by a keychain message.
+    #[tokio::test]
+    async fn merge_environments_keeps_the_original_error_when_nothing_is_declared() {
+        let (_dir, config) = config_with("secret_sources: {}\n");
+        let err = merge_environments(
+            &Envs::new(HashMap::new()),
+            &["MUNINN_MCP_BEARER_TOKEN".to_string()],
+            "muninn",
+            &config,
+        )
+        .await
+        .expect_err("no credential anywhere");
+        let ExtensionError::ConfigError(message) = err else {
+            panic!("expected a ConfigError");
+        };
+        assert!(
+            message.starts_with("Failed to fetch secret 'MUNINN_MCP_BEARER_TOKEN' from config:"),
+            "message: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_environment_value_still_wins_over_a_declared_source() {
+        let (_dir, config) = config_with(DECLARED);
+        let mut preset = HashMap::new();
+        preset.insert(
+            "MUNINN_MCP_BEARER_TOKEN".to_string(),
+            "from-the-environment".to_string(),
+        );
+        let merged = merge_environments(
+            &Envs::new(preset),
+            &["MUNINN_MCP_BEARER_TOKEN".to_string()],
+            "muninn",
+            &config,
+        )
+        .await
+        .expect("already present, no lookup needed");
+        assert_eq!(
+            merged.get("MUNINN_MCP_BEARER_TOKEN").map(String::as_str),
+            Some("from-the-environment")
+        );
+    }
 }

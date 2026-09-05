@@ -141,6 +141,44 @@ extensions:
 
 Use the `available_tools` field to limit which tools are loaded from an extension. List the tool names you want — only those will be available to gosling. Leave it empty (the default) to load all tools. This can help reduce token overhead in sessions where you only need a subset of an extension's capabilities.
 
+## Secret Sources
+
+`env_keys` names the secrets an extension needs. gosling resolves each one from
+the environment, then from its own keyring, then from the secrets file. When the
+credential belongs to another program, `secret_sources` lets gosling read it
+from that program's OS keychain item instead of holding a second copy:
+
+```yaml
+secret_sources:
+  MUNINN_MCP_BEARER_TOKEN:
+    keychain_service: ai.muninn.mcp
+    keychain_account: alice      # optional, defaults to $USER
+
+extensions:
+  muninn:
+    type: streamable_http
+    uri: http://127.0.0.1:8765/mcp
+    env_keys: [MUNINN_MCP_BEARER_TOKEN]
+    headers:
+      Authorization: "Bearer $MUNINN_MCP_BEARER_TOKEN"
+```
+
+The map is keyed by the same names the extension lists in `env_keys`. A source
+is consulted only when the environment and gosling's own store have nothing,
+so it never overrides a value you set explicitly, and a missing or malformed
+`secret_sources` block leaves every other extension unaffected.
+
+Prefer this over the two alternatives when another program owns the credential.
+Copying the value into gosling's keyring makes each rotation a two-step
+operation that silently half-fails, and relying on the process environment makes
+the value depend on where gosling sits in the login sequence — on macOS a
+`launchctl setenv` from a login agent reaches only processes started after it,
+so the same machine can succeed or fail from one boot to the next.
+
+If the item cannot be read, gosling reports which keychain item it tried rather
+than the generic "secret not found", because a server answers a missing header,
+an empty one, and a wrong one with the same 401.
+
 ## Search Path Configuration
 
 Extensions may need to execute external commands or tools. By default, gosling uses your system's PATH environment variable. You can add additional search directories in your config file:
