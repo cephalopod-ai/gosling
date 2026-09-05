@@ -1630,3 +1630,124 @@ async fn test_custom_headers_forwarded_oauth_path() {
         "custom header x-api-key was not forwarded through the OAuth connection path"
     );
 }
+
+/// Runs a real session-store write through the gate from inside a tool call,
+/// standing in for a delegated subagent creating its session or `todo`
+/// merging extension state.
+struct WriteGateHoldingClient {
+    session_manager: Arc<crate::session::SessionManager>,
+    working_dir: PathBuf,
+}
+
+#[async_trait::async_trait]
+impl McpClientTrait for WriteGateHoldingClient {
+    fn get_info(&self) -> Option<&InitializeResult> {
+        None
+    }
+
+    async fn list_tools(
+        &self,
+        _session_id: &str,
+        _next_cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ListToolsResult, Error> {
+        Ok(ListToolsResult {
+            tools: vec![Tool::new(
+                "create_session".to_string(),
+                "Creates a nested session".to_string(),
+                Arc::new(serde_json::json!({}).as_object().unwrap().clone()),
+            )],
+            next_cursor: None,
+            meta: None,
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        _ctx: &ToolCallContext,
+        _name: &str,
+        _arguments: Option<JsonObject>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<CallToolResult, Error> {
+        self.session_manager
+            .create_session(
+                self.working_dir.clone(),
+                "nested".to_string(),
+                crate::session::SessionType::SubAgent,
+                crate::config::GoslingMode::Auto,
+            )
+            .await
+            .map_err(|_| Error::TransportClosed)?;
+        Ok(CallToolResult::success(vec![]))
+    }
+}
+
+/// The reply stream multiplexes a tool batch with `select_all` on its own task
+/// and, when a sibling result arrives, persists it through the session store's
+/// write gate before polling the batch again. A tool future that parked while
+/// holding that gate would then never be polled again and the whole session
+/// deadlocked on one task (observed with a sync `delegate` beside any other
+/// tool). Tool bodies therefore run on their own task.
+#[tokio::test]
+async fn tool_parked_on_the_write_gate_does_not_deadlock_the_dispatching_task() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let session_manager = Arc::new(crate::session::SessionManager::new(
+        temp_dir.path().to_path_buf(),
+    ));
+    // Initializes the store, so the tool's first poll reaches BEGIN IMMEDIATE
+    // rather than parking in schema creation.
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "parent".to_string(),
+            crate::session::SessionType::User,
+            crate::config::GoslingMode::Auto,
+        )
+        .await
+        .unwrap();
+
+    let extension_manager = ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+    extension_manager
+        .add_mock_extension(
+            "gated".to_string(),
+            Arc::new(WriteGateHoldingClient {
+                session_manager: Arc::clone(&session_manager),
+                working_dir: temp_dir.path().to_path_buf(),
+            }),
+        )
+        .await;
+
+    let ctx = ToolCallContext::new(session.id.clone(), None, Some("req-1".to_string()));
+    let dispatched = extension_manager
+        .dispatch_tool_call(
+            &ctx,
+            CallToolRequestParams::new("gated__create_session".to_string()),
+            CancellationToken::default(),
+        )
+        .await
+        .unwrap();
+    let mut tool_result = dispatched.result;
+
+    // One poll, as `select_all` gives every tool in a batch, then the
+    // generator's own gated write without polling the tool again.
+    let _ = futures::poll!(&mut tool_result);
+    let persisted = tokio::time::timeout(
+        Duration::from_secs(5),
+        session_manager.add_message(
+            &session.id,
+            &crate::conversation::message::Message::user().with_text("sibling tool result"),
+        ),
+    )
+    .await;
+    assert!(
+        persisted.is_ok(),
+        "dispatching task deadlocked behind the write gate held by a parked tool future"
+    );
+    persisted.unwrap().unwrap();
+
+    let result = tokio::time::timeout(Duration::from_secs(5), tool_result)
+        .await
+        .expect("tool must still finish after the dispatching task's write")
+        .unwrap();
+    assert_ne!(result.is_error, Some(true));
+}

@@ -3,6 +3,8 @@
 // The extension_manager compatibility facade preserves the manager type and paths.
 
 use super::*;
+use std::future::Future;
+use tracing::Instrument;
 
 impl ExtensionManager {
     pub(super) async fn resolve_tool(
@@ -176,7 +178,7 @@ impl ExtensionManager {
         };
 
         Ok(ToolCallResult {
-            result: Box::new(fut.boxed()),
+            result: Box::new(run_on_own_task(fut).boxed()),
             notification_stream: Some(Box::new(ReceiverStream::new(notifications_receiver))),
             action_required_stream: action_required_receiver.map(
                 |(rx, session_id, tool_call_request_id)| {
@@ -188,5 +190,56 @@ impl ExtensionManager {
                 },
             ),
         })
+    }
+}
+
+/// Runs a tool body on its own task.
+///
+/// The reply stream multiplexes a batch's tool futures with `select_all` on
+/// its task and, between polls, persists sibling results through the session
+/// store's write gate. A tool body polled inline that parks while holding that
+/// gate (a delegated subagent creating its session, `todo` merging extension
+/// state) is then never polled again once the stream waits for the gate, and
+/// the whole session deadlocks on one task. The spawn is deferred to the first
+/// poll so a tool still starts only once the batch's approval prompts are
+/// answered, and the task is aborted when the caller drops the future so
+/// cancellation behaves as before.
+async fn run_on_own_task<F>(fut: F) -> Result<CallToolResult, ErrorData>
+where
+    F: Future<Output = Result<CallToolResult, ErrorData>> + Send + 'static,
+{
+    let session_id = crate::session_context::current_session_id();
+    let task = AbortOnDrop(tokio::spawn(
+        crate::session_context::with_session_id(session_id, fut)
+            .instrument(tracing::Span::current()),
+    ));
+    match task.await {
+        Ok(result) => result,
+        Err(join_error) if join_error.is_panic() => Err(ErrorData::new(
+            ErrorCode::INTERNAL_ERROR,
+            format!("tool task panicked: {join_error}"),
+            None,
+        )),
+        Err(_) => Err(ErrorData::new(
+            ErrorCode::INTERNAL_ERROR,
+            "tool task was cancelled before it produced a result".to_string(),
+            None,
+        )),
+    }
+}
+
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> Future for AbortOnDrop<T> {
+    type Output = Result<T, tokio::task::JoinError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.0).poll(cx)
+    }
+}
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
