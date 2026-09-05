@@ -23,6 +23,7 @@ use crate::providers::formats::anthropic::{
 };
 use gosling_providers::conversation::token_usage::Usage;
 use gosling_providers::model::ModelConfig;
+use gosling_providers::utils::sanitize_unicode_tags;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -368,11 +369,11 @@ pub fn to_bedrock_tool(tool: &Tool) -> Result<bedrock::Tool> {
 
     Ok(bedrock::Tool::ToolSpec(
         bedrock::ToolSpecification::builder()
-            .name(tool.name.to_string())
+            .name(sanitize_unicode_tags(&tool.name))
             .description(
                 tool.description
                     .as_ref()
-                    .map(|d| d.to_string())
+                    .map(|description| sanitize_unicode_tags(description))
                     .unwrap_or_default(),
             )
             .input_schema(bedrock::ToolInputSchema::Json(to_bedrock_json(
@@ -404,7 +405,7 @@ pub fn to_bedrock_json(value: &Value) -> Document {
                 unreachable!()
             }
         }
-        Value::String(str) => Document::String(str.to_string()),
+        Value::String(str) => Document::String(sanitize_unicode_tags(str)),
         Value::Array(arr) => Document::Array(arr.iter().map(to_bedrock_json).collect()),
         Value::Object(obj) => Document::Object(HashMap::from_iter(
             obj.into_iter()
@@ -805,6 +806,22 @@ mod tests {
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Failed to decode base64 image data"));
+    }
+
+    #[test]
+    fn bedrock_json_strips_hidden_unicode_tags() {
+        let document = to_bedrock_json(&json!({
+            "description": "safe\u{202E}text",
+            "nested": ["safe\u{E0001}value"]
+        }));
+
+        assert_eq!(
+            from_bedrock_json(&document).unwrap(),
+            json!({
+                "description": "safetext",
+                "nested": ["safevalue"]
+            })
+        );
     }
 
     #[test]

@@ -86,6 +86,7 @@ fn declared_secret_source(config: &Config, key: &str) -> Option<KeychainSecretSo
 /// `Ok(None)` means nothing was declared for this key and the caller should keep
 /// its existing behaviour. `Err` means a source was declared and could not be
 /// read, which is more actionable than the generic not-found error it replaces.
+#[allow(clippy::result_large_err)]
 fn resolve_declared_secret_with(
     reader: impl Fn(&KeychainSecretSource) -> Result<String, String>,
     config: &Config,
@@ -121,6 +122,7 @@ fn resolve_declared_secret_with(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn resolve_declared_secret(
     config: &Config,
     key: &str,

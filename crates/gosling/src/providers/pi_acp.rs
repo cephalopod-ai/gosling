@@ -59,7 +59,7 @@ impl ProviderDef for PiAcpProvider {
         Box::pin(async move {
             let config = Config::global();
             let resolved_command = SearchPaths::builder().with_npm().resolve(PI_ACP_BINARY)?;
-            let gosling_mode = config.get_gosling_mode().unwrap_or_default();
+            let gosling_mode = config.resolve_gosling_mode()?;
 
             let mode_mapping = HashMap::from([
                 (GoslingMode::Auto, "auto".to_string()),

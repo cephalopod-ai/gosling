@@ -63,7 +63,7 @@ impl ProviderDef for VibeAcpProvider {
         Box::pin(async move {
             let config = Config::global();
             let resolved_command = SearchPaths::builder().resolve(VIBE_ACP_BINARY)?;
-            let gosling_mode = config.get_gosling_mode().unwrap_or_default();
+            let gosling_mode = config.resolve_gosling_mode()?;
 
             let provider_config = AcpProviderConfig {
                 command: resolved_command,

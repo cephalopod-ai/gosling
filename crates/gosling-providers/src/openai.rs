@@ -15,7 +15,8 @@ use crate::formats::openai_responses::{
 };
 use crate::images::ImageFormat;
 use crate::openai_compatible::{
-    handle_response_openai_compat, handle_status, stream_openai_compat, stream_responses_compat,
+    handle_response_openai_compat, handle_status, read_json_response, stream_openai_compat,
+    stream_responses_compat,
 };
 use crate::request_log::{start_log, LoggerHandleExt};
 use anyhow::Result;
@@ -702,9 +703,7 @@ impl Provider for OpenAiProvider {
                     .inspect_err(|e| {
                         let _ = log.error(e);
                     })?;
-                let json: serde_json::Value = response.json().await.map_err(|e| {
-                    ProviderError::RequestFailed(format!("Failed to parse JSON: {}", e))
-                })?;
+                let json = read_json_response(response).await?;
 
                 let responses_api_response: ResponsesApiResponse =
                     serde_json::from_value(json.clone()).map_err(|e| {
@@ -775,9 +774,7 @@ impl Provider for OpenAiProvider {
                     .inspect_err(|e| {
                         let _ = log.error(e);
                     })?;
-                let json: serde_json::Value = response.json().await.map_err(|e| {
-                    ProviderError::RequestFailed(format!("Failed to parse JSON: {}", e))
-                })?;
+                let json = read_json_response(response).await?;
 
                 let message = response_to_message(&json).map_err(|e| {
                     ProviderError::RequestFailed(format!("Failed to parse message: {}", e))

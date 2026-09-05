@@ -76,11 +76,16 @@ impl ExtensionManager {
         primary: &std::path::Path,
         additional: &[std::path::PathBuf],
     ) -> ExtensionResult<()> {
-        let extensions = self.extensions.lock().await;
+        let extensions: Vec<_> = self
+            .extensions
+            .lock()
+            .await
+            .iter()
+            .map(|(name, extension)| (name.clone(), extension.get_client()))
+            .collect();
         let mut failures = Vec::new();
-        for (name, ext) in extensions.iter() {
-            if let Err(e) = ext
-                .client
+        for (name, client) in extensions {
+            if let Err(e) = client
                 .update_working_dirs(primary.to_path_buf(), additional.to_vec())
                 .await
             {

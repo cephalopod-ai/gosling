@@ -1504,6 +1504,14 @@ config_value!(GOSLING_CODE_EXECUTION_RUNTIME, CodeExecutionRuntime);
 // which checks the structured `providers:` block first and falls back to
 // the legacy flat keys. The accessors below delegate to that module.
 impl Config {
+    pub fn resolve_gosling_mode(&self) -> Result<GoslingMode, ConfigError> {
+        match self.get_gosling_mode() {
+            Ok(mode) => Ok(mode),
+            Err(ConfigError::NotFound(_)) => Ok(GoslingMode::default()),
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn resolve_gosling_code_execution_runtime(&self) -> CodeExecutionRuntime {
         match self.get_gosling_code_execution_runtime() {
             Ok(runtime) => runtime,
@@ -3381,5 +3389,17 @@ extensions:
         .await;
 
         assert!(matches!(result, Err(ConfigError::NotFound(_))));
+    }
+
+    #[test]
+    fn resolve_gosling_mode_defaults_only_when_unset() {
+        let config = new_test_config();
+        assert_eq!(config.resolve_gosling_mode().unwrap(), GoslingMode::Auto);
+
+        config.set_param("GOSLING_MODE", "not-a-mode").unwrap();
+        assert!(matches!(
+            config.resolve_gosling_mode(),
+            Err(ConfigError::DeserializeError(_))
+        ));
     }
 }

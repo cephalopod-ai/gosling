@@ -176,7 +176,7 @@ fn provider_error_from_reqwest(error: &reqwest::Error) -> ProviderError {
         };
     }
 
-    ProviderError::RequestFailed(error.to_string())
+    ProviderError::RequestFailed("Provider request failed before receiving a response".to_string())
 }
 
 impl From<anyhow::Error> for ProviderError {

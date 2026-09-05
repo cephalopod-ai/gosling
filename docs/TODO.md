@@ -189,6 +189,38 @@ The five checked findings above were closed on 2026-08-27 with focused
 regression, typecheck, compile, lint, formatting, and Clippy evidence recorded
 in the source audit's repair appendix.
 
+### Upstream-triage and reliability follow-up — 2026-09-05
+
+Source: [`docs/logs/session/2026-09-04-upstream-goose-v149-triage.md`](logs/session/2026-09-04-upstream-goose-v149-triage.md)
+and [`docs/logs/session/2026-09-05-deep-research-stall-write-gate-deadlock.md`](logs/session/2026-09-05-deep-research-stall-write-gate-deadlock.md).
+
+- [x] **UPSTREAM-GSL-001** — provider errors that have no HTTP status now use a
+      URL-free message, so query credentials cannot reach the terminal fallback.
+- [x] **UPSTREAM-GSL-002** — non-streaming OpenAI and OpenAI-compatible JSON
+      responses are capped at 10 MiB before parsing.
+- [x] **UPSTREAM-GSL-003** — Bedrock tool names, descriptions, and JSON-schema
+      string values strip hidden Unicode prompt-control tags before serialization.
+- [x] **UPSTREAM-GSL-004** — invalid `GOSLING_MODE` values no longer become
+      autonomous mode in ACP providers; only an absent setting uses the default.
+- [x] **UPSTREAM-GSL-005** — OpenAI streaming retains a tool name that arrives
+      after its tool-call id.
+- [x] **REL-GSL-003** — extension root notifications clone their client handles
+      before awaiting remote calls, so a stalled extension no longer holds the
+      global extension-map mutex.
+
+The following findings remain open because their safe behavior needs an explicit
+owner decision rather than a guessed timeout or policy:
+
+- [ ] **REL-GSL-004** — choose the synchronous-delegation timeout and its
+      cancellation/recovery contract.
+- [ ] **REL-GSL-005** — choose whether a live-owner session-turn lease can
+      expire, including how legitimate long turns prove liveness.
+- [ ] **REL-GSL-006** — choose when an unrecovered `started` tool operation may
+      become visible `in_doubt` without risking duplicate execution.
+- [ ] **ARC-GSL-006** — design the provider `TransportPolicy` (HTTPS-only,
+      loopback exception, and redirect constraints) before porting the remaining
+      Snowflake transport hardening.
+
 ## Open items from the 2026-08-15 exhaustive audit — recorded 2026-08-16
 
 The repair campaign (`docs/logs/session/2026-08-16-audit-repair-campaign.md`)

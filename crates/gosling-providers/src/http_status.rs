@@ -8,9 +8,14 @@ use std::time::{Duration, SystemTime};
 
 use crate::errors::ProviderError;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use futures::StreamExt;
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::{Response, StatusCode};
 use serde_json::Value;
+
+/// Provider JSON responses are bounded so a misbehaving endpoint cannot make
+/// a non-streaming turn allocate without limit.
+pub const MAX_JSON_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 
 /// Strip credentials and sensitive query parameters from a URL for safe
 /// inclusion in error messages and logs. Drops userinfo (`user:pass@`) and
@@ -272,8 +277,28 @@ pub async fn handle_status(response: Response) -> Result<Response, ProviderError
 pub async fn handle_response(response: Response) -> Result<Value, ProviderError> {
     let response = handle_status(response).await?;
 
-    response.json::<Value>().await.map_err(|e| {
-        ProviderError::RequestFailed(format!("Response body is not valid JSON: {}", e))
+    read_json_response(response).await
+}
+
+pub async fn read_json_response(response: Response) -> Result<Value, ProviderError> {
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| {
+            ProviderError::RequestFailed("Failed to read JSON response".to_string())
+        })?;
+        if body.len().saturating_add(chunk.len()) > MAX_JSON_RESPONSE_BYTES {
+            return Err(ProviderError::RequestFailed(format!(
+                "JSON response exceeded the {} byte limit",
+                MAX_JSON_RESPONSE_BYTES
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    serde_json::from_slice(&body).map_err(|error| {
+        ProviderError::RequestFailed(format!("Response body is not valid JSON: {error}"))
     })
 }
 
@@ -281,6 +306,7 @@ pub async fn handle_response(response: Response) -> Result<Value, ProviderError>
 mod tests {
     use super::*;
     use serde_json::json;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn empty_headers() -> HeaderMap {
         HeaderMap::new()
@@ -432,5 +458,23 @@ mod tests {
                 "expected generic bad request for: {message}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn json_response_limit_rejects_an_oversized_success_body() {
+        let server = MockServer::start().await;
+        Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("x".repeat(MAX_JSON_RESPONSE_BYTES + 1)),
+            )
+            .mount(&server)
+            .await;
+
+        let response = reqwest::get(server.uri()).await.unwrap();
+        let error = read_json_response(response).await.unwrap_err();
+        assert!(matches!(
+            error,
+            ProviderError::RequestFailed(message) if message.contains("exceeded")
+        ));
     }
 }

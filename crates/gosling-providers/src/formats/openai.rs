@@ -1309,9 +1309,9 @@ where
 
                 if let Some(tool_calls) = &chunk.choices[0].delta.tool_calls {
                     for (position, tool_call) in tool_calls.iter().enumerate() {
-                        if let (Some(id), Some(name)) = (&tool_call.id, &tool_call.function.name) {
+                        if let Some(id) = &tool_call.id {
                             let index = tool_call.index.unwrap_or(position as i32);
-                            tool_call_data.insert(index, (id.clone(), name.clone(), tool_call.function.arguments.clone(), tool_call.extra.clone()));
+                            tool_call_data.insert(index, (id.clone(), tool_call.function.name.clone().unwrap_or_default(), tool_call.function.arguments.clone(), tool_call.extra.clone()));
                         }
                     }
                 }
@@ -1352,7 +1352,12 @@ where
                                     if let Some(delta_tool_calls) = &tool_chunk.choices[0].delta.tool_calls {
                                         for delta_call in delta_tool_calls {
                                             if let Some(index) = delta_call.index {
-                                                if let Some((_, _, ref mut args, ref mut extra)) = tool_call_data.get_mut(&index) {
+                                                if let Some((_, name, args, extra)) = tool_call_data.get_mut(&index) {
+                                                    if name.is_empty() {
+                                                        if let Some(delta_name) = &delta_call.function.name {
+                                                            *name = delta_name.clone();
+                                                        }
+                                                    }
                                                     args.push_str(&delta_call.function.arguments);
                                                     if extra.is_none() && delta_call.extra.is_some() {
                                                         *extra = delta_call.extra.clone();
@@ -1361,8 +1366,8 @@ where
                                                             existing.entry(key.clone()).or_insert(value.clone());
                                                         }
                                                     }
-                                                } else if let (Some(id), Some(name)) = (&delta_call.id, &delta_call.function.name) {
-                                                    tool_call_data.insert(index, (id.clone(), name.clone(), delta_call.function.arguments.clone(), delta_call.extra.clone()));
+                                                } else if let Some(id) = &delta_call.id {
+                                                    tool_call_data.insert(index, (id.clone(), delta_call.function.name.clone().unwrap_or_default(), delta_call.function.arguments.clone(), delta_call.extra.clone()));
                                                 }
                                             }
                                         }
@@ -4533,6 +4538,64 @@ data: [DONE]"#;
         assert_eq!(tool_calls.len(), 1);
         assert_eq!(tool_calls[0].0, "get_weather");
         assert_eq!(tool_calls[0].1, Some(object!({"city": "Paris"})));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_tool_call_keeps_a_name_arriving_after_the_id() -> anyhow::Result<()> {
+        let initial = json!({
+            "id": "x",
+            "object": "chat.completion.chunk",
+            "model": "m",
+            "choices": [{
+                "index": 0,
+                "delta": {"tool_calls": [{
+                    "index": 0,
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"arguments": "{\"city\": \""}
+                }]},
+                "finish_reason": null
+            }]
+        });
+        let named = json!({
+            "id": "x",
+            "object": "chat.completion.chunk",
+            "model": "m",
+            "choices": [{
+                "index": 0,
+                "delta": {"tool_calls": [{
+                    "index": 0,
+                    "function": {"name": "get_weather", "arguments": "Paris\"}"}
+                }]},
+                "finish_reason": "tool_calls"
+            }]
+        });
+        let lines = vec![
+            format!("data: {initial}"),
+            format!("data: {named}"),
+            "data: [DONE]".to_string(),
+        ];
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut tool_calls = Vec::new();
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(message) = message {
+                for content in &message.content {
+                    if let MessageContent::ToolRequest(request) = content {
+                        let call = request.tool_call.as_ref().expect("tool call should parse");
+                        tool_calls.push((call.name.to_string(), call.arguments.clone()));
+                    }
+                }
+            }
+        }
+
+        assert_eq!(
+            tool_calls,
+            vec![("get_weather".to_string(), Some(object!({"city": "Paris"})))]
+        );
         Ok(())
     }
 

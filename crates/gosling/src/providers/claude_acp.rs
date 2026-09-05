@@ -61,7 +61,7 @@ impl ProviderDef for ClaudeAcpProvider {
             let resolved_command = SearchPaths::builder()
                 .with_npm()
                 .resolve(CLAUDE_ACP_BINARY)?;
-            let gosling_mode = config.get_gosling_mode().unwrap_or_default();
+            let gosling_mode = config.resolve_gosling_mode()?;
             let model = config
                 .get_gosling_model()
                 .unwrap_or_else(|_| ACP_CURRENT_MODEL.to_string());

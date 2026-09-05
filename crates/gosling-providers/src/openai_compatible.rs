@@ -175,9 +175,7 @@ impl Provider for OpenAiCompatibleProvider {
                 .inspect_err(|e| {
                     let _ = log.error(e);
                 })?;
-            let json: serde_json::Value = response.json().await.map_err(|e| {
-                ProviderError::RequestFailed(format!("Failed to parse JSON: {}", e))
-            })?;
+            let json = read_json_response(response).await?;
 
             let message = response_to_message(&json).map_err(|e| {
                 ProviderError::RequestFailed(format!("Failed to parse message: {}", e))
@@ -199,7 +197,8 @@ impl Provider for OpenAiCompatibleProvider {
 // Re-exported from the dedicated `http_status` module — these helpers are
 // format-agnostic and used across all provider families.
 pub use super::http_status::{
-    handle_response, handle_status, map_http_error_to_provider_error, sanitize_url,
+    handle_response, handle_status, map_http_error_to_provider_error, read_json_response,
+    sanitize_url,
 };
 
 // Legacy alias kept for callers that haven't migrated their import path yet.
