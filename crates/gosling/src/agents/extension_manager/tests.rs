@@ -17,23 +17,46 @@ use rmcp::model::ServerNotification;
 use tokio::sync::mpsc;
 
 #[tokio::test]
-async fn streamable_http_client_enforces_the_extension_timeout() {
+async fn streamable_http_client_keeps_idle_response_streams_open() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
+    let timeout_duration = Duration::from_millis(100);
     let server = tokio::spawn(async move {
-        let (_socket, _) = listener.accept().await.unwrap();
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut byte = [0u8; 1];
+        while !request.ends_with(b"\r\n\r\n") {
+            socket.read_exact(&mut byte).await.unwrap();
+            request.extend_from_slice(&byte);
+        }
+        socket
+            .write_all(
+                b"HTTP/1.1 200 OK\r\n\
+                  Content-Type: text/event-stream\r\n\
+                  Transfer-Encoding: chunked\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        socket.flush().await.unwrap();
+        tokio::time::sleep(timeout_duration * 5).await;
+        socket.write_all(b"6\r\n: ping\r\n0\r\n\r\n").await.unwrap();
+        socket.flush().await.unwrap();
     });
-    let client = build_streamable_http_client(HeaderMap::new(), Duration::from_millis(25)).unwrap();
 
-    let error = client
+    let client = build_streamable_http_client(HeaderMap::new(), timeout_duration).unwrap();
+    let body = client
         .get(format!("http://{address}"))
         .send()
         .await
-        .unwrap_err();
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
 
-    assert!(error.is_timeout());
-    server.abort();
+    assert_eq!(body, ": ping");
+    server.await.unwrap();
 }
 
 #[cfg(unix)]

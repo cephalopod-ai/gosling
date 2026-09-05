@@ -294,6 +294,11 @@ pub(super) async fn create_streamable_http_client(
     }
 }
 
+/// Streamable HTTP keeps a long-lived SSE response body open to deliver server
+/// messages, so a whole-request deadline would tear that stream down (and every
+/// in-flight request riding on it) once the extension timeout elapsed. The
+/// per-request deadline is enforced by `McpClient` instead, leaving only the
+/// connect phase to bound here.
 pub(super) fn build_streamable_http_client(
     default_headers: HeaderMap,
     timeout_duration: Duration,
@@ -301,7 +306,7 @@ pub(super) fn build_streamable_http_client(
     #[allow(unused_mut)]
     let mut builder = reqwest::Client::builder()
         .default_headers(default_headers)
-        .timeout(timeout_duration);
+        .connect_timeout(timeout_duration);
     #[cfg(target_os = "linux")]
     {
         builder = builder.tcp_user_timeout(Some(timeout_duration));

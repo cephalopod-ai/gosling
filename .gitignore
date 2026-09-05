@@ -94,3 +94,6 @@ result
 goslingselftest/
 .tasks/
 .dory/
+
+# Local pre-install binary backups
+install-backups/
