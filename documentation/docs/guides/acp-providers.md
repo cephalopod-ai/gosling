@@ -237,6 +237,10 @@ GOSLING_PROVIDER=codex-acp gosling run \
 
 See [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) for session mode details.
 
+**Clarifying questions:**
+
+When the agent asks a question (Claude Code's `AskUserQuestion`), the adapter sends an ACP form elicitation. gosling advertises form elicitation to every ACP agent and shows the request as a question form in every mode, including `auto` and `chat`. If you decline, dismiss, or leave the form unanswered for five minutes, the agent is told the elicitation was declined or cancelled rather than receiving an empty answer.
+
 ### Codex ACP Configuration
 
 | Environment Variable | Description        | Default         |

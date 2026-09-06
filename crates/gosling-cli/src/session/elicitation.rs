@@ -58,15 +58,27 @@ pub fn collect_elicitation_input(message: &str, schema: &Value) -> io::Result<El
             .get("type")
             .and_then(|t| t.as_str())
             .unwrap_or("string");
+        let label = field_schema
+            .get("title")
+            .and_then(|t| t.as_str())
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or(name);
         let description = field_schema.get("description").and_then(|d| d.as_str());
         let default = field_schema.get("default");
-        let enum_values = field_schema.get("enum").and_then(|e| e.as_array());
+        let enum_values = field_schema
+            .get("enum")
+            .or_else(|| {
+                field_schema
+                    .get("items")
+                    .and_then(|items| items.get("enum"))
+            })
+            .and_then(|e| e.as_array());
 
         // makes a little true/false toggle
         if field_type == "boolean" {
             let label = match description {
-                Some(desc) => format!("{} ({})", name, desc),
-                None => name.clone(),
+                Some(desc) => format!("{} ({})", label, desc),
+                None => label.to_string(),
             };
             let default_bool = default.and_then(|v| v.as_bool()).unwrap_or(false);
 
@@ -88,15 +100,25 @@ pub fn collect_elicitation_input(message: &str, schema: &Value) -> io::Result<El
             continue;
         }
 
+        if let Some(desc) = description {
+            println!("{}", style(desc).dim());
+        }
         if let Some(options) = enum_values {
-            let opts: Vec<&str> = options.iter().filter_map(|v| v.as_str()).collect();
-            println!("  {}: {}", style("Options").dim(), opts.join(", "));
+            let opts: Vec<String> = options
+                .iter()
+                .filter_map(|v| v.as_str())
+                .enumerate()
+                .map(|(index, option)| format!("{}. {}", index + 1, option))
+                .collect();
+            let hint = if field_type == "array" {
+                "Options (comma-separated numbers or names)"
+            } else {
+                "Options (number or name)"
+            };
+            println!("  {}: {}", style(hint).dim(), opts.join(", "));
         }
 
-        print!("{}", style(name).yellow());
-        if let Some(desc) = description {
-            print!(" {}", style(format!("({})", desc)).dim());
-        }
+        print!("{}", style(label).yellow());
         if is_required {
             print!("{}", style("*").red());
         }
@@ -173,16 +195,33 @@ fn format_default(value: &Value) -> String {
     }
 }
 
+fn parse_option(input: &str, valid: &[&str]) -> Option<String> {
+    if valid.contains(&input) {
+        return Some(input.to_string());
+    }
+    let idx = input.parse::<usize>().ok()?;
+    (idx > 0 && idx <= valid.len()).then(|| valid[idx - 1].to_string())
+}
+
 fn parse_value(input: &str, field_type: &str, enum_values: Option<&Vec<Value>>) -> Value {
     if let Some(options) = enum_values {
         let valid: Vec<&str> = options.iter().filter_map(|v| v.as_str()).collect();
-        if valid.contains(&input) {
-            return Value::String(input.to_string());
+        if field_type == "array" {
+            let chosen: Vec<Value> = input
+                .split(',')
+                .map(str::trim)
+                .filter(|part| !part.is_empty())
+                .filter_map(|part| parse_option(part, &valid))
+                .map(Value::String)
+                .collect();
+            return if chosen.is_empty() {
+                Value::Null
+            } else {
+                Value::Array(chosen)
+            };
         }
-        if let Ok(idx) = input.parse::<usize>() {
-            if idx > 0 && idx <= valid.len() {
-                return Value::String(valid[idx - 1].to_string());
-            }
+        if let Some(choice) = parse_option(input, &valid) {
+            return Value::String(choice);
         }
     }
 
@@ -202,5 +241,38 @@ fn parse_value(input: &str, field_type: &str, enum_values: Option<&Vec<Value>>) 
             .map(Value::Number)
             .unwrap_or(Value::Null),
         _ => Value::String(input.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_value_accepts_option_names_and_numbers() {
+        let options = vec![json!("Summary"), json!("Detailed")];
+        assert_eq!(
+            parse_value("2", "string", Some(&options)),
+            json!("Detailed")
+        );
+        assert_eq!(
+            parse_value("Summary", "string", Some(&options)),
+            json!("Summary")
+        );
+        assert_eq!(
+            parse_value("other", "string", Some(&options)),
+            json!("other")
+        );
+    }
+
+    #[test]
+    fn parse_value_collects_multi_select_answers_into_an_array() {
+        let options = vec![json!("Introduction"), json!("Conclusion")];
+        assert_eq!(
+            parse_value("1, Conclusion", "array", Some(&options)),
+            json!(["Introduction", "Conclusion"])
+        );
+        assert_eq!(parse_value("nope", "array", Some(&options)), Value::Null);
     }
 }

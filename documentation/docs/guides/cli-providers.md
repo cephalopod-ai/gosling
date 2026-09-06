@@ -54,8 +54,9 @@ The Claude Code provider integrates with Anthropic's [Claude CLI tool](https://c
 **Features:**
 - Uses Claude's latest models
 - 200,000 token context limit
-- Automatic filtering of gosling extensions from system prompts (since Claude Code has its own tool ecosystem)
+- Automatic filtering of gosling extensions from system prompts (since Claude Code has its own tool ecosystem); stdio and streamable-http extensions are handed to the CLI as MCP servers
 - Streaming JSON (NDJSON) protocol for persistent, multi-turn sessions
+- Clarifying questions from Claude Code appear as a form in gosling, in every mode
 
 **Requirements:**
 - Claude CLI tool installed and configured
@@ -343,20 +344,22 @@ gosling session
 
 **Known Models:**
 
-The following models are recognized and passed to the Claude CLI via the `--model` flag. If `GOSLING_MODEL` is set to a value not in this list, no model flag is passed and Claude Code uses its default:
-
-- `default` (opus)
-- `sonnet`
-- `haiku`
+gosling asks the installed `claude` CLI which models it serves and offers the current names it recognizes (`claude-opus-5`, `claude-sonnet-5`, `claude-fable-5-1` or `claude-fable-5`, `claude-haiku-4-5`). The selected name is passed to the CLI with `--model`; `default` leaves the CLI's own default in place.
 
 **Permission Modes (`GOSLING_MODE`):**
 
-| Mode | Claude Code Flag | Behavior |
-|------|------------------|----------|
-| `auto` | `--dangerously-skip-permissions` | Bypasses all permission prompts |
-| `smart-approve` | `--permission-prompt-tool stdio` | Routes permission checks through the control protocol (prompts as needed) |
-| `approve` | `--permission-prompt-tool stdio` | Routes permission checks through the control protocol (prompts as needed) |
-| `chat` | (none) | Default Claude Code behavior |
+Every mode runs the CLI with `--permission-prompt-tool stdio`, so its permission requests arrive on gosling's control channel instead of being decided inside the CLI.
+
+| Mode | Claude Code Flags | Behavior |
+|------|-------------------|----------|
+| `auto` | `--permission-prompt-tool stdio` | Tool requests are approved automatically without a prompt |
+| `smart-approve` | `--permission-prompt-tool stdio` | Tool requests are shown as allow/deny prompts in gosling |
+| `approve` | `--permission-prompt-tool stdio` | Tool requests are shown as allow/deny prompts in gosling |
+| `chat` | `--permission-mode plan --permission-prompt-tool stdio` | The CLI stays read-only; any tool that would change something is denied without a prompt |
+
+**Clarifying questions:**
+
+When Claude Code asks a question (its `AskUserQuestion` tool), gosling shows the question as a form in every mode, including `auto` and `chat`: one dropdown per single-choice question and checkboxes for multi-select questions. Your choices are returned to the CLI as the answers. If you decline, dismiss, or leave the form unanswered for five minutes, the CLI is told that no answer arrived so the model states its assumption or repeats the question in text rather than reporting that you ignored it.
 
 :::tip Approve Mode Integration
 When using `approve` or `smart_approve` mode with Claude Code, gosling routes Claude Code's permission prompts through gosling's confirmation interface. This means:

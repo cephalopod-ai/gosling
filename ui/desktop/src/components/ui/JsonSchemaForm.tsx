@@ -44,13 +44,21 @@ const i18n = defineMessages({
 
 interface JsonSchemaProperty {
   type?: string;
+  title?: string;
   description?: string;
   default?: unknown;
   enum?: string[];
+  items?: { type?: string; enum?: string[] };
   minimum?: number;
   maximum?: number;
   minLength?: number;
   maxLength?: number;
+}
+
+function multiSelectOptions(prop: JsonSchemaProperty): string[] | undefined {
+  if (prop.type !== 'array') return undefined;
+  const options = prop.items?.enum;
+  return options && options.length > 0 ? options : undefined;
 }
 
 export interface JsonSchema {
@@ -90,6 +98,8 @@ export default function JsonSchemaForm({
           initial[key] = false;
         } else if (prop.type === 'number' || prop.type === 'integer') {
           initial[key] = prop.minimum ?? 0;
+        } else if (prop.type === 'array') {
+          initial[key] = [];
         } else if (prop.enum && prop.enum.length > 0 && isRequired(key)) {
           initial[key] = prop.enum[0];
         } else {
@@ -109,7 +119,12 @@ export default function JsonSchemaForm({
 
       const isRequired = schema.required?.includes(key);
 
-      if (isRequired && (value === '' || value === null || value === undefined)) {
+      const isEmpty =
+        value === '' ||
+        value === null ||
+        value === undefined ||
+        (Array.isArray(value) && value.length === 0);
+      if (isRequired && isEmpty) {
         return intl.formatMessage(i18n.fieldRequired);
       }
 
@@ -183,6 +198,36 @@ export default function JsonSchemaForm({
     const value = formData[key];
     const error = errors[key];
     const isRequired = schema.required?.includes(key);
+
+    const options = multiSelectOptions(prop);
+    if (options) {
+      const selected = Array.isArray(value) ? (value as string[]) : [];
+      return (
+        <div role="group" aria-labelledby={`${key}-label`} className="flex flex-col gap-1">
+          {options.map((option) => (
+            <label key={option} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                name={key}
+                value={option}
+                checked={selected.includes(option)}
+                onChange={(e) =>
+                  handleChange(
+                    key,
+                    e.target.checked
+                      ? [...selected, option]
+                      : selected.filter((entry) => entry !== option)
+                  )
+                }
+                disabled={disabled}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-text-primary">{option}</span>
+            </label>
+          ))}
+        </div>
+      );
+    }
 
     if (prop.enum) {
       return (
@@ -274,12 +319,18 @@ export default function JsonSchemaForm({
 
         return (
           <div key={key} className="flex flex-col gap-1">
-            <label htmlFor={key} className="text-sm font-medium text-text-primary">
-              {key}
+            <label
+              id={`${key}-label`}
+              htmlFor={key}
+              className="text-sm font-medium text-text-primary"
+            >
+              {prop.title || key}
               {isRequired && <span className="text-red-500 ml-1">*</span>}
             </label>
             {prop.description && prop.type !== 'boolean' && (
-              <span className="text-xs text-text-secondary">{prop.description}</span>
+              <span className="text-xs text-text-secondary whitespace-pre-line">
+                {prop.description}
+              </span>
             )}
             {renderField(key, prop)}
             {error && <span className="text-red-500 text-xs">{error}</span>}

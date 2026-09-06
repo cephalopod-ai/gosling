@@ -1,12 +1,14 @@
 use agent_client_protocol::schema::v1::{
-    ClientCapabilities, CloseSessionRequest, ContentBlock, ContentChunk, EnvVariable, HttpHeader,
-    ImageContent, InitializeRequest, InitializeResponse, McpCapabilities, McpServer, McpServerHttp,
-    McpServerStdio, NewSessionRequest, NewSessionResponse, PermissionOptionKind, PromptRequest,
-    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOptions, SessionId, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModeResponse, StopReason,
-    TextContent, ToolCallContent, ToolCallStatus, ToolKind,
+    ClientCapabilities, CloseSessionRequest, ContentBlock, ContentChunk, CreateElicitationRequest,
+    CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction as AcpElicitationAction,
+    ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
+    EnvVariable, HttpHeader, ImageContent, InitializeRequest, InitializeResponse, McpCapabilities,
+    McpServer, McpServerHttp, McpServerStdio, NewSessionRequest, NewSessionResponse,
+    PermissionOptionKind, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SessionConfigKind, SessionConfigOption,
+    SessionConfigOptionCategory, SessionConfigSelectOptions, SessionId, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModeResponse,
+    StopReason, TextContent, ToolCallContent, ToolCallStatus, ToolKind,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo};
@@ -17,7 +19,7 @@ use async_stream::try_stream;
 use futures::future::BoxFuture;
 use gosling_providers::conversation::token_usage::{ProviderUsage, Usage};
 use rmcp::model::{CallToolRequestParams, CallToolResult, Content as RmcpContent, Role, Tool};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -32,7 +34,11 @@ use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 
+use crate::acp::elicitation_messages::{
+    CreateElicitationRequestMessage, CreateElicitationResponseMessage,
+};
 use crate::acp::{map_permission_response, PermissionDecision};
+use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
 use crate::config::permission::PermissionLevel;
 use crate::config::{ExtensionConfig, GoslingMode, PermissionManager};
 use crate::context_mgmt::format_message_for_compacting;
@@ -52,6 +58,59 @@ pub const ACP_CURRENT_MODEL: &str = "current";
 /// (not a model completion), so this is intentionally much shorter than a
 /// provider's request timeout - a well-behaved agent responds immediately.
 const ACP_CONTROL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Matches the desktop client's own form timeout, after which it cancels the
+/// elicitation on its side anyway.
+const ELICITATION_TIMEOUT: Duration = Duration::from_secs(300);
+
+fn elicitation_content_from_json(
+    value: serde_json::Value,
+) -> BTreeMap<String, ElicitationContentValue> {
+    let serde_json::Value::Object(fields) = value else {
+        return BTreeMap::new();
+    };
+    fields
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let content = match value {
+                serde_json::Value::String(text) => ElicitationContentValue::String(text),
+                serde_json::Value::Bool(flag) => ElicitationContentValue::Boolean(flag),
+                serde_json::Value::Number(number) => match number.as_i64() {
+                    Some(integer) => ElicitationContentValue::Integer(integer),
+                    None => ElicitationContentValue::Number(number.as_f64()?),
+                },
+                serde_json::Value::Array(items) => ElicitationContentValue::StringArray(
+                    items
+                        .into_iter()
+                        .filter_map(|item| match item {
+                            serde_json::Value::String(text) => Some(text),
+                            _ => None,
+                        })
+                        .collect(),
+                ),
+                _ => return None,
+            };
+            Some((name, content))
+        })
+        .collect()
+}
+
+fn elicitation_response_from_outcome(
+    outcome: Result<ElicitationOutcome>,
+) -> CreateElicitationResponse {
+    let action = match outcome {
+        Ok(ElicitationOutcome::Accept(user_data)) => AcpElicitationAction::Accept(
+            ElicitationAcceptAction::new().content(elicitation_content_from_json(user_data)),
+        ),
+        Ok(ElicitationOutcome::Decline) => AcpElicitationAction::Decline,
+        Ok(ElicitationOutcome::Cancel) => AcpElicitationAction::Cancel,
+        Err(error) => {
+            tracing::warn!(error = %error, "ACP elicitation ended without an answer");
+            AcpElicitationAction::Cancel
+        }
+    };
+    CreateElicitationResponse::new(action)
+}
 
 /// Await a control-request response with a timeout, so a hung ACP
 /// subprocess can't block the caller (and, transitively, anything else
@@ -136,6 +195,10 @@ enum AcpUpdate {
     PermissionRequest {
         request: Box<RequestPermissionRequest>,
         response_tx: oneshot::Sender<RequestPermissionResponse>,
+    },
+    Elicitation {
+        request: Box<CreateElicitationRequest>,
+        response_tx: oneshot::Sender<CreateElicitationResponse>,
     },
     Complete(StopReason, Option<AcpUsage>),
     Error(String),
@@ -560,6 +623,7 @@ impl Provider for AcpProvider {
 
         let reject_all_tools = gosling_mode == GoslingMode::Chat;
         let model_name = model_config.model_name.clone();
+        let gosling_session_id = crate::session_context::current_session_id().unwrap_or_default();
 
         Ok(Box::pin(try_stream! {
             let mut suppress_text = false;
@@ -737,6 +801,34 @@ impl Provider for AcpProvider {
                             rejected_tool_calls.insert(request.tool_call.tool_call_id.0.to_string());
                         }
                         let _ = response_tx.send(map_permission_response(&request, decision));
+                    }
+                    AcpUpdate::Elicitation { request, response_tx } => {
+                        text_run = None;
+                        thought_run = None;
+                        let ElicitationMode::Form(form) = &request.mode else {
+                            let _ = response_tx.send(CreateElicitationResponse::new(
+                                AcpElicitationAction::Cancel,
+                            ));
+                            continue;
+                        };
+                        let schema = serde_json::to_value(&form.requested_schema)
+                            .unwrap_or_else(|_| serde_json::json!({"type": "object"}));
+                        let pending = ActionRequiredManager::global()
+                            .open_pending(gosling_session_id.clone())
+                            .await;
+                        let message = Message::assistant()
+                            .with_content(MessageContent::action_required_elicitation(
+                                pending.id().to_string(),
+                                request.message.clone(),
+                                schema,
+                            ))
+                            .user_only();
+                        yield (Some(message), None);
+
+                        let outcome = ActionRequiredManager::global()
+                            .wait_for_pending(pending, ELICITATION_TIMEOUT)
+                            .await;
+                        let _ = response_tx.send(elicitation_response_from_outcome(outcome));
                     }
                     AcpUpdate::Complete(_reason, usage) => {
                         if let Some(usage) = usage {
@@ -1058,6 +1150,48 @@ impl AcpClientLoop {
                 },
                 agent_client_protocol::on_receive_request!(),
             )
+            .on_receive_request(
+                {
+                    let prompt_response_tx = prompt_response_tx.clone();
+                    async move |request: CreateElicitationRequestMessage,
+                                responder,
+                                _connection_cx| {
+                        let cancelled = || {
+                            CreateElicitationResponseMessage(CreateElicitationResponse::new(
+                                AcpElicitationAction::Cancel,
+                            ))
+                        };
+                        let handler = prompt_response_tx
+                            .lock()
+                            .ok()
+                            .as_ref()
+                            .and_then(|g| g.as_ref().cloned())
+                            .filter(|tx| !tx.is_closed());
+                        // A question outside a live prompt has nobody to answer it.
+                        let Some(tx) = handler else {
+                            return responder.respond(cancelled());
+                        };
+
+                        let (response_tx, response_rx) = oneshot::channel();
+                        if tx
+                            .try_send(AcpUpdate::Elicitation {
+                                request: Box::new(request.0),
+                                response_tx,
+                            })
+                            .is_err()
+                        {
+                            return responder.respond(cancelled());
+                        }
+
+                        let response = response_rx
+                            .await
+                            .map(CreateElicitationResponseMessage)
+                            .unwrap_or_else(|_| cancelled());
+                        responder.respond(response)
+                    }
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
             .connect_with(transport, async move |cx: ConnectionTo<Agent>| {
                 handle_requests(config, gosling_mode, cx, rx, prompt_response_tx, init_tx).await
             })
@@ -1147,7 +1281,8 @@ async fn handle_requests(
 ) -> Result<(), agent_client_protocol::Error> {
     let mut init_tx = Some(init_tx);
 
-    let client_capabilities = ClientCapabilities::new();
+    let client_capabilities = ClientCapabilities::new()
+        .elicitation(ElicitationCapabilities::new().form(ElicitationFormCapabilities::new()));
     let init_response: InitializeResponse = cx
         .send_request(
             InitializeRequest::new(ProtocolVersion::LATEST)
@@ -1841,6 +1976,136 @@ mod tests {
             },
             ModelConfig::new("test-model"),
         )
+    }
+
+    #[test]
+    fn elicitation_content_keeps_form_values_and_drops_the_rest() {
+        let content = elicitation_content_from_json(serde_json::json!({
+            "choice": "a",
+            "many": ["x", "y", 3],
+            "flag": true,
+            "count": 2,
+            "ratio": 0.5,
+            "nested": {"ignored": true},
+        }));
+
+        assert_eq!(
+            content.get("choice"),
+            Some(&ElicitationContentValue::String("a".into()))
+        );
+        assert_eq!(
+            content.get("many"),
+            Some(&ElicitationContentValue::StringArray(vec![
+                "x".into(),
+                "y".into()
+            ]))
+        );
+        assert_eq!(
+            content.get("flag"),
+            Some(&ElicitationContentValue::Boolean(true))
+        );
+        assert_eq!(
+            content.get("count"),
+            Some(&ElicitationContentValue::Integer(2))
+        );
+        assert_eq!(
+            content.get("ratio"),
+            Some(&ElicitationContentValue::Number(0.5))
+        );
+        assert!(!content.contains_key("nested"));
+    }
+
+    #[tokio::test]
+    async fn agent_elicitation_is_answered_through_a_gosling_form() {
+        use agent_client_protocol::schema::v1::{
+            ElicitationFormMode, ElicitationSchema, ElicitationSessionScope,
+        };
+        use futures::StreamExt;
+
+        let (tx, mut rx) = mpsc::channel(4);
+        let (provider, model) = test_provider_with_tx(Some(tx));
+        let messages = vec![Message::user().with_text("hello")];
+        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+
+        let Some(ClientRequest::Prompt { response_tx, .. }) = rx.recv().await else {
+            panic!("expected a prompt request");
+        };
+        let schema: ElicitationSchema = serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "format": {"type": "string", "title": "Format", "enum": ["Summary", "Detailed"]},
+                "sections": {"type": "array", "items": {"type": "string", "enum": ["Intro", "End"]}},
+            },
+            "required": ["format"],
+        }))
+        .unwrap();
+        let request = CreateElicitationRequest::new(
+            ElicitationFormMode::new(ElicitationSessionScope::new("test-session"), schema),
+            "How should I format the output?",
+        );
+        let (answer_tx, answer_rx) = oneshot::channel();
+        response_tx
+            .send(AcpUpdate::Elicitation {
+                request: Box::new(request),
+                response_tx: answer_tx,
+            })
+            .await
+            .unwrap();
+
+        let (message, _) = stream.next().await.unwrap().unwrap();
+        let message = message.expect("elicitation message");
+        assert!(message.is_user_visible() && !message.is_agent_visible());
+        let elicitation_id = match &message.content[0] {
+            MessageContent::ActionRequired(action_required) => match &action_required.data {
+                crate::conversation::message::ActionRequiredData::Elicitation {
+                    id,
+                    message,
+                    requested_schema,
+                } => {
+                    assert_eq!(message, "How should I format the output?");
+                    assert_eq!(
+                        requested_schema["properties"]["format"]["enum"],
+                        serde_json::json!(["Summary", "Detailed"])
+                    );
+                    id.clone()
+                }
+                other => panic!("expected an elicitation, got {other:?}"),
+            },
+            other => panic!("expected action-required content, got {other:?}"),
+        };
+
+        ActionRequiredManager::global()
+            .claim_response("", &elicitation_id)
+            .await
+            .unwrap()
+            .submit(ElicitationOutcome::Accept(serde_json::json!({
+                "format": "Detailed",
+                "sections": ["Intro"],
+            })))
+            .unwrap();
+
+        // The provider only forwards the answer while the stream is polled.
+        response_tx
+            .send(AcpUpdate::Complete(StopReason::EndTurn, None))
+            .await
+            .unwrap();
+        while let Some(item) = stream.next().await {
+            item.unwrap();
+        }
+
+        let answer = answer_rx.await.unwrap();
+        let AcpElicitationAction::Accept(accept) = answer.action else {
+            panic!("expected an accepted elicitation, got {:?}", answer.action);
+        };
+        let content = accept.content.unwrap();
+        assert_eq!(
+            content.get("format"),
+            Some(&ElicitationContentValue::String("Detailed".into()))
+        );
+        assert_eq!(
+            content.get("sections"),
+            Some(&ElicitationContentValue::StringArray(vec!["Intro".into()]))
+        );
     }
 
     #[test]

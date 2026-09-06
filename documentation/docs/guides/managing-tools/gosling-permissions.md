@@ -156,4 +156,6 @@ For example, with Claude Code in approve mode:
 
 This integration uses the same mechanism as the official Claude Agent SDKs, ensuring compatibility and consistent behavior.
 
+Claude Code's clarifying questions travel over the same channel but are not approvals: gosling shows them as a question form in every mode, including auto and chat, and sends your choices back as the answers. An unanswered form (declined, dismissed, or left for five minutes) tells Claude Code that no answer arrived, so it does not proceed as if you had been asked and stayed silent.
+
 See [CLI Providers - Claude Code Configuration](/docs/guides/cli-providers#claude-code-configuration) for setup details.

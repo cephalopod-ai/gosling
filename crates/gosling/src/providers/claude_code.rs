@@ -638,8 +638,14 @@ impl ClaudeCodeProvider {
                 true
             }
             GoslingMode::Chat => {
-                cmd.arg("--permission-mode").arg("plan");
-                false
+                // Plan mode keeps the CLI read-only. The control protocol stays
+                // on so clarifying questions still reach the user; every other
+                // prompt is denied in `stream` rather than shown.
+                cmd.arg("--permission-mode")
+                    .arg("plan")
+                    .arg("--permission-prompt-tool")
+                    .arg("stdio");
+                true
             }
         }
     }
@@ -924,7 +930,7 @@ impl gosling_providers::base::ProviderDescriptor for ClaudeCodeProvider {
         ProviderMetadata::new(
             CLAUDE_CODE_PROVIDER_NAME,
             "Claude Code CLI",
-            "[Deprecated: use claude-acp instead] Requires claude CLI installed, no MCPs. Use claude-acp for ACP support with extensions.",
+            "[Deprecated: use claude-acp instead] Drives the claude CLI over stream-json; stdio and streamable-http extensions are passed through as MCP servers. Prefer claude-acp.",
             CLAUDE_CODE_DEFAULT_MODEL,
             CLAUDE_CODE_KNOWN_MODELS.to_vec(),
             CLAUDE_CODE_DOC_URL,
@@ -1303,14 +1309,18 @@ impl Provider for ClaudeCodeProvider {
                                         }
 
                                         let mode = stream_initial_mode;
-                                        if mode == GoslingMode::Auto {
-                                            let resp = ControlResponse::success(
-                                                request_id,
+                                        if matches!(mode, GoslingMode::Auto | GoslingMode::Chat) {
+                                            let perm_resp = if mode == GoslingMode::Auto {
                                                 PermissionResponse::Allow {
                                                     updated_input: input,
                                                     tool_use_id,
-                                                },
-                                            );
+                                                }
+                                            } else {
+                                                PermissionResponse::Deny {
+                                                    message: "This Gosling session is in chat mode: tools that change anything are disabled. Answer in text instead.".to_string(),
+                                                }
+                                            };
+                                            let resp = ControlResponse::success(request_id, perm_resp);
                                             let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
                                                 ProviderError::RequestFailed(format!("Failed to serialize automatic permission response: {e}"))
                                             })?;
@@ -1423,9 +1433,9 @@ mod tests {
     )]
     #[test_case(
         GoslingMode::Chat,
-        false,
-        vec!["--permission-mode", "plan"];
-        "chat_uses_plan_mode"
+        true,
+        vec!["--permission-mode", "plan", "--permission-prompt-tool", "stdio"];
+        "chat_uses_plan_mode_and_keeps_questions_reachable"
     )]
     fn permission_flags_follow_session_mode(
         mode: GoslingMode,
@@ -1897,7 +1907,9 @@ mod tests {
         let child = tokio::process::Command::new("true")
             .spawn()
             .expect("failed to spawn `true`");
-        let (stdin_writer, stdin_reader) = tokio::io::duplex(1024);
+        // Nothing reads the test stdin until the stream finishes, so the
+        // buffer must hold every control response a test writes.
+        let (stdin_writer, stdin_reader) = tokio::io::duplex(64 * 1024);
         let process = CliProcess {
             child,
             stdin: Box::new(stdin_writer),
@@ -2197,6 +2209,49 @@ mod tests {
                 .unwrap()
                 .len(),
             2
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_mode_denies_tools_without_prompting_but_still_asks_questions() {
+        use futures::StreamExt;
+
+        let (provider, mut stream, stdin_reader) = stream_with_canned_stdout_in_mode(
+            &[
+                r#"{"type":"control_response","response":{"subtype":"success","request_id":"req_0"}}"#,
+                r#"{"type":"control_request","request_id":"perm_w","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"path":"foo.txt"},"tool_use_id":"tu_w"}}"#,
+                ask_user_question_control_request(),
+                r#"{"type":"result","result":"Done","usage":{"input_tokens":10,"output_tokens":5}}"#,
+            ],
+            GoslingMode::Chat,
+        )
+        .await;
+
+        let elicitation_id = first_elicitation_id(&mut stream).await;
+        ActionRequiredManager::global()
+            .claim_response("", &elicitation_id)
+            .await
+            .unwrap()
+            .submit(ElicitationOutcome::Accept(
+                json!({"q1": "Summary", "q2": ["Conclusion"]}),
+            ))
+            .unwrap();
+
+        while let Some(item) = stream.next().await {
+            item.unwrap();
+        }
+        drop(stream);
+
+        let stdin_str = capture_stdin(&provider, stdin_reader).await;
+        let write_response = extract_permission_response(&stdin_str, "perm_w");
+        assert_eq!(write_response["behavior"], "deny");
+        assert!(write_response["message"]
+            .as_str()
+            .unwrap()
+            .contains("chat mode"));
+        assert_eq!(
+            extract_permission_response(&stdin_str, "perm_q")["behavior"],
+            "allow"
         );
     }
 

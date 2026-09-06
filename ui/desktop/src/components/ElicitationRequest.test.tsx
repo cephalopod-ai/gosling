@@ -23,12 +23,43 @@ type SubmitElicitationResponse = (
   userData: Record<string, unknown>
 ) => Promise<boolean>;
 
-function renderElicitationRequest(onSubmit: SubmitElicitationResponse) {
+const questionContent = {
+  type: 'actionRequired',
+  data: {
+    actionType: 'elicitation',
+    id: 'elicitation-2',
+    message: 'Claude Code is asking you:',
+    requested_schema: {
+      type: 'object',
+      properties: {
+        q1: {
+          type: 'string',
+          title: 'Format',
+          description: 'How should I format the output?',
+          enum: ['Summary', 'Detailed'],
+        },
+        q2: {
+          type: 'array',
+          title: 'Sections',
+          description: 'Which sections should I include?',
+          items: { type: 'string', enum: ['Introduction', 'Conclusion'] },
+          minItems: 1,
+        },
+      },
+      required: ['q1', 'q2'],
+    },
+  },
+} as ActionRequired & { type: 'actionRequired' };
+
+function renderElicitationRequest(
+  onSubmit: SubmitElicitationResponse,
+  content: ActionRequired & { type: 'actionRequired' } = actionRequiredContent
+) {
   return render(
     <ElicitationRequest
       isCancelledMessage={false}
       isClicked={false}
-      actionRequiredContent={actionRequiredContent}
+      actionRequiredContent={content}
       onSubmit={onSubmit}
     />,
     { wrapper: IntlTestWrapper }
@@ -78,5 +109,26 @@ describe('ElicitationRequest', () => {
     );
     expect(screen.queryByText('Information submitted')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
+  });
+
+  it('labels question fields by title and submits multi-select answers as arrays', async () => {
+    const onSubmit = vi.fn<SubmitElicitationResponse>().mockResolvedValue(true);
+
+    renderElicitationRequest(onSubmit, questionContent);
+
+    expect(screen.getByText('Format')).toBeInTheDocument();
+    expect(screen.getByText('How should I format the output?')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText('This field is required')).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'Detailed');
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Introduction' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Conclusion' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Introduction' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
+
+    expect(onSubmit).toHaveBeenCalledWith('elicitation-2', { q1: 'Detailed', q2: ['Conclusion'] });
+    expect(await screen.findByText('Information submitted')).toBeInTheDocument();
   });
 });
