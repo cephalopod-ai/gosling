@@ -1589,7 +1589,8 @@ mod tests {
         for path in [&stale, &fresh, &unrelated] {
             fs::write(path, "{}").unwrap();
         }
-        let two_days_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 24 * 60 * 60);
+        let two_days_ago =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 24 * 60 * 60);
         for path in [&stale, &unrelated] {
             fs::File::options()
                 .write(true)
@@ -1602,7 +1603,10 @@ mod tests {
         let tmp = write_mcp_config_file(state_dir.path(), "{}").unwrap();
 
         assert!(!stale.exists(), "a day-old config file is swept");
-        assert!(fresh.exists(), "a recent config file may belong to a live child");
+        assert!(
+            fresh.exists(),
+            "a recent config file may belong to a live child"
+        );
         assert!(unrelated.exists(), "only config files are touched");
         assert!(tmp.path().exists());
     }
