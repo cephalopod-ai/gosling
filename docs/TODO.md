@@ -449,6 +449,17 @@ performance audit. Confirmation evidence, validation, and residual trade-offs ar
       prior-model and intervening-switch state in one pass; disclosures now use
       constant-time array reads and preserve recorded-switch suppression.
 
+#### Snippet optimization — 2026-09-06
+
+- [x] **REL-OPT-001** — resolved 2026-09-06: chat-list snippets borrow visible
+      text and stop at known truncation, avoiding full-text normalization buffers
+      and image/tool-content copies. The same local debug-build fixture reduced
+      a 20-session list median from 149.93 ms to 31.26 ms; this is not a
+      production or release-build latency claim. All 147 session tests and
+      crate-wide all-target Clippy pass; follow-up patch review has no remaining
+      findings. Discovery, benchmark limits, and the repaired test/lint issues
+      are recorded in [the session log](logs/session/2026-09-06-snippet-optimization.md).
+
 ### Lower priority, mechanical but needs a judgement call
 
 ARCN-GSL-002 (49 scattered `process.env` reads), ARC-GSL-005 (duplicated

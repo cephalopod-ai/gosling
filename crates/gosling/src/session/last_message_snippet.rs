@@ -1,4 +1,4 @@
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 use crate::session::session_manager::Session;
 use anyhow::Result;
 use rmcp::model::Role;
@@ -131,33 +131,51 @@ fn message_snippet(message: &Message, max_chars: usize) -> Option<String> {
         return None;
     }
 
-    let text = message
+    let chars = message
         .content
         .iter()
-        .filter_map(|content| content.filter_for_audience(Role::User))
-        .filter_map(|content| content.as_text().map(|text| text.to_string()))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if normalized.is_empty() {
-        return None;
-    }
+        .filter_map(|content| match content {
+            MessageContent::Text(text)
+                if text
+                    .audience()
+                    .map(|roles| roles.contains(&Role::User))
+                    .unwrap_or(true) =>
+            {
+                Some(text.text.as_str())
+            }
+            _ => None,
+        })
+        .flat_map(|text| text.chars().chain(std::iter::once('\n')));
 
-    let mut chars = normalized.chars();
-    let mut result: String = chars.by_ref().take(max_chars).collect();
-    if chars.next().is_some() {
-        let end = result.trim_end().len();
-        result.truncate(end);
-        result.push('…');
+    let mut result = String::new();
+    let mut char_count = 0;
+    let mut pending_space = false;
+    for ch in chars {
+        if ch.is_whitespace() {
+            pending_space = !result.is_empty();
+            continue;
+        }
+        if pending_space && char_count < max_chars {
+            result.push(' ');
+            char_count += 1;
+        }
+        if char_count == max_chars {
+            result.truncate(result.trim_end().len());
+            result.push('…');
+            return Some(result);
+        }
+        result.push(ch);
+        char_count += 1;
+        pending_space = false;
     }
-    Some(result)
+    (!result.is_empty()).then_some(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::GoslingMode;
-    use crate::conversation::message::{MessageContent, MessageMetadata};
+    use crate::conversation::message::MessageMetadata;
     use crate::session::session_manager::{
         SessionListFilters, SessionListPageQuery, SessionManager, SessionType,
     };
@@ -219,6 +237,81 @@ mod tests {
         )
     }
 
+    #[tokio::test]
+    #[ignore = "manual same-workload snippet benchmark; run with --ignored --nocapture"]
+    async fn benchmark_last_message_snippets() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        fn report(label: &str, mut samples: Vec<f64>) {
+            samples.sort_by(f64::total_cmp);
+            println!(
+                "{label}: median={:.2}us p95={:.2}us min={:.2}us max={:.2}us n={}",
+                samples[samples.len() / 2],
+                samples[(samples.len() * 95).div_ceil(100) - 1],
+                samples[0],
+                samples[samples.len() - 1],
+                samples.len(),
+            );
+        }
+
+        let cases = [
+            ("short", Message::user().with_text("A short chat message.")),
+            (
+                "64KiB text",
+                Message::user().with_text("word \n\t ".repeat(8192)),
+            ),
+            (
+                "1MiB word",
+                Message::user().with_text("x".repeat(1_048_576)),
+            ),
+            (
+                "1MiB image + short text",
+                Message::user()
+                    .with_image("A".repeat(1_048_576), "image/png")
+                    .with_text("Describe this image."),
+            ),
+        ];
+        for (label, message) in &cases {
+            for _ in 0..10 {
+                black_box(message_snippet(
+                    black_box(message),
+                    LAST_MESSAGE_SNIPPET_MAX_CHARS,
+                ));
+            }
+            let mut samples = Vec::new();
+            for _ in 0..30 {
+                let start = Instant::now();
+                for _ in 0..100 {
+                    black_box(message_snippet(
+                        black_box(message),
+                        LAST_MESSAGE_SNIPPET_MAX_CHARS,
+                    ));
+                }
+                samples.push(start.elapsed().as_secs_f64() * 1_000_000.0 / 100.0);
+            }
+            report(label, samples);
+        }
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        for index in 0..20 {
+            let id = snippet_session(&sm).await;
+            sm.add_message(&id, &cases[1 + index % 3].1).await.unwrap();
+        }
+        let expected = listed_snippets(&sm).await;
+        assert_eq!(expected.len(), 20);
+        assert!(expected.values().all(Option::is_some));
+        let mut samples = Vec::new();
+        for _ in 0..30 {
+            let start = Instant::now();
+            let actual = listed_snippets(&sm).await;
+            samples.push(start.elapsed().as_secs_f64() * 1_000_000.0);
+            assert_eq!(actual, expected);
+        }
+        report("20-session list with snippets", samples);
+    }
+
     #[test]
     fn test_message_snippet_collapses_whitespace_and_truncates() {
         use rmcp::model::CallToolRequestParams;
@@ -274,6 +367,97 @@ mod tests {
             Message::user().with_content(assistant_audience_text("assistant-only details"));
 
         assert_eq!(message_snippet(&only_assistant, 128), None);
+    }
+
+    #[test]
+    fn test_message_snippet_preserves_unicode_and_block_boundaries() {
+        let inputs = [
+            "", " ", "a", "é", "🪿", "\u{301}", "\t\n", "\u{a0}", "\u{2003}",
+        ];
+        for first in inputs {
+            for second in inputs {
+                for third in inputs {
+                    let message = Message::user()
+                        .with_content(MessageContent::text(format!("{first}{second}")))
+                        .with_content(assistant_audience_text("hidden"))
+                        .with_content(MessageContent::text(third));
+                    let normalized = format!("{first}{second}\n{third}")
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    for limit in 0..=6 {
+                        let expected = if normalized.is_empty() {
+                            None
+                        } else {
+                            let prefix = normalized.chars().take(limit).collect::<String>();
+                            Some(if normalized.chars().count() > limit {
+                                format!("{}…", prefix.trim_end())
+                            } else {
+                                prefix
+                            })
+                        };
+                        assert_eq!(
+                            message_snippet(&message, limit),
+                            expected,
+                            "parts={first:?}/{second:?}/{third:?}, limit={limit}",
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_message_snippet_preserves_all_text_audiences() {
+        use rmcp::model::{AnnotateAble, RawTextContent};
+
+        for audience in [
+            None,
+            Some(vec![]),
+            Some(vec![Role::Assistant]),
+            Some(vec![Role::User]),
+            Some(vec![Role::Assistant, Role::User]),
+        ] {
+            let text = RawTextContent {
+                text: "visible?".to_string(),
+                meta: None,
+            }
+            .no_annotation();
+            let text = match &audience {
+                Some(roles) => text.with_audience(roles.clone()),
+                None => text,
+            };
+            let expected = audience
+                .as_ref()
+                .map(|roles| roles.contains(&Role::User))
+                .unwrap_or(true)
+                .then_some("visible?");
+            let message = Message::user().with_content(MessageContent::Text(text));
+            assert_eq!(message_snippet(&message, 128).as_deref(), expected);
+        }
+    }
+
+    #[test]
+    fn test_message_snippet_ignores_non_text_and_trailing_whitespace() {
+        use rmcp::model::{CallToolResult, Content};
+
+        let message = Message::assistant()
+            .with_image("A".repeat(1_048_576), "image/png")
+            .with_tool_response(
+                "t1",
+                Ok(CallToolResult::success(vec![Content::text(
+                    "tool-only text",
+                )])),
+            )
+            .with_thinking("private thought", "sig")
+            .with_text("\t🪿 é\n")
+            .with_text(" \u{2003}".repeat(1024));
+        assert_eq!(message_snippet(&message, 3).as_deref(), Some("🪿 é"));
+        assert_eq!(message_snippet(&message, 2).as_deref(), Some("🪿…"));
+        assert_eq!(message_snippet(&message, 0).as_deref(), Some("…"));
+
+        let continued = message.with_text("x");
+        assert_eq!(message_snippet(&continued, 3).as_deref(), Some("🪿 é…"));
     }
 
     #[tokio::test]
