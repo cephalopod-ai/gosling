@@ -1,9 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import {
   describeAcpError,
+  isAcpAwaitingReplyError,
   isAcpConnectionClosedError,
   parseAcpCreditsExhaustedError,
 } from '../errors';
+
+describe('isAcpAwaitingReplyError', () => {
+  it('recognises a Deep Research turn that ended on a question to the user', () => {
+    expect(
+      isAcpAwaitingReplyError({
+        code: -32603,
+        message: 'Waiting for your reply',
+        data: { reason: 'deep_research_awaiting_reply', message: 'Answer the question above.' },
+      })
+    ).toBe(true);
+    expect(
+      isAcpAwaitingReplyError({
+        error: {
+          code: -32603,
+          message: 'Waiting',
+          data: { reason: 'deep_research_awaiting_reply' },
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('does not match other structured errors', () => {
+    expect(
+      isAcpAwaitingReplyError({ code: -32603, message: 'x', data: { reason: 'credits_exhausted' } })
+    ).toBe(false);
+    expect(isAcpAwaitingReplyError({ code: -32603, message: 'x', data: 'plain text' })).toBe(false);
+    expect(isAcpAwaitingReplyError(new Error('boom'))).toBe(false);
+  });
+});
 
 describe('parseAcpCreditsExhaustedError', () => {
   it('parses structured ACP credits exhausted errors', () => {

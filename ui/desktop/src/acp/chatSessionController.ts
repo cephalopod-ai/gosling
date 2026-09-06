@@ -21,6 +21,7 @@ import {
   isAcpConnectionClosedError,
   parseAcpCreditsExhaustedError,
   type AcpCreditsExhaustedError,
+  isAcpAwaitingReplyError,
 } from './errors';
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
 import { acpCancelPrompt, acpPromptSession } from './prompt';
@@ -354,11 +355,16 @@ async function submitMessage(
       return;
     }
 
-    console.error('Failed to submit ACP prompt:', error);
-    const submitError = {
-      message: 'Submit error: ' + describeAcpError(error),
-      connectionLost: isAcpConnectionClosedError(error),
-    };
+    const awaitingReply = isAcpAwaitingReplyError(error);
+    if (!awaitingReply) {
+      console.error('Failed to submit ACP prompt:', error);
+    }
+    const submitError = awaitingReply
+      ? { message: '', connectionLost: false, awaitingReply: true }
+      : {
+          message: 'Submit error: ' + describeAcpError(error),
+          connectionLost: isAcpConnectionClosedError(error),
+        };
     if (
       acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId, submitError)
     ) {

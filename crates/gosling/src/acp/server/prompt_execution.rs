@@ -5,6 +5,12 @@
 
 use super::*;
 
+/// Shown in the chat, and carried as the prompt error, when a Deep Research
+/// turn ends on a question to the operator instead of a report.
+const RESEARCH_AWAITING_REPLY_NOTICE: &str =
+    "Deep Research is waiting for your reply. Answer the question above and it will continue and write the report.";
+const RESEARCH_AWAITING_REPLY_REASON: &str = "deep_research_awaiting_reply";
+
 fn to_nonnegative_u64(value: Option<i32>) -> Option<u64> {
     value.and_then(|v| u64::try_from(v).ok())
 }
@@ -389,7 +395,35 @@ impl GoslingAcpAgent {
             )
             .await
             {
-                Ok(notes) => {
+                Ok(research_completion::ResearchOutcome::AwaitingReply) => {
+                    let message = Message::assistant().with_system_notification(
+                        SystemNotificationType::InlineMessage,
+                        RESEARCH_AWAITING_REPLY_NOTICE,
+                    );
+                    self.session_manager
+                        .add_message(&session_id, &message)
+                        .await
+                        .internal_err_ctx("Failed to record the research status")?;
+                    for content in &message.content {
+                        if let MessageContent::SystemNotification(notification) = content {
+                            send_status_message_update(
+                                cx,
+                                self.supports_gosling_custom_notifications(),
+                                &session_id,
+                                notification,
+                            )?;
+                        }
+                    }
+                    stream_error = Some(
+                        agent_client_protocol::Error::new(-32603, "Waiting for your reply").data(
+                            serde_json::json!({
+                                "reason": RESEARCH_AWAITING_REPLY_REASON,
+                                "message": RESEARCH_AWAITING_REPLY_NOTICE,
+                            }),
+                        ),
+                    );
+                }
+                Ok(research_completion::ResearchOutcome::Verified(notes)) => {
                     for note in notes {
                         let message = Message::assistant()
                             .with_system_notification(SystemNotificationType::InlineMessage, note);

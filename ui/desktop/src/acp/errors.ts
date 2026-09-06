@@ -24,6 +24,18 @@ export function parseAcpCreditsExhaustedError(error: unknown): AcpCreditsExhaust
   };
 }
 
+const DEEP_RESEARCH_AWAITING_REPLY_REASON = 'deep_research_awaiting_reply';
+
+/** A Deep Research turn ended on a question to the user rather than a report. */
+export function isAcpAwaitingReplyError(error: unknown): boolean {
+  const jsonRpcError = asAcpJsonRpcError(error);
+  return (
+    jsonRpcError !== null &&
+    isRecord(jsonRpcError.data) &&
+    jsonRpcError.data.reason === DEEP_RESEARCH_AWAITING_REPLY_REASON
+  );
+}
+
 /**
  * Renders an ACP JSON-RPC error the way the Rust `Display for Error` impl does:
  * the message, plus the `data` payload (often the real underlying cause, e.g. an

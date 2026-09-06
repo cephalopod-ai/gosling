@@ -17,19 +17,27 @@ const MAX_LIBRARY_SCAN_ENTRIES: usize = 5_000;
 const MAX_LIBRARY_SCAN_DEPTH: usize = 6;
 const HASH_BUFFER_SIZE: usize = 64 * 1024;
 
+#[derive(Debug)]
+pub(super) enum ResearchOutcome {
+    /// The contract holds; the notes describe any copy the closeout made.
+    Verified(Vec<String>),
+    /// The turn was nudged to write the report and still ended without one:
+    /// the model is waiting on the operator, which is not a failure.
+    AwaitingReply,
+}
+
 /// Verifies the dual-destination contract for a Deep Research turn and, when
 /// the model produced a report on only one side, makes the other copy itself.
-/// Returns operator-facing notes describing anything it did.
 pub(super) async fn verify_deep_research_completion(
     session_manager: &SessionManager,
     session_id: &str,
     assistant_text: &str,
     run_started_at: DateTime<Utc>,
     current_assistant_message_ids: &HashSet<String>,
-) -> Result<Vec<String>> {
+) -> Result<ResearchOutcome> {
     let session = session_manager.get_session(session_id, false).await?;
     let Some(state) = DeepResearchState::from_extension_data(&session.extension_data) else {
-        return Ok(Vec::new());
+        return Ok(ResearchOutcome::Verified(Vec::new()));
     };
 
     let mut artifacts = research::list_all_artifacts(session_manager, session_id).await?;
@@ -76,20 +84,60 @@ pub(super) async fn verify_deep_research_completion(
         artifacts = research::list_all_artifacts(session_manager, session_id).await?;
     }
 
-    let assistant_text = assistant_text.to_string();
-    let current_assistant_message_ids = current_assistant_message_ids.clone();
-    tokio::task::spawn_blocking(move || {
-        verify_artifact_pairs(
-            &state,
-            &artifacts,
-            &assistant_text,
-            run_started_at,
-            &current_assistant_message_ids,
-        )
-    })
-    .await
-    .context("completion verifier stopped unexpectedly")??;
-    Ok(closeout.notes)
+    let verification = {
+        let state = state.clone();
+        let assistant_text = assistant_text.to_string();
+        let current_assistant_message_ids = current_assistant_message_ids.clone();
+        tokio::task::spawn_blocking(move || {
+            verify_artifact_pairs(
+                &state,
+                &artifacts,
+                &assistant_text,
+                run_started_at,
+                &current_assistant_message_ids,
+            )
+        })
+        .await
+        .context("completion verifier stopped unexpectedly")?
+    };
+    match verification {
+        Ok(()) => Ok(ResearchOutcome::Verified(closeout.notes)),
+        Err(error) => {
+            let wrote_nothing = !research::turn_wrote_output_deliverable(
+                session_manager,
+                session_id,
+                &state,
+                run_started_at,
+                assistant_text,
+            )
+            .await;
+            if wrote_nothing
+                && nudged_this_turn(session_manager, session_id, run_started_at).await?
+            {
+                return Ok(ResearchOutcome::AwaitingReply);
+            }
+            Err(error)
+        }
+    }
+}
+
+async fn nudged_this_turn(
+    session_manager: &SessionManager,
+    session_id: &str,
+    run_started_at: DateTime<Utc>,
+) -> Result<bool> {
+    let session = session_manager.get_session(session_id, true).await?;
+    Ok(session
+        .conversation
+        .as_ref()
+        .map(|conversation| {
+            conversation.messages().iter().any(|message| {
+                message.role == rmcp::model::Role::User
+                    && message.created >= run_started_at.timestamp()
+                    && message.as_concat_text() == research::RESEARCH_DELIVERABLE_NUDGE
+            })
+        })
+        .unwrap_or(false))
 }
 
 #[derive(Debug, Default)]
@@ -802,6 +850,79 @@ mod tests {
         .unwrap();
         assert!(closeout.register.is_empty());
         assert!(closeout.notes.is_empty());
+    }
+
+    /// The reply loop nudged once and the model still ended without a report:
+    /// it is asking the operator something. That is reported as waiting, not
+    /// as a failure; without the nudge the same empty turn is still an error.
+    #[tokio::test]
+    async fn a_nudged_turn_that_still_wrote_nothing_is_awaiting_reply() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = std::fs::canonicalize(root.path()).unwrap();
+        let outputs = root_path.join("outputs");
+        let library = root_path.join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let session_manager = SessionManager::new(root_path.join("data"));
+        let session = session_manager
+            .create_session(
+                root_path.join("project"),
+                "research".into(),
+                crate::session::SessionType::User,
+                crate::config::GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        let mut extension_data = session.extension_data.clone();
+        DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        }
+        .to_extension_data(&mut extension_data)
+        .unwrap();
+        session_manager
+            .update(&session.id)
+            .extension_data(extension_data)
+            .apply()
+            .await
+            .unwrap();
+        let started = run_started_at();
+
+        let error = verify_deep_research_completion(
+            &session_manager,
+            &session.id,
+            "Which two strategies?",
+            started,
+            &HashSet::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("ended without a research report"),
+            "{error}"
+        );
+
+        session_manager
+            .add_message(
+                &session.id,
+                &crate::conversation::message::Message::user()
+                    .with_text(research::RESEARCH_DELIVERABLE_NUDGE)
+                    .with_visibility(false, true),
+            )
+            .await
+            .unwrap();
+        let outcome = verify_deep_research_completion(
+            &session_manager,
+            &session.id,
+            "I'm waiting for you to choose the two strategies.",
+            started,
+            &HashSet::new(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(outcome, ResearchOutcome::AwaitingReply));
     }
 
     #[test]

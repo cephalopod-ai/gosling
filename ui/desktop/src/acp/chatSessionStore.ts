@@ -40,6 +40,8 @@ export interface AcpChatSessionSnapshot {
 export interface AcpPromptError {
   message: string;
   connectionLost: boolean;
+  /** The turn ended on a question to the user; nothing failed. */
+  awaitingReply?: boolean;
 }
 
 type SnapshotListener = (snapshot: AcpChatSessionSnapshot) => void;

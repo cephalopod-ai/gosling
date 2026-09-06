@@ -215,6 +215,12 @@
   "backButton.back": {
     "defaultMessage": "Back"
   },
+  "baseChat.awaitingReply": {
+    "defaultMessage": "Waiting for your reply"
+  },
+  "baseChat.awaitingReplyBody": {
+    "defaultMessage": "Deep Research asked a question above. Answer it and the research will continue and write the report."
+  },
   "baseChat.connectionInterrupted": {
     "defaultMessage": "Connection interrupted"
   },

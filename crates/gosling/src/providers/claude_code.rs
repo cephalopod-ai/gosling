@@ -683,11 +683,44 @@ fn claude_mcp_config_json(extensions: &[ExtensionConfig]) -> Option<String> {
     serde_json::to_string(&json!({ "mcpServers": mcp_servers })).ok()
 }
 
+const STALE_MCP_CONFIG_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// The temp file is removed when the provider drops, but a server killed on
+/// app quit never runs destructors, so config files carrying extension
+/// headers piled up across restarts. Anything older than a day cannot belong
+/// to a live child.
+fn remove_stale_mcp_config_files(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_config = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("mcp-config-") && name.ends_with(".json"));
+        if !is_config {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age > STALE_MCP_CONFIG_AGE);
+        if stale {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 /// Write the MCP config JSON to a temp file with restricted permissions
 /// so secrets (headers, env vars) are not leaked via process argv.
 fn write_mcp_config_file(state_dir: &Path, json: &str) -> Result<NamedTempFile, anyhow::Error> {
     let dir = state_dir.join("claude-code");
     std::fs::create_dir_all(&dir)?;
+    remove_stale_mcp_config_files(&dir);
     let prefix = format!("mcp-config-{}_", chrono::Utc::now().format("%Y%m%d"));
     let mut tmp = tempfile::Builder::new()
         .prefix(&prefix)
@@ -1543,6 +1576,35 @@ mod tests {
         let expected_prefix = format!("claude-code/mcp-config-{}_", Utc::now().format("%Y%m%d"));
         assert!(norm_path.contains(&expected_prefix));
         assert!(norm_path.ends_with(".json"));
+    }
+
+    #[test]
+    fn stale_mcp_config_files_are_removed_and_fresh_ones_kept() {
+        let state_dir = tempdir().unwrap();
+        let dir = state_dir.path().join("claude-code");
+        fs::create_dir_all(&dir).unwrap();
+        let stale = dir.join("mcp-config-20260717_old.json");
+        let fresh = dir.join("mcp-config-20260906_new.json");
+        let unrelated = dir.join("notes.txt");
+        for path in [&stale, &fresh, &unrelated] {
+            fs::write(path, "{}").unwrap();
+        }
+        let two_days_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 24 * 60 * 60);
+        for path in [&stale, &unrelated] {
+            fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(two_days_ago)
+                .unwrap();
+        }
+
+        let tmp = write_mcp_config_file(state_dir.path(), "{}").unwrap();
+
+        assert!(!stale.exists(), "a day-old config file is swept");
+        assert!(fresh.exists(), "a recent config file may belong to a live child");
+        assert!(unrelated.exists(), "only config files are touched");
+        assert!(tmp.path().exists());
     }
 
     #[test]

@@ -65,6 +65,15 @@ const i18n = defineMessages({
     id: 'baseChat.reconnect',
     defaultMessage: 'Reconnect',
   },
+  awaitingReply: {
+    id: 'baseChat.awaitingReply',
+    defaultMessage: 'Waiting for your reply',
+  },
+  awaitingReplyBody: {
+    id: 'baseChat.awaitingReplyBody',
+    defaultMessage:
+      'Deep Research asked a question above. Answer it and the research will continue and write the report.',
+  },
   taskInterrupted: {
     id: 'baseChat.taskInterrupted',
     defaultMessage: 'Task interrupted',
@@ -637,23 +646,32 @@ export default function BaseChat({
 
         {(promptError || interruptedPrompt) && (
           <div
-            role="alert"
-            className="mx-4 mb-2 flex items-center justify-between gap-4 rounded-lg border border-border-warning bg-background-warning/20 px-4 py-3 text-text-primary"
+            role={promptError?.awaitingReply ? 'status' : 'alert'}
+            data-prompt-state={promptError?.awaitingReply ? 'awaiting-reply' : undefined}
+            className={`mx-4 mb-2 flex items-center justify-between gap-4 rounded-lg border px-4 py-3 text-text-primary ${
+              promptError?.awaitingReply
+                ? 'border-border-primary bg-background-secondary'
+                : 'border-border-warning bg-background-warning/20'
+            }`}
           >
             <div className="min-w-0">
               <p className="text-sm font-semibold">
                 {intl.formatMessage(
-                  promptError?.connectionLost
-                    ? i18n.connectionInterrupted
-                    : promptError
-                      ? i18n.taskFailed
-                      : i18n.taskInterrupted
+                  promptError?.awaitingReply
+                    ? i18n.awaitingReply
+                    : promptError?.connectionLost
+                      ? i18n.connectionInterrupted
+                      : promptError
+                        ? i18n.taskFailed
+                        : i18n.taskInterrupted
                 )}
               </p>
               <p className="mt-1 text-xs text-text-secondary">
-                {promptError?.connectionLost
-                  ? intl.formatMessage(i18n.connectionInterruptedBody)
-                  : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
+                {promptError?.awaitingReply
+                  ? intl.formatMessage(i18n.awaitingReplyBody)
+                  : promptError?.connectionLost
+                    ? intl.formatMessage(i18n.connectionInterruptedBody)
+                    : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
               </p>
             </div>
             {promptError?.connectionLost ? (
