@@ -370,6 +370,45 @@ pub fn get_security_finding_id_from_results(
         .and_then(|result| result.finding_id.clone())
 }
 
+/// The inspector-authored approval prompt for a request, if any inspector
+/// required approval with a message. Inspectors run in registration order and
+/// the permission baseline usually reports first, so the first result for a
+/// request is often a plain `Allow`; a later security finding must still
+/// reach the approval prompt instead of being shadowed by it.
+pub fn security_prompt_for_request<'a>(
+    tool_request_id: &str,
+    inspection_results: &'a [InspectionResult],
+) -> Option<&'a str> {
+    inspection_results.iter().find_map(|result| {
+        if result.tool_request_id != tool_request_id {
+            return None;
+        }
+        match &result.action {
+            InspectionAction::RequireApproval(Some(message)) => Some(message.as_str()),
+            _ => None,
+        }
+    })
+}
+
+/// The single still-unresolved egress domain an inspector attached to a
+/// request. More than one flagged domain makes a one-click grant ambiguous,
+/// so only an exact single entry is offered.
+pub fn single_flagged_domain_for_request(
+    tool_request_id: &str,
+    inspection_results: &[InspectionResult],
+) -> Option<String> {
+    inspection_results
+        .iter()
+        .filter(|result| result.tool_request_id == tool_request_id)
+        .find_map(|result| {
+            let domains = result.metadata.as_ref()?.get("domains")?.as_array()?;
+            if domains.len() != 1 {
+                return None;
+            }
+            domains[0].as_str().map(str::to_string)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

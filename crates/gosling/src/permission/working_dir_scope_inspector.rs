@@ -14,8 +14,10 @@ use std::sync::Arc;
 
 /// Enforces the session's pinned filesystem boundary. Ordinary sessions opt
 /// in through `Session::restrict_tools_to_working_dirs`; workspace sessions
-/// always enforce their saved policy. Out-of-scope paths require approval,
-/// while mutations under read-only workspace roots are denied outright.
+/// always enforce their saved folder policy. With the restriction on, every
+/// out-of-scope path requires approval. A workspace session with it off still
+/// requires approval for out-of-scope mutations, while out-of-scope reads
+/// pass. Mutations under read-only workspace roots are denied outright.
 pub struct WorkingDirScopeInspector {
     session_manager: Arc<SessionManager>,
 }
@@ -94,8 +96,12 @@ impl ToolInspector for WorkingDirScopeInspector {
                     }
                 }
             }
-            let Some(path) = out_of_scope_path(tool_call, &session.working_dir, &allowed_dirs)?
-            else {
+            let candidate_paths = if session.restrict_tools_to_working_dirs {
+                referenced_paths(tool_call, &session.working_dir)
+            } else {
+                mutation_paths(tool_call, &session.working_dir)
+            };
+            let Some(path) = out_of_scope_path(&candidate_paths, &allowed_dirs)? else {
                 continue;
             };
 
@@ -104,15 +110,26 @@ impl ToolInspector for WorkingDirScopeInspector {
                 .map(|d| d.display().to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            results.push(InspectionResult {
-                tool_request_id: request.id.clone(),
-                action: InspectionAction::RequireApproval(Some(format!(
+            let message = if session.restrict_tools_to_working_dirs {
+                format!(
                     "\"{}\" touches {}, which is outside your working directories ({}). \
                      This session has \"restrict tools to working directories\" turned on.",
                     tool_call.name,
                     path.display(),
                     dirs_list
-                ))),
+                )
+            } else {
+                format!(
+                    "\"{}\" would modify {}, which is outside this workspace session's \
+                     folders ({}). Add that folder to the session to allow it without approval.",
+                    tool_call.name,
+                    path.display(),
+                    dirs_list
+                )
+            };
+            results.push(InspectionResult {
+                tool_request_id: request.id.clone(),
+                action: InspectionAction::RequireApproval(Some(message)),
                 reason: "path outside configured working directories".to_string(),
                 confidence: 1.0,
                 inspector_name: self.name().to_string(),
@@ -352,6 +369,23 @@ fn collect_referenced_paths(
     }
 }
 
+fn shell_segments(command: &str) -> Vec<Vec<String>> {
+    let tokens = shell_words::split(command).unwrap_or_default();
+    tokens
+        .split(|token| matches!(token.as_str(), "|" | "&&" | "||" | ";"))
+        .filter(|segment| !segment.is_empty())
+        .map(<[String]>::to_vec)
+        .collect()
+}
+
+fn collect_shell_segment_paths(segment: &[String], working_dir: &Path, paths: &mut Vec<PathBuf>) {
+    for token in segment.iter().skip(1) {
+        if let Some(path) = path_from_shell_token(token) {
+            paths.push(resolve(path, working_dir));
+        }
+    }
+}
+
 fn referenced_paths(tool_call: &CallToolRequestParams, working_dir: &Path) -> Vec<PathBuf> {
     let Some(args) = tool_call.arguments.as_ref() else {
         return Vec::new();
@@ -363,16 +397,36 @@ fn referenced_paths(tool_call: &CallToolRequestParams, working_dir: &Path) -> Ve
         }
     }
     if let Some(command) = args.get("command").and_then(|value| value.as_str()) {
-        let tokens = shell_words::split(command).unwrap_or_default();
-        for segment in tokens
-            .split(|token| matches!(token.as_str(), "|" | "&&" | "||" | ";"))
-            .filter(|segment| !segment.is_empty())
-        {
-            for token in segment.iter().skip(1) {
-                if let Some(path) = path_from_shell_token(token) {
-                    paths.push(resolve(path, working_dir));
-                }
-            }
+        for segment in shell_segments(command) {
+            collect_shell_segment_paths(&segment, working_dir, &mut paths);
+        }
+    }
+    paths
+}
+
+/// Paths a call may change. Shell pipelines are judged per segment so a
+/// read-only `cat` of reference material does not count against a later
+/// segment that only writes inside the session's folders.
+fn mutation_paths(tool_call: &CallToolRequestParams, working_dir: &Path) -> Vec<PathBuf> {
+    if !is_shell_tool(tool_call) {
+        return if is_mutating_tool_call(tool_call) {
+            referenced_paths(tool_call, working_dir)
+        } else {
+            Vec::new()
+        };
+    }
+    let Some(command) = tool_call
+        .arguments
+        .as_ref()
+        .and_then(|args| args.get("command"))
+        .and_then(|value| value.as_str())
+    else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    for segment in shell_segments(command) {
+        if !shell_segment_is_read_only(&segment) {
+            collect_shell_segment_paths(&segment, working_dir, &mut paths);
         }
     }
     paths
@@ -442,58 +496,56 @@ fn is_shell_tool(tool_call: &CallToolRequestParams) -> bool {
 }
 
 fn is_confidently_read_only_shell(command: &str) -> bool {
-    let Ok(tokens) = shell_words::split(command) else {
+    if shell_words::split(command).is_err() {
         return false;
-    };
-    if tokens.is_empty()
-        || tokens
+    }
+    let segments = shell_segments(command);
+    !segments.is_empty()
+        && segments
             .iter()
-            .any(|token| token == ">" || token == ">>" || token.starts_with('>'))
+            .all(|segment| shell_segment_is_read_only(segment))
+}
+
+fn shell_segment_is_read_only(segment: &[String]) -> bool {
+    if segment
+        .iter()
+        .any(|token| token == ">" || token == ">>" || token.starts_with('>'))
     {
         return false;
     }
-    let mut commands = tokens
-        .split(|token| matches!(token.as_str(), "|" | "&&" | "||" | ";"))
-        .filter(|segment| !segment.is_empty());
-    commands.all(|segment| {
-        let executable = Path::new(&segment[0])
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        match executable {
-            "cat" | "ls" | "pwd" | "rg" | "grep" | "head" | "tail" | "wc" | "stat" | "file" => true,
-            "find" => !segment.iter().any(|token| {
-                matches!(
-                    token.as_str(),
-                    "-delete" | "-exec" | "-execdir" | "-ok" | "-okdir"
-                )
-            }),
-            "sed" => !segment
-                .iter()
-                .any(|token| token == "-i" || token.starts_with("-i")),
-            "git" => segment.get(1).is_some_and(|subcommand| {
-                matches!(
-                    subcommand.as_str(),
-                    "diff" | "grep" | "log" | "show" | "status"
-                )
-            }),
-            _ => false,
-        }
-    })
+    let executable = Path::new(&segment[0])
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    match executable {
+        "cat" | "ls" | "pwd" | "rg" | "grep" | "head" | "tail" | "wc" | "stat" | "file" => true,
+        "find" => !segment.iter().any(|token| {
+            matches!(
+                token.as_str(),
+                "-delete" | "-exec" | "-execdir" | "-ok" | "-okdir"
+            )
+        }),
+        "sed" => !segment
+            .iter()
+            .any(|token| token == "-i" || token.starts_with("-i")),
+        "git" => segment.get(1).is_some_and(|subcommand| {
+            matches!(
+                subcommand.as_str(),
+                "diff" | "grep" | "log" | "show" | "status"
+            )
+        }),
+        _ => false,
+    }
 }
 
-/// Returns the first out-of-scope path referenced by this tool call, if any
-/// can be confidently determined. Only flags calls with an explicit `path`
-/// argument, or shell commands referencing an explicit absolute or relative
-/// path. Ambiguous path-free calls are left alone rather than guessed at.
-fn out_of_scope_path(
-    tool_call: &CallToolRequestParams,
-    working_dir: &Path,
-    allowed_dirs: &[PathBuf],
-) -> Result<Option<PathBuf>> {
-    for resolved in referenced_paths(tool_call, working_dir) {
-        if !is_within_any(&resolved, allowed_dirs)? {
-            return Ok(Some(canonicalize_potential_path(&resolved)?));
+/// Returns the first out-of-scope path among the given resolved paths, if
+/// any. Callers only pass explicit `path` arguments and explicit absolute or
+/// relative shell paths; ambiguous path-free calls are left alone rather than
+/// guessed at.
+fn out_of_scope_path(paths: &[PathBuf], allowed_dirs: &[PathBuf]) -> Result<Option<PathBuf>> {
+    for resolved in paths {
+        if !is_within_any(resolved, allowed_dirs)? {
+            return Ok(Some(canonicalize_potential_path(resolved)?));
         }
     }
 
@@ -504,6 +556,14 @@ fn out_of_scope_path(
 mod tests {
     use super::*;
     use rmcp::model::JsonObject;
+
+    fn out_of_scope_path(
+        tool_call: &CallToolRequestParams,
+        working_dir: &Path,
+        allowed_dirs: &[PathBuf],
+    ) -> Result<Option<PathBuf>> {
+        super::out_of_scope_path(&referenced_paths(tool_call, working_dir), allowed_dirs)
+    }
 
     fn tool_call(name: &str, args: JsonObject) -> CallToolRequestParams {
         CallToolRequestParams::new(name.to_string()).with_arguments(args)
@@ -1205,5 +1265,147 @@ mod tests {
             .unwrap();
 
         assert!(results.is_empty());
+    }
+
+    async fn workspace_session(
+        session_manager: &Arc<SessionManager>,
+        project: &Path,
+    ) -> crate::session::Session {
+        let session = session_manager
+            .create_session(
+                project.to_path_buf(),
+                "workspace".into(),
+                crate::session::SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let context = crate::workspace::WorkspaceSessionContext {
+            workspace_id: "workspace".into(),
+            workspace_name: "Workspace".into(),
+            primary_working_folder: project.to_string_lossy().to_string(),
+            folders: Vec::new(),
+            product_output_folders: Vec::new(),
+            folder_policy: WorkspaceFolderPolicy {
+                roots: vec![crate::workspace::WorkspaceFolderPolicyRoot {
+                    path: project.to_string_lossy().to_string(),
+                    access: WorkspaceFolderAccess::ReadWrite,
+                }],
+            },
+        };
+        session_manager
+            .update(&session.id)
+            .workspace_snapshot(
+                "workspace".into(),
+                "Workspace".into(),
+                None,
+                None,
+                None,
+                context,
+            )
+            .apply()
+            .await
+            .unwrap();
+        session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap()
+    }
+
+    /// A workspace session that has not turned on "restrict tools to working
+    /// directories" may read reference material outside its folders without a
+    /// prompt; only out-of-scope mutations still require approval.
+    #[tokio::test]
+    async fn workspace_session_without_restriction_prompts_only_for_out_of_scope_mutations() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let reference = root.path().join("reference");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&reference).unwrap();
+        let notes = reference.join("notes.md");
+        std::fs::write(&notes, "reference").unwrap();
+
+        let session_manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let session = workspace_session(&session_manager, &project).await;
+        assert!(!session.restrict_tools_to_working_dirs);
+
+        let inspector = WorkingDirScopeInspector::new(session_manager);
+        let results = inspector
+            .inspect(
+                &session.id,
+                &[
+                    read_request("read-outside", notes.to_str().unwrap()),
+                    shell_request(
+                        "cat-then-script",
+                        &format!("cat {}; python3 - <<'PY'\nprint(1)\nPY", notes.display()),
+                    ),
+                    write_request(
+                        "write-outside",
+                        reference.join("draft.md").to_str().unwrap(),
+                    ),
+                    shell_request(
+                        "shell-write-outside",
+                        &format!("touch {}", reference.join("touched.md").display()),
+                    ),
+                ],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        let flagged: Vec<&str> = results
+            .iter()
+            .map(|result| result.tool_request_id.as_str())
+            .collect();
+        assert_eq!(flagged, vec!["write-outside", "shell-write-outside"]);
+        for result in &results {
+            match &result.action {
+                InspectionAction::RequireApproval(Some(message)) => {
+                    assert!(message.contains("workspace session"), "{message}");
+                    assert!(!message.contains("turned on"), "{message}");
+                }
+                other => panic!("expected RequireApproval with a message, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn workspace_session_with_restriction_prompts_for_out_of_scope_reads() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let reference = root.path().join("reference");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&reference).unwrap();
+        let notes = reference.join("notes.md");
+        std::fs::write(&notes, "reference").unwrap();
+
+        let session_manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let session = workspace_session(&session_manager, &project).await;
+        session_manager
+            .update(&session.id)
+            .restrict_tools_to_working_dirs(true)
+            .apply()
+            .await
+            .unwrap();
+
+        let inspector = WorkingDirScopeInspector::new(session_manager);
+        let results = inspector
+            .inspect(
+                &session.id,
+                &[read_request("read-outside", notes.to_str().unwrap())],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        match &results[0].action {
+            InspectionAction::RequireApproval(Some(message)) => {
+                assert!(message.contains("turned on"), "{message}");
+            }
+            other => panic!("expected RequireApproval with a message, got {other:?}"),
+        }
     }
 }

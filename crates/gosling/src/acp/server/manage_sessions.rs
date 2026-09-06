@@ -300,12 +300,48 @@ impl GoslingAcpAgent {
                 if req.text.trim().is_empty() {
                     agent.remove_system_prompt_extra(key).await;
                 } else {
-                    agent.extend_system_prompt(key.to_string(), req.text).await;
+                    agent
+                        .extend_system_prompt(key.to_string(), req.text.clone())
+                        .await;
                 }
+                self.persist_system_prompt_extra(session_id, key, req.text)
+                    .await?;
             }
         }
 
         Ok(EmptyResponse {})
+    }
+
+    async fn persist_system_prompt_extra(
+        &self,
+        session_id: &str,
+        key: &str,
+        text: String,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to load session")?;
+        let mut state =
+            crate::session::SystemPromptExtrasState::from_extension_data(&session.extension_data)
+                .unwrap_or_default();
+        if text.trim().is_empty() {
+            state.remove(key);
+        } else {
+            state.upsert(key, text);
+        }
+        let value = state
+            .to_value()
+            .internal_err_ctx("Failed to serialize system prompt extras")?;
+        self.session_manager
+            .merge_extension_state(
+                session_id,
+                &crate::session::SystemPromptExtrasState::state_key(),
+                value,
+            )
+            .await
+            .internal_err_ctx("Failed to persist system prompt extras")
     }
 
     pub(super) async fn on_delete_session(

@@ -71,7 +71,10 @@ use super::agent::{tool_stream, ToolOperationGuard, ToolStream};
 use crate::agents::Agent;
 use crate::conversation::message::ToolRequest;
 use crate::session::Session;
-use crate::tool_inspection::get_security_finding_id_from_results;
+use crate::tool_inspection::{
+    get_security_finding_id_from_results, security_prompt_for_request,
+    single_flagged_domain_for_request,
+};
 
 pub const DECLINED_RESPONSE: &str = "The user has declined to run this tool. \
     DO NOT attempt to call this tool again. \
@@ -105,27 +108,11 @@ impl Agent {
         try_stream! {
         for request in tool_requests.iter() {
             if let Ok(tool_call) = request.tool_call.clone() {
-                let matching_result = inspection_results.iter()
-                    .find(|result| result.tool_request_id == request.id);
-                let security_message = matching_result
-                    .and_then(|result| {
-                        if let crate::tool_inspection::InspectionAction::RequireApproval(Some(message)) = &result.action {
-                            Some(message.clone())
-                        } else {
-                            None
-                        }
-                    });
-                // A domain-scoped "always allow" is only offered when the
-                // inspector flagged exactly one still-unresolved domain --
-                // more than one would make a single-click grant ambiguous
-                // about what it actually covers.
-                let single_flagged_domain = matching_result
-                    .and_then(|result| result.metadata.as_ref())
-                    .and_then(|metadata| metadata.get("domains"))
-                    .and_then(|domains| domains.as_array())
-                    .filter(|domains| domains.len() == 1)
-                    .and_then(|domains| domains[0].as_str())
-                    .map(|domain| domain.to_string());
+                let security_message =
+                    security_prompt_for_request(&request.id, inspection_results)
+                        .map(str::to_string);
+                let single_flagged_domain =
+                    single_flagged_domain_for_request(&request.id, inspection_results);
 
                 let mut mode_changes = self.gosling_mode_changes.subscribe();
                 let confirmation_rx = self.tool_confirmation_router.register(request.id.clone()).await;

@@ -50,6 +50,10 @@ impl SessionStorage {
             EnabledExtensionsState::EXTENSION_NAME,
             EnabledExtensionsState::VERSION,
         );
+        extension_data.remove_extension_state(
+            crate::session::SystemPromptExtrasState::EXTENSION_NAME,
+            crate::session::SystemPromptExtrasState::VERSION,
+        );
         crate::session::import_formats::SessionImportProvenance {
             schema_version: 1,
             transport,

@@ -41,7 +41,11 @@ ACP operation, whose server-owned session ID is the persistence and enforcement 
 - A user can add private working material to the current workspace chat without widening the
   workspace definition or sibling chats.
 - The current session's Gosling-hosted tools and extension clients can use the directory; a sibling
-  session receives an out-of-scope approval result for the same path.
+  session receives an out-of-scope approval result when it would modify the same path.
+- Amended 2026-09-05: a workspace session only prompts for out-of-scope *mutations* unless the
+  operator turns on "restrict tools to working directories", which also prompts for out-of-scope
+  reads. Read-only shell segments (`cat`, `ls`, `grep`, ...) are judged separately from the
+  segments that follow them in a pipeline. Read-only workspace roots are still denied outright.
 - Existing workspace folder permissions remain pinned. Removing or replacing workspace roots still
   requires starting a new session from an updated workspace.
 - This is an application capability boundary, not an operating-system ACL. Separate local programs

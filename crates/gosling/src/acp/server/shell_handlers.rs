@@ -283,7 +283,8 @@ impl GoslingAcpAgent {
         &self,
         request: ShellLibraryListRequest,
     ) -> Result<ShellLibraryListResponse, agent_client_protocol::Error> {
-        self.require_library_session(&request.session_id).await?;
+        self.require_library_session_record(&request.session_id)
+            .await?;
         let items = self
             .session_manager
             .list_session_library_items(&request.session_id)
@@ -458,6 +459,27 @@ impl GoslingAcpAgent {
             });
         }
         Ok(ShellLibraryResolveResponse { items })
+    }
+
+    /// Listing is a read of persisted library rows, so it only needs the
+    /// session record. The desktop's artifact pane asks for inputs while the
+    /// chat is still activating the session; gating on the in-memory ACP
+    /// session made that first request fail until a manual retry.
+    async fn require_library_session_record(
+        &self,
+        session_id: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        if session_id.is_empty() || session_id.len() > 512 {
+            return Err(shell_library_invalid("SHELL_LIBRARY_SESSION_INVALID"));
+        }
+        if self.sessions.lock().await.contains_key(session_id) {
+            return Ok(());
+        }
+        self.session_manager
+            .get_session(session_id, false)
+            .await
+            .map(|_| ())
+            .map_err(|_| shell_library_invalid("SHELL_LIBRARY_SESSION_UNAVAILABLE"))
     }
 
     async fn require_library_session(

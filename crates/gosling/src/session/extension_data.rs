@@ -131,6 +131,46 @@ impl ExtensionState for DeepResearchState {
     const VERSION: &'static str = "v1";
 }
 
+/// Client-appended system prompt instructions, keyed like
+/// `PromptManager::add_system_prompt_extra`. They live only in the in-memory
+/// agent otherwise, so a session that is evicted or reloaded after a restart
+/// would silently lose them (the Deep Research library contract, for one).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SystemPromptExtrasState {
+    pub extras: Vec<SystemPromptExtra>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SystemPromptExtra {
+    pub key: String,
+    pub text: String,
+}
+
+impl SystemPromptExtrasState {
+    pub fn upsert(&mut self, key: &str, text: String) {
+        match self.extras.iter_mut().find(|extra| extra.key == key) {
+            Some(extra) => extra.text = text,
+            None => self.extras.push(SystemPromptExtra {
+                key: key.to_string(),
+                text,
+            }),
+        }
+    }
+
+    pub fn remove(&mut self, key: &str) {
+        self.extras.retain(|extra| extra.key != key);
+    }
+
+    pub fn state_key() -> String {
+        format!("{}.{}", Self::EXTENSION_NAME, Self::VERSION)
+    }
+}
+
+impl ExtensionState for SystemPromptExtrasState {
+    const EXTENSION_NAME: &'static str = "system_prompt_extras";
+    const VERSION: &'static str = "v1";
+}
+
 /// State persisted by the built-in todo extension.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoState {
@@ -198,6 +238,36 @@ mod tests {
     use serde_json::json;
     use tempfile::NamedTempFile;
     use test_case::test_case;
+
+    #[test]
+    fn system_prompt_extras_round_trip_preserves_order_and_replaces_by_key() {
+        let mut state = SystemPromptExtrasState::default();
+        state.upsert("research-library", "library v1".into());
+        state.upsert("research-team", "team".into());
+        state.upsert("research-library", "library v2".into());
+        state.remove("missing");
+
+        let mut extension_data = ExtensionData::new();
+        state.to_extension_data(&mut extension_data).unwrap();
+        let restored = SystemPromptExtrasState::from_extension_data(&extension_data).unwrap();
+
+        assert_eq!(restored, state);
+        assert_eq!(
+            restored
+                .extras
+                .iter()
+                .map(|extra| (extra.key.as_str(), extra.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("research-library", "library v2"),
+                ("research-team", "team")
+            ]
+        );
+        assert_eq!(
+            SystemPromptExtrasState::state_key(),
+            "system_prompt_extras.v1"
+        );
+    }
 
     fn test_config() -> Config {
         let config_file = NamedTempFile::new().unwrap();

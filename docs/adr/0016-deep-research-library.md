@@ -61,6 +61,10 @@ mismatched copies make the prompt `Failed`; cancellation remains `Cancelled`.
 - The agent instruction creates and reports the dual-destination artifacts; the ACP completion gate
   independently checks their provenance, placement, and identity. Gosling does not copy arbitrary
   session artifacts after the fact or rewrite files the user produced elsewhere.
+- Amended 2026-09-05: appended session system instructions (the library contract among them) are
+  persisted in the session's extension data and re-applied whenever the session is activated, so a
+  session resumed after an app restart or agent eviction is still bound by the dual-destination
+  contract the completion gate enforces. Imported sessions never carry such instructions in.
 
 ## Rejected alternatives
 

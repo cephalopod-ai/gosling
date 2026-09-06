@@ -147,6 +147,13 @@ impl GoslingAcpAgent {
                 )
                 .await;
         }
+        if let Some(state) =
+            crate::session::SystemPromptExtrasState::from_extension_data(&session.extension_data)
+        {
+            for extra in state.extras {
+                agent.extend_system_prompt(extra.key, extra.text).await;
+            }
+        }
         self.apply_acp_extension_overrides(cx, &agent, session)
             .await;
         self.maybe_refresh_provider_inventory_with_agent(session, &agent)

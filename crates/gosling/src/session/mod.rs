@@ -27,7 +27,7 @@ pub use diagnostics::{
 };
 pub use extension_data::{
     AcpPromptRunState, DeepResearchState, EnabledExtensionsState, ExtensionData, ExtensionState,
-    ShellSkillSelectionState, TodoState,
+    ShellSkillSelectionState, SystemPromptExtra, SystemPromptExtrasState, TodoState,
 };
 pub use library::{
     NewSessionLibraryContent, SessionLibraryItem, SessionLibraryItemKind, SessionLibraryScope,

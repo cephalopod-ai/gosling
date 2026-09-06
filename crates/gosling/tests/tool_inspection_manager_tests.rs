@@ -3,7 +3,8 @@ use async_trait::async_trait;
 use gosling::config::GoslingMode;
 use gosling::conversation::message::{Message, ToolRequest};
 use gosling::tool_inspection::{
-    InspectionAction, InspectionResult, ToolInspectionManager, ToolInspector,
+    security_prompt_for_request, single_flagged_domain_for_request, InspectionAction,
+    InspectionResult, ToolInspectionManager, ToolInspector,
 };
 
 struct MockInspectorOk {
@@ -120,4 +121,77 @@ async fn test_inspect_tools_aggregates_and_handles_errors() {
     assert!(results
         .iter()
         .any(|r| matches!(r.action, InspectionAction::RequireApproval(_))));
+}
+
+fn result(
+    tool_request_id: &str,
+    inspector_name: &str,
+    action: InspectionAction,
+    metadata: Option<serde_json::Value>,
+) -> InspectionResult {
+    InspectionResult {
+        tool_request_id: tool_request_id.to_string(),
+        action,
+        reason: String::new(),
+        confidence: 1.0,
+        inspector_name: inspector_name.to_string(),
+        finding_id: None,
+        metadata,
+    }
+}
+
+/// The permission baseline reports before the scope and egress inspectors.
+/// A stored always-allow for the tool produced an `Allow` first, and the
+/// approval prompt used to read only that first result, so a later
+/// `RequireApproval` from `working_dir_scope` was silently auto-approved in
+/// Auto mode. The prompt must come from whichever inspector required it.
+#[test]
+fn security_prompt_is_not_shadowed_by_an_earlier_allow_for_the_same_request() {
+    let results = vec![
+        result("req_1", "permission", InspectionAction::Allow, None),
+        result(
+            "req_1",
+            "working_dir_scope",
+            InspectionAction::RequireApproval(Some("outside the working directories".into())),
+            None,
+        ),
+        result(
+            "req_2",
+            "permission",
+            InspectionAction::RequireApproval(None),
+            None,
+        ),
+    ];
+
+    assert_eq!(
+        security_prompt_for_request("req_1", &results),
+        Some("outside the working directories")
+    );
+    assert_eq!(security_prompt_for_request("req_2", &results), None);
+    assert_eq!(security_prompt_for_request("req_3", &results), None);
+}
+
+#[test]
+fn flagged_domain_comes_from_any_result_for_the_request_and_only_when_unambiguous() {
+    let results = vec![
+        result("req_1", "permission", InspectionAction::Allow, None),
+        result(
+            "req_1",
+            "egress",
+            InspectionAction::RequireApproval(Some("Egress destinations detected".into())),
+            Some(serde_json::json!({ "domains": ["exfil.example"] })),
+        ),
+        result(
+            "req_2",
+            "egress",
+            InspectionAction::RequireApproval(Some("Egress destinations detected".into())),
+            Some(serde_json::json!({ "domains": ["a.example", "b.example"] })),
+        ),
+    ];
+
+    assert_eq!(
+        single_flagged_domain_for_request("req_1", &results).as_deref(),
+        Some("exfil.example")
+    );
+    assert_eq!(single_flagged_domain_for_request("req_2", &results), None);
 }
