@@ -336,7 +336,35 @@ fn path_from_shell_token(token: &str) -> Option<&str> {
     let candidate = candidate.trim_start_matches(|character: char| {
         character.is_ascii_digit() || matches!(character, '<' | '>' | '&')
     });
-    looks_like_explicit_path(candidate).then_some(candidate)
+    (looks_like_explicit_path(candidate) && !is_device_stream(Path::new(candidate)))
+        .then_some(candidate)
+}
+
+/// Kernel pseudo-files that stand in for the process's own streams or a
+/// discard sink. Redirecting to them changes nothing on disk, so they never
+/// count as touching a path; raw disks and other device nodes still do.
+fn is_device_stream(path: &Path) -> bool {
+    let mut components = path.components();
+    if components.next() != Some(Component::RootDir)
+        || components.next() != Some(Component::Normal("dev".as_ref()))
+    {
+        return false;
+    }
+    match components.next() {
+        Some(Component::Normal(name)) => {
+            let rest = components.next();
+            match name.to_str() {
+                Some(
+                    "null" | "zero" | "random" | "urandom" | "stdin" | "stdout" | "stderr" | "tty",
+                ) => rest.is_none(),
+                Some("fd") => matches!(rest, Some(Component::Normal(descriptor))
+                    if descriptor.to_str().is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
+                    && components.next().is_none()),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
 }
 
 fn collect_referenced_paths(
@@ -352,7 +380,10 @@ fn collect_referenced_paths(
             if path_semantics
                 || (!argument_key_is_text_payload(key) && looks_like_explicit_path(value))
             {
-                paths.push(resolve(value, working_dir));
+                let path = resolve(value, working_dir);
+                if !is_device_stream(&path) {
+                    paths.push(path);
+                }
             }
         }
         serde_json::Value::Array(values) => {
@@ -369,12 +400,67 @@ fn collect_referenced_paths(
     }
 }
 
+/// Splits a command at unquoted `;`, newline, `|`, `||`, and `&&` so each
+/// simple command is judged on its own. Word splitting alone leaves a
+/// separator glued to its neighbour (`head file;`), which merges every
+/// command into one segment and turns `file;` into a path.
+fn split_shell_command(command: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut chars = command.chars().peekable();
+    let mut quote: Option<char> = None;
+    while let Some(character) = chars.next() {
+        match quote {
+            Some('\'') => {
+                current.push(character);
+                if character == '\'' {
+                    quote = None;
+                }
+            }
+            Some(_) => {
+                current.push(character);
+                if character == '\\' {
+                    if let Some(escaped) = chars.next() {
+                        current.push(escaped);
+                    }
+                } else if character == '"' {
+                    quote = None;
+                }
+            }
+            None => match character {
+                '\'' | '"' => {
+                    quote = Some(character);
+                    current.push(character);
+                }
+                '\\' => {
+                    current.push(character);
+                    if let Some(escaped) = chars.next() {
+                        current.push(escaped);
+                    }
+                }
+                ';' | '\n' | '|' => {
+                    if character == '|' && chars.peek() == Some(&'|') {
+                        chars.next();
+                    }
+                    segments.push(std::mem::take(&mut current));
+                }
+                '&' if chars.peek() == Some(&'&') => {
+                    chars.next();
+                    segments.push(std::mem::take(&mut current));
+                }
+                _ => current.push(character),
+            },
+        }
+    }
+    segments.push(current);
+    segments
+}
+
 fn shell_segments(command: &str) -> Vec<Vec<String>> {
-    let tokens = shell_words::split(command).unwrap_or_default();
-    tokens
-        .split(|token| matches!(token.as_str(), "|" | "&&" | "||" | ";"))
+    split_shell_command(command)
+        .iter()
+        .map(|segment| shell_words::split(segment).unwrap_or_default())
         .filter(|segment| !segment.is_empty())
-        .map(<[String]>::to_vec)
         .collect()
 }
 
@@ -506,11 +592,40 @@ fn is_confidently_read_only_shell(command: &str) -> bool {
             .all(|segment| shell_segment_is_read_only(segment))
 }
 
+/// Whether `token` opens an output redirection (`>`, `>>`, `2>`, `&>`, and
+/// their glued forms) that lands somewhere other than a device stream.
+fn redirects_output_to_file(segment: &[String], index: usize) -> bool {
+    let token = segment[index].as_str();
+    let operator_start = token
+        .find(|character: char| !character.is_ascii_digit() && character != '&')
+        .unwrap_or(token.len());
+    let (descriptor, rest) = token.split_at(operator_start);
+    if descriptor.contains('&') && !descriptor.starts_with('&') {
+        return false;
+    }
+    let Some(target) = rest
+        .strip_prefix(">>")
+        .or_else(|| rest.strip_prefix(">|"))
+        .or_else(|| rest.strip_prefix('>'))
+    else {
+        return false;
+    };
+    let target = if target.is_empty() {
+        segment
+            .get(index + 1)
+            .map(String::as_str)
+            .unwrap_or_default()
+    } else {
+        target
+    };
+    if let Some(duplicated) = target.strip_prefix('&') {
+        return !duplicated.bytes().all(|byte| byte.is_ascii_digit());
+    }
+    !is_device_stream(Path::new(target))
+}
+
 fn shell_segment_is_read_only(segment: &[String]) -> bool {
-    if segment
-        .iter()
-        .any(|token| token == ">" || token == ">>" || token.starts_with('>'))
-    {
+    if (0..segment.len()).any(|index| redirects_output_to_file(segment, index)) {
         return false;
     }
     let executable = Path::new(&segment[0])
@@ -518,7 +633,14 @@ fn shell_segment_is_read_only(segment: &[String]) -> bool {
         .and_then(|name| name.to_str())
         .unwrap_or_default();
     match executable {
-        "cat" | "ls" | "pwd" | "rg" | "grep" | "head" | "tail" | "wc" | "stat" | "file" => true,
+        "cat" | "ls" | "pwd" | "rg" | "grep" | "head" | "tail" | "wc" | "stat" | "file"
+        | "echo" | "printf" | "test" | "[" | "true" | "false" | "ps" | "lsof" | "which"
+        | "type" | "env" | "printenv" | "date" | "diff" | "du" | "df" | "basename" | "dirname"
+        | "realpath" | "readlink" | "jq" | "md5" | "md5sum" | "shasum" | "sha256sum" | "cut"
+        | "tr" | "whoami" | "uname" | "hostname" | "id" => true,
+        "sort" => !segment
+            .iter()
+            .any(|token| token == "-o" || token.starts_with("-o") || token.starts_with("--output")),
         "find" => !segment.iter().any(|token| {
             matches!(
                 token.as_str(),
@@ -1407,5 +1529,190 @@ mod tests {
             }
             other => panic!("expected RequireApproval with a message, got {other:?}"),
         }
+    }
+
+    fn shell_mutation_out_of_scope(command: &str, working_dir: &Path) -> Option<PathBuf> {
+        let call = tool_call("developer__shell", json_args(&[("command", command)]));
+        let allowed = vec![working_dir.to_path_buf()];
+        super::out_of_scope_path(&mutation_paths(&call, working_dir), &allowed).unwrap()
+    }
+
+    #[test]
+    fn device_streams_are_recognized_narrowly() {
+        for path in [
+            "/dev/null",
+            "/dev/stdout",
+            "/dev/stderr",
+            "/dev/tty",
+            "/dev/fd/3",
+            "/dev/urandom",
+        ] {
+            assert!(is_device_stream(Path::new(path)), "{path}");
+        }
+        for path in [
+            "/dev/disk2",
+            "/dev/fd/abc",
+            "/dev/fd",
+            "/dev/null/child",
+            "/devices/null",
+            "dev/null",
+        ] {
+            assert!(!is_device_stream(Path::new(path)), "{path}");
+        }
+    }
+
+    #[test]
+    fn redirections_to_device_streams_do_not_count_as_writes() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_file = outside.path().join("input.txt");
+        std::fs::write(&outside_file, "data").unwrap();
+        for command in [
+            format!(
+                "sample 123 3 -file {} >/dev/null 2>&1",
+                working_dir.path().join("out.txt").display()
+            ),
+            format!(
+                "find {} -name '*.md' 2>/dev/null | head -5",
+                outside.path().display()
+            ),
+            format!("grep -n pattern {} 2> /dev/null", outside_file.display()),
+            format!("cat {} > /dev/stdout", outside_file.display()),
+            "printf 'x' &>/dev/null".to_string(),
+        ] {
+            assert_eq!(
+                shell_mutation_out_of_scope(&command, working_dir.path()),
+                None,
+                "{command}"
+            );
+        }
+
+        let raw_disk = shell_mutation_out_of_scope("echo x > /dev/disk2", working_dir.path());
+        assert_eq!(raw_disk.as_deref(), Some(Path::new("/dev/disk2")));
+        let stderr_to_file = shell_mutation_out_of_scope(
+            &format!("ls 2>{}", outside.path().join("err.log").display()),
+            working_dir.path(),
+        );
+        assert_eq!(
+            stderr_to_file,
+            Some(canonicalize_potential_path(&outside.path().join("err.log")).unwrap())
+        );
+    }
+
+    #[test]
+    fn segments_split_at_glued_separators_and_newlines() {
+        assert_eq!(
+            split_shell_command("head -3 a;printf 'x;y' | wc -l\ncd b && rm c || true"),
+            vec![
+                "head -3 a",
+                "printf 'x;y' ",
+                " wc -l",
+                "cd b ",
+                " rm c ",
+                " true"
+            ]
+        );
+        assert_eq!(
+            split_shell_command("echo \"a;b\" 2>&1; echo \\; done"),
+            vec!["echo \"a;b\" 2>&1", " echo \\; done"]
+        );
+
+        let working_dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_file = outside.path().join("notes.md");
+        std::fs::write(&outside_file, "notes").unwrap();
+        for command in [
+            format!(
+                "head -55 {}; printf '\\n---next---\\n'",
+                outside_file.display()
+            ),
+            format!("tail -65 '{}'; ps -p 1 -o pid", outside_file.display()),
+            format!("cat {}\nls -la", outside_file.display()),
+        ] {
+            assert_eq!(
+                shell_mutation_out_of_scope(&command, working_dir.path()),
+                None,
+                "{command}"
+            );
+        }
+        let written = outside.path().join("draft.md");
+        let expected = canonicalize_potential_path(&written).unwrap();
+        for command in [
+            format!(
+                "cat {}; echo hi > {}",
+                outside_file.display(),
+                written.display()
+            ),
+            format!(
+                "cd {}\nrm -rf {}",
+                working_dir.path().display(),
+                written.display()
+            ),
+        ] {
+            assert_eq!(
+                shell_mutation_out_of_scope(&command, working_dir.path()).as_deref(),
+                Some(expected.as_path()),
+                "{command}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn workspace_session_does_not_prompt_for_diagnostic_pipelines() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let library = root.path().join("Library");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(library.join("logs")).unwrap();
+        let log = library.join("logs").join("service.log");
+        std::fs::write(&log, "log").unwrap();
+
+        let session_manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let session = workspace_session(&session_manager, &project).await;
+        let inspector = WorkingDirScopeInspector::new(session_manager);
+        let results = inspector
+            .inspect(
+                &session.id,
+                &[
+                    shell_request(
+                        "profile",
+                        &format!(
+                            "printf '\\n---profile---\\n'; sample 123 3 10 -file {} >/dev/null 2>&1; ls -t '{}' | head -4",
+                            project.join("sample.txt").display(),
+                            library.join("logs").display()
+                        ),
+                    ),
+                    shell_request(
+                        "logs",
+                        &format!(
+                            "printf '\\n---logs---\\n'; tail -65 '{}'; find '{}' -iname '*.log'; lsof -a -p 1 -d cwd -Fn 2>/dev/null; ps -p 1 -o pid,command",
+                            log.display(),
+                            library.display()
+                        ),
+                    ),
+                    shell_request(
+                        "config",
+                        &format!(
+                            "cd {} && printf '\\n---config---\\n'; find {} -maxdepth 3 -type f -iname '*config*' 2>/dev/null | head -45; grep -nE 'remote|provider' src/config.py 2>/dev/null | head -65",
+                            project.display(),
+                            library.display()
+                        ),
+                    ),
+                    shell_request(
+                        "write-outside",
+                        &format!("printf 'x' >> {}", library.join("draft.md").display()),
+                    ),
+                ],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        let flagged: Vec<&str> = results
+            .iter()
+            .map(|result| result.tool_request_id.as_str())
+            .collect();
+        assert_eq!(flagged, vec!["write-outside"]);
     }
 }

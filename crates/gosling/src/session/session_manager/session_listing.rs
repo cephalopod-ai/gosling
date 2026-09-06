@@ -11,11 +11,20 @@
 //! `list_sessions`.
 
 use super::{
-    normalized_message_timestamp_sql, session_sort_at, Session, SessionArchiveState,
-    SessionListCursor, SessionListFilters, SessionListPage, SessionListPageQuery, SessionStorage,
-    SessionType,
+    session_sort_at, Session, SessionArchiveState, SessionListCursor, SessionListFilters,
+    SessionListPage, SessionListPageQuery, SessionStorage, SessionType,
+    MILLISECOND_TIMESTAMP_THRESHOLD,
 };
 use anyhow::Result;
+
+/// Newest message time in seconds. Millisecond and second timestamps are
+/// maxed separately so each side is an index-range `MAX` rather than a scan
+/// over a normalized expression; SQLite's multi-argument `MAX` returns NULL
+/// when either side is NULL, hence the explicit cases.
+const LAST_MESSAGE_TIMESTAMP_SQL: &str = "CASE \
+    WHEN s.millisecond_last_message IS NULL THEN s.second_last_message \
+    WHEN s.second_last_message IS NULL THEN s.millisecond_last_message \
+    ELSE MAX(s.millisecond_last_message, s.second_last_message) END";
 
 #[derive(Debug, Default)]
 struct SessionListQuery<'a> {
@@ -64,10 +73,6 @@ impl SessionStorage {
 
         let keywords = keyword_terms(filters.keyword);
         let mut where_clauses = Vec::new();
-        let mut having_clauses = Vec::new();
-        let normalized_message_timestamp = normalized_message_timestamp_sql("m.created_timestamp");
-        let sort_timestamp_sql =
-            format!("COALESCE(MAX({normalized_message_timestamp}), unixepoch(s.updated_at))");
         if let Some(types) = filters.types {
             let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
             where_clauses.push(format!("s.session_type IN ({})", placeholders));
@@ -89,13 +94,12 @@ impl SessionStorage {
                 "s.workspace_id = ?".to_string()
             });
         }
+        if filters.only_sessions_with_messages {
+            where_clauses
+                .push("EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id)".to_string());
+        }
         if !keywords.is_empty() {
             where_clauses.push(message_keyword_clause(keywords.len()));
-        }
-        if query.cursor.is_some() {
-            having_clauses.push(format!(
-                "({sort_timestamp_sql} < ? OR ({sort_timestamp_sql} = ? AND s.id < ?))"
-            ));
         }
 
         let where_clause = if where_clauses.is_empty() {
@@ -103,19 +107,17 @@ impl SessionStorage {
         } else {
             format!("WHERE {}", where_clauses.join(" AND "))
         };
-        let having_clause = if having_clauses.is_empty() {
-            String::new()
+        let cursor_clause = if query.cursor.is_some() {
+            "WHERE (s.sort_timestamp < ? OR (s.sort_timestamp = ? AND s.id < ?))"
         } else {
-            format!("HAVING {}", having_clauses.join(" AND "))
+            ""
         };
-        let message_join = if filters.only_sessions_with_messages {
-            "JOIN messages m ON s.id = m.session_id"
-        } else {
-            "LEFT JOIN messages m ON s.id = m.session_id"
-        };
-        let order_by = "ORDER BY sort_timestamp DESC, s.id DESC";
+        let order_by = "ORDER BY s.sort_timestamp DESC, s.id DESC";
         let limit_clause = if query.limit.is_some() { "LIMIT ?" } else { "" };
 
+        // Message activity is derived per session from index seeks and the
+        // message count only for the returned page; aggregating the join over
+        // every message row before LIMIT scaled with the whole messages table.
         let sql = format!(
             r#"
             SELECT s.id, s.working_dir, s.additional_working_dirs_json, s.restrict_tools_to_working_dirs, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
@@ -128,24 +130,32 @@ impl SessionStorage {
                    s.archived_at, s.project_id, s.workspace_id, s.workspace_name,
                    s.credential_profile_id, s.credential_profile_name,
                    s.credential_binding_id, s.workspace_context_json,
-                   COUNT(m.id) as message_count,
-                   MAX({}) as last_message_timestamp,
-                   {} as sort_timestamp
-            FROM sessions s
-            {}
-            {}
-            GROUP BY s.id
-            {}
-            {}
-            {}
+                   (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count,
+                   s.last_message_timestamp
+            FROM (
+                SELECT s.*
+                FROM (
+                    SELECT s.*,
+                           {last_message_timestamp} AS last_message_timestamp,
+                           COALESCE({last_message_timestamp}, unixepoch(s.updated_at)) AS sort_timestamp
+                    FROM (
+                        SELECT s.*,
+                               (SELECT MAX(m.created_timestamp) / 1000 FROM messages m
+                                WHERE m.session_id = s.id AND m.created_timestamp > {threshold}) AS millisecond_last_message,
+                               (SELECT MAX(m.created_timestamp) FROM messages m
+                                WHERE m.session_id = s.id AND m.created_timestamp <= {threshold}) AS second_last_message
+                        FROM sessions s
+                        {where_clause}
+                    ) s
+                ) s
+                {cursor_clause}
+                {order_by}
+                {limit_clause}
+            ) s
+            {order_by}
             "#,
-            normalized_message_timestamp,
-            sort_timestamp_sql,
-            message_join,
-            where_clause,
-            having_clause,
-            order_by,
-            limit_clause
+            last_message_timestamp = LAST_MESSAGE_TIMESTAMP_SQL,
+            threshold = MILLISECOND_TIMESTAMP_THRESHOLD,
         );
 
         let mut q = sqlx::query_as::<_, Session>(&sql);
@@ -247,5 +257,269 @@ impl SessionStorage {
             SessionArchiveState::Active,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::GoslingMode;
+    use crate::session::session_manager::{
+        session_sort_at, Session, SessionListCursor, SessionListFilters, SessionListPageQuery,
+        SessionManager, SessionType,
+    };
+    use std::path::{Path, PathBuf};
+    use tempfile::TempDir;
+
+    const WORKING_DIR: &str = "/tmp/session-listing";
+
+    async fn listing_session(sm: &SessionManager, name: &str) -> String {
+        sm.create_session(
+            PathBuf::from(WORKING_DIR),
+            name.to_string(),
+            SessionType::User,
+            GoslingMode::default(),
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    async fn insert_messages(sm: &SessionManager, session_id: &str, created_timestamps: &[i64]) {
+        let pool = sm.storage().pool().await.unwrap();
+        for (index, created) in created_timestamps.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp) VALUES (?, ?, 'user', ?, ?)",
+            )
+            .bind(format!("{session_id}-{index}"))
+            .bind(session_id)
+            .bind(r#"[{"type":"text","text":"listing fixture"}]"#)
+            .bind(created)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn set_updated_at(sm: &SessionManager, session_id: &str, unix_seconds: i64) {
+        let pool = sm.storage().pool().await.unwrap();
+        sqlx::query("UPDATE sessions SET updated_at = datetime(?, 'unixepoch') WHERE id = ?")
+            .bind(unix_seconds)
+            .bind(session_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn list_all_pages(
+        sm: &SessionManager,
+        page_size: usize,
+        only_sessions_with_messages: bool,
+    ) -> Vec<Session> {
+        let types = [SessionType::User];
+        let mut cursor: Option<SessionListCursor> = None;
+        let mut sessions = Vec::new();
+        loop {
+            let page = sm
+                .list_sessions_paged(SessionListPageQuery {
+                    filters: SessionListFilters {
+                        types: Some(&types),
+                        working_dir: Some(Path::new(WORKING_DIR)),
+                        only_sessions_with_messages,
+                        ..Default::default()
+                    },
+                    cursor: cursor.as_ref(),
+                    page_size,
+                    include_last_message_snippet: false,
+                })
+                .await
+                .unwrap();
+            sessions.extend(page.sessions);
+            match page.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => return sessions,
+            }
+        }
+    }
+
+    fn assert_matches_activity(listed: &[Session], expected: &[Session]) {
+        let listed_ids = listed.iter().map(|s| s.id.as_str()).collect::<Vec<_>>();
+        let expected_ids = expected.iter().map(|s| s.id.as_str()).collect::<Vec<_>>();
+        assert_eq!(listed_ids, expected_ids);
+        for (listed, expected) in listed.iter().zip(expected) {
+            assert_eq!(
+                listed.message_count, expected.message_count,
+                "{}",
+                listed.id
+            );
+            assert_eq!(
+                listed.last_message_at, expected.last_message_at,
+                "{}",
+                listed.id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_session_list_activity_matches_per_session_aggregates() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let second = 1_700_000_000_i64;
+        let millisecond = |seconds: i64| seconds * 1000 + 999;
+
+        let fixtures: [(&str, Vec<i64>, i64); 7] = [
+            ("empty, recently updated", vec![], second + 5_000),
+            (
+                "seconds only",
+                vec![second + 10, second + 400, second + 20],
+                second,
+            ),
+            ("milliseconds only", vec![millisecond(second + 300)], second),
+            (
+                "mixed, newest in milliseconds",
+                vec![second + 100, millisecond(second + 500)],
+                second,
+            ),
+            (
+                "mixed, newest in seconds",
+                vec![millisecond(second + 200), second + 600],
+                second,
+            ),
+            (
+                "stale messages, newer updated_at",
+                vec![second + 1],
+                second + 9_000,
+            ),
+            ("tie with seconds only", vec![second + 400], second),
+        ];
+        let mut ids = Vec::new();
+        for (name, created_timestamps, updated_at) in &fixtures {
+            let id = listing_session(&sm, name).await;
+            insert_messages(&sm, &id, created_timestamps).await;
+            set_updated_at(&sm, &id, *updated_at).await;
+            ids.push(id);
+        }
+
+        let mut expected = Vec::new();
+        for id in &ids {
+            expected.push(sm.get_session(id, false).await.unwrap());
+        }
+        expected.sort_by(|a, b| {
+            session_sort_at(b)
+                .cmp(&session_sort_at(a))
+                .then_with(|| b.id.cmp(&a.id))
+        });
+        assert_eq!(
+            expected[0].message_count, 0,
+            "empty session sorts by updated_at"
+        );
+
+        assert_matches_activity(&list_all_pages(&sm, 1, false).await, &expected);
+        assert_matches_activity(&list_all_pages(&sm, 3, false).await, &expected);
+        assert_matches_activity(&list_all_pages(&sm, 100, false).await, &expected);
+
+        let with_messages = expected
+            .iter()
+            .filter(|session| session.message_count > 0)
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(with_messages.len(), 6);
+        assert_matches_activity(&list_all_pages(&sm, 2, true).await, &with_messages);
+
+        let unpaged = sm.list_sessions().await.unwrap();
+        assert_matches_activity(&unpaged, &expected);
+    }
+
+    #[tokio::test]
+    #[ignore = "manual same-workload session listing benchmark; run with --ignored --nocapture"]
+    async fn benchmark_session_listing() {
+        use std::time::Instant;
+
+        fn report(label: &str, mut samples: Vec<f64>) {
+            samples.sort_by(f64::total_cmp);
+            println!(
+                "{label}: median={:.2}us p95={:.2}us min={:.2}us max={:.2}us n={}",
+                samples[samples.len() / 2],
+                samples[(samples.len() * 95).div_ceil(100) - 1],
+                samples[0],
+                samples[samples.len() - 1],
+                samples.len(),
+            );
+        }
+
+        const SESSIONS: usize = 300;
+        const MESSAGES_PER_SESSION: i64 = 100;
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage().pool().await.unwrap();
+        for index in 0..SESSIONS {
+            let id = listing_session(&sm, &format!("session {index}")).await;
+            let base = 1_700_000_000 + index as i64;
+            let mut insert = String::from(
+                "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp) VALUES ",
+            );
+            let rows = (0..MESSAGES_PER_SESSION)
+                .map(|m| {
+                    format!(
+                        "('{id}-{m}', '{id}', 'user', '[{{\"type\":\"text\",\"text\":\"benchmark fixture\"}}]', {})",
+                        base + m * SESSIONS as i64
+                    )
+                })
+                .collect::<Vec<_>>();
+            insert.push_str(&rows.join(", "));
+            sqlx::query(&insert).execute(pool).await.unwrap();
+        }
+
+        async fn first_page(sm: &SessionManager) -> super::SessionListPage {
+            let types = [SessionType::User];
+            sm.list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    working_dir: Some(Path::new(WORKING_DIR)),
+                    only_sessions_with_messages: true,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 50,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap()
+        }
+
+        let expected = first_page(&sm).await;
+        assert_eq!(expected.sessions.len(), 50);
+        assert!(expected.next_cursor.is_some());
+        for _ in 0..10 {
+            first_page(&sm).await;
+        }
+        let mut samples = Vec::new();
+        for _ in 0..30 {
+            let start = Instant::now();
+            let page = first_page(&sm).await;
+            samples.push(start.elapsed().as_secs_f64() * 1_000_000.0);
+            let ids = |page: &super::SessionListPage| {
+                page.sessions
+                    .iter()
+                    .map(|s| (s.id.clone(), s.message_count, s.last_message_at))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(ids(&page), ids(&expected));
+        }
+        report(
+            &format!("first page of {SESSIONS} sessions x {MESSAGES_PER_SESSION} messages"),
+            samples,
+        );
+
+        for _ in 0..5 {
+            sm.list_sessions().await.unwrap();
+        }
+        let mut samples = Vec::new();
+        for _ in 0..30 {
+            let start = Instant::now();
+            let sessions = sm.list_sessions().await.unwrap();
+            samples.push(start.elapsed().as_secs_f64() * 1_000_000.0);
+            assert_eq!(sessions.len(), SESSIONS);
+        }
+        report("unpaged list of all sessions", samples);
     }
 }

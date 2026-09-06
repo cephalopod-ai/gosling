@@ -87,6 +87,7 @@ impl SessionStorage {
                     WHERE messages.session_id = ?
                       AND json_extract(tool_request.value, '$.type') = 'toolRequest'
                       AND json_extract(tool_request.value, '$.id') = ?
+                    ORDER BY messages.id DESC
                     LIMIT 1
                     "#,
                 )
@@ -520,5 +521,167 @@ fn deserialize_tool_operation_result(value: &str) -> Result<ToolResult<CallToolR
     match serde_json::from_str::<MessageContent>(value)? {
         MessageContent::ToolResponse(response) => Ok(response.tool_result),
         _ => anyhow::bail!("tool operation result is malformed"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ToolOperationStart;
+    use crate::config::GoslingMode;
+    use crate::conversation::message::Message;
+    use crate::session::session_manager::{SessionManager, SessionType};
+    use rmcp::model::CallToolRequestParams;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    async fn tool_session(sm: &SessionManager) -> String {
+        sm.create_session(
+            PathBuf::from("/tmp/tool-operations"),
+            "Tool operations".to_string(),
+            SessionType::User,
+            GoslingMode::default(),
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    fn shell_call(command: &str) -> CallToolRequestParams {
+        CallToolRequestParams::new("developer__shell")
+            .with_arguments(rmcp::object!({ "command": command }))
+    }
+
+    async fn add_tool_round(sm: &SessionManager, session_id: &str, request_id: &str, output: &str) {
+        let call = shell_call(&format!("echo {request_id}"));
+        sm.add_message(
+            session_id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request(request_id, Ok(call)),
+        )
+        .await
+        .unwrap();
+        sm.add_message(
+            session_id,
+            &Message::user().with_generated_id().with_tool_response(
+                request_id,
+                Ok(rmcp::model::CallToolResult::success(vec![
+                    rmcp::model::Content::text(output),
+                ])),
+            ),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_begin_tool_operation_checks_the_newest_checkpoint_of_a_request_id() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = tool_session(&sm).await;
+        for index in 0..20 {
+            add_tool_round(&sm, &session_id, &format!("earlier-{index}"), "done").await;
+        }
+        let superseded = shell_call("echo superseded");
+        sm.add_message(
+            &session_id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request("repeated", Ok(superseded.clone())),
+        )
+        .await
+        .unwrap();
+        let current = shell_call("echo current");
+        sm.add_message(
+            &session_id,
+            &Message::assistant()
+                .with_generated_id()
+                .with_tool_request("repeated", Ok(current.clone())),
+        )
+        .await
+        .unwrap();
+
+        let mismatch = sm
+            .begin_tool_operation(&session_id, "repeated", &superseded, true)
+            .await
+            .unwrap_err();
+        assert!(mismatch.to_string().contains("different tool payload"));
+        assert!(matches!(
+            sm.begin_tool_operation(&session_id, "repeated", &current, true)
+                .await
+                .unwrap(),
+            ToolOperationStart::Execute { .. }
+        ));
+
+        let older = shell_call("echo earlier-3");
+        assert!(matches!(
+            sm.begin_tool_operation(&session_id, "earlier-3", &older, true)
+                .await
+                .unwrap(),
+            ToolOperationStart::Execute { .. }
+        ));
+        let missing = sm
+            .begin_tool_operation(&session_id, "never-checkpointed", &older, true)
+            .await
+            .unwrap_err();
+        assert!(missing.to_string().contains("must be durably checkpointed"));
+    }
+
+    #[tokio::test]
+    #[ignore = "manual same-workload tool dispatch benchmark; run with --ignored --nocapture"]
+    async fn benchmark_begin_tool_operation() {
+        use std::time::Instant;
+
+        fn report(label: &str, mut samples: Vec<f64>) {
+            samples.sort_by(f64::total_cmp);
+            println!(
+                "{label}: median={:.2}us p95={:.2}us min={:.2}us max={:.2}us n={}",
+                samples[samples.len() / 2],
+                samples[(samples.len() * 95).div_ceil(100) - 1],
+                samples[0],
+                samples[samples.len() - 1],
+                samples.len(),
+            );
+        }
+
+        const ROUNDS: usize = 300;
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = tool_session(&sm).await;
+        let output = "x".repeat(20_000);
+        for index in 0..ROUNDS {
+            add_tool_round(&sm, &session_id, &format!("round-{index}"), &output).await;
+        }
+        let newest = format!("round-{}", ROUNDS - 1);
+        let call = shell_call(&format!("echo {newest}"));
+        let pool = sm.storage().pool().await.unwrap();
+        let reset = |request_id: &str| {
+            sqlx::query("DELETE FROM tool_operations WHERE session_id = ? AND tool_request_id = ?")
+                .bind(session_id.clone())
+                .bind(request_id.to_string())
+                .execute(pool)
+        };
+
+        for _ in 0..5 {
+            sm.begin_tool_operation(&session_id, &newest, &call, true)
+                .await
+                .unwrap();
+            reset(&newest).await.unwrap();
+        }
+        let mut samples = Vec::new();
+        for _ in 0..30 {
+            let start = Instant::now();
+            let started = sm
+                .begin_tool_operation(&session_id, &newest, &call, true)
+                .await
+                .unwrap();
+            samples.push(start.elapsed().as_secs_f64() * 1_000_000.0);
+            assert!(matches!(started, ToolOperationStart::Execute { .. }));
+            reset(&newest).await.unwrap();
+        }
+        report(
+            &format!("begin_tool_operation, newest request after {ROUNDS} tool rounds"),
+            samples,
+        );
     }
 }

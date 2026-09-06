@@ -460,6 +460,27 @@ performance audit. Confirmation evidence, validation, and residual trade-offs ar
       findings. Discovery, benchmark limits, and the repaired test/lint issues
       are recorded in [the session log](logs/session/2026-09-06-snippet-optimization.md).
 
+#### Session storage optimization — 2026-09-06
+
+- [x] **REL-OPT-002** — resolved 2026-09-06: session listing derives each
+      session's newest message time from two index-range maxima instead of
+      aggregating a join over every message row, and the paged path counts
+      messages only for the returned page (the unpaged path still counts every
+      matching session). Same-harness debug-build fixture of 300
+      sessions × 100 messages: first-page median 36.06 ms → 2.14 ms, unpaged
+      list 41.17 ms → 6.92 ms. Exact ordering, `message_count`, and
+      `last_message_at` are asserted against per-session `get_session`
+      aggregates, including millisecond/second timestamp mixes and empty
+      sessions. Not a production or release-build latency claim.
+- [x] **REL-OPT-003** — resolved 2026-09-06: `begin_tool_operation` checks the
+      newest checkpointed copy of a tool request id, so the `json_each` scan
+      stops at the most recent message instead of parsing every message in the
+      session under the write lock on every tool dispatch. Same-harness fixture
+      of 300 tool rounds (about 6 MB of content): median 7.89 ms → 0.19 ms per
+      dispatch. Newest-wins now matches the sibling artifact-discovery lookup.
+      Discovery register, benchmark limits, and follow-up review for both items
+      are in [the session log](logs/session/2026-09-06-session-storage-optimization.md).
+
 ### Lower priority, mechanical but needs a judgement call
 
 ARCN-GSL-002 (49 scattered `process.env` reads), ARC-GSL-005 (duplicated
