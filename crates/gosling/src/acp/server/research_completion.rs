@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 const MAX_RESEARCH_ARTIFACTS: usize = 2_000;
 const MAX_RESEARCH_DELIVERABLE_BYTES: u64 = 100 * 1024 * 1024;
 const ARTIFACT_PAGE_SIZE: usize = 200;
+const MAX_LIBRARY_SCAN_ENTRIES: usize = 5_000;
+const MAX_LIBRARY_SCAN_DEPTH: usize = 6;
 const HASH_BUFFER_SIZE: usize = 64 * 1024;
 
 pub(super) async fn verify_deep_research_completion(
@@ -90,7 +92,7 @@ fn verify_artifact_pairs(
                 current_assistant_message_ids,
             )
     });
-    let (output_files, library_files) =
+    let (output_files, mut library_files) =
         collect_report_files(current_deliverables, &library_root, &output_roots);
 
     if output_files.is_empty() && library_files.is_empty() {
@@ -98,8 +100,14 @@ fn verify_artifact_pairs(
             artifact_can_complete_research(artifact)
                 && is_deliverable(Path::new(&artifact.resolved_path))
         });
-        let (prior_outputs, prior_library) =
+        let (prior_outputs, mut prior_library) =
             collect_report_files(prior_deliverables, &library_root, &output_roots);
+        if prior_library.is_empty() {
+            // Same blind spot as below: a copy made with `cp` is absent from the
+            // inventory. Whether a verified pair already exists is a question
+            // about the files, so no run window applies here.
+            prior_library = discover_library_copies(&library_root, &prior_outputs, None);
+        }
         if has_identical_report_pair(&prior_outputs, &prior_library)? {
             return Ok(());
         }
@@ -108,6 +116,15 @@ fn verify_artifact_pairs(
 
     if output_files.is_empty() {
         bail!("the current Deep Research turn did not produce a report in Session Outputs");
+    }
+    if library_files.is_empty() {
+        // The archive copy is normally made with `cp`, so the file never passes
+        // through a structured file tool and never reaches the artifact
+        // inventory. Requiring the tool would mean re-emitting an entire report
+        // through the model just to copy it. Placement, recency, and byte
+        // identity are still verified below against the real files on disk, so
+        // this discovers the copy rather than trusting that it was made.
+        library_files = discover_library_copies(&library_root, &output_files, Some(run_started_at));
     }
     if library_files.is_empty() {
         bail!("the current Deep Research turn did not produce a Research Library copy");
@@ -167,6 +184,72 @@ fn collect_report_files<'a>(
         }
     }
     (output_files, library_files)
+}
+
+/// Files under the Research Library whose name matches a reported Session
+/// Output, optionally narrowed to those written since `written_since`. The
+/// caller still compares contents, so a same-named unrelated file cannot
+/// satisfy the gate.
+fn discover_library_copies(
+    library_root: &Path,
+    output_files: &[PathBuf],
+    written_since: Option<DateTime<Utc>>,
+) -> Vec<PathBuf> {
+    let wanted: HashSet<&std::ffi::OsStr> = output_files
+        .iter()
+        .filter_map(|path| path.file_name())
+        .collect();
+    if wanted.is_empty() {
+        return Vec::new();
+    }
+
+    let mut found = Vec::new();
+    let mut directories = vec![(library_root.to_path_buf(), 0usize)];
+    let mut visited = 0usize;
+    while let Some((directory, depth)) = directories.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            visited += 1;
+            if visited > MAX_LIBRARY_SCAN_ENTRIES {
+                return found;
+            }
+            let path = entry.path();
+            if path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with('.'))
+            {
+                continue;
+            }
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            if metadata.file_type().is_symlink() {
+                continue;
+            }
+            if metadata.is_dir() {
+                if depth < MAX_LIBRARY_SCAN_DEPTH {
+                    directories.push((path, depth + 1));
+                }
+                continue;
+            }
+            if !path.file_name().is_some_and(|name| wanted.contains(name)) {
+                continue;
+            }
+            let in_window = written_since.is_none_or(|since| {
+                metadata
+                    .modified()
+                    .map(|modified| DateTime::<Utc>::from(modified) >= since)
+                    .unwrap_or(false)
+            });
+            if in_window {
+                found.push(path);
+            }
+        }
+    }
+    found
 }
 
 fn has_identical_report_pair(output_files: &[PathBuf], library_files: &[PathBuf]) -> Result<bool> {
@@ -263,6 +346,7 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use std::fs;
+    use std::time::SystemTime;
 
     fn artifact(path: &Path) -> SessionArtifact {
         SessionArtifact {
@@ -309,6 +393,112 @@ mod tests {
             &HashSet::new(),
         )
         .unwrap();
+    }
+
+    /// The archive copy is made with `cp`, so it never reaches the artifact
+    /// inventory and the gate used to fail a turn whose copies were on disk and
+    /// byte-identical. (Observed on session 20260904_7, 2026-09-06.)
+    #[test]
+    fn accepts_a_library_copy_made_outside_the_structured_file_tools() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library").join("Topic - 2026-09-06");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("SYNTHESIS.md");
+        let copy = library.join("SYNTHESIS.md");
+        fs::write(&output, "verified report").unwrap();
+        fs::write(&copy, "verified report").unwrap();
+        let state = DeepResearchState {
+            library_path: root.path().join("library").to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+
+        // Only the Session Outputs side is in the inventory, exactly as when the
+        // copy is made by a shell command.
+        verify_artifact_pairs(
+            &state,
+            &[artifact(&output)],
+            "",
+            run_started_at(),
+            &HashSet::new(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_discovered_library_copy_that_differs_is_still_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("SYNTHESIS.md");
+        let copy = library.join("SYNTHESIS.md");
+        fs::write(&output, "verified report").unwrap();
+        fs::write(&copy, "a different report").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+
+        let error = verify_artifact_pairs(
+            &state,
+            &[artifact(&output)],
+            "",
+            run_started_at(),
+            &HashSet::new(),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("not identical"), "{error}");
+    }
+
+    /// A copy left over from an earlier run does not let a later turn that
+    /// wrote nothing to the library pass.
+    #[test]
+    fn a_library_copy_predating_the_run_is_not_discovered() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("SYNTHESIS.md");
+        let copy = library.join("SYNTHESIS.md");
+        fs::write(&output, "verified report").unwrap();
+        fs::write(&copy, "verified report").unwrap();
+
+        let discovered = discover_library_copies(
+            &std::fs::canonicalize(&library).unwrap(),
+            &[std::fs::canonicalize(&output).unwrap()],
+            Some(Utc::now() + chrono::Duration::seconds(60)),
+        );
+        assert!(discovered.is_empty(), "{discovered:?}");
+    }
+
+    /// A turn that only refreshes the archive copy records no Session Outputs
+    /// artifact of its own, so the gate falls back to "is there already a
+    /// verified pair?" -- which must also see copies made with `cp`.
+    #[test]
+    fn accepts_a_prior_pair_whose_library_copy_is_only_on_disk() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library").join("Topic");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("SYNTHESIS.md");
+        let copy = library.join("SYNTHESIS.md");
+        fs::write(&output, "verified report").unwrap();
+        fs::write(&copy, "verified report").unwrap();
+        let state = DeepResearchState {
+            library_path: root.path().join("library").to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+
+        let mut prior = artifact(&output);
+        prior.first_seen_at = Utc::now() - chrono::Duration::hours(2);
+        prior.last_seen_at = Utc::now() - chrono::Duration::hours(2);
+
+        verify_artifact_pairs(&state, &[prior], "", run_started_at(), &HashSet::new()).unwrap();
     }
 
     #[test]
@@ -396,6 +586,14 @@ mod tests {
         let output_artifact = artifact(&output);
         let mut library_artifact = artifact(&copy);
         library_artifact.last_seen_at = Utc::now() - chrono::Duration::hours(1);
+        // The copy predates the run on disk too, so neither the inventory nor
+        // the filesystem can attribute it to this turn.
+        File::options()
+            .write(true)
+            .open(&copy)
+            .unwrap()
+            .set_modified(SystemTime::now() - std::time::Duration::from_secs(3600))
+            .unwrap();
         let error = verify_artifact_pairs(
             &state,
             &[output_artifact, library_artifact],
