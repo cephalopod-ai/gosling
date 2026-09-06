@@ -20,7 +20,8 @@ impl GoslingAcpAgent {
         cx: &ConnectionTo<Client>,
     ) {
         let Some(chain) = session.chain_membership.get(tool_call_id).cloned() else {
-            warn!(
+            // A single tool call has no chain; this is the common case, not a fault.
+            debug!(
                 "tool chain summary: skipped — no chain registered for tool_call_id {tool_call_id}",
             );
             return;

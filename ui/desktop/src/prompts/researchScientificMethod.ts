@@ -7,7 +7,10 @@ const NO_INITIAL_INPUTS_SCOPE = `# Host-resolved session scope (binding)
 
 No Initial Inputs were supplied for this session. Do not inspect workspace files, search for an
 initial-input corpus, or claim that files were reviewed unless the user explicitly supplies or
-requests them later. Treat Phase 0 and the internal-program portion of Phase 2 as N/A; external
+requests them later. That includes listing the working folder or its subfolders: no tree, ls,
+find, glob, grep, or read calls against them. Nothing there is research material, and even a
+filename must not enter this investigation. Write only to the Session Outputs and Research
+Library folders. Treat Phase 0 and the internal-program portion of Phase 2 as N/A; external
 prior-art discovery and the remaining scientific-method requirements still apply.`;
 
 export function buildResearchScientificMethodPrompt(hasInitialInputs: boolean): string {

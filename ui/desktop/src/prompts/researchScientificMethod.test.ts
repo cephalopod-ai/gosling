@@ -31,6 +31,7 @@ describe('embedded research scientific method prompt', () => {
 
     expect(prompt).toContain('No Initial Inputs were supplied');
     expect(prompt).toContain('Do not inspect workspace files');
+    expect(prompt).toContain('no tree, ls,\nfind, glob, grep, or read calls against them');
     expect(prompt).toContain('Treat Phase 0 and the internal-program portion of Phase 2 as N/A');
   });
 

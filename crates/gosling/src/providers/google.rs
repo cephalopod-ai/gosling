@@ -25,8 +25,15 @@ use tokio_util::io::StreamReader;
 pub(crate) const GOOGLE_PROVIDER_NAME: &str = "google";
 pub const GOOGLE_API_HOST: &str = "https://generativelanguage.googleapis.com";
 pub const GOOGLE_DEFAULT_MODEL: &str = "gemini-2.5-pro";
-pub const GOOGLE_DEFAULT_FAST_MODEL: &str = "gemini-2.5-flash";
+// The pinned `gemini-2.5-flash` began returning 404 "no longer available to new
+// users" in September 2026; every tool-call summary then failed twice before
+// falling back to a deterministic title. The alias tracks whatever flash tier
+// Google currently serves.
+pub const GOOGLE_DEFAULT_FAST_MODEL: &str = "gemini-flash-latest";
 pub const GOOGLE_KNOWN_MODELS: &[&str] = &[
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
+    "gemini-pro-latest",
     // Gemini 3 models
     "gemini-3-pro-preview",
     "gemini-3-pro-image-preview",

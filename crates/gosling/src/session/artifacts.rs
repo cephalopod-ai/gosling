@@ -1,3 +1,4 @@
+use crate::session::{DeepResearchState, ExtensionData, ExtensionState};
 use chrono::{DateTime, Utc};
 use rmcp::model::{CallToolRequestParams, CallToolResult, RawContent, ResourceContents};
 use serde::{Deserialize, Serialize};
@@ -113,6 +114,36 @@ impl DiscoveredArtifact {
         provenance: SessionArtifactProvenance,
         source_id: Option<&str>,
     ) -> Option<Self> {
+        Self::from_path_within(
+            value,
+            working_dir,
+            &[],
+            workspace_id,
+            mime_type,
+            relation,
+            provenance,
+            source_id,
+        )
+    }
+
+    /// Like `from_path`, but a path may also live under one of the session's
+    /// other granted folders. A workspace session's Outputs and Research
+    /// Library usually sit outside its working directory, and a report's
+    /// final message links to them relative to the folder it wrote into;
+    /// resolving against the working directory alone recorded paths that
+    /// exist nowhere and dropped the absolute ones outright. Text-sourced
+    /// paths are still confined to granted folders.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_path_within(
+        value: &str,
+        working_dir: &Path,
+        additional_dirs: &[PathBuf],
+        workspace_id: Option<&str>,
+        mime_type: Option<String>,
+        relation: SessionArtifactRelation,
+        provenance: SessionArtifactProvenance,
+        source_id: Option<&str>,
+    ) -> Option<Self> {
         let display_path = local_path_from_uri(value)?;
         let path = Path::new(&display_path);
         if path
@@ -121,24 +152,53 @@ impl DiscoveredArtifact {
         {
             return None;
         }
-        let resolved = if path.is_absolute() {
-            lexical_normalize(path)
-        } else {
-            lexical_normalize(&working_dir.join(path))
-        };
         let working_dir = lexical_normalize(working_dir);
-        if matches!(
+        let additional_dirs: Vec<PathBuf> = additional_dirs
+            .iter()
+            .map(|dir| lexical_normalize(dir))
+            .collect();
+        let from_text = matches!(
             provenance,
             SessionArtifactProvenance::AssistantMessage
                 | SessionArtifactProvenance::CompatibilityInference
-        ) && !resolved.starts_with(&working_dir)
-        {
-            return None;
-        }
+        );
+
+        let (resolved, base) = if path.is_absolute() {
+            let resolved = lexical_normalize(path);
+            let base = if resolved.starts_with(&working_dir) {
+                Some(working_dir.clone())
+            } else {
+                additional_dirs
+                    .iter()
+                    .find(|dir| resolved.starts_with(dir))
+                    .cloned()
+            };
+            (resolved, base)
+        } else {
+            let in_working_dir = lexical_normalize(&working_dir.join(path));
+            let elsewhere = (from_text && !in_working_dir.exists())
+                .then(|| {
+                    additional_dirs
+                        .iter()
+                        .map(|dir| (lexical_normalize(&dir.join(path)), dir.clone()))
+                        .find(|(candidate, _)| candidate.exists())
+                })
+                .flatten();
+            match elsewhere {
+                Some((resolved, dir)) => (resolved, Some(dir)),
+                None => (in_working_dir, Some(working_dir.clone())),
+            }
+        };
+
+        let base = match base {
+            Some(base) => base,
+            None if from_text => return None,
+            None => working_dir,
+        };
         Some(Self {
             display_path,
             resolved_path: resolved.to_string_lossy().to_string(),
-            base_working_dir: working_dir.to_string_lossy().to_string(),
+            base_working_dir: base.to_string_lossy().to_string(),
             workspace_id: workspace_id.map(str::to_string),
             mime_type,
             relation,
@@ -146,6 +206,30 @@ impl DiscoveredArtifact {
             source_id: source_id.map(str::to_string),
         })
     }
+}
+
+/// The folders a relative link in assistant text is tried against, after the
+/// working directory. A Deep Research deliverable exists under both a
+/// workspace output root and the Research Library by contract, and the final
+/// message links to the Outputs copy relative to that folder, so output roots
+/// come first and the library last; other granted folders keep their order.
+pub fn assistant_reference_bases(
+    additional_dirs: Vec<PathBuf>,
+    extension_data: &ExtensionData,
+) -> Vec<PathBuf> {
+    let Some(state) = DeepResearchState::from_extension_data(extension_data) else {
+        return additional_dirs;
+    };
+    let outputs: Vec<PathBuf> = state.output_paths.iter().map(PathBuf::from).collect();
+    let library = PathBuf::from(&state.library_path);
+    let mut bases = outputs.clone();
+    bases.extend(
+        additional_dirs
+            .into_iter()
+            .filter(|dir| !outputs.contains(dir) && *dir != library),
+    );
+    bases.push(library);
+    bases
 }
 
 fn lexical_normalize(path: &Path) -> PathBuf {
@@ -254,6 +338,7 @@ pub fn discover_from_successful_tool(
 pub fn discover_from_assistant_markdown(
     markdown: &str,
     working_dir: &Path,
+    additional_dirs: &[PathBuf],
     workspace_id: Option<&str>,
     source_id: Option<&str>,
     provenance: SessionArtifactProvenance,
@@ -270,16 +355,18 @@ pub fn discover_from_assistant_markdown(
         {
             let value = value.as_str().trim();
             if looks_like_file_path(value) {
-                push_path(
-                    &mut candidates,
+                if let Some(artifact) = DiscoveredArtifact::from_path_within(
                     value,
                     working_dir,
+                    additional_dirs,
                     workspace_id,
                     None,
                     SessionArtifactRelation::Referenced,
                     provenance,
                     source_id,
-                );
+                ) {
+                    candidates.push(artifact);
+                }
             }
         }
     }
@@ -552,11 +639,140 @@ mod tests {
         let markdown = discover_from_assistant_markdown(
             "See `src/lib.rs` and [report](<docs/report.md>).",
             Path::new("/workspace"),
+            &[],
             None,
             Some("message-1"),
             SessionArtifactProvenance::AssistantMessage,
         );
         assert_eq!(markdown.len(), 2);
+    }
+
+    /// The same report name exists under Outputs and the Research Library by
+    /// contract; a relative link means the Outputs copy, so research sessions
+    /// try output roots first and the library last.
+    #[test]
+    fn research_sessions_try_output_roots_before_the_library() {
+        let mut extension_data = ExtensionData::new();
+        DeepResearchState {
+            library_path: "/library".into(),
+            output_paths: vec!["/outputs".into()],
+        }
+        .to_extension_data(&mut extension_data)
+        .unwrap();
+        let bases = assistant_reference_bases(
+            vec![
+                PathBuf::from("/library"),
+                PathBuf::from("/reference"),
+                PathBuf::from("/outputs"),
+            ],
+            &extension_data,
+        );
+        assert_eq!(
+            bases,
+            vec![
+                PathBuf::from("/outputs"),
+                PathBuf::from("/reference"),
+                PathBuf::from("/library")
+            ]
+        );
+        assert_eq!(
+            assistant_reference_bases(vec![PathBuf::from("/reference")], &ExtensionData::new()),
+            vec![PathBuf::from("/reference")]
+        );
+
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library");
+        for dir in [&project, &outputs, &library] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(outputs.join("report.md"), "x").unwrap();
+        std::fs::write(library.join("report.md"), "x").unwrap();
+        let artifacts = discover_from_assistant_markdown(
+            &format!(
+                "[report](report.md) and `{}`",
+                library.join("report.md").display()
+            ),
+            &project,
+            &[outputs.clone(), library.clone()],
+            None,
+            None,
+            SessionArtifactProvenance::AssistantMessage,
+        );
+        let resolved: Vec<&str> = artifacts
+            .iter()
+            .map(|artifact| artifact.resolved_path.as_str())
+            .collect();
+        assert_eq!(
+            resolved,
+            vec![
+                outputs.join("report.md").to_str().unwrap(),
+                library.join("report.md").to_str().unwrap(),
+            ]
+        );
+    }
+
+    /// A workspace session's Outputs and Research Library live outside its
+    /// working directory. The final report links to them relative to the
+    /// folder it wrote into, or by absolute path; both must resolve to the
+    /// real files, and neither may reach beyond the granted folders.
+    #[test]
+    fn assistant_references_resolve_against_granted_session_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library");
+        std::fs::create_dir_all(project.join("report")).unwrap();
+        std::fs::create_dir_all(outputs.join("report")).unwrap();
+        std::fs::create_dir_all(&library).unwrap();
+        std::fs::write(outputs.join("report").join("SYNTHESIS.md"), "x").unwrap();
+        std::fs::write(library.join("SYNTHESIS.md"), "x").unwrap();
+        std::fs::write(project.join("report").join("notes.md"), "x").unwrap();
+        let granted = vec![outputs.clone(), library.clone()];
+
+        let markdown = format!(
+            "[synthesis](report/SYNTHESIS.md), [notes](report/notes.md), \
+             [archive]({}), [private](/outside/private-notes.txt), [missing](report/MISSING.md)",
+            library.join("SYNTHESIS.md").display()
+        );
+        let artifacts = discover_from_assistant_markdown(
+            &markdown,
+            &project,
+            &granted,
+            None,
+            Some("message-1"),
+            SessionArtifactProvenance::AssistantMessage,
+        );
+        let resolved: Vec<(&str, &str)> = artifacts
+            .iter()
+            .map(|artifact| {
+                (
+                    artifact.resolved_path.as_str(),
+                    artifact.base_working_dir.as_str(),
+                )
+            })
+            .collect();
+
+        let outputs_synthesis = outputs.join("report").join("SYNTHESIS.md");
+        let project_notes = project.join("report").join("notes.md");
+        let library_synthesis = library.join("SYNTHESIS.md");
+        let project_missing = project.join("report").join("MISSING.md");
+        assert_eq!(
+            resolved,
+            vec![
+                (
+                    outputs_synthesis.to_str().unwrap(),
+                    outputs.to_str().unwrap()
+                ),
+                (project_notes.to_str().unwrap(), project.to_str().unwrap()),
+                (
+                    library_synthesis.to_str().unwrap(),
+                    library.to_str().unwrap()
+                ),
+                (project_missing.to_str().unwrap(), project.to_str().unwrap()),
+            ]
+        );
     }
 
     #[test]

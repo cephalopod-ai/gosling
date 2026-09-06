@@ -12,7 +12,8 @@
 use super::SessionStorage;
 use crate::conversation::message::MessageContent;
 use crate::session::artifacts::{
-    discover_from_assistant_markdown, discover_from_successful_tool, SessionArtifactProvenance,
+    assistant_reference_bases, discover_from_assistant_markdown, discover_from_successful_tool,
+    SessionArtifactProvenance,
 };
 use anyhow::Result;
 use sqlx::{Pool, Sqlite};
@@ -446,12 +447,18 @@ impl SessionStorage {
     pub(super) async fn backfill_session_artifacts(
         tx: &mut sqlx::Transaction<'_, Sqlite>,
     ) -> Result<()> {
-        let sessions = sqlx::query_as::<_, (String, String, Option<String>)>(
-            "SELECT id, working_dir, workspace_id FROM sessions",
+        let sessions = sqlx::query_as::<_, (String, String, String, String, Option<String>)>(
+            "SELECT id, working_dir, additional_working_dirs_json, extension_data, workspace_id FROM sessions",
         )
         .fetch_all(&mut **tx)
         .await?;
-        for (session_id, working_dir, workspace_id) in sessions {
+        for (session_id, working_dir, additional_dirs_json, extension_data_json, workspace_id) in
+            sessions
+        {
+            let additional_dirs = assistant_reference_bases(
+                serde_json::from_str(&additional_dirs_json).unwrap_or_default(),
+                &serde_json::from_str(&extension_data_json).unwrap_or_default(),
+            );
             let messages = sqlx::query_as::<_, (Option<String>, String, String, Option<String>)>(
                 "SELECT message_id, role, content_json, metadata_json FROM messages WHERE session_id = ? ORDER BY id",
             )
@@ -494,6 +501,7 @@ impl SessionStorage {
                             let artifacts = discover_from_assistant_markdown(
                                 &text.text,
                                 Path::new(&working_dir),
+                                &additional_dirs,
                                 workspace_id.as_deref(),
                                 message_id.as_deref(),
                                 SessionArtifactProvenance::CompatibilityInference,
