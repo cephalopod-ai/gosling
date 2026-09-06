@@ -128,6 +128,9 @@ impl Agent {
             let mut consecutive_stop_hook_blocks = 0u32;
             let stop_hook_block_cap = self.stop_hook_block_cap();
             let mut can_drain_pending_steers = false;
+            let turn_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
+            let research_state = crate::session::DeepResearchState::from_extension_data(&session.extension_data);
+            let mut research_nudge_sent = false;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1057,6 +1060,19 @@ impl Agent {
                             self.goal.lock().await.clone()
                         };
                         let grind_nudge = self.grind.lock().await.clone();
+                        let research_report_missing = match &research_state {
+                            Some(state) if !research_nudge_sent => {
+                                !crate::session::research::turn_wrote_output_deliverable(
+                                    &session_manager,
+                                    &session_config.id,
+                                    state,
+                                    turn_started_at,
+                                    &last_assistant_text,
+                                )
+                                .await
+                            }
+                            _ => false,
+                        };
                         if let Some(goal) = goal_nudge {
                             goal_check_pending = true;
                             let nudge = format!(
@@ -1098,6 +1114,23 @@ impl Agent {
                                 );
                                 exit_chat = true;
                             }
+                        } else if research_report_missing {
+                            // A research turn that ends with the model announcing the
+                            // report instead of writing it would otherwise fail the
+                            // completion gate and wait on the operator. One hidden
+                            // nudge finishes it; a second end is honoured as-is.
+                            research_nudge_sent = true;
+                            messages_to_add.push(
+                                Message::user()
+                                    .with_text(crate::session::research::RESEARCH_DELIVERABLE_NUDGE)
+                                    .with_visibility(false, true),
+                            );
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    "No report in Session Outputs yet; asking for it before finishing.",
+                                )
+                            );
                         } else {
                             self.set_goal(None).await;
                             self.set_grind(None).await;

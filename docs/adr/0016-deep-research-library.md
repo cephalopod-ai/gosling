@@ -61,6 +61,15 @@ mismatched copies make the prompt `Failed`; cancellation remains `Cancelled`.
 - The agent instruction creates and reports the dual-destination artifacts; the ACP completion gate
   independently checks their provenance, placement, and identity. Gosling does not copy arbitrary
   session artifacts after the fact or rewrite files the user produced elsewhere.
+- Amended 2026-09-06: the completion gate now closes out the contract itself before judging it.
+  A report the turn wrote on only one side is mirrored to the other — Outputs to a Research
+  Library topic folder (the report's own folder, or one named after the session), or Library
+  back to Outputs — never replacing a different file of the same name (a dated copy is made
+  instead), and each copy is recorded in the inventory and announced in the chat. A report
+  written with a shell command is found by its mention in the final message. A research turn
+  that ends without any report gets one hidden nudge to write it before the gate runs. The gate
+  still verifies placement and byte identity; what changed is that a model that did the research
+  but not the bookkeeping no longer fails the turn.
 - Amended 2026-09-05: appended session system instructions (the library contract among them) are
   persisted in the session's extension data and re-applied whenever the session is activated, so a
   session resumed after an app restart or agent eviction is still bound by the dual-destination

@@ -417,7 +417,10 @@ export default function Hub({
         await acpAppendSessionSystemPrompt(
           session.id,
           RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
-          buildResearchScientificMethodPrompt(hasInitialInputs)
+          buildResearchScientificMethodPrompt(
+            hasInitialInputs,
+            enabledResearchExtensionNames.includes('math_mcp')
+          )
         );
         if (researchLibraryPath) {
           await acpAppendSessionSystemPrompt(

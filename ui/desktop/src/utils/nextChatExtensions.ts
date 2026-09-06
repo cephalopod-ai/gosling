@@ -17,8 +17,13 @@ function extensionConfig(extension: FixedExtensionEntry): ExtensionConfig {
 }
 
 export function requiredResearchExtensionNames(mode: ResearchTeamMode): string[] {
-  return mode === 'solo' ? ['math_mcp'] : ['math_mcp', 'summon'];
+  return mode === 'solo' ? [] : ['summon'];
 }
+
+// Auto-selected for research when configured, never a precondition: the
+// scientific-method prompt already degrades without equation routing, so a
+// missing Math MCP must not stop a research session from starting.
+export const PREFERRED_RESEARCH_EXTENSION_NAMES = ['math_mcp'];
 
 export function createNextChatExtensionDraft(
   allExtensions: FixedExtensionEntry[] = []
@@ -53,7 +58,7 @@ export function selectResearchSessionExtensions(
     : allExtensions.filter((extension) => extension.enabled).map(extensionConfig);
   const selectedNames = new Set(selected.map((extension) => extension.name));
 
-  for (const name of requiredNames) {
+  for (const name of [...requiredNames, ...PREFERRED_RESEARCH_EXTENSION_NAMES]) {
     const extension = configuredByName.get(name);
     if (extension && !selectedNames.has(name)) {
       selected.push(extensionConfig(extension));

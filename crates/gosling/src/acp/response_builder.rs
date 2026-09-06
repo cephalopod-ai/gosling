@@ -2,7 +2,7 @@ use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
 use crate::providers::inventory::{ProviderInventoryEntry, ProviderInventoryService};
 use crate::session::import_formats::SessionImportProvenance;
-use crate::session::Session;
+use crate::session::{ExtensionState, Session};
 use crate::slash_commands::types::{SlashCommandEntry, SlashCommandSource};
 use agent_client_protocol::schema::v1::{
     AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate, SessionConfigOption,
@@ -62,11 +62,17 @@ struct SessionMeta<'a> {
     import_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     import_original_working_dir: Option<String>,
+    /// Set for Deep Research sessions so a client can recognise one it did not
+    /// create in this window (resume from history, restart, another device).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    research_library_path: Option<String>,
 }
 
 impl<'a> From<&'a Session> for SessionMeta<'a> {
     fn from(session: &'a Session) -> Self {
         let provenance = SessionImportProvenance::from_extension_data(&session.extension_data);
+        let research =
+            crate::session::DeepResearchState::from_extension_data(&session.extension_data);
         Self {
             message_count: session.message_count,
             created_at: session.created_at,
@@ -98,6 +104,7 @@ impl<'a> From<&'a Session> for SessionMeta<'a> {
                 .map(|provenance| provenance.source_format.clone()),
             import_original_working_dir: provenance
                 .and_then(|provenance| provenance.original_working_dir),
+            research_library_path: research.map(|state| state.library_path),
         }
     }
 }
@@ -490,6 +497,25 @@ mod tests {
     use super::*;
     use agent_client_protocol::schema::v1::SessionConfigKind;
     use test_case::test_case;
+
+    #[test]
+    fn session_meta_marks_deep_research_sessions() {
+        let mut session = Session::default();
+        assert!(session_meta(&session).get("researchLibraryPath").is_none());
+
+        crate::session::DeepResearchState {
+            library_path: "/library".into(),
+            output_paths: vec!["/outputs".into()],
+        }
+        .to_extension_data(&mut session.extension_data)
+        .unwrap();
+        assert_eq!(
+            session_meta(&session)
+                .get("researchLibraryPath")
+                .and_then(|value| value.as_str()),
+            Some("/library")
+        );
+    }
 
     fn model_selection(current: &str, models: &[&str]) -> ModelSelection {
         ModelSelection {

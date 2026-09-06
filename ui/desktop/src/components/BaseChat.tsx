@@ -506,7 +506,10 @@ export default function BaseChat({
   }
 
   return (
-    <div className="h-full flex flex-col min-h-0" data-session-experience={sessionExperience}>
+    <div
+      className="h-full flex flex-col min-h-0"
+      data-session-experience={session?.research_library_path ? 'research' : sessionExperience}
+    >
       <MainPanelLayout
         backgroundColor={'bg-background-primary'}
         removeTopPadding={true}
@@ -536,7 +539,7 @@ export default function BaseChat({
                 </span>
               </a>
               <EnvironmentBadge className="translate-y-px" />
-              {sessionExperience === 'research' && (
+              {(sessionExperience === 'research' || session?.research_library_path) && (
                 <span
                   className="rounded-full border border-border-primary bg-background-secondary px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
                   data-session-tag="research"

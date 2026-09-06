@@ -37,6 +37,7 @@ interface GoslingSessionInfoMeta {
   importedUntrusted?: boolean;
   importSource?: string;
   importOriginalWorkingDir?: string;
+  researchLibraryPath?: string;
 }
 
 export const COMPACTED_SESSION_TAIL_LIMIT = 50;
@@ -167,6 +168,7 @@ export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta =
     working_dir: loadMeta.workingDir ?? s.cwd,
     additional_working_dirs: meta.additionalWorkingDirs ?? [],
     restrict_tools_to_working_dirs: meta.restrictToolsToWorkingDirs ?? false,
+    ...(meta.researchLibraryPath ? { research_library_path: meta.researchLibraryPath } : {}),
     created_at: createdAt,
     updated_at: updatedAt,
     last_message_at: meta.lastMessageAt,

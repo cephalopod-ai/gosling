@@ -57,6 +57,17 @@ describe('ACP sessions', () => {
     expect(session.workspace_name).toBe('Project');
   });
 
+  it('recognises a Deep Research session from its metadata', () => {
+    const session = sessionInfoToSession(
+      sessionInfo({
+        _meta: { researchLibraryPath: '/Users/tester/Documents/Gosling Research Library' },
+      })
+    );
+
+    expect(session.research_library_path).toBe('/Users/tester/Documents/Gosling Research Library');
+    expect(sessionInfoToSession(sessionInfo()).research_library_path).toBeUndefined();
+  });
+
   it('pins workspace id in ACP new-session metadata', async () => {
     const client = {
       newSession: vi.fn().mockResolvedValue({

@@ -52,7 +52,7 @@ describe('nextChatExtensions', () => {
     ]);
   });
 
-  it('forces Math MCP into Solo research without changing its global enabled state', () => {
+  it('adds Math MCP to Solo research when configured without changing its global enabled state', () => {
     const math = extension('math_mcp', false);
     const selected = selectResearchSessionExtensions(
       [extension('developer', true), math],
@@ -65,7 +65,14 @@ describe('nextChatExtensions', () => {
     expect(math.enabled).toBe(false);
   });
 
-  it('forces Math MCP and summon into multi-model research and reports missing requirements', () => {
+  it('does not require Math MCP to start research', () => {
+    const selected = selectResearchSessionExtensions([extension('developer', true)], null, 'solo');
+
+    expect(selected.extensionConfigs.map(({ name }) => name)).toEqual(['developer']);
+    expect(selected.missingRequiredNames).toEqual([]);
+  });
+
+  it('forces summon into multi-model research and reports it when missing', () => {
     const selected = selectResearchSessionExtensions(
       [extension('developer', true), extension('math_mcp', false)],
       { selectedNames: new Set() },

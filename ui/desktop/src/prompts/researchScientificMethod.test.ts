@@ -38,4 +38,17 @@ describe('embedded research scientific method prompt', () => {
   it('retains initial-input inspection when the session has inputs', () => {
     expect(buildResearchScientificMethodPrompt(true)).toBe(RESEARCH_SCIENTIFIC_METHOD_PROMPT);
   });
+
+  it('drops equation routing when no Math MCP extension is in the session', () => {
+    const prompt = buildResearchScientificMethodPrompt(true, false);
+
+    expect(prompt).not.toContain('Math MCP equation routing (binding for Deep Research)');
+    expect(prompt).not.toContain('pending Math MCP review');
+    expect(prompt).toContain('No Math MCP extension is attached to this session');
+    expect(prompt).toContain('## Procedure');
+    expect(prompt).toContain('Phase 0 — Detect existing tooling');
+    expect(buildResearchScientificMethodPrompt(false, false)).toContain(
+      'No Initial Inputs were supplied'
+    );
+  });
 });

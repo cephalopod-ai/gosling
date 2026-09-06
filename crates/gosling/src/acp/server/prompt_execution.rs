@@ -380,7 +380,7 @@ impl GoslingAcpAgent {
         Self::send_active_run_update(cx, &args.session_id, None)?;
         was_cancelled |= cancel_token.is_cancelled();
         if stream_error.is_none() && !was_cancelled {
-            if let Err(error) = research_completion::verify_deep_research_completion(
+            match research_completion::verify_deep_research_completion(
                 &self.session_manager,
                 &session_id,
                 &terminal_assistant_text,
@@ -389,9 +389,32 @@ impl GoslingAcpAgent {
             )
             .await
             {
-                stream_error = Some(agent_client_protocol::Error::internal_error().data(format!(
-                    "Deep Research completion was not verified: {error}"
-                )));
+                Ok(notes) => {
+                    for note in notes {
+                        let message = Message::assistant()
+                            .with_system_notification(SystemNotificationType::InlineMessage, note);
+                        self.session_manager
+                            .add_message(&session_id, &message)
+                            .await
+                            .internal_err_ctx("Failed to record the research closeout")?;
+                        for content in &message.content {
+                            if let MessageContent::SystemNotification(notification) = content {
+                                send_status_message_update(
+                                    cx,
+                                    self.supports_gosling_custom_notifications(),
+                                    &session_id,
+                                    notification,
+                                )?;
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
+                    stream_error = Some(
+                        agent_client_protocol::Error::internal_error()
+                            .data(format!("Deep Research was not completed: {error}")),
+                    );
+                }
             }
         }
         let terminal_state = if stream_error.is_some() {

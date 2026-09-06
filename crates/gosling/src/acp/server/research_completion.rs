@@ -1,3 +1,5 @@
+use crate::session::artifacts::DiscoveredArtifact;
+use crate::session::research;
 use crate::session::{
     DeepResearchState, ExtensionState, SessionArtifact, SessionArtifactProvenance,
     SessionArtifactRelation, SessionManager,
@@ -10,39 +12,68 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-const MAX_RESEARCH_ARTIFACTS: usize = 2_000;
 const MAX_RESEARCH_DELIVERABLE_BYTES: u64 = 100 * 1024 * 1024;
-const ARTIFACT_PAGE_SIZE: usize = 200;
 const MAX_LIBRARY_SCAN_ENTRIES: usize = 5_000;
 const MAX_LIBRARY_SCAN_DEPTH: usize = 6;
 const HASH_BUFFER_SIZE: usize = 64 * 1024;
 
+/// Verifies the dual-destination contract for a Deep Research turn and, when
+/// the model produced a report on only one side, makes the other copy itself.
+/// Returns operator-facing notes describing anything it did.
 pub(super) async fn verify_deep_research_completion(
     session_manager: &SessionManager,
     session_id: &str,
     assistant_text: &str,
     run_started_at: DateTime<Utc>,
     current_assistant_message_ids: &HashSet<String>,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     let session = session_manager.get_session(session_id, false).await?;
     let Some(state) = DeepResearchState::from_extension_data(&session.extension_data) else {
-        return Ok(());
+        return Ok(Vec::new());
     };
 
-    let mut artifacts = Vec::new();
-    let mut cursor = None;
-    loop {
-        let page = session_manager
-            .list_session_artifacts(session_id, cursor.as_deref(), ARTIFACT_PAGE_SIZE)
+    let mut artifacts = research::list_all_artifacts(session_manager, session_id).await?;
+
+    let closeout = {
+        let state = state.clone();
+        let artifacts = artifacts.clone();
+        let assistant_text = assistant_text.to_string();
+        let current_assistant_message_ids = current_assistant_message_ids.clone();
+        let session_name = session.name.clone();
+        tokio::task::spawn_blocking(move || {
+            close_out_deliverables(
+                &state,
+                &artifacts,
+                &assistant_text,
+                run_started_at,
+                &current_assistant_message_ids,
+                &session_name,
+            )
+        })
+        .await
+        .context("completion closeout stopped unexpectedly")??
+    };
+
+    if !closeout.register.is_empty() {
+        let working_dir = session.working_dir.to_string_lossy().into_owned();
+        let discovered: Vec<DiscoveredArtifact> = closeout
+            .register
+            .iter()
+            .map(|path| DiscoveredArtifact {
+                display_path: path.to_string_lossy().into_owned(),
+                resolved_path: path.to_string_lossy().into_owned(),
+                base_working_dir: working_dir.clone(),
+                workspace_id: session.workspace_id.clone(),
+                mime_type: None,
+                relation: SessionArtifactRelation::Created,
+                provenance: SessionArtifactProvenance::BuiltInTool,
+                source_id: None,
+            })
+            .collect();
+        session_manager
+            .upsert_session_artifacts(session_id, &discovered)
             .await?;
-        if page.total_count > MAX_RESEARCH_ARTIFACTS {
-            bail!("the session has too many artifacts to verify safely");
-        }
-        artifacts.extend(page.artifacts);
-        let Some(next_cursor) = page.next_cursor else {
-            break;
-        };
-        cursor = Some(next_cursor);
+        artifacts = research::list_all_artifacts(session_manager, session_id).await?;
     }
 
     let assistant_text = assistant_text.to_string();
@@ -58,7 +89,145 @@ pub(super) async fn verify_deep_research_completion(
     })
     .await
     .context("completion verifier stopped unexpectedly")??;
-    Ok(())
+    Ok(closeout.notes)
+}
+
+#[derive(Debug, Default)]
+struct Closeout {
+    /// Files to add to the artifact inventory: reports the model wrote outside
+    /// the structured file tools, plus the copies made here.
+    register: Vec<PathBuf>,
+    notes: Vec<String>,
+}
+
+/// Finds this turn's deliverables on both sides, including ones written with a
+/// shell command, and mirrors whichever side is missing. The verifier still
+/// judges the result afterwards; this only removes the failure modes where the
+/// model did the research but not the bookkeeping.
+fn close_out_deliverables(
+    state: &DeepResearchState,
+    artifacts: &[SessionArtifact],
+    assistant_text: &str,
+    run_started_at: DateTime<Utc>,
+    current_assistant_message_ids: &HashSet<String>,
+    session_name: &str,
+) -> Result<Closeout> {
+    let library_root = std::fs::canonicalize(&state.library_path)
+        .context("the Research Library is unavailable")?;
+    let output_roots = research::canonical_dirs(&state.output_paths);
+    if output_roots.is_empty() {
+        bail!("a workspace output folder is unavailable");
+    }
+
+    let current_deliverables = artifacts.iter().filter(|artifact| {
+        artifact_can_complete_research(artifact)
+            && is_deliverable(Path::new(&artifact.resolved_path))
+            && artifact_belongs_to_current_run(
+                artifact,
+                run_started_at,
+                current_assistant_message_ids,
+            )
+    });
+    let (mut outputs, mut library) =
+        collect_report_files(current_deliverables, &library_root, &output_roots);
+    let mut closeout = Closeout::default();
+
+    if outputs.is_empty() {
+        outputs =
+            research::deliverables_written_since(&output_roots, run_started_at, assistant_text);
+        closeout.register.extend(outputs.iter().cloned());
+    }
+    if library.is_empty() {
+        library = if outputs.is_empty() {
+            research::deliverables_written_since(
+                std::slice::from_ref(&library_root),
+                run_started_at,
+                assistant_text,
+            )
+        } else {
+            discover_library_copies(&library_root, &outputs, Some(run_started_at))
+        };
+        closeout.register.extend(library.iter().cloned());
+    }
+
+    if !outputs.is_empty() {
+        for output in &outputs {
+            let Some(name) = output.file_name() else {
+                continue;
+            };
+            if library.iter().any(|copy| copy.file_name() == Some(name)) {
+                continue;
+            }
+            let topic = output_roots
+                .iter()
+                .find_map(|root| output.strip_prefix(root).ok())
+                .and_then(|relative| relative.parent())
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from(research::topic_folder_name(session_name)));
+            let destination = mirror_file(output, &library_root.join(topic), name)?;
+            closeout.notes.push(format!(
+                "Archived to Research Library: {}",
+                destination.display()
+            ));
+            closeout.register.push(destination.clone());
+            library.push(destination);
+        }
+    } else if !library.is_empty() {
+        for copy in &library {
+            let Some(name) = copy.file_name() else {
+                continue;
+            };
+            let relative_dir = copy
+                .strip_prefix(&library_root)
+                .ok()
+                .and_then(|relative| relative.parent())
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
+            let destination = mirror_file(copy, &output_roots[0].join(relative_dir), name)?;
+            closeout.notes.push(format!(
+                "Copied to Session Outputs: {}",
+                destination.display()
+            ));
+            closeout.register.push(destination);
+        }
+    }
+
+    Ok(closeout)
+}
+
+/// Copies `source` into `directory` as `name`, never replacing a different
+/// file of that name: an existing identical copy is reused and a different one
+/// is kept, with the new copy taking a dated name.
+fn mirror_file(source: &Path, directory: &Path, name: &std::ffi::OsStr) -> Result<PathBuf> {
+    std::fs::create_dir_all(directory)
+        .with_context(|| format!("cannot create {}", directory.display()))?;
+    let mut destination = directory.join(name);
+    if destination.exists() {
+        if sha256_file(&destination)? == sha256_file(&source.to_path_buf())? {
+            return Ok(destination);
+        }
+        let stem = Path::new(name)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let extension = Path::new(name)
+            .extension()
+            .map(|extension| format!(".{}", extension.to_string_lossy()))
+            .unwrap_or_default();
+        destination = directory.join(format!(
+            "{stem} ({}){extension}",
+            Utc::now().format("%Y%m%d-%H%M%S")
+        ));
+    }
+    std::fs::copy(source, &destination).with_context(|| {
+        format!(
+            "cannot copy {} to {}",
+            source.display(),
+            destination.display()
+        )
+    })?;
+    Ok(destination)
 }
 
 fn verify_artifact_pairs(
@@ -111,11 +280,13 @@ fn verify_artifact_pairs(
         if has_identical_report_pair(&prior_outputs, &prior_library)? {
             return Ok(());
         }
-        bail!("Deep Research has no verified report and the current turn did not produce one");
+        bail!(
+            "this turn ended without a research report. Reply with \"write the report now\" to continue; the session and its evidence are intact"
+        );
     }
 
     if output_files.is_empty() {
-        bail!("the current Deep Research turn did not produce a report in Session Outputs");
+        bail!("this turn ended without a report in Session Outputs. Reply with \"write the report now\" to continue");
     }
     if library_files.is_empty() {
         // The archive copy is normally made with `cp`, so the file never passes
@@ -127,7 +298,7 @@ fn verify_artifact_pairs(
         library_files = discover_library_copies(&library_root, &output_files, Some(run_started_at));
     }
     if library_files.is_empty() {
-        bail!("the current Deep Research turn did not produce a Research Library copy");
+        bail!("the Research Library copy of this turn's report could not be made or verified");
     }
 
     for output in &output_files {
@@ -302,26 +473,7 @@ fn artifact_belongs_to_current_run(
 }
 
 fn is_deliverable(path: &Path) -> bool {
-    matches!(
-        path.extension()
-            .and_then(|extension| extension.to_str())
-            .map(str::to_ascii_lowercase)
-            .as_deref(),
-        Some(
-            "csv"
-                | "doc"
-                | "docx"
-                | "html"
-                | "json"
-                | "md"
-                | "pdf"
-                | "rtf"
-                | "tsv"
-                | "txt"
-                | "yaml"
-                | "yml"
-        )
-    )
+    research::is_deliverable(path)
 }
 
 fn sha256_file(path: &PathBuf) -> Result<[u8; 32]> {
@@ -501,6 +653,157 @@ mod tests {
         verify_artifact_pairs(&state, &[prior], "", run_started_at(), &HashSet::new()).unwrap();
     }
 
+    /// The model wrote the report to Outputs and stopped. The closeout makes
+    /// the archive copy itself, in the report's own topic folder, and reports
+    /// it, so the turn completes without anyone re-prompting.
+    #[test]
+    fn closeout_archives_an_outputs_only_report_into_the_library() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = std::fs::canonicalize(root.path()).unwrap();
+        let outputs = root_path.join("outputs");
+        let library = root_path.join("library");
+        fs::create_dir_all(outputs.join("retry-study")).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let report = outputs.join("retry-study").join("report.md");
+        fs::write(&report, "final report").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+
+        let closeout = close_out_deliverables(
+            &state,
+            &[artifact(&report)],
+            "",
+            run_started_at(),
+            &HashSet::new(),
+            "Retry Study",
+        )
+        .unwrap();
+
+        let copy = library.join("retry-study").join("report.md");
+        assert_eq!(fs::read_to_string(&copy).unwrap(), "final report");
+        assert_eq!(closeout.register, vec![copy.clone()]);
+        assert_eq!(closeout.notes.len(), 1);
+        assert!(closeout.notes[0].contains("Archived to Research Library"));
+
+        let mut artifacts = vec![artifact(&report)];
+        artifacts.push(artifact(&copy));
+        verify_artifact_pairs(&state, &artifacts, "", run_started_at(), &HashSet::new()).unwrap();
+    }
+
+    /// A report written with a shell heredoc is not in the inventory; the
+    /// closeout finds it because the final message names it, then archives it
+    /// under a folder named after the session when it has no topic folder.
+    #[test]
+    fn closeout_finds_a_shell_written_report_by_its_mention_and_names_the_topic() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = std::fs::canonicalize(root.path()).unwrap();
+        let outputs = root_path.join("outputs");
+        let library = root_path.join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let report = outputs.join("report.md");
+        fs::write(&report, "final report").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+
+        let closeout = close_out_deliverables(
+            &state,
+            &[],
+            &format!("Saved the report to {}", report.display()),
+            run_started_at(),
+            &HashSet::new(),
+            "Bounded Retry: A Comparison",
+        )
+        .unwrap();
+
+        let copy = library.join("Bounded Retry A Comparison").join("report.md");
+        assert!(copy.is_file(), "{closeout:?}");
+        assert_eq!(
+            closeout.register,
+            vec![std::fs::canonicalize(&report).unwrap(), copy]
+        );
+    }
+
+    #[test]
+    fn closeout_copies_a_library_only_report_back_to_outputs_without_overwriting() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = std::fs::canonicalize(root.path()).unwrap();
+        let outputs = root_path.join("outputs");
+        let library = root_path.join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(library.join("topic")).unwrap();
+        let copy = library.join("topic").join("report.md");
+        fs::write(&copy, "final report").unwrap();
+        fs::create_dir_all(outputs.join("topic")).unwrap();
+        fs::write(outputs.join("topic").join("report.md"), "an older draft").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+
+        let closeout = close_out_deliverables(
+            &state,
+            &[artifact(&copy)],
+            "",
+            run_started_at(),
+            &HashSet::new(),
+            "Topic",
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(outputs.join("topic").join("report.md")).unwrap(),
+            "an older draft",
+            "a different existing file must never be overwritten"
+        );
+        let dated = closeout
+            .register
+            .iter()
+            .find(|path| path.starts_with(&outputs))
+            .expect("a dated copy under Outputs");
+        assert!(dated
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("report ("));
+        assert_eq!(fs::read_to_string(dated).unwrap(), "final report");
+        assert!(closeout.notes[0].contains("Copied to Session Outputs"));
+    }
+
+    #[test]
+    fn closeout_leaves_a_complete_pair_alone() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = std::fs::canonicalize(root.path()).unwrap();
+        let outputs = root_path.join("outputs");
+        let library = root_path.join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("report.md");
+        let copy = library.join("report.md");
+        fs::write(&output, "verified report").unwrap();
+        fs::write(&copy, "verified report").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+
+        let closeout = close_out_deliverables(
+            &state,
+            &[artifact(&output), artifact(&copy)],
+            "",
+            run_started_at(),
+            &HashSet::new(),
+            "Topic",
+        )
+        .unwrap();
+        assert!(closeout.register.is_empty());
+        assert!(closeout.notes.is_empty());
+    }
+
     #[test]
     fn verifies_external_provider_reports_discovered_from_persisted_assistant_text() {
         let root = tempfile::tempdir().unwrap();
@@ -605,7 +908,7 @@ mod tests {
 
         assert!(error
             .to_string()
-            .contains("did not produce a Research Library copy"));
+            .contains("Research Library copy of this turn's report could not be made or verified"));
     }
 
     #[test]
@@ -712,6 +1015,8 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("no verified report"));
+        assert!(error
+            .to_string()
+            .contains("ended without a research report"));
     }
 }

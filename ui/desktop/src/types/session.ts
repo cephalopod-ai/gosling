@@ -55,4 +55,5 @@ export type Session = {
   imported_untrusted?: boolean;
   import_source?: string;
   import_original_working_dir?: string;
+  research_library_path?: string;
 };
