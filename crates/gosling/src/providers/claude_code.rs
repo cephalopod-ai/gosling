@@ -13,6 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::Command;
@@ -23,6 +24,7 @@ use super::base::{
     ProviderMetadata,
 };
 use super::utils::filter_extensions_from_system_prompt;
+use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
 use crate::config::paths::Paths;
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, ExtensionConfig, GoslingMode};
@@ -51,6 +53,187 @@ const CLAUDE_CODE_KNOWN_MODELS: &[&str] = &[
 /// `DEFAULT_SESSION_TAIL_LIMIT`, the window already shown to the user on a
 /// compacted session reload, so the backfill matches what's visibly on screen.
 const CLI_RESTART_BACKFILL_MESSAGES: usize = 50;
+
+/// The CLI's clarifying-question tool. It arrives as a `can_use_tool`
+/// control request like any other tool, but approving it does not answer
+/// it: the CLI expects the permission response to carry the user's
+/// `answers`, and without them the model is told the user gave no answer.
+const ASK_USER_QUESTION_TOOL: &str = "AskUserQuestion";
+
+/// Matches the desktop client's own elicitation timeout, after which it
+/// cancels the form on its side anyway.
+const ASK_USER_QUESTION_TIMEOUT: Duration = Duration::from_secs(300);
+
+#[derive(Debug, Clone, Deserialize)]
+struct AskUserQuestion {
+    question: String,
+    #[serde(default)]
+    header: String,
+    #[serde(default)]
+    options: Vec<AskUserQuestionOption>,
+    #[serde(default, rename = "multiSelect")]
+    multi_select: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AskUserQuestionOption {
+    label: String,
+    #[serde(default)]
+    description: String,
+}
+
+fn parse_ask_user_questions(input: &serde_json::Map<String, Value>) -> Vec<AskUserQuestion> {
+    input
+        .get("questions")
+        .cloned()
+        .and_then(|questions| serde_json::from_value(questions).ok())
+        .unwrap_or_default()
+}
+
+fn ask_user_question_field(index: usize) -> String {
+    format!("q{}", index + 1)
+}
+
+fn ask_user_question_message(questions: &[AskUserQuestion]) -> String {
+    let mut lines = vec!["Claude Code is asking you:".to_string()];
+    for (index, question) in questions.iter().enumerate() {
+        let header = question.header.trim();
+        if header.is_empty() {
+            lines.push(format!("{}. {}", index + 1, question.question.trim()));
+        } else {
+            lines.push(format!(
+                "{}. [{}] {}",
+                index + 1,
+                header,
+                question.question.trim()
+            ));
+        }
+    }
+    lines.join("\n")
+}
+
+/// Builds the elicitation form schema for a set of questions. Each question
+/// becomes one field: a single-select string enum, or a multi-select array of
+/// option labels. Field names are positional so the answers can be mapped
+/// back to question text regardless of how the client orders its form.
+fn ask_user_question_schema(questions: &[AskUserQuestion]) -> Value {
+    let mut properties = serde_json::Map::new();
+    let mut required = Vec::new();
+    for (index, question) in questions.iter().enumerate() {
+        let name = ask_user_question_field(index);
+        let labels: Vec<String> = question
+            .options
+            .iter()
+            .map(|option| option.label.clone())
+            .collect();
+        let mut description = question.question.trim().to_string();
+        for option in &question.options {
+            let detail = option.description.trim();
+            if detail.is_empty() {
+                description.push_str(&format!("\n- {}", option.label));
+            } else {
+                description.push_str(&format!("\n- {}: {}", option.label, detail));
+            }
+        }
+        let title = if question.header.trim().is_empty() {
+            question.question.trim().to_string()
+        } else {
+            question.header.trim().to_string()
+        };
+        let property = if question.multi_select {
+            json!({
+                "type": "array",
+                "title": title,
+                "description": description,
+                "items": {"type": "string", "enum": labels},
+                "minItems": 1,
+            })
+        } else {
+            json!({
+                "type": "string",
+                "title": title,
+                "description": description,
+                "enum": labels,
+            })
+        };
+        properties.insert(name.clone(), property);
+        required.push(name);
+    }
+    json!({
+        "type": "object",
+        "properties": properties,
+        "required": required,
+    })
+}
+
+/// Maps a submitted form back onto the CLI's `answers` contract: question
+/// text as the key, the chosen option label as the value, multi-select
+/// answers joined with ", ". Fields the user left empty are omitted.
+fn ask_user_question_answers(
+    questions: &[AskUserQuestion],
+    user_data: &Value,
+) -> serde_json::Map<String, Value> {
+    let mut answers = serde_json::Map::new();
+    for (index, question) in questions.iter().enumerate() {
+        let answer = match user_data.get(ask_user_question_field(index)) {
+            Some(Value::String(text)) => text.trim().to_string(),
+            Some(Value::Array(items)) => items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .collect::<Vec<_>>()
+                .join(", "),
+            _ => String::new(),
+        };
+        if !answer.is_empty() {
+            answers.insert(question.question.clone(), Value::String(answer));
+        }
+    }
+    answers
+}
+
+fn unanswered_question_denial(reason: &str) -> String {
+    format!(
+        "Gosling showed this question to the user, but no answer came back: {reason}. \
+         Do not describe this as the user ignoring you and do not assume an answer. \
+         Either continue on your best judgment and say which assumption you made, or end \
+         your turn by restating the question as plain text so the user can reply in chat."
+    )
+}
+
+fn ask_user_question_response(
+    questions: &[AskUserQuestion],
+    mut input: serde_json::Map<String, Value>,
+    tool_use_id: String,
+    outcome: anyhow::Result<ElicitationOutcome>,
+) -> PermissionResponse {
+    let reason = match outcome {
+        Ok(ElicitationOutcome::Accept(user_data)) => {
+            let answers = ask_user_question_answers(questions, &user_data);
+            if answers.is_empty() {
+                "the form was submitted without choosing any option"
+            } else {
+                input.insert("answers".to_string(), Value::Object(answers));
+                return PermissionResponse::Allow {
+                    updated_input: input,
+                    tool_use_id,
+                };
+            }
+        }
+        Ok(ElicitationOutcome::Decline) => "the user declined to answer",
+        Ok(ElicitationOutcome::Cancel) => {
+            "the question was dismissed, or the client cannot display questions"
+        }
+        Err(error) if error.to_string().contains("Timeout") => {
+            "nobody answered within five minutes"
+        }
+        Err(_) => "the question could not be delivered to the user",
+    };
+    PermissionResponse::Deny {
+        message: unanswered_question_denial(reason),
+    }
+}
 
 /// Maps a model value the CLI advertises onto the name Gosling passes back to it
 /// as `--model`. Fable 5 and Fable 5.1 are separate models the CLI serves side by
@@ -1082,6 +1265,43 @@ impl Provider for ClaudeCodeProvider {
                                     }) = serde_json::from_str::<IncomingControlRequest>(trimmed) {
                                         tracing::debug!(raw = %parsed, "can_use_tool control_request received");
 
+                                        if tool_name == ASK_USER_QUESTION_TOOL {
+                                            let questions = parse_ask_user_questions(&input);
+                                            let pending = ActionRequiredManager::global()
+                                                .open_pending(session_id.clone())
+                                                .await;
+                                            // Registered so a cancelled stream's cleanup
+                                            // above still sends the CLI a deny for this
+                                            // request instead of leaving it blocked.
+                                            let (cancel_guard, _) = oneshot::channel();
+                                            pending_confirmations.lock().await.insert(request_id.clone(), cancel_guard);
+
+                                            let elicitation = Message::assistant()
+                                                .with_content(MessageContent::action_required_elicitation(
+                                                    pending.id().to_string(),
+                                                    ask_user_question_message(&questions),
+                                                    ask_user_question_schema(&questions),
+                                                ))
+                                                .user_only();
+                                            yield (Some(elicitation), None);
+
+                                            let outcome = ActionRequiredManager::global()
+                                                .wait_for_pending(pending, ASK_USER_QUESTION_TIMEOUT)
+                                                .await;
+                                            pending_confirmations.lock().await.remove(&request_id);
+
+                                            let perm_resp = ask_user_question_response(&questions, input, tool_use_id, outcome);
+                                            let resp = ControlResponse::success(request_id, perm_resp);
+                                            let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
+                                                ProviderError::RequestFailed(format!("Failed to serialize question response: {e}"))
+                                            })?;
+                                            resp_str.push('\n');
+                                            process.stdin.write_all(resp_str.as_bytes()).await.map_err(|e| {
+                                                ProviderError::RequestFailed(format!("Failed to write question response: {e}"))
+                                            })?;
+                                            continue;
+                                        }
+
                                         let mode = stream_initial_mode;
                                         if mode == GoslingMode::Auto {
                                             let resp = ControlResponse::success(
@@ -1889,6 +2109,164 @@ mod tests {
         let stdin_str = capture_stdin(&provider, stdin_reader).await;
         let response_data = extract_permission_response(&stdin_str, "perm_1");
         assert_eq!(response_data, expected_response);
+    }
+
+    fn ask_user_question_control_request() -> &'static str {
+        r#"{"type":"control_request","request_id":"perm_q","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","input":{"questions":[{"question":"How should I format the output?","header":"Format","options":[{"label":"Summary","description":"Brief overview"},{"label":"Detailed","description":"Full explanation"}],"multiSelect":false},{"question":"Which sections should I include?","header":"Sections","options":[{"label":"Introduction","description":"Opening context"},{"label":"Conclusion","description":"Final summary"}],"multiSelect":true}]},"tool_use_id":"tu_q"}}"#
+    }
+
+    async fn first_elicitation_id(stream: &mut MessageStream) -> String {
+        use futures::StreamExt;
+
+        loop {
+            let (message, _) = stream.next().await.unwrap().unwrap();
+            let Some(message) = message else { continue };
+            let ar = message
+                .content
+                .iter()
+                .find_map(|c| c.as_action_required())
+                .expect("first message is an action-required message");
+            match &ar.data {
+                crate::conversation::message::ActionRequiredData::Elicitation {
+                    id,
+                    message: prompt,
+                    requested_schema,
+                } => {
+                    assert!(prompt.contains("How should I format the output?"));
+                    assert_eq!(
+                        requested_schema["properties"]["q1"]["enum"],
+                        json!(["Summary", "Detailed"])
+                    );
+                    assert_eq!(requested_schema["properties"]["q2"]["type"], json!("array"));
+                    assert!(message.is_user_visible());
+                    assert!(!message.is_agent_visible());
+                    return id.clone();
+                }
+                other => panic!("expected an elicitation, got {other:?}"),
+            }
+        }
+    }
+
+    #[test_case(GoslingMode::Auto ; "auto_mode_still_asks_the_user")]
+    #[test_case(GoslingMode::Approve ; "approve_mode_asks_the_user")]
+    #[tokio::test]
+    async fn ask_user_question_is_answered_through_an_elicitation(mode: GoslingMode) {
+        use futures::StreamExt;
+
+        let (provider, mut stream, stdin_reader) = stream_with_canned_stdout_in_mode(
+            &[
+                r#"{"type":"control_response","response":{"subtype":"success","request_id":"req_0"}}"#,
+                ask_user_question_control_request(),
+                r#"{"type":"result","result":"Done","usage":{"input_tokens":10,"output_tokens":5}}"#,
+            ],
+            mode,
+        )
+        .await;
+
+        let elicitation_id = first_elicitation_id(&mut stream).await;
+        ActionRequiredManager::global()
+            .claim_response("", &elicitation_id)
+            .await
+            .unwrap()
+            .submit(ElicitationOutcome::Accept(json!({
+                "q1": "Summary",
+                "q2": ["Introduction", "Conclusion"],
+            })))
+            .unwrap();
+
+        while let Some(item) = stream.next().await {
+            item.unwrap();
+        }
+        drop(stream);
+
+        assert!(provider.pending_confirmations.lock().await.is_empty());
+        let stdin_str = capture_stdin(&provider, stdin_reader).await;
+        let response = extract_permission_response(&stdin_str, "perm_q");
+        assert_eq!(response["behavior"], "allow");
+        assert_eq!(response["toolUseID"], "tu_q");
+        assert_eq!(
+            response["updatedInput"]["answers"],
+            json!({
+                "How should I format the output?": "Summary",
+                "Which sections should I include?": "Introduction, Conclusion",
+            })
+        );
+        assert_eq!(
+            response["updatedInput"]["questions"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[test_case(ElicitationOutcome::Decline, "declined" ; "declined")]
+    #[test_case(ElicitationOutcome::Cancel, "dismissed" ; "cancelled")]
+    #[test_case(ElicitationOutcome::Accept(json!({"q1": ""})), "without choosing" ; "empty_submission")]
+    #[tokio::test]
+    async fn unanswered_question_is_denied_with_an_explanation(
+        outcome: ElicitationOutcome,
+        expected_reason: &str,
+    ) {
+        use futures::StreamExt;
+
+        let (provider, mut stream, stdin_reader) = stream_with_canned_stdout(&[
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"req_0"}}"#,
+            ask_user_question_control_request(),
+            r#"{"type":"result","result":"Done","usage":{"input_tokens":10,"output_tokens":5}}"#,
+        ])
+        .await;
+
+        let elicitation_id = first_elicitation_id(&mut stream).await;
+        ActionRequiredManager::global()
+            .claim_response("", &elicitation_id)
+            .await
+            .unwrap()
+            .submit(outcome)
+            .unwrap();
+
+        while let Some(item) = stream.next().await {
+            item.unwrap();
+        }
+        drop(stream);
+
+        let stdin_str = capture_stdin(&provider, stdin_reader).await;
+        let response = extract_permission_response(&stdin_str, "perm_q");
+        assert_eq!(response["behavior"], "deny");
+        let message = response["message"].as_str().unwrap();
+        assert!(message.contains(expected_reason), "{message}");
+        assert!(message.contains("Do not describe this as the user ignoring you"));
+    }
+
+    #[test]
+    fn ask_user_question_schema_maps_each_question_to_a_field() {
+        let questions = parse_ask_user_questions(
+            serde_json::from_str::<Value>(ask_user_question_control_request()).unwrap()["request"]
+                ["input"]
+                .as_object()
+                .unwrap(),
+        );
+        let schema = ask_user_question_schema(&questions);
+
+        serde_json::from_value::<agent_client_protocol::schema::v1::ElicitationSchema>(
+            schema.clone(),
+        )
+        .expect("schema is a valid ACP form elicitation schema");
+        assert_eq!(schema["required"], json!(["q1", "q2"]));
+        assert_eq!(schema["properties"]["q1"]["title"], json!("Format"));
+        assert_eq!(
+            schema["properties"]["q1"]["description"],
+            json!("How should I format the output?\n- Summary: Brief overview\n- Detailed: Full explanation")
+        );
+        assert_eq!(
+            schema["properties"]["q2"]["items"],
+            json!({"type": "string", "enum": ["Introduction", "Conclusion"]})
+        );
+        assert_eq!(schema["properties"]["q2"]["minItems"], json!(1));
+        assert_eq!(
+            ask_user_question_message(&questions),
+            "Claude Code is asking you:\n1. [Format] How should I format the output?\n2. [Sections] Which sections should I include?"
+        );
     }
 
     #[tokio::test]

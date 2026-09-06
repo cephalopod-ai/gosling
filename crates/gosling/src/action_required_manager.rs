@@ -44,6 +44,18 @@ impl PendingResponseClaim {
     }
 }
 
+pub(crate) struct PendingElicitation {
+    id: String,
+    request: Arc<Mutex<PendingRequest>>,
+    rx: tokio::sync::oneshot::Receiver<ElicitationOutcome>,
+}
+
+impl PendingElicitation {
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+}
+
 pub(crate) struct ActionRequiredManager {
     pending: Arc<RwLock<HashMap<String, Arc<Mutex<PendingRequest>>>>>,
     action_required_senders: Mutex<HashMap<(String, String), mpsc::Sender<Message>>>,
@@ -63,6 +75,35 @@ impl ActionRequiredManager {
         &INSTANCE
     }
 
+    /// Opens a pending elicitation whose action-required message the caller
+    /// delivers itself (a provider that streams its own messages, for
+    /// example). The user's answer still arrives through `claim_response`.
+    pub(crate) async fn open_pending(&self, session_id: String) -> PendingElicitation {
+        let id = Uuid::new_v4().to_string();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let request = Arc::new(Mutex::new(PendingRequest {
+            session_id,
+            response_tx: Some(tx),
+        }));
+        self.pending
+            .write()
+            .await
+            .insert(id.clone(), Arc::clone(&request));
+        PendingElicitation { id, request, rx }
+    }
+
+    pub(crate) async fn wait_for_pending(
+        &self,
+        pending: PendingElicitation,
+        timeout_duration: Duration,
+    ) -> Result<ElicitationOutcome> {
+        let result = self
+            .wait_for_response(&pending.id, pending.request, pending.rx, timeout_duration)
+            .await;
+        self.pending.write().await.remove(&pending.id);
+        result
+    }
+
     pub(crate) async fn request_and_wait(
         &self,
         session_id: String,
@@ -71,32 +112,21 @@ impl ActionRequiredManager {
         schema: Value,
         timeout_duration: Duration,
     ) -> Result<ElicitationOutcome> {
-        let id = Uuid::new_v4().to_string();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let pending_request = PendingRequest {
-            session_id: session_id.clone(),
-            response_tx: Some(tx),
-        };
-        let pending_request = Arc::new(Mutex::new(pending_request));
-
-        self.pending
-            .write()
-            .await
-            .insert(id.clone(), Arc::clone(&pending_request));
+        let pending = self.open_pending(session_id.clone()).await;
 
         let action_required_message = Message::assistant().with_content(
-            MessageContent::action_required_elicitation(id.clone(), message, schema),
+            MessageContent::action_required_elicitation(pending.id.clone(), message, schema),
         );
 
         let sender = self
             .action_required_senders
             .lock()
             .await
-            .get(&(session_id.clone(), tool_call_request_id.clone()))
+            .get(&(session_id, tool_call_request_id.clone()))
             .cloned();
 
         let Some(sender) = sender else {
-            self.pending.write().await.remove(&id);
+            self.pending.write().await.remove(&pending.id);
             return Err(anyhow::anyhow!(
                 "Tool call request not found for elicitation: {}",
                 tool_call_request_id
@@ -104,20 +134,14 @@ impl ActionRequiredManager {
         };
 
         if sender.send(action_required_message).await.is_err() {
-            self.pending.write().await.remove(&id);
+            self.pending.write().await.remove(&pending.id);
             return Err(anyhow::anyhow!(
                 "Tool call action-required stream closed: {}",
                 tool_call_request_id
             ));
         }
 
-        let result = self
-            .wait_for_response(&id, pending_request, rx, timeout_duration)
-            .await;
-
-        self.pending.write().await.remove(&id);
-
-        result
+        self.wait_for_pending(pending, timeout_duration).await
     }
 
     pub(crate) async fn claim_response(
