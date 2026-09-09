@@ -103,6 +103,7 @@ function mockLoadResult() {
     },
     response: {},
     meta: {},
+    resumeIntegrity: 'clean',
   } as Awaited<ReturnType<typeof acpLoadSession>>;
 }
 
@@ -129,6 +130,7 @@ function snapshotWithActivePrompt(activePromptAttemptId: string | null): AcpChat
     sessionLoadError: undefined,
     promptError: undefined,
     interruptedPrompt: false,
+    resumeIntegrity: 'unknown',
     activePromptAttemptId,
     activeRunId: activePromptAttemptId ? 'run-1' : null,
     pendingCancelPromptAttemptId: null,
@@ -174,7 +176,8 @@ describe('acpChatSessionController.loadSession', () => {
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession(),
-      1
+      1,
+      { interruptedPrompt: false, resumeIntegrity: 'clean' }
     );
   });
 
@@ -188,7 +191,8 @@ describe('acpChatSessionController.loadSession', () => {
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession(),
-      1
+      1,
+      { interruptedPrompt: false, resumeIntegrity: 'clean' }
     );
   });
 
@@ -221,7 +225,25 @@ describe('acpChatSessionController.loadSession', () => {
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession(),
-      2
+      2,
+      { interruptedPrompt: false, resumeIntegrity: 'clean' }
+    );
+  });
+
+  it('marks an uncertain startup recovery as interrupted', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+    vi.mocked(acpLoadSession).mockResolvedValue({
+      ...mockLoadResult(),
+      resumeIntegrity: 'uncertain',
+    });
+
+    await acpChatSessionController.loadSession(SESSION_ID, { crashRecovery: true });
+
+    expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
+      SESSION_ID,
+      loadedSession(),
+      1,
+      { interruptedPrompt: true, resumeIntegrity: 'uncertain' }
     );
   });
 });
@@ -280,6 +302,10 @@ describe('acpChatSessionController.submitMessage', () => {
   });
 
   it('marks a closed ACP connection as an interrupted prompt', async () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+    });
     vi.mocked(acpPromptSession).mockRejectedValue(new Error('ACP connection closed'));
     const onFinish = vi.fn();
 
@@ -298,7 +324,34 @@ describe('acpChatSessionController.submitMessage', () => {
     );
     expect(window.electron.setWakelockActive).toHaveBeenNthCalledWith(1, SESSION_ID, true);
     expect(window.electron.setWakelockActive).toHaveBeenNthCalledWith(2, SESSION_ID, false);
+    expect(window.electron.setSessionRecoveryActive).toHaveBeenCalledTimes(1);
+    expect(window.electron.setSessionRecoveryActive).toHaveBeenCalledWith(SESSION_ID, '/tmp', true);
     expect(onFinish).toHaveBeenCalledWith('Submit error: ACP connection closed');
+  });
+
+  it('clears the recovery marker after a terminal prompt result', async () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+    });
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish: vi.fn(),
+    });
+
+    expect(window.electron.setSessionRecoveryActive).toHaveBeenNthCalledWith(
+      1,
+      SESSION_ID,
+      '/tmp',
+      true
+    );
+    expect(window.electron.setSessionRecoveryActive).toHaveBeenNthCalledWith(
+      2,
+      SESSION_ID,
+      '/tmp',
+      false
+    );
   });
 
   it('rejects while a cancellation barrier is pending', async () => {

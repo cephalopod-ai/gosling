@@ -39,7 +39,12 @@ interface GoslingSessionInfoMeta {
   importSource?: string;
   importOriginalWorkingDir?: string;
   researchLibraryPath?: string;
+  gosling?: {
+    resumeIntegrity?: unknown;
+  };
 }
+
+export type AcpResumeIntegrity = 'clean' | 'uncertain' | 'unknown';
 
 export const COMPACTED_SESSION_TAIL_LIMIT = 50;
 const ARTIFACT_PAGE_LIMIT = 200;
@@ -123,6 +128,7 @@ export interface AcpLoadSessionResult {
   sessionInfo: SessionInfo;
   response: LoadSessionResponse;
   meta: LoadSessionMeta;
+  resumeIntegrity: AcpResumeIntegrity;
 }
 
 const inFlightSessionLoads = new Map<string, Promise<AcpLoadSessionResult>>();
@@ -150,6 +156,12 @@ export function parseLoadMeta(response: LoadSessionResponse): LoadSessionMeta {
 
 function sessionInfoMeta(s: SessionInfo): GoslingSessionInfoMeta {
   return (s._meta ?? {}) as GoslingSessionInfoMeta;
+}
+
+export function sessionResumeIntegrity(s: SessionInfo): AcpResumeIntegrity {
+  const value = sessionInfoMeta(s).gosling?.resumeIntegrity;
+  if (value === 'clean' || value === 'uncertain') return value;
+  return 'unknown';
 }
 
 export function sessionInfoToSession(s: SessionInfo, loadMeta: LoadSessionMeta = {}): Session {
@@ -335,6 +347,7 @@ async function loadAcpSession(sessionId: string): Promise<AcpLoadSessionResult> 
     sessionInfo: sessionInfoResponse.session,
     response,
     meta: parseLoadMeta(response),
+    resumeIntegrity: sessionResumeIntegrity(sessionInfoResponse.session),
   };
 }
 

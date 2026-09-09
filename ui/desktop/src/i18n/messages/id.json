@@ -3556,5 +3556,35 @@
   },
   "sessionActionsHeader.handoffSession": {
     "defaultMessage": "Hand off to new session"
+  },
+  "settings.crashRecovery.always.description": {
+    "defaultMessage": "Automatically continue even when a tool result is missing or failed. This can repeat external side effects such as writes, messages, or deployments."
+  },
+  "settings.crashRecovery.always.label": {
+    "defaultMessage": "Always"
+  },
+  "settings.crashRecovery.description": {
+    "defaultMessage": "Choose what Gosling does with a task that was running when Desktop stopped unexpectedly. Recovery starts a new model turn from saved history; it cannot restore the exact interrupted provider stream."
+  },
+  "settings.crashRecovery.manual.description": {
+    "defaultMessage": "Reopen the interrupted chat and wait for you to review and resume it."
+  },
+  "settings.crashRecovery.manual.label": {
+    "defaultMessage": "Manual"
+  },
+  "settings.crashRecovery.safe.description": {
+    "defaultMessage": "Automatically continue only when the backend confirms an interrupted turn and every recovered tool call has a saved successful result. Otherwise, wait for your review."
+  },
+  "settings.crashRecovery.safe.label": {
+    "defaultMessage": "Safe (recommended)"
+  },
+  "settings.crashRecovery.safeguards": {
+    "defaultMessage": "Permission prompts still apply in every mode. Closing Gosling normally clears pending recovery instead of restarting the task."
+  },
+  "settings.crashRecovery.saveError": {
+    "defaultMessage": "Could not save the crash recovery policy: {error}"
+  },
+  "settings.crashRecovery.title": {
+    "defaultMessage": "Crash recovery"
   }
 }

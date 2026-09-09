@@ -8,6 +8,7 @@ export interface UseChatSessionParams {
   sessionId: string;
   onStreamFinish: () => void;
   onSessionLoaded?: () => void;
+  crashRecovery?: boolean;
 }
 
 export interface UseChatSessionResult {

@@ -71,6 +71,7 @@ const mockSettings: Record<string, unknown> = {
   language: 'system',
   responseStyle: 'concise',
   showPricing: true,
+  crashRecoveryPolicy: 'safe',
   seenAnnouncementIds: [],
   recentModels: [],
   outputFileExtensions: ['pdf', 'md', 'txt', 'doc', 'docx', 'jpg', 'png', 'yaml', 'json'],
@@ -98,6 +99,7 @@ Object.defineProperty(window, 'electron', {
       return Promise.resolve();
     }),
     setWakelockActive: vi.fn(() => Promise.resolve(true)),
+    setSessionRecoveryActive: vi.fn(() => Promise.resolve(true)),
     reloadApp: vi.fn(),
     showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })),
     saveArtifact: vi.fn(() => Promise.resolve({ canceled: true })),

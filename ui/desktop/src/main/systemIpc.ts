@@ -16,6 +16,12 @@ export interface SystemIpcDependencies {
   focusWindow: () => void;
   activeWakelockSessionsByWindow: Map<number, Set<string>>;
   syncWindowPowerSaveBlocker: (windowId: number) => void;
+  setSessionRecoveryActive: (
+    windowId: number,
+    sessionId: string,
+    workingDir: string,
+    active: boolean
+  ) => boolean;
 }
 
 export const SYSTEM_IPC_CHANNELS = [
@@ -27,6 +33,7 @@ export const SYSTEM_IPC_CHANNELS = [
   'set-wakelock',
   'get-wakelock-state',
   'set-wakelock-active',
+  'set-session-recovery-active',
   'set-spellcheck',
   'get-spellcheck-state',
   'is-any-window-focused',
@@ -46,6 +53,7 @@ export function registerSystemIpcHandlers(
     focusWindow,
     activeWakelockSessionsByWindow,
     syncWindowPowerSaveBlocker,
+    setSessionRecoveryActive,
   } = dependencies;
 
   // Handle menu bar icon visibility
@@ -174,6 +182,21 @@ export function registerSystemIpcHandlers(
       }
       syncWindowPowerSaveBlocker(windowId);
       return true;
+    }
+  );
+  targetIpcMain.handle(
+    'set-session-recovery-active',
+    (event, sessionId: unknown, workingDir: unknown, active: unknown): boolean => {
+      const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+      if (
+        !windowId ||
+        typeof sessionId !== 'string' ||
+        typeof workingDir !== 'string' ||
+        typeof active !== 'boolean'
+      ) {
+        return false;
+      }
+      return setSessionRecoveryActive(windowId, sessionId, workingDir, active);
     }
   );
   targetIpcMain.handle('set-spellcheck', async (_event, enable: boolean) => {

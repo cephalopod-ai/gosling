@@ -20,6 +20,7 @@ export default function ChatSessionsContainer({
   const [searchParams] = useSearchParams();
   const currentSessionId = searchParams.get('resumeSessionId') ?? undefined;
   const currentSessionExperience = sessionExperienceFrom(searchParams.get('sessionExperience'));
+  const currentSessionCrashRecovery = searchParams.get('crashRecovery') === 'true';
 
   // Always render active sessions to keep SSE connections alive, even when not on /pair route
   if (!currentSessionId && activeSessions.length === 0) {
@@ -33,7 +34,11 @@ export default function ChatSessionsContainer({
   if (currentSessionId && !activeSessions.some((s) => s.sessionId === currentSessionId)) {
     sessionsToRender = [
       ...activeSessions,
-      { sessionId: currentSessionId, sessionExperience: currentSessionExperience },
+      {
+        sessionId: currentSessionId,
+        crashRecovery: currentSessionCrashRecovery,
+        sessionExperience: currentSessionExperience,
+      },
     ];
   }
 
@@ -54,6 +59,7 @@ export default function ChatSessionsContainer({
               sessionId={session.sessionId}
               initialMessage={session.initialMessage}
               noAutoSubmit={session.noAutoSubmit}
+              crashRecovery={session.crashRecovery}
               sessionExperience={session.sessionExperience}
               suppressEmptyState={false}
               isActiveSession={isVisible}

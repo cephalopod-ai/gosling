@@ -87,6 +87,7 @@ import { registerSettingsIpcHandlers } from './main/settingsIpc';
 import { createWindowChrome } from './main/windowChrome';
 import { installApplicationMenu } from './main/applicationMenu';
 import { registerAppIpcHandlers } from './main/appIpc';
+import { SessionRecoveryRegistry } from './main/sessionRecoveryRegistry';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -893,6 +894,7 @@ const goslingServeLeases = new GoslingServeLeaseRegistry(log);
 
 const windowPowerSaveBlockers = new Map<number, number>(); // windowId -> blockerId
 const activeWakelockSessionsByWindow = new Map<number, Set<string>>();
+const sessionRecoveryRegistry = new SessionRecoveryRegistry(getSettings, updateSettings);
 
 function syncWindowPowerSaveBlocker(windowId: number): void {
   const activeSessions = activeWakelockSessionsByWindow.get(windowId);
@@ -941,6 +943,7 @@ interface CreateChatOptions {
   initialMessageNoAutoSubmit?: boolean;
   dir?: string;
   resumeSessionId?: string;
+  crashRecovery?: boolean;
   viewType?: string;
 }
 
@@ -948,7 +951,14 @@ const createChat = async (
   app: App,
   options: CreateChatOptions = {}
 ): Promise<BrowserWindow | undefined> => {
-  const { initialMessage, initialMessageNoAutoSubmit, dir, resumeSessionId, viewType } = options;
+  const {
+    initialMessage,
+    initialMessageNoAutoSubmit,
+    dir,
+    resumeSessionId,
+    crashRecovery,
+    viewType,
+  } = options;
   const settings = getSettings();
 
   let externalBackend: ExternalBackend | null;
@@ -1387,6 +1397,9 @@ const createChat = async (
   let searchParams = new URLSearchParams();
   if (resumeSessionId) {
     searchParams.set('resumeSessionId', resumeSessionId);
+    if (crashRecovery) {
+      searchParams.set('crashRecovery', 'true');
+    }
     if (appPath === '/') {
       appPath = '/pair';
     }
@@ -1453,6 +1466,14 @@ const createChat = async (
   });
 
   windowMap.set(windowId, mainWindow);
+  if (crashRecovery && resumeSessionId) {
+    const recovery = settings.pendingSessionRecoveries.find(
+      (candidate) => candidate.sessionId === resumeSessionId
+    );
+    if (recovery) {
+      sessionRecoveryRegistry.attachPending(windowId, recovery);
+    }
+  }
 
   // Handle window closure
   mainWindow.on('closed', () => {
@@ -1464,6 +1485,11 @@ const createChat = async (
     reactReadyWindows.delete(windowId);
 
     clearWindowWakelock(windowId);
+    try {
+      sessionRecoveryRegistry.clearWindow(windowId);
+    } catch (error) {
+      log.error('Failed to clear session recovery state for closed window:', error);
+    }
   });
   return mainWindow;
 };
@@ -1555,6 +1581,8 @@ registerSystemIpcHandlers(ipcMain, {
   focusWindow,
   activeWakelockSessionsByWindow,
   syncWindowPowerSaveBlocker,
+  setSessionRecoveryActive: (windowId, sessionId, workingDir, active) =>
+    sessionRecoveryRegistry.setActive(windowId, sessionId, workingDir, active),
 });
 
 registerFileIpcHandlers(ipcMain, {
@@ -1717,7 +1745,18 @@ async function appMain() {
   const { dirPath } = parseArgs();
 
   if (!openUrlHandledLaunch) {
-    await createNewWindow(app, dirPath);
+    const pendingRecoveries = settings.pendingSessionRecoveries;
+    if (pendingRecoveries.length > 0) {
+      for (const recovery of pendingRecoveries) {
+        await createChat(app, {
+          dir: recovery.workingDir,
+          resumeSessionId: recovery.sessionId,
+          crashRecovery: true,
+        });
+      }
+    } else {
+      await createNewWindow(app, dirPath);
+    }
   } else {
     log.info('[Main] Skipping window creation in appMain - open-url already handled launch');
   }
@@ -1819,6 +1858,11 @@ let shutdownCleanupPromise: Promise<void> | null = null;
 let shutdownCleanupComplete = false;
 
 async function runShutdownCleanup(): Promise<void> {
+  try {
+    sessionRecoveryRegistry.clearAll();
+  } catch (error) {
+    log.error('Failed to clear session recovery state during quit:', error);
+  }
   const goslingServeLeaseCount = goslingServeLeases.activeLeaseCount();
   if (goslingServeLeaseCount > 0) {
     log.info(`App quitting, cleaning up ${goslingServeLeaseCount} backend lease(s)`);

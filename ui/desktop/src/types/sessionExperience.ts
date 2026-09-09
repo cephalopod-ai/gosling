@@ -24,6 +24,7 @@ export interface ActiveSessionView {
   sessionId: string;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+  crashRecovery?: boolean;
   sessionExperience: SessionExperience;
 }
 

@@ -13,6 +13,7 @@ import {
   acpRemoveSessionWorkingDir,
   acpUnarchiveSession,
   sessionInfoToSession,
+  sessionResumeIntegrity,
 } from '../sessions';
 
 vi.mock('../acpConnection', () => ({
@@ -59,6 +60,19 @@ describe('ACP sessions', () => {
     const session = sessionInfoToSession(sessionInfo());
 
     expect(session.session_type).toBe('scheduled');
+  });
+
+  it('parses only explicit backend resume integrity values', () => {
+    expect(
+      sessionResumeIntegrity(sessionInfo({ _meta: { gosling: { resumeIntegrity: 'uncertain' } } }))
+    ).toBe('uncertain');
+    expect(
+      sessionResumeIntegrity(sessionInfo({ _meta: { gosling: { resumeIntegrity: 'clean' } } }))
+    ).toBe('clean');
+    expect(
+      sessionResumeIntegrity(sessionInfo({ _meta: { gosling: { resumeIntegrity: 'unsafe' } } }))
+    ).toBe('unknown');
+    expect(sessionResumeIntegrity(sessionInfo())).toBe('unknown');
   });
 
   it('preserves pinned workspace metadata from session info', () => {
@@ -183,6 +197,7 @@ describe('ACP sessions', () => {
     });
     expect(client.gosling.sessionInfo_unstable).toHaveBeenCalledTimes(2);
     expect(result.sessionInfo).toBe(loadedSessionInfo);
+    expect(result.resumeIntegrity).toBe('unknown');
     expect(sessionInfoToSession(result.sessionInfo).provider_name).toBe('anthropic');
     expect(sessionInfoToSession(result.sessionInfo).model_config?.model_name).toBe(
       'claude-sonnet-4-5'

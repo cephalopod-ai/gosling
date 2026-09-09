@@ -169,6 +169,11 @@ type ElectronAPI = {
   setWakelock: (enable: boolean) => Promise<boolean>;
   getWakelockState: () => Promise<boolean>;
   setWakelockActive: (sessionId: string, active: boolean) => Promise<boolean>;
+  setSessionRecoveryActive: (
+    sessionId: string,
+    workingDir: string,
+    active: boolean
+  ) => Promise<boolean>;
   setSpellcheck: (enable: boolean) => Promise<boolean>;
   getSpellcheckState: () => Promise<boolean>;
   openNotificationsSettings: () => Promise<boolean>;
@@ -339,6 +344,8 @@ const electronAPI: ElectronAPI = {
   getWakelockState: () => ipcRenderer.invoke('get-wakelock-state'),
   setWakelockActive: (sessionId: string, active: boolean) =>
     ipcRenderer.invoke('set-wakelock-active', sessionId, active),
+  setSessionRecoveryActive: (sessionId: string, workingDir: string, active: boolean) =>
+    ipcRenderer.invoke('set-session-recovery-active', sessionId, workingDir, active),
   setSpellcheck: (enable: boolean) => ipcRenderer.invoke('set-spellcheck', enable),
   getSpellcheckState: () => ipcRenderer.invoke('get-spellcheck-state'),
   openNotificationsSettings: () => ipcRenderer.invoke('open-notifications-settings'),

@@ -11,6 +11,14 @@ export type RecentModel = {
   model: string;
 };
 
+export type CrashRecoveryPolicy = 'manual' | 'safe' | 'always';
+
+export interface PendingSessionRecovery {
+  sessionId: string;
+  workingDir: string;
+  startedAt: number;
+}
+
 export const defaultOutputFileExtensions = [
   'pdf',
   'md',
@@ -81,6 +89,8 @@ export interface Settings {
   recentModels: RecentModel[];
   outputFileExtensions: string[];
   researchLibraryPath: string | null;
+  crashRecoveryPolicy: CrashRecoveryPolicy;
+  pendingSessionRecoveries: PendingSessionRecovery[];
 }
 
 export const settingKeys = [
@@ -104,6 +114,7 @@ export const settingKeys = [
   'recentModels',
   'outputFileExtensions',
   'researchLibraryPath',
+  'crashRecoveryPolicy',
 ] as const satisfies readonly (keyof Settings)[];
 
 export type SettingKey = (typeof settingKeys)[number];
@@ -154,6 +165,8 @@ export const defaultSettings: Settings = {
   recentModels: [],
   outputFileExtensions: [...defaultOutputFileExtensions],
   researchLibraryPath: null,
+  crashRecoveryPolicy: 'safe',
+  pendingSessionRecoveries: [],
 };
 
 const languageSettings = new Set<LanguageSetting>([
@@ -186,6 +199,7 @@ const MAX_RECENT_MODELS = 5;
 const MAX_RECENT_MODEL_FIELD_LENGTH = 512;
 const MAX_OUTPUT_FILE_EXTENSIONS = 100;
 const MAX_OUTPUT_FILE_EXTENSION_LENGTH = 32;
+const MAX_PENDING_SESSION_RECOVERIES = 10;
 
 export function normalizeOutputFileExtension(value: string): string | null {
   const normalized = value.trim().toLowerCase().replace(/^\.+/, '');
@@ -264,6 +278,29 @@ function isExternalGoslingdConfig(value: unknown): value is ExternalGoslingdConf
   );
 }
 
+function isPendingSessionRecovery(value: unknown): value is PendingSessionRecovery {
+  if (!isPlainRecord(value)) return false;
+  return (
+    Object.keys(value).every((key) => ['sessionId', 'workingDir', 'startedAt'].includes(key)) &&
+    isBoundedString(value.sessionId, 256) &&
+    value.sessionId.trim().length > 0 &&
+    isBoundedString(value.workingDir, MAX_PATH_LENGTH) &&
+    value.workingDir.trim().length > 0 &&
+    typeof value.startedAt === 'number' &&
+    Number.isFinite(value.startedAt) &&
+    value.startedAt >= 0
+  );
+}
+
+function isPendingSessionRecoveries(value: unknown): value is PendingSessionRecovery[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_PENDING_SESSION_RECOVERIES &&
+    value.every(isPendingSessionRecovery) &&
+    new Set(value.map((recovery) => recovery.sessionId)).size === value.length
+  );
+}
+
 export function isSettingKey(value: unknown): value is SettingKey {
   return typeof value === 'string' && (settingKeys as readonly string[]).includes(value);
 }
@@ -296,6 +333,8 @@ export function isSettingValue<K extends SettingKey>(key: K, value: unknown): va
       return typeof value === 'string' && languageSettings.has(value as LanguageSetting);
     case 'responseStyle':
       return isBoundedString(value, MAX_RESPONSE_STYLE_LENGTH);
+    case 'crashRecoveryPolicy':
+      return value === 'manual' || value === 'safe' || value === 'always';
     case 'seenAnnouncementIds':
       return (
         Array.isArray(value) &&
@@ -345,6 +384,7 @@ export function setSettingValue<K extends SettingKey>(
     case 'recentModels':
     case 'outputFileExtensions':
     case 'researchLibraryPath':
+    case 'crashRecoveryPolicy':
       Object.assign(settings, { [key]: value });
   }
 }
@@ -358,6 +398,7 @@ function freshDefaultSettings(): Settings {
     seenAnnouncementIds: [],
     recentModels: [],
     outputFileExtensions: [...defaultSettings.outputFileExtensions],
+    pendingSessionRecoveries: [],
   };
 }
 
@@ -416,6 +457,12 @@ export function resolveStoredSettings(stored: LegacySettings): {
     if (isKeyboardShortcuts(mergedKeyboardShortcuts)) {
       settings.keyboardShortcuts = mergedKeyboardShortcuts;
     }
+  }
+
+  if (isPendingSessionRecoveries(stored.pendingSessionRecoveries)) {
+    settings.pendingSessionRecoveries = stored.pendingSessionRecoveries.map((recovery) => ({
+      ...recovery,
+    }));
   }
 
   return {

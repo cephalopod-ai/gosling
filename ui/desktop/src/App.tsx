@@ -23,6 +23,7 @@ interface PairRouteState {
   resumeSessionId?: string;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+  crashRecovery?: boolean;
   sessionExperience?: SessionExperience;
 }
 
@@ -96,6 +97,7 @@ const PairRouteWrapper = ({ activeSessions }: { activeSessions: ActiveSessionVie
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
+  const crashRecovery = routeState.crashRecovery ?? searchParams.get('crashRecovery') === 'true';
   const sessionExperience = sessionExperienceFrom(
     routeState.sessionExperience ?? searchParams.get('sessionExperience')
   );
@@ -118,12 +120,20 @@ const PairRouteWrapper = ({ activeSessions }: { activeSessions: ActiveSessionVie
             sessionId: resumeSessionId,
             initialMessage: initialMessage,
             noAutoSubmit,
+            crashRecovery,
             sessionExperience,
           },
         })
       );
     }
-  }, [resumeSessionId, activeSessions, initialMessage, noAutoSubmit, sessionExperience]);
+  }, [
+    resumeSessionId,
+    activeSessions,
+    initialMessage,
+    noAutoSubmit,
+    crashRecovery,
+    sessionExperience,
+  ]);
 
   return null;
 };
@@ -263,11 +273,12 @@ export function AppInner() {
 
   useEffect(() => {
     const handleAddActiveSession = (event: Event) => {
-      const { sessionId, initialMessage, noAutoSubmit, sessionExperience } = (
+      const { sessionId, initialMessage, noAutoSubmit, crashRecovery, sessionExperience } = (
         event as CustomEvent<{
           sessionId: string;
           initialMessage?: UserInput;
           noAutoSubmit?: boolean;
+          crashRecovery?: boolean;
           sessionExperience?: SessionExperience;
         }>
       ).detail;
@@ -282,6 +293,7 @@ export function AppInner() {
             ...existing,
             ...(initialMessage ? { initialMessage } : {}),
             ...(noAutoSubmit !== undefined ? { noAutoSubmit } : {}),
+            ...(crashRecovery !== undefined ? { crashRecovery } : {}),
             ...(sessionExperience ? { sessionExperience } : {}),
           };
           return [
@@ -296,6 +308,7 @@ export function AppInner() {
           sessionId,
           initialMessage,
           noAutoSubmit,
+          crashRecovery,
           sessionExperience: sessionExperienceFrom(sessionExperience),
         };
         const updated = [...prev, newSession];

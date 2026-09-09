@@ -25,6 +25,8 @@ import { acpSteerSession } from '../acp/prompt';
 import { acpListSessionMessages } from '../acp/sessions';
 import { resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
 import { clearSelectedSessionInputs, getSelectedSessionInputs } from '../acp/sessionInputSelection';
+import { canSafelyAutoResume } from '../utils/crashRecovery';
+import { defaultSettings } from '../utils/settings';
 
 const initialTokenState: TokenState = {
   inputTokens: 0,
@@ -34,6 +36,9 @@ const initialTokenState: TokenState = {
   accumulatedOutputTokens: 0,
   accumulatedTotalTokens: 0,
 };
+
+const RECOVERY_CONTINUATION_MESSAGE =
+  'Continue the interrupted task from the saved session state. Review the existing tool results first. Do not repeat an operation whose outcome is uncertain; verify external state or ask me before proceeding.';
 
 function isClearCommand(message: string): boolean {
   return message.trim() === '/clear';
@@ -58,6 +63,7 @@ export function useChatSession({
   sessionId,
   onStreamFinish,
   onSessionLoaded,
+  crashRecovery = false,
 }: UseChatSessionParams): UseChatSessionResult {
   const intl = useIntl();
   const acpSnapshot = useAcpChatSessionSnapshot(sessionId);
@@ -151,8 +157,8 @@ export function useChatSession({
   useEffect(() => {
     if (!sessionId) return;
 
-    void acpChatSessionController.loadSession(sessionId, { onSessionLoaded });
-  }, [sessionId, onSessionLoaded]);
+    void acpChatSessionController.loadSession(sessionId, { onSessionLoaded, crashRecovery });
+  }, [crashRecovery, sessionId, onSessionLoaded]);
 
   const handleSubmit = useCallback(
     async (input: UserInput) => {
@@ -208,14 +214,54 @@ export function useChatSession({
   );
 
   const retrySessionLoad = useCallback(
-    () => acpChatSessionController.loadSession(sessionId, { force: true, onSessionLoaded }),
-    [onSessionLoaded, sessionId]
+    () =>
+      acpChatSessionController.loadSession(sessionId, {
+        force: true,
+        onSessionLoaded,
+        crashRecovery,
+      }),
+    [crashRecovery, onSessionLoaded, sessionId]
   );
 
   const resumeInterruptedPrompt = useCallback(
-    () => handleSubmit({ msg: '', images: [] }),
+    () => handleSubmit({ msg: RECOVERY_CONTINUATION_MESSAGE, images: [] }),
     [handleSubmit]
   );
+
+  const crashRecoveryHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !crashRecovery ||
+      !session ||
+      chatState !== ChatState.Idle ||
+      crashRecoveryHandledRef.current === sessionId
+    ) {
+      return;
+    }
+
+    crashRecoveryHandledRef.current = sessionId;
+    void (async () => {
+      const policy = await window.electron.getSetting('crashRecoveryPolicy').catch((error) => {
+        console.warn('Failed to load crash recovery policy; using Safe:', error);
+        return defaultSettings.crashRecoveryPolicy;
+      });
+      const latestSnapshot = acpChatSessionStore.getSnapshot(sessionId);
+      const shouldAutoResume =
+        latestSnapshot?.interruptedPrompt === true &&
+        (policy === 'always' ||
+          (policy === 'safe' &&
+            canSafelyAutoResume(latestSnapshot.resumeIntegrity, latestSnapshot.messages)));
+
+      if (shouldAutoResume) {
+        await resumeInterruptedPrompt();
+        return;
+      }
+
+      await window.electron
+        .setSessionRecoveryActive(sessionId, session.working_dir, false)
+        .catch((error) => console.warn('Failed to clear session recovery state:', error));
+    })();
+  }, [chatState, crashRecovery, resumeInterruptedPrompt, session, sessionId]);
 
   const loadOlderMessagePage = useCallback(async (): Promise<boolean> => {
     const currentSnapshot = acpChatSessionStore.getSnapshot(sessionId);

@@ -16,6 +16,7 @@ import {
 import type { ElicitationStatus } from './adapter/elicitations';
 import { cloneMessage } from './adapter/shared';
 import type { AcpElicitationRequest } from './elicitationRequests';
+import type { AcpResumeIntegrity } from './sessions';
 
 export interface AcpChatSessionSnapshot {
   session: Session | undefined;
@@ -32,6 +33,7 @@ export interface AcpChatSessionSnapshot {
   sessionLoadError: string | undefined;
   promptError: AcpPromptError | undefined;
   interruptedPrompt: boolean;
+  resumeIntegrity: AcpResumeIntegrity;
   activePromptAttemptId: string | null;
   activeRunId: string | null;
   pendingCancelPromptAttemptId: string | null;
@@ -92,7 +94,11 @@ export interface AcpChatSessionActions {
   finishSessionLoad(
     sessionId: string,
     session: Session,
-    connectionGeneration: number
+    connectionGeneration: number,
+    recovery?: {
+      interruptedPrompt: boolean;
+      resumeIntegrity: AcpResumeIntegrity;
+    }
   ): AcpChatSessionSnapshot;
   failSessionLoad(sessionId: string, sessionLoadError: string): AcpChatSessionSnapshot;
   setSessionLoadError(
@@ -213,6 +219,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       sessionLoadError: undefined,
       promptError: undefined,
       interruptedPrompt: false,
+      resumeIntegrity: 'unknown',
       activePromptAttemptId: null,
       activeRunId: null,
       pendingCancelPromptAttemptId: null,
@@ -275,13 +282,18 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
   const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (
     sessionId,
     session,
-    connectionGeneration
+    connectionGeneration,
+    recovery
   ) => {
     const entry = getOrCreateEntry(sessionId);
     entry.session = session;
     entry.connectionGeneration = connectionGeneration;
     entry.sessionLoadError = undefined;
     entry.promptError = undefined;
+    if (recovery) {
+      entry.interruptedPrompt = recovery.interruptedPrompt;
+      entry.resumeIntegrity = recovery.resumeIntegrity;
+    }
     entry.chatState = entry.activePromptAttemptId ? ChatState.Streaming : ChatState.Idle;
     return notify(sessionId, entry);
   };
@@ -878,6 +890,7 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     sessionLoadError: entry.sessionLoadError,
     promptError: entry.promptError,
     interruptedPrompt: entry.interruptedPrompt,
+    resumeIntegrity: entry.resumeIntegrity,
     activePromptAttemptId: entry.activePromptAttemptId,
     activeRunId: entry.activeRunId,
     pendingCancelPromptAttemptId: entry.pendingCancelPromptAttemptId,

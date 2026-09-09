@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acpChatSessionActions, acpChatSessionStore } from '../acp/chatSessionStore';
 import { IntlTestWrapper } from '../i18n/test-utils';
@@ -19,6 +19,7 @@ vi.mock('../acp/sessionLibraryInputs', () => ({ resolveSessionLibraryInputs: vi.
 const mocks = vi.hoisted(() => ({
   acpListSessionMessages: vi.fn(),
   loadSession: vi.fn(() => Promise.resolve(true)),
+  submitMessage: vi.fn(() => Promise.resolve()),
   toastError: vi.fn(),
 }));
 
@@ -26,7 +27,7 @@ vi.mock('../acp/chatSessionController', () => ({
   acpChatSessionController: {
     loadSession: mocks.loadSession,
     stop: vi.fn(),
-    submitMessage: vi.fn(),
+    submitMessage: mocks.submitMessage,
     updateMessage: vi.fn(),
   },
 }));
@@ -67,6 +68,7 @@ describe('useChatSession history navigation', () => {
   beforeEach(() => {
     mocks.acpListSessionMessages.mockReset();
     mocks.loadSession.mockClear();
+    mocks.submitMessage.mockClear();
     mocks.toastError.mockClear();
     acpChatSessionActions.finishSessionLoad(SESSION_ID, session(), 1);
     acpChatSessionActions.setMessages(SESSION_ID, [message('current')]);
@@ -208,5 +210,145 @@ describe('useChatSession history navigation', () => {
       title: 'Failed to load older messages',
       msg: 'offline',
     });
+  });
+
+  it('automatically continues a safely recoverable crashed prompt', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValueOnce('safe');
+    acpChatSessionActions.finishSessionLoad(SESSION_ID, session(), 1, {
+      interruptedPrompt: true,
+      resumeIntegrity: 'uncertain',
+    });
+    acpChatSessionActions.setMessages(SESSION_ID, [message('Finish the report')]);
+
+    renderHook(
+      () =>
+        useChatSession({
+          sessionId: SESSION_ID,
+          onStreamFinish: vi.fn(),
+          crashRecovery: true,
+        }),
+      { wrapper: IntlTestWrapper }
+    );
+
+    await waitFor(() => expect(mocks.submitMessage).toHaveBeenCalledTimes(1));
+    expect(mocks.submitMessage).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.objectContaining({
+        content: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'text',
+            text: expect.stringContaining('Continue the interrupted task'),
+          }),
+        ]),
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('waits for review when Safe recovery finds unresolved tool activity', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValueOnce('safe');
+    acpChatSessionActions.finishSessionLoad(SESSION_ID, session(), 1, {
+      interruptedPrompt: true,
+      resumeIntegrity: 'uncertain',
+    });
+    acpChatSessionActions.setMessages(SESSION_ID, [
+      message('Deploy the service'),
+      {
+        id: 'assistant-tool',
+        role: 'assistant',
+        content: [
+          {
+            type: 'toolRequest',
+            id: 'tool-1',
+            toolCall: { status: 'success' },
+          },
+        ],
+        created: 2,
+        metadata: { agentVisible: true, userVisible: true },
+      },
+    ]);
+
+    renderHook(
+      () =>
+        useChatSession({
+          sessionId: SESSION_ID,
+          onStreamFinish: vi.fn(),
+          crashRecovery: true,
+        }),
+      { wrapper: IntlTestWrapper }
+    );
+
+    await waitFor(() =>
+      expect(window.electron.setSessionRecoveryActive).toHaveBeenCalledWith(
+        SESSION_ID,
+        '/tmp',
+        false
+      )
+    );
+    expect(mocks.submitMessage).not.toHaveBeenCalled();
+  });
+
+  it('waits for review under the Manual policy even when Safe could continue', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValueOnce('manual');
+    acpChatSessionActions.finishSessionLoad(SESSION_ID, session(), 1, {
+      interruptedPrompt: true,
+      resumeIntegrity: 'uncertain',
+    });
+    acpChatSessionActions.setMessages(SESSION_ID, [message('Finish the report')]);
+
+    renderHook(
+      () =>
+        useChatSession({
+          sessionId: SESSION_ID,
+          onStreamFinish: vi.fn(),
+          crashRecovery: true,
+        }),
+      { wrapper: IntlTestWrapper }
+    );
+
+    await waitFor(() =>
+      expect(window.electron.setSessionRecoveryActive).toHaveBeenCalledWith(
+        SESSION_ID,
+        '/tmp',
+        false
+      )
+    );
+    expect(mocks.submitMessage).not.toHaveBeenCalled();
+  });
+
+  it('automatically continues unresolved tool activity under the Always policy', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValueOnce('always');
+    acpChatSessionActions.finishSessionLoad(SESSION_ID, session(), 1, {
+      interruptedPrompt: true,
+      resumeIntegrity: 'uncertain',
+    });
+    acpChatSessionActions.setMessages(SESSION_ID, [
+      message('Deploy the service'),
+      {
+        id: 'assistant-tool',
+        role: 'assistant',
+        content: [
+          {
+            type: 'toolRequest',
+            id: 'tool-1',
+            toolCall: { status: 'success' },
+          },
+        ],
+        created: 2,
+        metadata: { agentVisible: true, userVisible: true },
+      },
+    ]);
+
+    renderHook(
+      () =>
+        useChatSession({
+          sessionId: SESSION_ID,
+          onStreamFinish: vi.fn(),
+          crashRecovery: true,
+        }),
+      { wrapper: IntlTestWrapper }
+    );
+
+    await waitFor(() => expect(mocks.submitMessage).toHaveBeenCalledTimes(1));
   });
 });

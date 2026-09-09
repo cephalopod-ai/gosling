@@ -16,6 +16,29 @@ describe('resolveStoredSettings', () => {
     expect(resolveStoredSettings({}).settings.outputFileExtensions).toEqual(
       defaultOutputFileExtensions
     );
+    expect(resolveStoredSettings({}).settings.crashRecoveryPolicy).toBe('safe');
+  });
+
+  it('restores valid crash recovery settings and rejects malformed recovery markers', () => {
+    const valid = resolveStoredSettings({
+      crashRecoveryPolicy: 'always',
+      pendingSessionRecoveries: [
+        { sessionId: 'session-1', workingDir: '/workspace', startedAt: 123 },
+      ],
+    }).settings;
+
+    expect(valid.crashRecoveryPolicy).toBe('always');
+    expect(valid.pendingSessionRecoveries).toEqual([
+      { sessionId: 'session-1', workingDir: '/workspace', startedAt: 123 },
+    ]);
+
+    const malformed = resolveStoredSettings({
+      crashRecoveryPolicy: 'automatic',
+      pendingSessionRecoveries: [{ sessionId: '', workingDir: '/workspace', startedAt: 123 }],
+    }).settings;
+
+    expect(malformed.crashRecoveryPolicy).toBe('safe');
+    expect(malformed.pendingSessionRecoveries).toEqual([]);
   });
 
   it('includes every saved-revision document type by default', () => {
@@ -116,6 +139,8 @@ describe('setting IPC schemas', () => {
   it('rejects malformed values for every structured or bounded setting', () => {
     expect(isSettingValue('showDockIcon', 'yes')).toBe(false);
     expect(isSettingValue('theme', 'system')).toBe(false);
+    expect(isSettingValue('crashRecoveryPolicy', 'safe')).toBe(true);
+    expect(isSettingValue('crashRecoveryPolicy', 'automatic')).toBe(false);
     expect(isSettingValue('archiveFolder', 'x'.repeat(4097))).toBe(false);
     expect(isSettingValue('researchLibraryPath', '/Users/tester/Documents/Research')).toBe(true);
     expect(isSettingValue('researchLibraryPath', 'x'.repeat(4097))).toBe(false);

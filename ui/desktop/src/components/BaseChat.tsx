@@ -110,6 +110,7 @@ interface BaseChatProps {
   isActiveSession: boolean;
   initialMessage?: UserInput;
   noAutoSubmit?: boolean;
+  crashRecovery?: boolean;
   sessionExperience?: SessionExperience;
 }
 
@@ -121,6 +122,7 @@ export default function BaseChat({
   sessionId,
   initialMessage,
   noAutoSubmit,
+  crashRecovery,
   isActiveSession,
   sessionExperience = 'chat',
 }: BaseChatProps) {
@@ -168,6 +170,7 @@ export default function BaseChat({
   } = useChatSession({
     sessionId,
     onStreamFinish,
+    crashRecovery,
   });
 
   useEffect(() => {

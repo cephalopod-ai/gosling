@@ -60,6 +60,7 @@ describe('ACP chat session lifecycle', () => {
       sessionInfo: { sessionId: SESSION_ID, cwd: '/tmp', title: 'Test session' },
       response: {},
       meta: {},
+      resumeIntegrity: 'clean',
     });
     vi.mocked(acpListSessionArtifacts).mockResolvedValue([]);
   });

@@ -44,6 +44,7 @@ import {
 export interface AcpLoadSessionOptions {
   onSessionLoaded?: () => void;
   force?: boolean;
+  crashRecovery?: boolean;
 }
 
 export interface AcpSnapshotOptions {
@@ -180,7 +181,7 @@ async function loadSession(
 ): Promise<boolean> {
   let load = inFlightSessionLoads.get(sessionId);
   if (!load) {
-    load = loadSessionSnapshot(sessionId, options.force ?? false);
+    load = loadSessionSnapshot(sessionId, options.force ?? false, options.crashRecovery ?? false);
     inFlightSessionLoads.set(sessionId, load);
   }
 
@@ -197,7 +198,11 @@ async function loadSession(
   }
 }
 
-async function loadSessionSnapshot(sessionId: string, force: boolean): Promise<boolean> {
+async function loadSessionSnapshot(
+  sessionId: string,
+  force: boolean,
+  crashRecovery: boolean
+): Promise<boolean> {
   const cached = acpChatSessionStore.getSnapshot(sessionId);
   const connectionGeneration = getAcpConnectionGeneration();
   if (
@@ -217,7 +222,7 @@ async function loadSessionSnapshot(sessionId: string, force: boolean): Promise<b
   }
 
   try {
-    const { sessionInfo, meta } = await acpLoadSession(sessionId);
+    const { sessionInfo, meta, resumeIntegrity } = await acpLoadSession(sessionId);
     let artifacts: SessionArtifactDto[] = [];
     try {
       artifacts = await acpListSessionArtifacts(sessionId);
@@ -243,7 +248,11 @@ async function loadSessionSnapshot(sessionId: string, force: boolean): Promise<b
     acpChatSessionActions.finishSessionLoad(
       sessionId,
       sessionInfoToSession(sessionInfo, meta),
-      loadedConnectionGeneration
+      loadedConnectionGeneration,
+      {
+        interruptedPrompt: crashRecovery && resumeIntegrity !== 'clean',
+        resumeIntegrity,
+      }
     );
     acpChatSessionActions.setArtifacts(sessionId, artifacts);
     if (meta.historyLoad?.mode === 'compacted') {
@@ -315,6 +324,7 @@ async function submitMessage(
   }
 
   const promptAttemptId = uuidv7();
+  const workingDir = snapshot?.session?.working_dir;
   const selectedInputIds =
     userMessage.role === 'user' &&
     !getTextAndImageContent(userMessage).textContent.trim().startsWith('/')
@@ -322,8 +332,15 @@ async function submitMessage(
       : [];
   preparingPromptAttempts.add(promptAttemptId);
   acpChatSessionActions.startPromptAttempt(sessionId, promptAttemptId);
+  let preserveRecoveryMarker = false;
 
   try {
+    if (workingDir) {
+      await window.electron.setSessionRecoveryActive(sessionId, workingDir, true).catch((error) => {
+        console.warn('Failed to persist session recovery state:', error);
+        return false;
+      });
+    }
     await window.electron.setWakelockActive(sessionId, true).catch(() => false);
     if (finishPromptCancellation(sessionId, promptAttemptId)) return;
     if (selectedInputIds.length > 0) {
@@ -381,6 +398,7 @@ async function submitMessage(
           message: 'Submit error: ' + describeAcpError(error),
           connectionLost: isAcpConnectionClosedError(error),
         };
+    preserveRecoveryMarker = submitError.connectionLost;
     if (
       acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId, submitError)
     ) {
@@ -388,6 +406,11 @@ async function submitMessage(
     }
   } finally {
     preparingPromptAttempts.delete(promptAttemptId);
+    if (!preserveRecoveryMarker && workingDir) {
+      await window.electron
+        .setSessionRecoveryActive(sessionId, workingDir, false)
+        .catch((error) => console.warn('Failed to clear session recovery state:', error));
+    }
     const current = acpChatSessionStore.getSnapshot(sessionId);
     if (!current?.activePromptAttemptId && !current?.pendingCancelPromptAttemptId) {
       await window.electron.setWakelockActive(sessionId, false).catch(() => false);
