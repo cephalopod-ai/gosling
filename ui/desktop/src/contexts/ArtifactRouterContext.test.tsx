@@ -317,6 +317,42 @@ describe('ArtifactRouterProvider', () => {
     );
   });
 
+  it('publishes the qualified output instead of a duplicate bare assistant alias', async () => {
+    renderRouter();
+    act(() =>
+      router.setVisibleSessionArtifacts([
+        {
+          sessionId: 'session-1',
+          displayPath: 'Outputs/report.md',
+          resolvedPath: '/active/Outputs/report.md',
+          baseWorkingDir: '/active',
+          relation: 'referenced',
+          provenance: 'assistant_message',
+          sourceId: 'message-1',
+          firstSeenAt: '2026-09-09T00:00:00Z',
+          lastSeenAt: '2026-09-09T00:00:00Z',
+        },
+        {
+          sessionId: 'session-1',
+          displayPath: 'report.md',
+          resolvedPath: '/active/report.md',
+          baseWorkingDir: '/active',
+          relation: 'referenced',
+          provenance: 'assistant_message',
+          sourceId: 'message-1',
+          firstSeenAt: '2026-09-09T00:00:00Z',
+          lastSeenAt: '2026-09-09T00:00:00Z',
+        },
+      ])
+    );
+
+    await waitFor(() =>
+      expect(setArtifactRoutingConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ artifactFiles: ['/active/Outputs/report.md'] })
+      )
+    );
+  });
+
   it('warns instead of silently falling back when a native download is unroutable', () => {
     renderRouter();
     act(() => unroutedHandler?.({}, 'brief.pdf'));

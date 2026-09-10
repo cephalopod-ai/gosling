@@ -1,4 +1,5 @@
 use crate::session::{DeepResearchState, ExtensionData, ExtensionState};
+use crate::workspace::WorkspaceSessionContext;
 use chrono::{DateTime, Utc};
 use rmcp::model::{CallToolRequestParams, CallToolResult, RawContent, ResourceContents};
 use serde::{Deserialize, Serialize};
@@ -216,19 +217,54 @@ impl DiscoveredArtifact {
 pub fn assistant_reference_bases(
     additional_dirs: Vec<PathBuf>,
     extension_data: &ExtensionData,
+    workspace_context: Option<&WorkspaceSessionContext>,
 ) -> Vec<PathBuf> {
-    let Some(state) = DeepResearchState::from_extension_data(extension_data) else {
-        return additional_dirs;
-    };
-    let outputs: Vec<PathBuf> = state.output_paths.iter().map(PathBuf::from).collect();
-    let library = PathBuf::from(&state.library_path);
-    let mut bases = outputs.clone();
-    bases.extend(
+    let research_state = DeepResearchState::from_extension_data(extension_data);
+    let research_outputs: Vec<PathBuf> = research_state
+        .as_ref()
+        .map(|state| state.output_paths.iter().map(PathBuf::from).collect())
+        .unwrap_or_default();
+    let research_library = research_state.map(|state| PathBuf::from(state.library_path));
+    let workspace_outputs: Vec<PathBuf> = workspace_context
+        .map(|context| {
+            context
+                .product_output_folders
+                .iter()
+                .map(|output| PathBuf::from(&output.path))
+                .collect()
+        })
+        .unwrap_or_default();
+    let workspace_roots: Vec<PathBuf> = workspace_context
+        .map(|context| {
+            context
+                .effective_folder_policy()
+                .roots
+                .into_iter()
+                .map(|root| PathBuf::from(root.path))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut candidates = workspace_outputs;
+    candidates.extend(research_outputs);
+    candidates.extend(
         additional_dirs
             .into_iter()
-            .filter(|dir| !outputs.contains(dir) && *dir != library),
+            .filter(|base| research_library.as_ref() != Some(base)),
     );
-    bases.push(library);
+    candidates.extend(
+        workspace_roots
+            .into_iter()
+            .filter(|base| research_library.as_ref() != Some(base)),
+    );
+    candidates.extend(research_library);
+
+    let mut bases = Vec::new();
+    for base in candidates.into_iter().map(|base| lexical_normalize(&base)) {
+        if !bases.contains(&base) {
+            bases.push(base);
+        }
+    }
     bases
 }
 
@@ -666,6 +702,7 @@ mod tests {
                 PathBuf::from("/outputs"),
             ],
             &extension_data,
+            None,
         );
         assert_eq!(
             bases,
@@ -676,7 +713,11 @@ mod tests {
             ]
         );
         assert_eq!(
-            assistant_reference_bases(vec![PathBuf::from("/reference")], &ExtensionData::new()),
+            assistant_reference_bases(
+                vec![PathBuf::from("/reference")],
+                &ExtensionData::new(),
+                None
+            ),
             vec![PathBuf::from("/reference")]
         );
 

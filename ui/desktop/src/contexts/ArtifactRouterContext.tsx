@@ -13,6 +13,7 @@ import type {
   RoutedArtifactSaveResult,
 } from '../types/artifactRouter';
 import { resolveWorkspaceArtifact } from '../utils/artifactRouting';
+import { coalesceSessionArtifactAliases } from '../utils/sessionArtifactAliases';
 import { ARTIFACT_TIMESTAMPS_REFRESH_EVENT } from '../types/artifactFileTimestamps';
 import { useWorkspace } from './WorkspaceContext';
 
@@ -105,7 +106,12 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
   const [visibleSessionWorkspaceId, setVisibleSessionWorkspaceId] = useState<
     string | null | undefined
   >(undefined);
-  const [visibleSessionArtifacts, setVisibleSessionArtifacts] = useState<SessionArtifactDto[]>([]);
+  const [visibleSessionArtifacts, setVisibleSessionArtifactsState] = useState<SessionArtifactDto[]>(
+    []
+  );
+  const setVisibleSessionArtifacts = useCallback((artifacts: SessionArtifactDto[]) => {
+    setVisibleSessionArtifactsState(coalesceSessionArtifactAliases(artifacts).artifacts);
+  }, []);
 
   const nativeWorkspace = useMemo(() => {
     const workspaceId =

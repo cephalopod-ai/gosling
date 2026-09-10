@@ -143,6 +143,60 @@ describe('ArtifactWorkbenchProvider', () => {
     expect(workbench.tabs).toHaveLength(2);
   });
 
+  it('rebinds a persisted bare alias to the qualified output and keeps one openable row', () => {
+    localStorage.setItem(
+      'gosling-artifact-workbench-v1',
+      JSON.stringify({
+        isOpen: true,
+        width: 480,
+        sessions: {
+          'session-a': {
+            activeTabId: 'alias-tab',
+            deletedArtifacts: {},
+            tabs: [
+              {
+                id: 'alias-tab',
+                kind: 'markdown',
+                source: { type: 'file', path: 'report.md', baseDirectory: '/workspace' },
+                title: 'report.md',
+              },
+            ],
+          },
+        },
+      })
+    );
+    const output = {
+      sessionId: 'session-a',
+      displayPath: 'Outputs/report.md',
+      resolvedPath: '/workspace/Outputs/report.md',
+      baseWorkingDir: '/workspace',
+      relation: 'referenced' as const,
+      provenance: 'assistant_message' as const,
+      sourceId: 'message-1',
+      firstSeenAt: '2026-09-09T00:00:00Z',
+      lastSeenAt: '2026-09-09T00:00:00Z',
+    };
+    const missingAlias = {
+      ...output,
+      displayPath: 'report.md',
+      resolvedPath: '/workspace/report.md',
+    };
+    render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+
+    act(() => workbench.setVisibleSession('session-a', [output, missingAlias]));
+
+    expect(workbench.artifacts).toEqual([output]);
+    expect(workbench.activeTab?.source).toEqual({
+      type: 'file',
+      path: 'Outputs/report.md',
+      baseDirectory: '/workspace',
+    });
+  });
+
   it('drops unsupported persisted tabs while retaining MIME-only text previews', () => {
     localStorage.setItem(
       'gosling-artifact-workbench-v1',

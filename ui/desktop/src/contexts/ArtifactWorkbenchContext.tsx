@@ -8,6 +8,7 @@ import {
   isArtifactKindPreviewableWithoutExtension,
 } from '../components/artifacts/artifactUtils';
 import type { ArtifactTab } from '../components/artifacts/types';
+import { coalesceSessionArtifactAliases } from '../utils/sessionArtifactAliases';
 
 const STORAGE_KEY = 'gosling-artifact-workbench-v1';
 const DEFAULT_SESSION_ID = '__no_session__';
@@ -354,11 +355,43 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
   const setVisibleSession = useCallback(
     (sessionId: string | null, nextArtifacts: SessionArtifactDto[]) => {
       const key = sessionId ?? DEFAULT_SESSION_ID;
+      const coalesced = coalesceSessionArtifactAliases(nextArtifacts);
       setVisibleSessionId(key);
       setArtifactsBySession((currentArtifacts) => ({
         ...currentArtifacts,
-        [key]: nextArtifacts,
+        [key]: coalesced.artifacts,
       }));
+      if (coalesced.aliases.length > 0) {
+        setSessions((all) => {
+          const state = all[key];
+          if (!state) return all;
+          const tabs = state.tabs.map((tab) => {
+            if (tab.source.type !== 'file') return tab;
+            const alias = coalesced.aliases.find(
+              ({ artifact }) =>
+                tab.source.type === 'file' &&
+                (tab.source.path === artifact.resolvedPath ||
+                  (tab.source.path === artifact.displayPath &&
+                    tab.source.baseDirectory === artifact.baseWorkingDir))
+            );
+            if (!alias) return tab;
+            return {
+              ...tab,
+              kind: artifactKindFromMetadata(alias.target.displayPath, alias.target.mimeType),
+              source: {
+                type: 'file' as const,
+                path: alias.target.displayPath,
+                baseDirectory: alias.target.baseWorkingDir,
+              },
+              title: artifactTitleFromPath(alias.target.displayPath),
+              workspaceId: alias.target.workspaceId ?? undefined,
+            };
+          });
+          return tabs.some((tab, index) => tab !== state.tabs[index])
+            ? { ...all, [key]: { ...state, tabs } }
+            : all;
+        });
+      }
     },
     []
   );

@@ -120,7 +120,10 @@ session store.
 Schema v26 stores artifact metadata in `session_artifacts`; source files stay in place. Successful
 write/edit tool targets, local MCP resources, explicit tool metadata/output arguments, and completed
 assistant Markdown references are discovered in that order and deduplicated by session plus resolved
-path. Forking copies metadata, deleting a session cascades metadata, and missing files remain named.
+path. Bare assistant references try the pinned workspace output and other granted roots after the
+working directory, so a named output resolves to the file the session actually produced. Desktop
+coalesces an unambiguous qualified-output/dead-bare alias from older inventories and rebinds persisted
+preview tabs. Forking copies metadata, deleting a session cascades metadata, and missing files remain named.
 Legacy migration parses persisted messages once and never scans output directories.
 
 The Desktop loads the paginated inventory with the session and applies durable `artifact_update`

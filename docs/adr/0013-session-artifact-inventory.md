@@ -30,8 +30,10 @@ window preferences. The default display list is `.pdf`, `.md`, `.txt`, `.doc`, `
 `.yaml`, and `.json`. Files without an in-app renderer remain available for reveal and external opening.
 The durable metadata remains intact even when an entry is not presented.
 
-Inventory registration grants no filesystem capability. Relative paths retain their discovery working
-directory, but selection still passes through the Electron artifact guard. Existing renderer roots,
+Inventory registration grants no filesystem capability. Relative assistant paths resolve existing
+files against the discovery working directory first, then the session's pinned workspace output and
+other granted roots; unresolved paths retain the discovery working directory. Selection still passes
+through the Electron artifact guard. Existing renderer roots,
 validated workspace output roots, explicit file-picker grants, and exact session-generated user-facing
 deliverables authorize a read/open/reveal/copy. The last category is limited to document-like files
 created or modified by a built-in tool or referenced by the assistant; it never grants a directory or
@@ -47,6 +49,10 @@ Files are never created, copied, moved, opened, or read merely because a record 
 by arbitrary shell commands and never referenced were initially undiscovered. ADR-0018 adds a
 separate bounded observer around hosted mutating tools; inventory listing and legacy backfill remain
 metadata-only.
+
+Older inventories can contain both a qualified output path and a dead bare-path alias extracted from
+the same assistant message. Desktop coalesces only an unambiguous same-message/same-filename pair and
+rebinds a persisted alias preview to the qualified output. Ambiguous qualified paths remain distinct.
 
 ## Explicit file deletion (2026-09-08)
 

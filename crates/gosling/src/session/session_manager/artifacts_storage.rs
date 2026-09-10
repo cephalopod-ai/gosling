@@ -16,6 +16,7 @@ use crate::session::artifacts::{
     assistant_reference_bases, discover_from_assistant_markdown, discover_from_successful_tool,
     DiscoveredArtifact, SessionArtifact, SessionArtifactProvenance,
 };
+use crate::workspace::WorkspaceSessionContext;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rmcp::model::Role;
@@ -88,16 +89,26 @@ impl SessionStorage {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-        let (working_dir, additional_dirs_json, extension_data_json, workspace_id) =
-            sqlx::query_as::<_, (String, String, String, Option<String>)>(
-                "SELECT working_dir, additional_working_dirs_json, extension_data, workspace_id FROM sessions WHERE id = ?",
+        let (
+            working_dir,
+            additional_dirs_json,
+            extension_data_json,
+            workspace_id,
+            workspace_context_json,
+        ) = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>)>(
+                "SELECT working_dir, additional_working_dirs_json, extension_data, workspace_id, workspace_context_json FROM sessions WHERE id = ?",
             )
             .bind(session_id)
             .fetch_one(&mut *tx)
             .await?;
+        let workspace_context: Option<WorkspaceSessionContext> = workspace_context_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?;
         let additional_dirs = assistant_reference_bases(
             serde_json::from_str(&additional_dirs_json).unwrap_or_default(),
             &serde_json::from_str(&extension_data_json).unwrap_or_default(),
+            workspace_context.as_ref(),
         );
         let artifacts = message
             .content

@@ -5208,6 +5208,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assistant_artifact_basenames_resolve_to_pinned_workspace_outputs() {
+        let temp_dir = TempDir::new().unwrap();
+        let working_dir = temp_dir.path().join("workspace");
+        let output_dir = working_dir.join("Outputs");
+        std::fs::create_dir_all(&output_dir).unwrap();
+        std::fs::write(output_dir.join("report.md"), "# Report").unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                working_dir.clone(),
+                "Workspace output aliases".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let context = WorkspaceSessionContext {
+            workspace_id: "workspace-id".into(),
+            workspace_name: "Project".into(),
+            primary_working_folder: working_dir.to_string_lossy().into_owned(),
+            folders: Vec::new(),
+            product_output_folders: vec![crate::workspace::ProductOutputFolder {
+                id: "outputs".into(),
+                label: "Outputs".into(),
+                path: output_dir.to_string_lossy().into_owned(),
+                product_types: vec![crate::workspace::ProductType::Document],
+                is_default: true,
+                create_if_missing: false,
+            }],
+            folder_policy: Default::default(),
+        };
+        manager
+            .update(&session.id)
+            .workspace_snapshot(
+                "workspace-id".into(),
+                "Project".into(),
+                None,
+                None,
+                None,
+                context,
+            )
+            .apply()
+            .await
+            .unwrap();
+        let message = Message::assistant()
+            .with_id("artifact-message")
+            .with_text("Read `report.md` or `Outputs/report.md`.");
+
+        manager
+            .register_completed_assistant_artifacts(&session.id, &message)
+            .await
+            .unwrap();
+
+        let page = manager
+            .list_session_artifacts(&session.id, None, 20)
+            .await
+            .unwrap();
+        assert_eq!(page.total_count, 1);
+        assert_eq!(page.artifacts[0].display_path, "report.md");
+        assert_eq!(
+            page.artifacts[0].resolved_path,
+            output_dir.join("report.md").to_string_lossy()
+        );
+    }
+
+    #[tokio::test]
     async fn session_artifact_legacy_backfill_uses_messages_and_skips_untrusted_history() {
         let temp_dir = TempDir::new().unwrap();
         let manager = SessionManager::new(temp_dir.path().to_path_buf());
